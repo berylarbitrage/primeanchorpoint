@@ -2710,7 +2710,7 @@ function generateW9HtmlTemplate(workerName) {
     <tr>
       <td style="width:65%">
         <div style="font-size:8pt;margin-bottom:2px"><strong>Signature of U.S. person ▶</strong></div>
-        <signature-field name="w9_signature" role="Signer" required="true" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+        <signature-field name="w9_signature" role="Signer" required="true" preferences='{"signature_type":["drawn"]}' style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       </td>
       <td style="width:35%;padding-left:10px">
         <div style="font-size:8pt;margin-bottom:2px"><strong>Date ▶</strong></div>
@@ -4118,21 +4118,46 @@ function getDsealConfigTemplateId(type) {
   } catch { return ''; }
 }
 
+// Fetch field names from a DocuSeal template; returns a Set of field names, or null on failure
+async function dsealGetTemplateFieldNames(templateId) {
+  try {
+    const res = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
+    if (res.status >= 400 || !res.data) return null;
+    const fields = res.data.fields || res.data.schema || [];
+    const names = new Set(fields.map(f => f.name).filter(Boolean));
+    console.log(`[DocuSeal W-9] template ${templateId} fields: ${[...names].join(', ')}`);
+    return names;
+  } catch (e) {
+    console.warn(`[DocuSeal W-9] could not fetch template fields: ${e.message}`);
+    return null;
+  }
+}
+
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
 async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, cityStateZip, ssn, tinType, businessName, taxClassification, overrideTemplateId }) {
   const templateId = overrideTemplateId || getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
+  let dsealHandledNotifications = false;
   if (templateId) {
-    // Use existing DocuSeal template (official IRS W-9) — pre-fill all available fields
-    const fields = [{ name: 'w9_name', default_value: workerName, readonly: false, required: true }];
-    if (address) fields.push({ name: 'w9_address', default_value: address, readonly: false, required: true });
-    if (cityStateZip) fields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false, required: true });
-    if (ssn) fields.push({ name: 'w9_ssn', default_value: ssn, readonly: false, required: true });
-    if (businessName) fields.push({ name: 'w9_business_name', default_value: businessName, readonly: false, required: true });
-    if (taxClassification) fields.push({ name: 'w9_tax_classification', default_value: taxClassification, readonly: false, required: true });
-    fields.push({ name: 'w9_date', default_value: todayDate, readonly: false, required: true });
-    const w9Submitter = { role: 'First Party', name: workerName, email: workerEmail, fields };
+    // Use existing DocuSeal template (official IRS W-9)
+    // Fetch actual field names from the template to avoid sending unknown fields (422 error)
+    const templateFieldNames = await dsealGetTemplateFieldNames(templateId);
+    const addField = (fields, name, value, readonly) => {
+      if (!templateFieldNames || templateFieldNames.has(name)) {
+        fields.push({ name, default_value: value, readonly, required: true });
+      }
+    };
+    const fields = [];
+    addField(fields, 'w9_name', workerName, false);
+    if (address) addField(fields, 'w9_address', address, false);
+    if (cityStateZip) addField(fields, 'w9_city_state_zip', cityStateZip, false);
+    if (ssn) addField(fields, 'w9_ssn', ssn, false);
+    if (businessName) addField(fields, 'w9_business_name', businessName, false);
+    if (taxClassification) addField(fields, 'w9_tax_classification', taxClassification, false);
+    addField(fields, 'w9_date', todayDate, false);
+    const w9Submitter = { role: 'First Party', name: workerName, email: workerEmail };
+    if (fields.length) w9Submitter.fields = fields;
     if (workerPhone) w9Submitter.phone = formatPhoneE164(workerPhone);
     subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
@@ -4140,12 +4165,14 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
       send_sms: true,
       submitters: [w9Submitter]
     });
+    // DocuSeal handles email+SMS notifications directly — system should not send duplicates
+    dsealHandledNotifications = true;
   } else {
     // Fallback: generate HTML template
     const w9Html = generateW9HtmlTemplate(workerName);
     const fallbackFields = [
       { name: 'w9_name', default_value: workerName, readonly: false, required: true },
-      { name: 'w9_date', default_value: todayDate, readonly: true, required: true }
+      { name: 'w9_date', default_value: todayDate, readonly: false, required: true }
     ];
     if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false, required: true });
     if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false, required: true });
@@ -4178,7 +4205,7 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
   const directUrl = slug ? `${baseHost}/s/${slug}` : '';
   const finalWorkerUrl = directUrl || workerSignUrl;
   console.log(`[DocuSeal W-9] Worker sign URL: ${(finalWorkerUrl || 'NONE').substring(0, 100)}`);
-  return { submissionId: String(submissionId || signer?.id || ''), workerSignUrl: finalWorkerUrl };
+  return { submissionId: String(submissionId || signer?.id || ''), workerSignUrl: finalWorkerUrl, dsealHandledNotifications };
 }
 
 async function dsealGetW9Status(submissionId) {
@@ -7370,15 +7397,17 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     let w9SubmissionId = '';
     let w9SignUrl = '';
     let dsealError = '';
+    let dsealSentNotifications = false;
     if (dsealEnabled()) {
       try {
         const address = w.work_address || '';
         const overrideTemplateId = req.body.template_id ? String(req.body.template_id) : '';
-        const { submissionId, workerSignUrl } = await dsealSendW9Html({
+        const { submissionId, workerSignUrl, dsealHandledNotifications: dsHandled } = await dsealSendW9Html({
           workerName, workerEmail, workerPhone, address, overrideTemplateId
         });
         w9SubmissionId = submissionId || '';
         w9SignUrl = workerSignUrl || '';
+        if (dsHandled) dsealSentNotifications = true;
         console.log(`[W-9 send] DocuSeal submission created: ${w9SubmissionId}, signUrl: ${(w9SignUrl||'').substring(0,80)}`);
       } catch (e) {
         dsealError = e.message || '未知错误';
@@ -7405,30 +7434,37 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
 
     let emailSent = false;
     let smsSent = false;
-    // Send email/SMS with W-9 signing link (only if DocuSeal direct link available)
-    if (w9Link && workerEmail) {
-      const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${w9Link}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署 W-9 / Sign W-9 / Firmar W-9</a></p>`;
-      emailSent = await sendEmail(workerEmail,
-        `Prime Anchorpoint — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
-        `${workerName}，请点击链接签署 W-9 税表。\n${w9Link}\n\n${workerName}, please click the link to sign your W-9 form.\n${w9Link}\n\n${workerName}, haga clic en el enlace para firmar su formulario W-9.\n${w9Link}`,
-        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
-          <h2 style="color:#1a1a1a;text-align:center">请签署 W-9 税表</h2>
-          <p>您好 ${workerName}，请点击下方按钮直接签署 W-9 税表。</p>
-          ${signLink}
-          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
-          <h3 style="font-size:.95rem">Please Sign Your W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please click the button below to sign your W-9 form directly.</p>
-          ${signLink}
-          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
-          <h3 style="font-size:.95rem">Firme el Formulario W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic en el botón para firmar su formulario W-9 directamente.</p>
-          ${signLink}
-          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
-        </div>`
-      );
-    }
-    if (w9Link && workerPhone) {
-      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
+    // If DocuSeal already sent email+SMS (template path with send_email/send_sms true),
+    // do NOT also send system email/SMS — that would create duplicate notifications with broken links
+    if (dsealSentNotifications) {
+      emailSent = !!workerEmail;
+      smsSent = !!workerPhone;
+    } else if (w9Link) {
+      // Fallback HTML path: DocuSeal did not send notifications, system sends them
+      if (workerEmail) {
+        const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${w9Link}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署 W-9 / Sign W-9 / Firmar W-9</a></p>`;
+        emailSent = await sendEmail(workerEmail,
+          `Prime Anchorpoint — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
+          `${workerName}，请点击链接签署 W-9 税表。\n${w9Link}\n\n${workerName}, please click the link to sign your W-9 form.\n${w9Link}\n\n${workerName}, haga clic en el enlace para firmar su formulario W-9.\n${w9Link}`,
+          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+            <h2 style="color:#1a1a1a;text-align:center">请签署 W-9 税表</h2>
+            <p>您好 ${workerName}，请点击下方按钮直接签署 W-9 税表。</p>
+            ${signLink}
+            <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+            <h3 style="font-size:.95rem">Please Sign Your W-9</h3>
+            <p style="color:#555;font-size:.9rem">Hi ${workerName}, please click the button below to sign your W-9 form directly.</p>
+            ${signLink}
+            <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+            <h3 style="font-size:.95rem">Firme el Formulario W-9</h3>
+            <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic en el botón para firmar su formulario W-9 directamente.</p>
+            ${signLink}
+            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+          </div>`
+        );
+      }
+      if (workerPhone) {
+        smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
+      }
     }
     const warnings = [];
     if (!w9Link) {
@@ -14956,6 +14992,32 @@ app.put('/api/admin/docuseal/my-templates/:id/category', requireAdmin, (req, res
   if (!local) return res.status(404).json({ error: '模板不存在' });
   db.prepare('UPDATE docuseal_templates SET category=? WHERE id=?').run(category.trim(), req.params.id);
   res.json({ success: true, category: category.trim() });
+});
+
+// POST /api/admin/docuseal/templates/:dsId/apply-field-requirements
+// Apply required=true to all fields and draw-only to signature fields on an existing template
+app.post('/api/admin/docuseal/templates/:dsId/apply-field-requirements', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const tmplRes = await dsealApiCall('GET', `/api/templates/${req.params.dsId}`, null);
+    if (tmplRes.status >= 400 || !tmplRes.data) {
+      return res.status(tmplRes.status || 500).json({ error: '無法取得模板資料', detail: tmplRes.data });
+    }
+    const fields = tmplRes.data.fields || [];
+    if (!fields.length) return res.status(400).json({ error: '模板沒有欄位' });
+    const updatedFields = fields.map(f => {
+      const upd = { uuid: f.uuid, name: f.name, required: true };
+      if (f.type === 'signature') {
+        upd.preferences = { signature_type: ['drawn'] };
+      }
+      return upd;
+    });
+    const putRes = await dsealApiCall('PUT', `/api/templates/${req.params.dsId}`, { fields: updatedFields });
+    if (putRes.status >= 400) {
+      return res.status(putRes.status).json({ error: '更新模板欄位失敗', detail: putRes.data });
+    }
+    res.json({ success: true, updated_fields: updatedFields.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // PUT /api/admin/docuseal/templates/:dsId/rename — rename a template via DocuSeal API + local DB

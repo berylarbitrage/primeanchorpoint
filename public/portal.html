@@ -2088,18 +2088,35 @@ async function workerLogin() {
   const login = document.getElementById('wLogin').value.trim();
   const password = document.getElementById('wPassword').value;
   if (!login || !password) { await customAlert('请输入邮箱/手机号和密码', '登录提示', '⚠️'); return; }
-  const r = await fetch('/api/worker/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login, password })
-  });
-  if (!r.ok) { const e = await r.json(); await customAlert(e.error || '登录失败', '登录失败', '❌'); return; }
-  const data = await r.json();
-  WORKER_TOKEN = data.token;
-  localStorage.setItem('pa_worker_token', WORKER_TOKEN);
-  // Save current language preference to server on login
-  fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang: _portalLang }) }).catch(() => {});
-  showApp();
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  try {
+    let r;
+    try {
+      r = await fetch('/api/worker/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login, password })
+      });
+    } catch (e) {
+      await customAlert('网络错误，请检查连接后重试 / Network error, please check your connection', '登录失败', '❌');
+      return;
+    }
+    let errMsg;
+    if (!r.ok) {
+      try { const e = await r.json(); errMsg = e.error; } catch (_) {}
+      await customAlert(errMsg || '登录失败 / Login failed', '登录失败', '❌');
+      return;
+    }
+    const data = await r.json();
+    WORKER_TOKEN = data.token;
+    localStorage.setItem('pa_worker_token', WORKER_TOKEN);
+    // Save current language preference to server on login
+    fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang: _portalLang }) }).catch(() => {});
+    showApp();
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function workerLogout() {
