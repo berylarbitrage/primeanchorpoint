@@ -18033,7 +18033,7 @@ async function loadEmpInvoiceTab() {
       <td style="padding:.5rem;white-space:nowrap">${source}</td>
       <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">${r.status === 'ds_pending' ? '<span style="color:var(--gray-400);font-weight:400">待填写</span>' : '$'+(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
       <td style="padding:.5rem;text-align:center">${STATUS_BADGE[r.status]||r.status}</td>
-      <td style="padding:.5rem;text-align:center;white-space:nowrap">${r.status === 'submitted' ? `
+      <td style="padding:.5rem;text-align:center;white-space:nowrap">${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}${r.status === 'submitted' ? `
         <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
         <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
       ` : r.status === 'ds_pending' ? `<span style="font-size:.72rem;color:#0369a1">等待员工签字…</span>` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}</td>
@@ -18088,6 +18088,20 @@ async function doSendInvoice() {
     loadEmpInvoiceTab();
   } else {
     showToast(r?.error || '发送失败', 'error');
+  }
+}
+
+async function previewDsInvoice(invoiceId) {
+  try {
+    showToast('获取预览链接中…', 'info');
+    const r = await api(`/admin/contractor-invoices/${invoiceId}/signing-url`);
+    if (r && r.url) {
+      window.open(r.url, '_blank');
+    } else {
+      showToast(r?.error || '无法获取预览链接', 'error');
+    }
+  } catch(e) {
+    showToast('获取预览链接失败', 'error');
   }
 }
 
