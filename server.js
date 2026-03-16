@@ -6152,13 +6152,18 @@ function saveW9AddressFromDocuSeal(workerId, submitters) {
     if (!workerSub) return;
     const fields = workerSub.fields || workerSub.values || [];
     if (!Array.isArray(fields)) return;
+    // Support both custom HTML template field names (w9_address) and IRS PDF template field names
+    const addressFieldNames = ['w9_address', 'address', '5 address (number, street, and apt. or suite no.)'];
+    const cityStateZipFieldNames = ['w9_city_state_zip', 'city, state, and zip code', 'city_state_zip', 'citystatezip'];
+    const nameFieldNames = ['w9_name', 'name (as shown on your income tax return)', 'name'];
     let w9Address = '', w9CityStateZip = '', w9Name = '';
     for (const f of fields) {
-      const fname = (f.name || '').toLowerCase();
+      // DocuSeal fields array uses f.name; values array uses f.field
+      const fname = (f.name || f.field || '').toLowerCase();
       const fval = f.value || f.default_value || '';
-      if (fname === 'w9_address') w9Address = String(fval).trim();
-      else if (fname === 'w9_city_state_zip') w9CityStateZip = String(fval).trim();
-      else if (fname === 'w9_name') w9Name = String(fval).trim();
+      if (!w9Address && addressFieldNames.includes(fname)) w9Address = String(fval).trim();
+      else if (!w9CityStateZip && cityStateZipFieldNames.includes(fname)) w9CityStateZip = String(fval).trim();
+      else if (!w9Name && nameFieldNames.includes(fname)) w9Name = String(fval).trim();
     }
     if (!w9Address && !w9CityStateZip) return;
     // Parse city, state, zip from "city, state, zip" format
