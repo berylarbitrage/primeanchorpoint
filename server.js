@@ -3271,27 +3271,106 @@ function generateW2EmploymentHtmlTemplate() {
 }
 
 // ── 1099 Contractor Invoice Template ──
-function generateContractorInvoiceHtmlTemplate() {
+function generateContractorInvoiceHtmlTemplate(lang) {
+  // lang: 'en+es' for English+Spanish, default is English+Chinese
+  const es = (lang || '').toLowerCase().includes('es');
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = 'Prime Anchor Point';
+  const companyContact = 'Qiushi Zhang';
   const companyAddr = process.env.COMPANY_ADDRESS || '';
   const companyEmail = process.env.COMPANY_EMAIL || '';
+
+  // Labels: [English, Chinese/Spanish]
+  const L = es ? {
+    subtitle: '1099 Contractor Invoice / Factura de Contratista',
+    invNum: 'Invoice # / Número de Factura:',
+    invDate: 'Invoice Date / Fecha de Factura:',
+    fromLabel: 'FROM — Contractor / Contratista:',
+    nameLabel: 'Name / Nombre (must match W-9):',
+    addrLabel: 'Address / Dirección:',
+    phoneLabel: 'Phone / Teléfono:',
+    emailLabel: 'Email / Correo:',
+    billTo: 'BILL TO — Company / Empresa:',
+    contactLabel: 'Contact / Contacto:',
+    periodTitle: 'SERVICE PERIOD / PERÍODO DE SERVICIO',
+    periodFrom: 'Services performed from / Servicios realizados desde',
+    periodTo: 'to / hasta',
+    descTitle: 'SERVICE DESCRIPTION / DESCRIPCIÓN DEL SERVICIO',
+    descHint: 'Please itemize each service. Por favor detalle cada servicio (ej: clasificación de almacén 3 turnos / carga/descarga 2 viajes)',
+    rateTitle: 'RATE & COMPENSATION / TARIFA Y COMPENSACIÓN',
+    rateHint: 'Specify rate and method. Especifique tarifa y método (ej: $25/hora × 12 horas / $300/turno × 2 turnos / Tarifa fija $800)',
+    amtTitle: 'AMOUNT SUMMARY / RESUMEN DE MONTO',
+    subtotal: 'Subtotal:',
+    reimb: 'Reimbursable Expenses / Gastos Reembolsables:',
+    total: 'TOTAL AMOUNT DUE / MONTO TOTAL A PAGAR:',
+    dueDateTitle: 'PAYMENT DUE DATE / FECHA DE VENCIMIENTO',
+    dueBy: 'Payment due by / Pago vence el:',
+    dueLaw: 'If no due date is specified, payment is generally due within 30 days per Illinois law.<br>Si no se especifica fecha de pago, generalmente vence en 30 días según la ley de Illinois.',
+    payMethodTitle: 'PAYMENT METHOD / MÉTODO DE PAGO',
+    payMethod: 'Preferred payment method / Método de pago preferido:',
+    payNote: 'Note: Bank routing/account numbers should be provided via a separate form, not on invoices.<br>Nota: Números de cuenta bancaria deben proporcionarse por separado, no en facturas.',
+    notesTitle: 'NOTES / NOTAS',
+    certTitle: 'CONTRACTOR CERTIFICATION / CERTIFICACIÓN DEL CONTRATISTA',
+    certText: 'I certify that the above services were performed and the amounts are correct.<br>Certifico que los servicios anteriores se realizaron y los montos son correctos.',
+    sigLabel: 'Contractor Signature / Firma del Contratista:',
+    dateLabel: 'Date / Fecha:',
+    approvalTitle: 'COMPANY APPROVAL / APROBACIÓN DE LA EMPRESA',
+    approvedBy: 'Approved by / Aprobado por:',
+    footer: 'This invoice is issued pursuant to an independent contractor arrangement. The contractor is responsible for all applicable taxes.<br>Esta factura se emite en virtud de un acuerdo de contratista independiente. El contratista es responsable de todos los impuestos aplicables.'
+  } : {
+    subtitle: '1099 Contractor Invoice / 承包商发票',
+    invNum: 'Invoice # / 发票编号:',
+    invDate: 'Invoice Date / 开票日期:',
+    fromLabel: 'FROM — Contractor / 承包商信息:',
+    nameLabel: 'Name / 姓名 (须与 W-9 一致):',
+    addrLabel: 'Address / 地址:',
+    phoneLabel: 'Phone / 电话:',
+    emailLabel: 'Email / 邮箱:',
+    billTo: 'BILL TO — Company / 公司信息:',
+    contactLabel: 'Contact / 联系人:',
+    periodTitle: 'SERVICE PERIOD / 服务期间',
+    periodFrom: 'Services performed from / 服务日期从',
+    periodTo: 'to / 到',
+    descTitle: 'SERVICE DESCRIPTION / 服务内容明细',
+    descHint: 'Please itemize each service. 请逐项描述服务内容（如：仓库分拣 3 班 / 装卸 2 次 / 清洁服务 5 小时）',
+    rateTitle: 'RATE & COMPENSATION / 计费方式',
+    rateHint: 'Specify rate and method. 请填写计费方式（如：$25/hour × 12 hours / $300/shift × 2 shifts / Flat fee $800）',
+    amtTitle: 'AMOUNT SUMMARY / 金额汇总',
+    subtotal: 'Subtotal / 小计:',
+    reimb: 'Reimbursable Expenses / 可报销费用:',
+    total: 'TOTAL AMOUNT DUE / 应付总额:',
+    dueDateTitle: 'PAYMENT DUE DATE / 付款到期日',
+    dueBy: 'Payment due by / 付款截止日期:',
+    dueLaw: 'If no due date is specified in the contract, payment is generally due within 30 days of service completion per Illinois law.<br>若合同未注明付款日期，依 Illinois 法律通常在完工后 30 天内付款。',
+    payMethodTitle: 'PAYMENT METHOD / 付款方式',
+    payMethod: 'Preferred payment method / 首选付款方式:',
+    payNote: 'Note: Bank routing/account numbers should be provided via a separate payment authorization form, not on invoices.<br>注意：银行账户等敏感信息请通过单独的付款授权表提供，请勿填写在 invoice 上。',
+    notesTitle: 'NOTES / 备注',
+    certTitle: 'CONTRACTOR CERTIFICATION / 承包商声明',
+    certText: 'I certify that the above services were performed and the amounts are correct.<br>本人确认以上服务已完成，金额准确无误。',
+    sigLabel: 'Contractor Signature / 承包商签名:',
+    dateLabel: 'Date / 日期:',
+    approvalTitle: 'COMPANY APPROVAL / 公司审批',
+    approvedBy: 'Approved by / 审批人签名:',
+    footer: 'This invoice is issued pursuant to an independent contractor arrangement. The contractor is responsible for all applicable taxes.<br>本发票依据独立承包商协议开具，承包商自行负责所有适用税款。'
+  };
+
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
   <div style="font-size:1.4rem;font-weight:900;letter-spacing:2px">INVOICE</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">1099 Contractor Invoice / 承包商发票</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">${L.subtitle}</div>
 </div>
 
 <!-- Section 1-2: Invoice Number & Date -->
 <table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
   <tr>
     <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-      <div style="font-weight:700;margin-bottom:4px">Invoice # / 发票编号:</div>
-      <text-field name="invoice_number" role="First Party" required="true" style="${fs}width:200px" placeholder="2026-001"></text-field>
+      <div style="font-weight:700;margin-bottom:4px">${L.invNum}</div>
+      <text-field name="invoice_number" role="First Party" required="true" style="${fs}width:200px" placeholder="INVCON-IL-XZ-031626-0001"></text-field>
     </td>
     <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-      <div style="font-weight:700;margin-bottom:4px">Invoice Date / 开票日期:</div>
+      <div style="font-weight:700;margin-bottom:4px">${L.invDate}</div>
       <date-field name="invoice_date" role="First Party" required="true" style="${fs}width:160px"></date-field>
     </td>
   </tr>
@@ -3301,19 +3380,20 @@ function generateContractorInvoiceHtmlTemplate() {
 <table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
   <tr>
     <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-      <div style="font-weight:700;margin-bottom:4px">FROM — Contractor / 承包商信息:</div>
-      <div style="font-size:8pt;margin-bottom:2px">Name / 姓名 (须与 W-9 一致):</div>
+      <div style="font-weight:700;margin-bottom:4px">${L.fromLabel}</div>
+      <div style="font-size:8pt;margin-bottom:2px">${L.nameLabel}</div>
       <text-field name="contractor_name" role="First Party" required="true" style="${tf}" placeholder="Legal name or business name"></text-field>
-      <div style="font-size:8pt;margin:4px 0 2px">Address / 地址:</div>
+      <div style="font-size:8pt;margin:4px 0 2px">${L.addrLabel}</div>
       <text-field name="contractor_address" role="First Party" style="${tf}" placeholder="Street, City, State, ZIP"></text-field>
-      <div style="font-size:8pt;margin:4px 0 2px">Phone / 电话:</div>
+      <div style="font-size:8pt;margin:4px 0 2px">${L.phoneLabel}</div>
       <text-field name="contractor_phone" role="First Party" style="${fs}width:180px" placeholder="(xxx) xxx-xxxx"></text-field>
-      <div style="font-size:8pt;margin:4px 0 2px">Email / 邮箱:</div>
+      <div style="font-size:8pt;margin:4px 0 2px">${L.emailLabel}</div>
       <text-field name="contractor_email" role="First Party" style="${tf}" placeholder="email@example.com"></text-field>
     </td>
     <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-      <div style="font-weight:700;margin-bottom:4px">BILL TO — Company / 公司信息:</div>
+      <div style="font-weight:700;margin-bottom:4px">${L.billTo}</div>
       <div style="font-size:9pt;font-weight:600">${companyName}</div>
+      <div style="font-size:8pt;margin-top:2px">${L.contactLabel} ${companyContact}</div>
       ${companyAddr ? `<div style="font-size:8pt;margin-top:2px">${companyAddr}</div>` : ''}
       ${companyEmail ? `<div style="font-size:8pt;margin-top:2px">${companyEmail}</div>` : ''}
     </td>
@@ -3321,69 +3401,69 @@ function generateContractorInvoiceHtmlTemplate() {
 </table>
 
 <!-- Section 5: Service Period -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">SERVICE PERIOD / 服务期间</div>
-<p style="font-size:9pt">Services performed from / 服务日期从
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${L.periodTitle}</div>
+<p style="font-size:9pt">${L.periodFrom}
   <text-field name="service_period_start" role="First Party" required="true" style="${fs}width:130px" placeholder="MM/DD/YYYY"></text-field>
-  to / 到
+  ${L.periodTo}
   <text-field name="service_period_end" role="First Party" required="true" style="${fs}width:130px" placeholder="MM/DD/YYYY"></text-field>
 </p>
 
 <!-- Section 6: Itemized Service Description -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">SERVICE DESCRIPTION / 服务内容明细</div>
-<p style="font-size:8pt;color:#555;margin-bottom:4px">Please itemize each service. 请逐项描述服务内容（如：仓库分拣 3 班 / 装卸 2 次 / 清洁服务 5 小时）</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${L.descTitle}</div>
+<p style="font-size:8pt;color:#555;margin-bottom:4px">${L.descHint}</p>
 <text-field name="service_description" role="First Party" required="true" style="${tf};min-height:80px" placeholder="Line 1: Warehouse sorting — 3 shifts&#10;Line 2: Loading/unloading — 2 trips&#10;Line 3: Cleaning service — 5 hours"></text-field>
 
 <!-- Section 7: Rate & Method of Compensation -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">RATE &amp; COMPENSATION / 计费方式</div>
-<p style="font-size:8pt;color:#555;margin-bottom:4px">Specify rate and method. 请填写计费方式（如：$25/hour × 12 hours / $300/shift × 2 shifts / Flat fee $800）</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${L.rateTitle}</div>
+<p style="font-size:8pt;color:#555;margin-bottom:4px">${L.rateHint}</p>
 <text-field name="rate_description" role="First Party" required="true" style="${tf};min-height:40px" placeholder="$25/hour × 12 hours = $300&#10;$300/shift × 2 shifts = $600"></text-field>
 
 <!-- Section 8: Amount Summary -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">AMOUNT SUMMARY / 金额汇总</div>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${L.amtTitle}</div>
 <table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
   <tr>
-    <td style="padding:6px;border:1px solid #ccc;width:60%">Subtotal / 小计:</td>
+    <td style="padding:6px;border:1px solid #ccc;width:60%">${L.subtotal}</td>
     <td style="padding:6px;border:1px solid #ccc;text-align:right">$ <text-field name="subtotal_amount" role="First Party" style="${fs}width:120px" placeholder="0.00"></text-field></td>
   </tr>
   <tr>
-    <td style="padding:6px;border:1px solid #ccc">Reimbursable Expenses / 可报销费用:</td>
+    <td style="padding:6px;border:1px solid #ccc">${L.reimb}</td>
     <td style="padding:6px;border:1px solid #ccc;text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${fs}width:120px" placeholder="0.00"></text-field></td>
   </tr>
   <tr style="background:#f0f0f0;font-weight:700">
-    <td style="padding:8px;border:1px solid #999">TOTAL AMOUNT DUE / 应付总额:</td>
+    <td style="padding:8px;border:1px solid #999">${L.total}</td>
     <td style="padding:8px;border:1px solid #999;text-align:right;font-size:11pt">$ <text-field name="total_amount" role="First Party" required="true" style="${fs}width:120px;font-weight:700;font-size:11pt" placeholder="0.00"></text-field></td>
   </tr>
 </table>
 
 <!-- Section 9: Payment Due Date -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">PAYMENT DUE DATE / 付款到期日</div>
-<p style="font-size:9pt">Payment due by / 付款截止日期:
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${L.dueDateTitle}</div>
+<p style="font-size:9pt">${L.dueBy}
   <text-field name="payment_due_date" role="First Party" style="${fs}width:160px" placeholder="MM/DD/YYYY"></text-field>
 </p>
-<p style="font-size:8pt;color:#555">If no due date is specified in the contract, payment is generally due within 30 days of service completion per Illinois law.<br>若合同未注明付款日期，依 Illinois 法律通常在完工后 30 天内付款。</p>
+<p style="font-size:8pt;color:#555">${L.dueLaw}</p>
 
 <!-- Section 10: Payment Method -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">PAYMENT METHOD / 付款方式</div>
-<p style="font-size:9pt">Preferred payment method / 首选付款方式:
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${L.payMethodTitle}</div>
+<p style="font-size:9pt">${L.payMethod}
   <text-field name="payment_method" role="First Party" style="${fs}width:200px" placeholder="ACH / Check / Zelle / Wire"></text-field>
 </p>
-<p style="font-size:8pt;color:#555">Note: Bank routing/account numbers should be provided via a separate payment authorization form, not on invoices. 注意：银行账户等敏感信息请通过单独的付款授权表提供，请勿填写在 invoice 上。</p>
+<p style="font-size:8pt;color:#555">${L.payNote}</p>
 
 <!-- Section 11: Additional Notes -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">NOTES / 备注</div>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${L.notesTitle}</div>
 <text-field name="invoice_notes" role="First Party" style="${tf};min-height:40px" placeholder="Any additional notes..."></text-field>
 
 <!-- Section 12: Signature -->
 <div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
-  <div style="font-weight:700;margin-bottom:4px">CONTRACTOR CERTIFICATION / 承包商声明</div>
-  <p style="font-size:8pt;margin-bottom:8px">I certify that the above services were performed and the amounts are correct.<br>本人确认以上服务已完成，金额准确无误。</p>
+  <div style="font-weight:700;margin-bottom:4px">${L.certTitle}</div>
+  <p style="font-size:8pt;margin-bottom:8px">${L.certText}</p>
   <table style="width:100%"><tr>
     <td style="width:60%;padding-right:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Contractor Signature / 承包商签名:</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${L.sigLabel}</div>
       <signature-field name="contractor_signature" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
     </td>
     <td style="width:40%;padding-left:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Date / 日期:</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${L.dateLabel}</div>
       <date-field name="signature_date" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
     </td>
   </tr></table>
@@ -3391,22 +3471,21 @@ function generateContractorInvoiceHtmlTemplate() {
 
 <!-- Company Approval (optional second signer) -->
 <div style="background:#f9f9f0;border:1px solid #999;padding:10px;margin-top:8px;font-size:9pt">
-  <div style="font-weight:700;margin-bottom:4px">COMPANY APPROVAL / 公司审批 (${companyName})</div>
+  <div style="font-weight:700;margin-bottom:4px">${L.approvalTitle} (${companyName})</div>
   <table style="width:100%"><tr>
     <td style="width:60%;padding-right:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Approved by / 审批人签名:</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${L.approvedBy}</div>
       <signature-field name="company_signature" role="Second Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
     </td>
     <td style="width:40%;padding-left:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Date / 日期:</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${L.dateLabel}</div>
       <date-field name="approval_date" role="Second Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
     </td>
   </tr></table>
 </div>
 
 <div style="text-align:center;font-size:7pt;color:#999;margin-top:12px;border-top:1px solid #ddd;padding-top:6px">
-  This invoice is issued pursuant to an independent contractor arrangement. The contractor is responsible for all applicable taxes.<br>
-  本发票依据独立承包商协议开具，承包商自行负责所有适用税款。
+  ${L.footer}
 </div>
 </div>`;
 }
@@ -3561,7 +3640,8 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   w8bene: { name: 'W-8BEN-E Certificate of Foreign Status (Entity)', configKey: 'w8bene_template_id', category: 'w8bene', generator: generateW8BENEHtmlTemplate },
   form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', category: 'form8233', generator: generateForm8233HtmlTemplate },
   i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'i9', generator: generateI9HtmlTemplate },
-  contractor_invoice: { name: '1099 Contractor Invoice / 承包商发票', configKey: 'contractor_invoice_template_id', category: 'contractor_invoice', generator: generateContractorInvoiceHtmlTemplate },
+  contractor_invoice: { name: '1099 Contractor Invoice / 承包商发票 (EN+ZH)', configKey: 'contractor_invoice_template_id', category: 'contractor_invoice', generator: () => generateContractorInvoiceHtmlTemplate('en+zh') },
+  contractor_invoice_es: { name: '1099 Contractor Invoice / Factura de Contratista (EN+ES)', configKey: 'contractor_invoice_es_template_id', category: 'contractor_invoice', generator: () => generateContractorInvoiceHtmlTemplate('en+es') },
   invoice_approval: { name: 'Invoice Approval Form / 发票审批表 (内部)', configKey: 'invoice_approval_template_id', category: 'invoice_approval', generator: generateInvoiceApprovalHtmlTemplate },
 };
 
@@ -3588,6 +3668,7 @@ function getDsealConfigTemplateId(type) {
       third_party_pay: cfg.third_party_pay_template_id,
       cash_receipt: cfg.cash_receipt_template_id,
       contractor_invoice: cfg.contractor_invoice_template_id,
+      contractor_invoice_es: cfg.contractor_invoice_es_template_id,
       invoice_approval: cfg.invoice_approval_template_id,
     };
     const val = map[type];
@@ -7160,24 +7241,49 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id } = req.body;
+    const { worker_account_id, lang, period_from, period_to, invoice_date, service_description } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择员工' });
-    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
+    const w = db.prepare('SELECT wa.*, e.first_name, e.last_name, e.state FROM worker_accounts wa LEFT JOIN employees e ON wa.employee_id=e.id WHERE wa.id=?').get(worker_account_id);
     if (!w) return res.status(404).json({ error: '员工不存在' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    const templateId = getDsealConfigTemplateId('contractor_invoice');
+    const isEs = (lang || '').toLowerCase().includes('es');
+    const templateId = (isEs && getDsealConfigTemplateId('contractor_invoice_es')) || getDsealConfigTemplateId('contractor_invoice');
     if (!templateId) return res.status(400).json({ error: '未配置员工 Invoice 模板，请到 DocuSeal 模板管理中设置' });
     const workerEmail = w.email || `worker-${w.id}@placeholder.local`;
     const workerName = w.name || w.username || `Worker #${w.id}`;
-    const todayDate = new Date().toISOString().slice(0, 10);
+    const todayDate = invoice_date || new Date().toISOString().slice(0, 10);
+
+    // Generate INVCON invoice number: INVCON-州两位-姓名两位缩写-MMDDYY-0001
+    const stateCode = (w.state || 'XX').toUpperCase().slice(0, 2);
+    const firstName = (w.first_name || workerName.split(' ')[0] || 'X');
+    const lastName = (w.last_name || workerName.split(' ').slice(-1)[0] || 'X');
+    const nameInitials = (firstName[0] + lastName[0]).toUpperCase();
+    const d = new Date(todayDate + 'T00:00:00');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    const dateCode = mm + dd + yy;
+    const prefix = `INVCON-${stateCode}-${nameInitials}-${dateCode}`;
+    // Find next sequential number for this prefix
+    const existing = db.prepare("SELECT COUNT(*) as cnt FROM contractor_invoices WHERE invoice_number LIKE ?").get(prefix + '-%');
+    const seq = String((existing?.cnt || 0) + 1).padStart(4, '0');
+    const invoiceNumber = `${prefix}-${seq}`;
+
+    // Pre-fill fields for DocuSeal submission
+    const prefilledFields = [
+      { name: 'invoice_number', default_value: invoiceNumber, readonly: true },
+      { name: 'invoice_date', default_value: todayDate, readonly: false }
+    ];
+    if (period_from) prefilledFields.push({ name: 'service_period_start', default_value: period_from, readonly: false });
+    if (period_to) prefilledFields.push({ name: 'service_period_end', default_value: period_to, readonly: false });
+    if (service_description) prefilledFields.push({ name: 'service_description', default_value: service_description, readonly: false });
+
     // Create DocuSeal submission — single signer (worker fills amount + signs)
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
       submitters: [
-        { role: 'First Party', name: workerName, email: workerEmail, fields: [
-          { name: 'invoice_date', default_value: todayDate, readonly: false }
-        ] }
+        { role: 'First Party', name: workerName, email: workerEmail, fields: prefilledFields }
       ]
     });
     console.log(`[DocuSeal Invoice] submission status=${subRes.status}`);
@@ -7187,16 +7293,15 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     }
     const submitter = submitters[0];
     const submissionId = String(subRes.data?.id || submitter?.submission_id || '');
-    // Create contractor_invoices record with pending status
-    const invoiceNumber = `DSINV-${worker_account_id}-${todayDate.replace(/-/g, '')}-${submissionId.slice(-4)}`;
+    const desc = service_description || 'DocuSeal Invoice (待员工填写)';
     const sentBy = req.session?.username || 'admin';
     db.prepare(`INSERT INTO contractor_invoices
-      (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, ds_envelope_id, ds_status, sent_by)
-      VALUES (?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, todayDate, 'DocuSeal Invoice (待员工填写)', 0, 'ds_pending', submissionId, 'sent', sentBy);
+      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(worker_account_id, invoiceNumber, todayDate, desc, period_from || null, period_to || null, 0, 'ds_pending', submissionId, 'sent', sentBy);
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已发送 DocuSeal Invoice 模板给 ${workerName}`);
+      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已发送 DocuSeal Invoice 模板给 ${workerName} [${invoiceNumber}]`);
     res.json({ success: true, submission_id: submissionId, invoice_number: invoiceNumber });
   } catch (e) {
     console.error('[Send DocuSeal Invoice]', e.message);
