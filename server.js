@@ -6202,10 +6202,23 @@ app.post('/api/admin/worker-accounts/:id/init-onboarding', requireAdmin, (req, r
 });
 
 app.get('/api/admin/worker-accounts/:id/onboarding', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
   // auto-init if no tasks yet
-  const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.params.id);
-  if (!existing) initWorkerOnboarding(parseInt(req.params.id));
-  res.json(getOnboardingTasks(parseInt(req.params.id)));
+  const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(workerId);
+  if (!existing) initWorkerOnboarding(workerId);
+  // Auto-verify W-9 address for completed W-9 tasks that haven't been verified yet
+  const w9Task = db.prepare("SELECT status, ds_status, admin_note FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
+  if (w9Task && w9Task.ds_status === 'completed' && w9Task.admin_note && !w9Task.admin_note.includes('地址')) {
+    const addrCheck = verifyW9Address(workerId);
+    if (addrCheck.match) {
+      db.prepare("UPDATE worker_onboarding SET status='completed', completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP), admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+        .run(addrCheck.note, workerId);
+    } else {
+      db.prepare("UPDATE worker_onboarding SET status='submitted', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+        .run(addrCheck.note, workerId);
+    }
+  }
+  res.json(getOnboardingTasks(workerId));
 });
 
 app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, res) => {
