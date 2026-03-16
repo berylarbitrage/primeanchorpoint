@@ -2505,16 +2505,19 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
   // If a pre-built template is configured, use it directly
   if (templateId) {
     const todayDate = new Date().toISOString().slice(0, 10);
+    const submitter1 = { role: 'First Party', name: signer1.name, email: signer1.email,
+      fields: [{ name: 'date1', default_value: todayDate, readonly: true }] };
+    const submitter2 = { role: 'Second Party', name: signer2.name, email: signer2.email,
+      fields: [{ name: 'date2', default_value: todayDate, readonly: true }] };
+    // Include phone numbers so DocuSeal can send its own SMS notifications
+    if (signer1.phone) submitter1.phone = signer1.phone;
+    if (signer2.phone) submitter2.phone = signer2.phone;
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: false,
+      send_sms: true,
       order: 'preserved',
-      submitters: [
-        { role: 'First Party', name: signer1.name, email: signer1.email,
-          fields: [{ name: 'date1', default_value: todayDate, readonly: true }] },
-        { role: 'Second Party', name: signer2.name, email: signer2.email,
-          fields: [{ name: 'date2', default_value: todayDate, readonly: true }] }
-      ]
+      submitters: [submitter1, submitter2]
     });
     console.log(`[DocuSeal] submissions(template ${templateId}): status=${subRes.status}`);
     const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
@@ -2523,10 +2526,10 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
     const worker = submitters.find(s => s.role === 'Second Party') || submitters[1];
     const submissionId = String(subRes.data?.id || company?.submission_id || company?.id || '');
     const companyEmbedSrc = company?.embed_src || '';
-    let workerSignUrl = worker?.embed_src || '';
     const workerSlug = worker?.slug || '';
     const baseHost = dsealPublicHost();
-    if (!workerSignUrl && workerSlug) workerSignUrl = `${baseHost}/s/${workerSlug}`;
+    // Prefer slug-based URL for mobile compatibility
+    let workerSignUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : (worker?.embed_src || '');
     return { submissionId, companyEmbedSrc, workerSignUrl };
   }
   // Convert plain text contract to HTML, replacing field tags with DocuSeal HTML elements
@@ -2555,17 +2558,20 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
   const html = `<div style="font-family:Helvetica,Arial,sans-serif;font-size:11pt;line-height:1.5;max-width:700px;margin:0 auto;padding:20px">${htmlLines.join('\n')}</div>`;
 
   const todayDate = new Date().toISOString().slice(0, 10);
+  const submitter1 = { role: 'First Party', name: signer1.name, email: signer1.email,
+    fields: [{ name: 'date1', default_value: todayDate, readonly: true }] };
+  const submitter2 = { role: 'Second Party', name: signer2.name, email: signer2.email,
+    fields: [{ name: 'date2', default_value: todayDate, readonly: true }] };
+  // Include phone numbers so DocuSeal can send its own SMS notifications
+  if (signer1.phone) submitter1.phone = signer1.phone;
+  if (signer2.phone) submitter2.phone = signer2.phone;
   const subRes = await dsealApiCall('POST', '/api/submissions/html', {
     name: emailSubject || docName,
     documents: [{ name: docName, html, size: 'Letter' }],
     send_email: false,
+    send_sms: true,
     order: 'preserved',
-    submitters: [
-      { role: 'First Party', name: signer1.name, email: signer1.email,
-        fields: [{ name: 'date1', default_value: todayDate, readonly: true }] },
-      { role: 'Second Party', name: signer2.name, email: signer2.email,
-        fields: [{ name: 'date2', default_value: todayDate, readonly: true }] }
-    ]
+    submitters: [submitter1, submitter2]
   });
   console.log(`[DocuSeal] submissions/html: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
   const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
@@ -2585,6 +2591,8 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
   }
   const workerSlug = worker?.slug || '';
   const baseHost = dsealPublicHost();
+  // Prefer slug-based URL (/s/xxx) over embed_src — slug URLs work directly in mobile browsers,
+  // while embed_src is designed for embedding in web components and may not render on mobile
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
@@ -4110,7 +4118,7 @@ function getDsealConfigTemplateId(type) {
 }
 
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
-async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip, ssn, tinType, businessName, taxClassification, overrideTemplateId }) {
+async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, cityStateZip, ssn, tinType, businessName, taxClassification, overrideTemplateId }) {
   const templateId = overrideTemplateId || getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
@@ -4123,12 +4131,13 @@ async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip,
     if (businessName) fields.push({ name: 'w9_business_name', default_value: businessName, readonly: false });
     if (taxClassification) fields.push({ name: 'w9_tax_classification', default_value: taxClassification, readonly: false });
     fields.push({ name: 'w9_date', default_value: todayDate, readonly: false });
+    const w9Submitter = { role: 'First Party', name: workerName, email: workerEmail, fields };
+    if (workerPhone) w9Submitter.phone = workerPhone;
     subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
-      submitters: [
-        { role: 'First Party', name: workerName, email: workerEmail, fields }
-      ]
+      send_sms: true,
+      submitters: [w9Submitter]
     });
   } else {
     // Fallback: generate HTML template
@@ -4139,13 +4148,14 @@ async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip,
     ];
     if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false });
     if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
+    const w9FallbackSubmitter = { role: 'Signer', name: workerName, email: workerEmail, fields: fallbackFields };
+    if (workerPhone) w9FallbackSubmitter.phone = workerPhone;
     subRes = await dsealApiCall('POST', '/api/submissions/html', {
       name: `W-9 表格 - ${workerName}`,
       documents: [{ name: `W-9 Tax Form - ${workerName}`, html: w9Html, size: 'Letter' }],
       send_email: false,
-      submitters: [
-        { role: 'Signer', name: workerName, email: workerEmail, fields: fallbackFields }
-      ]
+      send_sms: true,
+      submitters: [w9FallbackSubmitter]
     });
   }
   console.log(`[DocuSeal W-9] submission: status=${subRes.status}, templateId=${templateId || 'html-fallback'}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
@@ -6439,13 +6449,14 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     fs.writeFileSync(docPath, pdfBuf);
     // Send via DocuSeal — use configured template if available, otherwise generate HTML
     const workerTemplateId = getDsealConfigTemplateId(empType === '1099' ? 'worker_1099' : 'worker_w2');
+    const workerPhone = w.phone || '';
     const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendContractHtml({
       contractText: content,
       templateId: workerTemplateId || undefined,
       docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}`,
       emailSubject: `请签署合同 / Please Sign — ${workerName} × ${companyName}`,
       signer1: { email: companyEmail, name: companyName },
-      signer2: { email: workerEmail, name: workerName }
+      signer2: { email: workerEmail, name: workerName, phone: workerPhone }
     });
     console.log(`[Contract] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}`);
     // Store worker's sign URL in action_url so the portal can show the correct signing link.
@@ -7214,7 +7225,7 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
         const address = w.work_address || '';
         const overrideTemplateId = req.body.template_id ? String(req.body.template_id) : '';
         const { submissionId, workerSignUrl } = await dsealSendW9Html({
-          workerName, workerEmail, address, overrideTemplateId
+          workerName, workerEmail, workerPhone, address, overrideTemplateId
         });
         w9SubmissionId = submissionId || '';
         w9SignUrl = workerSignUrl || '';
@@ -7700,19 +7711,20 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     }
 
     // Create DocuSeal submission — pre-fill suggestions, contractor can edit rate + description
+    const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
+      { name: 'invoice_date', default_value: todayDate, readonly: true },
+      { name: 'contractor_name', default_value: workerName, readonly: true },
+      { name: 'service_description', default_value: jobTitle || '', readonly: true },
+      { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
+      { name: 'payment_terms', default_value: 'Net 30', readonly: true },
+      { name: 'payment_due_date', default_value: dueDate, readonly: true }
+    ] };
+    if (workerPhone) invoiceSubmitter.phone = workerPhone;
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
-      submitters: [
-        { role: 'First Party', name: workerName, email: workerEmail, fields: [
-          { name: 'invoice_date', default_value: todayDate, readonly: true },
-          { name: 'contractor_name', default_value: workerName, readonly: true },
-          { name: 'service_description', default_value: jobTitle || '', readonly: true },
-          { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
-          { name: 'payment_terms', default_value: 'Net 30', readonly: true },
-          { name: 'payment_due_date', default_value: dueDate, readonly: true }
-        ] }
-      ]
+      send_sms: true,
+      submitters: [invoiceSubmitter]
     });
     console.log(`[DocuSeal Invoice] submission status=${subRes.status}`);
     const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
@@ -12533,7 +12545,7 @@ app.post('/api/worker/compliance/w9', requireWorker, async (req, res) => {
       const cityStateZip = [req.body.city, req.body.state, req.body.zip].filter(Boolean).join(', ');
       try {
         const { submissionId, workerSignUrl } = await dsealSendW9Html({
-          workerName, workerEmail, address, cityStateZip,
+          workerName, workerEmail, workerPhone: w.phone || '', address, cityStateZip,
           ssn: rawSsnEin, tinType: req.body.tin_type,
           businessName: req.body.business_name,
           taxClassification: req.body.tax_classification
@@ -13620,14 +13632,21 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                   const subData = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
                   const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party');
                   if (workerSub) {
-                    if (workerSub.embed_src) { workerSignUrl = workerSub.embed_src; }
-                    else if (workerSub.id) {
-                      const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name || workerName });
-                      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
-                    }
-                    if (!workerSignUrl && workerSub.slug) {
+                    // Prefer slug-based URL (/s/xxx) — works directly in mobile browsers
+                    // embed_src is designed for web component embedding and may not render on mobile
+                    if (workerSub.slug) {
                       const baseHost = dsealPublicHost();
                       workerSignUrl = `${baseHost}/s/${workerSub.slug}`;
+                    } else if (workerSub.embed_src) {
+                      workerSignUrl = workerSub.embed_src;
+                    } else if (workerSub.id) {
+                      const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name || workerName });
+                      if (wPut.data?.slug) {
+                        const baseHost = dsealPublicHost();
+                        workerSignUrl = `${baseHost}/s/${wPut.data.slug}`;
+                      } else if (wPut.data?.embed_src) {
+                        workerSignUrl = wPut.data.embed_src;
+                      }
                     }
                   }
                 } catch (e2) { console.error('[DocuSeal webhook] get worker sign URL error:', e2.message); }
