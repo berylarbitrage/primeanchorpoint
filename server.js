@@ -6089,6 +6089,50 @@ function initWorkerOnboarding(workerId) {
   }
 }
 
+// Extract W-9 address from DocuSeal submission fields and save to worker_compliance_docs if missing
+function saveW9AddressFromDocuSeal(workerId, submitters) {
+  try {
+    // Check if form_data already exists
+    const existing = db.prepare("SELECT id, form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1").get(workerId);
+    if (existing && existing.form_data) {
+      try { const d = JSON.parse(existing.form_data); if (d.address) return; } catch {}
+    }
+    // Extract address fields from DocuSeal submitter values
+    const workerSub = Array.isArray(submitters) ? (submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0]) : null;
+    if (!workerSub) return;
+    const fields = workerSub.fields || workerSub.values || [];
+    if (!Array.isArray(fields)) return;
+    let w9Address = '', w9CityStateZip = '', w9Name = '';
+    for (const f of fields) {
+      const fname = (f.name || '').toLowerCase();
+      const fval = f.value || f.default_value || '';
+      if (fname === 'w9_address') w9Address = String(fval).trim();
+      else if (fname === 'w9_city_state_zip') w9CityStateZip = String(fval).trim();
+      else if (fname === 'w9_name') w9Name = String(fval).trim();
+    }
+    if (!w9Address && !w9CityStateZip) return;
+    // Parse city, state, zip from "city, state, zip" format
+    let city = '', state = '', zip = '';
+    if (w9CityStateZip) {
+      const parts = w9CityStateZip.split(',').map(s => s.trim());
+      if (parts.length >= 3) { city = parts[0]; state = parts[1]; zip = parts[2]; }
+      else if (parts.length === 2) { city = parts[0]; const sz = parts[1].split(/\s+/); state = sz[0] || ''; zip = sz.slice(1).join(' ') || ''; }
+      else { city = parts[0]; }
+    }
+    const formData = JSON.stringify({ address: w9Address, city, state, zip, name: w9Name, _source: 'docuseal' });
+    if (existing && existing.id) {
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .run(formData, existing.id);
+    } else {
+      db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'completed')")
+        .run(workerId, formData);
+    }
+    console.log(`[saveW9AddressFromDocuSeal] Saved address for worker ${workerId}: ${w9Address}, ${w9CityStateZip}`);
+  } catch (e) {
+    console.error(`[saveW9AddressFromDocuSeal] Error for worker ${workerId}:`, e.message);
+  }
+}
+
 // Verify W-9 address against tax_residency_questionnaire; returns { match, note }
 function verifyW9Address(workerId) {
   try {
@@ -7546,11 +7590,13 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
       const addrCheck = onb.ds_status === 'completed' ? verifyW9Address(workerId) : null;
       return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, addressCheck: addrCheck });
     }
-    const { status, workerSigned, declineReason } = await dsealGetW9Status(onb.ds_envelope_id);
+    const { status, workerSigned, declineReason, raw } = await dsealGetW9Status(onb.ds_envelope_id);
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
       .run(status, workerSigned, workerId);
     let addressCheck = null;
     if (status === 'completed') {
+      // Extract and save address from DocuSeal submission before verifying
+      if (raw && raw.submitters) saveW9AddressFromDocuSeal(workerId, raw.submitters);
       const addrCheck = verifyW9Address(workerId);
       addressCheck = addrCheck;
       if (addrCheck.match) {
@@ -7652,6 +7698,7 @@ app.get('/api/worker/onboarding', requireWorker, async (req, res) => {
           const workerSub = submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0];
           const signedAt = workerSub?.completed_at || new Date().toISOString();
           if (dt.task_key === 'w9') {
+            saveW9AddressFromDocuSeal(req.workerId, submitters);
             const addrCheck = verifyW9Address(req.workerId);
             if (addrCheck.match) {
               db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
@@ -7701,6 +7748,7 @@ app.get('/api/worker/w9-sign-url', requireWorker, async (req, res) => {
         if (fullyDone) {
           const workerSub = submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0];
           const signedAt = workerSub?.completed_at || new Date().toISOString();
+          saveW9AddressFromDocuSeal(req.workerId, submitters);
           const addrCheck = verifyW9Address(req.workerId);
           if (addrCheck.match) {
             db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
@@ -13890,6 +13938,8 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
           const fullyDone = dsStatus === 'completed' || submitters.every(s => s.status === 'completed');
           console.log(`[DocuSeal W-9 webhook] wid=${wid}, dsStatus=${dsStatus}, fullyDone=${fullyDone}`);
           if (fullyDone) {
+            // Extract and save address from DocuSeal submission before verifying
+            saveW9AddressFromDocuSeal(wid, submitters);
             const addrCheck = verifyW9Address(wid);
             if (addrCheck.match) {
               db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
@@ -14081,10 +14131,11 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
       const w9wid = w9.worker_account_id;
       if (isCompleted || isSubmitterCompleted) {
         try {
-          const { status, workerSigned } = await dsealGetW9Status(submissionId);
+          const { status, workerSigned, raw: w9Raw } = await dsealGetW9Status(submissionId);
           db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
             .run(status, workerSigned, w9wid);
           if (status === 'completed') {
+            if (w9Raw && w9Raw.submitters) saveW9AddressFromDocuSeal(w9wid, w9Raw.submitters);
             const addrCheck = verifyW9Address(w9wid);
             if (addrCheck.match) {
               db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
