@@ -7562,7 +7562,7 @@ app.get('/api/admin/worker-accounts/:id/w9-sign-url', requireAdmin, async (req, 
 });
 
 // Worker: view own onboarding tasks (only visible ones)
-app.get('/api/worker/onboarding', requireWorker, (req, res) => {
+app.get('/api/worker/onboarding', requireWorker, async (req, res) => {
   const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.workerId);
   if (!existing) initWorkerOnboarding(req.workerId);
 
@@ -7576,6 +7576,42 @@ app.get('/api/worker/onboarding', requireWorker, (req, res) => {
       db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
     } else if (w && w.identity_status === 'declined') {
       db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+    }
+  }
+
+  // Auto-sync W-9 and contract status from DocuSeal (webhook may arrive with delay)
+  if (dsealEnabled()) {
+    const dsealTasks = db.prepare("SELECT task_key, ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key IN ('w9','contract') AND ds_envelope_id IS NOT NULL AND ds_envelope_id != '' AND ds_status != 'completed'").all(req.workerId);
+    for (const dt of dsealTasks) {
+      try {
+        const subData = await dsealApiCall('GET', `/api/submissions/${dt.ds_envelope_id}`, null);
+        const dsStatus = subData.data?.status || '';
+        const submitters = subData.data?.submitters || [];
+        const fullyDone = dsStatus === 'completed' || submitters.every(s => s.status === 'completed');
+        if (fullyDone) {
+          const workerSub = submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0];
+          const signedAt = workerSub?.completed_at || new Date().toISOString();
+          if (dt.task_key === 'w9') {
+            db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='W-9 已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+              .run(signedAt, req.workerId);
+          } else if (dt.task_key === 'contract') {
+            const companySub = submitters.find(s => s.role === 'Company' || s.role === 'First Party');
+            const companySignedAt = companySub?.completed_at || null;
+            db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='合同已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+              .run(signedAt, companySignedAt, req.workerId);
+          }
+          syncOnboardedStatus(req.workerId);
+        } else {
+          // Check if worker has signed but overall not completed yet
+          const workerSub = submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0];
+          if (workerSub && workerSub.status === 'completed' && !dt.ds_status?.includes('worker_signed')) {
+            const signedAt = workerSub.completed_at || new Date().toISOString();
+            const label = dt.task_key === 'w9' ? 'W-9' : '合同';
+            db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?")
+              .run(signedAt, `${label} 已填写提交，等待最终确认`, req.workerId, dt.task_key);
+          }
+        }
+      } catch (e) { console.error(`[onboarding auto-sync ${dt.task_key}]`, e.message); }
     }
   }
 
