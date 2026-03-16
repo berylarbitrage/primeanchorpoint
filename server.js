@@ -3437,8 +3437,8 @@ function generateContractorInvoiceHtmlTemplate(lang) {
   <tr>
     <td style="${c}width:25%"><b>Invoice #</b><br><text-field name="invoice_number" role="First Party" required="true" readonly="true" style="${ro}width:130px" placeholder="(auto)"></text-field></td>
     <td style="${c}width:25%"><b>${bi('Date', t ? t.date : '')}</b><br><date-field name="invoice_date" role="First Party" required="true" readonly="true" style="${ro}width:120px"></date-field></td>
-    <td style="${hi}width:25%"><b>${bi('Period From', t ? t.periodFrom : 'Period From *')}</b><br><text-field name="service_period_start" role="First Party" required="true" style="${ed}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
-    <td style="${hi}width:25%"><b>${bi('Period To', t ? t.periodTo : 'Period To *')}</b><br><text-field name="service_period_end" role="First Party" required="true" style="${ed}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="${c}width:25%"><b>${bi('Period From', t ? t.periodFrom : 'Period From *')}</b><br><text-field name="service_period_start" role="First Party" required="true" readonly="true" style="${ro}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="${c}width:25%"><b>${bi('Period To', t ? t.periodTo : 'Period To *')}</b><br><text-field name="service_period_end" role="First Party" required="true" readonly="true" style="${ro}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
   </tr>
 </table>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
@@ -8165,13 +8165,16 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id, worker_email, worker_phone, invoice_date, service_description } = req.body;
+    const { worker_account_id, worker_email, worker_phone, service_period_start, service_period_end, invoice_date, service_description, template_lang } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
+    if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务周期 / Service period required' });
+    if (!service_description) return res.status(400).json({ error: '请填写服务内容描述 / Service description required' });
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
     if (!w) return res.status(404).json({ error: '承包商不存在' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    const templateId = getDsealConfigTemplateId('contractor_invoice');
-    if (!templateId) return res.status(400).json({ error: '未配置承包商發票模板，请到 DocuSeal 模板管理中设置' });
+    const langType = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'].includes(template_lang) ? template_lang : 'contractor_invoice';
+    const templateId = getDsealConfigTemplateId(langType);
+    if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商發票模板，请先到 DocuSeal 模板管理中生成对应模板' });
     const workerEmail = worker_email || w.email || `worker-${w.id}@placeholder.local`;
     const workerPhone = worker_phone || w.phone || '';
     const workerName = w.name || w.username || `Worker #${w.id}`;
@@ -8187,12 +8190,16 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     }
     const serviceDescValue = service_description || jobTitle || '';
 
-    // Create DocuSeal submission — admin pre-fills date & service description; contractor fills amount
+    // Format period dates for display (MM/DD/YYYY)
+    const fmtPeriod = (d) => { if (!d) return ''; const p = d.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}/${p[0]}` : d; };
+    // Create DocuSeal submission — admin pre-fills date, period & service description; contractor fills amount
     const billToCompany = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
       { name: 'invoice_date', default_value: todayDate, readonly: true },
       { name: 'contractor_name', default_value: workerName, readonly: true },
       { name: 'bill_to_company', default_value: billToCompany, readonly: true },
+      { name: 'service_period_start', default_value: fmtPeriod(service_period_start), readonly: true },
+      { name: 'service_period_end', default_value: fmtPeriod(service_period_end), readonly: true },
       { name: 'service_description', default_value: serviceDescValue, readonly: false },
       { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
       { name: 'payment_terms', default_value: 'Net 30', readonly: true },
@@ -8216,9 +8223,9 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
     const sentBy = req.session?.username || 'admin';
     db.prepare(`INSERT INTO contractor_invoices
-      (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, ds_envelope_id, ds_status, sent_by)
-      VALUES (?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', 0, 'ds_pending', submissionId, 'sent', sentBy);
+      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', 0, 'ds_pending', submissionId, 'sent', sentBy);
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已發送承包商發票给 ${workerName}`);
@@ -8242,11 +8249,11 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
 
 // Admin: preview the contractor invoice with pre-filled data (HTML rendering)
 app.get('/api/admin/contractor-invoices/preview-filled', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  const { contractor_name, invoice_date, service_description } = req.query;
+  const { contractor_name, invoice_date, service_description, period_start, period_end } = req.query;
   const invDate = invoice_date || new Date().toISOString().slice(0, 10);
   const invDateObj = new Date(invDate + 'T12:00:00');
-  const periodEnd = invDate;
-  const periodStart = new Date(invDateObj.getTime() - 6 * 86400000).toISOString().slice(0, 10);
+  const periodEnd = period_end || invDate;
+  const periodStart = period_start || new Date(invDateObj.getTime() - 6 * 86400000).toISOString().slice(0, 10);
   const dueDate = new Date(invDateObj.getTime() + 30 * 86400000).toISOString().slice(0, 10);
   const billToCompany = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
   const contractorName = contractor_name || '(承包商姓名)';
@@ -8313,8 +8320,9 @@ app.get('/api/admin/contractor-invoices/preview-filled', requireAdmin, requireRo
 // Admin: preview the contractor invoice DocuSeal template (proxied PDF)
 app.get('/api/admin/contractor-invoices/preview-template', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-  const templateId = getDsealConfigTemplateId('contractor_invoice');
-  if (!templateId) return res.status(400).json({ error: '未配置承包商發票模板' });
+  const langType = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'].includes(req.query.lang) ? req.query.lang : 'contractor_invoice';
+  const templateId = getDsealConfigTemplateId(langType);
+  if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商發票模板，请先到 DocuSeal 模板管理中生成对应模板' });
   try {
     const r = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
     if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
