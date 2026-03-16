@@ -221,7 +221,7 @@ function googleTranslateElementInit() {
       <button class="login-lang-btn" id="lbEs" onclick="setPortalLang('es')">Español</button>
     </div>
     <img src="/logo.svg" alt="Prime Anchorpoint">
-    <h1 id="loginTitle">工人门户</h1>
+    <h1 id="loginTitle">合作中心</h1>
     <p id="loginSubtitle">Worker Self-Service Portal</p>
     <input type="text" id="wLogin" data-i18n-placeholder="loginPlaceholderUser" placeholder="邮箱或手机号 / Email or Phone" autocomplete="username">
     <div class="pw-wrap">
@@ -488,7 +488,7 @@ function googleTranslateElementInit() {
       <img src="/logo.svg" alt="Prime Anchorpoint" style="width:36px;height:36px;object-fit:contain;flex-shrink:0">
       <div>
         <h2>Prime Anchorpoint</h2>
-        <div class="sub" id="portalSubtitle">工人门户</div>
+        <div class="sub" id="portalSubtitle">合作中心</div>
       </div>
     </div>
     <nav class="sidebar-nav">
@@ -1747,6 +1747,7 @@ applyPortalLang();
 let WORKER_TOKEN = localStorage.getItem('pa_worker_token') || '';
 let _allJobs = [];
 let _forgotLogin = '';
+let _workerPortalMode = 'none'; // set from /api/worker/portal-config on login
 
 function showToast(msg, type='success') {
   const wrap = document.getElementById('toast-wrap');
@@ -1942,8 +1943,22 @@ let _pendingSlot = null;
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  const [me, interview, personaStatus] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status')]);
+  const [me, interview, personaStatus, portalCfg] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status'), fetch('/api/worker/portal-config').then(r=>r.json()).catch(()=>({worker_portal_mode:'none'}))]);
   if (!me) return;
+  // Apply worker portal mode (global setting) combined with per-worker feature flags
+  const globalMode = (portalCfg && portalCfg.worker_portal_mode) || 'none';
+  const perWorkerTimeclock = me.account && me.account.enable_timeclock ? 1 : 0;
+  const perWorkerInvoice = me.account && me.account.enable_invoice ? 1 : 0;
+  // Per-worker flags override or supplement global mode
+  if (perWorkerTimeclock) {
+    _workerPortalMode = 'timeclock';
+  } else if (perWorkerInvoice) {
+    _workerPortalMode = 'invoice';
+  } else {
+    _workerPortalMode = globalMode;
+  }
+  const navTimeclock = document.querySelector('.sidebar-nav a[data-tab="timeclock"]');
+  if (navTimeclock) navTimeclock.style.display = (perWorkerTimeclock || _workerPortalMode === 'timeclock') ? '' : 'none';
   _workerInfo = me;
   _workerEmploymentType = me.account?.employment_type || '';
   const firstName = me.employee
@@ -3837,10 +3852,11 @@ async function submitContractorInvoice(e) {
 async function loadContractorInvoices() {
   const card = document.getElementById('contractorInvoiceCard');
   if (!card) return;
-  // Only show for 1099 contractors
+  // Only show for 1099 contractors AND when invoice mode is enabled by admin
   const is1099 = _workerEmploymentType === '1099';
-  card.style.display = is1099 ? 'block' : 'none';
-  if (!is1099) return;
+  const invoiceEnabled = _workerPortalMode === 'invoice' || (_workerInfo && _workerInfo.account && _workerInfo.account.enable_invoice);
+  card.style.display = (is1099 && invoiceEnabled) ? 'block' : 'none';
+  if (!is1099 || !invoiceEnabled) return;
 
   const invoices = await wApi('/contractor-invoices');
   const el = document.getElementById('contractorInvoiceList');
@@ -4488,6 +4504,8 @@ async function loadOnboarding() {
       }
     } else if (s === 'completed' && t.key === 'contract' && t.ds_envelope_id) {
       actionHtml = `<button class="btn" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0" onclick="openSignedContractViewer()">📄 查看已签署合同</button>`;
+    } else if (s === 'completed' && t.key === 'w9' && t.ds_envelope_id) {
+      actionHtml = `<button class="btn" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0" onclick="openSignedW9Viewer()">📄 查看已签署W-9</button>`;
     }
     return `<div class="ob-step">
       <div class="ob-icon ob-${s==='completed'?'done':s==='waived'?'waived':s==='submitted'?'submitted':s==='pending'?'pending':'locked'}">${icons[t.key]||'📌'}</div>
@@ -4955,6 +4973,58 @@ async function openSignedContractViewer() {
 function closeSignedContractViewer() {
   document.getElementById('signedContractViewerModal').style.display = 'none';
   document.getElementById('signedContractViewerFrame').src = '';
+}
+</script>
+
+<!-- ── Signed W-9 PDF Viewer Modal ── -->
+<div id="signedW9ViewerModal" style="display:none;position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;width:min(98vw,860px);height:min(92vh,720px);display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.1rem;border-bottom:1px solid #e2e8f0;flex-shrink:0">
+      <span style="font-weight:700;font-size:.95rem;color:#065f46">📄 已签署W-9</span>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <a id="signedW9DownloadLink" href="#" download="signed-w9.pdf" style="font-size:.82rem;padding:.25rem .75rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0;border-radius:6px;text-decoration:none">⬇ 下载</a>
+        <button onclick="closeSignedW9Viewer()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#64748b;line-height:1">&times;</button>
+      </div>
+    </div>
+    <div id="signedW9ViewerLoading" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;font-size:.9rem;color:#64748b">
+      <div style="width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#065f46;border-radius:50%;animation:spin .8s linear infinite"></div>
+      <span>加载W-9中…</span>
+    </div>
+    <iframe id="signedW9ViewerFrame" style="flex:1;display:none;border:none;min-height:0" src=""></iframe>
+  </div>
+</div>
+
+<script>
+let _signedW9BlobUrl = null;
+async function openSignedW9Viewer() {
+  const modal = document.getElementById('signedW9ViewerModal');
+  const loading = document.getElementById('signedW9ViewerLoading');
+  const frame = document.getElementById('signedW9ViewerFrame');
+  const dlLink = document.getElementById('signedW9DownloadLink');
+  modal.style.display = 'flex';
+  loading.style.display = 'flex';
+  frame.style.display = 'none';
+  frame.src = '';
+  try {
+    const r = await fetch('/api/worker/w9-signed-pdf', {
+      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN }
+    });
+    if (r.status === 401) { workerLogout(); return; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || '加载失败'); }
+    const blob = await r.blob();
+    if (_signedW9BlobUrl) URL.revokeObjectURL(_signedW9BlobUrl);
+    _signedW9BlobUrl = URL.createObjectURL(blob);
+    dlLink.href = _signedW9BlobUrl;
+    frame.src = _signedW9BlobUrl;
+    loading.style.display = 'none';
+    frame.style.display = '';
+  } catch (e) {
+    loading.innerHTML = `❌ ${e.message}，请稍后重试。`;
+  }
+}
+function closeSignedW9Viewer() {
+  document.getElementById('signedW9ViewerModal').style.display = 'none';
+  document.getElementById('signedW9ViewerFrame').src = '';
 }
 </script>
 </body>

@@ -1711,6 +1711,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
  'expenses REAL DEFAULT 0','job_id INTEGER DEFAULT 0','job_title TEXT DEFAULT \'\'','service_type TEXT DEFAULT \'\'','confirmed INTEGER DEFAULT 0'
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
+// ─── App Settings (feature flags, portal config) ───
+db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+// Default: worker portal mode is 'none' (neither timeclock nor invoice enabled)
+db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('worker_portal_mode', 'none')`).run();
+
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
   .split(',').map(d => d.trim()).filter(Boolean);
@@ -2141,6 +2150,27 @@ function nextEmployeeId(state, hireDate) {
 }
 
 // ─── Auto-generate worker code: PORT-ST-MMDDYY-0001 ───
+function generateContractorInvoiceNumber(workerName, workerState) {
+  const stateStr = (workerState || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
+  // Build initials from worker name words (e.g. "Xuan Zhang" → "XZ")
+  const initials = (workerName || '').trim().split(/\s+/).map(w => w[0] || '').join('').toUpperCase().replace(/[^A-Z]/g, '') || 'XX';
+  const today = new Date();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const yy = String(today.getFullYear()).slice(-2);
+  const dateStr = mm + dd + yy;
+  const prefix = `INVCON-${stateStr}-${initials}-${dateStr}`;
+  // Find the highest sequential number for this same prefix today
+  const last = db.prepare(`SELECT invoice_number FROM contractor_invoices WHERE invoice_number LIKE ? ORDER BY invoice_number DESC LIMIT 1`).get(prefix + '-%');
+  let num = 1;
+  if (last) {
+    const parts = last.invoice_number.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) num = lastNum + 1;
+  }
+  return `${prefix}-${String(num).padStart(4, '0')}`;
+}
+
 function generateWorkerCode(state, prefix = 'PORT') {
   const dateStr = localDateStr(state);
   const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
@@ -3392,7 +3422,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
 
   const ro = 'border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;';
   const ed = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
   const companyAddr = process.env.COMPANY_ADDRESS || '';
   const companyEmail = process.env.COMPANY_EMAIL || '';
   const c = 'padding:3px 5px;border:1px solid #ccc;vertical-align:top;';
@@ -3419,7 +3449,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
     </td>
     <td style="${c}width:50%">
       <b>${bi('BILL TO — Company', t ? t.billTo : '')}</b><br>
-      <div style="font-weight:600">${companyName}</div>
+      <text-field name="bill_to_company" role="First Party" required="true" readonly="true" style="${ro}font-weight:600;width:100%;min-height:16px" placeholder="${companyName}"></text-field>
       ${companyAddr ? `<div>${companyAddr}</div>` : ''}
       ${companyEmail ? `<div>${companyEmail}</div>` : ''}
     </td>
@@ -4215,11 +4245,23 @@ async function dsealGetW9Status(submissionId) {
   const sub = r.data;
   let status = sub.status === 'completed' ? 'completed' : 'sent';
   let workerSigned = null, declineReason = '';
+  let w9Address = '', w9CityStateZip = '';
+  // Address field names used in both custom HTML template and standard IRS templates
+  const addressFields = ['w9_address', 'Address', 'address', '5 Address (number, street, and apt. or suite no.)'];
+  const cityStateZipFields = ['w9_city_state_zip', 'City, state, and ZIP code', 'city_state_zip', 'CityStateZip'];
   for (const s of (sub.submitters || [])) {
     if (s.status === 'completed' && s.completed_at) workerSigned = s.completed_at;
     if (s.status === 'declined') { status = 'declined'; declineReason = s.decline_reason || '已拒签'; }
+    // Extract address from submitter values (DocuSeal returns array of {field, value} objects)
+    const vals = s.values || [];
+    for (const v of vals) {
+      const fieldName = v.field || v.name || '';
+      const fieldValue = v.value || '';
+      if (!w9Address && addressFields.includes(fieldName)) w9Address = fieldValue;
+      if (!w9CityStateZip && cityStateZipFields.includes(fieldName)) w9CityStateZip = fieldValue;
+    }
   }
-  return { status, workerSigned, declineReason, raw: sub };
+  return { status, workerSigned, declineReason, w9Address, w9CityStateZip, raw: sub };
 }
 
 async function dsealGetW9SignUrl(submissionId) {
@@ -5831,6 +5873,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent_at TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN identity_reverify_date TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN enable_timeclock INTEGER DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN enable_invoice INTEGER DEFAULT 0"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -5911,7 +5955,7 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type, enable_timeclock, enable_invoice } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -5944,6 +5988,8 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   logChange('has_ssn', w.has_ssn||0, newHasSsn);
   if (entity_type !== undefined) logChange('entity_type', w.entity_type, entity_type);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
+  if (enable_timeclock !== undefined) logChange('enable_timeclock', w.enable_timeclock||0, enable_timeclock?1:0);
+  if (enable_invoice !== undefined) logChange('enable_invoice', w.enable_invoice||0, enable_invoice?1:0);
   // When reactivating a deactivated account (active 0→1), clear old interview
   // and onboarding records so the worker starts fresh
   if (!w.active && newActive) {
@@ -5955,13 +6001,16 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
     // Clear reserved interview slots for this worker (don't delete the slot rows)
     db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(wid);
   }
+  const newEnableTimeclock = enable_timeclock !== undefined ? (enable_timeclock ? 1 : 0) : (w.enable_timeclock || 0);
+  const newEnableInvoice = enable_invoice !== undefined ? (enable_invoice ? 1 : 0) : (w.enable_invoice || 0);
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
     payment_method=COALESCE(?,payment_method), payment_details=COALESCE(?,payment_details),
     assigned_tasks=COALESCE(?,assigned_tasks),
     work_status=COALESCE(?,work_status), has_ssn=?, position_interests=?,
     employment_type=COALESCE(?,employment_type),
-    entity_type=COALESCE(?,entity_type) WHERE id=?`)
+    entity_type=COALESCE(?,entity_type),
+    enable_timeclock=?, enable_invoice=? WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
       newActive, newSuspended,
@@ -5974,6 +6023,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       newHasSsn, newPositionInterests,
       employment_type !== undefined ? employment_type : null,
       entity_type !== undefined ? entity_type : null,
+      newEnableTimeclock, newEnableInvoice,
       req.params.id
     );
   res.json({ success: true });
@@ -6102,13 +6152,18 @@ function saveW9AddressFromDocuSeal(workerId, submitters) {
     if (!workerSub) return;
     const fields = workerSub.fields || workerSub.values || [];
     if (!Array.isArray(fields)) return;
+    // Support both custom HTML template field names (w9_address) and IRS PDF template field names
+    const addressFieldNames = ['w9_address', 'address', '5 address (number, street, and apt. or suite no.)'];
+    const cityStateZipFieldNames = ['w9_city_state_zip', 'city, state, and zip code', 'city_state_zip', 'citystatezip'];
+    const nameFieldNames = ['w9_name', 'name (as shown on your income tax return)', 'name'];
     let w9Address = '', w9CityStateZip = '', w9Name = '';
     for (const f of fields) {
-      const fname = (f.name || '').toLowerCase();
+      // DocuSeal fields array uses f.name; values array uses f.field
+      const fname = (f.name || f.field || '').toLowerCase();
       const fval = f.value || f.default_value || '';
-      if (fname === 'w9_address') w9Address = String(fval).trim();
-      else if (fname === 'w9_city_state_zip') w9CityStateZip = String(fval).trim();
-      else if (fname === 'w9_name') w9Name = String(fval).trim();
+      if (!w9Address && addressFieldNames.includes(fname)) w9Address = String(fval).trim();
+      else if (!w9CityStateZip && cityStateZipFieldNames.includes(fname)) w9CityStateZip = String(fval).trim();
+      else if (!w9Name && nameFieldNames.includes(fname)) w9Name = String(fval).trim();
     }
     if (!w9Address && !w9CityStateZip) return;
     // Parse city, state, zip from "city, state, zip" format
@@ -6355,7 +6410,7 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
     let smsSent = false;
     if (w.phone) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
-      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照/ID+自拍）以继续入职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
+      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照/ID+自拍）以继续入职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(w.phone, smsText);
     }
     // Send email
@@ -6364,12 +6419,12 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(w.email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.url || portalUrl}`,
+        `请完成身份验证。您可以登录合作中心直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${w.name||w.username||''}，</p>
          <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
          <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
-           <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
-           <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
+           <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录合作中心，在"合规文件"或"待办事项"中直接完成</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录合作中心 / Worker Portal</a></td></tr>
            ${result.url ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
            <tr><td style="padding:.3rem 0"><a href="${result.url}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
            <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.url}</span></td></tr>` : ''}
@@ -6764,6 +6819,18 @@ app.get('/api/worker/contract-signed-pdf', requireWorker, async (req, res) => {
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
     const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-contract.pdf"` });
+    res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Worker: view their own signed W-9 PDF
+app.get('/api/worker/w9-signed-pdf', requireWorker, async (req, res) => {
+  try {
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(req.workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-w9.pdf"` });
     res.send(signedBuf);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -7644,12 +7711,12 @@ app.post('/api/admin/worker-accounts/:id/send-work-auth', requireAdmin, async (r
     const workerPhone = w.phone || '';
     const workerEmail = w.email || '';
     if (workerPhone) {
-      await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录工人门户完成 Work Authorization 认证，上传所需身份证明文件。Reply STOP to opt out.`).catch(() => {});
+      await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录合作中心完成 Work Authorization 认证，上传所需身份证明文件。Reply STOP to opt out.`).catch(() => {});
     }
     if (workerEmail) {
       await sendEmail(workerEmail, 'Work Authorization 认证 — 请上传身份证明文件',
-        `${workerName}，\n请登录工人门户完成 Work Authorization 认证调查。\n\nPrime Anchorpoint`,
-        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem"><h2>Work Authorization 认证</h2><p>您好 ${workerName}，</p><p>请登录工人门户，在入职进度中完成 <strong>Work Authorization 认证</strong>，按要求上传身份证明文件。</p><p style="color:#64748b;font-size:.9rem">Prime Anchorpoint</p></div>`
+        `${workerName}，\n请登录合作中心完成 Work Authorization 认证调查。\n\nPrime Anchorpoint`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem"><h2>Work Authorization 认证</h2><p>您好 ${workerName}，</p><p>请登录合作中心，在入职进度中完成 <strong>Work Authorization 认证</strong>，按要求上传身份证明文件。</p><p style="color:#64748b;font-size:.9rem">Prime Anchorpoint</p></div>`
       ).catch(() => {});
     }
     res.json({ success: true });
@@ -8087,23 +8154,34 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const workerEmail = worker_email || w.email || `worker-${w.id}@placeholder.local`;
     const workerPhone = worker_phone || w.phone || '';
     const workerName = w.name || w.username || `Worker #${w.id}`;
-    const invDate = invoice_date || new Date().toISOString().slice(0, 10);
-    const dueDate = new Date(new Date(invDate).getTime() + 30 * 86400000).toISOString().slice(0, 10);
+    const todayDate = invoice_date || new Date().toISOString().slice(0, 10);
+    const dueDate = new Date(new Date(todayDate).getTime() + 30 * 86400000).toISOString().slice(0, 10);
+
+    // Get active job info for pre-filling (fallback if no service_description provided)
+    const empId = w.employee_id;
+    let jobTitle = '', rateDesc = '';
+    if (empId) {
+      const ej = db.prepare(`SELECT ej.emp_hourly_rate, j.title FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1`).get(empId);
+      if (ej) { jobTitle = ej.title || ''; rateDesc = ej.emp_hourly_rate ? `$${ej.emp_hourly_rate}/hour` : ''; }
+    }
+    const serviceDescValue = service_description || jobTitle || '';
 
     // Format period dates for display (MM/DD/YYYY)
-    const fmtPeriod = (d) => { const p = d.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}/${p[0]}` : d; };
-    // Create DocuSeal submission — all key fields pre-filled by admin (readonly)
+    const fmtPeriod = (d) => { if (!d) return ''; const p = d.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}/${p[0]}` : d; };
+    // Create DocuSeal submission — admin pre-fills date, period & service description; contractor fills amount
+    const billToCompany = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
-      { name: 'invoice_date', default_value: invDate, readonly: true },
+      { name: 'invoice_date', default_value: todayDate, readonly: true },
       { name: 'contractor_name', default_value: workerName, readonly: true },
+      { name: 'bill_to_company', default_value: billToCompany, readonly: true },
       { name: 'service_period_start', default_value: fmtPeriod(service_period_start), readonly: true },
       { name: 'service_period_end', default_value: fmtPeriod(service_period_end), readonly: true },
-      { name: 'service_description', default_value: service_description, readonly: true },
+      { name: 'service_description', default_value: serviceDescValue, readonly: false },
       { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
       { name: 'payment_terms', default_value: 'Net 30', readonly: true },
       { name: 'payment_due_date', default_value: dueDate, readonly: true }
     ] };
-    if (workerPhone) invoiceSubmitter.phone = workerPhone;
+    if (workerPhone) invoiceSubmitter.phone = formatPhoneE164(workerPhone);
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
@@ -8118,12 +8196,12 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const submitter = submitters[0];
     const submissionId = String(subRes.data?.id || submitter?.submission_id || '');
     // Create contractor_invoices record with pending status
-    const invoiceNumber = `DSINV-${worker_account_id}-${invDate.replace(/-/g, '')}-${submissionId.slice(-4)}`;
+    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
     const sentBy = req.session?.username || 'admin';
     db.prepare(`INSERT INTO contractor_invoices
       (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, invDate, service_description, service_period_start || '', service_period_end || '', 0, 'ds_pending', submissionId, 'sent', sentBy);
+      .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', 0, 'ds_pending', submissionId, 'sent', sentBy);
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已發送承包商發票给 ${workerName}`);
@@ -8141,6 +8219,62 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     res.json({ success: true, submission_id: submissionId, invoice_number: invoiceNumber, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[Send DocuSeal Invoice]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: preview the contractor invoice DocuSeal template (proxied PDF)
+app.get('/api/admin/contractor-invoices/preview-template', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const templateId = getDsealConfigTemplateId('contractor_invoice');
+  if (!templateId) return res.status(400).json({ error: '未配置承包商發票模板' });
+  try {
+    const r = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+    const documents = r.data?.documents || r.data?.schema || [];
+    const docUrl = documents[0]?.url || documents[0]?.file_url || null;
+    if (!docUrl) return res.status(404).json({ error: '该模板暂无可预览的文档' });
+    const { apiKey } = dsealGetCreds();
+    const parsedUrl = new URL(docUrl);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    const proxyReq = transport.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: { 'X-Auth-Token': apiKey, 'Accept': 'application/pdf,*/*' }
+    }, (proxyRes) => {
+      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="contractor-invoice-template.pdf"`);
+      proxyRes.pipe(res);
+    });
+    proxyReq.setTimeout(30000, () => { proxyReq.destroy(new Error('代理超时')); });
+    proxyReq.on('error', (e) => { if (!res.headersSent) res.status(500).json({ error: e.message }); });
+    proxyReq.end();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: get DocuSeal signing/preview URL for a contractor invoice
+app.get('/api/admin/contractor-invoices/:id/signing-url', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: '发票不存在' });
+    if (!inv.ds_envelope_id) return res.status(400).json({ error: '该发票没有 DocuSeal 记录' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const r = await dsealApiCall('GET', `/api/submissions/${inv.ds_envelope_id}`, null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+    const sub = r.data;
+    const baseHost = dsealPublicHost();
+    const submitter = (sub.submitters || [])[0];
+    if (!submitter) return res.status(404).json({ error: '找不到签署人信息' });
+    const slug = submitter.slug || '';
+    const signingUrl = slug ? `${baseHost}/s/${slug}` : (submitter.embed_src || '');
+    if (!signingUrl) return res.status(404).json({ error: '无法获取预览链接' });
+    res.json({ url: signingUrl, status: submitter.status, completed: sub.status === 'completed' });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
@@ -8281,14 +8415,14 @@ app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (re
         const locStr = interview_location_text || '';
         const noteStr = admin_note || '';
         const subject = 'Prime Anchorpoint — 面试通知 / Interview Scheduled';
-        const textMsg = `您好 ${workerName}，\n\n您申请的职位「${app2.job_title}」已安排面试：\n${dtLines ? dtLines + '\n' : ''}${locStr ? '地点：' + locStr + '\n' : ''}${noteStr ? '备注：' + noteStr + '\n' : ''}\n请登录工人门户查看详情。`;
+        const textMsg = `您好 ${workerName}，\n\n您申请的职位「${app2.job_title}」已安排面试：\n${dtLines ? dtLines + '\n' : ''}${locStr ? '地点：' + locStr + '\n' : ''}${noteStr ? '备注：' + noteStr + '\n' : ''}\n请登录合作中心查看详情。`;
         const htmlMsg = `<p>您好 ${workerName}，</p><p>您申请的职位 <strong>${app2.job_title}</strong> 已安排面试：</p>
           <table style="border-collapse:collapse;margin:1rem 0;font-size:15px">
             ${dtHtmlRows}
             ${locStr ? `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📍 地点</td><td style="padding:.4rem 0">${locStr}</td></tr>` : ''}
             ${noteStr ? `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📝 备注</td><td style="padding:.4rem 0">${noteStr}</td></tr>` : ''}
           </table>
-          <p>请登录工人门户查看完整详情。</p>`;
+          <p>请登录合作中心查看完整详情。</p>`;
         if (app2.worker_email) emailSent = await sendEmail(app2.worker_email, subject, textMsg, htmlMsg).catch(() => false);
         if (app2.worker_phone) smsSent = await sendSMS(app2.worker_phone, textMsg).catch(() => false);
       }
@@ -11165,7 +11299,7 @@ app.post('/api/worker/login', (req, res) => {
 });
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
-  const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, employment_type, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
+  const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, employment_type, enable_timeclock, enable_invoice, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
   const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
   res.json({ account: w, employee: emp, compliance_docs: docs });
@@ -13046,6 +13180,32 @@ app.put('/api/admin/integrations/:provider', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// ─── Admin: App Settings (feature flags) ───
+app.get('/api/admin/app-settings', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT key, value FROM app_settings').all();
+  const settings = {};
+  rows.forEach(r => { settings[r.key] = r.value; });
+  res.json(settings);
+});
+
+app.put('/api/admin/app-settings', requireAdmin, blockManager, (req, res) => {
+  const allowed = ['worker_portal_mode'];
+  const updates = req.body;
+  const stmt = db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
+  for (const key of allowed) {
+    if (updates[key] !== undefined) {
+      stmt.run(key, String(updates[key]));
+    }
+  }
+  res.json({ success: true });
+});
+
+// ─── Public: Worker Portal Config ───
+app.get('/api/worker/portal-config', (req, res) => {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='worker_portal_mode'").get();
+  res.json({ worker_portal_mode: row ? row.value : 'none' });
+});
+
 // ─── Admin: Worker Compliance Review ───
 app.get('/api/admin/compliance-docs', requireAdmin, (req, res) => {
   const docs = db.prepare(`
@@ -14548,7 +14708,7 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     let smsSent = false;
     if (interview.worker_phone) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
-      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
+      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(interview.worker_phone, smsText);
     }
     // Send email
@@ -14557,12 +14717,12 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(interview.worker_email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.url || portalUrl}`,
+        `请完成身份验证。您可以登录合作中心直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${interview.worker_name||''}，</p>
          <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
          <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
-           <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
-           <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
+           <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录合作中心，在"合规文件"或"待办事项"中直接完成</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录合作中心 / Worker Portal</a></td></tr>
            ${result.url ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
            <tr><td style="padding:.3rem 0"><a href="${result.url}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
            <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.url}</span></td></tr>` : ''}
@@ -15407,9 +15567,56 @@ app.use((err, req, res, _next) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// Auto-regenerate contractor invoice templates if they're missing the bill_to_company field
+// (handles case where old template had company name baked in as static text)
+async function autoRegenerateContractorInvoiceTemplates() {
+  if (!dsealEnabled()) return;
+  const typesToCheck = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'];
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  let cfgChanged = false;
+  for (const type of typesToCheck) {
+    const tmplDef = DOCUSEAL_AUTO_TEMPLATES[type];
+    if (!tmplDef) continue;
+    const templateId = cfg[tmplDef.configKey];
+    if (!templateId) continue;
+    try {
+      const fields = await dsealGetTemplateFieldNames(templateId);
+      if (fields === null) continue; // couldn't fetch, skip
+      if (!fields.has('bill_to_company')) {
+        // Old template without bill_to_company field — regenerate with updated HTML
+        console.log(`[startup] Regenerating ${type} template (bill_to_company field missing)...`);
+        const html = tmplDef.generator();
+        const r = await dsealApiCall('POST', '/api/templates/html', {
+          name: tmplDef.name,
+          documents: [{ name: tmplDef.name, html, size: 'Letter' }]
+        });
+        if (r.status < 400) {
+          const dsId = r.data?.id || r.data?.template_id;
+          if (dsId) {
+            db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, String(dsId), tmplDef.category || 'contract');
+            cfg[tmplDef.configKey] = dsId;
+            cfgChanged = true;
+            console.log(`[startup] ${type} template regenerated → new ID: ${dsId}`);
+          }
+        } else {
+          console.error(`[startup] Failed to regenerate ${type} template: DocuSeal ${r.status}`);
+        }
+      }
+    } catch (e) {
+      console.error(`[startup] Failed to check/regenerate ${type} template: ${e.message}`);
+    }
+  }
+  if (cfgChanged) {
+    db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+      .run(JSON.stringify(cfg));
+  }
+}
+
 app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
-
+  // Auto-regenerate contractor invoice templates if bill_to_company field is missing (old static-text templates)
+  setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 5000);
 });
