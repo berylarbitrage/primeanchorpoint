@@ -2165,6 +2165,42 @@ tr:hover td{background:var(--sky-light)}
 <!-- Integration Settings 集成设置 -->
 <div id="tab-integrations" style="display:none">
   <div class="top"><h1>第三方集成设置</h1></div>
+
+  <!-- Worker Portal Feature Settings 工人门户功能设置 -->
+  <div style="max-width:560px;margin:0 1.5rem 1.5rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.5rem">
+    <div style="font-size:1rem;font-weight:700;margin-bottom:.4rem;display:flex;align-items:center;gap:.5rem">
+      📱 工人门户功能开放设置
+    </div>
+    <p style="font-size:.85rem;color:#64748b;margin:0 0 1.2rem">
+      控制工人门户（Worker Portal）开放哪项功能。默认关闭，admin 可选择开放打卡功能或 Invoice 填写功能（二选一）。
+    </p>
+    <div style="display:flex;flex-direction:column;gap:.65rem;margin-bottom:1.2rem">
+      <label style="display:flex;align-items:center;gap:.75rem;cursor:pointer;padding:.6rem .9rem;border:2px solid transparent;border-radius:8px;transition:border-color .15s" id="portalModeLabel_none">
+        <input type="radio" name="workerPortalMode" value="none" onchange="onPortalModeChange(this)" style="width:16px;height:16px;accent-color:#6366f1">
+        <div>
+          <div style="font-weight:600;font-size:.9rem">🔒 关闭（默认）</div>
+          <div style="font-size:.8rem;color:#94a3b8">工人门户不开放打卡或 Invoice 功能</div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:center;gap:.75rem;cursor:pointer;padding:.6rem .9rem;border:2px solid transparent;border-radius:8px;transition:border-color .15s" id="portalModeLabel_timeclock">
+        <input type="radio" name="workerPortalMode" value="timeclock" onchange="onPortalModeChange(this)" style="width:16px;height:16px;accent-color:#6366f1">
+        <div>
+          <div style="font-weight:600;font-size:.9rem">⏱️ 打卡功能</div>
+          <div style="font-size:.8rem;color:#94a3b8">开放上下班打卡、休息打卡功能</div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:center;gap:.75rem;cursor:pointer;padding:.6rem .9rem;border:2px solid transparent;border-radius:8px;transition:border-color .15s" id="portalModeLabel_invoice">
+        <input type="radio" name="workerPortalMode" value="invoice" onchange="onPortalModeChange(this)" style="width:16px;height:16px;accent-color:#6366f1">
+        <div>
+          <div style="font-weight:600;font-size:.9rem">📄 Invoice 填写</div>
+          <div style="font-size:.8rem;color:#94a3b8">1099 独立承包商可提交 Invoice / Payment Request</div>
+        </div>
+      </label>
+    </div>
+    <button onclick="saveWorkerPortalMode()" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:.55rem 1.4rem;font-size:.9rem;font-weight:600;cursor:pointer">保存设置</button>
+    <span id="portalModeSaveMsg" style="margin-left:.75rem;font-size:.85rem;color:#16a34a;display:none">已保存 ✓</span>
+  </div>
+
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem" id="integrationsGrid"></div>
 </div>
 
@@ -5882,7 +5918,7 @@ function showTab(t) {
   if (t === 'interviews') { loadInterviews(); initBatchDays(); }
   if (t === 'compliance') loadComplianceDocs();
   if (t === 'jobsites')   loadJobSites();
-  if (t === 'integrations') loadIntegrations();
+  if (t === 'integrations') { loadIntegrations(); loadWorkerPortalMode(); }
   if (t === 'docuseal-templates') loadDocusealTemplatesPage();
   if (t === 'skill-settings')   loadSkillSettings();
   if (t === 'referrals')   loadAllReferrals();
@@ -19892,6 +19928,40 @@ async function deleteJobSite(id) {
   await api(`/admin/job-sites/${id}`, { method:'DELETE' });
   showToast('✅ 已删除');
   loadJobSites();
+}
+
+// ─── Worker Portal Mode Settings ───
+async function loadWorkerPortalMode() {
+  const settings = await api('/admin/app-settings');
+  if (!settings) return;
+  const mode = settings.worker_portal_mode || 'none';
+  document.querySelectorAll('input[name="workerPortalMode"]').forEach(r => {
+    r.checked = r.value === mode;
+  });
+  updatePortalModeLabels(mode);
+}
+
+function onPortalModeChange(radio) {
+  updatePortalModeLabels(radio.value);
+}
+
+function updatePortalModeLabels(mode) {
+  ['none', 'timeclock', 'invoice'].forEach(v => {
+    const lbl = document.getElementById('portalModeLabel_' + v);
+    if (lbl) lbl.style.borderColor = v === mode ? '#6366f1' : 'transparent';
+  });
+}
+
+async function saveWorkerPortalMode() {
+  const sel = document.querySelector('input[name="workerPortalMode"]:checked');
+  if (!sel) return;
+  const res = await api('/admin/app-settings', { method: 'PUT', body: JSON.stringify({ worker_portal_mode: sel.value }) });
+  if (res && res.success) {
+    const msg = document.getElementById('portalModeSaveMsg');
+    msg.style.display = 'inline';
+    setTimeout(() => { msg.style.display = 'none'; }, 2500);
+    updatePortalModeLabels(sel.value);
+  }
 }
 
 // ─── Integration Settings ───
