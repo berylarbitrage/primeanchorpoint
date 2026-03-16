@@ -17128,7 +17128,7 @@ async function openW9SendModal() {
         if (r && r.status) {
           updateW9DsStatusUI(r.status);
           if (r.status === 'completed') {
-            showW9AddressBox(r.w9Address, r.w9CityStateZip);
+            showW9AddressBox(r.w9Address, r.w9CityStateZip, r.allFields);
             showW9SubmissionSummary(r.allFields);
             document.getElementById('w9DownloadBtn').style.display = '';
             refreshOnboardingModal();
@@ -17154,10 +17154,22 @@ async function openW9SendModal() {
   }
 }
 
-function showW9AddressBox(w9Address, w9CityStateZip) {
+function showW9AddressBox(w9Address, w9CityStateZip, allFields) {
   const box = document.getElementById('w9AddressBox');
   if (!box) return;
-  const addrLine = [w9Address, w9CityStateZip].filter(Boolean).join(', ');
+  let addrLine = [w9Address, w9CityStateZip].filter(Boolean).join(', ');
+  // Fallback: try to detect address from allFields by content pattern
+  if (!addrLine && allFields && allFields.length) {
+    const textFields = allFields.filter(f => f.value && !f.value.startsWith('data:') && !f.value.startsWith('http') && f.value.length < 500);
+    let detectedAddr = '', detectedCity = '';
+    for (const f of textFields) {
+      const v = f.value.trim();
+      if (!detectedAddr && /^\d+\s+[A-Za-z]/.test(v) && v.length > 5 && v.length < 200) detectedAddr = v;
+      else if (!detectedCity && (/[A-Za-z]+[,\s]+[A-Z]{2}[,\s]+\d{5}/.test(v) || /^[A-Za-z\s]+,\s*[A-Z]{2}\s+\d{5}/.test(v))) detectedCity = v;
+    }
+    addrLine = [detectedAddr, detectedCity].filter(Boolean).join(', ');
+    if (addrLine) console.log('[showW9AddressBox] Detected address from allFields:', addrLine);
+  }
   if (addrLine) {
     box.style.cssText = 'display:block;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem;background:#f0fdf4;border:1px solid #86efac;color:#065f46';
     box.innerHTML = `🏠 <b>W-9 地址：</b>${esc(addrLine)}`;
@@ -17251,7 +17263,7 @@ async function refreshW9Status() {
   if (r && r.status) {
     updateW9DsStatusUI(r.status);
     if (r.status === 'completed') {
-      showW9AddressBox(r.w9Address, r.w9CityStateZip);
+      showW9AddressBox(r.w9Address, r.w9CityStateZip, r.allFields);
       showW9SubmissionSummary(r.allFields);
       document.getElementById('w9DownloadBtn').style.display = '';
     }
