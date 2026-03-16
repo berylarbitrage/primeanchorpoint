@@ -13936,7 +13936,7 @@ async function refreshOnboardingModal() {
 }
 
 function renderOnboardingTasks(tasks) {
-  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', tin_verify:'🔢', contract:'✍️', gusto:'💸', work_permit:'🛂',
+  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', address_verify:'📍', tin_verify:'🔢', contract:'✍️', gusto:'💸', work_permit:'🛂',
     tax_doc_w8ben:'📄', tax_doc_w8bene:'📄', tax_doc_8233:'📄', tax_doc_passport:'🛂', tax_doc_visa:'📋', tax_doc_i94:'📋', tax_doc_work_auth:'📋', tax_doc_w7_itin:'📄', tax_doc_8833:'📄', tax_doc_corp_cert:'📋', tax_doc_sign_auth:'📋', tax_doc_treaty_docs:'📋', tax_doc_treaty_stmt:'📋' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
@@ -13965,7 +13965,7 @@ function renderOnboardingTasks(tasks) {
   const taxResDone = taxResTask && ['completed','waived'].includes(taxResTask.status);
   // Tax form/doc tasks only show after tax residency is completed
   const taxDocKeys = ['tax_doc_w8ben', 'tax_doc_w8bene', 'tax_doc_8233', 'tax_doc_passport', 'tax_doc_visa', 'tax_doc_i94', 'tax_doc_work_auth', 'tax_doc_w7_itin', 'tax_doc_8833', 'tax_doc_corp_cert', 'tax_doc_sign_auth', 'tax_doc_treaty_docs', 'tax_doc_treaty_stmt'];
-  const taxGatedKeys = ['w9', 'tin_verify', ...(taxResTask ? ['work_permit'] : []), ...taxDocKeys];
+  const taxGatedKeys = ['w9', 'address_verify', 'tin_verify', ...(taxResTask ? ['work_permit'] : []), ...taxDocKeys];
 
   document.getElementById('onboardingTaskList').innerHTML = tasks.filter((t, idx) => {
     // Always show pre-interview steps
@@ -14036,6 +14036,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openTaxResidencyModal()">🏛️ ${(s==='completed'||s==='submitted')?'查看/修改判定结果':'开始 Resident Test'}</button>`
             : t.key==='work_permit'
             ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openWorkPermitModal()">🛂 ${s==='completed'?'查看/修改验证':'开始工作许可验证'}</button>`
+            : t.key==='address_verify'
+            ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="confirmOnboardingComplete('address_verify','核对地址')">📍 ${s==='completed'?'✅ 已核对':'核对地址'}</button>`
             : t.key==='tin_verify'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button>`
             : (t.key==='i9'||t.key==='ead_upload')
@@ -14198,8 +14200,8 @@ function selectEntityType(type) {
 }
 
 // Onboarding tasks auto-assigned per employment type
-const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'gusto'];
-const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify'];
+const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'address_verify', 'tin_verify', 'gusto'];
+const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'address_verify', 'tin_verify', 'work_permit', 'background_check', 'persona_verify'];
 
 
 // ─── Tax Wizard (standalone modal, opens from onboarding task list) ───
