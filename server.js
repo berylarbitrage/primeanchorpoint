@@ -15297,7 +15297,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','invoice_approval_template_id'];
+    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id'];
   const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
   const out = { connected: dsealEnabled(), url: _publicUrl };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
@@ -15331,7 +15331,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','invoice_approval_template_id',
+    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id',
     'invoice_approval_en_template_id','invoice_approval_es_template_id',
     'contract_template_id' /* legacy */,
     'account_email' /* DocuSeal account email for embedded builder JWT */];
