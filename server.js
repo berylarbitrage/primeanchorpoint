@@ -12877,6 +12877,36 @@ app.post('/api/worker/contractor-invoices', requireWorker, (req, res) => {
   res.json({ success: true, id: r.lastInsertRowid, invoice_number: invoiceNumber });
 });
 
+// Get single invoice detail (worker can only see their own)
+app.get('/api/worker/contractor-invoices/:id', requireWorker, (req, res) => {
+  const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=? AND worker_account_id=?').get(req.params.id, req.workerId);
+  if (!inv) return res.status(404).json({ error: '发票不存在 / Invoice not found' });
+  res.json(inv);
+});
+
+// Get DocuSeal signing URL for ds_pending invoices (worker can only access their own)
+app.get('/api/worker/contractor-invoices/:id/signing-url', requireWorker, async (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=? AND worker_account_id=?').get(req.params.id, req.workerId);
+    if (!inv) return res.status(404).json({ error: '发票不存在 / Invoice not found' });
+    if (inv.status !== 'ds_pending') return res.status(400).json({ error: '此发票不需要签署 / This invoice does not require signing' });
+    if (!inv.ds_envelope_id) return res.status(400).json({ error: '该发票没有 DocuSeal 记录 / No DocuSeal record for this invoice' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置 / DocuSeal not configured' });
+    const r = await dsealApiCall('GET', `/api/submissions/${inv.ds_envelope_id}`, null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+    const sub = r.data;
+    const baseHost = dsealPublicHost();
+    const submitter = (sub.submitters || [])[0];
+    if (!submitter) return res.status(404).json({ error: '找不到签署人信息 / Signer info not found' });
+    const slug = submitter.slug || '';
+    const signingUrl = slug ? `${baseHost}/s/${slug}` : (submitter.embed_src || '');
+    if (!signingUrl) return res.status(404).json({ error: '无法获取签署链接 / Unable to get signing URL' });
+    res.json({ url: signingUrl, status: submitter.status, completed: sub.status === 'completed' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Worker Forgot / Reset Password ───
 app.post('/api/worker/forgot-password', async (req, res) => {
   const { login } = req.body;
