@@ -2828,6 +2828,14 @@ tr:hover td{background:var(--sky-light)}
     系统将向承包商发送發票模板（邮件+短信），承包商填写金额并签字后提交回来。
   </div>
   <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票語言版本 / Invoice Language：<span style="color:#dc2626">*</span></label>
+    <select id="invSendLang" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+      <option value="contractor_invoice">中文+英文 (ZH+EN)</option>
+      <option value="contractor_invoice_en">English Only (EN)</option>
+      <option value="contractor_invoice_es">English+Español (EN+ES)</option>
+    </select>
+  </div>
+  <div style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">承包商邮箱：</label>
     <input id="invSendEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="contractor@email.com">
   </div>
@@ -18149,11 +18157,14 @@ function openInvSendModal() {
   document.getElementById('invSendStatus').style.display = 'none';
   document.getElementById('invSendBtn').textContent = '📤 發送發票';
   document.getElementById('invSendBtn').disabled = false;
+  document.getElementById('invSendLang').value = 'contractor_invoice';
   document.getElementById('invSendDate').value = new Date().toISOString().slice(0, 10);
   document.getElementById('invSendServiceDesc').value = '';
   document.getElementById('invPreviewSection').style.display = 'none';
   document.getElementById('invPreviewFrame').src = '';
   document.getElementById('invPreviewBtn').textContent = '🔍 预览模板';
+  const _prevSummary = document.getElementById('invPreviewSummary');
+  if (_prevSummary) _prevSummary.remove();
   // Pre-fill email, phone, and service description from cached worker data
   const w = _empInvWorkersCache.find(w => w.id === _invSendWorkerId);
   document.getElementById('invSendEmail').value = w?.email || '';
@@ -18177,11 +18188,14 @@ async function doSendInvoice() {
   if (!periodStart || !periodEnd) { showToast('请填写服务周期 Period From / Period To', 'error'); return; }
   if (!invoiceDate) { showToast('请选择發票日期', 'error'); return; }
   if (!serviceDesc) { showToast('请填写服务内容描述', 'error'); return; }
-  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，填写金额并签字后提交。`)) return;
+  const _langLabels = { contractor_invoice: '中文+英文', contractor_invoice_en: 'English', contractor_invoice_es: 'EN+ES' };
+  const _selLang = document.getElementById('invSendLang').value;
+  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，填写金额并签字后提交。`)) return;
   const btn = document.getElementById('invSendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
+  const templateLang = document.getElementById('invSendLang').value;
   const r = await api('/admin/contractor-invoices/send-docuseal', {
-    method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, worker_email: email, worker_phone: phone || undefined, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc })
+    method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, worker_email: email, worker_phone: phone || undefined, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, template_lang: templateLang })
   });
   btn.disabled = false; btn.textContent = '📤 重新發送';
   if (r && r.success) {
@@ -18206,8 +18220,30 @@ function previewInvoiceTemplate() {
   const section = document.getElementById('invPreviewSection');
   const frame = document.getElementById('invPreviewFrame');
   const btn = document.getElementById('invPreviewBtn');
+  const lang = document.getElementById('invSendLang').value;
   if (section.style.display === 'none') {
-    frame.src = '/api/admin/contractor-invoices/preview-template';
+    // Build form data summary for preview
+    const periodStart = document.getElementById('invSendPeriodStart').value;
+    const periodEnd = document.getElementById('invSendPeriodEnd').value;
+    const invoiceDate = document.getElementById('invSendDate').value;
+    const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
+    const workerName = _invSendWorkerName || '';
+    let summaryEl = document.getElementById('invPreviewSummary');
+    if (!summaryEl) {
+      summaryEl = document.createElement('div');
+      summaryEl.id = 'invPreviewSummary';
+      section.insertBefore(summaryEl, section.firstChild);
+    }
+    const langLabels = { contractor_invoice: '中文+英文', contractor_invoice_en: 'English', contractor_invoice_es: 'EN+ES' };
+    summaryEl.style.cssText = 'margin-bottom:.5rem;padding:.5rem .75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:.82rem;color:#1e40af';
+    summaryEl.innerHTML = `<b>将预填入的数据 (Pre-filled Data):</b><br>` +
+      `<b>语言版本:</b> ${langLabels[lang] || lang}　` +
+      `<b>承包商:</b> ${workerName || '—'}　` +
+      `<b>發票日期:</b> ${invoiceDate || '—'}　` +
+      `<b>服务周期:</b> ${periodStart || '—'} ~ ${periodEnd || '—'}<br>` +
+      `<b>服务内容:</b> ${serviceDesc || '—'}<br>` +
+      `<span style="color:#92400e;font-size:.78rem">※ 以下PDF为空白模板预览；发送后承包商收到的版本将自动带入上述数据。</span>`;
+    frame.src = '/api/admin/contractor-invoices/preview-template?lang=' + encodeURIComponent(lang);
     section.style.display = 'block';
     btn.textContent = '✖ 关闭预览';
   } else {
