@@ -12328,6 +12328,23 @@ app.get('/api/worker/compliance', requireWorker, (req, res) => {
   try { assignedTasks = JSON.parse(worker?.assigned_tasks || '[]'); } catch {}
   // Find expiring/expired approved documents
   const expiringDocs = docs.filter(d => d.expires_at && d.status === 'approved' && new Date(d.expires_at) <= new Date(Date.now() + 90 * 86400000));
+  // Include signed W-9 and contract from worker_onboarding (DocuSeal) if not already in compliance docs
+  const onbDocs = db.prepare("SELECT task_key, status, ds_status, ds_envelope_id, action_url, completed_at, updated_at FROM worker_onboarding WHERE worker_account_id=? AND task_key IN ('w9','contract') AND ds_envelope_id IS NOT NULL AND ds_envelope_id != ''").all(req.workerId);
+  for (const od of onbDocs) {
+    const docType = od.task_key; // 'w9' or 'contract'
+    if (!byType[docType] && (od.ds_status === 'completed' || od.status === 'completed')) {
+      byType[docType] = {
+        id: null,
+        doc_type: docType,
+        status: 'approved',
+        file_name: docType === 'w9' ? 'W-9 (DocuSeal 签署)' : '合同 (DocuSeal 签署)',
+        signed_url: od.action_url || '',
+        created_at: od.updated_at,
+        updated_at: od.updated_at,
+        ds_envelope_id: od.ds_envelope_id
+      };
+    }
+  }
   res.json({
     documents: byType,
     all_documents: docs,

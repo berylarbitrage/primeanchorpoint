@@ -4210,13 +4210,14 @@ async function loadProfile() {
     i9: { icon:'📋', zh:'I-9 就业资格验证' },
     drivers_license: { icon:'🪪', zh:'身份证件（Persona）' },
     w9: { icon:'📄', zh:'W-9 纳税人识别' },
+    contract: { icon:'✍️', zh:'签署合同 / Offer' },
     ssn_card: { icon:'🔒', zh:'社安卡 SSN Card' },
     work_permit: { icon:'📃', zh:'工作许可' },
     background_check: { icon:'🔍', zh:'背景调查' },
   };
   const statusBadge = (s) => {
     const map = {approved:'background:#dcfce7;color:#15803d', pending:'background:#fef9c3;color:#854d0e', rejected:'background:#fee2e2;color:#dc2626', not_submitted:'background:#f1f5f9;color:#64748b'};
-    const label = {approved:'已通过',pending:'审核中',rejected:'未通过',not_submitted:'未提交'};
+    const label = {approved:'✅ 已签署',pending:'审核中',rejected:'未通过',not_submitted:'未提交'};
     const style = map[s] || map.not_submitted;
     return `<span style="${style};padding:.15rem .55rem;border-radius:20px;font-size:.72rem;font-weight:700">${label[s]||s}</span>`;
   };
@@ -4233,15 +4234,20 @@ async function loadProfile() {
   }
   docEl.innerHTML = submitted.map(([type, d]) => {
     const meta = docTypeLabel[type] || { icon:'📄', zh: type };
+    const signedDate = d.updated_at ? new Date(d.updated_at).toLocaleDateString('zh-CN') : '';
+    const viewLink = d.signed_url ? `<a href="${esc(d.signed_url)}" target="_blank" style="font-size:.73rem;color:var(--sky);text-decoration:none;font-weight:600">📎 查看</a>` : '';
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--gray-100)">
       <div style="display:flex;align-items:center;gap:.6rem">
         <span style="font-size:1.25rem">${meta.icon}</span>
         <div>
           <div style="font-size:.88rem;font-weight:600">${meta.zh}</div>
-          ${d.file_name ? `<div style="font-size:.73rem;color:var(--gray-400)">${esc(d.file_name)}</div>` : ''}
+          ${d.file_name ? `<div style="font-size:.73rem;color:var(--gray-400)">${esc(d.file_name)}${signedDate ? ' · '+signedDate : ''}</div>` : ''}
         </div>
       </div>
-      ${statusBadge(d.status)}
+      <div style="display:flex;align-items:center;gap:.5rem">
+        ${viewLink}
+        ${statusBadge(d.status)}
+      </div>
     </div>`;
   }).join('');
 }
