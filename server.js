@@ -8075,9 +8075,10 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id, worker_email, worker_phone, service_period_start, service_period_end } = req.body;
+    const { worker_account_id, worker_email, worker_phone, service_period_start, service_period_end, invoice_date, service_description } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
     if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务周期 / Service period required' });
+    if (!service_description) return res.status(400).json({ error: '请填写服务内容描述 / Service description required' });
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
     if (!w) return res.status(404).json({ error: '承包商不存在' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
@@ -8086,26 +8087,18 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const workerEmail = worker_email || w.email || `worker-${w.id}@placeholder.local`;
     const workerPhone = worker_phone || w.phone || '';
     const workerName = w.name || w.username || `Worker #${w.id}`;
-    const todayDate = new Date().toISOString().slice(0, 10);
-    const dueDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-
-    // Get active job info for pre-filling
-    const empId = w.employee_id;
-    let jobTitle = '', rateDesc = '';
-    if (empId) {
-      const ej = db.prepare(`SELECT ej.emp_hourly_rate, j.title FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1`).get(empId);
-      if (ej) { jobTitle = ej.title || ''; rateDesc = ej.emp_hourly_rate ? `$${ej.emp_hourly_rate}/hour` : ''; }
-    }
+    const invDate = invoice_date || new Date().toISOString().slice(0, 10);
+    const dueDate = new Date(new Date(invDate).getTime() + 30 * 86400000).toISOString().slice(0, 10);
 
     // Format period dates for display (MM/DD/YYYY)
     const fmtPeriod = (d) => { const p = d.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}/${p[0]}` : d; };
-    // Create DocuSeal submission — pre-fill suggestions, contractor can edit rate + description
+    // Create DocuSeal submission — all key fields pre-filled by admin (readonly)
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
-      { name: 'invoice_date', default_value: todayDate, readonly: true },
+      { name: 'invoice_date', default_value: invDate, readonly: true },
       { name: 'contractor_name', default_value: workerName, readonly: true },
       { name: 'service_period_start', default_value: fmtPeriod(service_period_start), readonly: true },
       { name: 'service_period_end', default_value: fmtPeriod(service_period_end), readonly: true },
-      { name: 'service_description', default_value: jobTitle || '', readonly: true },
+      { name: 'service_description', default_value: service_description, readonly: true },
       { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
       { name: 'payment_terms', default_value: 'Net 30', readonly: true },
       { name: 'payment_due_date', default_value: dueDate, readonly: true }
@@ -8125,12 +8118,12 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const submitter = submitters[0];
     const submissionId = String(subRes.data?.id || submitter?.submission_id || '');
     // Create contractor_invoices record with pending status
-    const invoiceNumber = `DSINV-${worker_account_id}-${todayDate.replace(/-/g, '')}-${submissionId.slice(-4)}`;
+    const invoiceNumber = `DSINV-${worker_account_id}-${invDate.replace(/-/g, '')}-${submissionId.slice(-4)}`;
     const sentBy = req.session?.username || 'admin';
     db.prepare(`INSERT INTO contractor_invoices
       (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, todayDate, '承包商發票 (待填写)', service_period_start || '', service_period_end || '', 0, 'ds_pending', submissionId, 'sent', sentBy);
+      .run(worker_account_id, invoiceNumber, invDate, service_description, service_period_start || '', service_period_end || '', 0, 'ds_pending', submissionId, 'sent', sentBy);
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已發送承包商發票给 ${workerName}`);
