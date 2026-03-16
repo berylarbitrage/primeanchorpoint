@@ -4104,26 +4104,49 @@ function getDsealConfigTemplateId(type) {
   } catch { return ''; }
 }
 
+// Fetch field names from a DocuSeal template; returns a Set of field names, or null on failure
+async function dsealGetTemplateFieldNames(templateId) {
+  try {
+    const res = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
+    if (res.status >= 400 || !res.data) return null;
+    const fields = res.data.fields || res.data.schema || [];
+    const names = new Set(fields.map(f => f.name).filter(Boolean));
+    console.log(`[DocuSeal W-9] template ${templateId} fields: ${[...names].join(', ')}`);
+    return names;
+  } catch (e) {
+    console.warn(`[DocuSeal W-9] could not fetch template fields: ${e.message}`);
+    return null;
+  }
+}
+
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
 async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip, ssn, tinType, businessName, taxClassification, overrideTemplateId }) {
   const templateId = overrideTemplateId || getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
   if (templateId) {
-    // Use existing DocuSeal template (official IRS W-9) — pre-fill all available fields
-    const fields = [{ name: 'w9_name', default_value: workerName, readonly: false }];
-    if (address) fields.push({ name: 'w9_address', default_value: address, readonly: false });
-    if (cityStateZip) fields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
-    if (ssn) fields.push({ name: 'w9_ssn', default_value: ssn, readonly: false });
-    if (businessName) fields.push({ name: 'w9_business_name', default_value: businessName, readonly: false });
-    if (taxClassification) fields.push({ name: 'w9_tax_classification', default_value: taxClassification, readonly: false });
-    fields.push({ name: 'w9_date', default_value: todayDate, readonly: false });
+    // Use existing DocuSeal template (official IRS W-9)
+    // Fetch actual field names from the template to avoid sending unknown fields (422 error)
+    const templateFieldNames = await dsealGetTemplateFieldNames(templateId);
+    const addField = (fields, name, value, readonly) => {
+      if (!templateFieldNames || templateFieldNames.has(name)) {
+        fields.push({ name, default_value: value, readonly });
+      }
+    };
+    const fields = [];
+    addField(fields, 'w9_name', workerName, false);
+    if (address) addField(fields, 'w9_address', address, false);
+    if (cityStateZip) addField(fields, 'w9_city_state_zip', cityStateZip, false);
+    if (ssn) addField(fields, 'w9_ssn', ssn, false);
+    if (businessName) addField(fields, 'w9_business_name', businessName, false);
+    if (taxClassification) addField(fields, 'w9_tax_classification', taxClassification, false);
+    addField(fields, 'w9_date', todayDate, false);
+    const submitter = { role: 'First Party', name: workerName, email: workerEmail };
+    if (fields.length) submitter.fields = fields;
     subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
-      submitters: [
-        { role: 'First Party', name: workerName, email: workerEmail, fields }
-      ]
+      submitters: [submitter]
     });
   } else {
     // Fallback: generate HTML template
