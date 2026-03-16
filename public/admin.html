@@ -2809,7 +2809,28 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
   <div id="w9AddressBox" style="display:none;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem"></div>
-  <div id="w9AddrVerify" style="display:none;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line"></div>
+  <div id="w9AddrVerify" style="display:none;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem"></div>
+  <!-- Mismatch action panel — shown only when addresses don't match -->
+  <div id="w9AddrMismatchPanel" style="display:none;margin:.5rem 0">
+    <div id="w9TaxAddrEditBox" style="display:none;padding:.75rem;background:#fafafa;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:.5rem">
+      <div style="font-weight:700;font-size:.83rem;margin-bottom:.5rem;color:#1d4ed8">✏️ 修改税务地址</div>
+      <input id="taxAddrStreet" placeholder="街道地址（如：1005 West Cottonwood Lane 17E）" style="width:100%;padding:.35rem .6rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.82rem;margin-bottom:.35rem;box-sizing:border-box">
+      <div style="display:grid;grid-template-columns:1fr 70px 90px;gap:.35rem;margin-bottom:.5rem">
+        <input id="taxAddrCity" placeholder="城市 (City)" style="padding:.35rem .6rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.82rem">
+        <input id="taxAddrState" placeholder="州 (ST)" style="padding:.35rem .6rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.82rem">
+        <input id="taxAddrZip" placeholder="邮编 (ZIP)" style="padding:.35rem .6rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.82rem">
+      </div>
+      <div style="display:flex;gap:.4rem">
+        <button class="btn btn-green" style="font-size:.8rem;padding:.3rem .8rem" onclick="saveTaxAddressAndRecheck()">💾 保存并重新比对</button>
+        <button class="btn" style="font-size:.8rem;padding:.3rem .8rem;background:#f8fafc;color:var(--gray-500);border:1px solid var(--gray-200)" onclick="document.getElementById('w9TaxAddrEditBox').style.display='none'">取消</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+      <button class="btn" style="font-size:.8rem;padding:.3rem .8rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="w9ResendForRewrite()">↩️ 打回 W-9 重填</button>
+      <button class="btn" style="font-size:.8rem;padding:.3rem .8rem;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="showTaxAddressEditForm()">✏️ 修改税务地址</button>
+      <button class="btn" style="font-size:.8rem;padding:.3rem .8rem;background:#f0fdf4;color:#065f46;border:1px solid #86efac" onclick="approveW9Address()">✅ 确认并完成</button>
+    </div>
+  </div>
   <div style="margin:.75rem 0;padding:.6rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1">
     <b>流程：</b>点击「发送」后，系统自动生成 W-9 表格并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。
   </div>
@@ -17089,6 +17110,7 @@ async function openW9SendModal() {
   document.getElementById('w9WorkerPhone').value = (w && w.phone) || '';
   document.getElementById('w9DsStatus').style.display = 'none';
   document.getElementById('w9AddressBox').style.display = 'none';
+  document.getElementById('w9AddrMismatchPanel').style.display = 'none';
   document.getElementById('w9RefreshBtn').style.display = 'none';
   document.getElementById('w9DownloadBtn').style.display = 'none';
   document.getElementById('w9SendBtn').textContent = '📤 发送 W-9 填写请求';
@@ -17132,16 +17154,7 @@ async function openW9SendModal() {
             refreshOnboardingModal();
           }
           // Show address verification result
-          if (r.addressCheck) {
-            const addrEl = document.getElementById('w9AddrVerify');
-            if (r.addressCheck.match) {
-              addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
-              addrEl.textContent = '📍 ' + r.addressCheck.note;
-            } else {
-              addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
-              addrEl.textContent = '📍 ' + r.addressCheck.note;
-            }
-          }
+          if (r.addressCheck) showW9AddressCheckUI(r.addressCheck);
         } else {
           updateW9DsStatusUI(w9Task.ds_status || 'sent');
         }
@@ -17243,16 +17256,7 @@ async function refreshW9Status() {
     showToast(info, 'info', 5000);
     if (r.status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
     // Show address verification result
-    if (r.addressCheck) {
-      const addrEl = document.getElementById('w9AddrVerify');
-      if (r.addressCheck.match) {
-        addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
-        addrEl.textContent = '📍 ' + r.addressCheck.note;
-      } else {
-        addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
-        addrEl.textContent = '📍 ' + r.addressCheck.note;
-      }
-    }
+    if (r.addressCheck) showW9AddressCheckUI(r.addressCheck);
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
@@ -17262,6 +17266,109 @@ async function refreshW9Status() {
 async function downloadSignedW9() {
   if (!_onboardingWorkerId) return;
   window.open(`/api/admin/worker-accounts/${_onboardingWorkerId}/w9-signed-pdf`, '_blank');
+}
+
+// ─── W-9 Address Mismatch UI & Actions ───
+let _w9AddrCheckData = null;
+
+function showW9AddressCheckUI(addressCheck) {
+  const addrEl = document.getElementById('w9AddrVerify');
+  const mismatchPanel = document.getElementById('w9AddrMismatchPanel');
+  _w9AddrCheckData = addressCheck;
+  if (!addressCheck) { addrEl.style.display = 'none'; mismatchPanel.style.display = 'none'; return; }
+  if (addressCheck.match) {
+    addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+    addrEl.innerHTML = '📍 ' + esc(addressCheck.note);
+    mismatchPanel.style.display = 'none';
+  } else {
+    const w9Line = addressCheck.w9Full || '—';
+    const trLine = addressCheck.trFull || '—';
+    addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+    addrEl.innerHTML = `<b>⚠️ W-9 已签署但地址不一致，需人工核对</b><br><span style="color:#374151;font-size:.82rem;display:block;margin-top:.25rem">🏠 <b>W-9 地址：</b>${esc(w9Line)}</span><span style="color:#374151;font-size:.82rem;display:block;margin-top:.15rem">🗂 <b>税务问卷地址：</b>${esc(trLine)}</span>`;
+    mismatchPanel.style.display = '';
+    document.getElementById('w9TaxAddrEditBox').style.display = 'none';
+  }
+}
+
+function showTaxAddressEditForm() {
+  const box = document.getElementById('w9TaxAddrEditBox');
+  const isHidden = box.style.display === 'none' || !box.style.display;
+  box.style.display = isHidden ? '' : 'none';
+  if (isHidden && _w9AddrCheckData) {
+    document.getElementById('taxAddrStreet').value = _w9AddrCheckData.trAddr || '';
+    document.getElementById('taxAddrCity').value = _w9AddrCheckData.trCity || '';
+    document.getElementById('taxAddrState').value = _w9AddrCheckData.trState || '';
+    document.getElementById('taxAddrZip').value = _w9AddrCheckData.trZip || '';
+  }
+}
+
+async function saveTaxAddressAndRecheck() {
+  if (!_onboardingWorkerId) return;
+  const street = document.getElementById('taxAddrStreet').value.trim();
+  const city = document.getElementById('taxAddrCity').value.trim();
+  const state = document.getElementById('taxAddrState').value.trim();
+  const zip = document.getElementById('taxAddrZip').value.trim();
+  if (!street || !city || !state || !zip) { showToast('请填写完整地址', 'error'); return; }
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-address`, {
+    method: 'PUT', body: JSON.stringify({ addr_street: street, addr_city: city, addr_state: state, addr_zip: zip })
+  });
+  if (r && r.success) {
+    showToast('✅ 税务地址已更新', 'success');
+    document.getElementById('w9TaxAddrEditBox').style.display = 'none';
+    showW9AddressCheckUI(r.addressCheck);
+    if (r.addressCheck && r.addressCheck.match) refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '更新失败'), 'error');
+  }
+}
+
+async function approveW9Address() {
+  if (!_onboardingWorkerId) return;
+  if (!await showConfirm('确认标记 W-9 为「已完成」吗？\n\n地址不一致将被忽略，W-9 任务将标记为完成。')) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-approve-address`, {
+    method: 'POST', body: JSON.stringify({ note: '管理员已确认地址一致（手动批准）' })
+  });
+  if (r && r.success) {
+    showToast('✅ W-9 已批准完成', 'success');
+    document.getElementById('w9AddrMismatchPanel').style.display = 'none';
+    const addrEl = document.getElementById('w9AddrVerify');
+    addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+    addrEl.textContent = '✅ W-9 地址已由管理员批准确认';
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '操作失败'), 'error');
+  }
+}
+
+async function w9ResendForRewrite() {
+  if (!_onboardingWorkerId) return;
+  const email = document.getElementById('w9WorkerEmail').value.trim();
+  const phone = document.getElementById('w9WorkerPhone').value.trim();
+  if (!email) { showToast('请先填写工人邮箱', 'error'); return; }
+  if (!await showConfirm(`确认打回 W-9 重填？\n\n这将作废当前签署记录，并向工人重发新的 W-9 填写请求。\n\n邮箱：${email}${phone ? '\n手机：' + phone : ''}`)) return;
+  const reset = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-reset`, { method: 'POST' });
+  if (!reset || !reset.success) { showToast('❌ ' + (reset?.error || '重置失败'), 'error'); return; }
+  const btn = document.getElementById('w9SendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const sendBody = { worker_email: email, worker_phone: phone };
+  if (_w9SelectedTemplateId) sendBody.template_id = _w9SelectedTemplateId;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-w9`, { method: 'POST', body: JSON.stringify(sendBody) });
+  btn.disabled = false; btn.textContent = '📤 重新发送 W-9 填写请求';
+  if (r && r.success) {
+    document.getElementById('w9AddrMismatchPanel').style.display = 'none';
+    document.getElementById('w9AddrVerify').style.display = 'none';
+    if (r.w9Link) {
+      document.getElementById('w9SignLink').href = r.w9Link;
+      document.getElementById('w9SignLink').textContent = r.w9Link;
+      document.getElementById('w9SignLinkBox').style.display = '';
+    }
+    document.getElementById('w9RefreshBtn').style.display = '';
+    updateW9DsStatusUI('sent');
+    showToast('✅ W-9 已重发，工人将收到新的签字请求', 'success');
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '发送失败'), 'error');
+  }
 }
 
 // ─── Work Auth Modal Functions ───

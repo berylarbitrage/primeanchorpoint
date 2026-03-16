@@ -6285,9 +6285,9 @@ function verifyW9Address(workerId) {
 
     const match = w9Addr === trAddr && w9City === trCity && w9State === trState && w9Zip === trZip;
     if (match) {
-      return { match: true, note: `W-9 已签署完成 ✅ 地址核对通过\n地址: ${w9Full}` };
+      return { match: true, note: `W-9 已签署完成 ✅ 地址核对通过\n地址: ${w9Full}`, w9Full, trFull, trAddr: trq.addr_street, trCity: trq.addr_city, trState: trq.addr_state, trZip: trq.addr_zip };
     } else {
-      return { match: false, note: `⚠️ W-9 已签署但地址不一致，需人工核对\nW-9 地址: ${w9Full}\n税务问卷地址: ${trFull}` };
+      return { match: false, note: `⚠️ W-9 已签署但地址不一致，需人工核对\nW-9 地址: ${w9Full}\n税务问卷地址: ${trFull}`, w9Full, trFull, trAddr: trq.addr_street, trCity: trq.addr_city, trState: trq.addr_state, trZip: trq.addr_zip };
     }
   } catch (e) {
     console.error(`[verifyW9Address] Error for worker ${workerId}:`, e.message);
@@ -7798,6 +7798,49 @@ app.get('/api/admin/worker-accounts/:id/w9-signed-pdf', requireAdmin, async (req
     const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-w9-${workerId}.pdf"` });
     res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Update tax questionnaire address and re-verify W-9 address match
+app.put('/api/admin/worker-accounts/:id/tax-address', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const { addr_street, addr_city, addr_state, addr_zip } = req.body;
+    const existing = db.prepare("SELECT id FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY updated_at DESC LIMIT 1").get(workerId);
+    if (!existing) return res.status(404).json({ error: '税务问卷记录未找到' });
+    db.prepare("UPDATE tax_residency_questionnaire SET addr_street=?, addr_city=?, addr_state=?, addr_zip=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(addr_street || '', addr_city || '', addr_state || '', addr_zip || '', existing.id);
+    const addrCheck = verifyW9Address(workerId);
+    if (addrCheck.match) {
+      db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+        .run(addrCheck.note, workerId);
+      syncOnboardedStatus(workerId);
+    }
+    res.json({ success: true, addressCheck: addrCheck });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Approve W-9 address mismatch — force-complete the W-9 task
+app.post('/api/admin/worker-accounts/:id/w9-approve-address', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const { note } = req.body;
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+      .run(note || '管理员已确认地址一致（手动批准）', workerId);
+    syncOnboardedStatus(workerId);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Reset W-9 — void current signed form so admin can resend for rewrite
+app.post('/api/admin/worker-accounts/:id/w9-reset', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    db.prepare("UPDATE worker_compliance_docs SET form_data=NULL, status='pending', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND doc_type='w9'")
+      .run(workerId);
+    db.prepare(`UPDATE worker_onboarding SET status='pending', ds_envelope_id=NULL, ds_status=NULL, completed_at=NULL, admin_note='W-9 已被管理员打回重填', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+      .run(workerId);
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
