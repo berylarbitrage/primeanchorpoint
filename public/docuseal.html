@@ -368,6 +368,7 @@ function renderAllTemplates() {
       <div class="tmpl-row-actions">
         <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem"
           onclick="renameTemplate(${t.id}, '${escHtml(String(t.name||'')).replace(/'/g,"\\'")}')">改名</button>
+        <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem" onclick="previewTemplatePdf(${t.id})">预览 PDF</button>
         ${editBase ? `<a href="${editBase}/templates/${t.id}/edit" target="_blank" class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem">编辑 ↗</a>` : ''}
         <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem;color:var(--red);border-color:#fca5a5"
           onclick="deleteTemplate(${t.id}, '${escHtml(String(t.name||'')).replace(/'/g,"\\'")}')">删除</button>
@@ -532,6 +533,11 @@ async function uploadTemplate() {
     btn.disabled = !_fileData;
     btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 上传至 DocuSeal`;
   }
+}
+
+// ── Preview template PDF ──
+function previewTemplatePdf(dsId) {
+  window.open(`/api/admin/docuseal/templates/${dsId}/preview-pdf`, '_blank');
 }
 
 // ── Init ──

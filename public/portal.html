@@ -276,6 +276,35 @@ function googleTranslateElementInit() {
     </div>
 
     <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">🔧 工种类别 / Job Category</label>
+      <select id="applyCategory" onchange="toggleCustomCategory('applyCategory','applyCategoryCustom')" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;background:#fff;outline:none">
+        <option value="">-- 请选择 / Select --</option>
+        <option value="warehouse_sorter">仓库分拣员 / Warehouse Sorter</option>
+        <option value="labeler">贴标员 / Labeler</option>
+        <option value="packer">打包员 / Packer</option>
+        <option value="forklift_operator">叉车操作员 / Forklift Operator</option>
+        <option value="cdl_driver">CDL卡车司机 / CDL Truck Driver</option>
+        <option value="delivery_driver">送货司机 / Delivery Driver</option>
+        <option value="shift_supervisor">班组长 / Shift Supervisor</option>
+        <option value="site_manager">现场主管 / Site Manager</option>
+        <option value="quality_inspector">质检员 / Quality Inspector</option>
+        <option value="machine_operator">机器操作员 / Machine Operator</option>
+        <option value="assembly_line">装配线工人 / Assembly Line</option>
+        <option value="material_handler">物料搬运工 / Material Handler</option>
+        <option value="inventory_clerk">库存文员 / Inventory Clerk</option>
+        <option value="general_labor">普工 / General Labor</option>
+        <option value="janitorial">清洁工 / Janitorial</option>
+        <option value="food_processing">食品加工 / Food Processing</option>
+        <option value="warehouse_lead">仓库领班 / Warehouse Lead</option>
+        <option value="loading_unloading">装卸工 / Loading / Unloading</option>
+        <option value="order_picker">拣货员 / Order Picker</option>
+        <option value="welder">焊接工 / Welder</option>
+        <option value="__other__">其他 / Other（自定义）…</option>
+      </select>
+      <input type="text" id="applyCategoryCustom" placeholder="请输入自定义工种 / Enter custom job category" style="display:none;margin-top:.4rem;width:100%;box-sizing:border-box;padding:.55rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:.85rem">
       <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem" data-i18n="applyPay">💰 期望薪资</label>
       <input type="text" id="applyExpectedPay" data-i18n-ph="applyPayPH" placeholder="例：$18/hr 或 $3,500/月" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
     </div>
@@ -2999,6 +3028,16 @@ function renderJobs(jobs) {
 
 let _currentApplyJob = null;
 
+function toggleCustomCategory(selectId, inputId) {
+  const inp = document.getElementById(inputId);
+  if (document.getElementById(selectId).value === '__other__') {
+    inp.style.display = 'block';
+    inp.focus();
+  } else {
+    inp.style.display = 'none';
+  }
+}
+
 function applyJob(jobId) {
   const job = (_allJobs || []).find(j => j.id === jobId);
   if (!job) return;
@@ -3033,6 +3072,9 @@ function applyJob(jobId) {
 
 function closeApplyModal() {
   document.getElementById('applyModal').classList.remove('show');
+  document.getElementById('applyCategory').value = '';
+  document.getElementById('applyCategoryCustom').style.display = 'none';
+  document.getElementById('applyCategoryCustom').value = '';
   _currentApplyJob = null;
 }
 
@@ -3051,6 +3093,10 @@ async function submitApply() {
 
   const expected_pay = document.getElementById('applyExpectedPay').value.trim();
   const applicant_message = document.getElementById('applyMessage').value.trim();
+  const catSel = document.getElementById('applyCategory').value;
+  const job_category = catSel === '__other__'
+    ? (document.getElementById('applyCategoryCustom').value.trim() || '')
+    : catSel;
 
   let work_auth_confirmed = '';
   if (job.work_auth === 'gc' || job.work_auth === 'citizen') {
@@ -3068,7 +3114,7 @@ async function submitApply() {
 
   const r = await wApi(`/apply/${job.id}`, {
     method: 'POST',
-    body: JSON.stringify({ interview_availability, expected_pay, applicant_message, work_auth_confirmed })
+    body: JSON.stringify({ interview_availability, expected_pay, applicant_message, work_auth_confirmed, job_category })
   });
   if (!r) { btn.disabled = false; btn.textContent = _t('applySubmit'); return; }
   if (r.success) {
