@@ -7923,7 +7923,7 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id, worker_email, worker_phone } = req.body;
+    const { worker_account_id, worker_email, worker_phone, invoice_date, service_description } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
     if (!w) return res.status(404).json({ error: '承包商不存在' });
@@ -7933,22 +7933,23 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const workerEmail = worker_email || w.email || `worker-${w.id}@placeholder.local`;
     const workerPhone = worker_phone || w.phone || '';
     const workerName = w.name || w.username || `Worker #${w.id}`;
-    const todayDate = new Date().toISOString().slice(0, 10);
-    const dueDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const todayDate = invoice_date || new Date().toISOString().slice(0, 10);
+    const dueDate = new Date(new Date(todayDate).getTime() + 30 * 86400000).toISOString().slice(0, 10);
 
-    // Get active job info for pre-filling
+    // Get active job info for pre-filling (fallback if no service_description provided)
     const empId = w.employee_id;
     let jobTitle = '', rateDesc = '';
     if (empId) {
       const ej = db.prepare(`SELECT ej.emp_hourly_rate, j.title FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1`).get(empId);
       if (ej) { jobTitle = ej.title || ''; rateDesc = ej.emp_hourly_rate ? `$${ej.emp_hourly_rate}/hour` : ''; }
     }
+    const serviceDescValue = service_description || jobTitle || '';
 
-    // Create DocuSeal submission — pre-fill suggestions, contractor can edit rate + description
+    // Create DocuSeal submission — admin pre-fills date & service description; contractor fills amount
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
       { name: 'invoice_date', default_value: todayDate, readonly: true },
       { name: 'contractor_name', default_value: workerName, readonly: true },
-      { name: 'service_description', default_value: jobTitle || '', readonly: true },
+      { name: 'service_description', default_value: serviceDescValue, readonly: false },
       { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
       { name: 'payment_terms', default_value: 'Net 30', readonly: true },
       { name: 'payment_due_date', default_value: dueDate, readonly: true }
@@ -7973,7 +7974,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     db.prepare(`INSERT INTO contractor_invoices
       (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, ds_envelope_id, ds_status, sent_by)
       VALUES (?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, todayDate, '承包商發票 (待填写)', 0, 'ds_pending', submissionId, 'sent', sentBy);
+      .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', 0, 'ds_pending', submissionId, 'sent', sentBy);
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已發送承包商發票给 ${workerName}`);
