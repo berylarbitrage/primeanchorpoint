@@ -1112,7 +1112,7 @@ function googleTranslateElementInit() {
           <div class="form-section">
             <h3>纳税人信息 / Taxpayer Information</h3>
             <div class="form-row full"><div class="form-group"><label>姓名 Name (as shown on income tax return) *</label><input name="name" required></div></div>
-            <div class="form-row full"><div class="form-group"><label>商业名称 Business Name (如有)</label><input name="business_name"></div></div>
+            <div class="form-row full"><div class="form-group"><label>商业名称 Business Name *</label><input name="business_name" required placeholder="如无请填 N/A / Enter N/A if not applicable"></div></div>
             <div class="form-row full">
               <div class="form-group"><label>税务分类 Tax Classification *</label>
                 <select name="tax_classification" required>
@@ -1960,7 +1960,7 @@ function setPortalLang(lang) {
   // Save language preference to server
   fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang }) }).catch(() => {});
   if (_activeTab === 'profile') loadProfile();
-  else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
+  else if (_activeTab === 'payments') { loadPayments(); loadContractorInvoices(); }
   else if (_activeTab === 'todos') loadOnboarding();
   else if (_activeTab === 'referral') loadReferrals();
   else if (_activeTab === 'interview') loadInterview();
@@ -2279,7 +2279,7 @@ async function showApp() {
     _lastAutoRefresh = now;
     if (_activeTab === 'applications') loadApplications();
     else if (_activeTab === 'timeclock') loadTimeclock();
-    else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
+    else if (_activeTab === 'payments') { loadPayments(); loadContractorInvoices(); }
     else if (_activeTab === 'compliance') loadCompliance();
     else if (_activeTab === 'profile') loadProfile();
     else if (_activeTab === 'interview') loadInterview();
@@ -2312,7 +2312,7 @@ function showTab(tab) {
   closeSidebar();
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
-  else if (tab === 'payments') loadPayments(); loadContractorInvoices();
+  else if (tab === 'payments') { loadPayments(); loadContractorInvoices(); }
   else if (tab === 'compliance') loadCompliance();
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
