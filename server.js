@@ -7427,11 +7427,14 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
       smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
     }
     const warnings = [];
-    if (!w9Link) warnings.push('DocuSeal 签字链接生成失败，请检查 DocuSeal 配置');
-    if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
-    if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
-    if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
-    if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
+    if (!w9Link) {
+      warnings.push('DocuSeal 签字链接生成失败，请检查 DocuSeal 配置（邮件和短信因无签字链接未发送）');
+    } else {
+      if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
+      if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
+      if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
+      if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
+    }
     res.json({ success: true, w9Link, isDirect, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[W-9 send error]', e.message);
