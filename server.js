@@ -8699,6 +8699,44 @@ app.get('/api/admin/contractor-invoices/preview-template', requireAdmin, require
   }
 });
 
+// Admin: proxy completed PDF so it can be embedded in an iframe
+app.get('/api/admin/contractor-invoices/:id/pdf-proxy', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: '发票不存在' });
+    if (!inv.ds_envelope_id) return res.status(400).json({ error: '该发票没有 DocuSeal 记录' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const r = await dsealApiCall('GET', `/api/submissions/${inv.ds_envelope_id}`, null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+    const sub = r.data;
+    if (sub.status !== 'completed' || !sub.documents || !sub.documents.length) {
+      return res.status(400).json({ error: '该发票尚未完成签署，无法预览 PDF' });
+    }
+    const docUrl = sub.documents[0].url || sub.documents[0].download_url || '';
+    if (!docUrl) return res.status(404).json({ error: '找不到文件 URL' });
+    const { apiKey } = dsealGetCreds();
+    const parsedUrl = new URL(docUrl);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    const proxyReq = transport.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: { 'X-Auth-Token': apiKey, 'Accept': 'application/pdf,*/*' }
+    }, (proxyRes) => {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline; filename="invoice.pdf"');
+      proxyRes.pipe(res);
+    });
+    proxyReq.setTimeout(30000, () => { proxyReq.destroy(new Error('代理超时')); });
+    proxyReq.on('error', (e) => { if (!res.headersSent) res.status(500).json({ error: e.message }); });
+    proxyReq.end();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Admin: get DocuSeal signing/preview URL for a contractor invoice
 app.get('/api/admin/contractor-invoices/:id/signing-url', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {

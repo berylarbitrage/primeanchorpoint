@@ -18553,6 +18553,10 @@ async function previewDsInvoice(invoiceId) {
 
       link.href = r.url;
       fallbackLink.href = r.url;
+      // For completed PDFs, use proxy so the PDF can be embedded directly
+      const embedUrl = (r.completed || r.type === 'document')
+        ? `/api/admin/contractor-invoices/${invoiceId}/pdf-proxy`
+        : r.url;
       if (r.completed || r.type === 'document') {
         info.textContent = '该发票已签署完成（PDF 文件）。';
         link.textContent = '↗ 新标签页打开';
@@ -18570,7 +18574,7 @@ async function previewDsInvoice(invoiceId) {
 
       // Load URL in iframe; if X-Frame-Options blocks it show fallback
       setTimeout(() => {
-        frame.src = r.url;
+        frame.src = embedUrl;
         // Detect load failure (X-Frame-Options / CSP) after a delay
         const timer = setTimeout(() => {
           // If iframe loaded an error page or is blank, show fallback
