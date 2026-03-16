@@ -4198,8 +4198,12 @@ async function dsealGetW9SignUrl(submissionId) {
   if (r.status !== 200) throw new Error(`DocuSeal 获取 W-9 提交失败 ${r.status}`);
   const signer = (r.data.submitters || [])[0];
   if (!signer) throw new Error('DocuSeal W-9: 签署人未找到');
+  // Prefer slug-based URL (/s/xxx) — works directly in mobile browsers
+  const baseHost = dsealPublicHost();
+  if (signer.slug) return `${baseHost}/s/${signer.slug}`;
   if (signer.embed_src) return signer.embed_src;
   const u = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: signer.name });
+  if (u.data?.slug) return `${baseHost}/s/${u.data.slug}`;
   if (u.status >= 400 || !u.data?.embed_src) throw new Error(`DocuSeal 获取 W-9 签署链接失败 ${u.status}`);
   return u.data.embed_src;
 }
@@ -6518,6 +6522,74 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
         .run(workerId);
       syncOnboardedStatus(workerId);
     } else if (effectiveStatus === 'company_signed') {
+      // If status just changed from 'sent' to 'company_signed', webhook may have missed — send notification now
+      const prevStatus = onb.ds_status;
+      if (prevStatus === 'sent') {
+        // Refresh signing URL for worker
+        let workerSignUrl = '';
+        try {
+          const subData = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
+          const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party');
+          if (workerSub) {
+            if (workerSub.slug) {
+              workerSignUrl = `${dsealPublicHost()}/s/${workerSub.slug}`;
+            } else if (workerSub.embed_src) {
+              workerSignUrl = workerSub.embed_src;
+            } else if (workerSub.id) {
+              const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name });
+              if (wPut.data?.slug) workerSignUrl = `${dsealPublicHost()}/s/${wPut.data.slug}`;
+              else if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+            }
+          }
+        } catch (e2) { console.error('[contract-status] get worker sign URL error:', e2.message); }
+        if (workerSignUrl) {
+          db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+            .run(workerSignUrl, workerId);
+        }
+        // Send notification to worker (fallback for missed webhook)
+        const w = db.prepare('SELECT name, username, email, phone FROM worker_accounts WHERE id=?').get(workerId);
+        if (w) {
+          const workerName = w.name || w.username || '';
+          const workerEmail = w.email || '';
+          const workerPhone = w.phone || '';
+          const onbRecord = db.prepare("SELECT contract_content FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+          const empType = (onbRecord?.contract_content || '').includes('Independent Contractor') ? '1099' : 'w2';
+          const contractTypeCn = empType === '1099' ? '承包商协议' : '雇佣合同';
+          const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
+          const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
+          const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+          const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
+          if (workerEmail) {
+            sendEmail(workerEmail,
+              `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+              `${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署。\n${workerSignUrl || ''}\n\n${workerName}, ${companyName} has signed. Please sign here:\n${workerSignUrl || ''}\n\n${workerName}, ${companyName} ha firmado. Firme aquí:\n${workerSignUrl || ''}`,
+              `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+                <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
+                <p>您好 ${workerName}，${companyName} 已完成签署，现在轮到您签署了。</p>
+                ${signLink}
+                ${workerSignUrl ? `<p style="color:#666;font-size:.85rem">或复制链接：${workerSignUrl}</p>` : ''}
+                <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+                <h3 style="font-size:.95rem">Please Sign Your ${contractType}</h3>
+                <p style="color:#555;font-size:.9rem">Hi ${workerName}, ${companyName} has signed. It's now your turn.</p>
+                ${signLink}
+                <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+                <h3 style="font-size:.95rem">Firme Su ${contractTypeEs}</h3>
+                <p style="color:#555;font-size:.9rem">Hola ${workerName}, ${companyName} ha firmado. Ahora es su turno.</p>
+                ${signLink}
+                <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+              </div>`
+            ).catch(e => console.error('[contract-status] fallback email error:', e.message));
+            console.log(`[contract-status] Sent fallback signing email to ${workerEmail} (webhook may have missed)`);
+          }
+          if (workerPhone) {
+            const smsText = workerSignUrl
+              ? `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
+              : `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+            sendSMS(workerPhone, smsText).catch(e => console.error('[contract-status] fallback SMS error:', e.message));
+            console.log(`[contract-status] Sent fallback signing SMS to ${workerPhone} (webhook may have missed)`);
+          }
+        }
+      }
       db.prepare(`UPDATE worker_onboarding SET admin_note='公司已签署，等待工人签署', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
         .run(workerId);
     } else if (status === 'declined') {
@@ -6582,6 +6654,82 @@ app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async 
     console.log(`[CompanySign] workerId=${workerId}, submissionId=${onb.ds_envelope_id}, signUrl=${signUrl ? signUrl.substring(0, 80) + '...' : 'NULL'}`);
     res.json({ signUrl, companyName });
   } catch (e) { console.error('[CompanySign Error]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Admin: resend signing notification (SMS + email) to worker
+app.post('/api/admin/worker-accounts/:id/resend-sign-notification', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT name, username, email, phone FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, action_url, contract_content FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '合同未发送' });
+    if (onb.ds_status === 'completed') return res.status(400).json({ error: '合同已完成签署，无需通知' });
+    const workerName = w.name || w.username || '';
+    const workerEmail = w.email || '';
+    const workerPhone = w.phone || '';
+    if (!workerEmail && !workerPhone) return res.status(400).json({ error: '工人无邮箱和手机号，无法发送通知' });
+    // Get fresh signing URL
+    let workerSignUrl = onb.action_url || '';
+    if (dsealEnabled()) {
+      try {
+        const subData = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
+        const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party') || (subData.data?.submitters || [])[0];
+        if (workerSub) {
+          if (workerSub.slug) workerSignUrl = `${dsealPublicHost()}/s/${workerSub.slug}`;
+          else if (workerSub.embed_src) workerSignUrl = workerSub.embed_src;
+        }
+      } catch (e2) { console.error('[resend-notification] get sign URL error:', e2.message); }
+    }
+    if (workerSignUrl) {
+      db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+        .run(workerSignUrl, workerId);
+    }
+    const empType = (onb.contract_content || '').includes('Independent Contractor') ? '1099' : 'w2';
+    const contractTypeCn = empType === '1099' ? '承包商协议' : '雇佣合同';
+    const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
+    const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
+    let emailSent = false, smsSent = false;
+    if (workerEmail) {
+      emailSent = await sendEmail(workerEmail,
+        `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+        `${workerName}，请点击链接完成签署。\n${workerSignUrl || ''}\n\n${workerName}, please sign here:\n${workerSignUrl || ''}\n\n${workerName}, firme aquí:\n${workerSignUrl || ''}`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+          <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
+          <p>您好 ${workerName}，请点击下方按钮完成合同签署。</p>
+          ${signLink}
+          ${workerSignUrl ? `<p style="color:#666;font-size:.85rem">或复制链接：${workerSignUrl}</p>` : ''}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Please Sign Your ${contractType}</h3>
+          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please click below to sign your contract.</p>
+          ${signLink}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Firme Su ${contractTypeEs}</h3>
+          <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic abajo para firmar su contrato.</p>
+          ${signLink}
+          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+        </div>`
+      );
+    }
+    if (workerPhone) {
+      const smsText = workerSignUrl
+        ? `[Prime Anchorpoint] ${workerName}，请签署${contractTypeCn} / Please sign your contract / Firme su contrato:\n${workerSignUrl}\nReply STOP to opt out.`
+        : `[Prime Anchorpoint] ${workerName}，请查收邮件签署${contractTypeCn}。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+      smsSent = await sendSMS(workerPhone, smsText);
+    }
+    const warnings = [];
+    if (workerEmail && !emailSent) warnings.push('邮件发送失败');
+    if (workerPhone && !smsSent) warnings.push('短信发送失败');
+    if (!workerEmail) warnings.push('工人无邮箱，未发送邮件');
+    if (!workerPhone) warnings.push('工人无手机号，未发送短信');
+    console.log(`[resend-notification] workerId=${workerId}, emailSent=${emailSent}, smsSent=${smsSent}`);
+    res.json({ success: true, emailSent, smsSent, signUrl: workerSignUrl, warnings });
+  } catch (e) {
+    console.error('[resend-notification]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Admin: void/cancel onboarding contract submission (requires reason)
@@ -7417,14 +7565,21 @@ app.get('/api/worker/contract-sign-url', requireWorker, async (req, res) => {
         const subData = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
         const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party');
         if (workerSub) {
-          if (workerSub.embed_src) { signUrl = workerSub.embed_src; }
-          else if (workerSub.id) {
-            const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name });
-            if (wPut.data?.embed_src) signUrl = wPut.data.embed_src;
-          }
-          if (!signUrl && workerSub.slug) {
+          // Prefer slug-based URL (/s/xxx) — works directly in mobile browsers
+          // embed_src is designed for web component embedding and may not render on mobile
+          if (workerSub.slug) {
             const baseHost = dsealPublicHost();
             signUrl = `${baseHost}/s/${workerSub.slug}`;
+          } else if (workerSub.embed_src) {
+            signUrl = workerSub.embed_src;
+          } else if (workerSub.id) {
+            const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name });
+            if (wPut.data?.slug) {
+              const baseHost = dsealPublicHost();
+              signUrl = `${baseHost}/s/${wPut.data.slug}`;
+            } else if (wPut.data?.embed_src) {
+              signUrl = wPut.data.embed_src;
+            }
           }
           // Update stored URL
           if (signUrl) db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'").run(signUrl, req.workerId);

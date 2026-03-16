@@ -2699,6 +2699,7 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" id="contractSignBtn" style="display:none;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="openCompanySign()">✍️ 公司签署</button>
     <button class="btn" id="contractViewSignedBtn" style="display:none;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="viewSignedContract()">📋 查看已签版本</button>
     <button class="btn" id="contractRefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshContractStatus()">🔄 刷新签署状态</button>
+    <button class="btn" id="contractResendNotifyBtn" style="display:none;background:#fef9c3;color:#92400e;border:1px solid #fde68a" onclick="resendSignNotification()">📱 重发通知</button>
     <button class="btn" id="contractVoidBtn" style="display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="voidContract()">🗑️ 作废</button>
     <button class="btn" onclick="closeModal('contractSendModal')">关闭</button>
   </div>
@@ -16651,6 +16652,7 @@ async function openContractSendModal() {
   document.getElementById('contractSignBtn').style.display = 'none';
   document.getElementById('contractViewSignedBtn').style.display = 'none';
   document.getElementById('contractRefreshBtn').style.display = 'none';
+  document.getElementById('contractResendNotifyBtn').style.display = 'none';
   document.getElementById('contractVoidBtn').style.display = 'none';
   document.getElementById('contractPdfPreview').style.display = 'none';
   document.getElementById('contractSendBtn').style.display = '';
@@ -16681,6 +16683,10 @@ async function openContractSendModal() {
       document.getElementById('contractViewSignedBtn').style.display = '';
       // Auto-load the signed PDF so the user immediately sees the signature
       viewSignedContract(true);
+    }
+    // Show resend notification button when contract is waiting for worker signature
+    if (r.ds_status === 'company_signed' || r.ds_status === 'sent') {
+      document.getElementById('contractResendNotifyBtn').style.display = '';
     }
   }
 }
@@ -16744,6 +16750,7 @@ async function doSendContract() {
     updateContractDsStatusUI('sent');
     document.getElementById('contractSignBtn').style.display = '';
     document.getElementById('contractRefreshBtn').style.display = '';
+    document.getElementById('contractResendNotifyBtn').style.display = '';
     document.getElementById('contractVoidBtn').style.display = '';
     refreshOnboardingModal();
   } else {
@@ -16830,6 +16837,29 @@ async function refreshContractStatus() {
   }
 }
 
+async function resendSignNotification() {
+  if (!_onboardingWorkerId) return;
+  const btn = document.getElementById('contractResendNotifyBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中…';
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/resend-sign-notification`, { method: 'POST' });
+    if (r && r.success) {
+      let msg = '通知已发送';
+      if (r.emailSent) msg += ' (邮件 ✅)';
+      if (r.smsSent) msg += ' (短信 ✅)';
+      if (r.warnings && r.warnings.length) msg += ' — ' + r.warnings.join('; ');
+      showToast(msg, 'success', 5000);
+    } else {
+      showToast('❌ ' + (r?.error || '发送失败'), 'error');
+    }
+  } catch (e) {
+    showToast('❌ ' + e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '📱 重发通知';
+}
+
 async function viewSignedContract(autoRetry = false) {
   if (!_onboardingWorkerId) return;
   const previewDiv = document.getElementById('contractPdfPreview');
@@ -16877,6 +16907,7 @@ async function voidContract() {
     document.getElementById('contractSignBtn').style.display = 'none';
     document.getElementById('contractViewSignedBtn').style.display = 'none';
     document.getElementById('contractRefreshBtn').style.display = 'none';
+    document.getElementById('contractResendNotifyBtn').style.display = 'none';
     document.getElementById('contractVoidBtn').style.display = 'none';
     document.getElementById('contractPdfPreview').style.display = 'none';
     document.getElementById('contractSendBtn').textContent = '📤 发送合同';
