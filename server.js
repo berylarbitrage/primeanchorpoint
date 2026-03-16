@@ -7932,7 +7932,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
       { name: 'payment_terms', default_value: 'Net 30', readonly: true },
       { name: 'payment_due_date', default_value: dueDate, readonly: true }
     ] };
-    if (workerPhone) invoiceSubmitter.phone = workerPhone;
+    if (workerPhone) invoiceSubmitter.phone = formatPhoneE164(workerPhone);
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
@@ -7970,6 +7970,28 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     res.json({ success: true, submission_id: submissionId, invoice_number: invoiceNumber, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[Send DocuSeal Invoice]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: get DocuSeal signing/preview URL for a contractor invoice
+app.get('/api/admin/contractor-invoices/:id/signing-url', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: '发票不存在' });
+    if (!inv.ds_envelope_id) return res.status(400).json({ error: '该发票没有 DocuSeal 记录' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const r = await dsealApiCall('GET', `/api/submissions/${inv.ds_envelope_id}`, null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+    const sub = r.data;
+    const baseHost = dsealPublicHost();
+    const submitter = (sub.submitters || [])[0];
+    if (!submitter) return res.status(404).json({ error: '找不到签署人信息' });
+    const slug = submitter.slug || '';
+    const signingUrl = slug ? `${baseHost}/s/${slug}` : (submitter.embed_src || '');
+    if (!signingUrl) return res.status(404).json({ error: '无法获取预览链接' });
+    res.json({ url: signingUrl, status: submitter.status, completed: sub.status === 'completed' });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
