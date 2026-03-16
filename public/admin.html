@@ -2166,20 +2166,20 @@ tr:hover td{background:var(--sky-light)}
 <div id="tab-integrations" style="display:none">
   <div class="top"><h1>第三方集成设置</h1></div>
 
-  <!-- Worker Portal Feature Settings 工人门户功能设置 -->
+  <!-- Worker Portal Feature Settings 合作中心功能设置 -->
   <div style="max-width:560px;margin:0 1.5rem 1.5rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.5rem">
     <div style="font-size:1rem;font-weight:700;margin-bottom:.4rem;display:flex;align-items:center;gap:.5rem">
-      📱 工人门户功能开放设置
+      📱 合作中心功能开放设置
     </div>
     <p style="font-size:.85rem;color:#64748b;margin:0 0 1.2rem">
-      控制工人门户（Worker Portal）开放哪项功能。默认关闭，admin 可选择开放打卡功能或 Invoice 填写功能（二选一）。
+      控制合作中心（Worker Portal）开放哪项功能。默认关闭，admin 可选择开放打卡功能或 Invoice 填写功能（二选一）。
     </p>
     <div style="display:flex;flex-direction:column;gap:.65rem;margin-bottom:1.2rem">
       <label style="display:flex;align-items:center;gap:.75rem;cursor:pointer;padding:.6rem .9rem;border:2px solid transparent;border-radius:8px;transition:border-color .15s" id="portalModeLabel_none">
         <input type="radio" name="workerPortalMode" value="none" onchange="onPortalModeChange(this)" style="width:16px;height:16px;accent-color:#6366f1">
         <div>
           <div style="font-weight:600;font-size:.9rem">🔒 关闭（默认）</div>
-          <div style="font-size:.8rem;color:#94a3b8">工人门户不开放打卡或 Invoice 功能</div>
+          <div style="font-size:.8rem;color:#94a3b8">合作中心不开放打卡或 Invoice 功能</div>
         </div>
       </label>
       <label style="display:flex;align-items:center;gap:.75rem;cursor:pointer;padding:.6rem .9rem;border:2px solid transparent;border-radius:8px;transition:border-color .15s" id="portalModeLabel_timeclock">
@@ -14041,7 +14041,7 @@ function renderOnboardingTasks(tasks) {
         </div>
         ${t.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);font-style:italic;margin-top:.15rem">💬 ${esc(t.admin_note)}</div>`:''}
         ${t.action_url?`<div style="font-size:.78rem;margin-top:.15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px">🔗 <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)" title="${esc(t.action_url)}">${esc(t.action_url.length>60?t.action_url.substring(0,60)+'...':t.action_url)}</a></div>`:''}
-        ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 工人门户 — 已通知</div>`:''}
+        ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 合作中心 — 已通知</div>`:''}
         ${t.key==='interview'&&_onboardingInterviewInfo&&_onboardingInterviewInfo.slot_datetime?(()=>{
           const dt=new Date(_onboardingInterviewInfo.slot_datetime);
           const dtStr=dt.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
@@ -16639,7 +16639,7 @@ async function saveWorkPermit(doVerify) {
 }
 
 function confirmSendPersona() {
-  showConfirmModal('发送 Stripe Identity 身份验证', '确认向该工人发送 Stripe Identity 身份验证（驾照/ID + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
+  showConfirmModal('发送 Stripe Identity 身份验证', '确认向该工人发送 Stripe Identity 身份验证（驾照/ID + 自拍）？\n验证链接将通过短信、邮件发送，并在合作中心中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
 }
 function confirmSendCheckr() {
   showConfirmModal('发送 Checkr 背调邀请', '确认向该工人发送 Checkr 背景调查邀请？邀请链接将通过短信和邮件发送。', '🔍 确认发送', 'btn-blue', sendCheckrFromOnboarding, 'blue');
@@ -16667,13 +16667,13 @@ function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
 
 async function sendPersonaFromOnboarding() {
   if (!_onboardingWorkerId) return;
-  if (!await showConfirm('确定向该工人发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
+  if (!await showConfirm('确定向该工人发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信、邮件发送，并在合作中心中显示。')) return;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-persona`, { method:'POST', body:JSON.stringify({}) });
   if (r && r.success) {
     const parts = [];
     parts.push(r.smsSent ? '📱 短信 ✓' : '📱 短信 ✗');
     parts.push(r.emailSent ? '📧 邮件 ✓' : '📧 邮件 ✗');
-    parts.push('🖥️ 工人门户 ✓');
+    parts.push('🖥️ 合作中心 ✓');
     showToast(`✅ 身份验证已发送\n${parts.join('  ')}`, 'success', 6000);
     refreshOnboardingModal();
   } else {
