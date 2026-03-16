@@ -4245,11 +4245,23 @@ async function dsealGetW9Status(submissionId) {
   const sub = r.data;
   let status = sub.status === 'completed' ? 'completed' : 'sent';
   let workerSigned = null, declineReason = '';
+  let w9Address = '', w9CityStateZip = '';
+  // Address field names used in both custom HTML template and standard IRS templates
+  const addressFields = ['w9_address', 'Address', 'address', '5 Address (number, street, and apt. or suite no.)'];
+  const cityStateZipFields = ['w9_city_state_zip', 'City, state, and ZIP code', 'city_state_zip', 'CityStateZip'];
   for (const s of (sub.submitters || [])) {
     if (s.status === 'completed' && s.completed_at) workerSigned = s.completed_at;
     if (s.status === 'declined') { status = 'declined'; declineReason = s.decline_reason || '已拒签'; }
+    // Extract address from submitter values (DocuSeal returns array of {field, value} objects)
+    const vals = s.values || [];
+    for (const v of vals) {
+      const fieldName = v.field || v.name || '';
+      const fieldValue = v.value || '';
+      if (!w9Address && addressFields.includes(fieldName)) w9Address = fieldValue;
+      if (!w9CityStateZip && cityStateZipFields.includes(fieldName)) w9CityStateZip = fieldValue;
+    }
   }
-  return { status, workerSigned, declineReason, raw: sub };
+  return { status, workerSigned, declineReason, w9Address, w9CityStateZip, raw: sub };
 }
 
 async function dsealGetW9SignUrl(submissionId) {
@@ -7544,7 +7556,7 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
     const onb = db.prepare("SELECT ds_envelope_id, ds_status, ds_worker_signed_at FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
     if (!dsealEnabled()) return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at });
-    const { status, workerSigned, declineReason } = await dsealGetW9Status(onb.ds_envelope_id);
+    const { status, workerSigned, declineReason, w9Address, w9CityStateZip } = await dsealGetW9Status(onb.ds_envelope_id);
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
       .run(status, workerSigned, workerId);
     if (status === 'completed') {
@@ -7555,7 +7567,7 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
       db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
         .run(`工人已拒签 W-9: ${declineReason || ''}`, workerId);
     }
-    res.json({ status, workerSigned, declineReason });
+    res.json({ status, workerSigned, declineReason, w9Address, w9CityStateZip });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
