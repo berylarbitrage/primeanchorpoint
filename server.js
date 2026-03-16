@@ -12906,7 +12906,8 @@ app.get('/api/worker/contractor-invoices/:id/signing-url', requireWorker, async 
     const slug = submitter.slug || '';
     const signingUrl = slug ? `${baseHost}/s/${slug}` : (submitter.embed_src || '');
     if (!signingUrl) return res.status(404).json({ error: '无法获取签署链接 / Unable to get signing URL' });
-    res.json({ url: signingUrl, status: submitter.status, completed: sub.status === 'completed' });
+    const embedSrc = submitter.embed_src || signingUrl;
+    res.json({ url: signingUrl, embed_src: embedSrc, status: submitter.status, completed: sub.status === 'completed' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

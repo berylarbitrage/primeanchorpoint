@@ -938,13 +938,20 @@ function googleTranslateElementInit() {
 
         <!-- Invoice Detail Modal -->
         <div id="invoiceDetailOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);align-items:center;justify-content:center">
-          <div style="background:#fff;border-radius:14px;max-width:600px;width:92%;max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.2);padding:1.5rem">
+          <div id="invoiceDetailModal" style="background:#fff;border-radius:14px;max-width:600px;width:92%;max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.2);padding:1.5rem;transition:max-width .3s ease">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
-              <h3 style="margin:0;font-size:1rem;color:var(--gray-800)">📄 Invoice Detail / 发票详情</h3>
+              <h3 id="invoiceDetailTitle" style="margin:0;font-size:1rem;color:var(--gray-800)">📄 Invoice Detail / 发票详情</h3>
               <button onclick="closeInvoiceDetail()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400);padding:0;line-height:1">&times;</button>
             </div>
             <div id="invoiceDetailContent" style="font-size:.85rem">
               <p style="text-align:center;color:var(--gray-400);padding:1rem 0">Loading...</p>
+            </div>
+            <!-- Embedded DocuSeal Form Container -->
+            <div id="invoiceDocuSealContainer" style="display:none">
+              <div id="invoiceDocuSealLoading" style="text-align:center;padding:2rem 0">
+                <p style="color:var(--gray-400)">加载签署表单中… / Loading signing form...</p>
+              </div>
+              <div id="invoiceDocuSealForm"></div>
             </div>
           </div>
         </div>
@@ -4090,19 +4097,68 @@ async function openInvoiceDetail(invoiceId) {
 }
 
 function closeInvoiceDetail() {
-  document.getElementById('invoiceDetailOverlay').style.display = 'none';
+  const overlay = document.getElementById('invoiceDetailOverlay');
+  const modal = document.getElementById('invoiceDetailModal');
+  const formContainer = document.getElementById('invoiceDocuSealContainer');
+  const formEl = document.getElementById('invoiceDocuSealForm');
+  overlay.style.display = 'none';
+  // Reset modal to detail view state
+  modal.style.maxWidth = '600px';
+  document.getElementById('invoiceDetailContent').style.display = '';
+  formContainer.style.display = 'none';
+  formEl.innerHTML = '';
+  document.getElementById('invoiceDetailTitle').textContent = '📄 Invoice Detail / 发票详情';
 }
 
 async function openInvoiceSigningUrl(invoiceId) {
+  const modal = document.getElementById('invoiceDetailModal');
+  const detailContent = document.getElementById('invoiceDetailContent');
+  const formContainer = document.getElementById('invoiceDocuSealContainer');
+  const formEl = document.getElementById('invoiceDocuSealForm');
+  const loading = document.getElementById('invoiceDocuSealLoading');
+  const title = document.getElementById('invoiceDetailTitle');
+
   try {
+    // Switch to form view
+    detailContent.style.display = 'none';
+    formContainer.style.display = '';
+    loading.style.display = '';
+    formEl.innerHTML = '';
+    title.textContent = '✍️ 填写并签署 / Fill & Sign';
+    modal.style.maxWidth = '900px';
+
     const data = await wApi('/contractor-invoices/' + invoiceId + '/signing-url');
-    if (data && data.url) {
-      window.open(data.url, '_blank');
-    } else {
-      alert(data?.error || '无法获取签署链接 / Unable to get signing URL');
+    if (!data || (!data.embed_src && !data.url)) {
+      throw new Error(data?.error || '无法获取签署链接 / Unable to get signing URL');
     }
+
+    const embedUrl = data.embed_src || data.url;
+    loading.style.display = 'none';
+
+    // Create DocuSeal form web component
+    const form = document.createElement('docuseal-form');
+    form.setAttribute('data-src', embedUrl);
+    form.setAttribute('data-expand', 'false');
+    form.setAttribute('data-with-draw-signature', 'true');
+    form.setAttribute('data-with-typed-signature', 'true');
+    form.setAttribute('data-with-upload-signature', 'true');
+    form.setAttribute('data-with-send-copy-button', 'false');
+    form.style.width = '100%';
+
+    form.addEventListener('completed', () => {
+      closeInvoiceDetail();
+      showToast('✅ 发票已签署提交 / Invoice signed and submitted', 'success');
+      loadContractorInvoices();
+    });
+    form.addEventListener('declined', () => {
+      closeInvoiceDetail();
+      showToast('签署已取消 / Signing cancelled', 'info');
+    });
+
+    formEl.appendChild(form);
   } catch (e) {
-    alert('无法获取签署链接 / Unable to get signing URL');
+    loading.innerHTML = `<p style="color:#dc2626;padding:1rem 0">❌ ${e.message || '无法获取签署链接 / Unable to get signing URL'}</p>
+      <button onclick="openInvoiceSigningUrl(${invoiceId})" style="padding:.4rem 1rem;border:1px solid var(--gray-300);background:#fff;border-radius:6px;cursor:pointer;font-size:.82rem">🔄 重试 / Retry</button>`;
   }
 }
 
