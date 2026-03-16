@@ -7369,6 +7369,7 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     // Create DocuSeal W-9 submission immediately so worker can sign directly in portal
     let w9SubmissionId = '';
     let w9SignUrl = '';
+    let dsealError = '';
     if (dsealEnabled()) {
       try {
         const address = w.work_address || '';
@@ -7380,8 +7381,11 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
         w9SignUrl = workerSignUrl || '';
         console.log(`[W-9 send] DocuSeal submission created: ${w9SubmissionId}, signUrl: ${(w9SignUrl||'').substring(0,80)}`);
       } catch (e) {
+        dsealError = e.message || '未知错误';
         console.error('[W-9 send] DocuSeal creation failed:', e.message);
       }
+    } else {
+      dsealError = 'DocuSeal 未配置（缺少 API Key 或 URL）';
     }
 
     // Make W-9 task visible and set to pending, store DocuSeal info if available
@@ -7428,7 +7432,8 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     }
     const warnings = [];
     if (!w9Link) {
-      warnings.push('DocuSeal 签字链接生成失败，请检查 DocuSeal 配置（邮件和短信因无签字链接未发送）');
+      const detail = dsealError ? `：${dsealError}` : '';
+      warnings.push(`DocuSeal 签字链接生成失败${detail}（邮件和短信因无签字链接未发送）`);
     } else {
       if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
       if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
