@@ -2810,6 +2810,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
   <div id="w9AddressBox" style="display:none;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem"></div>
   <div id="w9AddrVerify" style="display:none;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line"></div>
+  <div id="w9SubmissionSummary" style="display:none;margin:.5rem 0"></div>
   <div style="margin:.75rem 0;padding:.6rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1">
     <b>流程：</b>点击「发送」后，系统自动生成 W-9 表格并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。
   </div>
@@ -17089,6 +17090,7 @@ async function openW9SendModal() {
   document.getElementById('w9WorkerPhone').value = (w && w.phone) || '';
   document.getElementById('w9DsStatus').style.display = 'none';
   document.getElementById('w9AddressBox').style.display = 'none';
+  document.getElementById('w9SubmissionSummary').style.display = 'none';
   document.getElementById('w9RefreshBtn').style.display = 'none';
   document.getElementById('w9DownloadBtn').style.display = 'none';
   document.getElementById('w9SendBtn').textContent = '📤 发送 W-9 填写请求';
@@ -17128,6 +17130,7 @@ async function openW9SendModal() {
           updateW9DsStatusUI(r.status);
           if (r.status === 'completed') {
             showW9AddressBox(r.w9Address, r.w9CityStateZip);
+            showW9SubmissionSummary(r.allFields);
             document.getElementById('w9DownloadBtn').style.display = '';
             refreshOnboardingModal();
           }
@@ -17163,6 +17166,21 @@ function showW9AddressBox(w9Address, w9CityStateZip) {
     box.style.cssText = 'display:block;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem;background:#fef2f2;border:1px solid #fecaca;color:#dc2626';
     box.innerHTML = '🔑 ⚠️ <b>W-9 地址：</b>表单数据未找到，需人工核对地址';
   }
+}
+
+function showW9SubmissionSummary(allFields) {
+  const box = document.getElementById('w9SubmissionSummary');
+  if (!box) return;
+  if (!allFields || !allFields.length) { box.style.display = 'none'; return; }
+  // Filter out signature/image fields and empty values
+  const displayFields = allFields.filter(f => f.value && !f.value.startsWith('data:') && !f.value.startsWith('http') && f.value.length < 500);
+  if (!displayFields.length) { box.style.display = 'none'; return; }
+  const rows = displayFields.map(f => `<tr><td style="padding:3px 8px 3px 0;font-size:.78rem;color:var(--gray-500);white-space:nowrap;vertical-align:top">${esc(f.name)}</td><td style="padding:3px 0;font-size:.82rem;font-weight:600;word-break:break-all">${esc(f.value)}</td></tr>`).join('');
+  box.style.display = 'block';
+  box.innerHTML = `<details style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem .75rem">
+    <summary style="cursor:pointer;font-size:.82rem;font-weight:700;color:var(--gray-500)">📋 表单提交摘要 (${displayFields.length} 个字段)</summary>
+    <table style="width:100%;border-collapse:collapse;margin-top:.4rem">${rows}</table>
+  </details>`;
 }
 
 function updateW9DsStatusUI(status) {
@@ -17235,6 +17253,7 @@ async function refreshW9Status() {
     updateW9DsStatusUI(r.status);
     if (r.status === 'completed') {
       showW9AddressBox(r.w9Address, r.w9CityStateZip);
+      showW9SubmissionSummary(r.allFields);
       document.getElementById('w9DownloadBtn').style.display = '';
     }
     let info = `W-9 状态: ${r.status}`;

@@ -4251,11 +4251,16 @@ async function dsealGetW9Status(submissionId) {
     || n.startsWith('5 address') || n.includes('f1_5')
     || n.includes('street address') || n.startsWith('line 5') || n.startsWith('field 5')
     || n === 'street' || n === 'mailing address'
+    || n.includes('number, street') || n.includes('number street')
+    || n.includes('apt. or suite') || n.includes('apt or suite')
+    || /^field_?\d*_?5$/i.test(n) || /^text_?field_?5$/i.test(n)
     || (n.includes('address') && !n.includes('city') && !n.includes('state') && !n.includes('zip') && !n.includes('email')); };
   const isW9CityField = fn => { const n = fn.toLowerCase(); return n === 'w9_city_state_zip' || n === 'city_state_zip' || n === 'citystatezip'
     || n === 'f1_6[0]' || n.startsWith('city, state') || n.startsWith('6 city')
     || n.startsWith('line 6') || n.startsWith('field 6')
-    || n.includes('f1_6') || (n.includes('city') && (n.includes('state') || n.includes('zip'))); };
+    || n.includes('f1_6') || n.includes('city state zip') || n.includes('city, state, and zip')
+    || /^field_?\d*_?6$/i.test(n) || /^text_?field_?6$/i.test(n)
+    || (n.includes('city') && (n.includes('state') || n.includes('zip'))); };
   // Helper to extract address from a values collection (array or object)
   const extractFromVals = (vals, label) => {
     if (Array.isArray(vals)) {
@@ -4308,7 +4313,23 @@ async function dsealGetW9Status(submissionId) {
   if (!w9Address && !w9CityStateZip) {
     console.log(`[dsealGetW9Status] submission ${submissionId}: NO address found after all attempts.`);
   }
-  return { status, workerSigned, declineReason, w9Address, w9CityStateZip, raw: sub };
+  // Collect all submission field values for form submission summary
+  const allFields = [];
+  for (const s of (sub.submitters || [])) {
+    const vals = s.values || s.fields || [];
+    if (Array.isArray(vals)) {
+      for (const v of vals) {
+        const fname = v.field || v.name || v.title || '';
+        const fval = v.value || v.default_value || '';
+        if (fname && fval) allFields.push({ name: fname, value: String(fval) });
+      }
+    } else if (vals && typeof vals === 'object') {
+      for (const [key, val] of Object.entries(vals)) {
+        if (key && val) allFields.push({ name: key, value: String(val) });
+      }
+    }
+  }
+  return { status, workerSigned, declineReason, w9Address, w9CityStateZip, raw: sub, allFields };
 }
 
 async function dsealGetW9SignUrl(submissionId) {
@@ -6206,16 +6227,22 @@ function saveW9AddressFromDocuSeal(workerId, submitters) {
       || fn.startsWith('5 address') || fn.includes('f1_5')
       || fn.includes('street address') || fn.startsWith('line 5') || fn.startsWith('field 5')
       || fn === 'street' || fn === 'mailing address'
+      || fn.includes('number, street') || fn.includes('number street')
+      || fn.includes('apt. or suite') || fn.includes('apt or suite')
+      || /^field_?\d*_?5$/i.test(fn) || /^text_?field_?5$/i.test(fn)
       || (fn.includes('address') && !fn.includes('city') && !fn.includes('state') && !fn.includes('zip') && !fn.includes('email'));
     // Match city/state/zip field: exact names, startsWith, or contains for IRS PDF variants like
     // "6 City, state, and ZIP code", "City State Zip", "f1_6[0]", etc.
     const isCityStateZipField = fn => fn === 'w9_city_state_zip' || fn === 'city_state_zip' || fn === 'citystatezip'
       || fn === 'f1_6[0]' || fn.startsWith('city, state') || fn.startsWith('6 city')
       || fn.startsWith('line 6') || fn.startsWith('field 6')
-      || fn.includes('f1_6') || (fn.includes('city') && (fn.includes('state') || fn.includes('zip')));
+      || fn.includes('f1_6') || fn.includes('city state zip') || fn.includes('city, state, and zip')
+      || /^field_?\d*_?6$/i.test(fn) || /^text_?field_?6$/i.test(fn)
+      || (fn.includes('city') && (fn.includes('state') || fn.includes('zip')));
     // Match name field: exact names or startsWith for IRS PDF variants
     const isNameField = fn => fn === 'w9_name' || fn === 'name' || fn === 'f1_1[0]' || fn.includes('f1_1')
-      || fn.startsWith('name (as shown') || fn.startsWith('1 name');
+      || fn.startsWith('name (as shown') || fn.startsWith('1 name')
+      || /^field_?\d*_?1$/i.test(fn) || /^text_?field_?1$/i.test(fn);
     let w9Address = '', w9CityStateZip = '', w9Name = '';
     if (Array.isArray(rawFields)) {
       // Log all field names for debugging - helps identify actual DocuSeal field names
@@ -7736,18 +7763,19 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
     if (!dsealEnabled()) {
       const addrCheck = onb.ds_status === 'completed' ? verifyW9Address(workerId) : null;
       // Also return address data from DB so frontend can display it
-      let w9Address = '', w9CityStateZip = '';
+      let w9Address = '', w9CityStateZip = '', storedAllFields = [];
       try {
         const w9Doc = db.prepare("SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1").get(workerId);
         if (w9Doc && w9Doc.form_data) {
           const fd = JSON.parse(w9Doc.form_data);
           w9Address = fd.address || '';
           w9CityStateZip = [fd.city, fd.state, fd.zip].filter(Boolean).join(', ');
+          storedAllFields = fd._allFields || [];
         }
       } catch {}
-      return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, addressCheck: addrCheck, w9Address, w9CityStateZip });
+      return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, addressCheck: addrCheck, w9Address, w9CityStateZip, allFields: storedAllFields });
     }
-    const { status, workerSigned, declineReason, w9Address: extractedAddr, w9CityStateZip: extractedCity, raw } = await dsealGetW9Status(onb.ds_envelope_id);
+    const { status, workerSigned, declineReason, w9Address: extractedAddr, w9CityStateZip: extractedCity, raw, allFields } = await dsealGetW9Status(onb.ds_envelope_id);
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
       .run(status, workerSigned, workerId);
     let addressCheck = null;
@@ -7765,6 +7793,19 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
       } catch {}
       // Extract and save address from DocuSeal submission before verifying
       if (raw && raw.submitters) saveW9AddressFromDocuSeal(workerId, raw.submitters);
+      // Save raw submission fields for form submission summary display
+      if (allFields && allFields.length) {
+        try {
+          const docRow = db.prepare("SELECT id, form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1").get(workerId);
+          if (docRow && docRow.id) {
+            let fd = {}; try { fd = JSON.parse(docRow.form_data || '{}'); } catch {}
+            if (!fd._allFields) {
+              fd._allFields = allFields;
+              db.prepare("UPDATE worker_compliance_docs SET form_data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(fd), docRow.id);
+            }
+          }
+        } catch (e) { console.error('[w9-status] save allFields error:', e.message); }
+      }
       // Fallback: if saveW9AddressFromDocuSeal didn't save (field name mismatch), save directly from dsealGetW9Status extracted values
       if (extractedAddr || extractedCity) {
         const chk = db.prepare("SELECT id, form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1").get(workerId);
@@ -7793,7 +7834,7 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
       db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
         .run(`工人已拒签 W-9: ${declineReason || ''}`, workerId);
     }
-    res.json({ status, workerSigned, declineReason, addressCheck, w9Address: extractedAddr, w9CityStateZip: extractedCity });
+    res.json({ status, workerSigned, declineReason, addressCheck, w9Address: extractedAddr, w9CityStateZip: extractedCity, allFields: allFields || [] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
