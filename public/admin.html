@@ -2739,6 +2739,14 @@ tr:hover td{background:var(--sky-light)}
       <div style="padding:.75rem;text-align:center;color:var(--gray-400);font-size:.83rem">加载模板中…</div>
     </div>
   </div>
+  <!-- Inline PDF Preview -->
+  <div id="w9PdfPreviewBox" style="display:none;margin:.5rem 0">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
+      <span style="font-size:.78rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px">模板预览</span>
+      <button onclick="document.getElementById('w9PdfPreviewBox').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:.85rem;color:var(--gray-400)">✕ 关闭预览</button>
+    </div>
+    <iframe id="w9PdfPreviewFrame" style="width:100%;height:400px;border:1px solid var(--gray-200);border-radius:8px" src=""></iframe>
+  </div>
   <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
   <div style="margin:.75rem 0;padding:.6rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1">
     <b>新流程：</b>点击「发送」后，工人将收到门户链接 → 填写个人信息（姓名、地址、SSN）→ 系统自动生成预填好的 W-9 → 工人只需签字确认。
@@ -16882,7 +16890,7 @@ async function voidContract() {
 
 let _w9SelectedTemplateId = '';
 
-function _renderW9TemplateList(templates, dsUrl, defaultTemplateId) {
+function _renderW9TemplateList(templates, _unused, defaultTemplateId) {
   const wrap = document.getElementById('w9TemplateList');
   if (!wrap) return;
   if (!templates || !templates.length) {
@@ -16894,11 +16902,9 @@ function _renderW9TemplateList(templates, dsUrl, defaultTemplateId) {
   if (!_w9SelectedTemplateId || !templates.find(t => String(t.docuseal_template_id) === _w9SelectedTemplateId)) {
     _w9SelectedTemplateId = defaultTemplateId ? String(defaultTemplateId) : String(templates[0].docuseal_template_id);
   }
-  const previewBase = (dsUrl || '').replace(/\/+$/, '');
   wrap.innerHTML = templates.map((t, i) => {
     const tid = String(t.docuseal_template_id);
     const isSelected = tid === _w9SelectedTemplateId;
-    const previewUrl = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
     return `<div id="w9tpl-row-${tid}" onclick="_selectW9Template('${tid}')" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;cursor:pointer;border-bottom:${i < templates.length-1 ? '1px solid #f1f5f9' : 'none'};background:${isSelected ? '#f0f9ff' : '#fff'};transition:background .15s">
       <div style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:2px solid ${isSelected ? '#0ea5e9' : '#cbd5e1'};background:${isSelected ? '#0ea5e9' : '#fff'};display:flex;align-items:center;justify-content:center">
         ${isSelected ? '<svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3" fill="#fff"/></svg>' : ''}
@@ -16907,9 +16913,16 @@ function _renderW9TemplateList(templates, dsUrl, defaultTemplateId) {
         <div style="font-size:.85rem;font-weight:${isSelected ? '700' : '500'};color:${isSelected ? '#0369a1' : '#1e293b'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name || '未命名模板'}</div>
         <div style="font-size:.75rem;color:#94a3b8">ID: ${tid}</div>
       </div>
-      <a href="${previewUrl}" target="_blank" onclick="event.stopPropagation()" style="flex-shrink:0;font-size:.75rem;color:#0ea5e9;text-decoration:none;padding:.2rem .5rem;border:1px solid #bae6fd;border-radius:4px;background:#f0f9ff;white-space:nowrap">预览 ↗</a>
+      <button onclick="event.stopPropagation();_previewW9Pdf('${tid}')" style="flex-shrink:0;font-size:.75rem;color:#0ea5e9;background:#f0f9ff;border:1px solid #bae6fd;border-radius:4px;padding:.2rem .5rem;cursor:pointer;white-space:nowrap">预览</button>
     </div>`;
   }).join('');
+}
+
+function _previewW9Pdf(tid) {
+  const box = document.getElementById('w9PdfPreviewBox');
+  const frame = document.getElementById('w9PdfPreviewFrame');
+  frame.src = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
+  box.style.display = '';
 }
 
 function _selectW9Template(tid) {
