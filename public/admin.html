@@ -18297,6 +18297,7 @@ function openInvSendModal() {
   const workerName = sel.options[sel.selectedIndex].text;
   _invSendWorkerId = parseInt(workerId);
   _invSendWorkerName = workerName;
+  _preGeneratedInvoiceNumber = null; // Reset pre-generated number when worker changes
   document.getElementById('invSendWorkerName').textContent = workerName;
   document.getElementById('invSendStatus').style.display = 'none';
   document.getElementById('invSendBtn').textContent = '📤 發送發票';
@@ -18318,7 +18319,7 @@ function openInvSendModal() {
   if (w?.position) document.getElementById('invSendServiceDesc').value = w.position;
   document.getElementById('invSendModal').classList.add('show');
 }
-let _invSendWorkerId = null, _invSendWorkerName = '';
+let _invSendWorkerId = null, _invSendWorkerName = '', _preGeneratedInvoiceNumber = null;
 
 async function doSendInvoice() {
   if (!_invSendWorkerId) return;
@@ -18334,15 +18335,19 @@ async function doSendInvoice() {
   if (!serviceDesc) { showToast('请填写服务内容描述', 'error'); return; }
   const _langLabels = { contractor_invoice: '中文+英文', contractor_invoice_en: 'English', contractor_invoice_es: 'EN+ES' };
   const _selLang = document.getElementById('invSendLang').value;
-  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，填写金额并签字后提交。`)) return;
+  const invNumInfo = _preGeneratedInvoiceNumber ? `\nInvoice #: ${_preGeneratedInvoiceNumber}` : '';
+  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}${invNumInfo}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，填写金额并签字后提交。`)) return;
   const btn = document.getElementById('invSendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const templateLang = document.getElementById('invSendLang').value;
+  const sendBody = { worker_account_id: _invSendWorkerId, worker_email: email, worker_phone: phone || undefined, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, template_lang: templateLang };
+  if (_preGeneratedInvoiceNumber) sendBody.pre_generated_invoice_number = _preGeneratedInvoiceNumber;
   const r = await api('/admin/contractor-invoices/send-docuseal', {
-    method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, worker_email: email, worker_phone: phone || undefined, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, template_lang: templateLang })
+    method: 'POST', body: JSON.stringify(sendBody)
   });
   btn.disabled = false; btn.textContent = '📤 重新發送';
   if (r && r.success) {
+    _preGeneratedInvoiceNumber = null; // Reset after successful send
     const statusEl = document.getElementById('invSendStatus');
     statusEl.style.display = 'block';
     statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
@@ -18360,21 +18365,41 @@ async function doSendInvoice() {
   }
 }
 
-function previewInvoiceTemplate() {
+async function previewInvoiceTemplate() {
   const section = document.getElementById('invPreviewSection');
   const frame = document.getElementById('invPreviewFrame');
   const btn = document.getElementById('invPreviewBtn');
   const infoBox = document.getElementById('invPreviewInfoBox');
   const lang = document.getElementById('invSendLang').value;
   if (section.style.display === 'none') {
+    if (!_invSendWorkerId) { showToast('请先选择承包商', 'error'); return; }
     const contractorName = _invSendWorkerName || '';
     const invoiceDate = document.getElementById('invSendDate').value || new Date().toISOString().slice(0,10);
     const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
     const periodStart = document.getElementById('invSendPeriodStart').value;
     const periodEnd = document.getElementById('invSendPeriodEnd').value;
     const langLabels = { contractor_invoice: '中文+英文', contractor_invoice_en: 'English', contractor_invoice_es: 'EN+ES' };
-    const invDateObj = new Date(invoiceDate + 'T12:00:00');
-    const dueDate = new Date(invDateObj.getTime() + 30 * 86400000).toISOString().slice(0, 10);
+    // Pre-generate invoice number if not already generated for this worker
+    if (!_preGeneratedInvoiceNumber) {
+      btn.disabled = true; btn.textContent = '生成编号中…';
+      try {
+        const r = await api('/admin/contractor-invoices/pre-generate-number', {
+          method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId })
+        });
+        if (r && r.success) {
+          _preGeneratedInvoiceNumber = r.invoice_number;
+        } else {
+          showToast(r?.error || '无法预生成发票编号', 'error');
+          btn.disabled = false; btn.textContent = '🔍 预览模板';
+          return;
+        }
+      } catch(e) {
+        showToast('预生成发票编号失败', 'error');
+        btn.disabled = false; btn.textContent = '🔍 预览模板';
+        return;
+      }
+      btn.disabled = false;
+    }
     // Show pre-filled data info box
     infoBox.style.display = 'block';
     infoBox.innerHTML = `<b>将预填入的数据 (Pre-filled Data):</b><br>` +
@@ -18383,8 +18408,9 @@ function previewInvoiceTemplate() {
       `<b>發票日期:</b> ${invoiceDate || '—'}　` +
       `<b>服务周期:</b> ${periodStart || '—'} ~ ${periodEnd || '—'}<br>` +
       `<b>服务内容:</b> ${esc(serviceDesc) || '—'}<br>` +
-      `<span style="font-size:.77rem;color:#6b7280">※ 以下PDF为预览；发送后承包商收到的版本将自动带入上述数据。<br>※ Invoice # 将在点击「发送」时自动生成并填入承包商收到的文件中。</span>`;
-    const params = new URLSearchParams({ contractor_name: contractorName, invoice_date: invoiceDate, service_description: serviceDesc, period_start: periodStart, period_end: periodEnd, lang });
+      `<b>Invoice #:</b> <span style="font-weight:700;color:#065f46">${esc(_preGeneratedInvoiceNumber)}</span><br>` +
+      `<span style="font-size:.77rem;color:#6b7280">※ 以下为预览；发送后承包商收到的版本将自动带入上述数据。</span>`;
+    const params = new URLSearchParams({ contractor_name: contractorName, invoice_date: invoiceDate, service_description: serviceDesc, period_start: periodStart, period_end: periodEnd, lang, invoice_number: _preGeneratedInvoiceNumber });
     frame.src = '/api/admin/contractor-invoices/preview-filled?' + params.toString();
     section.style.display = 'block';
     btn.textContent = '✖ 关闭预览';

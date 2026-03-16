@@ -2160,7 +2160,7 @@ function generateContractorInvoiceNumber(workerName, workerState) {
   const dd = String(today.getDate()).padStart(2, '0');
   const yy = String(today.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
-  const prefix = `INVCON-${stateStr}-${initials}-${dateStr}`;
+  const prefix = `INVWRK-${stateStr}-${initials}-${dateStr}`;
   // Find the highest sequential number for this same prefix today
   const last = db.prepare(`SELECT invoice_number FROM contractor_invoices WHERE invoice_number LIKE ? ORDER BY invoice_number DESC LIMIT 1`).get(prefix + '-%');
   let num = 1;
@@ -8428,10 +8428,32 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
   res.json({ success: true });
 });
 
+// ─── Admin: Pre-generate invoice number (called at preview time) ───
+app.post('/api/admin/contractor-invoices/pre-generate-number', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const { worker_account_id } = req.body;
+    if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
+    if (!w) return res.status(404).json({ error: '承包商不存在' });
+    const workerName = w.name || w.username || `Worker #${w.id}`;
+    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
+    // Save a placeholder record so the number is reserved
+    const sentBy = req.session?.username || 'admin';
+    const result = db.prepare(`INSERT INTO contractor_invoices
+      (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, sent_by)
+      VALUES (?,?,?,?,?,?,?)`)
+      .run(worker_account_id, invoiceNumber, new Date().toISOString().slice(0, 10), '(预生成)', 0, 'pre_generated', sentBy);
+    res.json({ success: true, invoice_number: invoiceNumber, invoice_id: result.lastInsertRowid });
+  } catch (e) {
+    console.error('[Pre-generate Invoice Number]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id, worker_email, worker_phone, service_period_start, service_period_end, invoice_date, service_description, template_lang } = req.body;
+    const { worker_account_id, worker_email, worker_phone, service_period_start, service_period_end, invoice_date, service_description, template_lang, pre_generated_invoice_number } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
     if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务周期 / Service period required' });
     if (!service_description) return res.status(400).json({ error: '请填写服务内容描述 / Service description required' });
@@ -8458,8 +8480,8 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
 
     // Format period dates for display (MM/DD/YYYY)
     const fmtPeriod = (d) => { if (!d) return ''; const p = d.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}/${p[0]}` : d; };
-    // Generate invoice number early so we can pre-fill it in DocuSeal
-    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
+    // Reuse pre-generated invoice number if provided, otherwise generate a new one
+    const invoiceNumber = pre_generated_invoice_number || generateContractorInvoiceNumber(workerName, w.state || '');
     // Create DocuSeal submission — admin pre-fills date, period & service description; contractor fills amount
     const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
@@ -8488,12 +8510,20 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     }
     const submitter = submitters[0];
     const submissionId = String(subRes.data?.id || submitter?.submission_id || '');
-    // Create contractor_invoices record with pending status
+    // Update pre-generated record or create new contractor_invoices record
     const sentBy = req.session?.username || 'admin';
-    db.prepare(`INSERT INTO contractor_invoices
-      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', 0, 'ds_pending', submissionId, 'sent', sentBy);
+    const existingPreGen = pre_generated_invoice_number
+      ? db.prepare(`SELECT id FROM contractor_invoices WHERE invoice_number=? AND status='pre_generated' LIMIT 1`).get(pre_generated_invoice_number)
+      : null;
+    if (existingPreGen) {
+      db.prepare(`UPDATE contractor_invoices SET invoice_date=?, service_description=?, service_period_start=?, service_period_end=?, total_amount=0, status='ds_pending', ds_envelope_id=?, ds_status='sent', sent_by=? WHERE id=?`)
+        .run(todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', submissionId, sentBy, existingPreGen.id);
+    } else {
+      db.prepare(`INSERT INTO contractor_invoices
+        (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', 0, 'ds_pending', submissionId, 'sent', sentBy);
+    }
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已發送承包商發票给 ${workerName}`);
