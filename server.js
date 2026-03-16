@@ -9,6 +9,7 @@ const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Render, Railway, etc.) for correct req.protocol
 const PORT = process.env.PORT || 3000;
 
 // ─── Twilio SMS ───
@@ -1030,6 +1031,7 @@ setTimeout(() => {
 // Migrate: richer fields on job_applications
 try { db.exec("ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE job_applications ADD COLUMN work_auth_confirmed TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE job_applications ADD COLUMN job_category TEXT DEFAULT ''"); } catch {}
 
 // ─── Interview system ───
 db.exec(`CREATE TABLE IF NOT EXISTS interview_locations (
@@ -2407,6 +2409,10 @@ function dsealGetCreds() {
   }
 }
 
+function dsealPublicHost() {
+  return (dsealGetCreds().baseUrl).replace(/api\./, 'app.').replace(/\/+$/, '');
+}
+
 function dsealEnabled() {
   const { apiKey, baseUrl } = dsealGetCreds();
   return !!(apiKey && baseUrl);
@@ -2487,7 +2493,7 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   }
   // Also try constructing direct URL from slug
   const workerSlug = worker?.slug || '';
-  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = dsealPublicHost();
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   console.log(`[DocuSeal] Worker sign URL: ${(finalWorkerUrl||'NONE').substring(0,100)}`);
@@ -2500,16 +2506,19 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
   // If a pre-built template is configured, use it directly
   if (templateId) {
     const todayDate = new Date().toISOString().slice(0, 10);
+    const submitter1 = { role: 'First Party', name: signer1.name, email: signer1.email,
+      fields: [{ name: 'date1', default_value: todayDate, readonly: true }] };
+    const submitter2 = { role: 'Second Party', name: signer2.name, email: signer2.email,
+      fields: [{ name: 'date2', default_value: todayDate, readonly: true }] };
+    // Include phone numbers so DocuSeal can send its own SMS notifications
+    if (signer1.phone) submitter1.phone = signer1.phone;
+    if (signer2.phone) submitter2.phone = signer2.phone;
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: false,
+      send_sms: true,
       order: 'preserved',
-      submitters: [
-        { role: 'First Party', name: signer1.name, email: signer1.email,
-          fields: [{ name: 'date1', default_value: todayDate, readonly: true }] },
-        { role: 'Second Party', name: signer2.name, email: signer2.email,
-          fields: [{ name: 'date2', default_value: todayDate, readonly: true }] }
-      ]
+      submitters: [submitter1, submitter2]
     });
     console.log(`[DocuSeal] submissions(template ${templateId}): status=${subRes.status}`);
     const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
@@ -2518,10 +2527,10 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
     const worker = submitters.find(s => s.role === 'Second Party') || submitters[1];
     const submissionId = String(subRes.data?.id || company?.submission_id || company?.id || '');
     const companyEmbedSrc = company?.embed_src || '';
-    let workerSignUrl = worker?.embed_src || '';
     const workerSlug = worker?.slug || '';
-    const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
-    if (!workerSignUrl && workerSlug) workerSignUrl = `${baseHost}/s/${workerSlug}`;
+    const baseHost = dsealPublicHost();
+    // Prefer slug-based URL for mobile compatibility
+    let workerSignUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : (worker?.embed_src || '');
     return { submissionId, companyEmbedSrc, workerSignUrl };
   }
   // Convert plain text contract to HTML, replacing field tags with DocuSeal HTML elements
@@ -2550,17 +2559,20 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
   const html = `<div style="font-family:Helvetica,Arial,sans-serif;font-size:11pt;line-height:1.5;max-width:700px;margin:0 auto;padding:20px">${htmlLines.join('\n')}</div>`;
 
   const todayDate = new Date().toISOString().slice(0, 10);
+  const submitter1 = { role: 'First Party', name: signer1.name, email: signer1.email,
+    fields: [{ name: 'date1', default_value: todayDate, readonly: true }] };
+  const submitter2 = { role: 'Second Party', name: signer2.name, email: signer2.email,
+    fields: [{ name: 'date2', default_value: todayDate, readonly: true }] };
+  // Include phone numbers so DocuSeal can send its own SMS notifications
+  if (signer1.phone) submitter1.phone = signer1.phone;
+  if (signer2.phone) submitter2.phone = signer2.phone;
   const subRes = await dsealApiCall('POST', '/api/submissions/html', {
     name: emailSubject || docName,
     documents: [{ name: docName, html, size: 'Letter' }],
     send_email: false,
+    send_sms: true,
     order: 'preserved',
-    submitters: [
-      { role: 'First Party', name: signer1.name, email: signer1.email,
-        fields: [{ name: 'date1', default_value: todayDate, readonly: true }] },
-      { role: 'Second Party', name: signer2.name, email: signer2.email,
-        fields: [{ name: 'date2', default_value: todayDate, readonly: true }] }
-    ]
+    submitters: [submitter1, submitter2]
   });
   console.log(`[DocuSeal] submissions/html: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
   const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
@@ -2579,7 +2591,9 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
     } catch (e) { console.error(`[DocuSeal] Failed to get worker embed_src: ${e.message}`); }
   }
   const workerSlug = worker?.slug || '';
-  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = dsealPublicHost();
+  // Prefer slug-based URL (/s/xxx) over embed_src — slug URLs work directly in mobile browsers,
+  // while embed_src is designed for embedding in web components and may not render on mobile
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
@@ -4120,7 +4134,7 @@ async function dsealGetTemplateFieldNames(templateId) {
 }
 
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
-async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip, ssn, tinType, businessName, taxClassification, overrideTemplateId }) {
+async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, cityStateZip, ssn, tinType, businessName, taxClassification, overrideTemplateId }) {
   const templateId = overrideTemplateId || getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
@@ -4141,12 +4155,14 @@ async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip,
     if (businessName) addField(fields, 'w9_business_name', businessName, false);
     if (taxClassification) addField(fields, 'w9_tax_classification', taxClassification, false);
     addField(fields, 'w9_date', todayDate, false);
-    const submitter = { role: 'First Party', name: workerName, email: workerEmail };
-    if (fields.length) submitter.fields = fields;
+    const w9Submitter = { role: 'First Party', name: workerName, email: workerEmail };
+    if (fields.length) w9Submitter.fields = fields;
+    if (workerPhone) w9Submitter.phone = formatPhoneE164(workerPhone);
     subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
-      submitters: [submitter]
+      send_sms: true,
+      submitters: [w9Submitter]
     });
   } else {
     // Fallback: generate HTML template
@@ -4157,13 +4173,14 @@ async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip,
     ];
     if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false });
     if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
+    const w9FallbackSubmitter = { role: 'Signer', name: workerName, email: workerEmail, fields: fallbackFields };
+    if (workerPhone) w9FallbackSubmitter.phone = formatPhoneE164(workerPhone);
     subRes = await dsealApiCall('POST', '/api/submissions/html', {
       name: `W-9 表格 - ${workerName}`,
       documents: [{ name: `W-9 Tax Form - ${workerName}`, html: w9Html, size: 'Letter' }],
       send_email: false,
-      submitters: [
-        { role: 'Signer', name: workerName, email: workerEmail, fields: fallbackFields }
-      ]
+      send_sms: true,
+      submitters: [w9FallbackSubmitter]
     });
   }
   console.log(`[DocuSeal W-9] submission: status=${subRes.status}, templateId=${templateId || 'html-fallback'}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
@@ -4181,7 +4198,7 @@ async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip,
     } catch (e) { console.error(`[DocuSeal W-9] Failed to get embed_src: ${e.message}`); }
   }
   const slug = signer?.slug || '';
-  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = dsealPublicHost();
   const directUrl = slug ? `${baseHost}/s/${slug}` : '';
   const finalWorkerUrl = directUrl || workerSignUrl;
   console.log(`[DocuSeal W-9] Worker sign URL: ${(finalWorkerUrl || 'NONE').substring(0, 100)}`);
@@ -4206,8 +4223,12 @@ async function dsealGetW9SignUrl(submissionId) {
   if (r.status !== 200) throw new Error(`DocuSeal 获取 W-9 提交失败 ${r.status}`);
   const signer = (r.data.submitters || [])[0];
   if (!signer) throw new Error('DocuSeal W-9: 签署人未找到');
+  // Prefer slug-based URL (/s/xxx) — works directly in mobile browsers
+  const baseHost = dsealPublicHost();
+  if (signer.slug) return `${baseHost}/s/${signer.slug}`;
   if (signer.embed_src) return signer.embed_src;
   const u = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: signer.name });
+  if (u.data?.slug) return `${baseHost}/s/${u.data.slug}`;
   if (u.status >= 400 || !u.data?.embed_src) throw new Error(`DocuSeal 获取 W-9 签署链接失败 ${u.status}`);
   return u.data.embed_src;
 }
@@ -6457,13 +6478,14 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     fs.writeFileSync(docPath, pdfBuf);
     // Send via DocuSeal — use configured template if available, otherwise generate HTML
     const workerTemplateId = getDsealConfigTemplateId(empType === '1099' ? 'worker_1099' : 'worker_w2');
+    const workerPhone = w.phone || '';
     const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendContractHtml({
       contractText: content,
       templateId: workerTemplateId || undefined,
       docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}`,
       emailSubject: `请签署合同 / Please Sign — ${workerName} × ${companyName}`,
       signer1: { email: companyEmail, name: companyName },
-      signer2: { email: workerEmail, name: workerName }
+      signer2: { email: workerEmail, name: workerName, phone: workerPhone }
     });
     console.log(`[Contract] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}`);
     // Store worker's sign URL in action_url so the portal can show the correct signing link.
@@ -6525,6 +6547,74 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
         .run(workerId);
       syncOnboardedStatus(workerId);
     } else if (effectiveStatus === 'company_signed') {
+      // If status just changed from 'sent' to 'company_signed', webhook may have missed — send notification now
+      const prevStatus = onb.ds_status;
+      if (prevStatus === 'sent') {
+        // Refresh signing URL for worker
+        let workerSignUrl = '';
+        try {
+          const subData = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
+          const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party');
+          if (workerSub) {
+            if (workerSub.slug) {
+              workerSignUrl = `${dsealPublicHost()}/s/${workerSub.slug}`;
+            } else if (workerSub.embed_src) {
+              workerSignUrl = workerSub.embed_src;
+            } else if (workerSub.id) {
+              const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name });
+              if (wPut.data?.slug) workerSignUrl = `${dsealPublicHost()}/s/${wPut.data.slug}`;
+              else if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+            }
+          }
+        } catch (e2) { console.error('[contract-status] get worker sign URL error:', e2.message); }
+        if (workerSignUrl) {
+          db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+            .run(workerSignUrl, workerId);
+        }
+        // Send notification to worker (fallback for missed webhook)
+        const w = db.prepare('SELECT name, username, email, phone FROM worker_accounts WHERE id=?').get(workerId);
+        if (w) {
+          const workerName = w.name || w.username || '';
+          const workerEmail = w.email || '';
+          const workerPhone = w.phone || '';
+          const onbRecord = db.prepare("SELECT contract_content FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+          const empType = (onbRecord?.contract_content || '').includes('Independent Contractor') ? '1099' : 'w2';
+          const contractTypeCn = empType === '1099' ? '承包商协议' : '雇佣合同';
+          const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
+          const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
+          const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+          const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
+          if (workerEmail) {
+            sendEmail(workerEmail,
+              `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+              `${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署。\n${workerSignUrl || ''}\n\n${workerName}, ${companyName} has signed. Please sign here:\n${workerSignUrl || ''}\n\n${workerName}, ${companyName} ha firmado. Firme aquí:\n${workerSignUrl || ''}`,
+              `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+                <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
+                <p>您好 ${workerName}，${companyName} 已完成签署，现在轮到您签署了。</p>
+                ${signLink}
+                ${workerSignUrl ? `<p style="color:#666;font-size:.85rem">或复制链接：${workerSignUrl}</p>` : ''}
+                <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+                <h3 style="font-size:.95rem">Please Sign Your ${contractType}</h3>
+                <p style="color:#555;font-size:.9rem">Hi ${workerName}, ${companyName} has signed. It's now your turn.</p>
+                ${signLink}
+                <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+                <h3 style="font-size:.95rem">Firme Su ${contractTypeEs}</h3>
+                <p style="color:#555;font-size:.9rem">Hola ${workerName}, ${companyName} ha firmado. Ahora es su turno.</p>
+                ${signLink}
+                <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+              </div>`
+            ).catch(e => console.error('[contract-status] fallback email error:', e.message));
+            console.log(`[contract-status] Sent fallback signing email to ${workerEmail} (webhook may have missed)`);
+          }
+          if (workerPhone) {
+            const smsText = workerSignUrl
+              ? `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
+              : `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+            sendSMS(workerPhone, smsText).catch(e => console.error('[contract-status] fallback SMS error:', e.message));
+            console.log(`[contract-status] Sent fallback signing SMS to ${workerPhone} (webhook may have missed)`);
+          }
+        }
+      }
       db.prepare(`UPDATE worker_onboarding SET admin_note='公司已签署，等待工人签署', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
         .run(workerId);
     } else if (status === 'declined') {
@@ -6589,6 +6679,82 @@ app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async 
     console.log(`[CompanySign] workerId=${workerId}, submissionId=${onb.ds_envelope_id}, signUrl=${signUrl ? signUrl.substring(0, 80) + '...' : 'NULL'}`);
     res.json({ signUrl, companyName });
   } catch (e) { console.error('[CompanySign Error]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Admin: resend signing notification (SMS + email) to worker
+app.post('/api/admin/worker-accounts/:id/resend-sign-notification', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT name, username, email, phone FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, action_url, contract_content FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '合同未发送' });
+    if (onb.ds_status === 'completed') return res.status(400).json({ error: '合同已完成签署，无需通知' });
+    const workerName = w.name || w.username || '';
+    const workerEmail = w.email || '';
+    const workerPhone = w.phone || '';
+    if (!workerEmail && !workerPhone) return res.status(400).json({ error: '工人无邮箱和手机号，无法发送通知' });
+    // Get fresh signing URL
+    let workerSignUrl = onb.action_url || '';
+    if (dsealEnabled()) {
+      try {
+        const subData = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
+        const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party') || (subData.data?.submitters || [])[0];
+        if (workerSub) {
+          if (workerSub.slug) workerSignUrl = `${dsealPublicHost()}/s/${workerSub.slug}`;
+          else if (workerSub.embed_src) workerSignUrl = workerSub.embed_src;
+        }
+      } catch (e2) { console.error('[resend-notification] get sign URL error:', e2.message); }
+    }
+    if (workerSignUrl) {
+      db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+        .run(workerSignUrl, workerId);
+    }
+    const empType = (onb.contract_content || '').includes('Independent Contractor') ? '1099' : 'w2';
+    const contractTypeCn = empType === '1099' ? '承包商协议' : '雇佣合同';
+    const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
+    const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
+    let emailSent = false, smsSent = false;
+    if (workerEmail) {
+      emailSent = await sendEmail(workerEmail,
+        `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+        `${workerName}，请点击链接完成签署。\n${workerSignUrl || ''}\n\n${workerName}, please sign here:\n${workerSignUrl || ''}\n\n${workerName}, firme aquí:\n${workerSignUrl || ''}`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+          <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
+          <p>您好 ${workerName}，请点击下方按钮完成合同签署。</p>
+          ${signLink}
+          ${workerSignUrl ? `<p style="color:#666;font-size:.85rem">或复制链接：${workerSignUrl}</p>` : ''}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Please Sign Your ${contractType}</h3>
+          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please click below to sign your contract.</p>
+          ${signLink}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Firme Su ${contractTypeEs}</h3>
+          <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic abajo para firmar su contrato.</p>
+          ${signLink}
+          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+        </div>`
+      );
+    }
+    if (workerPhone) {
+      const smsText = workerSignUrl
+        ? `[Prime Anchorpoint] ${workerName}，请签署${contractTypeCn} / Please sign your contract / Firme su contrato:\n${workerSignUrl}\nReply STOP to opt out.`
+        : `[Prime Anchorpoint] ${workerName}，请查收邮件签署${contractTypeCn}。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+      smsSent = await sendSMS(workerPhone, smsText);
+    }
+    const warnings = [];
+    if (workerEmail && !emailSent) warnings.push('邮件发送失败');
+    if (workerPhone && !smsSent) warnings.push('短信发送失败');
+    if (!workerEmail) warnings.push('工人无邮箱，未发送邮件');
+    if (!workerPhone) warnings.push('工人无手机号，未发送短信');
+    console.log(`[resend-notification] workerId=${workerId}, emailSent=${emailSent}, smsSent=${smsSent}`);
+    res.json({ success: true, emailSent, smsSent, signUrl: workerSignUrl, warnings });
+  } catch (e) {
+    console.error('[resend-notification]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Admin: void/cancel onboarding contract submission (requires reason)
@@ -7196,7 +7362,7 @@ app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) =>
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
   if (templateId) {
-    const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+    const baseHost = dsealPublicHost();
     const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:20px;background:#f9fafb;font-family:Arial,sans-serif}</style></head><body>
       <div style="text-align:center;padding:2rem;color:#555">
         <p style="font-size:1.1rem;font-weight:600">使用 DocuSeal 官方 W-9 模板</p>
@@ -7227,19 +7393,23 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     // Create DocuSeal W-9 submission immediately so worker can sign directly in portal
     let w9SubmissionId = '';
     let w9SignUrl = '';
+    let dsealError = '';
     if (dsealEnabled()) {
       try {
         const address = w.work_address || '';
         const overrideTemplateId = req.body.template_id ? String(req.body.template_id) : '';
         const { submissionId, workerSignUrl } = await dsealSendW9Html({
-          workerName, workerEmail, address, overrideTemplateId
+          workerName, workerEmail, workerPhone, address, overrideTemplateId
         });
         w9SubmissionId = submissionId || '';
         w9SignUrl = workerSignUrl || '';
         console.log(`[W-9 send] DocuSeal submission created: ${w9SubmissionId}, signUrl: ${(w9SignUrl||'').substring(0,80)}`);
       } catch (e) {
+        dsealError = e.message || '未知错误';
         console.error('[W-9 send] DocuSeal creation failed:', e.message);
       }
+    } else {
+      dsealError = 'DocuSeal 未配置（缺少 API Key 或 URL）';
     }
 
     // Make W-9 task visible and set to pending, store DocuSeal info if available
@@ -7253,44 +7423,48 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(workerId, changedBy, 'w9', '', '已发送', w9SubmissionId ? `W-9 DocuSeal 表格已创建，等待工人签署` : `W-9 填写请求已发送，等待工人在门户填写信息`);
 
-    // Build portal link — worker opens portal to fill in W-9 info
-    const baseUrl = (process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, '');
-    const portalLink = `${baseUrl}/portal.html#w9`;
+    // Use DocuSeal direct signing link only (no portal fallback)
+    const w9Link = w9SignUrl || '';
+    const isDirect = !!w9SignUrl;
 
     let emailSent = false;
     let smsSent = false;
-    // Send email with portal link
-    if (workerEmail) {
-      const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${portalLink}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">填写 W-9 / Complete W-9 / Completar W-9</a></p>`;
+    // Send email/SMS with W-9 signing link (only if DocuSeal direct link available)
+    if (w9Link && workerEmail) {
+      const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${w9Link}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署 W-9 / Sign W-9 / Firmar W-9</a></p>`;
       emailSent = await sendEmail(workerEmail,
-        `Prime Anchorpoint — 请填写 W-9 税表 / Please Complete W-9 / Complete el W-9`,
-        `${workerName}，请点击链接填写并签署 W-9 税表。\n${portalLink}\n\n${workerName}, please click the link to complete your W-9 form.\n${portalLink}\n\n${workerName}, haga clic en el enlace para completar su formulario W-9.\n${portalLink}`,
+        `Prime Anchorpoint — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
+        `${workerName}，请点击链接签署 W-9 税表。\n${w9Link}\n\n${workerName}, please click the link to sign your W-9 form.\n${w9Link}\n\n${workerName}, haga clic en el enlace para firmar su formulario W-9.\n${w9Link}`,
         `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
-          <h2 style="color:#1a1a1a;text-align:center">请填写 W-9 税表</h2>
-          <p>您好 ${workerName}，请登录门户填写 W-9 税表信息（姓名、地址、税号），填写完成后系统将自动生成正式 W-9 表格供您签字确认。</p>
+          <h2 style="color:#1a1a1a;text-align:center">请签署 W-9 税表</h2>
+          <p>您好 ${workerName}，请点击下方按钮直接签署 W-9 税表。</p>
           ${signLink}
           <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
-          <h3 style="font-size:.95rem">Please Complete Your W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please log into the portal to fill in your W-9 information (name, address, TIN). After submitting, the system will generate the official W-9 form for your signature.</p>
+          <h3 style="font-size:.95rem">Please Sign Your W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please click the button below to sign your W-9 form directly.</p>
           ${signLink}
           <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
-          <h3 style="font-size:.95rem">Complete el Formulario W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hola ${workerName}, inicie sesión en el portal para completar su información W-9. Después de enviar, el sistema generará el formulario W-9 oficial para su firma.</p>
+          <h3 style="font-size:.95rem">Firme el Formulario W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic en el botón para firmar su formulario W-9 directamente.</p>
           ${signLink}
           <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
         </div>`
       );
     }
-    // Send SMS with portal link
-    if (workerPhone) {
-      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录门户填写 W-9 税表 / Please complete your W-9 info / Complete su W-9\n${portalLink}\nReply STOP to opt out.`);
+    if (w9Link && workerPhone) {
+      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
     }
     const warnings = [];
-    if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
-    if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
-    if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
-    if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
-    res.json({ success: true, portalLink, emailSent, smsSent, warnings });
+    if (!w9Link) {
+      const detail = dsealError ? `：${dsealError}` : '';
+      warnings.push(`DocuSeal 签字链接生成失败${detail}（邮件和短信因无签字链接未发送）`);
+    } else {
+      if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
+      if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
+      if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
+      if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
+    }
+    res.json({ success: true, w9Link, isDirect, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[W-9 send error]', e.message);
     res.status(500).json({ error: e.message });
@@ -7424,14 +7598,21 @@ app.get('/api/worker/contract-sign-url', requireWorker, async (req, res) => {
         const subData = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
         const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party');
         if (workerSub) {
-          if (workerSub.embed_src) { signUrl = workerSub.embed_src; }
-          else if (workerSub.id) {
-            const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name });
-            if (wPut.data?.embed_src) signUrl = wPut.data.embed_src;
-          }
-          if (!signUrl && workerSub.slug) {
-            const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+          // Prefer slug-based URL (/s/xxx) — works directly in mobile browsers
+          // embed_src is designed for web component embedding and may not render on mobile
+          if (workerSub.slug) {
+            const baseHost = dsealPublicHost();
             signUrl = `${baseHost}/s/${workerSub.slug}`;
+          } else if (workerSub.embed_src) {
+            signUrl = workerSub.embed_src;
+          } else if (workerSub.id) {
+            const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name });
+            if (wPut.data?.slug) {
+              const baseHost = dsealPublicHost();
+              signUrl = `${baseHost}/s/${wPut.data.slug}`;
+            } else if (wPut.data?.embed_src) {
+              signUrl = wPut.data.embed_src;
+            }
           }
           // Update stored URL
           if (signUrl) db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'").run(signUrl, req.workerId);
@@ -7718,19 +7899,20 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     }
 
     // Create DocuSeal submission — pre-fill suggestions, contractor can edit rate + description
+    const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
+      { name: 'invoice_date', default_value: todayDate, readonly: true },
+      { name: 'contractor_name', default_value: workerName, readonly: true },
+      { name: 'service_description', default_value: jobTitle || '', readonly: true },
+      { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
+      { name: 'payment_terms', default_value: 'Net 30', readonly: true },
+      { name: 'payment_due_date', default_value: dueDate, readonly: true }
+    ] };
+    if (workerPhone) invoiceSubmitter.phone = workerPhone;
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
-      submitters: [
-        { role: 'First Party', name: workerName, email: workerEmail, fields: [
-          { name: 'invoice_date', default_value: todayDate, readonly: true },
-          { name: 'contractor_name', default_value: workerName, readonly: true },
-          { name: 'service_description', default_value: jobTitle || '', readonly: true },
-          { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
-          { name: 'payment_terms', default_value: 'Net 30', readonly: true },
-          { name: 'payment_due_date', default_value: dueDate, readonly: true }
-        ] }
-      ]
+      send_sms: true,
+      submitters: [invoiceSubmitter]
     });
     console.log(`[DocuSeal Invoice] submission status=${subRes.status}`);
     const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
@@ -11077,13 +11259,13 @@ app.get('/api/worker/jobs', requireWorker, (req, res) => {
 app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
   const job = db.prepare('SELECT id, work_auth FROM jobs WHERE id=? AND active=1').get(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found or no longer active' });
-  const { notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed } = req.body || {};
+  const { notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed, job_category } = req.body || {};
   // If job requires gc/citizen, applicant must confirm work auth status
   if ((job.work_auth === 'gc' || job.work_auth === 'citizen') && !work_auth_confirmed)
     return res.status(400).json({ error: '请选择您的工作身份状态' });
   try {
-    db.prepare(`INSERT INTO job_applications (job_id, worker_account_id, notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed) VALUES (?,?,?,?,?,?,?)`)
-      .run(req.params.jobId, req.workerId, notes||'', interview_availability||'', expected_pay||'', applicant_message||'', work_auth_confirmed||'');
+    db.prepare(`INSERT INTO job_applications (job_id, worker_account_id, notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed, job_category) VALUES (?,?,?,?,?,?,?,?)`)
+      .run(req.params.jobId, req.workerId, notes||'', interview_availability||'', expected_pay||'', applicant_message||'', work_auth_confirmed||'', job_category||'');
     res.json({ success: true });
   } catch { res.status(400).json({ error: 'Already applied to this job' }); }
 });
@@ -12551,7 +12733,7 @@ app.post('/api/worker/compliance/w9', requireWorker, async (req, res) => {
       const cityStateZip = [req.body.city, req.body.state, req.body.zip].filter(Boolean).join(', ');
       try {
         const { submissionId, workerSignUrl } = await dsealSendW9Html({
-          workerName, workerEmail, address, cityStateZip,
+          workerName, workerEmail, workerPhone: w.phone || '', address, cityStateZip,
           ssn: rawSsnEin, tinType: req.body.tin_type,
           businessName: req.body.business_name,
           taxClassification: req.body.tax_classification
@@ -13638,14 +13820,21 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                   const subData = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
                   const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party');
                   if (workerSub) {
-                    if (workerSub.embed_src) { workerSignUrl = workerSub.embed_src; }
-                    else if (workerSub.id) {
-                      const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name || workerName });
-                      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
-                    }
-                    if (!workerSignUrl && workerSub.slug) {
-                      const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+                    // Prefer slug-based URL (/s/xxx) — works directly in mobile browsers
+                    // embed_src is designed for web component embedding and may not render on mobile
+                    if (workerSub.slug) {
+                      const baseHost = dsealPublicHost();
                       workerSignUrl = `${baseHost}/s/${workerSub.slug}`;
+                    } else if (workerSub.embed_src) {
+                      workerSignUrl = workerSub.embed_src;
+                    } else if (workerSub.id) {
+                      const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name || workerName });
+                      if (wPut.data?.slug) {
+                        const baseHost = dsealPublicHost();
+                        workerSignUrl = `${baseHost}/s/${wPut.data.slug}`;
+                      } else if (wPut.data?.embed_src) {
+                        workerSignUrl = wPut.data.embed_src;
+                      }
                     }
                   }
                 } catch (e2) { console.error('[DocuSeal webhook] get worker sign URL error:', e2.message); }
@@ -14555,11 +14744,8 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
-    'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id'];
-  const _rawBase = dsealGetCreds().baseUrl;
-  const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL ||
-    _rawBase.replace('api.docuseal.co', 'app.docuseal.co').replace(/api\./, '').replace(/\/+$/, '');
+    'contractor_invoice_template_id','invoice_approval_template_id'];
+  const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
   const out = { connected: dsealEnabled(), url: _publicUrl };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
@@ -14643,6 +14829,39 @@ app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) =
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
       .run(JSON.stringify(cfg));
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/docuseal/templates/:id/preview-pdf — proxy template PDF from DocuSeal
+app.get('/api/admin/docuseal/templates/:id/preview-pdf', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const r = await dsealApiCall('GET', `/api/templates/${req.params.id}`, null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+    const documents = r.data?.documents || r.data?.schema || [];
+    const docUrl = documents[0]?.url || documents[0]?.file_url || null;
+    if (!docUrl) return res.status(404).json({ error: '该模板暂无可预览的文档' });
+    // Proxy the PDF through our server so browser doesn't need to reach DocuSeal directly
+    const { apiKey } = dsealGetCreds();
+    const parsedUrl = new URL(docUrl);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    const proxyReq = transport.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: { 'X-Auth-Token': apiKey, 'Accept': 'application/pdf,*/*' }
+    }, (proxyRes) => {
+      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="template-${req.params.id}.pdf"`);
+      proxyRes.pipe(res);
+    });
+    proxyReq.setTimeout(30000, () => { proxyReq.destroy(new Error('代理超时')); });
+    proxyReq.on('error', (e) => { if (!res.headersSent) res.status(500).json({ error: e.message }); });
+    proxyReq.end();
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
