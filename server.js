@@ -14028,7 +14028,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','invoice_approval_template_id'];
+    'contractor_invoice_template_id','contractor_invoice_es_template_id','invoice_approval_template_id'];
   const out = { connected: dsealEnabled(), url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '') };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
@@ -14060,7 +14060,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','invoice_approval_template_id',
+    'contractor_invoice_template_id','contractor_invoice_es_template_id','invoice_approval_template_id',
     'contract_template_id' /* legacy */];
   _configKeys.forEach(k => {
     if (req.body[k] === undefined) return;

@@ -2294,10 +2294,16 @@ tr:hover td{background:var(--sky-light)}
           <div id="ds-cfg-cash-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 员工 Invoice</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice / Payment Request</div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 员工 Invoice (EN+ZH)</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice — English+中文</div>
           <select id="ds-sel-contractor-inv" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice', this.value)"><option value="">— 未设置 —</option></select>
           <div id="ds-cfg-contractor-inv-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 员工 Invoice (EN+ES)</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice — English+Español</div>
+          <select id="ds-sel-contractor-inv-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice_es', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-contractor-inv-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">✅ 发票审批表 (内部)</div>
@@ -20012,8 +20018,9 @@ const _DS_SELECTORS = [
   { key: 'third_party_pay_template_id',  selId: 'ds-sel-third-party',        infoId: 'ds-cfg-third-party-info',       label: '第三方平台',   doc_type: 'third_party_pay' },
   { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收',     doc_type: 'cash_receipt' },
   // 员工 Invoice
-  { key: 'contractor_invoice_template_id', selId: 'ds-sel-contractor-inv',   infoId: 'ds-cfg-contractor-inv-info',    label: '员工Invoice',  doc_type: 'contractor_invoice' },
-  { key: 'invoice_approval_template_id',  selId: 'ds-sel-invoice-approval', infoId: 'ds-cfg-invoice-approval-info',  label: '发票审批',     doc_type: 'invoice_approval' },
+  { key: 'contractor_invoice_template_id',    selId: 'ds-sel-contractor-inv',    infoId: 'ds-cfg-contractor-inv-info',    label: '员工Invoice(ZH)', doc_type: 'contractor_invoice' },
+  { key: 'contractor_invoice_es_template_id', selId: 'ds-sel-contractor-inv-es', infoId: 'ds-cfg-contractor-inv-es-info', label: '员工Invoice(ES)', doc_type: 'contractor_invoice' },
+  { key: 'invoice_approval_template_id',      selId: 'ds-sel-invoice-approval',  infoId: 'ds-cfg-invoice-approval-info',  label: '发票审批',        doc_type: 'invoice_approval' },
 ];
 
 function _dsRefreshSelects() {
@@ -20059,8 +20066,9 @@ function _dsRenderMyTemplates() {
     zelle_auth_template_id:        { bg:'#fdf4ff', color:'#86198f', label:'Zelle' },
     third_party_pay_template_id:   { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金' },
-    contractor_invoice_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
-    invoice_approval_template_id:  { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
+    contractor_invoice_template_id:    { bg:'#fef3c7', color:'#92400e', label:'员工Invoice(ZH)' },
+    contractor_invoice_es_template_id: { bg:'#fef9c3', color:'#854d0e', label:'员工Invoice(ES)' },
+    invoice_approval_template_id:      { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
   };
   const _CAT_BADGE = {
     company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
