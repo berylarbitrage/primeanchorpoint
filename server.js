@@ -6212,9 +6212,30 @@ function saveW9AddressFromDocuSeal(workerId, submitters) {
       return;
     }
     if (!w9Address && !w9CityStateZip) {
-      const fieldNames = Array.isArray(rawFields) ? rawFields.map(f => f.name||f.field).join(', ') : Object.keys(rawFields).join(', ');
-      console.log(`[saveW9AddressFromDocuSeal] worker ${workerId}: no address/city fields matched among: ${fieldNames}`);
-      return;
+      // Fallback: detect generic "Text Field N" positional naming used by some DocuSeal W-9 templates
+      // Standard W-9 layout: Text Field 1 = name, Text Field 2 = street address, Text Field 3 = city/state/zip
+      const textFields = [];
+      if (Array.isArray(rawFields)) {
+        for (const f of rawFields) {
+          const fname = (f.name || f.field || f.title || '').toLowerCase().trim();
+          const m = fname.match(/^text field (\d+)$/);
+          if (m) textFields[parseInt(m[1])] = String(f.value || f.default_value || '').trim();
+        }
+      } else if (rawFields && typeof rawFields === 'object') {
+        for (const [key, val] of Object.entries(rawFields)) {
+          const m = key.toLowerCase().trim().match(/^text field (\d+)$/);
+          if (m) textFields[parseInt(m[1])] = String(val || '').trim();
+        }
+      }
+      if (textFields[2]) w9Address = textFields[2];
+      if (textFields[3]) w9CityStateZip = textFields[3];
+      if (!w9Name && textFields[1]) w9Name = textFields[1];
+      if (!w9Address && !w9CityStateZip) {
+        const fieldNames = Array.isArray(rawFields) ? rawFields.map(f => f.name||f.field).join(', ') : Object.keys(rawFields).join(', ');
+        console.log(`[saveW9AddressFromDocuSeal] worker ${workerId}: no address/city fields matched among: ${fieldNames}`);
+        return;
+      }
+      console.log(`[saveW9AddressFromDocuSeal] worker ${workerId}: used generic text field fallback: addr="${w9Address}" csz="${w9CityStateZip}"`);
     }
     // Parse city, state, zip from "city, state, zip" format
     let city = '', state = '', zip = '';
