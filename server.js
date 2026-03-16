@@ -2408,6 +2408,10 @@ function dsealGetCreds() {
   }
 }
 
+function dsealPublicHost() {
+  return (dsealGetCreds().baseUrl).replace(/api\./, 'app.').replace(/\/+$/, '');
+}
+
 function dsealEnabled() {
   const { apiKey, baseUrl } = dsealGetCreds();
   return !!(apiKey && baseUrl);
@@ -2488,7 +2492,7 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   }
   // Also try constructing direct URL from slug
   const workerSlug = worker?.slug || '';
-  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = dsealPublicHost();
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   console.log(`[DocuSeal] Worker sign URL: ${(finalWorkerUrl||'NONE').substring(0,100)}`);
@@ -2521,7 +2525,7 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
     const companyEmbedSrc = company?.embed_src || '';
     let workerSignUrl = worker?.embed_src || '';
     const workerSlug = worker?.slug || '';
-    const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+    const baseHost = dsealPublicHost();
     if (!workerSignUrl && workerSlug) workerSignUrl = `${baseHost}/s/${workerSlug}`;
     return { submissionId, companyEmbedSrc, workerSignUrl };
   }
@@ -2580,7 +2584,7 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
     } catch (e) { console.error(`[DocuSeal] Failed to get worker embed_src: ${e.message}`); }
   }
   const workerSlug = worker?.slug || '';
-  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = dsealPublicHost();
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
@@ -4159,7 +4163,7 @@ async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip,
     } catch (e) { console.error(`[DocuSeal W-9] Failed to get embed_src: ${e.message}`); }
   }
   const slug = signer?.slug || '';
-  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = dsealPublicHost();
   const directUrl = slug ? `${baseHost}/s/${slug}` : '';
   const finalWorkerUrl = directUrl || workerSignUrl;
   console.log(`[DocuSeal W-9] Worker sign URL: ${(finalWorkerUrl || 'NONE').substring(0, 100)}`);
@@ -7174,7 +7178,7 @@ app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) =>
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
   if (templateId) {
-    const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+    const baseHost = dsealPublicHost();
     const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:20px;background:#f9fafb;font-family:Arial,sans-serif}</style></head><body>
       <div style="text-align:center;padding:2rem;color:#555">
         <p style="font-size:1.1rem;font-weight:600">使用 DocuSeal 官方 W-9 模板</p>
@@ -7408,7 +7412,7 @@ app.get('/api/worker/contract-sign-url', requireWorker, async (req, res) => {
             if (wPut.data?.embed_src) signUrl = wPut.data.embed_src;
           }
           if (!signUrl && workerSub.slug) {
-            const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+            const baseHost = dsealPublicHost();
             signUrl = `${baseHost}/s/${workerSub.slug}`;
           }
           // Update stored URL
@@ -13622,7 +13626,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                       if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
                     }
                     if (!workerSignUrl && workerSub.slug) {
-                      const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+                      const baseHost = dsealPublicHost();
                       workerSignUrl = `${baseHost}/s/${workerSub.slug}`;
                     }
                   }
@@ -14533,11 +14537,8 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
-    'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id'];
-  const _rawBase = dsealGetCreds().baseUrl;
-  const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL ||
-    _rawBase.replace('api.docuseal.co', 'app.docuseal.co').replace(/api\./, '').replace(/\/+$/, '');
+    'contractor_invoice_template_id','invoice_approval_template_id'];
+  const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
   const out = { connected: dsealEnabled(), url: _publicUrl };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
