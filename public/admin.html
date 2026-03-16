@@ -2903,20 +2903,32 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- 承包商發票 预览链接 Modal -->
-<div class="modal-bg" id="dsInvPreviewModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-  <div class="modal" style="max-width:520px;width:95vw">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+<div class="modal-bg" id="dsInvPreviewModal" style="display:none" onclick="if(event.target===this)closeDsInvPreview()">
+  <div class="modal" style="max-width:92vw;width:92vw;height:90vh;display:flex;flex-direction:column;padding:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-shrink:0">
       <h2 style="margin:0;font-size:1rem">🔍 预览发票文件</h2>
-      <button class="btn btn-outline" onclick="document.getElementById('dsInvPreviewModal').style.display='none'">✕ 关闭</button>
+      <div style="display:flex;gap:.75rem;align-items:center">
+        <a id="dsInvPreviewLink" href="#" target="_blank" rel="noopener"
+          style="font-size:.82rem;color:#0369a1;text-decoration:none;padding:.3rem .7rem;border:1px solid #7dd3fc;border-radius:5px;background:#f0f9ff">
+          ↗ 新标签页打开
+        </a>
+        <button class="btn btn-outline" onclick="closeDsInvPreview()">✕ 关闭</button>
+      </div>
     </div>
-    <div id="dsInvPreviewInfo" style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem"></div>
-    <div style="padding:1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;text-align:center">
-      <div style="font-size:.88rem;color:#0369a1;margin-bottom:.75rem">点击下方按钮在新标签页中打开文件：</div>
-      <a id="dsInvPreviewLink" href="#" target="_blank" rel="noopener"
-        style="display:inline-block;padding:.5rem 1.25rem;background:#0369a1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;font-size:.88rem"
-        onclick="document.getElementById('dsInvPreviewModal').style.display='none'">
-        📄 打开文件
-      </a>
+    <div id="dsInvPreviewInfo" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.4rem;flex-shrink:0"></div>
+    <div id="dsInvPreviewFrameWrap" style="flex:1;position:relative;min-height:0">
+      <iframe id="dsInvPreviewFrame" src="about:blank"
+        style="width:100%;height:100%;border:1px solid var(--gray-200);border-radius:8px;display:block"
+        allow="camera;microphone;clipboard-write">
+      </iframe>
+      <div id="dsInvPreviewFallback" style="display:none;position:absolute;inset:0;background:#f9fafb;border:1px solid var(--gray-200);border-radius:8px;display:none;align-items:center;justify-content:center;flex-direction:column;gap:1rem;text-align:center;padding:2rem">
+        <div style="font-size:2rem">⚠️</div>
+        <div style="font-size:.9rem;color:var(--gray-600)">该页面不允许嵌入显示</div>
+        <a id="dsInvPreviewFallbackLink" href="#" target="_blank" rel="noopener"
+          style="display:inline-block;padding:.6rem 1.5rem;background:#0369a1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;font-size:.9rem">
+          📄 点此在新标签页打开
+        </a>
+      </div>
     </div>
   </div>
 </div>
@@ -2925,7 +2937,7 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="invEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal" style="max-width:560px;width:95vw">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-      <h2 style="margin:0;font-size:1rem">✏️ 编辑预生成发票</h2>
+      <h2 style="margin:0;font-size:1rem">✏️ 修改发票信息</h2>
       <button class="btn btn-outline" onclick="document.getElementById('invEditModal').style.display='none'">✕ 关闭</button>
     </div>
     <input type="hidden" id="invEditId">
@@ -18348,7 +18360,8 @@ async function loadEmpInvoiceTab() {
           <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
         ` : r.status === 'ds_pending' ? `
           <span style="font-size:.72rem;color:#0369a1">等待员工签字…</span><br>
-          <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
+          <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px;margin-bottom:2px" onclick="openInvEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 修改</button><br>
+          <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
         ` : r.status === 'pre_generated' ? `
           <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-bottom:2px" onclick="openInvEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button><br>
           <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
@@ -18466,6 +18479,16 @@ function previewInvoiceTemplate() {
   }
 }
 
+function closeDsInvPreview() {
+  const modal = document.getElementById('dsInvPreviewModal');
+  modal.style.display = 'none';
+  // Clear iframe to stop loading
+  const frame = document.getElementById('dsInvPreviewFrame');
+  frame.src = 'about:blank';
+  document.getElementById('dsInvPreviewFallback').style.display = 'none';
+  frame.style.display = 'block';
+}
+
 async function previewDsInvoice(invoiceId) {
   try {
     showToast('获取预览链接中…', 'info');
@@ -18473,16 +18496,63 @@ async function previewDsInvoice(invoiceId) {
     if (r && r.url) {
       const modal = document.getElementById('dsInvPreviewModal');
       const link = document.getElementById('dsInvPreviewLink');
+      const fallbackLink = document.getElementById('dsInvPreviewFallbackLink');
       const info = document.getElementById('dsInvPreviewInfo');
+      const frame = document.getElementById('dsInvPreviewFrame');
+      const fallback = document.getElementById('dsInvPreviewFallback');
+
       link.href = r.url;
+      fallbackLink.href = r.url;
       if (r.completed || r.type === 'document') {
-        info.textContent = '该发票已签署完成，点击打开已签署的 PDF 文件。';
-        link.textContent = '📄 打开已签署文件';
+        info.textContent = '该发票已签署完成（PDF 文件）。';
+        link.textContent = '↗ 新标签页打开';
       } else {
-        info.textContent = '该发票尚未签署，点击打开 DocuSeal 签署页面（承包商视角）。';
-        link.textContent = '🔗 打开签署页面';
+        info.textContent = '该发票尚未签署，以下为 DocuSeal 签署页面（承包商视角）。';
+        link.textContent = '↗ 新标签页打开';
       }
+
+      // Reset state
+      fallback.style.display = 'none';
+      frame.style.display = 'block';
+      frame.src = 'about:blank';
+
       modal.style.display = 'flex';
+
+      // Load URL in iframe; if X-Frame-Options blocks it show fallback
+      setTimeout(() => {
+        frame.src = r.url;
+        // Detect load failure (X-Frame-Options / CSP) after a delay
+        const timer = setTimeout(() => {
+          // If iframe loaded an error page or is blank, show fallback
+          try {
+            const doc = frame.contentDocument || frame.contentWindow?.document;
+            if (!doc || doc.title === '' || frame.contentWindow?.location?.href === 'about:blank') {
+              fallback.style.display = 'flex';
+              frame.style.display = 'none';
+            }
+          } catch(e) {
+            // Cross-origin access blocked = iframe loaded external content (good)
+          }
+        }, 4000);
+        frame.onload = () => {
+          clearTimeout(timer);
+          try {
+            // If we CAN read contentDocument, it means same-origin loaded
+            const doc = frame.contentDocument;
+            if (doc && (doc.body?.innerHTML === '' || doc.title === 'about:blank')) {
+              fallback.style.display = 'flex';
+              frame.style.display = 'none';
+            }
+          } catch(e) {
+            // Cross-origin = normal, iframe is showing external content
+          }
+        };
+        frame.onerror = () => {
+          clearTimeout(timer);
+          fallback.style.display = 'flex';
+          frame.style.display = 'none';
+        };
+      }, 50);
     } else {
       showToast(r?.error || '无法获取预览链接', 'error');
     }

@@ -8728,7 +8728,7 @@ app.patch('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin
   try {
     const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: '发票不存在' });
-    if (inv.status !== 'pre_generated') return res.status(400).json({ error: '只有预生成发票可以编辑' });
+    if (!['pre_generated', 'ds_pending'].includes(inv.status)) return res.status(400).json({ error: '只有预生成或待签署发票可以编辑' });
     const { service_description, total_amount, invoice_date, service_period_start, service_period_end } = req.body;
     db.prepare(`UPDATE contractor_invoices SET
       service_description=COALESCE(?,service_description),
