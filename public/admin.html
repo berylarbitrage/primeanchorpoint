@@ -1359,9 +1359,12 @@ tr:hover td{background:var(--sky-light)}
       <h3 style="margin:0 0 1rem">发票信息</h3>
 
       <!-- Meta info -->
-      <input type="hidden" id="invPageNumber">
       <input type="hidden" id="invPageEditId">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+        <div class="field">
+          <label>Invoice # <span style="font-size:.75rem;color:var(--gray-400)">(自动生成)</span></label>
+          <input type="text" id="invPageNumber" readonly style="background:#f5f5f5;color:#0369a1;font-family:monospace;font-weight:600;cursor:default" placeholder="填写公司名后自动生成">
+        </div>
         <div class="field">
           <label>Invoice 日期</label>
           <input type="date" id="invPageDate">
@@ -22574,6 +22577,14 @@ function onInvBillNameInput() {
   const selectedName = sr ? sr.value.trim() : '';
   if (billName !== selectedName) {
     window._invpSelectedPartnerState = null;
+  }
+  // Auto-refresh invoice number when company name changes (debounced)
+  clearTimeout(window._invpBillNameTimer);
+  if (billName) {
+    window._invpBillNameTimer = setTimeout(() => {
+      const numEl = document.getElementById('invPageNumber');
+      if (numEl) { numEl.value = ''; invpRefreshInvoiceNumber(); }
+    }, 600);
   }
 }
 
