@@ -8716,15 +8716,14 @@ app.get('/api/admin/contractor-invoices/:id/signing-url', requireAdmin, requireR
     }
     const submitter = (sub.submitters || [])[0];
     if (!submitter) return res.status(404).json({ error: '找不到签署人信息' });
-    // Prefer embed_src (DocuSeal's own public URL) over constructing from slug
-    let signingUrl = submitter.embed_src || '';
-    if (!signingUrl) {
-      const baseHost = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
-      const slug = submitter.slug || '';
-      signingUrl = slug ? `${baseHost}/s/${slug}` : '';
-    }
+    // Call PUT to get fresh embed_src — GET /submissions does not return embed_src
+    const u = await dsealApiCall('PUT', `/api/submitters/${submitter.id}`, { name: submitter.name });
+    const freshEmbedSrc = u.data?.embed_src || '';
+    const slug = u.data?.slug || submitter.slug || '';
+    const baseHost = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
+    const signingUrl = freshEmbedSrc || (slug ? `${baseHost}/s/${slug}` : '');
     if (!signingUrl) return res.status(404).json({ error: '无法获取预览链接' });
-    res.json({ url: signingUrl, status: submitter.status, completed: sub.status === 'completed', type: 'signing' });
+    res.json({ url: signingUrl, embed_src: freshEmbedSrc || signingUrl, status: submitter.status, completed: sub.status === 'completed', type: 'signing' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -12957,11 +12956,16 @@ app.get('/api/worker/contractor-invoices/:id/signing-url', requireWorker, async 
     const baseHost = dsealPublicHost();
     const submitter = (sub.submitters || [])[0];
     if (!submitter) return res.status(404).json({ error: '找不到签署人信息 / Signer info not found' });
-    const slug = submitter.slug || '';
-    const signingUrl = slug ? `${baseHost}/s/${slug}` : (submitter.embed_src || '');
+    // Always call PUT to get a fresh embed_src — GET /submissions does not return embed_src.
+    // embed_src uses DocuSeal's own APP_URL (publicly accessible), while slug URLs use our
+    // internal DOCUSEAL_URL which may not be reachable from the worker's browser.
+    // embed_src also allows iframe embedding; direct /s/xxx URLs may have X-Frame-Options set.
+    const u = await dsealApiCall('PUT', `/api/submitters/${submitter.id}`, { name: submitter.name });
+    const freshEmbedSrc = u.data?.embed_src || '';
+    const slug = u.data?.slug || submitter.slug || '';
+    const signingUrl = freshEmbedSrc || (slug ? `${baseHost}/s/${slug}` : '');
     if (!signingUrl) return res.status(404).json({ error: '无法获取签署链接 / Unable to get signing URL' });
-    const embedSrc = submitter.embed_src || signingUrl;
-    res.json({ url: signingUrl, embed_src: embedSrc, status: submitter.status, completed: sub.status === 'completed' });
+    res.json({ url: signingUrl, embed_src: freshEmbedSrc || signingUrl, status: submitter.status, completed: sub.status === 'completed' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
