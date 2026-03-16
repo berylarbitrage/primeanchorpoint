@@ -2742,6 +2742,10 @@ tr:hover td{background:var(--sky-light)}
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人邮箱：</label>
     <input id="w9WorkerEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="worker@email.com">
   </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手机号码（确认）：</label>
+    <input id="w9WorkerPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (555) 000-0000">
+  </div>
   <!-- W-9 Template Selector -->
   <div style="margin:.75rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.4rem">选择 W-9 模板：</label>
@@ -16994,6 +16998,7 @@ async function openW9SendModal() {
   const w = _onboardingWorkerData;
   document.getElementById('w9WorkerName').textContent = w ? (w.name || w.username || '') : '';
   document.getElementById('w9WorkerEmail').value = (w && w.email) || '';
+  document.getElementById('w9WorkerPhone').value = (w && w.phone) || '';
   document.getElementById('w9DsStatus').style.display = 'none';
   document.getElementById('w9RefreshBtn').style.display = 'none';
   document.getElementById('w9DownloadBtn').style.display = 'none';
@@ -17069,11 +17074,14 @@ function updateW9DsStatusUI(status) {
 async function doSendW9() {
   if (!_onboardingWorkerId) return;
   const email = document.getElementById('w9WorkerEmail').value.trim();
+  const phone = document.getElementById('w9WorkerPhone').value.trim();
   if (!email) { showToast('请填写工人邮箱', 'error'); return; }
-  if (!await showConfirm(`确认发送 W-9 签字请求至 ${email}？\n\n系统将自动生成 W-9 并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。`)) return;
+  if (!phone) { showToast('请填写并确认工人手机号码', 'error'); return; }
+  const confirmMsg = `确认发送 W-9 签字请求至：\n\n邮箱：${email}\n手机：${phone}\n\n系统将自动生成 W-9 并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。`;
+  if (!await showConfirm(confirmMsg)) return;
   const btn = document.getElementById('w9SendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
-  const sendBody = { worker_email: email };
+  const sendBody = { worker_email: email, worker_phone: phone };
   if (_w9SelectedTemplateId) sendBody.template_id = _w9SelectedTemplateId;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-w9`, {
     method: 'POST', body: JSON.stringify(sendBody)
