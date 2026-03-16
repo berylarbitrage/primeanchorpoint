@@ -2809,6 +2809,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
   <div id="w9AddressBox" style="display:none;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem"></div>
+  <div id="w9AddrVerify" style="display:none;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line"></div>
   <div style="margin:.75rem 0;padding:.6rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1">
     <b>流程：</b>点击「发送」后，系统自动生成 W-9 表格并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。
   </div>
@@ -14095,7 +14096,7 @@ function renderOnboardingTasks(tasks) {
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : t.key==='w9'
-            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'?'✅ W-9 已签署':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>`
+            ? `<button class="btn btn-sm" style="background:${s==='submitted'&&t.ds_status==='completed'?'#fef2f2':'#fefce8'};color:${s==='submitted'&&t.ds_status==='completed'?'#dc2626':'#854d0e'};border:1px solid ${s==='submitted'&&t.ds_status==='completed'?'#fecaca':'#fde68a'};font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'&&s==='completed'?'✅ W-9 已签署':t.ds_status==='completed'&&s==='submitted'?'⚠️ 地址待核对':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>`
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : t.key==='work_auth'
@@ -17101,6 +17102,7 @@ async function openW9SendModal() {
       // Always auto-poll DocuSeal for current status when modal opens —
       // so if worker already signed, the download button appears immediately
       updateW9DsStatusUI('checking');
+      document.getElementById('w9AddrVerify').style.display = 'none';
       try {
         const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-status`);
         if (r && r.status) {
@@ -17109,6 +17111,17 @@ async function openW9SendModal() {
             showW9AddressBox(r.w9Address, r.w9CityStateZip);
             document.getElementById('w9DownloadBtn').style.display = '';
             refreshOnboardingModal();
+          }
+          // Show address verification result
+          if (r.addressCheck) {
+            const addrEl = document.getElementById('w9AddrVerify');
+            if (r.addressCheck.match) {
+              addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+              addrEl.textContent = '📍 ' + r.addressCheck.note;
+            } else {
+              addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+              addrEl.textContent = '📍 ' + r.addressCheck.note;
+            }
           }
         } else {
           updateW9DsStatusUI(w9Task.ds_status || 'sent');
@@ -17209,6 +17222,18 @@ async function refreshW9Status() {
     if (r.workerSigned) info += ` | 工人已签: ${new Date(r.workerSigned).toLocaleString('zh-CN')}`;
     if (r.declineReason) info += ` | 拒签原因: ${r.declineReason}`;
     showToast(info, 'info', 5000);
+    if (r.status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
+    // Show address verification result
+    if (r.addressCheck) {
+      const addrEl = document.getElementById('w9AddrVerify');
+      if (r.addressCheck.match) {
+        addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+        addrEl.textContent = '📍 ' + r.addressCheck.note;
+      } else {
+        addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+        addrEl.textContent = '📍 ' + r.addressCheck.note;
+      }
+    }
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
