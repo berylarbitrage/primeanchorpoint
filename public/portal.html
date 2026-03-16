@@ -1960,7 +1960,7 @@ function setPortalLang(lang) {
   // Save language preference to server
   fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang }) }).catch(() => {});
   if (_activeTab === 'profile') loadProfile();
-  else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
+  else if (_activeTab === 'payments') { loadPayments(); loadContractorInvoices(); }
   else if (_activeTab === 'todos') loadOnboarding();
   else if (_activeTab === 'referral') loadReferrals();
   else if (_activeTab === 'interview') loadInterview();
@@ -2262,7 +2262,7 @@ async function showApp() {
     _lastAutoRefresh = now;
     if (_activeTab === 'applications') loadApplications();
     else if (_activeTab === 'timeclock') loadTimeclock();
-    else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
+    else if (_activeTab === 'payments') { loadPayments(); loadContractorInvoices(); }
     else if (_activeTab === 'compliance') loadCompliance();
     else if (_activeTab === 'profile') loadProfile();
     else if (_activeTab === 'interview') loadInterview();
@@ -2295,7 +2295,7 @@ function showTab(tab) {
   closeSidebar();
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
-  else if (tab === 'payments') loadPayments(); loadContractorInvoices();
+  else if (tab === 'payments') { loadPayments(); loadContractorInvoices(); }
   else if (tab === 'compliance') loadCompliance();
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
