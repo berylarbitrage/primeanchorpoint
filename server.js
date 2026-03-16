@@ -2710,11 +2710,11 @@ function generateW9HtmlTemplate(workerName) {
     <tr>
       <td style="width:65%">
         <div style="font-size:8pt;margin-bottom:2px"><strong>Signature of U.S. person ▶</strong></div>
-        <signature-field name="w9_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+        <signature-field name="w9_signature" role="Signer" required="true" preferences='{"signature_type":["drawn"]}' style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       </td>
       <td style="width:35%;padding-left:10px">
         <div style="font-size:8pt;margin-bottom:2px"><strong>Date ▶</strong></div>
-        <date-field name="w9_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+        <date-field name="w9_date" role="Signer" required="true" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
       </td>
     </tr>
   </table>
@@ -4171,11 +4171,11 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
     // Fallback: generate HTML template
     const w9Html = generateW9HtmlTemplate(workerName);
     const fallbackFields = [
-      { name: 'w9_name', default_value: workerName, readonly: false },
-      { name: 'w9_date', default_value: todayDate, readonly: true }
+      { name: 'w9_name', default_value: workerName, readonly: false, required: true },
+      { name: 'w9_date', default_value: todayDate, readonly: false, required: true }
     ];
-    if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false });
-    if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
+    if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false, required: true });
+    if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false, required: true });
     const w9FallbackSubmitter = { role: 'Signer', name: workerName, email: workerEmail, fields: fallbackFields };
     if (workerPhone) w9FallbackSubmitter.phone = formatPhoneE164(workerPhone);
     subRes = await dsealApiCall('POST', '/api/submissions/html', {
@@ -14992,6 +14992,32 @@ app.put('/api/admin/docuseal/my-templates/:id/category', requireAdmin, (req, res
   if (!local) return res.status(404).json({ error: '模板不存在' });
   db.prepare('UPDATE docuseal_templates SET category=? WHERE id=?').run(category.trim(), req.params.id);
   res.json({ success: true, category: category.trim() });
+});
+
+// POST /api/admin/docuseal/templates/:dsId/apply-field-requirements
+// Apply required=true to all fields and draw-only to signature fields on an existing template
+app.post('/api/admin/docuseal/templates/:dsId/apply-field-requirements', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const tmplRes = await dsealApiCall('GET', `/api/templates/${req.params.dsId}`, null);
+    if (tmplRes.status >= 400 || !tmplRes.data) {
+      return res.status(tmplRes.status || 500).json({ error: '無法取得模板資料', detail: tmplRes.data });
+    }
+    const fields = tmplRes.data.fields || [];
+    if (!fields.length) return res.status(400).json({ error: '模板沒有欄位' });
+    const updatedFields = fields.map(f => {
+      const upd = { uuid: f.uuid, name: f.name, required: true };
+      if (f.type === 'signature') {
+        upd.preferences = { signature_type: ['drawn'] };
+      }
+      return upd;
+    });
+    const putRes = await dsealApiCall('PUT', `/api/templates/${req.params.dsId}`, { fields: updatedFields });
+    if (putRes.status >= 400) {
+      return res.status(putRes.status).json({ error: '更新模板欄位失敗', detail: putRes.data });
+    }
+    res.json({ success: true, updated_fields: updatedFields.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // PUT /api/admin/docuseal/templates/:dsId/rename — rename a template via DocuSeal API + local DB
