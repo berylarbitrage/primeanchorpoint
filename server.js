@@ -15980,9 +15980,10 @@ async function autoRegenerateContractorInvoiceTemplates() {
     try {
       const fields = await dsealGetTemplateFieldNames(templateId);
       if (fields === null) continue; // couldn't fetch, skip
-      if (!fields.has('bill_to_company')) {
-        // Old template without bill_to_company field — regenerate with updated HTML
-        console.log(`[startup] Regenerating ${type} template (bill_to_company field missing)...`);
+      if (!fields.has('bill_to_company') || !fields.has('invoice_number')) {
+        // Old template missing required fields — regenerate with updated HTML
+        const missing = ['bill_to_company', 'invoice_number'].filter(f => !fields.has(f)).join(', ');
+        console.log(`[startup] Regenerating ${type} template (missing fields: ${missing})...`);
         const html = tmplDef.generator();
         const r = await dsealApiCall('POST', '/api/templates/html', {
           name: tmplDef.name,
