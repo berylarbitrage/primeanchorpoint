@@ -2833,6 +2833,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
     <button class="btn btn-green" id="invSendBtn" onclick="doSendInvoice()">📤 發送發票</button>
+    <button class="btn" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc" onclick="previewInvoiceTemplate()">🔍 预览模板</button>
     <button class="btn" onclick="closeModal('invSendModal')">关闭</button>
   </div>
 </div></div>
@@ -18095,6 +18096,10 @@ async function doSendInvoice() {
   } else {
     showToast(r?.error || '发送失败', 'error');
   }
+}
+
+function previewInvoiceTemplate() {
+  window.open('/api/admin/contractor-invoices/preview-template', '_blank');
 }
 
 async function previewDsInvoice(invoiceId) {
