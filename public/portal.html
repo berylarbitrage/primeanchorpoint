@@ -497,6 +497,7 @@ function googleTranslateElementInit() {
       <a data-tab="applications" onclick="showTab('applications')"><span class="nav-icon">📝</span><span class="nav-label">我的申请</span><span class="nav-badge" id="badgeApplications"></span></a>
       <a data-tab="timeclock" onclick="showTab('timeclock')"><span class="nav-icon">⏱️</span><span class="nav-label">打卡记录</span><span class="nav-badge" id="badgeTimeclock"></span></a>
       <a data-tab="payments" onclick="showTab('payments')"><span class="nav-icon">💰</span><span class="nav-label">打款记录</span><span class="nav-badge" id="badgePayments"></span></a>
+      <a data-tab="invoice" id="navInvoice" onclick="showTab('invoice')" style="display:none"><span class="nav-icon">📄</span><span class="nav-label">我的 Invoice</span><span class="nav-badge" id="badgeInvoice"></span></a>
 
       <a data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none"><span class="nav-icon">✅</span><span class="nav-label">待办事项</span><span class="nav-badge" id="badgeTodos"></span></a>
       <a data-tab="referral" onclick="showTab('referral')"><span class="nav-icon">🎁</span><span class="nav-label">推荐奖励</span><span class="nav-badge" id="badgeReferral"></span></a>
@@ -763,7 +764,10 @@ function googleTranslateElementInit() {
         <div id="paymentsTable"></div>
       </div>
 
-      <!-- Contractor Invoice / Payment Request (1099 only) -->
+    </div>
+
+    <!-- Invoice (separate page for 1099 contractors) -->
+    <div id="tabInvoice" style="display:none">
       <div class="card" id="contractorInvoiceCard" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
           <h2 style="margin:0">📄 Invoice / Payment Request</h2>
@@ -1150,7 +1154,7 @@ const PORTAL_I18N = {
     loginForgot: '忘记密码？',
     loginRegister: '注册账号',
     subtitle: '员工自助平台', logout: '退出',
-    tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', todos:'待办事项', referral:'推荐奖励', profile:'我的信息' },
+    tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', invoice:'我的 Invoice', todos:'待办事项', referral:'推荐奖励', profile:'我的信息' },
     searchPlaceholder: '搜索职位、地点...',
     filterType: '职位类型', filterAuth: '工作身份要求', filterShift: '班型', filterUrgent: '优先级',
     all: '全部', noLimit: '不限',
@@ -1308,7 +1312,7 @@ const PORTAL_I18N = {
     loginForgot: 'Forgot password?',
     loginRegister: 'Register',
     subtitle: 'Employee Self-Service', logout: 'Logout',
-    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', todos:'To-Do', referral:'Referrals', profile:'Profile' },
+    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', invoice:'My Invoice', todos:'To-Do', referral:'Referrals', profile:'Profile' },
     searchPlaceholder: 'Search jobs, locations...',
     filterType: 'Job Type', filterAuth: 'Work Authorization', filterShift: 'Shift', filterUrgent: 'Priority',
     all: 'All', noLimit: 'Any',
@@ -1466,7 +1470,7 @@ const PORTAL_I18N = {
     loginForgot: '¿Olvidó su contraseña?',
     loginRegister: 'Registrarse',
     subtitle: 'Autoservicio del Empleado', logout: 'Salir',
-    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', todos:'Tareas', referral:'Referidos', profile:'Perfil' },
+    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', invoice:'Mi Factura', todos:'Tareas', referral:'Referidos', profile:'Perfil' },
     searchPlaceholder: 'Buscar empleos, ubicaciones...',
     filterType: 'Tipo de empleo', filterAuth: 'Autorización de trabajo', filterShift: 'Turno', filterUrgent: 'Prioridad',
     all: 'Todos', noLimit: 'Cualquiera',
@@ -1961,6 +1965,13 @@ async function showApp() {
   if (navTimeclock) navTimeclock.style.display = (perWorkerTimeclock || _workerPortalMode === 'timeclock') ? '' : 'none';
   _workerInfo = me;
   _workerEmploymentType = me.account?.employment_type || '';
+  // Show invoice nav for 1099 contractors with invoice enabled
+  const navInvoice = document.getElementById('navInvoice');
+  if (navInvoice) {
+    const is1099 = _workerEmploymentType === '1099';
+    const invoiceOn = perWorkerInvoice || _workerPortalMode === 'invoice';
+    navInvoice.style.display = (is1099 && invoiceOn) ? '' : 'none';
+  }
   const firstName = me.employee
     ? me.employee.first_name
     : (me.account.first_name || (me.account.name || '').split(' ')[0] || '');
@@ -2025,7 +2036,7 @@ function closeSidebar() {
 }
 function showTab(tab) {
   _activeTab = tab;
-  ['jobs','interview','applications','timeclock','payments','todos','referral','profile'].forEach(t => {
+  ['jobs','interview','applications','timeclock','payments','invoice','todos','referral','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -2033,7 +2044,8 @@ function showTab(tab) {
   closeSidebar();
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
-  else if (tab === 'payments') { loadPayments(); loadContractorInvoices(); }
+  else if (tab === 'payments') { loadPayments(); }
+  else if (tab === 'invoice') { loadContractorInvoices(); }
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
   else if (tab === 'todos') loadOnboarding();
