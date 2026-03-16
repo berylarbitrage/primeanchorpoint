@@ -5642,8 +5642,6 @@ async function openWorkerW9Sign() {
   formDiv.style.display = 'none';
   formDiv.innerHTML = '';
   msgEl.textContent = '加载 W-9 签署页面中…';
-  // Clean up any previous postMessage listener
-  if (window._w9MsgHandler) { window.removeEventListener('message', window._w9MsgHandler); window._w9MsgHandler = null; }
   try {
     const r = await wApi('/w9-sign-url');
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
@@ -5655,70 +5653,24 @@ async function openWorkerW9Sign() {
       setTimeout(() => loadOnboarding(), 5000);
       return;
     }
-    // Use iframe for universal compatibility (works with both cloud and self-hosted DocuSeal,
-    // and does not depend on the cdn.docuseal.com/js/form.js CDN script being loaded)
-    const safeUrl = r.signUrl.replace(/'/g, "\\'");
-    const fallbackHtml = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;color:#64748b;font-size:.9rem">
-      <div>⚠️ 表单加载失败 / Form failed to load</div>
-      <button onclick="window.open('${safeUrl}','_blank');closeWorkerW9Sign();showToast('✅ W-9 签署页面已在新标签页打开')" style="padding:.5rem 1.5rem;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">在新标签页打开 / Open in New Tab</button>
-      <button onclick="closeWorkerW9Sign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭 / Close</button>
-    </div>`;
-    const iframe = document.createElement('iframe');
-    iframe.src = r.signUrl;
-    iframe.style.cssText = 'width:100%;height:100%;border:none;display:block';
-    iframe.allow = 'clipboard-write';
-    let iframeLoaded = false;
-    let formInitReceived = false;
-    // Handle immediate load errors
-    iframe.onerror = () => { formDiv.innerHTML = fallbackHtml; };
-    // Detect failures after iframe "loads" (e.g. X-Frame-Options block, unreachable server)
-    iframe.onload = () => {
-      iframeLoaded = true;
-      try {
-        // If same-origin and body is empty or shows error, it failed
-        const doc = iframe.contentDocument;
-        if (doc && (!doc.body || doc.body.childElementCount === 0 || doc.body.innerText.length < 10)) {
-          formDiv.innerHTML = fallbackHtml;
-          return;
-        }
-      } catch (_) { /* cross-origin = content loaded from external server, can't inspect */ }
-      // For cross-origin iframes, onload fires even when content is broken.
-      // Show "Open in New Tab" escape hatch after a short delay if no form init event received.
-      setTimeout(() => {
-        if (!formInitReceived && formDiv.contains(iframe)) {
-          const hint = document.createElement('div');
-          hint.style.cssText = 'text-align:center;padding:.5rem;background:#fef3c7;border-top:1px solid #e2e8f0;font-size:.85rem;color:#92400e';
-          hint.innerHTML = '如果表单未显示 / If the form is not showing: <button onclick="window.open(\'' + safeUrl + '\',\'_blank\');closeWorkerW9Sign();showToast(\'✅ W-9 签署页面已在新标签页打开\')" style="padding:.25rem .75rem;background:#1a7ed4;color:#fff;border:none;border-radius:6px;font-size:.85rem;cursor:pointer;margin-left:.5rem">在新标签页打开 / Open in New Tab</button>';
-          formDiv.appendChild(hint);
-        }
-      }, 4000);
-    };
-    // Listen for DocuSeal completion/decline/init postMessage events from the iframe
-    window._w9MsgHandler = function(e) {
-      const d = e.data;
-      if (!d || typeof d !== 'object') return;
-      const t = d.type || d.action || '';
-      // Track form initialization — proves the iframe content is working
-      if (t.includes('docuseal:') || t.includes('form:')) formInitReceived = true;
-      if (t === 'docuseal:form:completed' || t === 'form:completed' || t === 'completed') {
-        window.removeEventListener('message', window._w9MsgHandler); window._w9MsgHandler = null;
-        clearTimeout(loadTimeout);
-        closeWorkerW9Sign();
-        showToast('✅ W-9 已签署完成！', 'success', 6000);
-        loadOnboarding();
-      } else if (t === 'docuseal:form:declined' || t === 'form:declined' || t === 'declined') {
-        window.removeEventListener('message', window._w9MsgHandler); window._w9MsgHandler = null;
-        clearTimeout(loadTimeout);
-        closeWorkerW9Sign();
-        showToast('您已拒绝签署 W-9', 'info');
-      }
-    };
-    window.addEventListener('message', window._w9MsgHandler);
-    // Timeout fallback — if iframe hasn't loaded at all after 8 seconds, replace with fallback
-    const loadTimeout = setTimeout(() => {
-      if (!iframeLoaded) { formDiv.innerHTML = fallbackHtml; }
-    }, 8000);
-    formDiv.appendChild(iframe);
+    // Use DocuSeal web component (same approach as contract signing modal)
+    // The <docuseal-form> component handles rendering, signatures, and communication reliably.
+    const form = document.createElement('docuseal-form');
+    form.setAttribute('data-src', r.signUrl);
+    form.setAttribute('data-with-draw-signature', 'true');
+    form.setAttribute('data-with-typed-signature', 'true');
+    form.setAttribute('data-with-upload-signature', 'true');
+    form.style.width = '100%';
+    form.addEventListener('completed', () => {
+      closeWorkerW9Sign();
+      showToast('✅ W-9 已签署完成！', 'success', 6000);
+      loadOnboarding();
+    });
+    form.addEventListener('declined', () => {
+      closeWorkerW9Sign();
+      showToast('您已拒绝签署 W-9', 'info');
+    });
+    formDiv.appendChild(form);
     loading.style.display = 'none';
     formDiv.style.display = '';
   } catch (e) {
@@ -5729,7 +5681,6 @@ async function openWorkerW9Sign() {
 }
 
 function closeWorkerW9Sign() {
-  if (window._w9MsgHandler) { window.removeEventListener('message', window._w9MsgHandler); window._w9MsgHandler = null; }
   document.getElementById('workerW9SignModal').style.display = 'none';
   document.getElementById('workerW9SignForm').innerHTML = '';
 }
