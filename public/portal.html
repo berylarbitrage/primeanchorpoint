@@ -137,17 +137,6 @@ tr:last-child td{border-bottom:none}
 .punch-type-btn.sel-in{border-color:var(--green);background:#f0fdf4;color:#15803d}
 .punch-type-btn.sel-break{border-color:var(--orange);background:#fff7ed;color:#c2410c}
 .punch-type-btn.sel-out{border-color:var(--red);background:#fef2f2;color:#dc2626}
-/* Compliance section */
-.compliance-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem}
-.compliance-item{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.25rem;position:relative}
-.compliance-item h3{font-size:.92rem;font-weight:700;color:var(--blue);margin-bottom:.5rem}
-.compliance-item .ci-status{display:inline-block;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600}
-.ci-pending{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
-.ci-approved{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7}
-.ci-rejected{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
-.ci-not-submitted{background:var(--gray-100);color:var(--gray-500);border:1px solid var(--gray-200)}
-.compliance-item .ci-date{font-size:.75rem;color:var(--gray-400);margin-top:.35rem}
-.compliance-item .ci-note{font-size:.8rem;color:var(--red);margin-top:.35rem;font-style:italic}
 .form-section{margin-bottom:1.25rem}
 .form-section h3{font-size:.95rem;font-weight:700;color:var(--blue);margin-bottom:.75rem;border-bottom:1px solid var(--gray-200);padding-bottom:.4rem}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem}
@@ -185,7 +174,7 @@ tr:last-child td{border-bottom:none}
 @media(max-width:600px){
   .job-card{flex-direction:column}
   .form-row{grid-template-columns:1fr}
-  .compliance-grid{grid-template-columns:1fr}
+
   .content{padding:0 .65rem;margin:.85rem auto}
 }
 </style>
@@ -232,7 +221,7 @@ function googleTranslateElementInit() {
       <button class="login-lang-btn" id="lbEs" onclick="setPortalLang('es')">Español</button>
     </div>
     <img src="/logo.svg" alt="Prime Anchorpoint">
-    <h1 id="loginTitle">工人门户</h1>
+    <h1 id="loginTitle">合作中心</h1>
     <p id="loginSubtitle">Worker Self-Service Portal</p>
     <input type="text" id="wLogin" data-i18n-placeholder="loginPlaceholderUser" placeholder="邮箱或手机号 / Email or Phone" autocomplete="username">
     <div class="pw-wrap">
@@ -499,7 +488,7 @@ function googleTranslateElementInit() {
       <img src="/logo.svg" alt="Prime Anchorpoint" style="width:36px;height:36px;object-fit:contain;flex-shrink:0">
       <div>
         <h2>Prime Anchorpoint</h2>
-        <div class="sub" id="portalSubtitle">工人门户</div>
+        <div class="sub" id="portalSubtitle">合作中心</div>
       </div>
     </div>
     <nav class="sidebar-nav">
@@ -508,7 +497,7 @@ function googleTranslateElementInit() {
       <a data-tab="applications" onclick="showTab('applications')"><span class="nav-icon">📝</span><span class="nav-label">我的申请</span><span class="nav-badge" id="badgeApplications"></span></a>
       <a data-tab="timeclock" onclick="showTab('timeclock')"><span class="nav-icon">⏱️</span><span class="nav-label">打卡记录</span><span class="nav-badge" id="badgeTimeclock"></span></a>
       <a data-tab="payments" onclick="showTab('payments')"><span class="nav-icon">💰</span><span class="nav-label">打款记录</span><span class="nav-badge" id="badgePayments"></span></a>
-      <a data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none"><span class="nav-icon">📋</span><span class="nav-label">合规文件</span><span class="nav-badge" id="badgeCompliance"></span></a>
+
       <a data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none"><span class="nav-icon">✅</span><span class="nav-label">待办事项</span><span class="nav-badge" id="badgeTodos"></span></a>
       <a data-tab="referral" onclick="showTab('referral')"><span class="nav-icon">🎁</span><span class="nav-label">推荐奖励</span><span class="nav-badge" id="badgeReferral"></span></a>
       <a data-tab="profile" onclick="showTab('profile')"><span class="nav-icon">👤</span><span class="nav-label">我的信息</span><span class="nav-badge" id="badgeProfile"></span></a>
@@ -781,55 +770,115 @@ function googleTranslateElementInit() {
           <button onclick="toggleInvoiceForm()" id="btnToggleInvForm" style="padding:.45rem 1rem;border:1px solid var(--blue);background:#fff;color:var(--blue);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer">+ 新建 Invoice</button>
         </div>
 
-        <!-- Invoice submission form (hidden by default) -->
+        <!-- Invoice submission form (hidden by default) — pre-filled, contractor fills only 3-5 fields -->
         <div id="invoiceFormWrap" style="display:none;border:1px solid var(--gray-200);border-radius:10px;padding:1.2rem;margin-bottom:1rem;background:#fafbfc">
-          <h3 style="margin:0 0 1rem;font-size:.95rem;color:var(--gray-700)">Invoice / Payment Request Form</h3>
+          <h3 style="margin:0 0 .6rem;font-size:.95rem;color:var(--gray-700)">Invoice / Payment Request Form</h3>
+          <p style="font-size:.78rem;color:var(--gray-500);margin:0 0 1rem">Pre-filled from your profile. Please complete the highlighted fields below.<br>系统已自动带出您的信息，请填写下方高亮栏位即可。</p>
+
+          <!-- Pre-filled summary (readonly) -->
+          <div id="invPrefillSummary" style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.82rem;color:var(--gray-700)">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .8rem">
+              <div><span style="color:var(--gray-400)">Contractor 承包商:</span> <b id="invPfName">—</b></div>
+              <div><span style="color:var(--gray-400)">Bill To 付款方:</span> <b>Prime Anchorpoint LLC</b></div>
+              <div><span style="color:var(--gray-400)">Payment Terms 付款条件:</span> <b id="invPfTerms">—</b></div>
+              <div><span style="color:var(--gray-400)">Invoice Date 发票日期:</span> <b id="invPfDate">—</b></div>
+              <div><span style="color:var(--gray-400)">Due Date 到期日:</span> <b id="invPfDue">—</b></div>
+            </div>
+          </div>
+
           <form id="contractorInvoiceForm" onsubmit="submitContractorInvoice(event)">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Service Period Start / 服务开始日期 *</label>
-                <input type="date" name="service_period_start" required style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+            <!-- Hidden prefilled fields -->
+            <input type="hidden" name="payment_due_date" id="invHiddenDueDate">
+            <input type="hidden" name="job_id" id="invHiddenJobId">
+            <input type="hidden" name="job_title" id="invHiddenJobTitle">
+            <input type="hidden" name="service_type" id="invHiddenServiceType">
+
+            <!-- Job selector (only shown if multiple active jobs) -->
+            <div id="invJobSelectWrap" style="display:none;margin-bottom:.8rem">
+              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Select Job / 选择工作</label>
+              <select id="invJobSelect" onchange="onInvJobChange()" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem"></select>
+            </div>
+
+            <!-- ===== CONTRACTOR FILLS / EDITS THESE ===== -->
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.9rem 1rem;margin-bottom:.5rem">
+              <div style="font-size:.78rem;font-weight:700;color:#92400e;margin-bottom:.6rem">Please fill in / 请填写或修改:</div>
+
+              <!-- 1. Service Period -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.8rem">
+                <div>
+                  <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">① Service Period Start / 服务开始日期 *</label>
+                  <input type="date" name="service_period_start" required style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                </div>
+                <div>
+                  <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">① Service Period End / 服务结束日期 *</label>
+                  <input type="date" name="service_period_end" required style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                </div>
               </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Service Period End / 服务结束日期 *</label>
-                <input type="date" name="service_period_end" required style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+
+              <!-- 2. Service Description (editable, pre-filled with job title) -->
+              <div style="margin-bottom:.8rem">
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">② Service Description 服务明细 * <span style="font-weight:400;color:var(--gray-400)">(pre-filled, editable / 已预填，可修改)</span></label>
+                <textarea name="service_description" id="invServiceDesc" required rows="2" placeholder="Describe services — e.g. Warehouse sorting 3 shifts, Loading 2 trips" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;resize:vertical;background:#fff"></textarea>
+              </div>
+
+              <!-- 3. Billing Mode Toggle -->
+              <div style="margin-bottom:.8rem">
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">③ Billing Mode 计费方式 *</label>
+                <div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:2px solid #f59e0b;width:fit-content">
+                  <button type="button" id="invModeHourly" onclick="setInvBillingMode('hourly')" style="padding:.4rem 1rem;font-size:.82rem;font-weight:700;border:none;cursor:pointer;background:#f59e0b;color:#fff;transition:all .15s">Hourly 按时</button>
+                  <button type="button" id="invModeProject" onclick="setInvBillingMode('project')" style="padding:.4rem 1rem;font-size:.82rem;font-weight:700;border:none;cursor:pointer;background:#fff;color:#92400e;transition:all .15s">Per-Project 按项目</button>
+                </div>
+              </div>
+
+              <!-- Hourly fields -->
+              <div id="invHourlyFields" style="margin-bottom:.8rem">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+                  <div>
+                    <label style="font-size:.72rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">Agreed Rate 约定时薪 ($) <span style="font-weight:400;color:var(--gray-400)">(editable / 可修改)</span></label>
+                    <input type="number" name="hourly_rate" id="invRateInput" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                  </div>
+                  <div>
+                    <label style="font-size:.72rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">Hours / Units 工时</label>
+                    <input type="number" name="hours_worked" step="0.5" min="0" placeholder="e.g. 40" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Per-Project fields -->
+              <div id="invProjectFields" style="display:none;margin-bottom:.8rem">
+                <label style="font-size:.72rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">Project / Engagement Fee 项目费 ($)</label>
+                <input type="number" name="flat_amount" step="0.01" min="0" placeholder="e.g. 2000.00" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                <p style="font-size:.72rem;color:var(--gray-400);margin:.3rem 0 0">e.g. 2-week warehouse engagement, loading/sorting project, cleaning contract<br>例：两周仓库作业、装卸项目、清洁合同</p>
+              </div>
+
+              <!-- 4. Expenses -->
+              <div style="margin-bottom:.8rem">
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">④ Reimbursable Expenses 费用报销 ($)</label>
+                <input type="number" name="expenses" step="0.01" min="0" value="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+              </div>
+
+              <!-- Auto-calculated total -->
+              <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.8rem;padding:.5rem .7rem;background:#fff;border-radius:6px;border:1px solid var(--gray-200)">
+                <span style="font-size:.82rem;color:var(--gray-500)">Total / 总金额:</span>
+                <span id="invCalcTotal" style="font-size:1.15rem;font-weight:800;color:var(--green)">$0.00</span>
+                <span style="font-size:.72rem;color:var(--gray-400);margin-left:auto">(hours×rate + flat + expenses)</span>
+                <input type="hidden" name="total_amount" id="invTotalAmount">
+              </div>
+
+              <!-- 5. Confirmation checkbox with manner-and-means language -->
+              <div style="margin-bottom:.3rem">
+                <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--gray-700)">
+                  <input type="checkbox" name="confirmed" required style="margin-top:2px;width:18px;height:18px;accent-color:#f59e0b">
+                  <span>⑤ I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.<br>
+                  本人确认服务已完成、金额准确。承包商保留自行决定服务执行方式与方法的权利。<br>
+                  <span style="font-size:.72rem;color:var(--gray-400)">IL FWPA: Contractor responsible for all applicable taxes. 承包商自行负责税款。</span></span>
+                </label>
               </div>
             </div>
-            <div style="margin-top:.8rem">
-              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Description of Services / 服务描述 *</label>
-              <textarea name="service_description" required rows="3" placeholder="Describe the services performed during this period..." style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-top:.8rem">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Hours Worked / 工时</label>
-                <input type="number" name="hours_worked" step="0.5" min="0" placeholder="0" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-              </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Hourly Rate / 时薪 ($)</label>
-                <input type="number" name="hourly_rate" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-              </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Or Flat Amount / 固定金额 ($)</label>
-                <input type="number" name="flat_amount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-              </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:.8rem">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Total Amount / 总金额 ($) *</label>
-                <input type="number" name="total_amount" step="0.01" min="0.01" required placeholder="0.00" id="invTotalAmount" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem;font-weight:700">
-              </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Payment Due Date / 付款到期日</label>
-                <input type="date" name="payment_due_date" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-              </div>
-            </div>
-            <div style="margin-top:.8rem">
-              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Notes / 备注</label>
-              <input type="text" name="notes" placeholder="Optional notes..." style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-            </div>
-            <div style="display:flex;gap:.6rem;margin-top:1rem;justify-content:flex-end">
-              <button type="button" onclick="toggleInvoiceForm()" style="padding:.5rem 1.2rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-600);border-radius:8px;font-size:.85rem;cursor:pointer">取消</button>
-              <button type="submit" style="padding:.5rem 1.5rem;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">📤 Submit Invoice</button>
+
+            <div style="display:flex;gap:.6rem;margin-top:.8rem;justify-content:flex-end">
+              <button type="button" onclick="toggleInvoiceForm()" style="padding:.5rem 1.2rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-600);border-radius:8px;font-size:.85rem;cursor:pointer">取消 Cancel</button>
+              <button type="submit" style="padding:.5rem 1.5rem;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">Submit Invoice 提交</button>
             </div>
           </form>
         </div>
@@ -839,274 +888,6 @@ function googleTranslateElementInit() {
       </div>
     </div>
 
-    <!-- Compliance 合规文件 -->
-    <div id="tabCompliance" style="display:none">
-      <!-- Overview cards -->
-      <div class="card">
-        <h2>合规文件概览 / Compliance Overview</h2>
-        <div class="compliance-grid" id="complianceOverview"></div>
-      </div>
-
-      <!-- Submission Summary -->
-      <div class="card" id="submissionSummaryCard" style="display:none">
-        <h2 id="sumTitleEl"></h2>
-        <div id="submissionSummaryContent"></div>
-      </div>
-
-      <!-- I-9 Form -->
-      <div class="card" id="i9FormCard" style="display:none">
-        <h2>I-9 表格 / Employment Eligibility Verification</h2>
-        <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">请填写 I-9 表格第一部分（员工信息）/ Please complete Section 1 of Form I-9</p>
-        <form id="i9Form" onsubmit="submitI9(event)">
-          <div class="form-section">
-            <h3>个人信息 / Personal Information</h3>
-            <div class="form-row">
-              <div class="form-group"><label>姓 Last Name *</label><input name="last_name" required></div>
-              <div class="form-group"><label>名 First Name *</label><input name="first_name" required></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label>中间名首字母 Middle Initial</label><input name="middle_initial" maxlength="2"></div>
-              <div class="form-group"><label>曾用姓 Other Last Names</label><input name="other_last_names"></div>
-            </div>
-            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required oninput="clearI9AddrStatus()"></div></div>
-            <div class="form-row">
-              <div class="form-group"><label>公寓号 Apt</label><input name="apt" oninput="clearI9AddrStatus()"></div>
-              <div class="form-group"><label>城市 City *</label><input name="city" required oninput="clearI9AddrStatus()"></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label>州 State *</label>
-                <select name="state" required onchange="clearI9AddrStatus()"><option value="">选择...</option>
-                <option>AL</option><option>AK</option><option>AZ</option><option>AR</option><option>CA</option><option>CO</option><option>CT</option><option>DE</option><option>FL</option><option>GA</option><option>HI</option><option>ID</option><option>IL</option><option>IN</option><option>IA</option><option>KS</option><option>KY</option><option>LA</option><option>ME</option><option>MD</option><option>MA</option><option>MI</option><option>MN</option><option>MS</option><option>MO</option><option>MT</option><option>NE</option><option>NV</option><option>NH</option><option>NJ</option><option>NM</option><option>NY</option><option>NC</option><option>ND</option><option>OH</option><option>OK</option><option>OR</option><option>PA</option><option>RI</option><option>SC</option><option>SD</option><option>TN</option><option>TX</option><option>UT</option><option>VT</option><option>VA</option><option>WA</option><option>WV</option><option>WI</option><option>WY</option><option>DC</option>
-                </select>
-              </div>
-              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required pattern="[0-9]{5}(-[0-9]{4})?" oninput="clearI9AddrStatus()" onblur="autoVerifyI9Addr()"></div>
-            </div>
-            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
-              <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyI9Addr()">🔍 验证地址 Verify</button>
-              <span id="i9AddrStatus" style="font-size:.8rem;font-weight:600"></span>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label>出生日期 DOB *</label><input name="dob" type="date" required></div>
-              <div class="form-group"><label>SSN 后4位 (可选)</label><input name="ssn_last4" maxlength="4" pattern="[0-9]{4}"></div>
-            </div>
-          </div>
-          <div class="form-section">
-            <h3>公民身份 / Citizenship Status *</h3>
-            <div class="form-group">
-              <select name="citizenship_status" required onchange="toggleI9Fields(this.value)">
-                <option value="">选择...</option>
-                <option value="citizen">美国公民 / U.S. Citizen</option>
-                <option value="noncitizen_national">非公民国民 / Noncitizen National</option>
-                <option value="permanent_resident">永久居民 / Lawful Permanent Resident (绿卡)</option>
-                <option value="work_authorized">工作授权外国人 / Alien Authorized to Work</option>
-              </select>
-            </div>
-            <div id="i9AlienFields" style="display:none;margin-top:.75rem">
-              <div class="form-row">
-                <div class="form-group"><label>Alien Number / USCIS#</label><input name="alien_number"></div>
-                <div class="form-group"><label>I-94 入境号</label><input name="i94_number"></div>
-              </div>
-              <div class="form-row">
-                <div class="form-group"><label>护照号 Passport#</label><input name="passport_number"></div>
-                <div class="form-group"><label>护照国家</label><input name="passport_country"></div>
-              </div>
-              <div class="form-row">
-                <div class="form-group"><label>工作授权到期日</label><input name="work_auth_expiry" type="date"></div>
-              </div>
-            </div>
-          </div>
-          <div class="form-section">
-            <h3>支持文件上传 / Supporting Documents (可选)</h3>
-            <p style="font-size:.8rem;color:var(--gray-500);margin-bottom:.75rem">List A: 身份+工作授权一体文件 | List B: 身份证明 | List C: 工作授权证明</p>
-            <div class="form-row">
-              <div class="form-group"><label>List A 文件 (护照等)</label><input type="file" name="list_a_doc" accept=".pdf,.jpg,.jpeg,.png"></div>
-              <div class="form-group"><label>List B 文件 (驾照等)</label><input type="file" name="list_b_doc" accept=".pdf,.jpg,.jpeg,.png"></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label>List C 文件 (SSN卡等)</label><input type="file" name="list_c_doc" accept=".pdf,.jpg,.jpeg,.png"></div>
-            </div>
-          </div>
-          <div class="form-section">
-            <label style="display:flex;align-items:flex-start;gap:.5rem;font-size:.85rem;cursor:pointer">
-              <input type="checkbox" name="signature_confirm" required style="margin-top:3px">
-              <span>我确认以上信息真实准确，我在伪证处罚下签署此表格。<br>I attest, under penalty of perjury, that the information provided is true and correct.</span>
-            </label>
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-sky">提交 I-9 / Submit</button>
-            <button type="button" class="btn btn-gray" onclick="hideI9Form()">取消</button>
-          </div>
-        </form>
-      </div>
-
-      <!-- Driver's License / ID Verification (Persona) -->
-      <div class="card" id="dlFormCard" style="display:none">
-        <h2>🪪 身份证件验证 / ID Verification</h2>
-        <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">
-          请选择验证方式：可以在本网站直接完成验证，也可以选择在其他平台（手机、邮箱等）继续验证。<br>
-          <span style="font-size:.8rem">Choose how to verify: complete on this website, or continue on another platform (phone, email, etc.).</span>
-        </p>
-        <div id="personaStatusBox" style="display:none;padding:1rem;border-radius:8px;margin-bottom:1rem"></div>
-        <div id="personaActions">
-          <!-- Step 1: Two-choice selection -->
-          <div id="personaChoiceScreen">
-            <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
-              <!-- Option A: Verify on this website (Stripe embedded) -->
-              <div onclick="personaChooseWebsite()" style="flex:1;min-width:200px;padding:1.2rem;border:2px solid var(--gray-200);border-radius:12px;cursor:pointer;text-align:center;transition:all .2s;background:#fff" onmouseover="this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" onmouseout="this.style.borderColor='var(--gray-200)';this.style.background='#fff'">
-                <div style="font-size:2rem;margin-bottom:.5rem">🖥️</div>
-                <div style="font-weight:700;font-size:.95rem;color:var(--gray-700);margin-bottom:.3rem">在本网站验证</div>
-                <div style="font-size:.8rem;color:var(--gray-500)">Verify on This Website</div>
-                <div style="font-size:.75rem;color:var(--gray-400);margin-top:.5rem">直接在此页面完成身份验证<br>Complete verification right here</div>
-              </div>
-              <!-- Option B: Verify on other platform -->
-              <div onclick="personaChooseOtherPlatform()" style="flex:1;min-width:200px;padding:1.2rem;border:2px solid var(--gray-200);border-radius:12px;cursor:pointer;text-align:center;transition:all .2s;background:#fff" onmouseover="this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" onmouseout="this.style.borderColor='var(--gray-200)';this.style.background='#fff'">
-                <div style="font-size:2rem;margin-bottom:.5rem">📱</div>
-                <div style="font-weight:700;font-size:.95rem;color:var(--gray-700);margin-bottom:.3rem">在其他平台验证</div>
-                <div style="font-size:.8rem;color:var(--gray-500)">Verify on Other Platform</div>
-                <div style="font-size:.75rem;color:var(--gray-400);margin-top:.5rem">通过手机短信、邮件或扫码完成<br>Via SMS, email, QR code, or new tab</div>
-              </div>
-            </div>
-            <button type="button" class="btn btn-gray" onclick="hideDLForm()">取消 / Cancel</button>
-          </div>
-
-          <!-- Step 2A: Embedded verification via Stripe.js (hidden by default) -->
-          <div id="personaEmbeddedScreen" style="display:none">
-            <div style="margin-bottom:1rem">
-              <button class="btn btn-sky" onclick="startStripeVerification()" id="personaStartBtn" style="font-size:.95rem;padding:.7rem 1.5rem">
-                🖥️ 开始验证 / Start Verification
-              </button>
-              <button type="button" class="btn btn-outline" onclick="personaBackToChoice()" style="margin-left:.5rem;font-size:.85rem">← 返回 / Back</button>
-            </div>
-            <p style="font-size:.8rem;color:var(--gray-400)">验证窗口将在此页面弹出，请按照提示上传驾照/ID并完成自拍核验。<br>A verification modal will open. Follow prompts to upload your ID and take a selfie.</p>
-          </div>
-
-          <!-- Step 2B: Other platform options (hidden by default) -->
-          <div id="personaOtherPlatformScreen" style="display:none">
-            <div style="margin-bottom:1rem">
-              <button type="button" class="btn btn-outline" onclick="personaBackToChoice()" style="font-size:.85rem">← 返回选择 / Back to Options</button>
-            </div>
-            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem;font-weight:600">
-              选择一种方式发送验证链接 / Choose how to receive the verification link:
-            </p>
-            <!-- Open in new tab -->
-            <div style="margin-bottom:.75rem">
-              <button class="btn btn-sky" onclick="personaOpenNewTab()" id="personaNewTabBtn" style="font-size:.9rem;padding:.6rem 1.2rem;width:100%;text-align:left">
-                🌐 在新标签页中打开验证 / Open Verification in New Tab
-              </button>
-            </div>
-            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
-              <button class="btn btn-outline" onclick="personaSendSMS()" id="personaSmsBtn" style="font-size:.85rem;padding:.5rem 1rem">
-                💬 短信发送 / Send SMS
-              </button>
-              <button class="btn btn-outline" onclick="personaSendEmail()" id="personaEmailBtn" style="font-size:.85rem;padding:.5rem 1rem">
-                📧 邮件发送 / Send Email
-              </button>
-              <button class="btn btn-outline" onclick="personaShowQR()" id="personaQRBtn" style="font-size:.85rem;padding:.5rem 1rem">
-                📷 显示二维码 / Show QR Code
-              </button>
-              <button class="btn btn-outline" onclick="personaCopyLink()" id="personaCopyBtn" style="font-size:.85rem;padding:.5rem 1rem">
-                🔗 复制链接 / Copy Link
-              </button>
-            </div>
-            <!-- QR Code display area -->
-            <div id="personaQRArea" style="display:none;text-align:center;padding:1rem;background:#f9fafb;border-radius:8px;margin-bottom:.75rem">
-              <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.5rem">用手机扫描二维码完成验证 / Scan with your phone to verify</p>
-              <div id="personaQRCode" style="display:inline-block"></div>
-            </div>
-            <!-- Link display area -->
-            <div id="personaLinkArea" style="display:none;padding:.75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;margin-bottom:.75rem">
-              <p style="font-size:.78rem;color:var(--gray-500);margin-bottom:.3rem">验证链接 / Verification Link:</p>
-              <input type="text" id="personaLinkInput" readonly style="width:100%;padding:.4rem .6rem;font-size:.8rem;border:1px solid #d1d5db;border-radius:4px;background:#fff" onclick="this.select()">
-            </div>
-            <!-- Send status message -->
-            <div id="personaSendStatus" style="display:none;padding:.5rem .75rem;border-radius:6px;font-size:.82rem;margin-bottom:.5rem"></div>
-          </div>
-        </div>
-        <!-- Fallback for manual upload if Stripe Identity not configured -->
-        <div id="dlManualFallback" style="display:none;margin-top:1rem;border-top:1px solid var(--gray-200);padding-top:1rem">
-          <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">Stripe Identity 未配置，请手动上传驾照/ID</p>
-          <form id="dlForm" onsubmit="submitDL(event)">
-            <div class="form-row">
-              <div class="form-group"><label>驾照号 DL Number *</label><input name="dl_number" required></div>
-              <div class="form-group"><label>发行州 State *</label><input name="dl_state" required maxlength="2" placeholder="CA"></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label>到期日 Expiration *</label><input name="dl_expiry" type="date" required></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label>正面照片 Front *</label><input type="file" name="dl_front" accept=".pdf,.jpg,.jpeg,.png" required></div>
-              <div class="form-group"><label>背面照片 Back</label><input type="file" name="dl_back" accept=".pdf,.jpg,.jpeg,.png"></div>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-sky">提交驾照 / Submit</button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- W-9 Form -->
-      <div class="card" id="w9FormCard" style="display:none">
-        <h2>W-9 表格 / Request for TIN</h2>
-        <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">适用于1099独立承包商 / For independent contractors (1099)</p>
-        <form id="w9Form" onsubmit="submitW9(event)">
-          <div class="form-section">
-            <h3>纳税人信息 / Taxpayer Information</h3>
-            <div class="form-row full"><div class="form-group"><label>姓名 Name (as shown on income tax return) *</label><input name="name" required></div></div>
-            <div class="form-row full"><div class="form-group"><label>商业名称 Business Name (如有)</label><input name="business_name"></div></div>
-            <div class="form-row full">
-              <div class="form-group"><label>税务分类 Tax Classification *</label>
-                <select name="tax_classification" required>
-                  <option value="">选择...</option>
-                  <option value="individual">个人/独资 Individual/Sole proprietor</option>
-                  <option value="c_corp">C Corporation</option>
-                  <option value="s_corp">S Corporation</option>
-                  <option value="partnership">合伙企业 Partnership</option>
-                  <option value="llc">LLC</option>
-                  <option value="other">其他 Other</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <div class="form-section">
-            <h3>地址 / Address</h3>
-            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required oninput="clearW9AddrStatus()"></div></div>
-            <div class="form-row">
-              <div class="form-group"><label>城市 City *</label><input name="city" required oninput="clearW9AddrStatus()"></div>
-              <div class="form-group"><label>州 State *</label><input name="state" required maxlength="2" oninput="clearW9AddrStatus()"></div>
-            </div>
-            <div class="form-row">
-              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required oninput="clearW9AddrStatus()" onblur="autoVerifyW9Addr()"></div>
-            </div>
-            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
-              <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyW9Addr()">🔍 验证地址 Verify</button>
-              <span id="w9AddrStatus" style="font-size:.8rem;font-weight:600"></span>
-            </div>
-          </div>
-          <div class="form-section">
-            <h3>税号 / Taxpayer Identification Number (TIN)</h3>
-            <div class="form-row">
-              <div class="form-group"><label>类型 TIN Type *</label>
-                <select name="tin_type" required>
-                  <option value="ssn">SSN (社安号)</option>
-                  <option value="ein">EIN (雇主识别号)</option>
-                </select>
-              </div>
-              <div class="form-group"><label>SSN 或 EIN *</label><input name="ssn_or_ein" required placeholder="xxx-xx-xxxx 或 xx-xxxxxxx" maxlength="11"></div>
-            </div>
-          </div>
-          <div class="form-section">
-            <label style="display:flex;align-items:flex-start;gap:.5rem;font-size:.85rem;cursor:pointer">
-              <input type="checkbox" name="signature_confirm" required style="margin-top:3px">
-              <span>在伪证处罚下，我确认所填TIN正确，且我不受预扣税约束。<br>Under penalties of perjury, I certify that the TIN provided is correct.</span>
-            </label>
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-sky">提交 W-9 / Submit</button>
-            <button type="button" class="btn btn-gray" onclick="hideW9Form()">取消</button>
-          </div>
-        </form>
-      </div>
-    </div>
 
     <!-- Todos / Onboarding -->
     <div id="tabTodos" style="display:none">
@@ -1369,7 +1150,7 @@ const PORTAL_I18N = {
     loginForgot: '忘记密码？',
     loginRegister: '注册账号',
     subtitle: '员工自助平台', logout: '退出',
-    tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'待办事项', referral:'推荐奖励', profile:'我的信息' },
+    tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', todos:'待办事项', referral:'推荐奖励', profile:'我的信息' },
     searchPlaceholder: '搜索职位、地点...',
     filterType: '职位类型', filterAuth: '工作身份要求', filterShift: '班型', filterUrgent: '优先级',
     all: '全部', noLimit: '不限',
@@ -1447,7 +1228,7 @@ const PORTAL_I18N = {
     addrTitle: '🏠 地址信息', addrStreet: 'Street', addrStreet2: 'Street 2', addrCity: 'City', addrState: 'State', addrZip: 'Zip',
     addrRequired: '请填写街道地址', saveBtn: '保存', saveOk: '已保存', saveErr: '保存失败',
     emergTitle: '🆘 紧急联系人', emergName: '姓名', emergPhone: '电话', emergRelation: '关系',
-    profNoDocs: '暂无已提交文件，请前往"合规文件"标签上传。', profNoDocRecords: '暂无文件记录',
+    profNoDocs: '暂无已提交文件。', profNoDocRecords: '暂无文件记录',
     obEmpty: '入职流程尚未初始化，请联系 HR。',
     obLocked: '🔒 未开放', obPending: '⏳ 待处理', obSubmitted: '🔄 待审核', obCompleted: '✅ 已完成', obWaived: '⏭️ 已豁免',
     obActionInterview: '去预约面试', obActionPortalVerify: '🖥️ 在Portal中验证', obActionOpenLink: '🔗 打开链接验证',
@@ -1527,7 +1308,7 @@ const PORTAL_I18N = {
     loginForgot: 'Forgot password?',
     loginRegister: 'Register',
     subtitle: 'Employee Self-Service', logout: 'Logout',
-    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', compliance:'Compliance', todos:'To-Do', referral:'Referrals', profile:'Profile' },
+    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', todos:'To-Do', referral:'Referrals', profile:'Profile' },
     searchPlaceholder: 'Search jobs, locations...',
     filterType: 'Job Type', filterAuth: 'Work Authorization', filterShift: 'Shift', filterUrgent: 'Priority',
     all: 'All', noLimit: 'Any',
@@ -1685,7 +1466,7 @@ const PORTAL_I18N = {
     loginForgot: '¿Olvidó su contraseña?',
     loginRegister: 'Registrarse',
     subtitle: 'Autoservicio del Empleado', logout: 'Salir',
-    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', compliance:'Documentos', todos:'Tareas', referral:'Referidos', profile:'Perfil' },
+    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', todos:'Tareas', referral:'Referidos', profile:'Perfil' },
     searchPlaceholder: 'Buscar empleos, ubicaciones...',
     filterType: 'Tipo de empleo', filterAuth: 'Autorización de trabajo', filterShift: 'Turno', filterUrgent: 'Prioridad',
     all: 'Todos', noLimit: 'Cualquiera',
@@ -1900,7 +1681,7 @@ function setPortalLang(lang) {
   // Save language preference to server
   fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang }) }).catch(() => {});
   if (_activeTab === 'profile') loadProfile();
-  else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
+  else if (_activeTab === 'payments') { loadPayments(); loadContractorInvoices(); }
   else if (_activeTab === 'todos') loadOnboarding();
   else if (_activeTab === 'referral') loadReferrals();
   else if (_activeTab === 'interview') loadInterview();
@@ -1966,6 +1747,7 @@ applyPortalLang();
 let WORKER_TOKEN = localStorage.getItem('pa_worker_token') || '';
 let _allJobs = [];
 let _forgotLogin = '';
+let _workerPortalMode = 'none'; // set from /api/worker/portal-config on login
 
 function showToast(msg, type='success') {
   const wrap = document.getElementById('toast-wrap');
@@ -2028,18 +1810,35 @@ async function workerLogin() {
   const login = document.getElementById('wLogin').value.trim();
   const password = document.getElementById('wPassword').value;
   if (!login || !password) { await customAlert('请输入邮箱/手机号和密码', '登录提示', '⚠️'); return; }
-  const r = await fetch('/api/worker/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login, password })
-  });
-  if (!r.ok) { const e = await r.json(); await customAlert(e.error || '登录失败', '登录失败', '❌'); return; }
-  const data = await r.json();
-  WORKER_TOKEN = data.token;
-  localStorage.setItem('pa_worker_token', WORKER_TOKEN);
-  // Save current language preference to server on login
-  fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang: _portalLang }) }).catch(() => {});
-  showApp();
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  try {
+    let r;
+    try {
+      r = await fetch('/api/worker/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login, password })
+      });
+    } catch (e) {
+      await customAlert('网络错误，请检查连接后重试 / Network error, please check your connection', '登录失败', '❌');
+      return;
+    }
+    let errMsg;
+    if (!r.ok) {
+      try { const e = await r.json(); errMsg = e.error; } catch (_) {}
+      await customAlert(errMsg || '登录失败 / Login failed', '登录失败', '❌');
+      return;
+    }
+    const data = await r.json();
+    WORKER_TOKEN = data.token;
+    localStorage.setItem('pa_worker_token', WORKER_TOKEN);
+    // Save current language preference to server on login
+    fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang: _portalLang }) }).catch(() => {});
+    showApp();
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function workerLogout() {
@@ -2144,8 +1943,22 @@ let _pendingSlot = null;
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  const [me, interview, personaStatus] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status')]);
+  const [me, interview, personaStatus, portalCfg] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status'), fetch('/api/worker/portal-config').then(r=>r.json()).catch(()=>({worker_portal_mode:'none'}))]);
   if (!me) return;
+  // Apply worker portal mode (global setting) combined with per-worker feature flags
+  const globalMode = (portalCfg && portalCfg.worker_portal_mode) || 'none';
+  const perWorkerTimeclock = me.account && me.account.enable_timeclock ? 1 : 0;
+  const perWorkerInvoice = me.account && me.account.enable_invoice ? 1 : 0;
+  // Per-worker flags override or supplement global mode
+  if (perWorkerTimeclock) {
+    _workerPortalMode = 'timeclock';
+  } else if (perWorkerInvoice) {
+    _workerPortalMode = 'invoice';
+  } else {
+    _workerPortalMode = globalMode;
+  }
+  const navTimeclock = document.querySelector('.sidebar-nav a[data-tab="timeclock"]');
+  if (navTimeclock) navTimeclock.style.display = (perWorkerTimeclock || _workerPortalMode === 'timeclock') ? '' : 'none';
   _workerInfo = me;
   _workerEmploymentType = me.account?.employment_type || '';
   const firstName = me.employee
@@ -2158,27 +1971,14 @@ async function showApp() {
   if (personaStatus && personaStatus.status === 'pending') {
     wApi('/persona/poll-status', { method: 'POST' }).then(pollResult => {
       if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted' || pollResult.updated)) {
-        // Status changed — refresh UI
-        const _pInit2 = true;
-        document.getElementById('navCompliance').style.display = '';
-        // Refresh active tab if on todos or compliance
+        // Status changed — refresh onboarding if active
         const activeTab = document.querySelector('.sidebar-nav a.active');
-        if (activeTab) {
-          const t = activeTab.dataset.tab;
-          if (t === 'todos') loadOnboarding();
-          else if (t === 'compliance') loadCompliance();
-        }
+        if (activeTab && activeTab.dataset.tab === 'todos') loadOnboarding();
       }
     });
   }
 
-  // Show compliance tab if interview passed OR persona initiated OR interview onboarding task completed
   _interviewPassed = interview && interview.status === 'passed';
-  const _personaInitiated = personaStatus && personaStatus.status !== 'not_started';
-  const _obTasks = await wApi('/onboarding');
-  const _obInterview = Array.isArray(_obTasks) && _obTasks.find(t => t.key === 'interview');
-  const _interviewObDone = _obInterview && ['completed','waived'].includes(_obInterview.status);
-  document.getElementById('navCompliance').style.display = (_interviewPassed || _personaInitiated || _interviewObDone) ? '' : 'none';
   // Show todos tab (always visible for logged-in workers)
   document.getElementById('navTodos').style.display = '';
 
@@ -2187,8 +1987,7 @@ async function showApp() {
   // Handle hash navigation (e.g. #w9 from email/SMS link)
   const _hash = window.location.hash.replace('#', '');
   if (_hash === 'w9') {
-    showTab('compliance');
-    setTimeout(() => { showW9Form(); }, 300);
+    showTab('todos');
   } else {
     loadJobs();
   }
@@ -2202,8 +2001,7 @@ async function showApp() {
     _lastAutoRefresh = now;
     if (_activeTab === 'applications') loadApplications();
     else if (_activeTab === 'timeclock') loadTimeclock();
-    else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
-    else if (_activeTab === 'compliance') loadCompliance();
+    else if (_activeTab === 'payments') { loadPayments(); loadContractorInvoices(); }
     else if (_activeTab === 'profile') loadProfile();
     else if (_activeTab === 'interview') loadInterview();
     else if (_activeTab === 'todos') loadOnboarding();
@@ -2227,7 +2025,7 @@ function closeSidebar() {
 }
 function showTab(tab) {
   _activeTab = tab;
-  ['jobs','interview','applications','timeclock','payments','compliance','todos','referral','profile'].forEach(t => {
+  ['jobs','interview','applications','timeclock','payments','todos','referral','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -2235,8 +2033,7 @@ function showTab(tab) {
   closeSidebar();
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
-  else if (tab === 'payments') loadPayments(); loadContractorInvoices();
-  else if (tab === 'compliance') loadCompliance();
+  else if (tab === 'payments') { loadPayments(); loadContractorInvoices(); }
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
   else if (tab === 'todos') loadOnboarding();
@@ -3926,30 +3723,121 @@ async function loadPayments() {
   }).join('');
 }
 
-// ─── Contractor Invoice / Payment Request ───
+// ─── Contractor Invoice / Payment Request (Pre-filled Form) ───
+let _invPrefill = null;  // cached prefill data
+let _invActiveJobs = [];
+
 function toggleInvoiceForm() {
   const wrap = document.getElementById('invoiceFormWrap');
-  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+  const showing = wrap.style.display === 'none';
+  wrap.style.display = showing ? 'block' : 'none';
+  if (showing) loadInvoicePrefill();
 }
 
-// Auto-calculate total from hours * rate
-document.addEventListener('input', e => {
-  if (!e.target.closest('#contractorInvoiceForm')) return;
+async function loadInvoicePrefill() {
+  const pf = await wApi('/invoice-prefill');
+  if (!pf) return;
+  _invPrefill = pf;
+  _invActiveJobs = pf.active_jobs || [];
+
+  // Fill readonly summary
+  document.getElementById('invPfName').textContent = pf.contractor_name || '—';
+  document.getElementById('invPfTerms').textContent = pf.payment_terms || 'Net 30';
+  document.getElementById('invPfDate').textContent = pf.invoice_date || '—';
+  document.getElementById('invPfDue').textContent = pf.payment_due_date || '—';
+  document.getElementById('invHiddenDueDate').value = pf.payment_due_date || '';
+
+  // Job selector
+  const selWrap = document.getElementById('invJobSelectWrap');
+  const sel = document.getElementById('invJobSelect');
+  if (_invActiveJobs.length > 1) {
+    sel.innerHTML = _invActiveJobs.map((j, i) =>
+      `<option value="${i}">${esc(j.title)}${j.company_name ? ' — ' + esc(j.company_name) : ''} ${j.hourly_rate ? '($' + j.hourly_rate + '/hr)' : ''}</option>`
+    ).join('');
+    selWrap.style.display = 'block';
+  } else {
+    selWrap.style.display = 'none';
+  }
+  // Set first job as suggestion (editable)
+  applyJobPrefill(_invActiveJobs[0] || null);
+}
+
+function applyJobPrefill(job) {
+  // Pre-fill editable fields with suggestions from job data
+  const descEl = document.getElementById('invServiceDesc');
+  const rateEl = document.getElementById('invRateInput');
+  if (job) {
+    if (descEl && !descEl.value) descEl.value = job.title + (job.company_name ? ' — ' + job.company_name : '');
+    if (rateEl && !rateEl.value && job.hourly_rate) rateEl.value = parseFloat(job.hourly_rate).toFixed(2);
+  }
+  document.getElementById('invHiddenJobId').value = job?.job_id || 0;
+  document.getElementById('invHiddenJobTitle').value = job?.title || '';
+  document.getElementById('invHiddenServiceType').value = job?.title || '';
+  recalcInvoiceTotal();
+}
+
+function onInvJobChange() {
+  const idx = parseInt(document.getElementById('invJobSelect').value) || 0;
+  applyJobPrefill(_invActiveJobs[idx] || null);
+}
+
+let _invBillingMode = 'hourly';
+function setInvBillingMode(mode) {
+  _invBillingMode = mode;
+  const hourlyEl = document.getElementById('invHourlyFields');
+  const projectEl = document.getElementById('invProjectFields');
+  const btnH = document.getElementById('invModeHourly');
+  const btnP = document.getElementById('invModeProject');
+  if (mode === 'hourly') {
+    hourlyEl.style.display = '';
+    projectEl.style.display = 'none';
+    btnH.style.background = '#f59e0b'; btnH.style.color = '#fff';
+    btnP.style.background = '#fff'; btnP.style.color = '#92400e';
+    // Clear flat when switching to hourly
+    const flat = document.querySelector('#contractorInvoiceForm [name="flat_amount"]');
+    if (flat) flat.value = '';
+  } else {
+    hourlyEl.style.display = 'none';
+    projectEl.style.display = '';
+    btnP.style.background = '#f59e0b'; btnP.style.color = '#fff';
+    btnH.style.background = '#fff'; btnH.style.color = '#92400e';
+    // Clear hourly fields when switching to project
+    const rate = document.getElementById('invRateInput');
+    const hours = document.querySelector('#contractorInvoiceForm [name="hours_worked"]');
+    if (rate) rate.value = '';
+    if (hours) hours.value = '';
+  }
+  recalcInvoiceTotal();
+}
+
+// Auto-calculate total based on billing mode
+function recalcInvoiceTotal() {
   const form = document.getElementById('contractorInvoiceForm');
   if (!form) return;
   const h = parseFloat(form.hours_worked?.value) || 0;
   const r = parseFloat(form.hourly_rate?.value) || 0;
   const f = parseFloat(form.flat_amount?.value) || 0;
-  const calc = h * r + f;
-  if (calc > 0) document.getElementById('invTotalAmount').value = calc.toFixed(2);
+  const exp = parseFloat(form.expenses?.value) || 0;
+  const total = h * r + f + exp;
+  document.getElementById('invCalcTotal').textContent = '$' + total.toFixed(2);
+  document.getElementById('invTotalAmount').value = total.toFixed(2);
+}
+document.addEventListener('input', e => {
+  if (!e.target.closest('#contractorInvoiceForm')) return;
+  recalcInvoiceTotal();
 });
 
 async function submitContractorInvoice(e) {
   e.preventDefault();
   const form = e.target;
   const body = {};
-  new FormData(form).forEach((v, k) => { body[k] = ['hours_worked','hourly_rate','flat_amount','total_amount'].includes(k) ? parseFloat(v) || 0 : v; });
-  if (!body.total_amount) { alert('请填写总金额 / Total amount required'); return; }
+  new FormData(form).forEach((v, k) => {
+    if (k === 'confirmed') { body[k] = true; return; }
+    body[k] = ['hours_worked','hourly_rate','flat_amount','total_amount','expenses','job_id'].includes(k) ? (parseFloat(v) || 0) : v;
+  });
+  // Ensure confirmed is set (checkbox won't appear in FormData if unchecked — but required attr handles it)
+  if (!body.confirmed) { alert('请勾选确认框 / Please check the confirmation box'); return; }
+  if (!body.total_amount || body.total_amount <= 0) { alert('总金额必须大于0 / Total must be > 0. 请填写工时。'); return; }
   const r = await wApi('/contractor-invoices', { method: 'POST', body: JSON.stringify(body) });
   if (r && r.success) {
     form.reset();
@@ -3964,10 +3852,11 @@ async function submitContractorInvoice(e) {
 async function loadContractorInvoices() {
   const card = document.getElementById('contractorInvoiceCard');
   if (!card) return;
-  // Only show for 1099 contractors
+  // Only show for 1099 contractors AND when invoice mode is enabled by admin
   const is1099 = _workerEmploymentType === '1099';
-  card.style.display = is1099 ? 'block' : 'none';
-  if (!is1099) return;
+  const invoiceEnabled = _workerPortalMode === 'invoice' || (_workerInfo && _workerInfo.account && _workerInfo.account.enable_invoice);
+  card.style.display = (is1099 && invoiceEnabled) ? 'block' : 'none';
+  if (!is1099 || !invoiceEnabled) return;
 
   const invoices = await wApi('/contractor-invoices');
   const el = document.getElementById('contractorInvoiceList');
@@ -3991,6 +3880,8 @@ async function loadContractorInvoices() {
       <div style="display:flex;flex-wrap:wrap;gap:.35rem .9rem;font-size:.78rem;color:var(--gray-500)">
         <span>📅 ${esc(inv.service_period_start||'')} ~ ${esc(inv.service_period_end||'')}</span>
         ${inv.hours_worked ? `<span>⏱ ${inv.hours_worked}h × $${(+inv.hourly_rate).toFixed(2)}</span>` : ''}
+        ${inv.expenses ? `<span>💰 Expenses: $${(+inv.expenses).toFixed(2)}</span>` : ''}
+        ${inv.job_title ? `<span>📋 ${esc(inv.job_title)}</span>` : ''}
         ${inv.payment_due_date ? `<span>💳 Due: ${esc(inv.payment_due_date)}</span>` : ''}
       </div>
       <div style="margin-top:.5rem;display:flex;justify-content:space-between;align-items:center">
@@ -4335,13 +4226,14 @@ async function loadProfile() {
     i9: { icon:'📋', zh:'I-9 就业资格验证' },
     drivers_license: { icon:'🪪', zh:'身份证件（Persona）' },
     w9: { icon:'📄', zh:'W-9 纳税人识别' },
+    contract: { icon:'✍️', zh:'签署合同 / Offer' },
     ssn_card: { icon:'🔒', zh:'社安卡 SSN Card' },
     work_permit: { icon:'📃', zh:'工作许可' },
     background_check: { icon:'🔍', zh:'背景调查' },
   };
   const statusBadge = (s) => {
     const map = {approved:'background:#dcfce7;color:#15803d', pending:'background:#fef9c3;color:#854d0e', rejected:'background:#fee2e2;color:#dc2626', not_submitted:'background:#f1f5f9;color:#64748b'};
-    const label = {approved:'已通过',pending:'审核中',rejected:'未通过',not_submitted:'未提交'};
+    const label = {approved:'✅ 已签署',pending:'审核中',rejected:'未通过',not_submitted:'未提交'};
     const style = map[s] || map.not_submitted;
     return `<span style="${style};padding:.15rem .55rem;border-radius:20px;font-size:.72rem;font-weight:700">${label[s]||s}</span>`;
   };
@@ -4358,15 +4250,20 @@ async function loadProfile() {
   }
   docEl.innerHTML = submitted.map(([type, d]) => {
     const meta = docTypeLabel[type] || { icon:'📄', zh: type };
+    const signedDate = d.updated_at ? new Date(d.updated_at).toLocaleDateString('zh-CN') : '';
+    const viewLink = d.signed_url ? `<a href="${esc(d.signed_url)}" target="_blank" style="font-size:.73rem;color:var(--sky);text-decoration:none;font-weight:600">📎 查看</a>` : '';
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--gray-100)">
       <div style="display:flex;align-items:center;gap:.6rem">
         <span style="font-size:1.25rem">${meta.icon}</span>
         <div>
           <div style="font-size:.88rem;font-weight:600">${meta.zh}</div>
-          ${d.file_name ? `<div style="font-size:.73rem;color:var(--gray-400)">${esc(d.file_name)}</div>` : ''}
+          ${d.file_name ? `<div style="font-size:.73rem;color:var(--gray-400)">${esc(d.file_name)}${signedDate ? ' · '+signedDate : ''}</div>` : ''}
         </div>
       </div>
-      ${statusBadge(d.status)}
+      <div style="display:flex;align-items:center;gap:.5rem">
+        ${viewLink}
+        ${statusBadge(d.status)}
+      </div>
     </div>`;
   }).join('');
 }
@@ -4504,783 +4401,6 @@ async function ccConfirmNew() {
   loadProfile();
 }
 
-// ─── Compliance Section ───
-const DOC_LABELS = {
-  i9: { zh: 'I-9 就业资格验证', en: 'I-9 Employment Eligibility', icon: '📋' },
-  drivers_license: { zh: '身份证件验证', en: "ID Verification (Persona)", icon: '🪪' },
-  w9: { zh: 'W-9 纳税人识别', en: 'W-9 Tax ID', icon: '📄' },
-  ssn_card: { zh: '社安卡', en: 'SSN Card', icon: '🔒' },
-  work_permit: { zh: '工作许可/EAD', en: 'Work Permit / EAD', icon: '📃' },
-  background_check: { zh: '背景调查', en: 'Background Check', icon: '🔍' },
-  employment_contract: { zh: '雇佣合同', en: 'Employment Contract', icon: '📝' },
-  gusto_payroll: { zh: 'Gusto 薪资设置', en: 'Gusto Payroll Setup', icon: '💰' }
-};
-
-const STATUS_LABELS = { pending: '审核中', approved: '已通过', rejected: '未通过', not_submitted: '未提交', ordered: '已下单', completed: '已完成', clear: '通过', flagged: '有记录' };
-const STATUS_CLASS = { pending: 'ci-pending', approved: 'ci-approved', rejected: 'ci-rejected', not_submitted: 'ci-not-submitted', ordered: 'ci-pending', completed: 'ci-approved', clear: 'ci-approved', flagged: 'ci-rejected' };
-
-async function loadCompliance() {
-  loadSubmissionSummary();
-  const grid = document.getElementById('complianceOverview');
-  // Check if persona verification has been initiated
-  let pStatus = await wApi('/persona/status');
-  // If still pending, actively check Persona API for latest status
-  if (pStatus && pStatus.status === 'pending') {
-    const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
-    if (pollResult && pollResult.updated) {
-      pStatus = { ...pStatus, status: pollResult.status, persona_status: pollResult.persona_status };
-    }
-  }
-  const personaInitiated = pStatus && pStatus.status !== 'not_started';
-  // Also unlock if the onboarding interview task is completed/waived (HR approved)
-  let interviewOnboardingDone = false;
-  if (!_interviewPassed && !personaInitiated) {
-    const obTasks = await wApi('/onboarding');
-    const interviewTask = Array.isArray(obTasks) && obTasks.find(t => t.key === 'interview');
-    interviewOnboardingDone = interviewTask && ['completed','waived'].includes(interviewTask.status);
-  }
-  if (!_interviewPassed && !personaInitiated && !interviewOnboardingDone) {
-    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2.5rem 1rem">
-      <div style="font-size:2.5rem;margin-bottom:.75rem">🔒</div>
-      <div style="font-weight:700;font-size:1.05rem;color:var(--gray-600);margin-bottom:.5rem">合规文件尚未开放</div>
-      <div style="font-size:.85rem;color:var(--gray-400)">请先完成面试，面试通过后 HR 会发送链接，届时即可提交合规文件。</div>
-    </div>`;
-    return;
-  }
-  const data = await wApi('/compliance');
-  if (!data) return;
-  const docs = data.documents || {};
-  const bg = data.background_check;
-  const assignedTasks = data.assigned_tasks || [];
-
-  // If admin hasn't assigned any tasks, show a message
-  if (assignedTasks.length === 0) {
-    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2.5rem 1rem">
-      <div style="font-size:2.5rem;margin-bottom:.75rem">📋</div>
-      <div style="font-weight:700;font-size:1.05rem;color:var(--gray-600);margin-bottom:.5rem">暂无分配的合规任务</div>
-      <div style="font-size:.85rem;color:var(--gray-400)">HR 尚未为您分配合规任务，请耐心等待。<br>No compliance tasks have been assigned yet. Please wait for HR.</div>
-    </div>`;
-    return;
-  }
-
-  // Action mapping for each task type
-  const TASK_ACTIONS = {
-    i9: 'showI9Form()',
-    drivers_license: 'showDLForm()',
-    w9: 'showW9Form()',
-    ssn_card: null,
-    work_permit: null,
-    employment_contract: null,
-    gusto_payroll: null,
-    background_check: null
-  };
-
-  // Expiring documents warning
-  const expiringDocs = data.expiring_docs || [];
-  let expiringHtml = '';
-  if (expiringDocs.length) {
-    const docTypeLabels = { i9:'I-9', drivers_license:'驾照/ID', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可/EAD', ead_upload:'EAD 工卡', other:'其他' };
-    expiringHtml = `<div style="grid-column:1/-1;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius);padding:1rem;margin-bottom:.5rem">
-      <div style="font-weight:700;color:#92400e;font-size:.9rem;margin-bottom:.5rem">⚠️ 证件即将到期 / Documents Expiring Soon</div>
-      ${expiringDocs.map(d => {
-        const daysLeft = Math.ceil((new Date(d.expires_at) - new Date()) / 86400000);
-        const urgency = daysLeft <= 0 ? '已过期' : `${daysLeft}天后到期`;
-        const color = daysLeft <= 0 ? '#dc2626' : daysLeft <= 30 ? '#92400e' : '#6b7280';
-        return `<div style="font-size:.85rem;color:${color};padding:.2rem 0"><strong>${docTypeLabels[d.doc_type]||d.doc_type}</strong> — 到期日: ${(d.expires_at||'').slice(0,10)} (${urgency})</div>`;
-      }).join('')}
-      <div style="font-size:.8rem;color:#92400e;margin-top:.4rem">请尽快联系 HR 更新证件。/ Please contact HR to update your documents.</div>
-    </div>`;
-  }
-
-  let html = expiringHtml;
-  // Build items from assigned tasks only
-  const items = assignedTasks
-    .filter(type => DOC_LABELS[type])
-    .map(type => {
-      if (type === 'background_check') {
-        return { type, doc: bg ? { status: bg.result || bg.status, created_at: bg.ordered_date || bg.completed_date } : null, action: TASK_ACTIONS[type] };
-      }
-      return { type, doc: docs[type], action: TASK_ACTIONS[type] };
-    });
-
-  for (const item of items) {
-    const label = DOC_LABELS[item.type];
-    const d = item.doc;
-    const status = d ? (d.status || d.result || 'pending') : 'not_submitted';
-    // For drivers_license (Persona): if inquiry created but user hasn't completed verification,
-    // show "待验证" status and allow action button
-    const personaAwaitingUser = item.type === 'drivers_license' && status === 'pending'
-      && pStatus && pStatus.persona_status === 'created';
-    const statusLabel = personaAwaitingUser ? '待验证' : (STATUS_LABELS[status] || status);
-    const statusClass = personaAwaitingUser ? 'ci-pending' : (STATUS_CLASS[status] || 'ci-not-submitted');
-    const date = d && d.created_at ? d.created_at.slice(0, 10) : '';
-    const note = d && d.reviewer_notes ? `<div class="ci-note">${esc(d.reviewer_notes)}</div>` : '';
-    const canSubmit = !d || status === 'not_submitted' || status === 'rejected' || personaAwaitingUser;
-    let actionBtnLabel = d && status === 'rejected' ? '重新提交' : '填写提交';
-    if (personaAwaitingUser) actionBtnLabel = '开始验证';
-    const actionBtn = item.action && canSubmit
-      ? `<button class="btn btn-sky" onclick="${item.action}" style="margin-top:.75rem;font-size:.8rem">${actionBtnLabel}</button>`
-      : '';
-
-    html += `<div class="compliance-item">
-      <h3>${label.icon} ${label.zh}</h3>
-      <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:.5rem">${label.en}</div>
-      <span class="ci-status ${statusClass}">${statusLabel}</span>
-      ${date ? `<div class="ci-date">提交日期: ${date}</div>` : ''}
-      ${note}
-      ${actionBtn}
-    </div>`;
-  }
-  grid.innerHTML = html;
-
-  // Hide all forms
-  hideI9Form(); hideDLForm(); hideW9Form();
-}
-
-function showI9Form() { document.getElementById('i9FormCard').style.display = ''; }
-function hideI9Form() { document.getElementById('i9FormCard').style.display = 'none'; }
-async function showDLForm() {
-  document.getElementById('dlFormCard').style.display = '';
-  // Reset to choice screen
-  personaBackToChoice();
-  // Check if Stripe Identity is configured
-  const config = await wApi('/persona/config');
-  if (config && config.enabled) {
-    document.getElementById('personaActions').style.display = '';
-    document.getElementById('dlManualFallback').style.display = 'none';
-    _stripePublishableKey = config.publishableKey || '';
-    // Check current status
-    const status = await wApi('/persona/status');
-    const box = document.getElementById('personaStatusBox');
-    // Restore hosted URL if available
-    if (status && status.persona_hosted_url) {
-      _personaHostedUrl = status.persona_hosted_url;
-      updatePersonaLinkUI(status.persona_hosted_url);
-    }
-    // Store client secret for embedded flow
-    if (status && status.client_secret) {
-      _stripeClientSecret = status.client_secret;
-    }
-    if (status && status.persona_inquiry_id && status.status !== 'rejected') {
-      if (status.status === 'approved') {
-        box.style.display = '';
-        box.style.background = '#f0fdf4';
-        box.style.border = '1px solid #86efac';
-        box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
-        document.getElementById('personaChoiceScreen').style.display = 'none';
-        document.getElementById('personaEmbeddedScreen').style.display = 'none';
-        document.getElementById('personaOtherPlatformScreen').style.display = 'none';
-      } else if (status.status === 'pending' && (status.persona_status === 'requires_input' || status.persona_status === 'created')) {
-        box.style.display = '';
-        box.style.background = '#eff6ff';
-        box.style.border = '1px solid #93c5fd';
-        box.innerHTML = '<div style="color:#1d4ed8;font-weight:700">📋 请完成身份验证 / Please Complete ID Verification</div><div style="font-size:.82rem;color:#1e40af;margin-top:.3rem">HR 已为您发起身份验证，请选择以下方式完成验证。<br>HR has initiated identity verification. Please choose a method below to complete it.</div>';
-        document.getElementById('personaStartBtn').textContent = '🖥️ 开始验证 / Start Verification';
-      } else if (status.status === 'pending' || status.status === 'submitted') {
-        box.style.display = '';
-        box.style.background = '#fefce8';
-        box.style.border = '1px solid #fde047';
-        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Verification in progress</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">Stripe 正在自动验证您的证件，请稍候。如果通过手机完成了验证，请刷新页面查看最新状态。<br>Verification is being processed. If you completed it on another device, refresh the page.</div>';
-        document.getElementById('personaStartBtn').textContent = '🖥️ 重新验证 / Re-verify';
-      }
-    }
-  } else {
-    // Fallback to manual upload
-    document.getElementById('personaActions').style.display = 'none';
-    document.getElementById('dlManualFallback').style.display = '';
-  }
-}
-function hideDLForm() { document.getElementById('dlFormCard').style.display = 'none'; }
-function showW9Form() { document.getElementById('w9FormCard').style.display = ''; }
-function hideW9Form() { document.getElementById('w9FormCard').style.display = 'none'; }
-
-// Open Persona verification from onboarding tab — switch to compliance and auto-show DL form
-async function openPersonaInPortal() {
-  // Switch to compliance tab visually (without calling showTab to avoid loadCompliance race)
-  ['jobs','interview','applications','timeclock','payments','compliance','todos','profile'].forEach(t => {
-    document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t==='compliance'?'':'none';
-  });
-  document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === 'compliance'));
-  // Wait for compliance content to fully load (loadCompliance hides all forms at the end)
-  await loadCompliance();
-  // Now safely show the DL form — no race condition
-  showDLForm();
-  // Scroll to the DL form card so user sees it immediately
-  document.getElementById('dlFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// ── Stripe Identity Verification ──
-let _personaHostedUrl = null; // stored hosted URL for link sharing
-let _stripePublishableKey = '';
-let _stripeClientSecret = null;
-
-// Choice screen navigation
-function personaChooseWebsite() {
-  document.getElementById('personaChoiceScreen').style.display = 'none';
-  document.getElementById('personaEmbeddedScreen').style.display = '';
-  document.getElementById('personaOtherPlatformScreen').style.display = 'none';
-}
-
-function personaChooseOtherPlatform() {
-  document.getElementById('personaChoiceScreen').style.display = 'none';
-  document.getElementById('personaEmbeddedScreen').style.display = 'none';
-  document.getElementById('personaOtherPlatformScreen').style.display = '';
-  ensurePersonaInquiry();
-}
-
-function personaBackToChoice() {
-  document.getElementById('personaChoiceScreen').style.display = '';
-  document.getElementById('personaEmbeddedScreen').style.display = 'none';
-  document.getElementById('personaOtherPlatformScreen').style.display = 'none';
-}
-
-async function personaOpenNewTab() {
-  const btn = document.getElementById('personaNewTabBtn');
-  btn.disabled = true;
-  btn.textContent = '生成中... / Generating...';
-  try {
-    if (!_personaHostedUrl) {
-      const r = await ensurePersonaInquiry();
-      if (!r || (!r.hosted_url && !_personaHostedUrl)) {
-        showPersonaSendStatus('❌ 无法生成验证链接 / Failed to generate verification link', 'error');
-        btn.disabled = false; btn.textContent = '🌐 在新标签页中打开验证 / Open Verification in New Tab'; return;
-      }
-    }
-    window.open(_personaHostedUrl, '_blank');
-    showPersonaSendStatus('✅ 已在新标签页中打开验证页面 / Verification opened in new tab', 'ok');
-    startPersonaStatusPoll();
-  } catch (e) {
-    showPersonaSendStatus('❌ ' + e.message, 'error');
-  }
-  btn.disabled = false; btn.textContent = '🌐 在新标签页中打开验证 / Open Verification in New Tab';
-}
-
-async function ensurePersonaInquiry() {
-  if (_personaHostedUrl) return { inquiry_id: null, hosted_url: _personaHostedUrl };
-  const r = await wApi('/persona/inquiry', { method: 'POST' });
-  if (r && r.hosted_url) _personaHostedUrl = r.hosted_url;
-  if (r && r.client_secret) _stripeClientSecret = r.client_secret;
-  return r;
-}
-
-async function startStripeVerification() {
-  if (typeof Stripe === 'undefined') {
-    showToast('❌ Stripe.js 加载失败，请刷新页面重试', 'error');
-    return;
-  }
-  if (!_stripePublishableKey) {
-    showToast('❌ Stripe 未配置 publishable key', 'error');
-    return;
-  }
-  const btn = document.getElementById('personaStartBtn');
-  btn.disabled = true;
-  btn.textContent = '加载中...';
-
-  try {
-    // Create session on backend if we don't have a client secret
-    if (!_stripeClientSecret) {
-      const r = await wApi('/persona/inquiry', { method: 'POST' });
-      if (!r || !r.client_secret) {
-        showToast('❌ ' + (r?.error || '创建验证失败'), 'error');
-        btn.disabled = false;
-        btn.textContent = '🖥️ 开始验证 / Start Verification';
-        return;
-      }
-      _stripeClientSecret = r.client_secret;
-      if (r.hosted_url) {
-        _personaHostedUrl = r.hosted_url;
-        updatePersonaLinkUI(r.hosted_url);
-      }
-    }
-
-    // Initialize Stripe and open modal
-    const stripeObj = Stripe(_stripePublishableKey);
-    const result = await stripeObj.verifyIdentity(_stripeClientSecret);
-
-    btn.disabled = false;
-    btn.textContent = '🖥️ 开始验证 / Start Verification';
-
-    if (result.error) {
-      console.error('[Stripe Identity] Error:', result.error);
-      if (result.error.code === 'session_cancelled') {
-        showToast('验证已取消', 'error');
-      } else {
-        showToast('❌ 验证出错: ' + result.error.message, 'error');
-      }
-    } else {
-      // Verification submitted successfully
-      const box = document.getElementById('personaStatusBox');
-      box.style.display = '';
-      box.style.background = '#fefce8';
-      box.style.border = '1px solid #fde047';
-      box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Processing...</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">证件已提交，系统正在自动验证。通过后状态会自动更新。<br>Verification submitted. Status will update automatically.</div>';
-      showToast('✅ 证件已提交验证');
-      _stripeClientSecret = null; // reset after completion
-
-      // Poll for result
-      const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
-      loadCompliance();
-      loadOnboarding();
-      if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted')) {
-        if (pollResult.status === 'approved') {
-          box.style.background = '#f0fdf4';
-          box.style.border = '1px solid #86efac';
-          box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
-        } else {
-          box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证已提交，等待审核 / Submitted, Pending Review</div>';
-        }
-      } else {
-        startPersonaStatusPoll();
-      }
-    }
-  } catch (e) {
-    console.error('[Stripe Identity] Init error:', e);
-    showToast('❌ 初始化失败: ' + e.message, 'error');
-    btn.disabled = false;
-    btn.textContent = '🖥️ 开始验证 / Start Verification';
-  }
-}
-
-function updatePersonaLinkUI(url) {
-  if (!url) return;
-  const linkArea = document.getElementById('personaLinkArea');
-  const linkInput = document.getElementById('personaLinkInput');
-  if (linkArea && linkInput) {
-    linkInput.value = url;
-    linkArea.style.display = '';
-  }
-}
-
-function showPersonaSendStatus(msg, type) {
-  const el = document.getElementById('personaSendStatus');
-  el.style.display = '';
-  el.style.background = type === 'ok' ? '#f0fdf4' : type === 'error' ? '#fef2f2' : '#fefce8';
-  el.style.color = type === 'ok' ? '#15803d' : type === 'error' ? '#dc2626' : '#a16207';
-  el.textContent = msg;
-  setTimeout(() => { el.style.display = 'none'; }, 5000);
-}
-
-let _personaPollTimer = null;
-function startPersonaStatusPoll() {
-  if (_personaPollTimer) clearInterval(_personaPollTimer);
-  let attempts = 0;
-  _personaPollTimer = setInterval(async () => {
-    attempts++;
-    if (attempts > 20) { clearInterval(_personaPollTimer); _personaPollTimer = null; return; }
-    const st = await wApi('/persona/poll-status', { method: 'POST' });
-    if (st && (st.status === 'approved' || st.status === 'submitted' || st.persona_status === 'verified' || st.persona_status === 'processing')) {
-      clearInterval(_personaPollTimer);
-      _personaPollTimer = null;
-      loadOnboarding();
-      loadCompliance();
-      if (st.status === 'approved') {
-        showToast('✅ 身份验证已通过！');
-      } else {
-        showToast('✅ 验证已提交，等待审核');
-      }
-    }
-  }, 5000);
-}
-
-async function personaSendSMS() {
-  const acc = _workerInfo && _workerInfo.account;
-  const phone = acc && acc.phone;
-  if (!phone) {
-    showPersonaSendStatus('❌ 未设置手机号，请先在"个人信息"页面添加手机号 / No phone number set, please add one in Profile first', 'error');
-    return;
-  }
-  const maskedPhone = phone.slice(0, 3) + '****' + phone.slice(-4);
-  if (!await customConfirm(`将发送验证链接到以下手机号 / Verification link will be sent to:\n\n📱 ${maskedPhone}\n\n是否确认发送？ / Confirm send?`, '发送短信', '📱')) return;
-
-  const btn = document.getElementById('personaSmsBtn');
-  btn.disabled = true;
-  btn.textContent = '发送中...';
-  try {
-    if (!_personaHostedUrl) {
-      const r = await ensurePersonaInquiry();
-      if (!r || (!r.hosted_url && !_personaHostedUrl)) {
-        showPersonaSendStatus('❌ 请先创建验证 / Please create verification first', 'error');
-        btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS'; return;
-      }
-    }
-    const r = await wApi('/persona/send-sms', { method: 'POST', body: JSON.stringify({}) });
-    if (r && r.success) {
-      showPersonaSendStatus(`✅ 短信已发送到 ${maskedPhone} / SMS sent to ${maskedPhone}`, 'ok');
-    } else {
-      showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
-    }
-  } catch (e) {
-    showPersonaSendStatus('❌ ' + e.message, 'error');
-  }
-  btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS';
-}
-
-async function personaSendEmail() {
-  const acc = _workerInfo && _workerInfo.account;
-  const email = acc && acc.email;
-  if (!email) {
-    showPersonaSendStatus('❌ 未设置邮箱，请先在"个人信息"页面添加邮箱 / No email set, please add one in Profile first', 'error');
-    return;
-  }
-  const maskedEmail = email.replace(/(.{2}).*(@.*)/, '$1****$2');
-  if (!await customConfirm(`将发送验证链接到以下邮箱 / Verification link will be sent to:\n\n📧 ${maskedEmail}\n\n是否确认发送？ / Confirm send?`, '发送邮件', '📧')) return;
-
-  const btn = document.getElementById('personaEmailBtn');
-  btn.disabled = true;
-  btn.textContent = '发送中...';
-  try {
-    if (!_personaHostedUrl) {
-      const r = await ensurePersonaInquiry();
-      if (!r || (!r.hosted_url && !_personaHostedUrl)) {
-        showPersonaSendStatus('❌ 请先创建验证 / Please create verification first', 'error');
-        btn.disabled = false; btn.textContent = '📧 邮件发送 / Send Email'; return;
-      }
-    }
-    const r = await wApi('/persona/send-email', { method: 'POST', body: JSON.stringify({}) });
-    if (r && r.success) {
-      showPersonaSendStatus(`✅ 邮件已发送到 ${maskedEmail} / Email sent to ${maskedEmail}`, 'ok');
-    } else {
-      showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
-    }
-  } catch (e) {
-    showPersonaSendStatus('❌ ' + e.message, 'error');
-  }
-  btn.disabled = false; btn.textContent = '📧 邮件发送 / Send Email';
-}
-
-async function personaShowQR() {
-  const area = document.getElementById('personaQRArea');
-  const qrDiv = document.getElementById('personaQRCode');
-  if (!_personaHostedUrl) {
-    const btn = document.getElementById('personaQRBtn');
-    btn.disabled = true; btn.textContent = '生成中...';
-    const r = await ensurePersonaInquiry();
-    btn.disabled = false; btn.textContent = '📷 显示二维码 / Show QR Code';
-    if (!r || (!r.hosted_url && !_personaHostedUrl)) {
-      showPersonaSendStatus('❌ 请先创建验证 / Please create verification first', 'error');
-      return;
-    }
-  }
-  if (area.style.display !== 'none') { area.style.display = 'none'; return; }
-  qrDiv.innerHTML = '';
-  if (typeof QRCode === 'undefined') {
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
-    script.onload = () => { renderPersonaQR(qrDiv); area.style.display = ''; };
-    script.onerror = () => {
-      qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(_personaHostedUrl)}" alt="QR Code" style="width:200px;height:200px">`;
-      area.style.display = '';
-    };
-    document.head.appendChild(script);
-  } else {
-    renderPersonaQR(qrDiv);
-    area.style.display = '';
-  }
-  updatePersonaLinkUI(_personaHostedUrl);
-}
-
-function renderPersonaQR(container) {
-  new QRCode(container, { text: _personaHostedUrl, width: 200, height: 200, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
-}
-
-async function personaCopyLink() {
-  if (!_personaHostedUrl) {
-    const btn = document.getElementById('personaCopyBtn');
-    btn.disabled = true; btn.textContent = '生成中...';
-    const r = await ensurePersonaInquiry();
-    btn.disabled = false; btn.textContent = '🔗 复制链接 / Copy Link';
-    if (!r || (!r.hosted_url && !_personaHostedUrl)) {
-      showPersonaSendStatus('❌ 请先创建验证 / Please create verification first', 'error');
-      return;
-    }
-  }
-  try {
-    await navigator.clipboard.writeText(_personaHostedUrl);
-    showPersonaSendStatus('✅ 链接已复制到剪贴板 / Link copied!', 'ok');
-    updatePersonaLinkUI(_personaHostedUrl);
-  } catch {
-    const input = document.getElementById('personaLinkInput');
-    updatePersonaLinkUI(_personaHostedUrl);
-    input.select();
-    document.execCommand('copy');
-    showPersonaSendStatus('✅ 链接已复制 / Link copied!', 'ok');
-  }
-}
-
-// ── Portal address verify helpers ──
-function _setPortalAddrStatus(id, verified) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  if (verified === null || verified === undefined) { el.textContent = ''; return; }
-  if (verified) {
-    el.textContent = '✓ 已验证';
-    el.style.color = '#16a34a';
-  } else {
-    el.textContent = '⚠ 未能验证';
-    el.style.color = '#d97706';
-  }
-}
-
-function clearI9AddrStatus() { _setPortalAddrStatus('i9AddrStatus', null); }
-function clearW9AddrStatus() { _setPortalAddrStatus('w9AddrStatus', null); }
-
-async function _doVerifyI9Addr(silent) {
-  const form = document.getElementById('i9Form');
-  if (!form) return;
-  const street = form.address.value.trim();
-  const city   = form.city.value.trim();
-  const zip    = form.zip.value.trim();
-  if (!street && !city && !zip) return;
-  const statusEl = document.getElementById('i9AddrStatus');
-  statusEl.textContent = '验证中…'; statusEl.style.color = '#94a3b8';
-  try {
-    const result = await validateAddress({
-      street, street2: form.apt ? form.apt.value.trim() : '',
-      city, state: form.state.value, zip
-    }, { silent });
-    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
-    if (!result.proceed) { _setPortalAddrStatus('i9AddrStatus', false); return; }
-    if (result.standardized) {
-      const s = result.standardized;
-      form.address.value = s.street;
-      if (form.apt && s.street2) form.apt.value = s.street2;
-      form.city.value  = s.city;
-      form.state.value = s.state;
-      form.zip.value   = s.zip;
-    }
-    _setPortalAddrStatus('i9AddrStatus', result.verified === true);
-  } catch (e) {
-    console.error('[verifyI9Addr]', e);
-    _setPortalAddrStatus('i9AddrStatus', false);
-  }
-}
-
-function verifyI9Addr()     { _doVerifyI9Addr(false); }
-function autoVerifyI9Addr() {
-  const form = document.getElementById('i9Form');
-  if (!form || !form.address.value.trim()) return;
-  _doVerifyI9Addr(true);
-}
-
-async function _doVerifyW9Addr(silent) {
-  const form = document.getElementById('w9Form');
-  if (!form) return;
-  const street = form.address.value.trim();
-  const city   = form.city.value.trim();
-  const zip    = form.zip.value.trim();
-  if (!street && !city && !zip) return;
-  const statusEl = document.getElementById('w9AddrStatus');
-  statusEl.textContent = '验证中…'; statusEl.style.color = '#94a3b8';
-  try {
-    const result = await validateAddress({ street, city, state: form.state.value.trim(), zip }, { silent });
-    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
-    if (!result.proceed) { _setPortalAddrStatus('w9AddrStatus', false); return; }
-    if (result.standardized) {
-      const s = result.standardized;
-      form.address.value = s.street;
-      form.city.value    = s.city;
-      form.state.value   = s.state;
-      form.zip.value     = s.zip;
-    }
-    _setPortalAddrStatus('w9AddrStatus', result.verified === true);
-  } catch (e) {
-    console.error('[verifyW9Addr]', e);
-    _setPortalAddrStatus('w9AddrStatus', false);
-  }
-}
-
-function verifyW9Addr()     { _doVerifyW9Addr(false); }
-function autoVerifyW9Addr() {
-  const form = document.getElementById('w9Form');
-  if (!form || !form.address.value.trim()) return;
-  _doVerifyW9Addr(true);
-}
-
-function toggleI9Fields(val) {
-  document.getElementById('i9AlienFields').style.display = (val === 'permanent_resident' || val === 'work_authorized') ? '' : 'none';
-}
-
-async function submitI9(e) {
-  e.preventDefault();
-  const form = e.target;
-  const addrResult = await validateAddress({
-    street:  form.address.value.trim(),
-    street2: form.apt ? form.apt.value.trim() : '',
-    city:    form.city.value.trim(),
-    state:   form.state.value,
-    zip:     form.zip.value.trim()
-  });
-  if (!addrResult.proceed) return;
-  if (addrResult.standardized) {
-    const s = addrResult.standardized;
-    form.address.value = s.street;
-    if (form.apt) form.apt.value = s.street2 || '';
-    form.city.value  = s.city;
-    form.state.value = s.state;
-    form.zip.value   = s.zip;
-  }
-  const fd = new FormData(form);
-  fd.set('signature_confirm', form.signature_confirm.checked ? '1' : '');
-  try {
-    const r = await fetch('/api/worker/compliance/i9', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
-      body: fd
-    });
-    const data = await r.json();
-    if (data.success) { showToast('✅ I-9 已提交，等待审核'); form.reset(); loadCompliance(); loadSubmissionSummary(); }
-    else customAlert(data.error || '提交失败', '提交失败', '❌');
-  } catch { customAlert('网络错误', '错误', '❌'); }
-}
-
-async function submitDL(e) {
-  e.preventDefault();
-  const form = e.target;
-  const fd = new FormData(form);
-  try {
-    const r = await fetch('/api/worker/compliance/drivers-license', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
-      body: fd
-    });
-    const data = await r.json();
-    if (data.success) { showToast('✅ 驾照已提交，等待验证'); form.reset(); loadCompliance(); }
-    else customAlert(data.error || '提交失败', '提交失败', '❌');
-  } catch { customAlert('网络错误', '错误', '❌'); }
-}
-
-async function submitW9(e) {
-  e.preventDefault();
-  const form = e.target;
-  const addrResult = await validateAddress({
-    street:  form.address.value.trim(),
-    street2: '',
-    city:    form.city.value.trim(),
-    state:   form.state.value.trim(),
-    zip:     form.zip.value.trim()
-  });
-  if (!addrResult.proceed) return;
-  if (addrResult.standardized) {
-    const s = addrResult.standardized;
-    form.address.value = s.street;
-    form.city.value  = s.city;
-    form.state.value = s.state;
-    form.zip.value   = s.zip;
-  }
-  const body = {};
-  new FormData(form).forEach((v, k) => { body[k] = v; });
-  body.signature_confirm = form.signature_confirm.checked ? '1' : '';
-  const btn = form.querySelector('button[type="submit"]');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ 提交中...'; }
-  try {
-    const r = await fetch('/api/worker/compliance/w9', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
-      body: JSON.stringify(body)
-    });
-    const data = await r.json();
-    if (data.success) {
-      if (data.signUrl) {
-        // DocuSeal W-9 created — open signing modal inline
-        form.reset();
-        loadCompliance();
-        loadOnboarding();
-        setTimeout(() => { openWorkerW9Sign(); }, 300);
-      } else {
-        showToast('✅ W-9 已提交，等待审核');
-        form.reset();
-        loadCompliance();
-        loadOnboarding();
-      }
-    }
-    else customAlert(data.error || '提交失败', '提交失败', '❌');
-  } catch { customAlert('网络错误', '错误', '❌'); }
-  finally { if (btn) { btn.disabled = false; btn.textContent = '提交 W-9 / Submit'; } }
-}
-
-// ─── Submission Summary ───
-async function loadSubmissionSummary() {
-  const card = document.getElementById('submissionSummaryCard');
-  const content = document.getElementById('submissionSummaryContent');
-  const titleEl = document.getElementById('sumTitleEl');
-  if (!card || !content) return;
-  try {
-    const data = await wApi('/submission-summary');
-    if (!data || data.error) { card.style.display = 'none'; return; }
-
-    titleEl.textContent = _t('sumTitle');
-    const authLabels = _t('sumAuthLabels') || {};
-    const empLabels = _t('sumEmpLabels') || {};
-    const formMap = _t('sumFormMap') || {};
-
-    const authCat = data.work_auth_category || 'unknown';
-    const empType = data.employment_type || '';
-    const authLabel = authLabels[authCat] || authLabels.unknown || authCat;
-    const empLabel = empLabels[empType] || empLabels[''] || empType;
-
-    // Determine associated form based on employment type
-    const assocForm = formMap[empType] || '';
-
-    // Form status badges
-    const fs = data.form_statuses || {};
-    const i9s = fs.i9?.status || 'pending';
-    const w9s = fs.w9?.status || 'pending';
-    const i9Done = ['completed','submitted','waived'].includes(i9s);
-    const w9Done = ['completed','submitted','waived'].includes(w9s);
-
-    // Stats
-    const stats = data.stats || {};
-    const pct = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-
-    // Next steps
-    let nextStepsHtml = '';
-    const pendingForms = [];
-    if (!i9Done && (empType === 'W2' || !empType)) pendingForms.push(_t('sumI9Pending'));
-    if (!w9Done && (empType === '1099' || !empType)) pendingForms.push(_t('sumW9Pending'));
-    if (pendingForms.length === 0) {
-      nextStepsHtml = `<div style="padding:.6rem .8rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.82rem;color:#065f46">${_t('sumAllDone')}</div>`;
-    } else {
-      nextStepsHtml = `<div style="font-size:.82rem;color:var(--gray-500)">${_t('sumNextSteps')}：${pendingForms.join('、')}</div>`;
-    }
-
-    content.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
-        <!-- Work Auth Status -->
-        <div style="border:1.5px solid #e9d5ff;border-radius:10px;padding:1rem;background:#faf5ff">
-          <div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem">${esc(_t('sumWorkAuth'))}</div>
-          <div style="font-size:1.05rem;font-weight:700;color:var(--blue)">${esc(authLabel)}</div>
-          ${data.tax_residency?.work_permit_category ? `<div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem">${esc(data.tax_residency.work_permit_category)}</div>` : ''}
-        </div>
-        <!-- Employment Type -->
-        <div style="border:1.5px solid #bae6fd;border-radius:10px;padding:1rem;background:#f0f9ff">
-          <div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem">${esc(_t('sumEmpType'))}</div>
-          <div style="font-size:1.05rem;font-weight:700;color:var(--blue)">${esc(empLabel)}</div>
-          ${assocForm ? `<div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem">${esc(assocForm)}</div>` : ''}
-        </div>
-      </div>
-      <!-- Form Status Badges -->
-      <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem">
-        ${empType === 'W2' || !empType ? `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .75rem;border-radius:20px;font-size:.8rem;font-weight:600;${i9Done ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a'}">${i9Done ? '✅' : '⏳'} ${i9Done ? _t('sumI9Done') : _t('sumI9Pending')}</span>` : ''}
-        ${empType === '1099' || !empType ? `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .75rem;border-radius:20px;font-size:.8rem;font-weight:600;${w9Done ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a'}">${w9Done ? '✅' : '⏳'} ${w9Done ? _t('sumW9Done') : _t('sumW9Pending')}</span>` : ''}
-      </div>
-      <!-- Progress Bar -->
-      <div style="margin-bottom:.75rem">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
-          <span style="font-size:.78rem;font-weight:600;color:var(--blue)">${esc(_t('sumProgress'))}</span>
-          <span style="font-size:.78rem;color:var(--gray-500)">${stats.completed}${_t('sumOf')}${stats.total} ${_t('sumCompleted')}${stats.pending > 0 ? ` · ${stats.pending} ${_t('sumRemaining')}` : ''}</span>
-        </div>
-        <div style="background:var(--gray-100);border-radius:6px;height:8px;overflow:hidden">
-          <div style="background:linear-gradient(90deg,#10b981,#34d399);height:100%;border-radius:6px;width:${pct}%;transition:width .5s ease"></div>
-        </div>
-      </div>
-      ${nextStepsHtml}
-    `;
-    card.style.display = '';
-  } catch (e) {
-    console.error('[loadSubmissionSummary]', e);
-    card.style.display = 'none';
-  }
-}
 
 // ─── Onboarding / 待办事项 ───
 async function loadOnboarding() {
@@ -5336,8 +4456,7 @@ async function loadOnboarding() {
     } else if (s === 'pending') {
       if (t.key === 'persona_verify') {
         actionHtml = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
-          <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="openPersonaInPortal()">${_t('obActionPortalVerify')}</button>
-          ${t.action_url ? `<a class="btn" style="font-size:.8rem;padding:.3rem .75rem;text-decoration:none;display:inline-block;background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5" href="${esc(t.action_url)}" target="_blank">${_t('obActionOpenLink')}</a>` : ''}
+          ${t.action_url ? `<a class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;text-decoration:none;display:inline-block" href="${esc(t.action_url)}" target="_blank">${_t('obActionPortalVerify')}</a>` : `<div style="font-size:.82rem;color:var(--gray-500)">${_t('obActionCheckr')}</div>`}
         </div>`;
       } else if (t.key === 'background_check') {
         actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">${_t('obActionCheckr')}${t.action_url ? ` · <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">${_t('obActionOpenLink')}</a>` : ''}</div>`;
@@ -5364,10 +4483,10 @@ async function loadOnboarding() {
               </div>
             </div>
           </div>
-          <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="showTab('compliance')">${_t('obActionDocs')}</button>
+          <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="submitOnboardingTask('${t.key}')">${_t('obActionSubmit')}</button>
         </div>`;
-      } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
-        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">${_t('obActionDocs')}</button>`;
+      } else if (['id_verify','ssn_verify','ead_upload','i9'].includes(t.key)) {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="submitOnboardingTask('${t.key}')">${_t('obActionSubmit')}</button>`;
       } else if (t.key === 'contract' && t.action_url && t.ds_status !== 'sent') {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openWorkerContractSign()">${_t('obActionContract')}</button>`;
       } else if (t.key === 'contract' && (!t.action_url || t.ds_status === 'sent')) {
@@ -5385,6 +4504,8 @@ async function loadOnboarding() {
       }
     } else if (s === 'completed' && t.key === 'contract' && t.ds_envelope_id) {
       actionHtml = `<button class="btn" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0" onclick="openSignedContractViewer()">📄 查看已签署合同</button>`;
+    } else if (s === 'completed' && t.key === 'w9' && t.ds_envelope_id) {
+      actionHtml = `<button class="btn" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0" onclick="openSignedW9Viewer()">📄 查看已签署W-9</button>`;
     }
     return `<div class="ob-step">
       <div class="ob-icon ob-${s==='completed'?'done':s==='waived'?'waived':s==='submitted'?'submitted':s==='pending'?'pending':'locked'}">${icons[t.key]||'📌'}</div>
@@ -5412,9 +4533,6 @@ function updateSidebarBadgesFromTasks(tasks) {
   const pendingCount = tasks.filter(t => t.status === 'pending' || t.status === 'submitted').length;
   _setBadge('badgeTodos', pendingCount);
 
-  const complianceKeys = ['ead_upload', 'i9', 'w9', 'contract', 'gusto'];
-  const compliancePending = tasks.filter(t => complianceKeys.includes(t.key) && (t.status === 'pending' || t.status === 'submitted')).length;
-  _setBadge('badgeCompliance', compliancePending);
 }
 
 async function updateSidebarBadges() {
@@ -5474,7 +4592,26 @@ async function openWorkerW9Sign() {
   msgEl.textContent = '加载 W-9 签署页面中…';
   try {
     const r = await wApi('/w9-sign-url');
-    if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
+    if (!r || !r.signUrl) {
+      // If already completed, close modal and refresh
+      if (r?.error?.includes('已完成')) {
+        modal.style.display = 'none';
+        showToast('✅ W-9 已签署完成！', 'success', 4000);
+        loadOnboarding();
+        return;
+      }
+      throw new Error(r?.error || '获取签署链接失败');
+    }
+    // If URL is not embeddable (slug URL), open in new tab instead
+    if (r.embeddable === false) {
+      modal.style.display = 'none';
+      window.open(r.signUrl, '_blank');
+      showToast('✅ W-9 签署页面已在新标签页打开 / W-9 signing page opened in new tab');
+      setTimeout(() => loadOnboarding(), 5000);
+      return;
+    }
+    // Use DocuSeal web component (same approach as contract signing modal)
+    // The <docuseal-form> component handles rendering, signatures, and communication reliably.
     const form = document.createElement('docuseal-form');
     form.setAttribute('data-src', r.signUrl);
     form.setAttribute('data-with-draw-signature', 'true');
@@ -5494,6 +4631,8 @@ async function openWorkerW9Sign() {
     loading.style.display = 'none';
     formDiv.style.display = '';
   } catch (e) {
+    const spinnerEl = loading.querySelector('div');
+    if (spinnerEl) spinnerEl.style.display = 'none';
     msgEl.innerHTML = `❌ ${e.message}<br><br><button onclick="closeWorkerW9Sign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭</button>`;
   }
 }
@@ -5834,6 +4973,58 @@ async function openSignedContractViewer() {
 function closeSignedContractViewer() {
   document.getElementById('signedContractViewerModal').style.display = 'none';
   document.getElementById('signedContractViewerFrame').src = '';
+}
+</script>
+
+<!-- ── Signed W-9 PDF Viewer Modal ── -->
+<div id="signedW9ViewerModal" style="display:none;position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;width:min(98vw,860px);height:min(92vh,720px);display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.1rem;border-bottom:1px solid #e2e8f0;flex-shrink:0">
+      <span style="font-weight:700;font-size:.95rem;color:#065f46">📄 已签署W-9</span>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <a id="signedW9DownloadLink" href="#" download="signed-w9.pdf" style="font-size:.82rem;padding:.25rem .75rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0;border-radius:6px;text-decoration:none">⬇ 下载</a>
+        <button onclick="closeSignedW9Viewer()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#64748b;line-height:1">&times;</button>
+      </div>
+    </div>
+    <div id="signedW9ViewerLoading" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;font-size:.9rem;color:#64748b">
+      <div style="width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#065f46;border-radius:50%;animation:spin .8s linear infinite"></div>
+      <span>加载W-9中…</span>
+    </div>
+    <iframe id="signedW9ViewerFrame" style="flex:1;display:none;border:none;min-height:0" src=""></iframe>
+  </div>
+</div>
+
+<script>
+let _signedW9BlobUrl = null;
+async function openSignedW9Viewer() {
+  const modal = document.getElementById('signedW9ViewerModal');
+  const loading = document.getElementById('signedW9ViewerLoading');
+  const frame = document.getElementById('signedW9ViewerFrame');
+  const dlLink = document.getElementById('signedW9DownloadLink');
+  modal.style.display = 'flex';
+  loading.style.display = 'flex';
+  frame.style.display = 'none';
+  frame.src = '';
+  try {
+    const r = await fetch('/api/worker/w9-signed-pdf', {
+      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN }
+    });
+    if (r.status === 401) { workerLogout(); return; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || '加载失败'); }
+    const blob = await r.blob();
+    if (_signedW9BlobUrl) URL.revokeObjectURL(_signedW9BlobUrl);
+    _signedW9BlobUrl = URL.createObjectURL(blob);
+    dlLink.href = _signedW9BlobUrl;
+    frame.src = _signedW9BlobUrl;
+    loading.style.display = 'none';
+    frame.style.display = '';
+  } catch (e) {
+    loading.innerHTML = `❌ ${e.message}，请稍后重试。`;
+  }
+}
+function closeSignedW9Viewer() {
+  document.getElementById('signedW9ViewerModal').style.display = 'none';
+  document.getElementById('signedW9ViewerFrame').src = '';
 }
 </script>
 </body>

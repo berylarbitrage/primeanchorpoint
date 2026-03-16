@@ -1,132 +1,49 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"><title>Contractor Invoice Preview</title></head><body style="background:#f5f5f5;padding:20px"><div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
-  <div style="font-size:1.4rem;font-weight:900;letter-spacing:2px">INVOICE</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">1099 Contractor Invoice / 承包商发票</div>
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice</title><style>@page{size:letter;margin:0.5in}</style></head><body style="background:#fff;padding:0;margin:0"><div style="font-family:Arial,Helvetica,sans-serif;font-size:8pt;max-width:680px;margin:0 auto;padding:10px 16px;color:#111;line-height:1.35">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
+  <div style="font-size:14pt;font-weight:900;letter-spacing:2px">INVOICE</div>
+  <div style="font-size:7.5pt;color:#555">1099 Contractor Invoice / 承包商发票</div>
+  <div style="font-size:6.5pt;color:#f59e0b;margin-top:2px">Amber fields = you fill / 橙色栏位 = 请您填写 &nbsp;|&nbsp; Grey fields = pre-filled / 灰色 = 系统自动带出</div>
 </div>
-
-<!-- Section 1-2: Invoice Number & Date -->
-<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-      <div style="font-weight:700;margin-bottom:4px">Invoice # / 发票编号:</div>
-      <text-field name="invoice_number" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:200px" placeholder="2026-001"></text-field>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Invoice #</b><br><text-field name="invoice_number" role="First Party" required="true" readonly="true" style="border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;width:130px" placeholder="Auto-generated"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Date 日期</b><br><date-field name="invoice_date" role="First Party" required="true" readonly="true" style="border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;width:120px"></date-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Period From 起始 *</b><br><text-field name="service_period_start" role="First Party" required="true" readonly="true" style="border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;width:110px" placeholder="(pre-filled)"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Period To 截止 *</b><br><text-field name="service_period_end" role="First Party" required="true" readonly="true" style="border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;width:110px" placeholder="(pre-filled)"></text-field></td>
+  </tr>
+</table>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
+  <tr>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%">
+      <b>FROM — Contractor 承包商</b> <span style="font-size:6.5pt;color:#999">(pre-filled / 系统带出)</span><br>
+      Name 姓名: <text-field name="contractor_name" role="First Party" required="true" readonly="true" style="border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;width:100%" placeholder="(pre-filled)"></text-field>
     </td>
-    <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-      <div style="font-weight:700;margin-bottom:4px">Invoice Date / 开票日期:</div>
-      <date-field name="invoice_date" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:160px"></date-field>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%">
+      <b>BILL TO — Company 公司</b><br>
+      <div style="font-weight:600">Prime Anchorpoint LLC</div>
     </td>
   </tr>
 </table>
-
-<!-- Section 3-4: Contractor & Company Info -->
-<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
-  <tr>
-    <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-      <div style="font-weight:700;margin-bottom:4px">FROM — Contractor / 承包商信息:</div>
-      <div style="font-size:8pt;margin-bottom:2px">Name / 姓名 (须与 W-9 一致):</div>
-      <text-field name="contractor_name" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;" placeholder="Legal name or business name"></text-field>
-      <div style="font-size:8pt;margin:4px 0 2px">Address / 地址:</div>
-      <text-field name="contractor_address" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;" placeholder="Street, City, State, ZIP"></text-field>
-      <div style="font-size:8pt;margin:4px 0 2px">Phone / 电话:</div>
-      <text-field name="contractor_phone" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:180px" placeholder="(xxx) xxx-xxxx"></text-field>
-      <div style="font-size:8pt;margin:4px 0 2px">Email / 邮箱:</div>
-      <text-field name="contractor_email" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;" placeholder="email@example.com"></text-field>
-    </td>
-    <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-      <div style="font-weight:700;margin-bottom:4px">BILL TO — Company / 公司信息:</div>
-      <div style="font-size:9pt;font-weight:600">Prime Anchorpoint LLC</div>
-      
-      
-    </td>
-  </tr>
+<div style="font-weight:700;margin:4px 0 2px">SERVICE DESCRIPTION 服务内容 <span style="font-weight:400;color:#999;font-size:7pt">(Pre-filled by company 系统自动带出，不可修改)</span></div>
+<text-field name="service_description" role="First Party" required="true" readonly="true" style="border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;width:100%;min-height:48px" placeholder="e.g. Warehouse sorting and loading services for the period of [Start Date] to [End Date]"></text-field>
+<div style="font-weight:700;margin:4px 0 2px">Additional Notes 补充说明 <span style="font-weight:400;color:#999;font-size:7pt">(optional 选填)</span></div>
+<text-field name="additional_notes" role="First Party" style="border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:32px" placeholder="Additional details or clarifications 补充说明"></text-field>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin:6px 0">
+  <tr><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:65%"><b>Compensation Method 补偿方式</b></td><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;text-align:right"><text-field name="compensation_method" role="First Party" readonly="true" style="border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;width:240px" placeholder="Contractor-proposed flat project fee">Contractor-proposed flat project fee 承包商报价固定项目费用</text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;background:#fffbeb;width:65%"><b>Quoted Amount 报价金额</b></td><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;background:#fffbeb;text-align:right">$ <text-field name="quoted_amount" role="First Party" required="true" style="border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100px" placeholder="0.00"></text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;background:#fffbeb;">Reimbursable Expenses 可报销费用</td><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;background:#fffbeb;text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100px" placeholder="0.00"></text-field></td></tr>
+  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">TOTAL DUE 应付总额</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" required="true" style="border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></text-field></td></tr>
 </table>
-
-<!-- Section 5: Service Period -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">SERVICE PERIOD / 服务期间</div>
-<p style="font-size:9pt">Services performed from / 服务日期从
-  <text-field name="service_period_start" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:130px" placeholder="MM/DD/YYYY"></text-field>
-  to / 到
-  <text-field name="service_period_end" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:130px" placeholder="MM/DD/YYYY"></text-field>
-</p>
-
-<!-- Section 6: Itemized Service Description -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">SERVICE DESCRIPTION / 服务内容明细</div>
-<p style="font-size:8pt;color:#555;margin-bottom:4px">Please itemize each service. 请逐项描述服务内容（如：仓库分拣 3 班 / 装卸 2 次 / 清洁服务 5 小时）</p>
-<text-field name="service_description" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;;min-height:80px" placeholder="Line 1: Warehouse sorting — 3 shifts&#10;Line 2: Loading/unloading — 2 trips&#10;Line 3: Cleaning service — 5 hours"></text-field>
-
-<!-- Section 7: Rate & Method of Compensation -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">RATE &amp; COMPENSATION / 计费方式</div>
-<p style="font-size:8pt;color:#555;margin-bottom:4px">Specify rate and method. 请填写计费方式（如：$25/hour × 12 hours / $300/shift × 2 shifts / Flat fee $800）</p>
-<text-field name="rate_description" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;;min-height:40px" placeholder="$25/hour × 12 hours = $300&#10;$300/shift × 2 shifts = $600"></text-field>
-
-<!-- Section 8: Amount Summary -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">AMOUNT SUMMARY / 金额汇总</div>
-<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
-  <tr>
-    <td style="padding:6px;border:1px solid #ccc;width:60%">Subtotal / 小计:</td>
-    <td style="padding:6px;border:1px solid #ccc;text-align:right">$ <text-field name="subtotal_amount" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:120px" placeholder="0.00"></text-field></td>
-  </tr>
-  <tr>
-    <td style="padding:6px;border:1px solid #ccc">Reimbursable Expenses / 可报销费用:</td>
-    <td style="padding:6px;border:1px solid #ccc;text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:120px" placeholder="0.00"></text-field></td>
-  </tr>
-  <tr style="background:#f0f0f0;font-weight:700">
-    <td style="padding:8px;border:1px solid #999">TOTAL AMOUNT DUE / 应付总额:</td>
-    <td style="padding:8px;border:1px solid #999;text-align:right;font-size:11pt">$ <text-field name="total_amount" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:120px;font-weight:700;font-size:11pt" placeholder="0.00"></text-field></td>
-  </tr>
-</table>
-
-<!-- Section 9: Payment Due Date -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">PAYMENT DUE DATE / 付款到期日</div>
-<p style="font-size:9pt">Payment due by / 付款截止日期:
-  <text-field name="payment_due_date" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:160px" placeholder="MM/DD/YYYY"></text-field>
-</p>
-<p style="font-size:8pt;color:#555">If no due date is specified in the contract, payment is generally due within 30 days of service completion per Illinois law.<br>若合同未注明付款日期，依 Illinois 法律通常在完工后 30 天内付款。</p>
-
-<!-- Section 10: Payment Method -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">PAYMENT METHOD / 付款方式</div>
-<p style="font-size:9pt">Preferred payment method / 首选付款方式:
-  <text-field name="payment_method" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:200px" placeholder="ACH / Check / Zelle / Wire"></text-field>
-</p>
-<p style="font-size:8pt;color:#555">Note: Bank routing/account numbers should be provided via a separate payment authorization form, not on invoices. 注意：银行账户等敏感信息请通过单独的付款授权表提供，请勿填写在 invoice 上。</p>
-
-<!-- Section 11: Additional Notes -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">NOTES / 备注</div>
-<text-field name="invoice_notes" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;;min-height:40px" placeholder="Any additional notes..."></text-field>
-
-<!-- Section 12: Signature -->
-<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
-  <div style="font-weight:700;margin-bottom:4px">CONTRACTOR CERTIFICATION / 承包商声明</div>
-  <p style="font-size:8pt;margin-bottom:8px">I certify that the above services were performed and the amounts are correct.<br>本人确认以上服务已完成，金额准确无误。</p>
-  <table style="width:100%"><tr>
-    <td style="width:60%;padding-right:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Contractor Signature / 承包商签名:</div>
-      <signature-field name="contractor_signature" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-    </td>
-    <td style="width:40%;padding-left:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Date / 日期:</div>
-      <date-field name="signature_date" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
+<div style="font-weight:700;margin:4px 0 2px">PAYMENT TERMS 付款条件 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled)</span></div>
+<text-field name="payment_terms" role="First Party" readonly="true" style="border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;width:200px" placeholder="Net 30"></text-field>
+<span style="font-size:7pt;color:#999;margin-left:6px">Due Date 到期日: </span><text-field name="payment_due_date" role="First Party" readonly="true" style="border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;width:100px"></text-field>
+<div style="background:#fffbeb;border:2px solid #f59e0b;padding:6px;font-size:8pt;margin-top:6px;border-radius:4px">
+  <b>CONTRACTOR CERTIFICATION 承包商声明</b>
+  <div style="font-size:7.5pt;margin:3px 0">I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.<br>本人确认服务已完成、金额准确。承包商保留自行决定服务执行方式与方法的权利。</div>
+  <table style="width:100%;margin-top:4px"><tr>
+    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Contractor Signature 承包商签名 *:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:2px solid #f59e0b;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Date 日期:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
-
-<!-- Company Approval (optional second signer) -->
-<div style="background:#f9f9f0;border:1px solid #999;padding:10px;margin-top:8px;font-size:9pt">
-  <div style="font-weight:700;margin-bottom:4px">COMPANY APPROVAL / 公司审批 (Prime Anchorpoint LLC)</div>
-  <table style="width:100%"><tr>
-    <td style="width:60%;padding-right:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Approved by / 审批人签名:</div>
-      <signature-field name="company_signature" role="Second Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-    </td>
-    <td style="width:40%;padding-left:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Date / 日期:</div>
-      <date-field name="approval_date" role="Second Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
-  </tr></table>
-</div>
-
-<div style="text-align:center;font-size:7pt;color:#999;margin-top:12px;border-top:1px solid #ddd;padding-top:6px">
-  This invoice is issued pursuant to an independent contractor arrangement. The contractor is responsible for all applicable taxes.<br>
-  本发票依据独立承包商协议开具，承包商自行负责所有适用税款。
-</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">Independent contractor arrangement — contractor responsible for all applicable taxes and retains control over manner and means of service delivery. 独立承包商协议，承包商自行负责税款并保留对服务交付方式的控制权。<br>IL FWPA: 合同未注明付款日→完工后30天内付款 / Payment due within 30 days of completion if contract is silent.<br><span style="color:#f59e0b">■</span> = Contractor fills 承包商填写 &nbsp; <span style="color:#ddd">■</span> = Pre-filled by system 系统自动带出</div>
 </div></body></html>

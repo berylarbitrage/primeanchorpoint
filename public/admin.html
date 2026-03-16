@@ -321,6 +321,12 @@ tr:hover td{background:var(--sky-light)}
 .wa-dispatch.yes{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7}
 .wa-dispatch.no{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
 .wa-actions{display:flex;gap:4px;align-items:center;position:relative;white-space:nowrap;flex-shrink:0}
+.wa-toggle{position:relative;display:inline-block;width:34px;height:18px;cursor:pointer}
+.wa-toggle input{opacity:0;width:0;height:0}
+.wa-toggle-slider{position:absolute;top:0;left:0;right:0;bottom:0;background:#d1d5db;border-radius:18px;transition:.2s}
+.wa-toggle-slider:before{content:'';position:absolute;width:14px;height:14px;left:2px;bottom:2px;background:#fff;border-radius:50%;transition:.2s}
+.wa-toggle input:checked+.wa-toggle-slider{background:#16a34a}
+.wa-toggle input:checked+.wa-toggle-slider:before{transform:translateX(16px)}
 .wa-actions .btn-sm{padding:4px 10px;font-size:.72rem;border-radius:6px;white-space:nowrap}
 .wa-abtn-primary{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe}
 .wa-abtn-primary:hover{background:#ddd6fe}
@@ -558,7 +564,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
       <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
-      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 员工 Invoice</a>
+      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商發票</a>
     </div>
   </div>
 
@@ -1273,27 +1279,27 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════════ 员工 Invoice Tab ════════ -->
+<!-- ════════ 承包商發票 Tab ════════ -->
 <div id="tab-ts-emp-invoice" style="display:none">
   <div class="top">
-    <h1>📄 员工 Invoice / Payment Requests</h1>
+    <h1>📄 承包商發票</h1>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="loadEmpInvoiceTab()">刷新</button>
     </div>
   </div>
-  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商提交的 Invoice，用于 FWPA 合规（合同—服务完成—付款）链条记录</p>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商提交的發票，用于 FWPA 合规（合同—服务完成—付款）链条记录</p>
 
-  <!-- Send DocuSeal Invoice -->
+  <!-- Send Invoice -->
   <div class="card" style="margin-bottom:1rem;padding:1rem">
     <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 发送承包商发票：</label>
+      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 發送承包商發票：</label>
       <select id="empInvWorkerSelect" style="min-width:220px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        <option value="">— 选择员工 —</option>
+        <option value="">— 选择承包商 —</option>
       </select>
-      <button class="btn btn-green" onclick="openSendInvoiceModal()" style="white-space:nowrap">📄 发送发票模板</button>
+      <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 發送發票</button>
       <span id="empInvSendStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择员工后点击发送，系统将向承包商发送发票模板（邮件+短信），承包商填写金额并签字后提交回来。</div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送發票模板，承包商需填写金额、签字后提交回来。</div>
   </div>
 
   <div class="card">
@@ -2030,7 +2036,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
-      <th>协议</th><th>INVOICE</th><th>税务</th><th>身份Reverify日期</th><th>支付方式</th><th>薪资</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>协议</th><th>INVOICE</th><th>税务</th><th>身份Reverify日期</th><th>支付方式</th><th>薪资</th><th>期望薪资</th><th>评分</th><th>技能</th><th>打卡</th><th>Invoice功能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -2165,6 +2171,42 @@ tr:hover td{background:var(--sky-light)}
 <!-- Integration Settings 集成设置 -->
 <div id="tab-integrations" style="display:none">
   <div class="top"><h1>第三方集成设置</h1></div>
+
+  <!-- Worker Portal Feature Settings 合作中心功能设置 -->
+  <div style="max-width:560px;margin:0 1.5rem 1.5rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.5rem">
+    <div style="font-size:1rem;font-weight:700;margin-bottom:.4rem;display:flex;align-items:center;gap:.5rem">
+      📱 合作中心功能开放设置
+    </div>
+    <p style="font-size:.85rem;color:#64748b;margin:0 0 1.2rem">
+      控制合作中心（Worker Portal）开放哪项功能。默认关闭，admin 可选择开放打卡功能或 Invoice 填写功能（二选一）。
+    </p>
+    <div style="display:flex;flex-direction:column;gap:.65rem;margin-bottom:1.2rem">
+      <label style="display:flex;align-items:center;gap:.75rem;cursor:pointer;padding:.6rem .9rem;border:2px solid transparent;border-radius:8px;transition:border-color .15s" id="portalModeLabel_none">
+        <input type="radio" name="workerPortalMode" value="none" onchange="onPortalModeChange(this)" style="width:16px;height:16px;accent-color:#6366f1">
+        <div>
+          <div style="font-weight:600;font-size:.9rem">🔒 关闭（默认）</div>
+          <div style="font-size:.8rem;color:#94a3b8">合作中心不开放打卡或 Invoice 功能</div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:center;gap:.75rem;cursor:pointer;padding:.6rem .9rem;border:2px solid transparent;border-radius:8px;transition:border-color .15s" id="portalModeLabel_timeclock">
+        <input type="radio" name="workerPortalMode" value="timeclock" onchange="onPortalModeChange(this)" style="width:16px;height:16px;accent-color:#6366f1">
+        <div>
+          <div style="font-weight:600;font-size:.9rem">⏱️ 打卡功能</div>
+          <div style="font-size:.8rem;color:#94a3b8">开放上下班打卡、休息打卡功能</div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:center;gap:.75rem;cursor:pointer;padding:.6rem .9rem;border:2px solid transparent;border-radius:8px;transition:border-color .15s" id="portalModeLabel_invoice">
+        <input type="radio" name="workerPortalMode" value="invoice" onchange="onPortalModeChange(this)" style="width:16px;height:16px;accent-color:#6366f1">
+        <div>
+          <div style="font-weight:600;font-size:.9rem">📄 Invoice 填写</div>
+          <div style="font-size:.8rem;color:#94a3b8">1099 独立承包商可提交 Invoice / Payment Request</div>
+        </div>
+      </label>
+    </div>
+    <button onclick="saveWorkerPortalMode()" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:.55rem 1.4rem;font-size:.9rem;font-weight:600;cursor:pointer">保存设置</button>
+    <span id="portalModeSaveMsg" style="margin-left:.75rem;font-size:.85rem;color:#16a34a;display:none">已保存 ✓</span>
+  </div>
+
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem" id="integrationsGrid"></div>
 </div>
 
@@ -2176,6 +2218,15 @@ tr:hover td{background:var(--sky-light)}
 
     <!-- Connection status -->
     <div id="ds-conn-badge" style="margin-bottom:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap"></div>
+
+    <!-- Account email (needed for embedded editor JWT) -->
+    <div id="ds-account-email-bar" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.85rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <label style="display:block;font-size:.8rem;font-weight:600;color:#92400e;margin-bottom:.3rem">DocuSeal 帐号 Email（用于内嵌编辑器）</label>
+        <input type="email" id="ds-account-email-input" placeholder="your@docuseal-account.com" style="width:100%;border:1px solid #fde68a;border-radius:6px;padding:.4rem .7rem;font-size:.85rem;outline:none">
+      </div>
+      <button onclick="dsSaveAccountEmail()" style="padding:.45rem 1rem;border-radius:7px;background:#f59e0b;color:#fff;border:none;font-size:.84rem;font-weight:600;cursor:pointer;white-space:nowrap;margin-top:1.2rem">保存 Email</button>
+    </div>
 
     <!-- Current config -->
     <div style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1.5rem">
@@ -2294,22 +2345,42 @@ tr:hover td{background:var(--sky-light)}
           <div id="ds-cfg-cash-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 员工 Invoice (EN+ZH)</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice — English+中文</div>
-          <select id="ds-sel-contractor-inv" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-contractor-inv-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商發票</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">Contractor Invoice — 三種語言版本</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
+            <select id="ds-sel-contractor-inv" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-contractor-inv-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-contractor-inv-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-contractor-inv-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-contractor-inv-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-contractor-inv-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 员工 Invoice (EN+ES)</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice — English+Español</div>
-          <select id="ds-sel-contractor-inv-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice_es', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-contractor-inv-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-        </div>
-        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">✅ 发票审批表 (内部)</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Invoice Approval Form — 公司内部审批，不给承包商</div>
-          <select id="ds-sel-invoice-approval" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('invoice_approval', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-invoice-approval-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">✅ 发票审批表</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">Invoice Approval Form — 公司内部审批，不给承包商</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (EN+ZH)</div>
+            <select id="ds-sel-invoice-approval" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('invoice_approval', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-invoice-approval-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-invoice-approval-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('invoice_approval_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-invoice-approval-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-invoice-approval-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('invoice_approval_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-invoice-approval-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
       </div>
 
@@ -2352,8 +2423,12 @@ tr:hover td{background:var(--sky-light)}
               <option value="zelle_auth">Zelle</option>
               <option value="third_party_pay">PayPal / Venmo / CashApp</option>
               <option value="cash_receipt">现金签收</option>
-              <option value="contractor_invoice">承包商发票 / Contractor Invoice</option>
-              <option value="invoice_approval">发票审批表 / Invoice Approval (内部)</option>
+              <option value="contractor_invoice">承包商发票 (中英) / Contractor Invoice (EN+ZH)</option>
+              <option value="contractor_invoice_en">承包商发票 (英文) / Contractor Invoice (EN)</option>
+              <option value="contractor_invoice_es">承包商发票 (英西) / Contractor Invoice (EN+ES)</option>
+              <option value="invoice_approval">发票审批表 / Invoice Approval (EN+ZH)</option>
+              <option value="invoice_approval_en">Invoice Approval (EN)</option>
+              <option value="invoice_approval_es">Invoice Approval (EN+ES)</option>
             </optgroup>
           </select>
         </div>
@@ -2637,63 +2712,6 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
-<!-- Send Contractor Invoice Modal -->
-<div class="modal-bg" id="sendInvoiceModal"><div class="modal" style="max-width:600px">
-  <h2>📄 发送承包商发票 — <span id="sendInvWorkerName" style="color:var(--sky)"></span></h2>
-  <div style="font-size:.82rem;color:var(--gray-500);margin:.3rem 0 1rem">系统将向承包商发送发票模板（邮件+短信），承包商填写金额并签字后提交回来。</div>
-
-  <div style="display:grid;grid-template-columns:1fr;gap:.75rem">
-    <div class="field" style="margin:0">
-      <label style="font-weight:700;font-size:.85rem">发票语言版本 / Invoice Language: <span style="color:var(--red)">*</span></label>
-      <select id="sendInvLang" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem" onchange="updateSendInvPreview()">
-        <option value="en+zh">English+中文 (EN+ZH)</option>
-        <option value="en+es">English+Español (EN+ES)</option>
-      </select>
-    </div>
-    <div class="field" style="margin:0">
-      <label style="font-weight:700;font-size:.85rem">承包商邮箱：</label>
-      <input id="sendInvEmail" type="email" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem" placeholder="worker@email.com" readonly>
-    </div>
-    <div class="field" style="margin:0">
-      <label style="font-weight:700;font-size:.85rem">手机号（可选，发送短信通知）：</label>
-      <input id="sendInvPhone" type="tel" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem" placeholder="+1...">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
-      <div class="field" style="margin:0">
-        <label style="font-weight:700;font-size:.85rem">服务周期 开始 (Period From) <span style="color:var(--red)">*</span></label>
-        <input id="sendInvPeriodFrom" type="date" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem" onchange="updateSendInvPreview()">
-      </div>
-      <div class="field" style="margin:0">
-        <label style="font-weight:700;font-size:.85rem">服务周期 结束 (Period To) <span style="color:var(--red)">*</span></label>
-        <input id="sendInvPeriodTo" type="date" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem" onchange="updateSendInvPreview()">
-      </div>
-    </div>
-    <div class="field" style="margin:0">
-      <label style="font-weight:700;font-size:.85rem">发票日期： <span style="color:var(--red)">*</span></label>
-      <input id="sendInvDate" type="date" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem" onchange="updateSendInvPreview()">
-    </div>
-    <div class="field" style="margin:0">
-      <label style="font-weight:700;font-size:.85rem">服务内容描述： <span style="color:var(--red)">*</span></label>
-      <textarea id="sendInvDesc" rows="3" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;resize:vertical" placeholder="Two week assignment" oninput="updateSendInvPreview()"></textarea>
-    </div>
-  </div>
-
-  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem .75rem;margin-top:.75rem;font-size:.82rem;color:#92400e">
-    <b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。
-  </div>
-
-  <div id="sendInvPreview" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.6rem .75rem;margin-top:.5rem;font-size:.82rem;color:#0369a1;display:none">
-    <b>将预填入的数据 (Pre-filled Data):</b><br>
-    <span id="sendInvPreviewText"></span>
-  </div>
-
-  <div class="modal-actions" style="margin-top:1rem;gap:.5rem">
-    <button class="btn btn-green" id="sendInvSubmitBtn" onclick="doSendContractorInvoice()">📤 发送</button>
-    <button class="btn" onclick="closeModal('sendInvoiceModal')">取消</button>
-    <span id="sendInvStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
-  </div>
-</div></div>
-
 <!-- Contractor Invoices Review Modal -->
 <div class="modal-bg" id="contractorInvoicesModal"><div class="modal" style="max-width:900px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
@@ -2732,6 +2750,7 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" id="contractSignBtn" style="display:none;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="openCompanySign()">✍️ 公司签署</button>
     <button class="btn" id="contractViewSignedBtn" style="display:none;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="viewSignedContract()">📋 查看已签版本</button>
     <button class="btn" id="contractRefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshContractStatus()">🔄 刷新签署状态</button>
+    <button class="btn" id="contractResendNotifyBtn" style="display:none;background:#fef9c3;color:#92400e;border:1px solid #fde68a" onclick="resendSignNotification()">📱 重发通知</button>
     <button class="btn" id="contractVoidBtn" style="display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="voidContract()">🗑️ 作废</button>
     <button class="btn" onclick="closeModal('contractSendModal')">关闭</button>
   </div>
@@ -2759,21 +2778,102 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="w9SendModal"><div class="modal" style="max-width:720px">
   <h2>📄 发送 W-9 — <span id="w9WorkerName" style="color:var(--sky)"></span></h2>
   <div id="w9SendInfo" style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)">
-    系统将向工人发送门户链接（邮件+短信），工人在门户填写 W-9 信息（姓名、地址、SSN/TIN），提交后系统自动生成正式 W-9 表格供工人签字确认。
+    系统将自动生成 W-9 表格并向工人发送签字链接（邮件+短信），工人点击链接即可直接签字确认，无需登录门户。
   </div>
   <div style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人邮箱：</label>
     <input id="w9WorkerEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="worker@email.com">
   </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手机号码（确认）：</label>
+    <input id="w9WorkerPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (555) 000-0000">
+  </div>
+  <!-- W-9 Template Selector -->
+  <div style="margin:.75rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.4rem">选择 W-9 模板：</label>
+    <div id="w9TemplateList" style="border:1px solid var(--gray-200);border-radius:8px;overflow:hidden;max-height:220px;overflow-y:auto">
+      <div style="padding:.75rem;text-align:center;color:var(--gray-400);font-size:.83rem">加载模板中…</div>
+    </div>
+  </div>
+  <!-- Inline PDF Preview -->
+  <div id="w9PdfPreviewBox" style="display:none;margin:.5rem 0">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
+      <span style="font-size:.78rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px">模板预览</span>
+      <button onclick="document.getElementById('w9PdfPreviewBox').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:.85rem;color:var(--gray-400)">✕ 关闭预览</button>
+    </div>
+    <iframe id="w9PdfPreviewFrame" style="width:100%;height:400px;border:1px solid var(--gray-200);border-radius:8px" src=""></iframe>
+  </div>
+  <div id="w9SignLinkBox" style="display:none;margin:.5rem 0;padding:.6rem .75rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;font-size:.82rem">
+    <b>W-9 签字链接：</b><a id="w9SignLink" href="#" target="_blank" style="color:#0369a1;word-break:break-all"></a>
+    <button onclick="navigator.clipboard.writeText(document.getElementById('w9SignLink').href);showToast('已复制链接','success')" style="margin-left:.5rem;background:none;border:1px solid #86efac;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.78rem;color:#065f46">复制</button>
+  </div>
   <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <div id="w9AddressBox" style="display:none;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem"></div>
+  <div id="w9AddrVerify" style="display:none;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line"></div>
   <div style="margin:.75rem 0;padding:.6rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1">
-    <b>新流程：</b>点击「发送」后，工人将收到门户链接 → 填写个人信息（姓名、地址、SSN）→ 系统自动生成预填好的 W-9 → 工人只需签字确认。
+    <b>流程：</b>点击「发送」后，系统自动生成 W-9 表格并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。
   </div>
   <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
     <button class="btn btn-green" id="w9SendBtn" onclick="doSendW9()">📤 发送 W-9 填写请求</button>
     <button class="btn" id="w9RefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshW9Status()">🔄 刷新签署状态</button>
     <button class="btn" id="w9DownloadBtn" style="display:none;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="downloadSignedW9()">📥 下载已签 W-9</button>
     <button class="btn" onclick="closeModal('w9SendModal')">关闭</button>
+  </div>
+</div></div>
+
+<!-- 承包商發票 Send Modal -->
+<div class="modal-bg" id="invSendModal"><div class="modal" style="max-width:720px">
+  <h2>📄 發送承包商發票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
+  <div style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)">
+    系统将向承包商发送發票模板（邮件+短信），承包商填写金额并签字后提交回来。
+  </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票語言版本 / Invoice Language：<span style="color:#dc2626">*</span></label>
+    <select id="invSendLang" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+      <option value="contractor_invoice">中文+英文 (ZH+EN)</option>
+      <option value="contractor_invoice_en">English Only (EN)</option>
+      <option value="contractor_invoice_es">English+Español (EN+ES)</option>
+    </select>
+  </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">承包商邮箱：</label>
+    <input id="invSendEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="contractor@email.com">
+  </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手機號（可选，发送短信通知）：</label>
+    <input id="invSendPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (xxx) xxx-xxxx">
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin:.5rem 0">
+    <div>
+      <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">服务周期 开始 (Period From) <span style="color:#dc2626">*</span></label>
+      <input type="date" id="invSendPeriodStart" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    </div>
+    <div>
+      <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">服务周期 结束 (Period To) <span style="color:#dc2626">*</span></label>
+      <input type="date" id="invSendPeriodEnd" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    </div>
+  </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票日期：<span style="color:#dc2626">*</span></label>
+    <input type="date" id="invSendDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+  </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">服务内容描述：<span style="color:#dc2626">*</span></label>
+    <textarea id="invSendServiceDesc" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="例如：Home cleaning services for Jan 2025, 123 Main St…"></textarea>
+  </div>
+  <div id="invSendStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <div style="margin:.75rem 0;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e">
+    <b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。
+  </div>
+  <div id="invPreviewSection" style="display:none;margin:.5rem 0">
+    <div id="invPreviewInfoBox" style="display:none;margin-bottom:.5rem;padding:.5rem .75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.82rem;color:#1e40af;line-height:1.7"></div>
+    <div style="font-weight:700;font-size:.85rem;margin-bottom:.3rem">發票模板预览：</div>
+    <iframe id="invPreviewFrame" src="" style="width:100%;height:500px;border:1px solid var(--gray-200);border-radius:6px"></iframe>
+  </div>
+  <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+    <button class="btn btn-green" id="invSendBtn" onclick="doSendInvoice()">📤 發送發票</button>
+    <button class="btn" id="invPreviewBtn" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc" onclick="previewInvoiceTemplate()">🔍 预览模板</button>
+    <button class="btn" onclick="closeModal('invSendModal')">关闭</button>
   </div>
 </div></div>
 
@@ -5858,7 +5958,7 @@ function showTab(t) {
   if (t === 'interviews') { loadInterviews(); initBatchDays(); }
   if (t === 'compliance') loadComplianceDocs();
   if (t === 'jobsites')   loadJobSites();
-  if (t === 'integrations') loadIntegrations();
+  if (t === 'integrations') { loadIntegrations(); loadWorkerPortalMode(); }
   if (t === 'docuseal-templates') loadDocusealTemplatesPage();
   if (t === 'skill-settings')   loadSkillSettings();
   if (t === 'referrals')   loadAllReferrals();
@@ -13806,6 +13906,18 @@ async function loadWorkerAccounts() {
     <td style="font-size:.8rem">${w.expected_salary ? '$'+esc(w.expected_salary) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.8rem">${w.our_salary_rating ? esc(w.our_salary_rating) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="max-width:160px">${skillPills(skills)}</td>
+    <td style="text-align:center;white-space:nowrap">
+      <label class="wa-toggle" title="打卡功能">
+        <input type="checkbox" ${w.enable_timeclock ? 'checked' : ''} onchange="toggleWorkerFeature(${w.id},'enable_timeclock',this.checked)">
+        <span class="wa-toggle-slider"></span>
+      </label>
+    </td>
+    <td style="text-align:center;white-space:nowrap">
+      <label class="wa-toggle" title="Invoice功能">
+        <input type="checkbox" ${w.enable_invoice ? 'checked' : ''} onchange="toggleWorkerFeature(${w.id},'enable_invoice',this.checked)">
+        <span class="wa-toggle-slider"></span>
+      </label>
+    </td>
     <td>${workerStatus(w)}</td>
     <td>${dispatchBadge(w)}</td>
     <td style="white-space:nowrap">
@@ -13819,7 +13931,7 @@ async function loadWorkerAccounts() {
         ${extraBtns}
       </div>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="17" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="19" class="empty">暂无工人账户</td></tr>';
 }
 
 // ─── Onboarding Progress Modal ───
@@ -13981,7 +14093,7 @@ function renderOnboardingTasks(tasks) {
         </div>
         ${t.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);font-style:italic;margin-top:.15rem">💬 ${esc(t.admin_note)}</div>`:''}
         ${t.action_url?`<div style="font-size:.78rem;margin-top:.15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px">🔗 <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)" title="${esc(t.action_url)}">${esc(t.action_url.length>60?t.action_url.substring(0,60)+'...':t.action_url)}</a></div>`:''}
-        ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 工人门户 — 已通知</div>`:''}
+        ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 合作中心 — 已通知</div>`:''}
         ${t.key==='interview'&&_onboardingInterviewInfo&&_onboardingInterviewInfo.slot_datetime?(()=>{
           const dt=new Date(_onboardingInterviewInfo.slot_datetime);
           const dtStr=dt.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
@@ -14003,7 +14115,7 @@ function renderOnboardingTasks(tasks) {
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : t.key==='w9'
-            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'?'✅ W-9 已签署':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>`
+            ? `<button class="btn btn-sm" style="background:${s==='submitted'&&t.ds_status==='completed'?'#fef2f2':'#fefce8'};color:${s==='submitted'&&t.ds_status==='completed'?'#dc2626':'#854d0e'};border:1px solid ${s==='submitted'&&t.ds_status==='completed'?'#fecaca':'#fde68a'};font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'&&s==='completed'?'✅ W-9 已签署':t.ds_status==='completed'&&s==='submitted'?'⚠️ 地址待核对':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>`
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : t.key==='work_auth'
@@ -15818,9 +15930,14 @@ async function saveTaxResidency() {
   // Based on result, auto-waive the opposite tax form
   const recommendedForm = (trResult && trResult.recommended_form) || 'W-9';
   if (recommendedForm !== 'W-9') {
-    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
-      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
-    });
+    if (trResult && trResult.wp_conflict) {
+      const wpCatLabel = trResult.wp_conflict_category === 'citizen' ? '美国公民 U.S. Citizen' : '绿卡持有者 Green Card Holder';
+      showToast(`⚠️ 税务身份与工作许可验证冲突：工作许可已验证为【${wpCatLabel}】，但税务判定推荐 ${recommendedForm}。W-9 未自动豁免，请重新核查税务身份填写是否正确。`, 'warning', 8000);
+    } else {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
+        method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
+      });
+    }
   }
 
   // Warn if work permit verification was reset due to category change
@@ -15895,9 +16012,14 @@ async function completeTaxResidency() {
 
   const recommendedForm = (trResult && trResult.recommended_form) || 'W-9';
   if (recommendedForm !== 'W-9') {
-    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
-      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
-    });
+    if (trResult && trResult.wp_conflict) {
+      const wpCatLabel = trResult.wp_conflict_category === 'citizen' ? '美国公民 U.S. Citizen' : '绿卡持有者 Green Card Holder';
+      showToast(`⚠️ 税务身份与工作许可验证冲突：工作许可已验证为【${wpCatLabel}】，但税务判定推荐 ${recommendedForm}。W-9 未自动豁免，请重新核查税务身份填写是否正确。`, 'warning', 8000);
+    } else {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
+        method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
+      });
+    }
   }
 
   if (trResult && trResult.wp_reset) {
@@ -16569,7 +16691,7 @@ async function saveWorkPermit(doVerify) {
 }
 
 function confirmSendPersona() {
-  showConfirmModal('发送 Stripe Identity 身份验证', '确认向该工人发送 Stripe Identity 身份验证（驾照/ID + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
+  showConfirmModal('发送 Stripe Identity 身份验证', '确认向该工人发送 Stripe Identity 身份验证（驾照/ID + 自拍）？\n验证链接将通过短信、邮件发送，并在合作中心中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
 }
 function confirmSendCheckr() {
   showConfirmModal('发送 Checkr 背调邀请', '确认向该工人发送 Checkr 背景调查邀请？邀请链接将通过短信和邮件发送。', '🔍 确认发送', 'btn-blue', sendCheckrFromOnboarding, 'blue');
@@ -16597,13 +16719,13 @@ function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
 
 async function sendPersonaFromOnboarding() {
   if (!_onboardingWorkerId) return;
-  if (!await showConfirm('确定向该工人发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
+  if (!await showConfirm('确定向该工人发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信、邮件发送，并在合作中心中显示。')) return;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-persona`, { method:'POST', body:JSON.stringify({}) });
   if (r && r.success) {
     const parts = [];
     parts.push(r.smsSent ? '📱 短信 ✓' : '📱 短信 ✗');
     parts.push(r.emailSent ? '📧 邮件 ✓' : '📧 邮件 ✗');
-    parts.push('🖥️ 工人门户 ✓');
+    parts.push('🖥️ 合作中心 ✓');
     showToast(`✅ 身份验证已发送\n${parts.join('  ')}`, 'success', 6000);
     refreshOnboardingModal();
   } else {
@@ -16635,6 +16757,7 @@ async function openContractSendModal() {
   document.getElementById('contractSignBtn').style.display = 'none';
   document.getElementById('contractViewSignedBtn').style.display = 'none';
   document.getElementById('contractRefreshBtn').style.display = 'none';
+  document.getElementById('contractResendNotifyBtn').style.display = 'none';
   document.getElementById('contractVoidBtn').style.display = 'none';
   document.getElementById('contractPdfPreview').style.display = 'none';
   document.getElementById('contractSendBtn').style.display = '';
@@ -16665,6 +16788,10 @@ async function openContractSendModal() {
       document.getElementById('contractViewSignedBtn').style.display = '';
       // Auto-load the signed PDF so the user immediately sees the signature
       viewSignedContract(true);
+    }
+    // Show resend notification button when contract is waiting for worker signature
+    if (r.ds_status === 'company_signed' || r.ds_status === 'sent') {
+      document.getElementById('contractResendNotifyBtn').style.display = '';
     }
   }
 }
@@ -16728,6 +16855,7 @@ async function doSendContract() {
     updateContractDsStatusUI('sent');
     document.getElementById('contractSignBtn').style.display = '';
     document.getElementById('contractRefreshBtn').style.display = '';
+    document.getElementById('contractResendNotifyBtn').style.display = '';
     document.getElementById('contractVoidBtn').style.display = '';
     refreshOnboardingModal();
   } else {
@@ -16814,6 +16942,29 @@ async function refreshContractStatus() {
   }
 }
 
+async function resendSignNotification() {
+  if (!_onboardingWorkerId) return;
+  const btn = document.getElementById('contractResendNotifyBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中…';
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/resend-sign-notification`, { method: 'POST' });
+    if (r && r.success) {
+      let msg = '通知已发送';
+      if (r.emailSent) msg += ' (邮件 ✅)';
+      if (r.smsSent) msg += ' (短信 ✅)';
+      if (r.warnings && r.warnings.length) msg += ' — ' + r.warnings.join('; ');
+      showToast(msg, 'success', 5000);
+    } else {
+      showToast('❌ ' + (r?.error || '发送失败'), 'error');
+    }
+  } catch (e) {
+    showToast('❌ ' + e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '📱 重发通知';
+}
+
 async function viewSignedContract(autoRetry = false) {
   if (!_onboardingWorkerId) return;
   const previewDiv = document.getElementById('contractPdfPreview');
@@ -16861,6 +17012,7 @@ async function voidContract() {
     document.getElementById('contractSignBtn').style.display = 'none';
     document.getElementById('contractViewSignedBtn').style.display = 'none';
     document.getElementById('contractRefreshBtn').style.display = 'none';
+    document.getElementById('contractResendNotifyBtn').style.display = 'none';
     document.getElementById('contractVoidBtn').style.display = 'none';
     document.getElementById('contractPdfPreview').style.display = 'none';
     document.getElementById('contractSendBtn').textContent = '📤 发送合同';
@@ -16872,16 +17024,88 @@ async function voidContract() {
 
 // ─── W-9 Modal Functions ───
 
+let _w9SelectedTemplateId = '';
+
+function _renderW9TemplateList(templates, _unused, defaultTemplateId) {
+  const wrap = document.getElementById('w9TemplateList');
+  if (!wrap) return;
+  if (!templates || !templates.length) {
+    wrap.innerHTML = '<div style="padding:.75rem;text-align:center;color:var(--gray-400);font-size:.83rem">未找到 W-9 模板 — 请先在 DocuSeal 模板管理页面上传 W-9 模板</div>';
+    _w9SelectedTemplateId = '';
+    return;
+  }
+  // Auto-select default configured template or first available
+  if (!_w9SelectedTemplateId || !templates.find(t => String(t.docuseal_template_id) === _w9SelectedTemplateId)) {
+    _w9SelectedTemplateId = defaultTemplateId ? String(defaultTemplateId) : String(templates[0].docuseal_template_id);
+  }
+  wrap.innerHTML = templates.map((t, i) => {
+    const tid = String(t.docuseal_template_id);
+    const isSelected = tid === _w9SelectedTemplateId;
+    return `<div id="w9tpl-row-${tid}" onclick="_selectW9Template('${tid}')" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;cursor:pointer;border-bottom:${i < templates.length-1 ? '1px solid #f1f5f9' : 'none'};background:${isSelected ? '#f0f9ff' : '#fff'};transition:background .15s">
+      <div style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:2px solid ${isSelected ? '#0ea5e9' : '#cbd5e1'};background:${isSelected ? '#0ea5e9' : '#fff'};display:flex;align-items:center;justify-content:center">
+        ${isSelected ? '<svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3" fill="#fff"/></svg>' : ''}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.85rem;font-weight:${isSelected ? '700' : '500'};color:${isSelected ? '#0369a1' : '#1e293b'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name || '未命名模板'}</div>
+        <div style="font-size:.75rem;color:#94a3b8">ID: ${tid}</div>
+      </div>
+      <button onclick="event.stopPropagation();_previewW9Pdf('${tid}')" style="flex-shrink:0;font-size:.75rem;color:#0ea5e9;background:#f0f9ff;border:1px solid #bae6fd;border-radius:4px;padding:.2rem .5rem;cursor:pointer;white-space:nowrap">预览</button>
+    </div>`;
+  }).join('');
+}
+
+function _previewW9Pdf(tid) {
+  const box = document.getElementById('w9PdfPreviewBox');
+  const frame = document.getElementById('w9PdfPreviewFrame');
+  frame.src = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
+  box.style.display = '';
+}
+
+function _selectW9Template(tid) {
+  _w9SelectedTemplateId = tid;
+  // Update visual selection
+  document.querySelectorAll('[id^="w9tpl-row-"]').forEach(row => {
+    const rowTid = row.id.replace('w9tpl-row-', '');
+    const isSelected = rowTid === tid;
+    row.style.background = isSelected ? '#f0f9ff' : '#fff';
+    const radio = row.querySelector('div > div');
+    if (radio) {
+      radio.style.border = `2px solid ${isSelected ? '#0ea5e9' : '#cbd5e1'}`;
+      radio.style.background = isSelected ? '#0ea5e9' : '#fff';
+      radio.innerHTML = isSelected ? '<svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3" fill="#fff"/></svg>' : '';
+    }
+    const label = row.querySelector('div:nth-child(2) > div:first-child');
+    if (label) { label.style.fontWeight = isSelected ? '700' : '500'; label.style.color = isSelected ? '#0369a1' : '#1e293b'; }
+  });
+}
+
 async function openW9SendModal() {
   if (!_onboardingWorkerId) return;
+  _w9SelectedTemplateId = '';
   document.getElementById('w9SendModal').classList.add('show');
   const w = _onboardingWorkerData;
   document.getElementById('w9WorkerName').textContent = w ? (w.name || w.username || '') : '';
   document.getElementById('w9WorkerEmail').value = (w && w.email) || '';
+  document.getElementById('w9WorkerPhone').value = (w && w.phone) || '';
   document.getElementById('w9DsStatus').style.display = 'none';
+  document.getElementById('w9AddressBox').style.display = 'none';
   document.getElementById('w9RefreshBtn').style.display = 'none';
   document.getElementById('w9DownloadBtn').style.display = 'none';
   document.getElementById('w9SendBtn').textContent = '📤 发送 W-9 填写请求';
+  // Load W-9 templates
+  try {
+    const [cfg, myTemplates] = await Promise.all([
+      api('/admin/docuseal/config'),
+      api('/admin/docuseal/my-templates')
+    ]);
+    const dsUrl = (cfg && cfg.url) || '';
+    const defaultId = cfg && cfg.w9_template_id ? String(Array.isArray(cfg.w9_template_id) ? cfg.w9_template_id[0] : cfg.w9_template_id) : '';
+    const w9Templates = (myTemplates || []).filter(t => t.category === 'w9');
+    _renderW9TemplateList(w9Templates, dsUrl, defaultId);
+  } catch(e) {
+    const wrap = document.getElementById('w9TemplateList');
+    if (wrap) wrap.innerHTML = `<div style="padding:.75rem;text-align:center;color:#ef4444;font-size:.83rem">加载模板失败：${e.message}</div>`;
+  }
   // Load existing W-9 status
   const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
   if (tasks) {
@@ -16897,13 +17121,26 @@ async function openW9SendModal() {
       // Always auto-poll DocuSeal for current status when modal opens —
       // so if worker already signed, the download button appears immediately
       updateW9DsStatusUI('checking');
+      document.getElementById('w9AddrVerify').style.display = 'none';
       try {
         const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-status`);
         if (r && r.status) {
           updateW9DsStatusUI(r.status);
           if (r.status === 'completed') {
+            showW9AddressBox(r.w9Address, r.w9CityStateZip);
             document.getElementById('w9DownloadBtn').style.display = '';
             refreshOnboardingModal();
+          }
+          // Show address verification result
+          if (r.addressCheck) {
+            const addrEl = document.getElementById('w9AddrVerify');
+            if (r.addressCheck.match) {
+              addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+              addrEl.textContent = '📍 ' + r.addressCheck.note;
+            } else {
+              addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+              addrEl.textContent = '📍 ' + r.addressCheck.note;
+            }
           }
         } else {
           updateW9DsStatusUI(w9Task.ds_status || 'sent');
@@ -16912,6 +17149,19 @@ async function openW9SendModal() {
         updateW9DsStatusUI(w9Task.ds_status || 'sent');
       }
     }
+  }
+}
+
+function showW9AddressBox(w9Address, w9CityStateZip) {
+  const box = document.getElementById('w9AddressBox');
+  if (!box) return;
+  const addrLine = [w9Address, w9CityStateZip].filter(Boolean).join(', ');
+  if (addrLine) {
+    box.style.cssText = 'display:block;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem;background:#f0fdf4;border:1px solid #86efac;color:#065f46';
+    box.innerHTML = `🏠 <b>W-9 地址：</b>${esc(addrLine)}`;
+  } else {
+    box.style.cssText = 'display:block;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem;background:#fef2f2;border:1px solid #fecaca;color:#dc2626';
+    box.innerHTML = '🔑 ⚠️ <b>W-9 地址：</b>表单数据未找到，需人工核对地址';
   }
 }
 
@@ -16939,22 +17189,38 @@ function updateW9DsStatusUI(status) {
 async function doSendW9() {
   if (!_onboardingWorkerId) return;
   const email = document.getElementById('w9WorkerEmail').value.trim();
+  const phone = document.getElementById('w9WorkerPhone').value.trim();
   if (!email) { showToast('请填写工人邮箱', 'error'); return; }
-  if (!await showConfirm(`确认发送 W-9 填写请求至 ${email}？\n\n工人将收到门户链接（邮件+短信），在门户填写信息后，系统自动生成 W-9 供签字。`)) return;
+  if (!phone) { showToast('请填写并确认工人手机号码', 'error'); return; }
+  const confirmMsg = `确认发送 W-9 签字请求至：\n\n邮箱：${email}\n手机：${phone}\n\n系统将自动生成 W-9 并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。`;
+  if (!await showConfirm(confirmMsg)) return;
   const btn = document.getElementById('w9SendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
+  const sendBody = { worker_email: email, worker_phone: phone };
+  if (_w9SelectedTemplateId) sendBody.template_id = _w9SelectedTemplateId;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-w9`, {
-    method: 'POST', body: JSON.stringify({ worker_email: email })
+    method: 'POST', body: JSON.stringify(sendBody)
   });
   btn.disabled = false; btn.textContent = '📤 重新发送 W-9 填写请求';
   if (r && r.success) {
     const statusEl = document.getElementById('w9DsStatus');
     statusEl.style.display = ''; statusEl.style.background = '#dbeafe'; statusEl.style.color = '#1d4ed8'; statusEl.style.border = '1px solid #bfdbfe';
-    statusEl.innerHTML = '📤 已发送门户链接，等待工人填写 W-9 信息…';
+    if (r.isDirect) {
+      statusEl.innerHTML = '📤 已发送 DocuSeal 签字链接，等待工人签署…';
+    } else {
+      statusEl.innerHTML = '⚠️ DocuSeal 签字链接生成失败，请检查 DocuSeal 配置后重试';
+    }
+    // Show signing link if available
+    if (r.w9Link) {
+      document.getElementById('w9SignLink').href = r.w9Link;
+      document.getElementById('w9SignLink').textContent = r.w9Link;
+      document.getElementById('w9SignLinkBox').style.display = '';
+    }
+    document.getElementById('w9RefreshBtn').style.display = '';
     if (r.warnings && r.warnings.length > 0) {
       showToast('⚠️ W-9 请求已发送，但通知有问题：<br>' + r.warnings.join('<br>'), 'warning', 8000);
     } else {
-      showToast('✅ W-9 填写请求已发送（邮件+短信）', 'success');
+      showToast(r.isDirect ? '✅ W-9 签字链接已发送（邮件+短信），工人可直接签字' : '✅ W-9 填写请求已发送（邮件+短信）', 'success');
     }
     refreshOnboardingModal();
   } else {
@@ -16967,11 +17233,26 @@ async function refreshW9Status() {
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-status`);
   if (r && r.status) {
     updateW9DsStatusUI(r.status);
+    if (r.status === 'completed') {
+      showW9AddressBox(r.w9Address, r.w9CityStateZip);
+      document.getElementById('w9DownloadBtn').style.display = '';
+    }
     let info = `W-9 状态: ${r.status}`;
     if (r.workerSigned) info += ` | 工人已签: ${new Date(r.workerSigned).toLocaleString('zh-CN')}`;
     if (r.declineReason) info += ` | 拒签原因: ${r.declineReason}`;
     showToast(info, 'info', 5000);
     if (r.status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
+    // Show address verification result
+    if (r.addressCheck) {
+      const addrEl = document.getElementById('w9AddrVerify');
+      if (r.addressCheck.match) {
+        addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+        addrEl.textContent = '📍 ' + r.addressCheck.note;
+      } else {
+        addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+        addrEl.textContent = '📍 ' + r.addressCheck.note;
+      }
+    }
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
@@ -17673,6 +17954,17 @@ async function updateWorkerPayMethod(id, payment_method, sel) {
   showToast('✅ 支付方式已更新');
 }
 
+async function toggleWorkerFeature(id, field, enabled) {
+  const label = field === 'enable_timeclock' ? '打卡功能' : 'Invoice功能';
+  try {
+    await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ [field]: enabled ? 1 : 0 }) });
+    showToast(`✅ ${label}已${enabled ? '开启' : '关闭'}`);
+  } catch(e) {
+    showToast(`❌ 操作失败`, 'error');
+    loadWorkerAccounts();
+  }
+}
+
 async function setReverifyDate(id, el) {
   const current = el.dataset.date || el.textContent.trim().replace('— 未设置 —','');
   const val = prompt('身份 Reverify 日期（YYYY-MM-DD）：', current || '');
@@ -17791,8 +18083,9 @@ async function reviewContractorInvoice(id, status) {
   }
 }
 
-// ─── 员工 Invoice Tab (standalone page) ───
+// ─── 承包商發票 Tab ───
 let _empInvWorkersLoaded = false;
+let _empInvWorkersCache = [];
 async function loadEmpInvoiceTab() {
   // Load worker dropdown (once)
   if (!_empInvWorkersLoaded) {
@@ -17800,9 +18093,10 @@ async function loadEmpInvoiceTab() {
       const workers = await api('/admin/worker-accounts');
       const sel = document.getElementById('empInvWorkerSelect');
       if (sel && Array.isArray(workers)) {
-        sel.innerHTML = '<option value="">— 选择员工 —</option>' +
+        _empInvWorkersCache = workers;
+        sel.innerHTML = '<option value="">— 选择承包商 —</option>' +
           workers.filter(w => w.active).map(w =>
-            `<option value="${w.id}" data-email="${esc(w.email||'')}" data-phone="${esc(w.phone||'')}">${esc(w.name || w.username)} ${w.emp_type === '1099' ? '(1099)' : w.emp_type === 'w2' ? '(W2)' : ''}</option>`
+            `<option value="${w.id}">${esc(w.name || w.username)} ${w.emp_type === '1099' ? '(1099)' : w.emp_type === 'w2' ? '(W2)' : ''}</option>`
           ).join('');
         _empInvWorkersLoaded = true;
       }
@@ -17813,7 +18107,7 @@ async function loadEmpInvoiceTab() {
   el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
   const rows = await api('/admin/contractor-invoices');
   if (!Array.isArray(rows) || !rows.length) {
-    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无员工 Invoice 记录</div>';
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无承包商發票记录</div>';
     return;
   }
   const STATUS_BADGE = {
@@ -17844,7 +18138,7 @@ async function loadEmpInvoiceTab() {
       <td style="padding:.5rem;white-space:nowrap">${source}</td>
       <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">${r.status === 'ds_pending' ? '<span style="color:var(--gray-400);font-weight:400">待填写</span>' : '$'+(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
       <td style="padding:.5rem;text-align:center">${STATUS_BADGE[r.status]||r.status}</td>
-      <td style="padding:.5rem;text-align:center;white-space:nowrap">${r.status === 'submitted' ? `
+      <td style="padding:.5rem;text-align:center;white-space:nowrap">${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}${r.status === 'submitted' ? `
         <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
         <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
       ` : r.status === 'ds_pending' ? `<span style="font-size:.72rem;color:#0369a1">等待员工签字…</span>` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}</td>
@@ -17853,89 +18147,123 @@ async function loadEmpInvoiceTab() {
   </table>`;
 }
 
-let _sendInvWorkerId = null;
-
-function openSendInvoiceModal() {
+function openInvSendModal() {
   const sel = document.getElementById('empInvWorkerSelect');
   const workerId = sel.value;
-  if (!workerId) return showToast('请先选择员工', 'error');
-  _sendInvWorkerId = workerId;
-  const workerName = sel.options[sel.selectedIndex].text.replace(/\s*\(1099\)|\s*\(W2\)/g, '').trim();
-  document.getElementById('sendInvWorkerName').textContent = workerName;
-
-  // Pre-fill worker email/phone from worker select data
-  const opt = sel.options[sel.selectedIndex];
-  document.getElementById('sendInvEmail').value = opt.dataset.email || '';
-  document.getElementById('sendInvPhone').value = opt.dataset.phone || '';
-
-  // Pre-fill dates: period = last Monday to last Sunday (or last week), invoice date = today
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  // Default period: last 7 days (Mon-Sun)
-  const dayOfWeek = today.getDay(); // 0=Sun
-  const daysToLastMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-  const lastMon = new Date(today); lastMon.setDate(today.getDate() - daysToLastMon - 7);
-  const lastSun = new Date(lastMon); lastSun.setDate(lastMon.getDate() + 6);
-  document.getElementById('sendInvPeriodFrom').value = lastMon.toISOString().slice(0, 10);
-  document.getElementById('sendInvPeriodTo').value = lastSun.toISOString().slice(0, 10);
-  document.getElementById('sendInvDate').value = todayStr;
-  document.getElementById('sendInvDesc').value = '';
-  document.getElementById('sendInvStatus').textContent = '';
-  document.getElementById('sendInvSubmitBtn').disabled = false;
-  updateSendInvPreview();
-  document.getElementById('sendInvoiceModal').classList.add('show');
+  if (!workerId) return showToast('请先选择承包商', 'error');
+  const workerName = sel.options[sel.selectedIndex].text;
+  _invSendWorkerId = parseInt(workerId);
+  _invSendWorkerName = workerName;
+  document.getElementById('invSendWorkerName').textContent = workerName;
+  document.getElementById('invSendStatus').style.display = 'none';
+  document.getElementById('invSendBtn').textContent = '📤 發送發票';
+  document.getElementById('invSendBtn').disabled = false;
+  document.getElementById('invSendLang').value = 'contractor_invoice';
+  document.getElementById('invSendDate').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('invSendServiceDesc').value = '';
+  document.getElementById('invPreviewSection').style.display = 'none';
+  document.getElementById('invPreviewFrame').src = '';
+  document.getElementById('invPreviewBtn').textContent = '🔍 预览模板';
+  const _prevSummary = document.getElementById('invPreviewSummary');
+  if (_prevSummary) _prevSummary.remove();
+  // Pre-fill email, phone, and service description from cached worker data
+  const w = _empInvWorkersCache.find(w => w.id === _invSendWorkerId);
+  document.getElementById('invSendEmail').value = w?.email || '';
+  document.getElementById('invSendPhone').value = w?.phone || '';
+  document.getElementById('invSendPeriodStart').value = '';
+  document.getElementById('invSendPeriodEnd').value = '';
+  if (w?.position) document.getElementById('invSendServiceDesc').value = w.position;
+  document.getElementById('invSendModal').classList.add('show');
 }
+let _invSendWorkerId = null, _invSendWorkerName = '';
 
-function updateSendInvPreview() {
-  const lang = document.getElementById('sendInvLang').value;
-  const from = document.getElementById('sendInvPeriodFrom').value;
-  const to = document.getElementById('sendInvPeriodTo').value;
-  const date = document.getElementById('sendInvDate').value;
-  const desc = document.getElementById('sendInvDesc').value.trim();
-  const workerName = document.getElementById('sendInvWorkerName').textContent;
-  const previewEl = document.getElementById('sendInvPreview');
-  const previewText = document.getElementById('sendInvPreviewText');
-  if (from && to && date) {
-    const langLabel = lang === 'en+es' ? 'EN+ES' : 'EN+ZH';
-    previewText.innerHTML = `语言版本: <b>${langLabel}</b>&nbsp;&nbsp;承包商: <b>${esc(workerName)}</b>&nbsp;&nbsp;发票日期: <b>${date}</b>&nbsp;&nbsp;服务期间: <b>${from} ~ ${to}</b>${desc ? '<br>服务描述: <b>' + esc(desc) + '</b>' : ''}`;
-    previewEl.style.display = '';
+async function doSendInvoice() {
+  if (!_invSendWorkerId) return;
+  const email = document.getElementById('invSendEmail').value.trim();
+  const phone = document.getElementById('invSendPhone').value.trim();
+  const periodStart = document.getElementById('invSendPeriodStart').value;
+  const periodEnd = document.getElementById('invSendPeriodEnd').value;
+  const invoiceDate = document.getElementById('invSendDate').value.trim();
+  const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
+  if (!email) { showToast('请填写承包商邮箱', 'error'); return; }
+  if (!periodStart || !periodEnd) { showToast('请填写服务周期 Period From / Period To', 'error'); return; }
+  if (!invoiceDate) { showToast('请选择發票日期', 'error'); return; }
+  if (!serviceDesc) { showToast('请填写服务内容描述', 'error'); return; }
+  const _langLabels = { contractor_invoice: '中文+英文', contractor_invoice_en: 'English', contractor_invoice_es: 'EN+ES' };
+  const _selLang = document.getElementById('invSendLang').value;
+  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，填写金额并签字后提交。`)) return;
+  const btn = document.getElementById('invSendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const templateLang = document.getElementById('invSendLang').value;
+  const r = await api('/admin/contractor-invoices/send-docuseal', {
+    method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, worker_email: email, worker_phone: phone || undefined, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, template_lang: templateLang })
+  });
+  btn.disabled = false; btn.textContent = '📤 重新發送';
+  if (r && r.success) {
+    const statusEl = document.getElementById('invSendStatus');
+    statusEl.style.display = 'block';
+    statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+    let msg = `✅ 發票已發送 (${r.invoice_number})`;
+    if (r.emailSent) msg += '　📧 邮件已送达';
+    if (r.smsSent) msg += '　📱 短信已送达';
+    if (r.warnings && r.warnings.length) msg += `<br><span style="font-size:.78rem;color:#92400e">${r.warnings.join('；')}</span>`;
+    statusEl.innerHTML = msg;
+    const tabStatus = document.getElementById('empInvSendStatus');
+    tabStatus.textContent = `✅ 已发送 ${r.invoice_number}`;
+    tabStatus.style.color = '#15803d';
+    loadEmpInvoiceTab();
   } else {
-    previewEl.style.display = 'none';
+    showToast(r?.error || '发送失败', 'error');
   }
 }
 
-async function doSendContractorInvoice() {
-  const workerId = _sendInvWorkerId;
-  if (!workerId) return showToast('请先选择员工', 'error');
-  const lang = document.getElementById('sendInvLang').value;
-  const periodFrom = document.getElementById('sendInvPeriodFrom').value;
-  const periodTo = document.getElementById('sendInvPeriodTo').value;
-  const invoiceDate = document.getElementById('sendInvDate').value;
-  const desc = document.getElementById('sendInvDesc').value.trim();
-  if (!periodFrom || !periodTo || !invoiceDate) return showToast('请填写服务周期和发票日期', 'error');
-  if (!desc) return showToast('请填写服务内容描述', 'error');
-  const statusEl = document.getElementById('sendInvStatus');
-  const btn = document.getElementById('sendInvSubmitBtn');
-  btn.disabled = true;
-  statusEl.textContent = '发送中…';
-  statusEl.style.color = 'var(--sky)';
-  const r = await api('/admin/contractor-invoices/send-docuseal', {
-    method: 'POST', body: JSON.stringify({
-      worker_account_id: parseInt(workerId),
-      lang, period_from: periodFrom, period_to: periodTo,
-      invoice_date: invoiceDate, service_description: desc
-    })
-  });
-  if (r && r.success) {
-    showToast(`✅ 发票已发送，Invoice# ${r.invoice_number}`);
-    document.getElementById('empInvSendStatus').textContent = `✅ 已发送 ${r.invoice_number}`;
-    document.getElementById('empInvSendStatus').style.color = '#15803d';
-    closeModal('sendInvoiceModal');
-    loadEmpInvoiceTab();
+function previewInvoiceTemplate() {
+  const section = document.getElementById('invPreviewSection');
+  const frame = document.getElementById('invPreviewFrame');
+  const btn = document.getElementById('invPreviewBtn');
+  const infoBox = document.getElementById('invPreviewInfoBox');
+  const lang = document.getElementById('invSendLang').value;
+  if (section.style.display === 'none') {
+    const contractorName = _invSendWorkerName || '';
+    const invoiceDate = document.getElementById('invSendDate').value || new Date().toISOString().slice(0,10);
+    const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
+    const periodStart = document.getElementById('invSendPeriodStart').value;
+    const periodEnd = document.getElementById('invSendPeriodEnd').value;
+    const langLabels = { contractor_invoice: '中文+英文', contractor_invoice_en: 'English', contractor_invoice_es: 'EN+ES' };
+    const invDateObj = new Date(invoiceDate + 'T12:00:00');
+    const dueDate = new Date(invDateObj.getTime() + 30 * 86400000).toISOString().slice(0, 10);
+    // Show pre-filled data info box
+    infoBox.style.display = 'block';
+    infoBox.innerHTML = `<b>将预填入的数据 (Pre-filled Data):</b><br>` +
+      `<b>语言版本:</b> ${langLabels[lang] || lang}　` +
+      `<b>承包商:</b> ${esc(contractorName) || '—'}　` +
+      `<b>發票日期:</b> ${invoiceDate || '—'}　` +
+      `<b>服务周期:</b> ${periodStart || '—'} ~ ${periodEnd || '—'}<br>` +
+      `<b>服务内容:</b> ${esc(serviceDesc) || '—'}<br>` +
+      `<span style="font-size:.77rem;color:#6b7280">※ 以下PDF为预览；发送后承包商收到的版本将自动带入上述数据。</span>`;
+    const params = new URLSearchParams({ contractor_name: contractorName, invoice_date: invoiceDate, service_description: serviceDesc, period_start: periodStart, period_end: periodEnd });
+    frame.src = '/api/admin/contractor-invoices/preview-filled?' + params.toString();
+    section.style.display = 'block';
+    btn.textContent = '✖ 关闭预览';
   } else {
-    btn.disabled = false;
-    statusEl.textContent = '';
-    showToast(r?.error || '发送失败', 'error');
+    section.style.display = 'none';
+    infoBox.style.display = 'none';
+    frame.src = '';
+    btn.textContent = '🔍 预览模板';
+  }
+}
+
+async function previewDsInvoice(invoiceId) {
+  try {
+    showToast('获取预览链接中…', 'info');
+    const r = await api(`/admin/contractor-invoices/${invoiceId}/signing-url`);
+    if (r && r.url) {
+      window.open(r.url, '_blank');
+    } else {
+      showToast(r?.error || '无法获取预览链接', 'error');
+    }
+  } catch(e) {
+    showToast('获取预览链接失败', 'error');
   }
 }
 
@@ -19772,6 +20100,40 @@ async function deleteJobSite(id) {
   loadJobSites();
 }
 
+// ─── Worker Portal Mode Settings ───
+async function loadWorkerPortalMode() {
+  const settings = await api('/admin/app-settings');
+  if (!settings) return;
+  const mode = settings.worker_portal_mode || 'none';
+  document.querySelectorAll('input[name="workerPortalMode"]').forEach(r => {
+    r.checked = r.value === mode;
+  });
+  updatePortalModeLabels(mode);
+}
+
+function onPortalModeChange(radio) {
+  updatePortalModeLabels(radio.value);
+}
+
+function updatePortalModeLabels(mode) {
+  ['none', 'timeclock', 'invoice'].forEach(v => {
+    const lbl = document.getElementById('portalModeLabel_' + v);
+    if (lbl) lbl.style.borderColor = v === mode ? '#6366f1' : 'transparent';
+  });
+}
+
+async function saveWorkerPortalMode() {
+  const sel = document.querySelector('input[name="workerPortalMode"]:checked');
+  if (!sel) return;
+  const res = await api('/admin/app-settings', { method: 'PUT', body: JSON.stringify({ worker_portal_mode: sel.value }) });
+  if (res && res.success) {
+    const msg = document.getElementById('portalModeSaveMsg');
+    msg.style.display = 'inline';
+    setTimeout(() => { msg.style.display = 'none'; }, 2500);
+    updatePortalModeLabels(sel.value);
+  }
+}
+
 // ─── Integration Settings ───
 const INT_LABELS = {
   workbright: { name: 'WorkBright', desc: 'I-9 / Onboarding 平台', icon: '📋' },
@@ -19964,8 +20326,27 @@ async function _dsLoadConfig() {
   try {
     _dsConfig = await api('/admin/docuseal/config');
     _dsRefreshSelects();
+    if (_dsMyTemplates.length) _dsRenderMyTemplates();
+    // Populate account email field
+    const emailBar = document.getElementById('ds-account-email-bar');
+    const emailInp = document.getElementById('ds-account-email-input');
+    if (emailBar && emailInp) {
+      emailBar.style.display = 'flex';
+      emailInp.value = _dsConfig.account_email || '';
+    }
   } catch(e) { showToast(e.message, 'error'); }
   await _dsTestConnection();
+}
+
+async function dsSaveAccountEmail() {
+  const emailInp = document.getElementById('ds-account-email-input');
+  const email = (emailInp?.value || '').trim();
+  if (!email || !email.includes('@')) { showToast('请输入有效的 email', 'error'); return; }
+  try {
+    await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ account_email: email }) });
+    _dsConfig.account_email = email;
+    showToast('帐号 email 已保存', 'success');
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
 async function _dsTestConnection() {
@@ -20017,10 +20398,13 @@ const _DS_SELECTORS = [
   { key: 'zelle_auth_template_id',       selId: 'ds-sel-zelle',              infoId: 'ds-cfg-zelle-info',             label: 'Zelle授权',    doc_type: 'zelle_auth' },
   { key: 'third_party_pay_template_id',  selId: 'ds-sel-third-party',        infoId: 'ds-cfg-third-party-info',       label: '第三方平台',   doc_type: 'third_party_pay' },
   { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收',     doc_type: 'cash_receipt' },
-  // 员工 Invoice
-  { key: 'contractor_invoice_template_id',    selId: 'ds-sel-contractor-inv',    infoId: 'ds-cfg-contractor-inv-info',    label: '员工Invoice(ZH)', doc_type: 'contractor_invoice' },
-  { key: 'contractor_invoice_es_template_id', selId: 'ds-sel-contractor-inv-es', infoId: 'ds-cfg-contractor-inv-es-info', label: '员工Invoice(ES)', doc_type: 'contractor_invoice' },
-  { key: 'invoice_approval_template_id',      selId: 'ds-sel-invoice-approval',  infoId: 'ds-cfg-invoice-approval-info',  label: '发票审批',        doc_type: 'invoice_approval' },
+  // 发票
+  { key: 'contractor_invoice_template_id',    selId: 'ds-sel-contractor-inv',    infoId: 'ds-cfg-contractor-inv-info',    label: '发票(中英)',        doc_type: 'contractor_invoice' },
+  { key: 'contractor_invoice_en_template_id', selId: 'ds-sel-contractor-inv-en', infoId: 'ds-cfg-contractor-inv-en-info', label: '发票(英文)',        doc_type: 'contractor_invoice_en' },
+  { key: 'contractor_invoice_es_template_id', selId: 'ds-sel-contractor-inv-es', infoId: 'ds-cfg-contractor-inv-es-info', label: '发票(英西)',        doc_type: 'contractor_invoice_es' },
+  { key: 'invoice_approval_template_id',      selId: 'ds-sel-invoice-approval',    infoId: 'ds-cfg-invoice-approval-info',    label: '发票审批 (EN+ZH)', doc_type: 'invoice_approval' },
+  { key: 'invoice_approval_en_template_id',   selId: 'ds-sel-invoice-approval-en', infoId: 'ds-cfg-invoice-approval-en-info', label: '发票审批 (EN)',     doc_type: 'invoice_approval_en' },
+  { key: 'invoice_approval_es_template_id',   selId: 'ds-sel-invoice-approval-es', infoId: 'ds-cfg-invoice-approval-es-info', label: '发票审批 (EN+ES)', doc_type: 'invoice_approval_es' },
 ];
 
 function _dsRefreshSelects() {
@@ -20067,23 +20451,27 @@ function _dsRenderMyTemplates() {
     third_party_pay_template_id:   { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金' },
     contractor_invoice_template_id:    { bg:'#fef3c7', color:'#92400e', label:'员工Invoice(ZH)' },
+    contractor_invoice_en_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice(EN)' },
     contractor_invoice_es_template_id: { bg:'#fef9c3', color:'#854d0e', label:'员工Invoice(ES)' },
-    invoice_approval_template_id:      { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
+    invoice_approval_template_id:    { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
   };
   const _CAT_BADGE = {
     company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
     w4:{bg:'#e0f2fe',color:'#0369a1',label:'W-4'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'W-9'}, w8ben:{bg:'#fae8ff',color:'#6b21a8',label:'W-8BEN'}, w8bene:{bg:'#ede9fe',color:'#5b21b6',label:'W-8BEN-E'}, form8233:{bg:'#fce7f3',color:'#9d174d',label:'8233'}, i9:{bg:'#dcfce7',color:'#166534',label:'I-9'}, w7:{bg:'#f0fdf4',color:'#15803d',label:'W-7'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
     ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
     contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
-    invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
+    invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_en:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_es:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
   };
   const rows = _dsMyTemplates.map(t => {
     const cs = _CAT_BADGE[t.category];
     const catBadge = cs ? `<span style="display:inline-block;background:${cs.bg};color:${cs.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${cs.label}</span>` : '';
+    const _seenBadgeLabels = new Set(cs ? [cs.label] : []);
     const badges = Object.entries(_BADGE_STYLES).map(([k, s]) => {
       const cfgVal = _dsConfig[k];
       const inSlot = Array.isArray(cfgVal) ? cfgVal.some(id => id == t.docuseal_template_id) : cfgVal == t.docuseal_template_id;
-      return inSlot ? `<span style="display:inline-block;background:${s.bg};color:${s.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${s.label}</span>` : '';
+      if (!inSlot || _seenBadgeLabels.has(s.label)) return '';
+      _seenBadgeLabels.add(s.label);
+      return `<span style="display:inline-block;background:${s.bg};color:${s.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${s.label}</span>`;
     }).filter(Boolean).join('');
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
@@ -20093,7 +20481,7 @@ function _dsRenderMyTemplates() {
       <div style="display:flex;gap:.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
-        ${dsUrl ? `<a href="${dsUrl}/templates/${t.docuseal_template_id}/edit" target="_blank" style="display:inline-flex;align-items:center;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;text-decoration:none;white-space:nowrap">编辑 ↗</a>` : ''}
+        <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsOpenBuilderModal(${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">编辑</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444;white-space:nowrap" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
       </div>
     </div>`;
@@ -20112,17 +20500,87 @@ async function dsSetTemplate(type, id) {
   } catch(e) { showToast(e.message, 'error'); }
 }
 
-async function dsRenameMyTemplate(localId, currentName) {
-  const newName = prompt('请输入新的模板名称：', currentName);
-  if (!newName || newName.trim() === currentName) return;
+function dsRenameMyTemplate(localId, currentName) {
+  const modalHtml = `<div id="ds-rename-modal-overlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:1.5rem;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.2);margin:auto">
+      <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">改名</div>
+      <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为此模板输入新名称</div>
+      <input id="ds-rename-input" type="text" value="${_dsEsc(currentName)}" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .75rem;font-size:.88rem;outline:none;margin-bottom:1rem" onkeydown="if(event.key==='Enter')dsRenameMyTemplateConfirm(${localId})">
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button onclick="document.getElementById('ds-rename-modal-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
+        <button onclick="dsRenameMyTemplateConfirm(${localId})" style="padding:.4rem 1rem;border-radius:7px;border:none;background:#0ea5e9;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">保存</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  const input = document.getElementById('ds-rename-input');
+  input.focus();
+  input.select();
+}
+
+async function dsRenameMyTemplateConfirm(localId) {
+  const overlay = document.getElementById('ds-rename-modal-overlay');
+  const input = document.getElementById('ds-rename-input');
+  const newName = input ? input.value.trim() : '';
+  if (!newName) { showToast('名称不能为空', 'error'); return; }
+  const t = _dsMyTemplates.find(t => t.id === localId);
+  if (t && newName === t.name) { overlay && overlay.remove(); return; }
   try {
-    await api(`/admin/docuseal/my-templates/${localId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName.trim() }) });
-    const t = _dsMyTemplates.find(t => t.id === localId);
-    if (t) t.name = newName.trim();
+    await api(`/admin/docuseal/my-templates/${localId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName }) });
+    if (t) t.name = newName;
+    overlay && overlay.remove();
     _dsRenderMyTemplates();
     _dsRefreshSelects();
     showToast('模板已改名', 'success');
   } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ── Embedded DocuSeal builder modal ──
+let _dsBuilderScriptSrc = null;
+
+async function dsOpenBuilderModal(dsId, name) {
+  let overlay = document.getElementById('dsBuilderOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'dsBuilderOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:99999;display:flex;flex-direction:column';
+    overlay.innerHTML = `
+      <div style="background:#1e293b;color:#fff;padding:.65rem 1.25rem;display:flex;align-items:center;gap:.75rem;flex-shrink:0">
+        <div id="dsBuilderTitle" style="flex:1;font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">编辑模板</div>
+        <button onclick="dsCloseBuilderModal()" style="padding:.3rem .75rem;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:transparent;color:#fff;font-size:.82rem;cursor:pointer">✕ 关闭</button>
+      </div>
+      <div id="dsBuilderBody" style="flex:1;overflow:hidden;position:relative"></div>`;
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('dsBuilderTitle').textContent = `编辑模板: ${name || '#' + dsId}`;
+  document.getElementById('dsBuilderBody').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:.9rem">正在加载编辑器…</div>';
+  overlay.style.display = 'flex';
+  try {
+    const res = await fetch(`/api/admin/docuseal/builder-token/${dsId}`, { credentials: 'include' });
+    if (!res.ok) throw new Error('获取 token 失败: ' + res.status);
+    const { token, builderSrc } = await res.json();
+    if (_dsBuilderScriptSrc !== builderSrc) {
+      const old = document.querySelector('script[data-dsbuilder]');
+      if (old) old.remove();
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = builderSrc;
+        s.dataset.dsbuilder = '1';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('无法加载编辑器脚本，请检查网络或使用 VPN: ' + builderSrc));
+        document.head.appendChild(s);
+      });
+      _dsBuilderScriptSrc = builderSrc;
+    }
+    document.getElementById('dsBuilderBody').innerHTML = `<docuseal-builder data-token="${token.replace(/"/g,'&quot;')}" data-language="zh" style="width:100%;height:100%;display:block"></docuseal-builder>`;
+  } catch(e) {
+    document.getElementById('dsBuilderBody').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:.75rem;color:#ef4444;padding:2rem;text-align:center"><strong>编辑器加载失败</strong><div style="font-size:.85rem;color:#64748b">${e.message}</div></div>`;
+  }
+}
+
+function dsCloseBuilderModal() {
+  const overlay = document.getElementById('dsBuilderOverlay');
+  if (overlay) { overlay.style.display = 'none'; document.getElementById('dsBuilderBody').innerHTML = ''; }
 }
 
 async function dsDeleteMyTemplate(localId, dsId, name) {
@@ -20180,7 +20638,7 @@ function dsChangeCategoryModal(dsTemplateId) {
     ]},
     { title: 'Invoice', items: [
       { cat: 'contractor_invoice', label: '员工Invoice', bg:'#fef3c7', color:'#92400e' },
-      { cat: 'invoice_approval',   label: '发票审批',    bg:'#d1fae5', color:'#065f46' },
+      { cat: 'invoice_approval',    label: '发票审批', bg:'#d1fae5', color:'#065f46' },
     ]},
   ];
 
