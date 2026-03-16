@@ -2177,6 +2177,15 @@ tr:hover td{background:var(--sky-light)}
     <!-- Connection status -->
     <div id="ds-conn-badge" style="margin-bottom:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap"></div>
 
+    <!-- Account email (needed for embedded editor JWT) -->
+    <div id="ds-account-email-bar" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.85rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <label style="display:block;font-size:.8rem;font-weight:600;color:#92400e;margin-bottom:.3rem">DocuSeal 帐号 Email（用于内嵌编辑器）</label>
+        <input type="email" id="ds-account-email-input" placeholder="your@docuseal-account.com" style="width:100%;border:1px solid #fde68a;border-radius:6px;padding:.4rem .7rem;font-size:.85rem;outline:none">
+      </div>
+      <button onclick="dsSaveAccountEmail()" style="padding:.45rem 1rem;border-radius:7px;background:#f59e0b;color:#fff;border:none;font-size:.84rem;font-weight:600;cursor:pointer;white-space:nowrap;margin-top:1.2rem">保存 Email</button>
+    </div>
+
     <!-- Current config -->
     <div style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1.5rem">
       <div style="font-size:1rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem">
@@ -2732,6 +2741,10 @@ tr:hover td{background:var(--sky-light)}
   <div style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人邮箱：</label>
     <input id="w9WorkerEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="worker@email.com">
+  </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手机号码（确认）：</label>
+    <input id="w9WorkerPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (555) 000-0000">
   </div>
   <!-- W-9 Template Selector -->
   <div style="margin:.75rem 0">
@@ -16985,6 +16998,7 @@ async function openW9SendModal() {
   const w = _onboardingWorkerData;
   document.getElementById('w9WorkerName').textContent = w ? (w.name || w.username || '') : '';
   document.getElementById('w9WorkerEmail').value = (w && w.email) || '';
+  document.getElementById('w9WorkerPhone').value = (w && w.phone) || '';
   document.getElementById('w9DsStatus').style.display = 'none';
   document.getElementById('w9RefreshBtn').style.display = 'none';
   document.getElementById('w9DownloadBtn').style.display = 'none';
@@ -17060,11 +17074,14 @@ function updateW9DsStatusUI(status) {
 async function doSendW9() {
   if (!_onboardingWorkerId) return;
   const email = document.getElementById('w9WorkerEmail').value.trim();
+  const phone = document.getElementById('w9WorkerPhone').value.trim();
   if (!email) { showToast('请填写工人邮箱', 'error'); return; }
-  if (!await showConfirm(`确认发送 W-9 签字请求至 ${email}？\n\n系统将自动生成 W-9 并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。`)) return;
+  if (!phone) { showToast('请填写并确认工人手机号码', 'error'); return; }
+  const confirmMsg = `确认发送 W-9 签字请求至：\n\n邮箱：${email}\n手机：${phone}\n\n系统将自动生成 W-9 并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。`;
+  if (!await showConfirm(confirmMsg)) return;
   const btn = document.getElementById('w9SendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
-  const sendBody = { worker_email: email };
+  const sendBody = { worker_email: email, worker_phone: phone };
   if (_w9SelectedTemplateId) sendBody.template_id = _w9SelectedTemplateId;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-w9`, {
     method: 'POST', body: JSON.stringify(sendBody)
@@ -20070,8 +20087,26 @@ async function _dsLoadConfig() {
     _dsConfig = await api('/admin/docuseal/config');
     _dsRefreshSelects();
     if (_dsMyTemplates.length) _dsRenderMyTemplates();
+    // Populate account email field
+    const emailBar = document.getElementById('ds-account-email-bar');
+    const emailInp = document.getElementById('ds-account-email-input');
+    if (emailBar && emailInp) {
+      emailBar.style.display = 'flex';
+      emailInp.value = _dsConfig.account_email || '';
+    }
   } catch(e) { showToast(e.message, 'error'); }
   await _dsTestConnection();
+}
+
+async function dsSaveAccountEmail() {
+  const emailInp = document.getElementById('ds-account-email-input');
+  const email = (emailInp?.value || '').trim();
+  if (!email || !email.includes('@')) { showToast('请输入有效的 email', 'error'); return; }
+  try {
+    await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ account_email: email }) });
+    _dsConfig.account_email = email;
+    showToast('帐号 email 已保存', 'success');
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
 async function _dsTestConnection() {
@@ -20206,7 +20241,7 @@ function _dsRenderMyTemplates() {
       <div style="display:flex;gap:.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
-        ${dsUrl ? `<a href="${dsUrl}/templates/${t.docuseal_template_id}/edit" target="_blank" style="display:inline-flex;align-items:center;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;text-decoration:none;white-space:nowrap">编辑 ↗</a>` : ''}
+        <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsOpenBuilderModal(${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">编辑</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444;white-space:nowrap" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
       </div>
     </div>`;
@@ -20258,6 +20293,54 @@ async function dsRenameMyTemplateConfirm(localId) {
     _dsRefreshSelects();
     showToast('模板已改名', 'success');
   } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ── Embedded DocuSeal builder modal ──
+let _dsBuilderScriptSrc = null;
+
+async function dsOpenBuilderModal(dsId, name) {
+  let overlay = document.getElementById('dsBuilderOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'dsBuilderOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:99999;display:flex;flex-direction:column';
+    overlay.innerHTML = `
+      <div style="background:#1e293b;color:#fff;padding:.65rem 1.25rem;display:flex;align-items:center;gap:.75rem;flex-shrink:0">
+        <div id="dsBuilderTitle" style="flex:1;font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">编辑模板</div>
+        <button onclick="dsCloseBuilderModal()" style="padding:.3rem .75rem;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:transparent;color:#fff;font-size:.82rem;cursor:pointer">✕ 关闭</button>
+      </div>
+      <div id="dsBuilderBody" style="flex:1;overflow:hidden;position:relative"></div>`;
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('dsBuilderTitle').textContent = `编辑模板: ${name || '#' + dsId}`;
+  document.getElementById('dsBuilderBody').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:.9rem">正在加载编辑器…</div>';
+  overlay.style.display = 'flex';
+  try {
+    const res = await fetch(`/api/admin/docuseal/builder-token/${dsId}`, { credentials: 'include' });
+    if (!res.ok) throw new Error('获取 token 失败: ' + res.status);
+    const { token, builderSrc } = await res.json();
+    if (_dsBuilderScriptSrc !== builderSrc) {
+      const old = document.querySelector('script[data-dsbuilder]');
+      if (old) old.remove();
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = builderSrc;
+        s.dataset.dsbuilder = '1';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('无法加载编辑器脚本，请检查网络或使用 VPN: ' + builderSrc));
+        document.head.appendChild(s);
+      });
+      _dsBuilderScriptSrc = builderSrc;
+    }
+    document.getElementById('dsBuilderBody').innerHTML = `<docuseal-builder data-token="${token.replace(/"/g,'&quot;')}" data-language="zh" style="width:100%;height:100%;display:block"></docuseal-builder>`;
+  } catch(e) {
+    document.getElementById('dsBuilderBody').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:.75rem;color:#ef4444;padding:2rem;text-align:center"><strong>编辑器加载失败</strong><div style="font-size:.85rem;color:#64748b">${e.message}</div></div>`;
+  }
+}
+
+function dsCloseBuilderModal() {
+  const overlay = document.getElementById('dsBuilderOverlay');
+  if (overlay) { overlay.style.display = 'none'; document.getElementById('dsBuilderBody').innerHTML = ''; }
 }
 
 async function dsDeleteMyTemplate(localId, dsId, name) {

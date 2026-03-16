@@ -4227,14 +4227,15 @@ async function dsealGetW9SignUrl(submissionId) {
   if (r.status !== 200) throw new Error(`DocuSeal 获取 W-9 提交失败 ${r.status}`);
   const signer = (r.data.submitters || [])[0];
   if (!signer) throw new Error('DocuSeal W-9: 签署人未找到');
-  // Prefer embed_src — designed for web component embedding (docuseal-form)
-  // Slug URLs (/s/xxx) are full-page URLs and don't render inside the web component
-  if (signer.embed_src) return { url: signer.embed_src, embeddable: true };
-  const baseHost = dsealPublicHost();
-  if (signer.slug) return { url: `${baseHost}/s/${signer.slug}`, embeddable: false };
+  // Always call PUT to get a fresh embed_src — GET /submissions does not return embed_src.
+  // embed_src uses DocuSeal's own APP_URL (publicly accessible), while slug URLs use our
+  // internal DOCUSEAL_URL which may not be reachable from the worker's browser.
+  // embed_src also allows iframe embedding; direct /s/xxx URLs may have X-Frame-Options set.
   const u = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: signer.name });
   if (u.data?.embed_src) return { url: u.data.embed_src, embeddable: true };
+  const baseHost = dsealPublicHost();
   if (u.data?.slug) return { url: `${baseHost}/s/${u.data.slug}`, embeddable: false };
+  if (signer.slug) return { url: `${baseHost}/s/${signer.slug}`, embeddable: false };
   if (u.status >= 400) throw new Error(`DocuSeal 获取 W-9 签署链接失败 ${u.status}`);
   throw new Error('DocuSeal W-9: 无法获取签署链接');
 }
@@ -14777,6 +14778,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const out = { connected: dsealEnabled(), url: _publicUrl };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
+  out.account_email = cfg.account_email || '';
   res.json(out);
 });
 
@@ -14807,7 +14809,8 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
     'contractor_invoice_template_id','invoice_approval_template_id',
     'invoice_approval_en_template_id','invoice_approval_es_template_id',
-    'contract_template_id' /* legacy */];
+    'contract_template_id' /* legacy */,
+    'account_email' /* DocuSeal account email for embedded builder JWT */];
   _configKeys.forEach(k => {
     if (req.body[k] === undefined) return;
     const v = req.body[k];
@@ -14933,6 +14936,71 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// GET /api/admin/docuseal/builder-token/:id — generate embedded builder JWT for a template
+app.get('/api/admin/docuseal/builder-token/:id', requireAdmin, async (req, res) => {
+  const { apiKey, baseUrl } = dsealGetCreds();
+  if (!apiKey) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const templateId = parseInt(req.params.id, 10);
+  if (!templateId) return res.status(400).json({ error: '无效的模板 ID' });
+
+  // Fetch the actual DocuSeal account user email (required by the builder JWT)
+  // Strategy 1: GET /api/users
+  let userEmail = '';
+  try {
+    const r = await dsealApiCall('GET', '/api/users', null);
+    if (r.status === 200) {
+      const users = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+      if (users.length > 0) userEmail = users[0].email || '';
+    }
+  } catch {}
+
+  // Strategy 2: GET /api/templates/:id — author email sometimes embedded in template
+  if (!userEmail) {
+    try {
+      const r = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
+      if (r.status === 200 && r.data) {
+        userEmail = r.data.author?.email || r.data.created_by?.email || r.data.user?.email || '';
+      }
+    } catch {}
+  }
+
+  // Strategy 3: read cached account_email stored in docuseal config
+  if (!userEmail) {
+    try {
+      const cfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+      const cfg = JSON.parse(cfgRow?.config || '{}');
+      userEmail = cfg.account_email || '';
+    } catch {}
+  }
+
+  if (!userEmail) return res.status(503).json({ error: 'DocuSeal 帐号 email 获取失败，请在 DocuSeal 模板管理页面的连接设置中填写帐号 email' });
+
+  // Cache for future calls
+  try {
+    const cfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse(cfgRow?.config || '{}');
+    if (cfg.account_email !== userEmail) {
+      cfg.account_email = userEmail;
+      db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+    }
+  } catch {}
+
+  // Build HS256 JWT — DocuSeal builder requires top-level user_email
+  const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    user_email: userEmail,
+    template_id: templateId
+  })).toString('base64url');
+  const sig   = crypto.createHmac('sha256', apiKey).update(`${header}.${payload}`).digest('base64url');
+  const token = `${header}.${payload}.${sig}`;
+
+  const isCloud  = /api\.docuseal\.(com|eu)/.test(baseUrl);
+  const cleanBase = baseUrl.replace(/\/+$/, '');
+  const builderSrc = isCloud ? 'https://cdn.docuseal.com/js/builder.js' : `${cleanBase}/js/builder.js`;
+
+  res.json({ token, builderSrc });
 });
 
 // GET /api/admin/docuseal/my-templates — list only user-uploaded templates from local DB
