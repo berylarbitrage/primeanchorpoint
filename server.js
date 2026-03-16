@@ -7542,12 +7542,17 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
     const workerId = parseInt(req.params.id);
     const onb = db.prepare("SELECT ds_envelope_id, ds_status, ds_worker_signed_at FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
-    if (!dsealEnabled()) return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at });
+    if (!dsealEnabled()) {
+      const addrCheck = onb.ds_status === 'completed' ? verifyW9Address(workerId) : null;
+      return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, addressCheck: addrCheck });
+    }
     const { status, workerSigned, declineReason } = await dsealGetW9Status(onb.ds_envelope_id);
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
       .run(status, workerSigned, workerId);
+    let addressCheck = null;
     if (status === 'completed') {
       const addrCheck = verifyW9Address(workerId);
+      addressCheck = addrCheck;
       if (addrCheck.match) {
         db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
           .run(addrCheck.note, workerId);
@@ -7560,7 +7565,7 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
       db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
         .run(`工人已拒签 W-9: ${declineReason || ''}`, workerId);
     }
-    res.json({ status, workerSigned, declineReason });
+    res.json({ status, workerSigned, declineReason, addressCheck });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
