@@ -12713,6 +12713,14 @@ app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
 // Submit W-9 form data — saves info, then auto-creates DocuSeal submission for signing
 app.post('/api/worker/compliance/w9', requireWorker, async (req, res) => {
   try {
+    // Validate all required fields
+    const requiredFields = ['name','business_name','tax_classification','address','city','state','zip','ssn_or_ein','tin_type','signature_confirm'];
+    for (const f of requiredFields) {
+      if (!req.body[f] || !String(req.body[f]).trim()) {
+        return res.status(400).json({ error: `缺少必填字段 / Missing required field: ${f}` });
+      }
+    }
+
     const formData = {};
     const fields = ['name','business_name','tax_classification','exempt_payee_code','fatca_code',
       'address','city','state','zip','account_numbers','ssn_or_ein','signature_confirm','tin_type'];
