@@ -13867,18 +13867,19 @@ async function loadWorkerAccounts() {
     <td style="font-size:.78rem;white-space:nowrap">${(()=>{
       if (!w.onboarded) return '<span style="color:var(--gray-400)">— 不确定 —</span>';
       const ts = w.tax_status;
-      if (ts === 'citizen') return '<span style="padding:2px 6px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-weight:600">🇺🇸 公民</span>';
+      if (ts === 'citizen' || ts === 'us_citizen') return '<span style="padding:2px 6px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-weight:600">🇺🇸 公民</span>';
       if (ts === 'resident_alien' || ts === 'likely_resident_alien') return '<span style="padding:2px 6px;border-radius:6px;background:#d1fae5;color:#065f46;font-weight:600">🟢 RA 居民</span>';
       if (ts === 'nonresident_alien' || ts === 'likely_nonresident_alien') return '<span style="padding:2px 6px;border-radius:6px;background:#fef3c7;color:#92400e;font-weight:600">NRA 非居民</span>';
       if (ts === 'us_entity') return '<span style="padding:2px 6px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-weight:600">🇺🇸 美国实体</span>';
       if (ts === 'foreign_entity') return '<span style="padding:2px 6px;border-radius:6px;background:#fef3c7;color:#92400e;font-weight:600">境外实体</span>';
       if (w.work_status === 'citizen') return '<span style="padding:2px 6px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-weight:600">🇺🇸 公民</span>';
       if (w.work_status === 'green_card') return '<span style="padding:2px 6px;border-radius:6px;background:#d1fae5;color:#065f46;font-weight:600">🟢 绿卡</span>';
+      if (w.work_status === 'resident') return '<span style="padding:2px 6px;border-radius:6px;background:#d1fae5;color:#065f46;font-weight:600">🟢 RA 居民</span>';
+      if (w.work_status === 'nonresident_alien') return '<span style="padding:2px 6px;border-radius:6px;background:#fef3c7;color:#92400e;font-weight:600">NRA 非居民</span>';
       if (w.work_status) return '<span style="padding:2px 6px;border-radius:6px;background:#f3f4f6;color:#374151;font-weight:600">' + esc(w.work_status) + '</span>';
       return '<span style="color:var(--gray-300)">— 待确认 —</span>';
     })()}</td>
     <td style="font-size:.78rem;white-space:nowrap">${(()=>{
-      if (!w.employee_id) return '<span style="color:var(--gray-400)">— 不确定 —</span>';
       const et = w.employment_type;
       if (et === 'w2') return '<span style="padding:2px 6px;border-radius:6px;background:#eff6ff;color:#1d4ed8;font-weight:600">W-2</span>';
       if (et === '1099') return '<span style="padding:2px 6px;border-radius:6px;background:#fffbeb;color:#9a3412;font-weight:600">1099</span>';
@@ -13904,7 +13905,7 @@ async function loadWorkerAccounts() {
       return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;white-space:nowrap;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${esc(filingLabel)}</button>`;
     })()}</td>
     <td style="font-size:.78rem;white-space:nowrap;text-align:center">${(() => {
-      const isCitizen = w.tax_status === 'citizen' || w.work_status === 'citizen';
+      const isCitizen = w.tax_status === 'citizen' || w.tax_status === 'us_citizen' || w.work_status === 'citizen';
       if (isCitizen) return '<span style="color:var(--gray-400);font-size:.75rem">🇺🇸 不需要</span>';
       const d = w.identity_reverify_date || '';
       const today = new Date().toISOString().slice(0,10);
