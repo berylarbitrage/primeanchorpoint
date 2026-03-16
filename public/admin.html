@@ -20631,6 +20631,16 @@ function _dsRenderMyTemplates() {
     contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice(ZH)'}, contractor_invoice_en:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice(EN)'}, contractor_invoice_es:{bg:'#fef9c3',color:'#854d0e',label:'员工Invoice(ES)'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
     invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_en:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_es:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
   };
+  const _LANG_BADGE = {
+    EN: { bg:'#dbeafe', color:'#1e40af', label:'EN' },
+    ZH: { bg:'#fef3c7', color:'#92400e', label:'ZH' },
+    ES: { bg:'#d1fae5', color:'#065f46', label:'ES' },
+    FR: { bg:'#ede9fe', color:'#5b21b6', label:'FR' },
+    PT: { bg:'#fce7f3', color:'#9d174d', label:'PT' },
+    KO: { bg:'#e0f2fe', color:'#0369a1', label:'KO' },
+    JA: { bg:'#fff7ed', color:'#9a3412', label:'JA' },
+    VI: { bg:'#dcfce7', color:'#166534', label:'VI' },
+  };
   const rows = _dsMyTemplates.map(t => {
     const cs = _CAT_BADGE[t.category];
     const catBadge = cs ? `<span style="display:inline-block;background:${cs.bg};color:${cs.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${cs.label}</span>` : '';
@@ -20642,14 +20652,21 @@ function _dsRenderMyTemplates() {
       _seenBadgeLabels.add(s.label);
       return `<span style="display:inline-block;background:${s.bg};color:${s.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${s.label}</span>`;
     }).filter(Boolean).join('');
+    const tLangs = t.languages ? t.languages.split(',').map(l => l.trim()).filter(Boolean) : [];
+    const langBadges = tLangs.map(l => {
+      const ls = _LANG_BADGE[l];
+      return ls ? `<span style="display:inline-block;background:${ls.bg};color:${ls.color};border-radius:4px;padding:1px 6px;font-size:.72rem;font-weight:700;margin-left:.3rem;border:1px solid ${ls.color}22">${ls.label}</span>` : '';
+    }).filter(Boolean).join('');
+    const langSubtitle = tLangs.length ? ` · 语言: ${tLangs.join('+')}` : '';
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
-        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}
-        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${(_CAT_BADGE[t.category]||{}).label||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
+        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}${langBadges}
+        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${(_CAT_BADGE[t.category]||{}).label||t.category||'未分类'}${langSubtitle} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
+        <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;white-space:nowrap" onclick="dsChangeLanguageModal(${t.id})">改语言</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsOpenBuilderModal(${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">编辑</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444;white-space:nowrap" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
       </div>
@@ -20849,6 +20866,55 @@ async function dsApplyCategoryChanges(dsTemplateId) {
     overlay.remove();
     _dsRenderMyTemplates();
     showToast('分类已更新', 'success');
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function dsChangeLanguageModal(localId) {
+  const tpl = _dsMyTemplates.find(t => t.id === localId);
+  if (!tpl) return;
+  const currentLangs = tpl.languages ? tpl.languages.split(',').map(l => l.trim()).filter(Boolean) : [];
+  const allLangs = [
+    { code: 'EN', label: 'English (EN)',    bg:'#dbeafe', color:'#1e40af' },
+    { code: 'ZH', label: '中文 (ZH)',        bg:'#fef3c7', color:'#92400e' },
+    { code: 'ES', label: 'Español (ES)',    bg:'#d1fae5', color:'#065f46' },
+    { code: 'FR', label: 'Français (FR)',   bg:'#ede9fe', color:'#5b21b6' },
+    { code: 'PT', label: 'Português (PT)',  bg:'#fce7f3', color:'#9d174d' },
+    { code: 'KO', label: '한국어 (KO)',      bg:'#e0f2fe', color:'#0369a1' },
+    { code: 'JA', label: '日本語 (JA)',      bg:'#fff7ed', color:'#9a3412' },
+    { code: 'VI', label: 'Tiếng Việt (VI)', bg:'#dcfce7', color:'#166534' },
+  ];
+  const checkboxes = allLangs.map(l => {
+    const checked = currentLangs.includes(l.code) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:.55rem;padding:.32rem .2rem;cursor:pointer">
+      <input type="checkbox" name="ds-lang-cb" value="${l.code}" ${checked} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
+      <span style="display:inline-block;background:${l.bg};color:${l.color};border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700;border:1px solid ${l.color}22">${l.label}</span>
+    </label>`;
+  }).join('');
+  const modalHtml = `<div id="ds-lang-modal-overlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:1.5rem;width:340px;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+      <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">设置语言</div>
+      <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为「${_dsEsc(tpl.name)}」选择支持的语言（可多选）</div>
+      <div style="display:flex;flex-direction:column;gap:.1rem;margin-bottom:1rem">${checkboxes}</div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button onclick="document.getElementById('ds-lang-modal-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
+        <button onclick="dsApplyLanguageChanges(${localId})" style="padding:.4rem 1rem;border-radius:7px;border:none;background:#4f46e5;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">保存</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function dsApplyLanguageChanges(localId) {
+  const overlay = document.getElementById('ds-lang-modal-overlay');
+  const checked = [...overlay.querySelectorAll('input[name="ds-lang-cb"]:checked')].map(i => i.value);
+  const tpl = _dsMyTemplates.find(t => t.id === localId);
+  if (!tpl) { overlay.remove(); return; }
+  try {
+    await api(`/admin/docuseal/my-templates/${localId}/languages`, { method: 'PUT', body: JSON.stringify({ languages: checked }) });
+    tpl.languages = checked.join(',');
+    overlay.remove();
+    _dsRenderMyTemplates();
+    showToast('语言已更新', 'success');
   } catch(e) { showToast(e.message, 'error'); }
 }
 
