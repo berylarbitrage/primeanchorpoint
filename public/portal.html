@@ -5657,10 +5657,30 @@ async function openWorkerW9Sign() {
     }
     // Use iframe for universal compatibility (works with both cloud and self-hosted DocuSeal,
     // and does not depend on the cdn.docuseal.com/js/form.js CDN script being loaded)
+    const safeUrl = r.signUrl.replace(/'/g, "\\'");
+    const fallbackHtml = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;color:#64748b;font-size:.9rem">
+      <div>⚠️ 表单加载失败 / Form failed to load</div>
+      <button onclick="window.open('${safeUrl}','_blank');closeWorkerW9Sign();showToast('✅ W-9 签署页面已在新标签页打开')" style="padding:.5rem 1.5rem;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">在新标签页打开 / Open in New Tab</button>
+      <button onclick="closeWorkerW9Sign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭 / Close</button>
+    </div>`;
     const iframe = document.createElement('iframe');
     iframe.src = r.signUrl;
     iframe.style.cssText = 'width:100%;height:100%;border:none;display:block';
     iframe.allow = 'clipboard-write';
+    let iframeLoaded = false;
+    // Handle immediate load errors
+    iframe.onerror = () => { formDiv.innerHTML = fallbackHtml; };
+    // Detect failures after iframe "loads" (e.g. X-Frame-Options block, unreachable server)
+    iframe.onload = () => {
+      iframeLoaded = true;
+      try {
+        // If same-origin and body is empty or shows error, it failed
+        const doc = iframe.contentDocument;
+        if (doc && (!doc.body || doc.body.childElementCount === 0 || doc.body.innerText.length < 10)) {
+          formDiv.innerHTML = fallbackHtml;
+        }
+      } catch (_) { /* cross-origin = content loaded from external server, likely OK */ }
+    };
     // Listen for DocuSeal completion/decline postMessage events from the iframe
     window._w9MsgHandler = function(e) {
       const d = e.data;
@@ -5680,19 +5700,10 @@ async function openWorkerW9Sign() {
       }
     };
     window.addEventListener('message', window._w9MsgHandler);
-    // Detect load failure — if iframe fails to load content after timeout, offer new-tab fallback
+    // Timeout fallback — if iframe hasn't loaded after 6 seconds, show fallback
     const loadTimeout = setTimeout(() => {
-      try {
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-        if (!iframeDoc || !iframeDoc.body || iframeDoc.body.childElementCount === 0) {
-          formDiv.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;color:#64748b;font-size:.9rem">
-            <div>⚠️ 表单加载失败 / Form failed to load</div>
-            <button onclick="window.open('${r.signUrl.replace(/'/g, "\\'")}','_blank');closeWorkerW9Sign();showToast('✅ W-9 签署页面已在新标签页打开')" style="padding:.5rem 1.5rem;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">在新标签页打开 / Open in New Tab</button>
-            <button onclick="closeWorkerW9Sign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭 / Close</button>
-          </div>`;
-        }
-      } catch (_) { /* cross-origin iframe — content loaded, no fallback needed */ }
-    }, 8000);
+      if (!iframeLoaded) { formDiv.innerHTML = fallbackHtml; }
+    }, 6000);
     formDiv.appendChild(iframe);
     loading.style.display = 'none';
     formDiv.style.display = '';
