@@ -4245,11 +4245,23 @@ async function dsealGetW9Status(submissionId) {
   const sub = r.data;
   let status = sub.status === 'completed' ? 'completed' : 'sent';
   let workerSigned = null, declineReason = '';
+  let w9Address = '', w9CityStateZip = '';
+  // Address field names used in both custom HTML template and standard IRS templates
+  const addressFields = ['w9_address', 'Address', 'address', '5 Address (number, street, and apt. or suite no.)'];
+  const cityStateZipFields = ['w9_city_state_zip', 'City, state, and ZIP code', 'city_state_zip', 'CityStateZip'];
   for (const s of (sub.submitters || [])) {
     if (s.status === 'completed' && s.completed_at) workerSigned = s.completed_at;
     if (s.status === 'declined') { status = 'declined'; declineReason = s.decline_reason || '已拒签'; }
+    // Extract address from submitter values (DocuSeal returns array of {field, value} objects)
+    const vals = s.values || [];
+    for (const v of vals) {
+      const fieldName = v.field || v.name || '';
+      const fieldValue = v.value || '';
+      if (!w9Address && addressFields.includes(fieldName)) w9Address = fieldValue;
+      if (!w9CityStateZip && cityStateZipFields.includes(fieldName)) w9CityStateZip = fieldValue;
+    }
   }
-  return { status, workerSigned, declineReason, raw: sub };
+  return { status, workerSigned, declineReason, w9Address, w9CityStateZip, raw: sub };
 }
 
 async function dsealGetW9SignUrl(submissionId) {

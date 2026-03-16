@@ -2808,6 +2808,7 @@ tr:hover td{background:var(--sky-light)}
     <button onclick="navigator.clipboard.writeText(document.getElementById('w9SignLink').href);showToast('已复制链接','success')" style="margin-left:.5rem;background:none;border:1px solid #86efac;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.78rem;color:#065f46">复制</button>
   </div>
   <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <div id="w9AddressBox" style="display:none;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem"></div>
   <div id="w9AddrVerify" style="display:none;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line"></div>
   <div style="margin:.75rem 0;padding:.6rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1">
     <b>流程：</b>点击「发送」后，系统自动生成 W-9 表格并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。
@@ -17068,6 +17069,7 @@ async function openW9SendModal() {
   document.getElementById('w9WorkerEmail').value = (w && w.email) || '';
   document.getElementById('w9WorkerPhone').value = (w && w.phone) || '';
   document.getElementById('w9DsStatus').style.display = 'none';
+  document.getElementById('w9AddressBox').style.display = 'none';
   document.getElementById('w9RefreshBtn').style.display = 'none';
   document.getElementById('w9DownloadBtn').style.display = 'none';
   document.getElementById('w9SendBtn').textContent = '📤 发送 W-9 填写请求';
@@ -17106,6 +17108,7 @@ async function openW9SendModal() {
         if (r && r.status) {
           updateW9DsStatusUI(r.status);
           if (r.status === 'completed') {
+            showW9AddressBox(r.w9Address, r.w9CityStateZip);
             document.getElementById('w9DownloadBtn').style.display = '';
             refreshOnboardingModal();
           }
@@ -17127,6 +17130,19 @@ async function openW9SendModal() {
         updateW9DsStatusUI(w9Task.ds_status || 'sent');
       }
     }
+  }
+}
+
+function showW9AddressBox(w9Address, w9CityStateZip) {
+  const box = document.getElementById('w9AddressBox');
+  if (!box) return;
+  const addrLine = [w9Address, w9CityStateZip].filter(Boolean).join(', ');
+  if (addrLine) {
+    box.style.cssText = 'display:block;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem;background:#f0fdf4;border:1px solid #86efac;color:#065f46';
+    box.innerHTML = `🏠 <b>W-9 地址：</b>${esc(addrLine)}`;
+  } else {
+    box.style.cssText = 'display:block;margin:.5rem 0;padding:.5rem .75rem;border-radius:8px;font-size:.82rem;background:#fef2f2;border:1px solid #fecaca;color:#dc2626';
+    box.innerHTML = '🔑 ⚠️ <b>W-9 地址：</b>表单数据未找到，需人工核对地址';
   }
 }
 
@@ -17198,6 +17214,10 @@ async function refreshW9Status() {
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-status`);
   if (r && r.status) {
     updateW9DsStatusUI(r.status);
+    if (r.status === 'completed') {
+      showW9AddressBox(r.w9Address, r.w9CityStateZip);
+      document.getElementById('w9DownloadBtn').style.display = '';
+    }
     let info = `W-9 状态: ${r.status}`;
     if (r.workerSigned) info += ` | 工人已签: ${new Date(r.workerSigned).toLocaleString('zh-CN')}`;
     if (r.declineReason) info += ` | 拒签原因: ${r.declineReason}`;
