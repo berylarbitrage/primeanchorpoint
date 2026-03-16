@@ -3449,7 +3449,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
     </td>
     <td style="${c}width:50%">
       <b>${bi('BILL TO — Company', t ? t.billTo : '')}</b><br>
-      <div style="font-weight:600">${companyName}</div>
+      <text-field name="bill_to_company" role="First Party" required="true" readonly="true" style="${ro}font-weight:600;width:100%;min-height:16px" placeholder="${companyName}"></text-field>
       ${companyAddr ? `<div>${companyAddr}</div>` : ''}
       ${companyEmail ? `<div>${companyEmail}</div>` : ''}
     </td>
@@ -8028,9 +8028,11 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const serviceDescValue = service_description || jobTitle || '';
 
     // Create DocuSeal submission — admin pre-fills date & service description; contractor fills amount
+    const billToCompany = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
       { name: 'invoice_date', default_value: todayDate, readonly: true },
       { name: 'contractor_name', default_value: workerName, readonly: true },
+      { name: 'bill_to_company', default_value: billToCompany, readonly: true },
       { name: 'service_description', default_value: serviceDescValue, readonly: false },
       { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
       { name: 'payment_terms', default_value: 'Net 30', readonly: true },
@@ -15390,9 +15392,56 @@ app.use((err, req, res, _next) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// Auto-regenerate contractor invoice templates if they're missing the bill_to_company field
+// (handles case where old template had company name baked in as static text)
+async function autoRegenerateContractorInvoiceTemplates() {
+  if (!dsealEnabled()) return;
+  const typesToCheck = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'];
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  let cfgChanged = false;
+  for (const type of typesToCheck) {
+    const tmplDef = DOCUSEAL_AUTO_TEMPLATES[type];
+    if (!tmplDef) continue;
+    const templateId = cfg[tmplDef.configKey];
+    if (!templateId) continue;
+    try {
+      const fields = await dsealGetTemplateFieldNames(templateId);
+      if (fields === null) continue; // couldn't fetch, skip
+      if (!fields.has('bill_to_company')) {
+        // Old template without bill_to_company field — regenerate with updated HTML
+        console.log(`[startup] Regenerating ${type} template (bill_to_company field missing)...`);
+        const html = tmplDef.generator();
+        const r = await dsealApiCall('POST', '/api/templates/html', {
+          name: tmplDef.name,
+          documents: [{ name: tmplDef.name, html, size: 'Letter' }]
+        });
+        if (r.status < 400) {
+          const dsId = r.data?.id || r.data?.template_id;
+          if (dsId) {
+            db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, String(dsId), tmplDef.category || 'contract');
+            cfg[tmplDef.configKey] = dsId;
+            cfgChanged = true;
+            console.log(`[startup] ${type} template regenerated → new ID: ${dsId}`);
+          }
+        } else {
+          console.error(`[startup] Failed to regenerate ${type} template: DocuSeal ${r.status}`);
+        }
+      }
+    } catch (e) {
+      console.error(`[startup] Failed to check/regenerate ${type} template: ${e.message}`);
+    }
+  }
+  if (cfgChanged) {
+    db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+      .run(JSON.stringify(cfg));
+  }
+}
+
 app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
-
+  // Auto-regenerate contractor invoice templates if bill_to_company field is missing (old static-text templates)
+  setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 5000);
 });
