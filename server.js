@@ -6295,6 +6295,35 @@ function saveW9AddressFromDocuSeal(workerId, submitters) {
   }
 }
 
+// Fallback: extract address from _allFields by content pattern (not field name)
+// W-9 has few fields — detect address/city by value format when field-name matching fails
+function extractAddressFromAllFields(allFields) {
+  if (!allFields || !allFields.length) return null;
+  // Filter to text-only fields (skip signatures, images, URLs)
+  const textFields = allFields.filter(f => f.value && !f.value.startsWith('data:') && !f.value.startsWith('http') && f.value.length < 500);
+  let address = '', cityStateZip = '', name = '';
+  // Street address pattern: starts with a number followed by letters (e.g. "123 Main St", "456 Oak Ave Apt 2")
+  const streetPattern = /^\d+\s+[A-Za-z]/;
+  // City, State ZIP pattern: "City, ST 12345" or "City, State, 12345" etc.
+  const cityStateZipPattern = /[A-Za-z]+[,\s]+[A-Z]{2}[,\s]+\d{5}/;
+  // Also match "City, State ZIP" without comma before zip
+  const cityStateZipPattern2 = /^[A-Za-z\s]+,\s*[A-Z]{2}\s+\d{5}/;
+  for (const f of textFields) {
+    const v = f.value.trim();
+    if (!address && streetPattern.test(v) && v.length > 5 && v.length < 200) {
+      address = v;
+    } else if (!cityStateZip && (cityStateZipPattern.test(v) || cityStateZipPattern2.test(v))) {
+      cityStateZip = v;
+    } else if (!name && !streetPattern.test(v) && !cityStateZipPattern.test(v) && /^[A-Za-z\s.\-']+$/.test(v) && v.length >= 3 && v.length < 80 && v.includes(' ')) {
+      // Name: alphabetic with spaces, like "John Doe"
+      name = v;
+    }
+  }
+  if (!address && !cityStateZip) return null;
+  console.log(`[extractAddressFromAllFields] Detected address="${address}", cityStateZip="${cityStateZip}", name="${name}" from ${textFields.length} fields`);
+  return { address, cityStateZip, name };
+}
+
 // Verify W-9 address against tax_residency_questionnaire; returns { match, note }
 function verifyW9Address(workerId) {
   try {
@@ -7818,6 +7847,34 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
           console.log(`[w9-status] fallback direct save for worker ${workerId}: addr=${extractedAddr}, city=${extractedCity}`);
           if (chk && chk.id) db.prepare("UPDATE worker_compliance_docs SET form_data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(fd, chk.id);
           else db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'completed')").run(workerId, fd);
+        }
+      }
+      // Final fallback: if address still not saved, try content-based extraction from allFields
+      // This handles cases where field names don't match any known patterns
+      {
+        const chk2 = db.prepare("SELECT id, form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1").get(workerId);
+        const hasAddr2 = chk2 && chk2.form_data && (() => { try { return JSON.parse(chk2.form_data).address; } catch { return false; } })();
+        if (!hasAddr2 && allFields && allFields.length) {
+          const detected = extractAddressFromAllFields(allFields);
+          if (detected && (detected.address || detected.cityStateZip)) {
+            let city = '', state = '', zip = '';
+            if (detected.cityStateZip) {
+              const parts = detected.cityStateZip.split(',').map(s => s.trim());
+              if (parts.length >= 3) { city = parts[0]; state = parts[1]; zip = parts[2]; }
+              else if (parts.length === 2) { city = parts[0]; const sz = parts[1].split(/\s+/); state = sz[0] || ''; zip = sz.slice(1).join(' ') || ''; }
+              else { city = parts[0]; }
+            }
+            let fd2 = {};
+            if (chk2 && chk2.form_data) { try { fd2 = JSON.parse(chk2.form_data); } catch {} }
+            fd2.address = detected.address || '';
+            fd2.city = city; fd2.state = state; fd2.zip = zip;
+            if (detected.name && !fd2.name) fd2.name = detected.name;
+            fd2._source = 'content_detection';
+            const fd2Str = JSON.stringify(fd2);
+            console.log(`[w9-status] content-based fallback for worker ${workerId}: addr="${detected.address}", city="${detected.cityStateZip}"`);
+            if (chk2 && chk2.id) db.prepare("UPDATE worker_compliance_docs SET form_data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(fd2Str, chk2.id);
+            else db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'completed')").run(workerId, fd2Str);
+          }
         }
       }
       const addrCheck = verifyW9Address(workerId);
