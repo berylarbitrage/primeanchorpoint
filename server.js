@@ -2710,11 +2710,11 @@ function generateW9HtmlTemplate(workerName) {
     <tr>
       <td style="width:65%">
         <div style="font-size:8pt;margin-bottom:2px"><strong>Signature of U.S. person ▶</strong></div>
-        <signature-field name="w9_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+        <signature-field name="w9_signature" role="Signer" required="true" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       </td>
       <td style="width:35%;padding-left:10px">
         <div style="font-size:8pt;margin-bottom:2px"><strong>Date ▶</strong></div>
-        <date-field name="w9_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+        <date-field name="w9_date" role="Signer" required="true" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
       </td>
     </tr>
   </table>
@@ -4125,13 +4125,13 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
   let subRes;
   if (templateId) {
     // Use existing DocuSeal template (official IRS W-9) — pre-fill all available fields
-    const fields = [{ name: 'w9_name', default_value: workerName, readonly: false }];
-    if (address) fields.push({ name: 'w9_address', default_value: address, readonly: false });
-    if (cityStateZip) fields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
-    if (ssn) fields.push({ name: 'w9_ssn', default_value: ssn, readonly: false });
-    if (businessName) fields.push({ name: 'w9_business_name', default_value: businessName, readonly: false });
-    if (taxClassification) fields.push({ name: 'w9_tax_classification', default_value: taxClassification, readonly: false });
-    fields.push({ name: 'w9_date', default_value: todayDate, readonly: false });
+    const fields = [{ name: 'w9_name', default_value: workerName, readonly: false, required: true }];
+    if (address) fields.push({ name: 'w9_address', default_value: address, readonly: false, required: true });
+    if (cityStateZip) fields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false, required: true });
+    if (ssn) fields.push({ name: 'w9_ssn', default_value: ssn, readonly: false, required: true });
+    if (businessName) fields.push({ name: 'w9_business_name', default_value: businessName, readonly: false, required: true });
+    if (taxClassification) fields.push({ name: 'w9_tax_classification', default_value: taxClassification, readonly: false, required: true });
+    fields.push({ name: 'w9_date', default_value: todayDate, readonly: false, required: true });
     const w9Submitter = { role: 'First Party', name: workerName, email: workerEmail, fields };
     if (workerPhone) w9Submitter.phone = formatPhoneE164(workerPhone);
     subRes = await dsealApiCall('POST', '/api/submissions', {
@@ -4144,11 +4144,11 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
     // Fallback: generate HTML template
     const w9Html = generateW9HtmlTemplate(workerName);
     const fallbackFields = [
-      { name: 'w9_name', default_value: workerName, readonly: false },
-      { name: 'w9_date', default_value: todayDate, readonly: true }
+      { name: 'w9_name', default_value: workerName, readonly: false, required: true },
+      { name: 'w9_date', default_value: todayDate, readonly: true, required: true }
     ];
-    if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false });
-    if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
+    if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false, required: true });
+    if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false, required: true });
     const w9FallbackSubmitter = { role: 'Signer', name: workerName, email: workerEmail, fields: fallbackFields };
     if (workerPhone) w9FallbackSubmitter.phone = formatPhoneE164(workerPhone);
     subRes = await dsealApiCall('POST', '/api/submissions/html', {
