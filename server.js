@@ -6705,6 +6705,18 @@ app.get('/api/worker/contract-signed-pdf', requireWorker, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Worker: view their own signed W-9 PDF
+app.get('/api/worker/w9-signed-pdf', requireWorker, async (req, res) => {
+  try {
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(req.workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-w9.pdf"` });
+    res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Admin: get company signing URL for onboarding contract
 app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async (req, res) => {
   try {
