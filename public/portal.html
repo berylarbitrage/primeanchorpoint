@@ -1945,10 +1945,20 @@ async function showApp() {
   document.getElementById('app').style.display = 'block';
   const [me, interview, personaStatus, portalCfg] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status'), fetch('/api/worker/portal-config').then(r=>r.json()).catch(()=>({worker_portal_mode:'none'}))]);
   if (!me) return;
-  // Apply worker portal mode (controls which features are visible)
-  _workerPortalMode = (portalCfg && portalCfg.worker_portal_mode) || 'none';
+  // Apply worker portal mode (global setting) combined with per-worker feature flags
+  const globalMode = (portalCfg && portalCfg.worker_portal_mode) || 'none';
+  const perWorkerTimeclock = me.account && me.account.enable_timeclock ? 1 : 0;
+  const perWorkerInvoice = me.account && me.account.enable_invoice ? 1 : 0;
+  // Per-worker flags override or supplement global mode
+  if (perWorkerTimeclock) {
+    _workerPortalMode = 'timeclock';
+  } else if (perWorkerInvoice) {
+    _workerPortalMode = 'invoice';
+  } else {
+    _workerPortalMode = globalMode;
+  }
   const navTimeclock = document.querySelector('.sidebar-nav a[data-tab="timeclock"]');
-  if (navTimeclock) navTimeclock.style.display = _workerPortalMode === 'timeclock' ? '' : 'none';
+  if (navTimeclock) navTimeclock.style.display = (perWorkerTimeclock || _workerPortalMode === 'timeclock') ? '' : 'none';
   _workerInfo = me;
   _workerEmploymentType = me.account?.employment_type || '';
   const firstName = me.employee
@@ -3844,7 +3854,7 @@ async function loadContractorInvoices() {
   if (!card) return;
   // Only show for 1099 contractors AND when invoice mode is enabled by admin
   const is1099 = _workerEmploymentType === '1099';
-  const invoiceEnabled = _workerPortalMode === 'invoice';
+  const invoiceEnabled = _workerPortalMode === 'invoice' || (_workerInfo && _workerInfo.account && _workerInfo.account.enable_invoice);
   card.style.display = (is1099 && invoiceEnabled) ? 'block' : 'none';
   if (!is1099 || !invoiceEnabled) return;
 

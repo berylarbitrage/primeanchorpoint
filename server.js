@@ -5861,6 +5861,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent_at TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN identity_reverify_date TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN enable_timeclock INTEGER DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN enable_invoice INTEGER DEFAULT 0"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -5941,7 +5943,7 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type, enable_timeclock, enable_invoice } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -5974,6 +5976,8 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   logChange('has_ssn', w.has_ssn||0, newHasSsn);
   if (entity_type !== undefined) logChange('entity_type', w.entity_type, entity_type);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
+  if (enable_timeclock !== undefined) logChange('enable_timeclock', w.enable_timeclock||0, enable_timeclock?1:0);
+  if (enable_invoice !== undefined) logChange('enable_invoice', w.enable_invoice||0, enable_invoice?1:0);
   // When reactivating a deactivated account (active 0→1), clear old interview
   // and onboarding records so the worker starts fresh
   if (!w.active && newActive) {
@@ -5985,13 +5989,16 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
     // Clear reserved interview slots for this worker (don't delete the slot rows)
     db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(wid);
   }
+  const newEnableTimeclock = enable_timeclock !== undefined ? (enable_timeclock ? 1 : 0) : (w.enable_timeclock || 0);
+  const newEnableInvoice = enable_invoice !== undefined ? (enable_invoice ? 1 : 0) : (w.enable_invoice || 0);
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
     payment_method=COALESCE(?,payment_method), payment_details=COALESCE(?,payment_details),
     assigned_tasks=COALESCE(?,assigned_tasks),
     work_status=COALESCE(?,work_status), has_ssn=?, position_interests=?,
     employment_type=COALESCE(?,employment_type),
-    entity_type=COALESCE(?,entity_type) WHERE id=?`)
+    entity_type=COALESCE(?,entity_type),
+    enable_timeclock=?, enable_invoice=? WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
       newActive, newSuspended,
@@ -6004,6 +6011,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       newHasSsn, newPositionInterests,
       employment_type !== undefined ? employment_type : null,
       entity_type !== undefined ? entity_type : null,
+      newEnableTimeclock, newEnableInvoice,
       req.params.id
     );
   res.json({ success: true });
@@ -11213,7 +11221,7 @@ app.post('/api/worker/login', (req, res) => {
 });
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
-  const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, employment_type, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
+  const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, employment_type, enable_timeclock, enable_invoice, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
   const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
   res.json({ account: w, employee: emp, compliance_docs: docs });
