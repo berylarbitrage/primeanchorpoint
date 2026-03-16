@@ -887,6 +887,52 @@ function googleTranslateElementInit() {
           </form>
         </div>
 
+        <!-- Invoice Summary / Confirmation Modal -->
+        <div id="invoiceSummaryOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center">
+          <div style="background:#fff;border-radius:14px;max-width:560px;width:92%;max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.2);padding:1.5rem">
+            <h3 style="margin:0 0 .3rem;font-size:1rem;color:var(--gray-800)">📋 Invoice Summary / 提交预览</h3>
+            <p style="font-size:.78rem;color:var(--gray-400);margin:0 0 1rem">Please review before submitting. / 提交前请确认以下信息。</p>
+
+            <!-- Pre-filled info -->
+            <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;margin-bottom:.8rem;font-size:.82rem">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem .8rem">
+                <div><span style="color:var(--gray-400)">Contractor 承包商:</span> <b id="sumContractor">—</b></div>
+                <div><span style="color:var(--gray-400)">Bill To 付款方:</span> <b>Prime Anchorpoint LLC</b></div>
+                <div><span style="color:var(--gray-400)">Payment Terms:</span> <b id="sumTerms">—</b></div>
+                <div><span style="color:var(--gray-400)">Invoice Date:</span> <b id="sumInvDate">—</b></div>
+                <div><span style="color:var(--gray-400)">Due Date 到期日:</span> <b id="sumDueDate">—</b></div>
+              </div>
+            </div>
+
+            <!-- Worker-filled info -->
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:.8rem;font-size:.82rem">
+              <div style="font-size:.72rem;font-weight:700;color:#92400e;margin-bottom:.5rem">Your Input / 您填写的内容</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem .8rem">
+                <div><span style="color:var(--gray-400)">Service Period 服务周期:</span><br><b id="sumPeriod">—</b></div>
+                <div><span style="color:var(--gray-400)">Job 职位:</span><br><b id="sumJobTitle">—</b></div>
+              </div>
+              <div style="margin-top:.4rem"><span style="color:var(--gray-400)">Service Description 服务明细:</span><br><b id="sumDesc">—</b></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem .8rem;margin-top:.4rem">
+                <div><span style="color:var(--gray-400)">Billing Mode 计费方式:</span> <b id="sumBillingMode">—</b></div>
+                <div id="sumRateHoursWrap"><span style="color:var(--gray-400)">Rate × Hours:</span> <b id="sumRateHours">—</b></div>
+                <div id="sumFlatWrap" style="display:none"><span style="color:var(--gray-400)">Project Fee 项目费:</span> <b id="sumFlat">—</b></div>
+              </div>
+              <div style="margin-top:.4rem" id="sumExpensesWrap"><span style="color:var(--gray-400)">Expenses 费用报销:</span> <b id="sumExpenses">$0.00</b></div>
+            </div>
+
+            <!-- Total -->
+            <div style="text-align:center;padding:.7rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;margin-bottom:1rem">
+              <span style="font-size:.85rem;color:var(--gray-500)">Total Amount 总金额</span><br>
+              <span id="sumTotal" style="font-size:1.5rem;font-weight:800;color:var(--green)">$0.00</span>
+            </div>
+
+            <div style="display:flex;gap:.6rem;justify-content:flex-end">
+              <button type="button" onclick="closeInvoiceSummary()" style="padding:.5rem 1.2rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-600);border-radius:8px;font-size:.85rem;cursor:pointer">← Back 返回修改</button>
+              <button type="button" id="btnConfirmSubmitInvoice" onclick="confirmSubmitInvoice()" style="padding:.5rem 1.5rem;border:none;background:var(--green);color:#fff;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">✅ Confirm & Submit 确认提交</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Invoice history list -->
         <div id="contractorInvoiceList"></div>
       </div>
@@ -3839,7 +3885,9 @@ document.addEventListener('input', e => {
   recalcInvoiceTotal();
 });
 
-async function submitContractorInvoice(e) {
+let _pendingInvoiceBody = null;
+
+function submitContractorInvoice(e) {
   e.preventDefault();
   const form = e.target;
   const body = {};
@@ -3847,12 +3895,64 @@ async function submitContractorInvoice(e) {
     if (k === 'confirmed') { body[k] = true; return; }
     body[k] = ['hours_worked','hourly_rate','flat_amount','total_amount','expenses','job_id'].includes(k) ? (parseFloat(v) || 0) : v;
   });
-  // Ensure confirmed is set (checkbox won't appear in FormData if unchecked — but required attr handles it)
   if (!body.confirmed) { alert('请勾选确认框 / Please check the confirmation box'); return; }
   if (!body.total_amount || body.total_amount <= 0) { alert('总金额必须大于0 / Total must be > 0. 请填写工时。'); return; }
-  const r = await wApi('/contractor-invoices', { method: 'POST', body: JSON.stringify(body) });
+
+  // Store body and show summary for confirmation
+  _pendingInvoiceBody = body;
+  showInvoiceSummary(body);
+}
+
+function showInvoiceSummary(body) {
+  // Pre-filled info
+  document.getElementById('sumContractor').textContent = document.getElementById('invPfName').textContent;
+  document.getElementById('sumTerms').textContent = document.getElementById('invPfTerms').textContent;
+  document.getElementById('sumInvDate').textContent = document.getElementById('invPfDate').textContent;
+  document.getElementById('sumDueDate').textContent = document.getElementById('invPfDue').textContent;
+
+  // Worker-filled info
+  document.getElementById('sumPeriod').textContent = (body.service_period_start || '—') + '  ~  ' + (body.service_period_end || '—');
+  document.getElementById('sumJobTitle').textContent = body.job_title || '—';
+  document.getElementById('sumDesc').textContent = body.service_description || '—';
+
+  if (_invBillingMode === 'hourly') {
+    document.getElementById('sumBillingMode').textContent = 'Hourly 按时';
+    document.getElementById('sumRateHoursWrap').style.display = '';
+    document.getElementById('sumFlatWrap').style.display = 'none';
+    document.getElementById('sumRateHours').textContent = '$' + (body.hourly_rate || 0).toFixed(2) + ' × ' + (body.hours_worked || 0) + 'h = $' + ((body.hourly_rate || 0) * (body.hours_worked || 0)).toFixed(2);
+  } else {
+    document.getElementById('sumBillingMode').textContent = 'Per-Project 按项目';
+    document.getElementById('sumRateHoursWrap').style.display = 'none';
+    document.getElementById('sumFlatWrap').style.display = '';
+    document.getElementById('sumFlat').textContent = '$' + (body.flat_amount || 0).toFixed(2);
+  }
+
+  const exp = body.expenses || 0;
+  document.getElementById('sumExpenses').textContent = '$' + exp.toFixed(2);
+  document.getElementById('sumExpensesWrap').style.display = exp > 0 ? '' : 'none';
+  document.getElementById('sumTotal').textContent = '$' + (body.total_amount || 0).toFixed(2);
+
+  // Show overlay
+  const overlay = document.getElementById('invoiceSummaryOverlay');
+  overlay.style.display = 'flex';
+}
+
+function closeInvoiceSummary() {
+  document.getElementById('invoiceSummaryOverlay').style.display = 'none';
+  _pendingInvoiceBody = null;
+}
+
+async function confirmSubmitInvoice() {
+  if (!_pendingInvoiceBody) return;
+  const btn = document.getElementById('btnConfirmSubmitInvoice');
+  btn.disabled = true;
+  btn.textContent = '⏳ Submitting...';
+  const r = await wApi('/contractor-invoices', { method: 'POST', body: JSON.stringify(_pendingInvoiceBody) });
+  btn.disabled = false;
+  btn.textContent = '✅ Confirm & Submit 确认提交';
   if (r && r.success) {
-    form.reset();
+    closeInvoiceSummary();
+    document.getElementById('contractorInvoiceForm').reset();
     toggleInvoiceForm();
     showToast('✅ Invoice submitted: ' + r.invoice_number);
     loadContractorInvoices();
