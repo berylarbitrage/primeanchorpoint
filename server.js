@@ -7625,6 +7625,23 @@ app.get('/api/worker/w9-sign-url', requireWorker, async (req, res) => {
     const onb = db.prepare("SELECT ds_envelope_id, ds_status, action_url FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(req.workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
     if (onb.ds_status === 'completed') return res.status(400).json({ error: 'W-9 已完成签署' });
+    // Check DocuSeal for real-time completion status (webhook may not have arrived yet)
+    if (dsealEnabled()) {
+      try {
+        const subData = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
+        const dsStatus = subData.data?.status || '';
+        const submitters = subData.data?.submitters || [];
+        const fullyDone = dsStatus === 'completed' || submitters.every(s => s.status === 'completed');
+        if (fullyDone) {
+          const workerSub = submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0];
+          const signedAt = workerSub?.completed_at || new Date().toISOString();
+          db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='W-9 已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+            .run(signedAt, req.workerId);
+          syncOnboardedStatus(req.workerId);
+          return res.status(400).json({ error: 'W-9 已完成签署' });
+        }
+      } catch (e) { console.error('[worker w9-sign-url check]', e.message); }
+    }
     let signUrl = onb.action_url || '';
     let embeddable = false;
     if (dsealEnabled()) {
