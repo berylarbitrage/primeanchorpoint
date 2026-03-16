@@ -675,6 +675,7 @@ try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT
 try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`UPDATE employees SET employee_id = REPLACE(employee_id, 'STAFF-', 'WRK-') WHERE employee_id LIKE 'STAFF-%'`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
@@ -2135,18 +2136,18 @@ function localDateStr(state, dateObj) {
   return p.month + p.day + String(p.year).slice(-2);
 }
 
-// ─── Auto-generate employee ID: STAFF-ST-MMDDYY-0001 ───
+// ─── Auto-generate employee ID: WRK-ST-MMDDYY-0001 ───
 function nextEmployeeId(state, hireDate) {
   const dateStr = localDateStr(state, hireDate ? new Date(hireDate) : null);
   const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'WRK-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
   if (last) {
     const parts = last.employee_id.split('-');
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `STAFF-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
+  return `WRK-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
 // ─── Auto-generate worker code: PORT-ST-MMDDYY-0001 ───
@@ -2197,7 +2198,7 @@ function activateWorkerAccount(accountId, prefix) {
   // Ensure a linked inquiry exists — prefer employee record's stored inquiry_id (survives account deletion/re-creation)
   if (!acc.linked_inquiry_id) {
     let inquiryId = null;
-    // If linked to an employee (STAFF-xxx), use that employee's persistent inquiry_id
+    // If linked to an employee (WRK-xxx), use that employee's persistent inquiry_id
     if (acc.employee_id) {
       const emp = db.prepare('SELECT inquiry_id FROM employees WHERE id=?').get(acc.employee_id);
       if (emp && emp.inquiry_id) {
