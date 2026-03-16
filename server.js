@@ -4133,7 +4133,7 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
     if (taxClassification) fields.push({ name: 'w9_tax_classification', default_value: taxClassification, readonly: false });
     fields.push({ name: 'w9_date', default_value: todayDate, readonly: false });
     const w9Submitter = { role: 'First Party', name: workerName, email: workerEmail, fields };
-    if (workerPhone) w9Submitter.phone = workerPhone;
+    if (workerPhone) w9Submitter.phone = formatPhoneE164(workerPhone);
     subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
@@ -4150,7 +4150,7 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
     if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false });
     if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
     const w9FallbackSubmitter = { role: 'Signer', name: workerName, email: workerEmail, fields: fallbackFields };
-    if (workerPhone) w9FallbackSubmitter.phone = workerPhone;
+    if (workerPhone) w9FallbackSubmitter.phone = formatPhoneE164(workerPhone);
     subRes = await dsealApiCall('POST', '/api/submissions/html', {
       name: `W-9 表格 - ${workerName}`,
       documents: [{ name: `W-9 Tax Form - ${workerName}`, html: w9Html, size: 'Letter' }],
