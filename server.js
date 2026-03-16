@@ -14920,17 +14920,27 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
 });
 
 // GET /api/admin/docuseal/builder-token/:id — generate embedded builder JWT for a template
-app.get('/api/admin/docuseal/builder-token/:id', requireAdmin, (req, res) => {
+app.get('/api/admin/docuseal/builder-token/:id', requireAdmin, async (req, res) => {
   const { apiKey, baseUrl } = dsealGetCreds();
   if (!apiKey) return res.status(503).json({ error: 'DocuSeal 未配置' });
   const templateId = parseInt(req.params.id, 10);
   if (!templateId) return res.status(400).json({ error: '无效的模板 ID' });
 
-  // Build HS256 JWT using Node's built-in crypto (no external library needed)
+  // Fetch the actual DocuSeal account user email (required by the builder JWT)
+  let userEmail = '';
+  try {
+    const r = await dsealApiCall('GET', '/api/users', null);
+    const users = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+    if (users.length > 0) userEmail = users[0].email || '';
+  } catch {}
+
+  if (!userEmail) return res.status(503).json({ error: 'DocuSeal 帐号 email 获取失败，请检查 API Key' });
+
+  // Build HS256 JWT — DocuSeal builder requires top-level user_email
   const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const payload = Buffer.from(JSON.stringify({
-    template_id: templateId,
-    user: { email: `${req.userName || 'admin'}@primeanchorpoint.local`, name: req.userName || 'Admin' }
+    user_email: userEmail,
+    template_id: templateId
   })).toString('base64url');
   const sig   = crypto.createHmac('sha256', apiKey).update(`${header}.${payload}`).digest('base64url');
   const token = `${header}.${payload}.${sig}`;
