@@ -4249,37 +4249,64 @@ async function dsealGetW9Status(submissionId) {
   // Flexible matching for IRS PDF field name variants (may include number prefix, extra suffix, or nested PDF paths)
   const isW9AddrField = fn => { const n = fn.toLowerCase(); return n === 'w9_address' || n === 'address' || n === 'f1_5[0]'
     || n.startsWith('5 address') || n.includes('f1_5')
+    || n.includes('street address') || n.startsWith('line 5') || n.startsWith('field 5')
+    || n === 'street' || n === 'mailing address'
     || (n.includes('address') && !n.includes('city') && !n.includes('state') && !n.includes('zip') && !n.includes('email')); };
   const isW9CityField = fn => { const n = fn.toLowerCase(); return n === 'w9_city_state_zip' || n === 'city_state_zip' || n === 'citystatezip'
     || n === 'f1_6[0]' || n.startsWith('city, state') || n.startsWith('6 city')
+    || n.startsWith('line 6') || n.startsWith('field 6')
     || n.includes('f1_6') || (n.includes('city') && (n.includes('state') || n.includes('zip'))); };
+  // Helper to extract address from a values collection (array or object)
+  const extractFromVals = (vals, label) => {
+    if (Array.isArray(vals)) {
+      console.log(`[dsealGetW9Status] ${label}: ${vals.length} values: ${vals.map(v => JSON.stringify({n: v.field||v.name||v.title||'?', v: String(v.value||v.default_value||'').substring(0,30)})).join(', ')}`);
+      for (const v of vals) {
+        const fieldName = v.field || v.name || v.title || '';
+        const fieldValue = v.value || v.default_value || '';
+        if (!w9Address && isW9AddrField(fieldName)) w9Address = String(fieldValue).trim();
+        if (!w9CityStateZip && isW9CityField(fieldName)) w9CityStateZip = String(fieldValue).trim();
+      }
+    } else if (vals && typeof vals === 'object') {
+      console.log(`[dsealGetW9Status] ${label}: object keys: ${Object.keys(vals).join(', ')}`);
+      for (const [key, fieldValue] of Object.entries(vals)) {
+        if (!w9Address && isW9AddrField(key)) w9Address = String(fieldValue || '').trim();
+        if (!w9CityStateZip && isW9CityField(key)) w9CityStateZip = String(fieldValue || '').trim();
+      }
+    }
+  };
   for (const s of (sub.submitters || [])) {
     if (s.status === 'completed' && s.completed_at) workerSigned = s.completed_at;
     if (s.status === 'declined') { status = 'declined'; declineReason = s.decline_reason || '已拒签'; }
     // Extract address from submitter values and/or fields
     // DocuSeal may return values as array [{field, value}], plain object {fieldName: fieldValue}, or under 'fields'
     const vals = s.values || s.fields || [];
-    if (Array.isArray(vals)) {
-      // Log field names for debugging
-      console.log(`[dsealGetW9Status] submitter ${s.id||'?'} role=${s.role||'?'}: ${vals.length} values: ${vals.map(v => (v.field||v.name||v.title||'?')).join(', ')}`);
-      for (const v of vals) {
-        const fieldName = v.field || v.name || v.title || '';
-        const fieldValue = v.value || v.default_value || '';
-        if (!w9Address && isW9AddrField(fieldName)) w9Address = fieldValue;
-        if (!w9CityStateZip && isW9CityField(fieldName)) w9CityStateZip = fieldValue;
-      }
-    } else if (vals && typeof vals === 'object') {
-      console.log(`[dsealGetW9Status] submitter ${s.id||'?'} role=${s.role||'?'}: object keys: ${Object.keys(vals).join(', ')}`);
-      for (const [key, fieldValue] of Object.entries(vals)) {
-        if (!w9Address && isW9AddrField(key)) w9Address = String(fieldValue || '');
-        if (!w9CityStateZip && isW9CityField(key)) w9CityStateZip = String(fieldValue || '');
+    extractFromVals(vals, `submitter ${s.id||'?'} role=${s.role||'?'}`);
+  }
+  // Fallback: if no address found from submission response, fetch each submitter individually
+  // DocuSeal GET /api/submissions/:id may omit values — GET /api/submitters/:id includes them
+  if (!w9Address && !w9CityStateZip && status === 'completed') {
+    const subKeys = (sub.submitters || []).map(s => ({ id: s.id, role: s.role, valKeys: Object.keys(s).filter(k => ['values','fields','documents'].includes(k)) }));
+    console.log(`[dsealGetW9Status] submission ${submissionId}: NO address in submission response. Fetching submitters individually. Structure: ${JSON.stringify(subKeys)}`);
+    for (const s of (sub.submitters || [])) {
+      if (!s.id) continue;
+      try {
+        const sr = await dsealApiCall('GET', `/api/submitters/${s.id}`, null);
+        if (sr.status === 200 && sr.data) {
+          const sData = sr.data;
+          const sVals = sData.values || sData.fields || [];
+          extractFromVals(sVals, `submitter-api ${s.id} role=${s.role||'?'}`);
+          // Also merge fetched values into the raw submitter for saveW9AddressFromDocuSeal
+          if (!s.values && sData.values) s.values = sData.values;
+          if (!s.fields && sData.fields) s.fields = sData.fields;
+          if (w9Address || w9CityStateZip) break;
+        }
+      } catch (e) {
+        console.warn(`[dsealGetW9Status] Failed to fetch submitter ${s.id}: ${e.message}`);
       }
     }
   }
   if (!w9Address && !w9CityStateZip) {
-    // Log full submission structure for debugging when no address found
-    const subKeys = (sub.submitters || []).map(s => ({ role: s.role, valKeys: Object.keys(s).filter(k => ['values','fields','documents'].includes(k)) }));
-    console.log(`[dsealGetW9Status] submission ${submissionId}: NO address found. Submitter structure: ${JSON.stringify(subKeys)}`);
+    console.log(`[dsealGetW9Status] submission ${submissionId}: NO address found after all attempts.`);
   }
   return { status, workerSigned, declineReason, w9Address, w9CityStateZip, raw: sub };
 }
@@ -6177,11 +6204,14 @@ function saveW9AddressFromDocuSeal(workerId, submitters) {
     // "Address", "f1_5[0]", "topmostSubform[0].Page1[0].f1_5[0]", etc.
     const isAddressField = fn => fn === 'w9_address' || fn === 'address' || fn === 'f1_5[0]'
       || fn.startsWith('5 address') || fn.includes('f1_5')
+      || fn.includes('street address') || fn.startsWith('line 5') || fn.startsWith('field 5')
+      || fn === 'street' || fn === 'mailing address'
       || (fn.includes('address') && !fn.includes('city') && !fn.includes('state') && !fn.includes('zip') && !fn.includes('email'));
     // Match city/state/zip field: exact names, startsWith, or contains for IRS PDF variants like
     // "6 City, state, and ZIP code", "City State Zip", "f1_6[0]", etc.
     const isCityStateZipField = fn => fn === 'w9_city_state_zip' || fn === 'city_state_zip' || fn === 'citystatezip'
       || fn === 'f1_6[0]' || fn.startsWith('city, state') || fn.startsWith('6 city')
+      || fn.startsWith('line 6') || fn.startsWith('field 6')
       || fn.includes('f1_6') || (fn.includes('city') && (fn.includes('state') || fn.includes('zip')));
     // Match name field: exact names or startsWith for IRS PDF variants
     const isNameField = fn => fn === 'w9_name' || fn === 'name' || fn === 'f1_1[0]' || fn.includes('f1_1')
