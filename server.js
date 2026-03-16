@@ -1030,6 +1030,7 @@ setTimeout(() => {
 // Migrate: richer fields on job_applications
 try { db.exec("ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE job_applications ADD COLUMN work_auth_confirmed TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE job_applications ADD COLUMN job_category TEXT DEFAULT ''"); } catch {}
 
 // ─── Interview system ───
 db.exec(`CREATE TABLE IF NOT EXISTS interview_locations (
@@ -11054,13 +11055,13 @@ app.get('/api/worker/jobs', requireWorker, (req, res) => {
 app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
   const job = db.prepare('SELECT id, work_auth FROM jobs WHERE id=? AND active=1').get(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found or no longer active' });
-  const { notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed } = req.body || {};
+  const { notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed, job_category } = req.body || {};
   // If job requires gc/citizen, applicant must confirm work auth status
   if ((job.work_auth === 'gc' || job.work_auth === 'citizen') && !work_auth_confirmed)
     return res.status(400).json({ error: '请选择您的工作身份状态' });
   try {
-    db.prepare(`INSERT INTO job_applications (job_id, worker_account_id, notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed) VALUES (?,?,?,?,?,?,?)`)
-      .run(req.params.jobId, req.workerId, notes||'', interview_availability||'', expected_pay||'', applicant_message||'', work_auth_confirmed||'');
+    db.prepare(`INSERT INTO job_applications (job_id, worker_account_id, notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed, job_category) VALUES (?,?,?,?,?,?,?,?)`)
+      .run(req.params.jobId, req.workerId, notes||'', interview_availability||'', expected_pay||'', applicant_message||'', work_auth_confirmed||'', job_category||'');
     res.json({ success: true });
   } catch { res.status(400).json({ error: 'Already applied to this job' }); }
 });
@@ -14620,6 +14621,39 @@ app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) =
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
       .run(JSON.stringify(cfg));
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/docuseal/templates/:id/preview-pdf — proxy template PDF from DocuSeal
+app.get('/api/admin/docuseal/templates/:id/preview-pdf', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const r = await dsealApiCall('GET', `/api/templates/${req.params.id}`, null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+    const documents = r.data?.documents || r.data?.schema || [];
+    const docUrl = documents[0]?.url || documents[0]?.file_url || null;
+    if (!docUrl) return res.status(404).json({ error: '该模板暂无可预览的文档' });
+    // Proxy the PDF through our server so browser doesn't need to reach DocuSeal directly
+    const { apiKey } = dsealGetCreds();
+    const parsedUrl = new URL(docUrl);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    const proxyReq = transport.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: { 'X-Auth-Token': apiKey, 'Accept': 'application/pdf,*/*' }
+    }, (proxyRes) => {
+      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="template-${req.params.id}.pdf"`);
+      proxyRes.pipe(res);
+    });
+    proxyReq.setTimeout(30000, () => { proxyReq.destroy(new Error('代理超时')); });
+    proxyReq.on('error', (e) => { if (!res.headersSent) res.status(500).json({ error: e.message }); });
+    proxyReq.end();
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
