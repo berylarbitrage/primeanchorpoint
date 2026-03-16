@@ -3422,7 +3422,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
 
   const ro = 'border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;';
   const ed = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
-  const companyName = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
   const companyAddr = process.env.COMPANY_ADDRESS || '';
   const companyEmail = process.env.COMPANY_EMAIL || '';
   const c = 'padding:3px 5px;border:1px solid #ccc;vertical-align:top;';
@@ -8255,7 +8255,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     // Format period dates for display (MM/DD/YYYY)
     const fmtPeriod = (d) => { if (!d) return ''; const p = d.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}/${p[0]}` : d; };
     // Create DocuSeal submission — admin pre-fills date, period & service description; contractor fills amount
-    const billToCompany = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+    const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
       { name: 'invoice_date', default_value: todayDate, readonly: true },
       { name: 'contractor_name', default_value: workerName, readonly: true },
@@ -8317,7 +8317,7 @@ app.get('/api/admin/contractor-invoices/preview-filled', requireAdmin, requireRo
   const periodEnd = period_end || invDate;
   const periodStart = period_start || new Date(invDateObj.getTime() - 6 * 86400000).toISOString().slice(0, 10);
   const dueDate = new Date(invDateObj.getTime() + 30 * 86400000).toISOString().slice(0, 10);
-  const billToCompany = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
   const contractorName = contractor_name || '(承包商姓名)';
   const serviceDesc = service_description || '(服务内容)';
 
