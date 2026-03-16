@@ -14927,6 +14927,29 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
   }
 });
 
+// GET /api/admin/docuseal/builder-token/:id — generate embedded builder JWT for a template
+app.get('/api/admin/docuseal/builder-token/:id', requireAdmin, (req, res) => {
+  const { apiKey, baseUrl } = dsealGetCreds();
+  if (!apiKey) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const templateId = parseInt(req.params.id, 10);
+  if (!templateId) return res.status(400).json({ error: '无效的模板 ID' });
+
+  // Build HS256 JWT using Node's built-in crypto (no external library needed)
+  const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    template_id: templateId,
+    user: { email: `${req.userName || 'admin'}@primeanchorpoint.local`, name: req.userName || 'Admin' }
+  })).toString('base64url');
+  const sig   = crypto.createHmac('sha256', apiKey).update(`${header}.${payload}`).digest('base64url');
+  const token = `${header}.${payload}.${sig}`;
+
+  const isCloud  = /api\.docuseal\.(com|eu)/.test(baseUrl);
+  const cleanBase = baseUrl.replace(/\/+$/, '');
+  const builderSrc = isCloud ? 'https://cdn.docuseal.com/js/builder.js' : `${cleanBase}/js/builder.js`;
+
+  res.json({ token, builderSrc });
+});
+
 // GET /api/admin/docuseal/my-templates — list only user-uploaded templates from local DB
 app.get('/api/admin/docuseal/my-templates', requireAdmin, (req, res) => {
   const rows = db.prepare('SELECT * FROM docuseal_templates ORDER BY created_at DESC').all();

@@ -100,6 +100,14 @@
   .modal-input{width:100%;border:1.5px solid var(--gray-200);border-radius:8px;padding:.6rem .85rem;font-size:.9rem;outline:none;color:#1e293b;transition:border .15s;font-family:inherit}
   .modal-input:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(14,165,233,.12)}
   .modal-actions{display:flex;gap:.65rem;justify-content:flex-end;margin-top:1.25rem}
+
+  /* ── Fullscreen builder modal ── */
+  .builder-overlay{position:fixed;inset:0;background:#fff;z-index:10001;display:flex;flex-direction:column;opacity:0;transition:opacity .18s;pointer-events:none}
+  .builder-overlay.open{opacity:1;pointer-events:all}
+  .builder-bar{background:#1e293b;color:#fff;padding:.65rem 1.25rem;display:flex;align-items:center;gap:.75rem;flex-shrink:0}
+  .builder-bar-title{flex:1;font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .builder-body{flex:1;overflow:hidden;position:relative}
+  .builder-body docuseal-builder,.builder-body iframe{width:100%;height:100%;border:none;display:block}
 </style>
 </head>
 <body>
@@ -355,8 +363,6 @@ function renderAllTemplates() {
     });
   });
 
-  const editBase = _dsUrl ? _dsUrl.replace(/\/$/, '') : '';
-
   const rows = _allTemplates.map(t => {
     const labels = (usedBy[t.id] || []).map(l =>
       `<span style="display:inline-block;background:#e0f2fe;color:#0369a1;border-radius:4px;padding:1px 7px;font-size:.72rem;font-weight:600;margin-left:.3rem">${escHtml(l)}</span>`
@@ -371,7 +377,7 @@ function renderAllTemplates() {
         <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem"
           onclick="renameTemplate(${t.id}, '${escHtml(String(t.name||'')).replace(/'/g,"\\'")}')">改名</button>
         <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem" onclick="previewTemplatePdf(${t.id})">预览 PDF</button>
-        ${editBase ? `<a href="${editBase}/templates/${t.id}/edit" target="_blank" class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem">编辑 ↗</a>` : ''}
+        <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem" onclick="openBuilderModal(${t.id})">编辑</button>
         <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem;color:var(--red);border-color:#fca5a5"
           onclick="deleteTemplate(${t.id}, '${escHtml(String(t.name||'')).replace(/'/g,"\\'")}')">删除</button>
       </div>
@@ -549,6 +555,45 @@ function previewTemplatePdf(dsId) {
   window.open(`/api/admin/docuseal/templates/${dsId}/preview-pdf`, '_blank');
 }
 
+// ── Embedded builder modal ──
+let _builderScriptSrc = null;
+
+async function openBuilderModal(dsId) {
+  const overlay = document.getElementById('builderModal');
+  const body    = document.getElementById('builderBody');
+  const titleEl = document.getElementById('builderTitle');
+  const tmpl    = _allTemplates.find(t => t.id === dsId);
+  titleEl.textContent = `编辑模板: ${tmpl ? tmpl.name : '#' + dsId}`;
+  body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:.9rem">正在加载编辑器…</div>';
+  overlay.classList.add('open');
+  try {
+    const { token, builderSrc } = await api(`/api/admin/docuseal/builder-token/${dsId}`);
+    // Load the DocuSeal builder script once
+    if (_builderScriptSrc !== builderSrc) {
+      const old = document.querySelector('script[data-dsbuilder]');
+      if (old) old.remove();
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = builderSrc;
+        s.dataset.dsbuilder = '1';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('无法加载 DocuSeal 编辑器脚本: ' + builderSrc));
+        document.head.appendChild(s);
+      });
+      _builderScriptSrc = builderSrc;
+    }
+    body.innerHTML = `<docuseal-builder data-token="${escHtml(token)}" data-language="zh" style="width:100%;height:100%;display:block"></docuseal-builder>`;
+  } catch(e) {
+    body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:.75rem;color:#ef4444;padding:2rem;text-align:center"><strong>编辑器加载失败</strong><div style="font-size:.85rem;color:#64748b">${escHtml(e.message)}</div></div>`;
+    toast('编辑器加载失败: ' + e.message, 'error');
+  }
+}
+
+function closeBuilderModal() {
+  document.getElementById('builderModal').classList.remove('open');
+  document.getElementById('builderBody').innerHTML = '';
+}
+
 // ── Init ──
 async function init() {
   await loadConfig();
@@ -588,6 +633,15 @@ function showPromptModal(title, defaultValue = '') {
   });
 }
 </script>
+
+<!-- Fullscreen embedded builder modal -->
+<div class="builder-overlay" id="builderModal">
+  <div class="builder-bar">
+    <div class="builder-bar-title" id="builderTitle">编辑模板</div>
+    <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3);background:transparent;font-size:.82rem;padding:.3rem .75rem" onclick="closeBuilderModal()">✕ 关闭</button>
+  </div>
+  <div class="builder-body" id="builderBody"></div>
+</div>
 
 <!-- Custom prompt modal -->
 <div class="modal-overlay" id="promptModal">
