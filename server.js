@@ -4138,13 +4138,14 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
   const templateId = overrideTemplateId || getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
+  let dsealHandledNotifications = false;
   if (templateId) {
     // Use existing DocuSeal template (official IRS W-9)
     // Fetch actual field names from the template to avoid sending unknown fields (422 error)
     const templateFieldNames = await dsealGetTemplateFieldNames(templateId);
     const addField = (fields, name, value, readonly) => {
       if (!templateFieldNames || templateFieldNames.has(name)) {
-        fields.push({ name, default_value: value, readonly });
+        fields.push({ name, default_value: value, readonly, required: true });
       }
     };
     const fields = [];
@@ -4164,6 +4165,8 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
       send_sms: true,
       submitters: [w9Submitter]
     });
+    // DocuSeal handles email+SMS notifications directly — system should not send duplicates
+    dsealHandledNotifications = true;
   } else {
     // Fallback: generate HTML template
     const w9Html = generateW9HtmlTemplate(workerName);
@@ -4202,7 +4205,7 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
   const directUrl = slug ? `${baseHost}/s/${slug}` : '';
   const finalWorkerUrl = directUrl || workerSignUrl;
   console.log(`[DocuSeal W-9] Worker sign URL: ${(finalWorkerUrl || 'NONE').substring(0, 100)}`);
-  return { submissionId: String(submissionId || signer?.id || ''), workerSignUrl: finalWorkerUrl };
+  return { submissionId: String(submissionId || signer?.id || ''), workerSignUrl: finalWorkerUrl, dsealHandledNotifications };
 }
 
 async function dsealGetW9Status(submissionId) {
@@ -7394,15 +7397,17 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     let w9SubmissionId = '';
     let w9SignUrl = '';
     let dsealError = '';
+    let dsealSentNotifications = false;
     if (dsealEnabled()) {
       try {
         const address = w.work_address || '';
         const overrideTemplateId = req.body.template_id ? String(req.body.template_id) : '';
-        const { submissionId, workerSignUrl } = await dsealSendW9Html({
+        const { submissionId, workerSignUrl, dsealHandledNotifications: dsHandled } = await dsealSendW9Html({
           workerName, workerEmail, workerPhone, address, overrideTemplateId
         });
         w9SubmissionId = submissionId || '';
         w9SignUrl = workerSignUrl || '';
+        if (dsHandled) dsealSentNotifications = true;
         console.log(`[W-9 send] DocuSeal submission created: ${w9SubmissionId}, signUrl: ${(w9SignUrl||'').substring(0,80)}`);
       } catch (e) {
         dsealError = e.message || '未知错误';
@@ -7429,30 +7434,37 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
 
     let emailSent = false;
     let smsSent = false;
-    // Send email/SMS with W-9 signing link (only if DocuSeal direct link available)
-    if (w9Link && workerEmail) {
-      const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${w9Link}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署 W-9 / Sign W-9 / Firmar W-9</a></p>`;
-      emailSent = await sendEmail(workerEmail,
-        `Prime Anchorpoint — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
-        `${workerName}，请点击链接签署 W-9 税表。\n${w9Link}\n\n${workerName}, please click the link to sign your W-9 form.\n${w9Link}\n\n${workerName}, haga clic en el enlace para firmar su formulario W-9.\n${w9Link}`,
-        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
-          <h2 style="color:#1a1a1a;text-align:center">请签署 W-9 税表</h2>
-          <p>您好 ${workerName}，请点击下方按钮直接签署 W-9 税表。</p>
-          ${signLink}
-          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
-          <h3 style="font-size:.95rem">Please Sign Your W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please click the button below to sign your W-9 form directly.</p>
-          ${signLink}
-          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
-          <h3 style="font-size:.95rem">Firme el Formulario W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic en el botón para firmar su formulario W-9 directamente.</p>
-          ${signLink}
-          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
-        </div>`
-      );
-    }
-    if (w9Link && workerPhone) {
-      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
+    // If DocuSeal already sent email+SMS (template path with send_email/send_sms true),
+    // do NOT also send system email/SMS — that would create duplicate notifications with broken links
+    if (dsealSentNotifications) {
+      emailSent = !!workerEmail;
+      smsSent = !!workerPhone;
+    } else if (w9Link) {
+      // Fallback HTML path: DocuSeal did not send notifications, system sends them
+      if (workerEmail) {
+        const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${w9Link}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署 W-9 / Sign W-9 / Firmar W-9</a></p>`;
+        emailSent = await sendEmail(workerEmail,
+          `Prime Anchorpoint — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
+          `${workerName}，请点击链接签署 W-9 税表。\n${w9Link}\n\n${workerName}, please click the link to sign your W-9 form.\n${w9Link}\n\n${workerName}, haga clic en el enlace para firmar su formulario W-9.\n${w9Link}`,
+          `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+            <h2 style="color:#1a1a1a;text-align:center">请签署 W-9 税表</h2>
+            <p>您好 ${workerName}，请点击下方按钮直接签署 W-9 税表。</p>
+            ${signLink}
+            <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+            <h3 style="font-size:.95rem">Please Sign Your W-9</h3>
+            <p style="color:#555;font-size:.9rem">Hi ${workerName}, please click the button below to sign your W-9 form directly.</p>
+            ${signLink}
+            <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+            <h3 style="font-size:.95rem">Firme el Formulario W-9</h3>
+            <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic en el botón para firmar su formulario W-9 directamente.</p>
+            ${signLink}
+            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+          </div>`
+        );
+      }
+      if (workerPhone) {
+        smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
+      }
     }
     const warnings = [];
     if (!w9Link) {
