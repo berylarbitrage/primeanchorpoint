@@ -17993,6 +17993,7 @@ async function reviewContractorInvoice(id, status) {
 
 // ─── 承包商發票 Tab ───
 let _empInvWorkersLoaded = false;
+let _empInvWorkersCache = [];
 async function loadEmpInvoiceTab() {
   // Load worker dropdown (once)
   if (!_empInvWorkersLoaded) {
@@ -18000,6 +18001,7 @@ async function loadEmpInvoiceTab() {
       const workers = await api('/admin/worker-accounts');
       const sel = document.getElementById('empInvWorkerSelect');
       if (sel && Array.isArray(workers)) {
+        _empInvWorkersCache = workers;
         sel.innerHTML = '<option value="">— 选择承包商 —</option>' +
           workers.filter(w => w.active).map(w =>
             `<option value="${w.id}">${esc(w.name || w.username)} ${w.emp_type === '1099' ? '(1099)' : w.emp_type === 'w2' ? '(W2)' : ''}</option>`
@@ -18061,27 +18063,19 @@ function openInvSendModal() {
   _invSendWorkerId = parseInt(workerId);
   _invSendWorkerName = workerName;
   document.getElementById('invSendWorkerName').textContent = workerName;
-  document.getElementById('invSendEmail').value = '';
-  document.getElementById('invSendPhone').value = '';
-  document.getElementById('invSendDate').value = new Date().toISOString().slice(0, 10);
-  document.getElementById('invSendServiceDesc').value = '';
   document.getElementById('invSendStatus').style.display = 'none';
   document.getElementById('invSendBtn').textContent = '📤 發送發票';
   document.getElementById('invSendBtn').disabled = false;
+  document.getElementById('invSendDate').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('invSendServiceDesc').value = '';
   document.getElementById('invPreviewSection').style.display = 'none';
   document.getElementById('invPreviewFrame').src = '';
   document.getElementById('invPreviewBtn').textContent = '🔍 预览模板';
-  // Pre-fill email, phone, and service description from worker data
-  (async () => {
-    try {
-      const w = await api(`/admin/worker-accounts/${workerId}`);
-      if (w) {
-        document.getElementById('invSendEmail').value = w.email || '';
-        document.getElementById('invSendPhone').value = w.phone || '';
-        if (w.position) document.getElementById('invSendServiceDesc').value = w.position;
-      }
-    } catch(e) {}
-  })();
+  // Pre-fill email, phone, and service description from cached worker data
+  const w = _empInvWorkersCache.find(w => w.id === _invSendWorkerId);
+  document.getElementById('invSendEmail').value = w?.email || '';
+  document.getElementById('invSendPhone').value = w?.phone || '';
+  if (w?.position) document.getElementById('invSendServiceDesc').value = w.position;
   document.getElementById('invSendModal').classList.add('show');
 }
 let _invSendWorkerId = null, _invSendWorkerName = '';
