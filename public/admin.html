@@ -2835,6 +2835,16 @@ tr:hover td{background:var(--sky-light)}
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手機號（可选，发送短信通知）：</label>
     <input id="invSendPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (xxx) xxx-xxxx">
   </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin:.5rem 0">
+    <div>
+      <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">服务周期 开始 (Period From) <span style="color:#dc2626">*</span></label>
+      <input type="date" id="invSendPeriodStart" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    </div>
+    <div>
+      <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">服务周期 结束 (Period To) <span style="color:#dc2626">*</span></label>
+      <input type="date" id="invSendPeriodEnd" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    </div>
+  </div>
   <div style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票日期：<span style="color:#dc2626">*</span></label>
     <input type="date" id="invSendDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
@@ -2845,7 +2855,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="invSendStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
   <div style="margin:.75rem 0;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e">
-    <b>流程：</b>Admin填写日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。
+    <b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。
   </div>
   <div id="invPreviewSection" style="display:none;margin:.5rem 0">
     <div style="font-weight:700;font-size:.85rem;margin-bottom:.3rem">發票模板预览：</div>
@@ -18148,6 +18158,8 @@ function openInvSendModal() {
   const w = _empInvWorkersCache.find(w => w.id === _invSendWorkerId);
   document.getElementById('invSendEmail').value = w?.email || '';
   document.getElementById('invSendPhone').value = w?.phone || '';
+  document.getElementById('invSendPeriodStart').value = '';
+  document.getElementById('invSendPeriodEnd').value = '';
   if (w?.position) document.getElementById('invSendServiceDesc').value = w.position;
   document.getElementById('invSendModal').classList.add('show');
 }
@@ -18157,16 +18169,19 @@ async function doSendInvoice() {
   if (!_invSendWorkerId) return;
   const email = document.getElementById('invSendEmail').value.trim();
   const phone = document.getElementById('invSendPhone').value.trim();
+  const periodStart = document.getElementById('invSendPeriodStart').value;
+  const periodEnd = document.getElementById('invSendPeriodEnd').value;
   const invoiceDate = document.getElementById('invSendDate').value.trim();
   const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
   if (!email) { showToast('请填写承包商邮箱', 'error'); return; }
+  if (!periodStart || !periodEnd) { showToast('请填写服务周期 Period From / Period To', 'error'); return; }
   if (!invoiceDate) { showToast('请选择發票日期', 'error'); return; }
   if (!serviceDesc) { showToast('请填写服务内容描述', 'error'); return; }
-  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，填写金额并签字后提交。`)) return;
+  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，填写金额并签字后提交。`)) return;
   const btn = document.getElementById('invSendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const r = await api('/admin/contractor-invoices/send-docuseal', {
-    method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, worker_email: email, worker_phone: phone || undefined, invoice_date: invoiceDate, service_description: serviceDesc })
+    method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, worker_email: email, worker_phone: phone || undefined, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc })
   });
   btn.disabled = false; btn.textContent = '📤 重新發送';
   if (r && r.success) {
