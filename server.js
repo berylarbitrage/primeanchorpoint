@@ -675,6 +675,7 @@ try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT
 try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`UPDATE employees SET employee_id = REPLACE(employee_id, 'STAFF-', 'WRK-') WHERE employee_id LIKE 'STAFF-%'`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
@@ -2139,7 +2140,7 @@ function localDateStr(state, dateObj) {
 function nextEmployeeId(state, hireDate) {
   const dateStr = localDateStr(state, hireDate ? new Date(hireDate) : null);
   const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'WRK-%' OR employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'WRK-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
   if (last) {
     const parts = last.employee_id.split('-');
@@ -2197,7 +2198,7 @@ function activateWorkerAccount(accountId, prefix) {
   // Ensure a linked inquiry exists — prefer employee record's stored inquiry_id (survives account deletion/re-creation)
   if (!acc.linked_inquiry_id) {
     let inquiryId = null;
-    // If linked to an employee (STAFF-xxx), use that employee's persistent inquiry_id
+    // If linked to an employee (WRK-xxx), use that employee's persistent inquiry_id
     if (acc.employee_id) {
       const emp = db.prepare('SELECT inquiry_id FROM employees WHERE id=?').get(acc.employee_id);
       if (emp && emp.inquiry_id) {
@@ -6381,12 +6382,21 @@ function verifyW9Address(workerId) {
   }
 }
 
+// Onboarding tasks auto-assigned per employment type (must match frontend W2_TASKS / C1099_TASKS)
+const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'gusto'];
+const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify'];
+
 // Check if all assigned onboarding tasks are done; update onboarded flag accordingly
 function syncOnboardedStatus(workerId) {
-  const w = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(workerId);
+  const w = db.prepare('SELECT assigned_tasks, employment_type FROM worker_accounts WHERE id=?').get(workerId);
   if (!w) return;
   let assigned = [];
   try { assigned = JSON.parse(w.assigned_tasks || '[]'); } catch {}
+  // Override with employment_type task list if available (matches frontend logic)
+  if (w.employment_type) {
+    const typeTasks = w.employment_type === 'w2' ? W2_TASKS : w.employment_type === '1099' ? C1099_TASKS : [];
+    if (typeTasks.length) assigned = [...typeTasks];
+  }
   if (!assigned.length) return; // no tasks assigned — don't auto-mark
   const tasks = db.prepare('SELECT task_key, status FROM worker_onboarding WHERE worker_account_id=?').all(workerId);
   const statusMap = Object.fromEntries(tasks.map(t => [t.task_key, t.status]));
@@ -16015,6 +16025,14 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
+  // Re-sync onboarded status for all workers with employment_type on startup
+  // This ensures the onboarded flag is recalculated after any logic changes
+  try {
+    const workers = db.prepare('SELECT id FROM worker_accounts WHERE employment_type IS NOT NULL').all();
+    let synced = 0;
+    for (const w of workers) { syncOnboardedStatus(w.id); synced++; }
+    if (synced) console.log(`[startup] Re-synced onboarded status for ${synced} workers`);
+  } catch(e) { console.error('[startup] onboarded sync error:', e.message); }
   // Auto-regenerate contractor invoice templates if bill_to_company field is missing (old static-text templates)
   setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 5000);
 });
