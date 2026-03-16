@@ -5645,6 +5645,14 @@ async function openWorkerW9Sign() {
   try {
     const r = await wApi('/w9-sign-url');
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
+    // If URL is not embeddable (slug URL), open in new tab instead
+    if (r.embeddable === false) {
+      modal.style.display = 'none';
+      window.open(r.signUrl, '_blank');
+      showToast('✅ W-9 签署页面已在新标签页打开 / W-9 signing page opened in new tab');
+      setTimeout(() => loadOnboarding(), 5000);
+      return;
+    }
     const form = document.createElement('docuseal-form');
     form.setAttribute('data-src', r.signUrl);
     form.setAttribute('data-with-draw-signature', 'true');
@@ -5662,6 +5670,18 @@ async function openWorkerW9Sign() {
       closeWorkerW9Sign();
       showToast('您已拒绝签署 W-9', 'info');
     });
+    // Detect load failure — if form stays empty after timeout, offer new-tab fallback
+    const loadTimeout = setTimeout(() => {
+      if (formDiv.querySelector('docuseal-form') && !formDiv.querySelector('docuseal-form iframe')) {
+        formDiv.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;color:#64748b;font-size:.9rem">
+          <div>⚠️ 表单加载失败 / Form failed to load</div>
+          <button onclick="window.open('${r.signUrl.replace(/'/g, "\\'")}','_blank');closeWorkerW9Sign();showToast('✅ W-9 签署页面已在新标签页打开')" style="padding:.5rem 1.5rem;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">在新标签页打开 / Open in New Tab</button>
+          <button onclick="closeWorkerW9Sign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭 / Close</button>
+        </div>`;
+      }
+    }, 8000);
+    form.addEventListener('completed', () => clearTimeout(loadTimeout));
+    form.addEventListener('declined', () => clearTimeout(loadTimeout));
     formDiv.appendChild(form);
     loading.style.display = 'none';
     formDiv.style.display = '';

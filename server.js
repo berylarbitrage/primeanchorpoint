@@ -4229,12 +4229,12 @@ async function dsealGetW9SignUrl(submissionId) {
   if (!signer) throw new Error('DocuSeal W-9: 签署人未找到');
   // Prefer embed_src — designed for web component embedding (docuseal-form)
   // Slug URLs (/s/xxx) are full-page URLs and don't render inside the web component
-  if (signer.embed_src) return signer.embed_src;
+  if (signer.embed_src) return { url: signer.embed_src, embeddable: true };
   const baseHost = dsealPublicHost();
-  if (signer.slug) return `${baseHost}/s/${signer.slug}`;
+  if (signer.slug) return { url: `${baseHost}/s/${signer.slug}`, embeddable: false };
   const u = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: signer.name });
-  if (u.data?.embed_src) return u.data.embed_src;
-  if (u.data?.slug) return `${baseHost}/s/${u.data.slug}`;
+  if (u.data?.embed_src) return { url: u.data.embed_src, embeddable: true };
+  if (u.data?.slug) return { url: `${baseHost}/s/${u.data.slug}`, embeddable: false };
   if (u.status >= 400) throw new Error(`DocuSeal 获取 W-9 签署链接失败 ${u.status}`);
   throw new Error('DocuSeal W-9: 无法获取签署链接');
 }
@@ -7555,8 +7555,8 @@ app.get('/api/admin/worker-accounts/:id/w9-sign-url', requireAdmin, async (req, 
     const workerId = parseInt(req.params.id);
     const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
-    const signUrl = await dsealGetW9SignUrl(onb.ds_envelope_id);
-    res.json({ signUrl });
+    const result = await dsealGetW9SignUrl(onb.ds_envelope_id);
+    res.json({ signUrl: result.url, embeddable: result.embeddable });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -7589,14 +7589,19 @@ app.get('/api/worker/w9-sign-url', requireWorker, async (req, res) => {
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
     if (onb.ds_status === 'completed') return res.status(400).json({ error: 'W-9 已完成签署' });
     let signUrl = onb.action_url || '';
+    let embeddable = true;
     if (dsealEnabled()) {
       try {
-        signUrl = await dsealGetW9SignUrl(onb.ds_envelope_id);
-        if (signUrl) db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'").run(signUrl, req.workerId);
+        const result = await dsealGetW9SignUrl(onb.ds_envelope_id);
+        if (result && result.url) {
+          signUrl = result.url;
+          embeddable = result.embeddable;
+          db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'").run(signUrl, req.workerId);
+        }
       } catch (e) { console.error('[worker w9-sign-url]', e.message); }
     }
     if (!signUrl) return res.status(404).json({ error: '签署链接暂不可用，请稍后再试' });
-    res.json({ signUrl, dsStatus: onb.ds_status });
+    res.json({ signUrl, embeddable, dsStatus: onb.ds_status });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
