@@ -4203,7 +4203,8 @@ async function dsealSendW9Html({ workerName, workerEmail, workerPhone, address, 
   const slug = signer?.slug || '';
   const baseHost = dsealPublicHost();
   const directUrl = slug ? `${baseHost}/s/${slug}` : '';
-  const finalWorkerUrl = directUrl || workerSignUrl;
+  // Prefer embed_src for web component embedding; fall back to slug URL
+  const finalWorkerUrl = workerSignUrl || directUrl;
   console.log(`[DocuSeal W-9] Worker sign URL: ${(finalWorkerUrl || 'NONE').substring(0, 100)}`);
   return { submissionId: String(submissionId || signer?.id || ''), workerSignUrl: finalWorkerUrl, dsealHandledNotifications };
 }
@@ -4226,14 +4227,16 @@ async function dsealGetW9SignUrl(submissionId) {
   if (r.status !== 200) throw new Error(`DocuSeal 获取 W-9 提交失败 ${r.status}`);
   const signer = (r.data.submitters || [])[0];
   if (!signer) throw new Error('DocuSeal W-9: 签署人未找到');
-  // Prefer slug-based URL (/s/xxx) — works directly in mobile browsers
+  // Prefer embed_src — designed for web component embedding (docuseal-form)
+  // Slug URLs (/s/xxx) are full-page URLs and don't render inside the web component
+  if (signer.embed_src) return signer.embed_src;
   const baseHost = dsealPublicHost();
   if (signer.slug) return `${baseHost}/s/${signer.slug}`;
-  if (signer.embed_src) return signer.embed_src;
   const u = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: signer.name });
+  if (u.data?.embed_src) return u.data.embed_src;
   if (u.data?.slug) return `${baseHost}/s/${u.data.slug}`;
-  if (u.status >= 400 || !u.data?.embed_src) throw new Error(`DocuSeal 获取 W-9 签署链接失败 ${u.status}`);
-  return u.data.embed_src;
+  if (u.status >= 400) throw new Error(`DocuSeal 获取 W-9 签署链接失败 ${u.status}`);
+  throw new Error('DocuSeal W-9: 无法获取签署链接');
 }
 
 async function dsealGetCompanySignUrl(submissionId) {

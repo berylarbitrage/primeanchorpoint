@@ -5651,6 +5651,8 @@ async function openWorkerW9Sign() {
     form.setAttribute('data-with-typed-signature', 'false');
     form.setAttribute('data-with-upload-signature', 'false');
     form.style.width = '100%';
+    form.style.height = '100%';
+    form.style.display = 'block';
     form.addEventListener('completed', () => {
       closeWorkerW9Sign();
       showToast('✅ W-9 已签署完成！', 'success', 6000);
