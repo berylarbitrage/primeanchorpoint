@@ -1560,6 +1560,11 @@ try {
   }
 } catch(e) { /* column already exists */ }
 
+// Migrate: add languages column if missing
+try {
+  db.exec("ALTER TABLE docuseal_templates ADD COLUMN languages TEXT DEFAULT ''");
+} catch(e) { /* column already exists */ }
+
 // Migrate: update broad categories (tax, contract, payment, invoice) to specific doc_types
 try {
   const _dsRow2 = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
@@ -8704,17 +8709,67 @@ app.get('/api/admin/contractor-invoices/:id/signing-url', requireAdmin, requireR
     const r = await dsealApiCall('GET', `/api/submissions/${inv.ds_envelope_id}`, null);
     if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
     const sub = r.data;
-    const baseHost = dsealPublicHost();
+    // For completed submissions, return the signed document download URL
+    if (sub.status === 'completed' && sub.documents && sub.documents.length > 0) {
+      const docUrl = sub.documents[0].url || sub.documents[0].download_url || '';
+      if (docUrl) return res.json({ url: docUrl, status: 'completed', completed: true, type: 'document' });
+    }
     const submitter = (sub.submitters || [])[0];
     if (!submitter) return res.status(404).json({ error: '找不到签署人信息' });
     // Call PUT to get fresh embed_src — GET /submissions does not return embed_src
     const u = await dsealApiCall('PUT', `/api/submitters/${submitter.id}`, { name: submitter.name });
     const freshEmbedSrc = u.data?.embed_src || '';
     const slug = u.data?.slug || submitter.slug || '';
+    const baseHost = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
     const signingUrl = freshEmbedSrc || (slug ? `${baseHost}/s/${slug}` : '');
     if (!signingUrl) return res.status(404).json({ error: '无法获取预览链接' });
-    res.json({ url: signingUrl, embed_src: freshEmbedSrc || signingUrl, status: submitter.status, completed: sub.status === 'completed' });
+    res.json({ url: signingUrl, embed_src: freshEmbedSrc || signingUrl, status: submitter.status, completed: sub.status === 'completed', type: 'signing' });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: revoke/void a contractor invoice (cancels DocuSeal submission if pending)
+app.post('/api/admin/contractor-invoices/:id/revoke', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: '发票不存在' });
+    if (['voided', 'approved'].includes(inv.status)) return res.status(400).json({ error: `发票状态为 ${inv.status}，无法撤回` });
+    // Void DocuSeal submission if it exists
+    if (inv.ds_envelope_id && dsealEnabled()) {
+      try {
+        await dsealApiCall('DELETE', `/api/submissions/${inv.ds_envelope_id}`, null);
+      } catch(e) { console.error('[Revoke Invoice] DocuSeal void failed:', e.message); }
+    }
+    const revokedBy = req.session?.username || 'admin';
+    db.prepare('UPDATE contractor_invoices SET status=?, reviewed_by=?, reviewed_at=? WHERE id=?')
+      .run('voided', revokedBy, new Date().toISOString(), req.params.id);
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(inv.worker_account_id, revokedBy, 'contractor_invoice', inv.status, 'voided', `Invoice ${inv.invoice_number} 已撤回`);
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: edit a pre_generated contractor invoice
+app.patch('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: '发票不存在' });
+    if (inv.status !== 'pre_generated') return res.status(400).json({ error: '只有预生成发票可以编辑' });
+    const { service_description, total_amount, invoice_date, service_period_start, service_period_end } = req.body;
+    db.prepare(`UPDATE contractor_invoices SET
+      service_description=COALESCE(?,service_description),
+      total_amount=COALESCE(?,total_amount),
+      invoice_date=COALESCE(?,invoice_date),
+      service_period_start=COALESCE(?,service_period_start),
+      service_period_end=COALESCE(?,service_period_end)
+      WHERE id=?`)
+      .run(service_description ?? null, total_amount ?? null, invoice_date ?? null,
+           service_period_start ?? null, service_period_end ?? null, req.params.id);
+    res.json({ success: true });
+  } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
@@ -15913,6 +15968,16 @@ app.put('/api/admin/docuseal/my-templates/:id/category', requireAdmin, (req, res
   res.json({ success: true, category: category.trim() });
 });
 
+// PUT /api/admin/docuseal/my-templates/:id/languages — update languages of a template in local DB
+app.put('/api/admin/docuseal/my-templates/:id/languages', requireAdmin, (req, res) => {
+  const { languages } = req.body;
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  const langStr = Array.isArray(languages) ? languages.join(',') : (languages || '');
+  db.prepare('UPDATE docuseal_templates SET languages=? WHERE id=?').run(langStr, req.params.id);
+  res.json({ success: true, languages: langStr });
+});
+
 // POST /api/admin/docuseal/templates/:dsId/apply-field-requirements
 // Apply required=true to all fields and draw-only to signature fields on an existing template
 app.post('/api/admin/docuseal/templates/:dsId/apply-field-requirements', requireAdmin, async (req, res) => {
@@ -16059,9 +16124,10 @@ async function autoRegenerateContractorInvoiceTemplates() {
     try {
       const fields = await dsealGetTemplateFieldNames(templateId);
       if (fields === null) continue; // couldn't fetch, skip
-      if (!fields.has('bill_to_company')) {
-        // Old template without bill_to_company field — regenerate with updated HTML
-        console.log(`[startup] Regenerating ${type} template (bill_to_company field missing)...`);
+      if (!fields.has('bill_to_company') || !fields.has('invoice_number')) {
+        // Old template missing required fields — regenerate with updated HTML
+        const missing = ['bill_to_company', 'invoice_number'].filter(f => !fields.has(f)).join(', ');
+        console.log(`[startup] Regenerating ${type} template (missing fields: ${missing})...`);
         const html = tmplDef.generator();
         const r = await dsealApiCall('POST', '/api/templates/html', {
           name: tmplDef.name,

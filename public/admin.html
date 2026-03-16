@@ -2902,6 +2902,64 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- 承包商發票 预览链接 Modal -->
+<div class="modal-bg" id="dsInvPreviewModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:520px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">🔍 预览发票文件</h2>
+      <button class="btn btn-outline" onclick="document.getElementById('dsInvPreviewModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <div id="dsInvPreviewInfo" style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem"></div>
+    <div style="padding:1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;text-align:center">
+      <div style="font-size:.88rem;color:#0369a1;margin-bottom:.75rem">点击下方按钮在新标签页中打开文件：</div>
+      <a id="dsInvPreviewLink" href="#" target="_blank" rel="noopener"
+        style="display:inline-block;padding:.5rem 1.25rem;background:#0369a1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;font-size:.88rem"
+        onclick="document.getElementById('dsInvPreviewModal').style.display='none'">
+        📄 打开文件
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- 承包商發票 Edit Modal (pre_generated) -->
+<div class="modal-bg" id="invEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:560px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">✏️ 编辑预生成发票</h2>
+      <button class="btn btn-outline" onclick="document.getElementById('invEditModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <input type="hidden" id="invEditId">
+    <div style="display:grid;gap:.6rem">
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">發票日期</label>
+        <input type="date" id="invEditDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 开始</label>
+          <input type="date" id="invEditPeriodStart" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 结束</label>
+          <input type="date" id="invEditPeriodEnd" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务内容描述</label>
+        <textarea id="invEditServiceDesc" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+      </div>
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">金额 (Total Amount)</label>
+        <input type="number" id="invEditAmount" step="0.01" min="0" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0.00">
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button class="btn btn-green" onclick="saveInvEdit()">💾 保存</button>
+      <button class="btn" onclick="document.getElementById('invEditModal').style.display='none'">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- Work Authorization Modal -->
 <div class="modal-bg" id="workAuthModal"><div class="modal" style="max-width:680px">
   <h2>📑 Work Authorization 认证 — <span id="workAuthWorkerName" style="color:var(--sky)"></span></h2>
@@ -13861,7 +13919,7 @@ async function loadWorkerAccounts() {
     extraBtns += `<button class="btn btn-sm wa-abtn-del" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除</button>`;
     return `<tr>
     <td style="font-family:monospace;font-size:.78rem;white-space:nowrap;color:var(--sky)">${w.worker_code ? esc(w.worker_code) : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div>${w.emp_code ? `<div style="font-size:.72rem;color:var(--sky);font-family:monospace">${esc(w.emp_code)}</div>` : ''}</td>
+    <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div>${w.emp_code ? `<div style="font-size:.72rem;color:var(--sky);font-family:monospace;white-space:nowrap">${esc(w.emp_code)}</div>` : ''}</td>
     <td style="font-size:.8rem;white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
     <td style="font-size:.78rem;white-space:nowrap">${(()=>{
@@ -18257,7 +18315,9 @@ async function loadEmpInvoiceTab() {
     ds_pending: '<span style="padding:2px 8px;border-radius:6px;background:#e0f2fe;color:#0369a1;font-size:.75rem;font-weight:600">📄 已发送待填写</span>',
     submitted: '<span style="padding:2px 8px;border-radius:6px;background:#fffbeb;color:#92400e;font-size:.75rem;font-weight:600">⏳ 待审核</span>',
     approved: '<span style="padding:2px 8px;border-radius:6px;background:#dcfce7;color:#15803d;font-size:.75rem;font-weight:600">✅ 已批准</span>',
-    rejected: '<span style="padding:2px 8px;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:.75rem;font-weight:600">❌ 已拒绝</span>'
+    rejected: '<span style="padding:2px 8px;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:.75rem;font-weight:600">❌ 已拒绝</span>',
+    pre_generated: '<span style="padding:2px 8px;border-radius:6px;background:#fef9c3;color:#854d0e;font-size:.75rem;font-weight:600">📝 预生成</span>',
+    voided: '<span style="padding:2px 8px;border-radius:6px;background:#f3f4f6;color:#6b7280;font-size:.75rem;font-weight:600">🚫 已撤回</span>'
   };
   el.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
     <thead><tr style="border-bottom:2px solid var(--gray-200)">
@@ -18281,10 +18341,20 @@ async function loadEmpInvoiceTab() {
       <td style="padding:.5rem;white-space:nowrap">${source}</td>
       <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">${r.status === 'ds_pending' ? '<span style="color:var(--gray-400);font-weight:400">待填写</span>' : '$'+(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
       <td style="padding:.5rem;text-align:center">${STATUS_BADGE[r.status]||r.status}</td>
-      <td style="padding:.5rem;text-align:center;white-space:nowrap">${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}${r.status === 'submitted' ? `
-        <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
-        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
-      ` : r.status === 'ds_pending' ? `<span style="font-size:.72rem;color:#0369a1">等待员工签字…</span>` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}</td>
+      <td style="padding:.5rem;text-align:center;white-space:nowrap">
+        ${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}
+        ${r.status === 'submitted' ? `
+          <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
+          <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
+        ` : r.status === 'ds_pending' ? `
+          <span style="font-size:.72rem;color:#0369a1">等待员工签字…</span><br>
+          <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
+        ` : r.status === 'pre_generated' ? `
+          <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-bottom:2px" onclick="openInvEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button><br>
+          <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
+        ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}
+        ${r.status !== 'approved' ? `<br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : ''}
+      </td>
     </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
     }).join('')}</tbody>
   </table>`;
@@ -18427,12 +18497,78 @@ async function previewDsInvoice(invoiceId) {
     showToast('获取预览链接中…', 'info');
     const r = await api(`/admin/contractor-invoices/${invoiceId}/signing-url`);
     if (r && r.url) {
-      window.open(r.url, '_blank');
+      const modal = document.getElementById('dsInvPreviewModal');
+      const link = document.getElementById('dsInvPreviewLink');
+      const info = document.getElementById('dsInvPreviewInfo');
+      link.href = r.url;
+      if (r.completed || r.type === 'document') {
+        info.textContent = '该发票已签署完成，点击打开已签署的 PDF 文件。';
+        link.textContent = '📄 打开已签署文件';
+      } else {
+        info.textContent = '该发票尚未签署，点击打开 DocuSeal 签署页面（承包商视角）。';
+        link.textContent = '🔗 打开签署页面';
+      }
+      modal.style.display = 'flex';
     } else {
       showToast(r?.error || '无法获取预览链接', 'error');
     }
   } catch(e) {
     showToast('获取预览链接失败', 'error');
+  }
+}
+
+async function revokeContractorInvoice(id, invoiceNumber) {
+  if (!confirm(`第 1/3 次确认\n\n确认要撤回发票 ${invoiceNumber} 吗？\n撤回后 DocuSeal 签署链接将失效。`)) return;
+  if (!confirm(`第 2/3 次确认\n\n撤回后状态将变为「已撤回」，无法再次发送给承包商签署。`)) return;
+  if (!confirm(`第 3/3 次确认\n\n最后确认：确定撤回发票 ${invoiceNumber}？`)) return;
+  const r = await api(`/admin/contractor-invoices/${id}/revoke`, { method: 'POST' });
+  if (r?.success) {
+    showToast('✅ 发票已撤回');
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '撤回失败', 'error');
+  }
+}
+
+async function deleteContractorInvoice(id, invoiceNumber) {
+  if (!confirm(`第 1/3 次确认\n\n确认要删除发票 ${invoiceNumber} 吗？\n此操作将永久删除记录，不可恢复！`)) return;
+  if (!confirm(`第 2/3 次确认\n\n发票记录将从数据库中永久删除，包括所有历史信息。`)) return;
+  if (!confirm(`第 3/3 次确认\n\n最后确认：确定永久删除发票 ${invoiceNumber}？`)) return;
+  const r = await api(`/admin/contractor-invoices/${id}`, { method: 'DELETE' });
+  if (r?.success) {
+    showToast('🗑️ 发票已删除');
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '删除失败', 'error');
+  }
+}
+
+function openInvEditModal(row) {
+  document.getElementById('invEditId').value = row.id;
+  document.getElementById('invEditDate').value = row.invoice_date || '';
+  document.getElementById('invEditPeriodStart').value = row.service_period_start || '';
+  document.getElementById('invEditPeriodEnd').value = row.service_period_end || '';
+  document.getElementById('invEditServiceDesc').value = row.service_description || '';
+  document.getElementById('invEditAmount').value = row.total_amount || '';
+  document.getElementById('invEditModal').style.display = 'flex';
+}
+
+async function saveInvEdit() {
+  const id = document.getElementById('invEditId').value;
+  const body = {
+    invoice_date: document.getElementById('invEditDate').value || null,
+    service_period_start: document.getElementById('invEditPeriodStart').value || null,
+    service_period_end: document.getElementById('invEditPeriodEnd').value || null,
+    service_description: document.getElementById('invEditServiceDesc').value || null,
+    total_amount: document.getElementById('invEditAmount').value !== '' ? parseFloat(document.getElementById('invEditAmount').value) : null
+  };
+  const r = await api(`/admin/contractor-invoices/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  if (r?.success) {
+    document.getElementById('invEditModal').style.display = 'none';
+    showToast('✅ 发票已更新');
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '保存失败', 'error');
   }
 }
 
@@ -20619,17 +20755,27 @@ function _dsRenderMyTemplates() {
     zelle_auth_template_id:        { bg:'#fdf4ff', color:'#86198f', label:'Zelle' },
     third_party_pay_template_id:   { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金' },
-    contractor_invoice_template_id:    { bg:'#fef3c7', color:'#92400e', label:'员工Invoice(ZH)' },
-    contractor_invoice_en_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice(EN)' },
-    contractor_invoice_es_template_id: { bg:'#fef9c3', color:'#854d0e', label:'员工Invoice(ES)' },
+    contractor_invoice_template_id:    { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
+    contractor_invoice_en_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
+    contractor_invoice_es_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     invoice_approval_template_id:    { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
   };
   const _CAT_BADGE = {
     company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
     w4:{bg:'#e0f2fe',color:'#0369a1',label:'W-4'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'W-9'}, w8ben:{bg:'#fae8ff',color:'#6b21a8',label:'W-8BEN'}, w8bene:{bg:'#ede9fe',color:'#5b21b6',label:'W-8BEN-E'}, form8233:{bg:'#fce7f3',color:'#9d174d',label:'8233'}, i9:{bg:'#dcfce7',color:'#166534',label:'I-9'}, w7:{bg:'#f0fdf4',color:'#15803d',label:'W-7'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
     ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
-    contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
+    contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_en:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_es:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
     invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_en:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_es:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
+  };
+  const _LANG_BADGE = {
+    EN: { bg:'#dbeafe', color:'#1e40af', label:'EN' },
+    ZH: { bg:'#fef3c7', color:'#92400e', label:'ZH' },
+    ES: { bg:'#d1fae5', color:'#065f46', label:'ES' },
+    FR: { bg:'#ede9fe', color:'#5b21b6', label:'FR' },
+    PT: { bg:'#fce7f3', color:'#9d174d', label:'PT' },
+    KO: { bg:'#e0f2fe', color:'#0369a1', label:'KO' },
+    JA: { bg:'#fff7ed', color:'#9a3412', label:'JA' },
+    VI: { bg:'#dcfce7', color:'#166534', label:'VI' },
   };
   const rows = _dsMyTemplates.map(t => {
     const cs = _CAT_BADGE[t.category];
@@ -20642,14 +20788,21 @@ function _dsRenderMyTemplates() {
       _seenBadgeLabels.add(s.label);
       return `<span style="display:inline-block;background:${s.bg};color:${s.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${s.label}</span>`;
     }).filter(Boolean).join('');
+    const tLangs = t.languages ? t.languages.split(',').map(l => l.trim()).filter(Boolean) : [];
+    const langBadges = tLangs.map(l => {
+      const ls = _LANG_BADGE[l];
+      return ls ? `<span style="display:inline-block;background:${ls.bg};color:${ls.color};border-radius:4px;padding:1px 6px;font-size:.72rem;font-weight:700;margin-left:.3rem;border:1px solid ${ls.color}22">${ls.label}</span>` : '';
+    }).filter(Boolean).join('');
+    const langSubtitle = tLangs.length ? ` · 语言: ${tLangs.join('+')}` : '';
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
-        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}
-        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${(_CAT_BADGE[t.category]||{}).label||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
+        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}${langBadges}
+        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${(_CAT_BADGE[t.category]||{}).label||t.category||'未分类'}${langSubtitle} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
+        <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;white-space:nowrap" onclick="dsChangeLanguageModal(${t.id})">改语言</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsOpenBuilderModal(${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">编辑</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444;white-space:nowrap" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
       </div>
@@ -20849,6 +21002,55 @@ async function dsApplyCategoryChanges(dsTemplateId) {
     overlay.remove();
     _dsRenderMyTemplates();
     showToast('分类已更新', 'success');
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function dsChangeLanguageModal(localId) {
+  const tpl = _dsMyTemplates.find(t => t.id === localId);
+  if (!tpl) return;
+  const currentLangs = tpl.languages ? tpl.languages.split(',').map(l => l.trim()).filter(Boolean) : [];
+  const allLangs = [
+    { code: 'EN', label: 'English (EN)',    bg:'#dbeafe', color:'#1e40af' },
+    { code: 'ZH', label: '中文 (ZH)',        bg:'#fef3c7', color:'#92400e' },
+    { code: 'ES', label: 'Español (ES)',    bg:'#d1fae5', color:'#065f46' },
+    { code: 'FR', label: 'Français (FR)',   bg:'#ede9fe', color:'#5b21b6' },
+    { code: 'PT', label: 'Português (PT)',  bg:'#fce7f3', color:'#9d174d' },
+    { code: 'KO', label: '한국어 (KO)',      bg:'#e0f2fe', color:'#0369a1' },
+    { code: 'JA', label: '日本語 (JA)',      bg:'#fff7ed', color:'#9a3412' },
+    { code: 'VI', label: 'Tiếng Việt (VI)', bg:'#dcfce7', color:'#166534' },
+  ];
+  const checkboxes = allLangs.map(l => {
+    const checked = currentLangs.includes(l.code) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:.55rem;padding:.32rem .2rem;cursor:pointer">
+      <input type="checkbox" name="ds-lang-cb" value="${l.code}" ${checked} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
+      <span style="display:inline-block;background:${l.bg};color:${l.color};border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700;border:1px solid ${l.color}22">${l.label}</span>
+    </label>`;
+  }).join('');
+  const modalHtml = `<div id="ds-lang-modal-overlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:1.5rem;width:340px;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+      <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">设置语言</div>
+      <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为「${_dsEsc(tpl.name)}」选择支持的语言（可多选）</div>
+      <div style="display:flex;flex-direction:column;gap:.1rem;margin-bottom:1rem">${checkboxes}</div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button onclick="document.getElementById('ds-lang-modal-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
+        <button onclick="dsApplyLanguageChanges(${localId})" style="padding:.4rem 1rem;border-radius:7px;border:none;background:#4f46e5;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">保存</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function dsApplyLanguageChanges(localId) {
+  const overlay = document.getElementById('ds-lang-modal-overlay');
+  const checked = [...overlay.querySelectorAll('input[name="ds-lang-cb"]:checked')].map(i => i.value);
+  const tpl = _dsMyTemplates.find(t => t.id === localId);
+  if (!tpl) { overlay.remove(); return; }
+  try {
+    await api(`/admin/docuseal/my-templates/${localId}/languages`, { method: 'PUT', body: JSON.stringify({ languages: checked }) });
+    tpl.languages = checked.join(',');
+    overlay.remove();
+    _dsRenderMyTemplates();
+    showToast('语言已更新', 'success');
   } catch(e) { showToast(e.message, 'error'); }
 }
 
