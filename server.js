@@ -2150,6 +2150,27 @@ function nextEmployeeId(state, hireDate) {
 }
 
 // ─── Auto-generate worker code: PORT-ST-MMDDYY-0001 ───
+function generateContractorInvoiceNumber(workerName, workerState) {
+  const stateStr = (workerState || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
+  // Build initials from worker name words (e.g. "Xuan Zhang" → "XZ")
+  const initials = (workerName || '').trim().split(/\s+/).map(w => w[0] || '').join('').toUpperCase().replace(/[^A-Z]/g, '') || 'XX';
+  const today = new Date();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const yy = String(today.getFullYear()).slice(-2);
+  const dateStr = mm + dd + yy;
+  const prefix = `INVCON-${stateStr}-${initials}-${dateStr}`;
+  // Find the highest sequential number for this same prefix today
+  const last = db.prepare(`SELECT invoice_number FROM contractor_invoices WHERE invoice_number LIKE ? ORDER BY invoice_number DESC LIMIT 1`).get(prefix + '-%');
+  let num = 1;
+  if (last) {
+    const parts = last.invoice_number.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) num = lastNum + 1;
+  }
+  return `${prefix}-${String(num).padStart(4, '0')}`;
+}
+
 function generateWorkerCode(state, prefix = 'PORT') {
   const dateStr = localDateStr(state);
   const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
@@ -8009,7 +8030,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const submitter = submitters[0];
     const submissionId = String(subRes.data?.id || submitter?.submission_id || '');
     // Create contractor_invoices record with pending status
-    const invoiceNumber = `DSINV-${worker_account_id}-${todayDate.replace(/-/g, '')}-${submissionId.slice(-4)}`;
+    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
     const sentBy = req.session?.username || 'admin';
     db.prepare(`INSERT INTO contractor_invoices
       (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, ds_envelope_id, ds_status, sent_by)
@@ -8032,6 +8053,40 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     res.json({ success: true, submission_id: submissionId, invoice_number: invoiceNumber, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[Send DocuSeal Invoice]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: preview the contractor invoice DocuSeal template (proxied PDF)
+app.get('/api/admin/contractor-invoices/preview-template', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const templateId = getDsealConfigTemplateId('contractor_invoice');
+  if (!templateId) return res.status(400).json({ error: '未配置承包商發票模板' });
+  try {
+    const r = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+    const documents = r.data?.documents || r.data?.schema || [];
+    const docUrl = documents[0]?.url || documents[0]?.file_url || null;
+    if (!docUrl) return res.status(404).json({ error: '该模板暂无可预览的文档' });
+    const { apiKey } = dsealGetCreds();
+    const parsedUrl = new URL(docUrl);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    const proxyReq = transport.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: { 'X-Auth-Token': apiKey, 'Accept': 'application/pdf,*/*' }
+    }, (proxyRes) => {
+      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="contractor-invoice-template.pdf"`);
+      proxyRes.pipe(res);
+    });
+    proxyReq.setTimeout(30000, () => { proxyReq.destroy(new Error('代理超时')); });
+    proxyReq.on('error', (e) => { if (!res.headersSent) res.status(500).json({ error: e.message }); });
+    proxyReq.end();
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
