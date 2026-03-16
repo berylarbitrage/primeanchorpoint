@@ -17074,9 +17074,9 @@ async function doSendW9() {
     const statusEl = document.getElementById('w9DsStatus');
     statusEl.style.display = ''; statusEl.style.background = '#dbeafe'; statusEl.style.color = '#1d4ed8'; statusEl.style.border = '1px solid #bfdbfe';
     if (r.isDirect) {
-      statusEl.innerHTML = '📤 W-9 签字链接已发送，等待工人签署…';
+      statusEl.innerHTML = '📤 已发送 DocuSeal 签字链接，等待工人签署…';
     } else {
-      statusEl.innerHTML = '📤 已发送门户链接，等待工人填写 W-9 信息…';
+      statusEl.innerHTML = '⚠️ DocuSeal 签字链接生成失败，请检查 DocuSeal 配置后重试';
     }
     // Show signing link if available
     if (r.w9Link) {
