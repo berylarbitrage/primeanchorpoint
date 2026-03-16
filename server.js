@@ -7395,16 +7395,14 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(workerId, changedBy, 'w9', '', '已发送', w9SubmissionId ? `W-9 DocuSeal 表格已创建，等待工人签署` : `W-9 填写请求已发送，等待工人在门户填写信息`);
 
-    // Use DocuSeal direct signing link if available, otherwise fall back to portal
-    const baseUrl = (process.env.BASE_URL || (req ? `${req.protocol}://${req.get('host')}` : `http://localhost:${process.env.PORT || 3000}`)).replace(/\/+$/, '');
-    const portalLink = `${baseUrl}/portal.html#w9`;
-    const w9Link = w9SignUrl || portalLink;
+    // Use DocuSeal direct signing link only (no portal fallback)
+    const w9Link = w9SignUrl || '';
     const isDirect = !!w9SignUrl;
 
     let emailSent = false;
     let smsSent = false;
-    // Send email with W-9 signing link
-    if (workerEmail) {
+    // Send email/SMS with W-9 signing link (only if DocuSeal direct link available)
+    if (w9Link && workerEmail) {
       const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${w9Link}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署 W-9 / Sign W-9 / Firmar W-9</a></p>`;
       emailSent = await sendEmail(workerEmail,
         `Prime Anchorpoint — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
@@ -7425,16 +7423,16 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
         </div>`
       );
     }
-    // Send SMS with W-9 signing link
-    if (workerPhone) {
+    if (w9Link && workerPhone) {
       smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
     }
     const warnings = [];
+    if (!w9Link) warnings.push('DocuSeal 签字链接生成失败，请检查 DocuSeal 配置');
     if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
     if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
     if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
     if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
-    res.json({ success: true, portalLink, w9Link, isDirect, emailSent, smsSent, warnings });
+    res.json({ success: true, w9Link, isDirect, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[W-9 send error]', e.message);
     res.status(500).json({ error: e.message });
