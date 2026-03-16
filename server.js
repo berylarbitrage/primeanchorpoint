@@ -2135,18 +2135,18 @@ function localDateStr(state, dateObj) {
   return p.month + p.day + String(p.year).slice(-2);
 }
 
-// ─── Auto-generate employee ID: STAFF-ST-MMDDYY-0001 ───
+// ─── Auto-generate employee ID: WRK-ST-MMDDYY-0001 ───
 function nextEmployeeId(state, hireDate) {
   const dateStr = localDateStr(state, hireDate ? new Date(hireDate) : null);
   const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'WRK-%' OR employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
   if (last) {
     const parts = last.employee_id.split('-');
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `STAFF-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
+  return `WRK-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
 // ─── Auto-generate worker code: PORT-ST-MMDDYY-0001 ───
