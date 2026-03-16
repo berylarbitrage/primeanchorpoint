@@ -4246,9 +4246,9 @@ async function dsealGetW9Status(submissionId) {
   let status = sub.status === 'completed' ? 'completed' : 'sent';
   let workerSigned = null, declineReason = '';
   let w9Address = '', w9CityStateZip = '';
-  // Address field names used in both custom HTML template and standard IRS templates (lowercase for case-insensitive matching)
-  const addressFields = ['w9_address', 'address', '5 address (number, street, and apt. or suite no.)'];
-  const cityStateZipFields = ['w9_city_state_zip', 'city, state, and zip code', 'city_state_zip', 'citystatezip'];
+  // Flexible matching for IRS PDF field name variants (may include number prefix or extra suffix)
+  const isW9AddrField = fn => { const n = fn.toLowerCase(); return n === 'w9_address' || n === 'address' || n === 'f1_5[0]' || n.startsWith('5 address'); };
+  const isW9CityField = fn => { const n = fn.toLowerCase(); return n === 'w9_city_state_zip' || n === 'city_state_zip' || n === 'citystatezip' || n === 'f1_6[0]' || n.startsWith('city, state') || n.startsWith('6 city'); };
   for (const s of (sub.submitters || [])) {
     if (s.status === 'completed' && s.completed_at) workerSigned = s.completed_at;
     if (s.status === 'declined') { status = 'declined'; declineReason = s.decline_reason || '已拒签'; }
@@ -4257,16 +4257,15 @@ async function dsealGetW9Status(submissionId) {
     const vals = s.values || [];
     if (Array.isArray(vals)) {
       for (const v of vals) {
-        const fieldName = (v.field || v.name || '').toLowerCase();
+        const fieldName = v.field || v.name || '';
         const fieldValue = v.value || '';
-        if (!w9Address && addressFields.includes(fieldName)) w9Address = fieldValue;
-        if (!w9CityStateZip && cityStateZipFields.includes(fieldName)) w9CityStateZip = fieldValue;
+        if (!w9Address && isW9AddrField(fieldName)) w9Address = fieldValue;
+        if (!w9CityStateZip && isW9CityField(fieldName)) w9CityStateZip = fieldValue;
       }
     } else if (vals && typeof vals === 'object') {
       for (const [key, fieldValue] of Object.entries(vals)) {
-        const fieldName = key.toLowerCase();
-        if (!w9Address && addressFields.includes(fieldName)) w9Address = String(fieldValue || '');
-        if (!w9CityStateZip && cityStateZipFields.includes(fieldName)) w9CityStateZip = String(fieldValue || '');
+        if (!w9Address && isW9AddrField(key)) w9Address = String(fieldValue || '');
+        if (!w9CityStateZip && isW9CityField(key)) w9CityStateZip = String(fieldValue || '');
       }
     }
   }
@@ -6160,31 +6159,44 @@ function saveW9AddressFromDocuSeal(workerId, submitters) {
     const workerSub = Array.isArray(submitters) ? (submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0]) : null;
     if (!workerSub) return;
     const rawFields = workerSub.fields || workerSub.values || [];
-    // Support both custom HTML template field names (w9_address) and IRS PDF template field names
-    const addressFieldNames = ['w9_address', 'address', '5 address (number, street, and apt. or suite no.)'];
-    const cityStateZipFieldNames = ['w9_city_state_zip', 'city, state, and zip code', 'city_state_zip', 'citystatezip'];
-    const nameFieldNames = ['w9_name', 'name (as shown on your income tax return)', 'name'];
+    // Match address field: exact names or startsWith for IRS PDF variants like
+    // "5 Address (number, street, and apt. or suite no.) See instructions."
+    const isAddressField = fn => fn === 'w9_address' || fn === 'address' || fn === 'f1_5[0]' || fn.startsWith('5 address');
+    // Match city/state/zip field: exact names or startsWith for IRS PDF variants like
+    // "6 City, state, and ZIP code"
+    const isCityStateZipField = fn => fn === 'w9_city_state_zip' || fn === 'city_state_zip' || fn === 'citystatezip' || fn === 'f1_6[0]' || fn.startsWith('city, state') || fn.startsWith('6 city');
+    // Match name field: exact names or startsWith for IRS PDF variants
+    const isNameField = fn => fn === 'w9_name' || fn === 'name' || fn === 'f1_1[0]' || fn.startsWith('name (as shown');
     let w9Address = '', w9CityStateZip = '', w9Name = '';
     if (Array.isArray(rawFields)) {
+      // Log all field names for debugging - helps identify actual DocuSeal field names
+      console.log(`[saveW9AddressFromDocuSeal] worker ${workerId}: ${rawFields.length} fields: ${rawFields.map(f => JSON.stringify({n: f.name||f.field, v: String(f.value||f.default_value||'').substring(0,30)})).join(', ')}`);
       for (const f of rawFields) {
         // DocuSeal fields array uses f.name; values array uses f.field
         const fname = (f.name || f.field || '').toLowerCase();
         const fval = f.value || f.default_value || '';
-        if (!w9Address && addressFieldNames.includes(fname)) w9Address = String(fval).trim();
-        else if (!w9CityStateZip && cityStateZipFieldNames.includes(fname)) w9CityStateZip = String(fval).trim();
-        else if (!w9Name && nameFieldNames.includes(fname)) w9Name = String(fval).trim();
+        if (!w9Address && isAddressField(fname)) w9Address = String(fval).trim();
+        else if (!w9CityStateZip && isCityStateZipField(fname)) w9CityStateZip = String(fval).trim();
+        else if (!w9Name && isNameField(fname)) w9Name = String(fval).trim();
       }
     } else if (rawFields && typeof rawFields === 'object') {
       // DocuSeal may return values as plain object {fieldName: fieldValue}
+      console.log(`[saveW9AddressFromDocuSeal] worker ${workerId}: object-format values with keys: ${Object.keys(rawFields).join(', ')}`);
       for (const [key, val] of Object.entries(rawFields)) {
         const fname = key.toLowerCase();
         const fval = String(val || '').trim();
-        if (!w9Address && addressFieldNames.includes(fname)) w9Address = fval;
-        else if (!w9CityStateZip && cityStateZipFieldNames.includes(fname)) w9CityStateZip = fval;
-        else if (!w9Name && nameFieldNames.includes(fname)) w9Name = fval;
+        if (!w9Address && isAddressField(fname)) w9Address = fval;
+        else if (!w9CityStateZip && isCityStateZipField(fname)) w9CityStateZip = fval;
+        else if (!w9Name && isNameField(fname)) w9Name = fval;
       }
+    } else {
+      return;
     }
-    if (!w9Address && !w9CityStateZip) return;
+    if (!w9Address && !w9CityStateZip) {
+      const fieldNames = Array.isArray(rawFields) ? rawFields.map(f => f.name||f.field).join(', ') : Object.keys(rawFields).join(', ');
+      console.log(`[saveW9AddressFromDocuSeal] worker ${workerId}: no address/city fields matched among: ${fieldNames}`);
+      return;
+    }
     // Parse city, state, zip from "city, state, zip" format
     let city = '', state = '', zip = '';
     if (w9CityStateZip) {
@@ -7686,13 +7698,27 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
       } catch {}
       return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, addressCheck: addrCheck, w9Address, w9CityStateZip });
     }
-    const { status, workerSigned, declineReason, w9Address, w9CityStateZip, raw } = await dsealGetW9Status(onb.ds_envelope_id);
+    const { status, workerSigned, declineReason, w9Address: extractedAddr, w9CityStateZip: extractedCity, raw } = await dsealGetW9Status(onb.ds_envelope_id);
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
       .run(status, workerSigned, workerId);
     let addressCheck = null;
     if (status === 'completed') {
       // Extract and save address from DocuSeal submission before verifying
       if (raw && raw.submitters) saveW9AddressFromDocuSeal(workerId, raw.submitters);
+      // Fallback: if saveW9AddressFromDocuSeal didn't save (field name mismatch), save directly from dsealGetW9Status extracted values
+      if (extractedAddr || extractedCity) {
+        const chk = db.prepare("SELECT id, form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1").get(workerId);
+        const hasAddr = chk && chk.form_data && (() => { try { return JSON.parse(chk.form_data).address; } catch { return false; } })();
+        if (!hasAddr) {
+          const parts = (extractedCity || '').split(',').map(s => s.trim());
+          let city = parts[0] || '', state = '', zip = '';
+          if (parts.length >= 2) { const sz = parts[1].split(/\s+/); state = sz[0] || ''; zip = sz.slice(1).join(' ') || ''; }
+          const fd = JSON.stringify({ address: extractedAddr || '', city, state, zip, _source: 'docuseal_direct' });
+          console.log(`[w9-status] fallback direct save for worker ${workerId}: addr=${extractedAddr}, city=${extractedCity}`);
+          if (chk && chk.id) db.prepare("UPDATE worker_compliance_docs SET form_data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(fd, chk.id);
+          else db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'completed')").run(workerId, fd);
+        }
+      }
       const addrCheck = verifyW9Address(workerId);
       addressCheck = addrCheck;
       if (addrCheck.match) {
@@ -7707,7 +7733,7 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
       db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
         .run(`工人已拒签 W-9: ${declineReason || ''}`, workerId);
     }
-    res.json({ status, workerSigned, declineReason, addressCheck, w9Address, w9CityStateZip });
+    res.json({ status, workerSigned, declineReason, addressCheck, w9Address: extractedAddr, w9CityStateZip: extractedCity });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
