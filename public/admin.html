@@ -2902,6 +2902,64 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- 承包商發票 预览链接 Modal -->
+<div class="modal-bg" id="dsInvPreviewModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:520px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">🔍 预览发票文件</h2>
+      <button class="btn btn-outline" onclick="document.getElementById('dsInvPreviewModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <div id="dsInvPreviewInfo" style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem"></div>
+    <div style="padding:1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;text-align:center">
+      <div style="font-size:.88rem;color:#0369a1;margin-bottom:.75rem">点击下方按钮在新标签页中打开文件：</div>
+      <a id="dsInvPreviewLink" href="#" target="_blank" rel="noopener"
+        style="display:inline-block;padding:.5rem 1.25rem;background:#0369a1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;font-size:.88rem"
+        onclick="document.getElementById('dsInvPreviewModal').style.display='none'">
+        📄 打开文件
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- 承包商發票 Edit Modal (pre_generated) -->
+<div class="modal-bg" id="invEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:560px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">✏️ 编辑预生成发票</h2>
+      <button class="btn btn-outline" onclick="document.getElementById('invEditModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <input type="hidden" id="invEditId">
+    <div style="display:grid;gap:.6rem">
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">發票日期</label>
+        <input type="date" id="invEditDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 开始</label>
+          <input type="date" id="invEditPeriodStart" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 结束</label>
+          <input type="date" id="invEditPeriodEnd" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务内容描述</label>
+        <textarea id="invEditServiceDesc" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+      </div>
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">金额 (Total Amount)</label>
+        <input type="number" id="invEditAmount" step="0.01" min="0" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0.00">
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button class="btn btn-green" onclick="saveInvEdit()">💾 保存</button>
+      <button class="btn" onclick="document.getElementById('invEditModal').style.display='none'">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- Work Authorization Modal -->
 <div class="modal-bg" id="workAuthModal"><div class="modal" style="max-width:680px">
   <h2>📑 Work Authorization 认证 — <span id="workAuthWorkerName" style="color:var(--sky)"></span></h2>
@@ -18257,7 +18315,9 @@ async function loadEmpInvoiceTab() {
     ds_pending: '<span style="padding:2px 8px;border-radius:6px;background:#e0f2fe;color:#0369a1;font-size:.75rem;font-weight:600">📄 已发送待填写</span>',
     submitted: '<span style="padding:2px 8px;border-radius:6px;background:#fffbeb;color:#92400e;font-size:.75rem;font-weight:600">⏳ 待审核</span>',
     approved: '<span style="padding:2px 8px;border-radius:6px;background:#dcfce7;color:#15803d;font-size:.75rem;font-weight:600">✅ 已批准</span>',
-    rejected: '<span style="padding:2px 8px;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:.75rem;font-weight:600">❌ 已拒绝</span>'
+    rejected: '<span style="padding:2px 8px;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:.75rem;font-weight:600">❌ 已拒绝</span>',
+    pre_generated: '<span style="padding:2px 8px;border-radius:6px;background:#fef9c3;color:#854d0e;font-size:.75rem;font-weight:600">📝 预生成</span>',
+    voided: '<span style="padding:2px 8px;border-radius:6px;background:#f3f4f6;color:#6b7280;font-size:.75rem;font-weight:600">🚫 已撤回</span>'
   };
   el.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
     <thead><tr style="border-bottom:2px solid var(--gray-200)">
@@ -18281,10 +18341,20 @@ async function loadEmpInvoiceTab() {
       <td style="padding:.5rem;white-space:nowrap">${source}</td>
       <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">${r.status === 'ds_pending' ? '<span style="color:var(--gray-400);font-weight:400">待填写</span>' : '$'+(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
       <td style="padding:.5rem;text-align:center">${STATUS_BADGE[r.status]||r.status}</td>
-      <td style="padding:.5rem;text-align:center;white-space:nowrap">${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}${r.status === 'submitted' ? `
-        <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
-        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
-      ` : r.status === 'ds_pending' ? `<span style="font-size:.72rem;color:#0369a1">等待员工签字…</span>` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}</td>
+      <td style="padding:.5rem;text-align:center;white-space:nowrap">
+        ${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}
+        ${r.status === 'submitted' ? `
+          <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
+          <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
+        ` : r.status === 'ds_pending' ? `
+          <span style="font-size:.72rem;color:#0369a1">等待员工签字…</span><br>
+          <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
+        ` : r.status === 'pre_generated' ? `
+          <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-bottom:2px" onclick="openInvEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button><br>
+          <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
+        ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}
+        ${r.status !== 'approved' ? `<br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : ''}
+      </td>
     </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
     }).join('')}</tbody>
   </table>`;
@@ -18427,12 +18497,78 @@ async function previewDsInvoice(invoiceId) {
     showToast('获取预览链接中…', 'info');
     const r = await api(`/admin/contractor-invoices/${invoiceId}/signing-url`);
     if (r && r.url) {
-      window.open(r.url, '_blank');
+      const modal = document.getElementById('dsInvPreviewModal');
+      const link = document.getElementById('dsInvPreviewLink');
+      const info = document.getElementById('dsInvPreviewInfo');
+      link.href = r.url;
+      if (r.completed || r.type === 'document') {
+        info.textContent = '该发票已签署完成，点击打开已签署的 PDF 文件。';
+        link.textContent = '📄 打开已签署文件';
+      } else {
+        info.textContent = '该发票尚未签署，点击打开 DocuSeal 签署页面（承包商视角）。';
+        link.textContent = '🔗 打开签署页面';
+      }
+      modal.style.display = 'flex';
     } else {
       showToast(r?.error || '无法获取预览链接', 'error');
     }
   } catch(e) {
     showToast('获取预览链接失败', 'error');
+  }
+}
+
+async function revokeContractorInvoice(id, invoiceNumber) {
+  if (!confirm(`第 1/3 次确认\n\n确认要撤回发票 ${invoiceNumber} 吗？\n撤回后 DocuSeal 签署链接将失效。`)) return;
+  if (!confirm(`第 2/3 次确认\n\n撤回后状态将变为「已撤回」，无法再次发送给承包商签署。`)) return;
+  if (!confirm(`第 3/3 次确认\n\n最后确认：确定撤回发票 ${invoiceNumber}？`)) return;
+  const r = await api(`/admin/contractor-invoices/${id}/revoke`, { method: 'POST' });
+  if (r?.success) {
+    showToast('✅ 发票已撤回');
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '撤回失败', 'error');
+  }
+}
+
+async function deleteContractorInvoice(id, invoiceNumber) {
+  if (!confirm(`第 1/3 次确认\n\n确认要删除发票 ${invoiceNumber} 吗？\n此操作将永久删除记录，不可恢复！`)) return;
+  if (!confirm(`第 2/3 次确认\n\n发票记录将从数据库中永久删除，包括所有历史信息。`)) return;
+  if (!confirm(`第 3/3 次确认\n\n最后确认：确定永久删除发票 ${invoiceNumber}？`)) return;
+  const r = await api(`/admin/contractor-invoices/${id}`, { method: 'DELETE' });
+  if (r?.success) {
+    showToast('🗑️ 发票已删除');
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '删除失败', 'error');
+  }
+}
+
+function openInvEditModal(row) {
+  document.getElementById('invEditId').value = row.id;
+  document.getElementById('invEditDate').value = row.invoice_date || '';
+  document.getElementById('invEditPeriodStart').value = row.service_period_start || '';
+  document.getElementById('invEditPeriodEnd').value = row.service_period_end || '';
+  document.getElementById('invEditServiceDesc').value = row.service_description || '';
+  document.getElementById('invEditAmount').value = row.total_amount || '';
+  document.getElementById('invEditModal').style.display = 'flex';
+}
+
+async function saveInvEdit() {
+  const id = document.getElementById('invEditId').value;
+  const body = {
+    invoice_date: document.getElementById('invEditDate').value || null,
+    service_period_start: document.getElementById('invEditPeriodStart').value || null,
+    service_period_end: document.getElementById('invEditPeriodEnd').value || null,
+    service_description: document.getElementById('invEditServiceDesc').value || null,
+    total_amount: document.getElementById('invEditAmount').value !== '' ? parseFloat(document.getElementById('invEditAmount').value) : null
+  };
+  const r = await api(`/admin/contractor-invoices/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  if (r?.success) {
+    document.getElementById('invEditModal').style.display = 'none';
+    showToast('✅ 发票已更新');
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '保存失败', 'error');
   }
 }
 

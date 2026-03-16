@@ -8709,14 +8709,68 @@ app.get('/api/admin/contractor-invoices/:id/signing-url', requireAdmin, requireR
     const r = await dsealApiCall('GET', `/api/submissions/${inv.ds_envelope_id}`, null);
     if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
     const sub = r.data;
-    const baseHost = dsealPublicHost();
+    // For completed submissions, return the signed document download URL
+    if (sub.status === 'completed' && sub.documents && sub.documents.length > 0) {
+      const docUrl = sub.documents[0].url || sub.documents[0].download_url || '';
+      if (docUrl) return res.json({ url: docUrl, status: 'completed', completed: true, type: 'document' });
+    }
     const submitter = (sub.submitters || [])[0];
     if (!submitter) return res.status(404).json({ error: '找不到签署人信息' });
-    const slug = submitter.slug || '';
-    const signingUrl = slug ? `${baseHost}/s/${slug}` : (submitter.embed_src || '');
+    // Prefer embed_src (DocuSeal's own public URL) over constructing from slug
+    let signingUrl = submitter.embed_src || '';
+    if (!signingUrl) {
+      const baseHost = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
+      const slug = submitter.slug || '';
+      signingUrl = slug ? `${baseHost}/s/${slug}` : '';
+    }
     if (!signingUrl) return res.status(404).json({ error: '无法获取预览链接' });
-    res.json({ url: signingUrl, status: submitter.status, completed: sub.status === 'completed' });
+    res.json({ url: signingUrl, status: submitter.status, completed: sub.status === 'completed', type: 'signing' });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: revoke/void a contractor invoice (cancels DocuSeal submission if pending)
+app.post('/api/admin/contractor-invoices/:id/revoke', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: '发票不存在' });
+    if (['voided', 'approved'].includes(inv.status)) return res.status(400).json({ error: `发票状态为 ${inv.status}，无法撤回` });
+    // Void DocuSeal submission if it exists
+    if (inv.ds_envelope_id && dsealEnabled()) {
+      try {
+        await dsealApiCall('DELETE', `/api/submissions/${inv.ds_envelope_id}`, null);
+      } catch(e) { console.error('[Revoke Invoice] DocuSeal void failed:', e.message); }
+    }
+    const revokedBy = req.session?.username || 'admin';
+    db.prepare('UPDATE contractor_invoices SET status=?, reviewed_by=?, reviewed_at=? WHERE id=?')
+      .run('voided', revokedBy, new Date().toISOString(), req.params.id);
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(inv.worker_account_id, revokedBy, 'contractor_invoice', inv.status, 'voided', `Invoice ${inv.invoice_number} 已撤回`);
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: edit a pre_generated contractor invoice
+app.patch('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: '发票不存在' });
+    if (inv.status !== 'pre_generated') return res.status(400).json({ error: '只有预生成发票可以编辑' });
+    const { service_description, total_amount, invoice_date, service_period_start, service_period_end } = req.body;
+    db.prepare(`UPDATE contractor_invoices SET
+      service_description=COALESCE(?,service_description),
+      total_amount=COALESCE(?,total_amount),
+      invoice_date=COALESCE(?,invoice_date),
+      service_period_start=COALESCE(?,service_period_start),
+      service_period_end=COALESCE(?,service_period_end)
+      WHERE id=?`)
+      .run(service_description ?? null, total_amount ?? null, invoice_date ?? null,
+           service_period_start ?? null, service_period_end ?? null, req.params.id);
+    res.json({ success: true });
+  } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
