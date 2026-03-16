@@ -4227,14 +4227,15 @@ async function dsealGetW9SignUrl(submissionId) {
   if (r.status !== 200) throw new Error(`DocuSeal 获取 W-9 提交失败 ${r.status}`);
   const signer = (r.data.submitters || [])[0];
   if (!signer) throw new Error('DocuSeal W-9: 签署人未找到');
-  // Prefer embed_src — designed for web component embedding (docuseal-form)
-  // Slug URLs (/s/xxx) are full-page URLs and don't render inside the web component
-  if (signer.embed_src) return signer.embed_src;
-  const baseHost = dsealPublicHost();
-  if (signer.slug) return `${baseHost}/s/${signer.slug}`;
+  // Always call PUT to get a fresh embed_src — GET /submissions does not return embed_src.
+  // embed_src uses DocuSeal's own APP_URL (publicly accessible), while slug URLs use our
+  // internal DOCUSEAL_URL which may not be reachable from the worker's browser.
+  // embed_src also allows iframe embedding; direct /s/xxx URLs may have X-Frame-Options set.
   const u = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: signer.name });
   if (u.data?.embed_src) return u.data.embed_src;
+  const baseHost = dsealPublicHost();
   if (u.data?.slug) return `${baseHost}/s/${u.data.slug}`;
+  if (signer.slug) return `${baseHost}/s/${signer.slug}`;
   if (u.status >= 400) throw new Error(`DocuSeal 获取 W-9 签署链接失败 ${u.status}`);
   throw new Error('DocuSeal W-9: 无法获取签署链接');
 }
