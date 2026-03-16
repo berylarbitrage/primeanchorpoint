@@ -2457,6 +2457,30 @@ tr:hover td{background:var(--sky-light)}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
         我的模板
       </div>
+      <!-- Filter bar -->
+      <div style="display:flex;gap:.6rem;margin-bottom:.9rem;flex-wrap:wrap;align-items:center">
+        <select id="ds-filter-cat" onchange="_dsFilterCat=this.value;_dsRenderMyTemplates()" style="border:1px solid #e2e8f0;border-radius:7px;padding:.3rem .65rem;font-size:.82rem;color:#334155;background:#fff;cursor:pointer;outline:none">
+          <option value="">全部分类</option>
+          <option value="__contract__">合同</option>
+          <option value="__tax__">税务表格</option>
+          <option value="__payment__">付款授权</option>
+          <option value="__invoice__">员工Invoice</option>
+          <option value="__approval__">发票审批</option>
+        </select>
+        <select id="ds-filter-lang" onchange="_dsFilterLang=this.value;_dsRenderMyTemplates()" style="border:1px solid #e2e8f0;border-radius:7px;padding:.3rem .65rem;font-size:.82rem;color:#334155;background:#fff;cursor:pointer;outline:none">
+          <option value="">全部语言</option>
+          <option value="EN">EN</option>
+          <option value="ZH">ZH</option>
+          <option value="ES">ES</option>
+          <option value="FR">FR</option>
+          <option value="PT">PT</option>
+          <option value="KO">KO</option>
+          <option value="JA">JA</option>
+          <option value="VI">VI</option>
+        </select>
+        <button onclick="_dsFilterLang='';_dsFilterCat='';document.getElementById('ds-filter-lang').value='';document.getElementById('ds-filter-cat').value='';_dsRenderMyTemplates()" style="padding:.3rem .65rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.8rem;cursor:pointer">重置</button>
+        <span id="ds-filter-count" style="font-size:.78rem;color:#94a3b8;margin-left:.2rem"></span>
+      </div>
       <div id="ds-my-templates-wrap">
         <div style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:.9rem">正在加载…</div>
       </div>
@@ -20692,6 +20716,8 @@ async function _populateJobTitleSelect(currentVal) {
 let _dsConfig = {};
 let _dsMyTemplates = [];
 let _dsFileData = null;
+let _dsFilterLang = '';
+let _dsFilterCat = '';
 
 async function loadDocusealTemplatesPage() {
   await Promise.all([_dsLoadConfig(), _dsLoadMyTemplates()]);
@@ -20801,10 +20827,39 @@ function _dsRefreshSelects() {
   }
 }
 
+const _DS_CAT_GROUPS = {
+  __contract__: ['company_contract','worker_1099','worker_w2','contract'],
+  __tax__:      ['w4','w9','w8ben','w8bene','form8233','i9','w7','tax'],
+  __payment__:  ['ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt','payment'],
+  __invoice__:  ['contractor_invoice','contractor_invoice_en','contractor_invoice_es','invoice'],
+  __approval__: ['invoice_approval','invoice_approval_en','invoice_approval_es'],
+};
+
 function _dsRenderMyTemplates() {
   const wrap = document.getElementById('ds-my-templates-wrap');
   if (!_dsMyTemplates.length) {
     wrap.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:.9rem">暂无模板，请在上方上传</div>';
+    return;
+  }
+  // Apply filters
+  let filtered = _dsMyTemplates;
+  if (_dsFilterCat) {
+    const allowed = _DS_CAT_GROUPS[_dsFilterCat] || [];
+    filtered = filtered.filter(t => allowed.includes(t.category));
+  }
+  if (_dsFilterLang) {
+    filtered = filtered.filter(t => {
+      const langs = t.languages ? t.languages.split(',').map(l => l.trim()) : [];
+      return langs.includes(_dsFilterLang);
+    });
+  }
+  const countEl = document.getElementById('ds-filter-count');
+  if (countEl) {
+    const isFiltered = _dsFilterLang || _dsFilterCat;
+    countEl.textContent = isFiltered ? `显示 ${filtered.length} / ${_dsMyTemplates.length} 个模板` : '';
+  }
+  if (!filtered.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:.9rem">没有符合条件的模板</div>';
     return;
   }
   const dsUrl = _dsConfig.url || '';
@@ -20847,7 +20902,7 @@ function _dsRenderMyTemplates() {
     JA: { bg:'#fff7ed', color:'#9a3412', label:'JA' },
     VI: { bg:'#dcfce7', color:'#166534', label:'VI' },
   };
-  const rows = _dsMyTemplates.map(t => {
+  const rows = filtered.map(t => {
     const cs = _CAT_BADGE[t.category];
     const catBadge = cs ? `<span style="display:inline-block;background:${cs.bg};color:${cs.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${cs.label}</span>` : '';
     const _seenBadgeLabels = new Set(cs ? [cs.label] : []);
