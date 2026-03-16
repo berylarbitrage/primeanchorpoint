@@ -16898,7 +16898,7 @@ function _renderW9TemplateList(templates, dsUrl, defaultTemplateId) {
   wrap.innerHTML = templates.map((t, i) => {
     const tid = String(t.docuseal_template_id);
     const isSelected = tid === _w9SelectedTemplateId;
-    const previewUrl = previewBase ? `${previewBase}/templates/${tid}` : '';
+    const previewUrl = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
     return `<div id="w9tpl-row-${tid}" onclick="_selectW9Template('${tid}')" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;cursor:pointer;border-bottom:${i < templates.length-1 ? '1px solid #f1f5f9' : 'none'};background:${isSelected ? '#f0f9ff' : '#fff'};transition:background .15s">
       <div style="flex-shrink:0;width:18px;height:18px;border-radius:50%;border:2px solid ${isSelected ? '#0ea5e9' : '#cbd5e1'};background:${isSelected ? '#0ea5e9' : '#fff'};display:flex;align-items:center;justify-content:center">
         ${isSelected ? '<svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3" fill="#fff"/></svg>' : ''}
@@ -16907,7 +16907,7 @@ function _renderW9TemplateList(templates, dsUrl, defaultTemplateId) {
         <div style="font-size:.85rem;font-weight:${isSelected ? '700' : '500'};color:${isSelected ? '#0369a1' : '#1e293b'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name || '未命名模板'}</div>
         <div style="font-size:.75rem;color:#94a3b8">ID: ${tid}</div>
       </div>
-      ${previewUrl ? `<a href="${previewUrl}" target="_blank" onclick="event.stopPropagation()" style="flex-shrink:0;font-size:.75rem;color:#0ea5e9;text-decoration:none;padding:.2rem .5rem;border:1px solid #bae6fd;border-radius:4px;background:#f0f9ff;white-space:nowrap">预览 ↗</a>` : ''}
+      <a href="${previewUrl}" target="_blank" onclick="event.stopPropagation()" style="flex-shrink:0;font-size:.75rem;color:#0ea5e9;text-decoration:none;padding:.2rem .5rem;border:1px solid #bae6fd;border-radius:4px;background:#f0f9ff;white-space:nowrap">预览 ↗</a>
     </div>`;
   }).join('');
 }
