@@ -9,6 +9,7 @@ const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Render, Railway, etc.) for correct req.protocol
 const PORT = process.env.PORT || 3000;
 
 // ─── Twilio SMS ───
@@ -7395,7 +7396,7 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
       .run(workerId, changedBy, 'w9', '', '已发送', w9SubmissionId ? `W-9 DocuSeal 表格已创建，等待工人签署` : `W-9 填写请求已发送，等待工人在门户填写信息`);
 
     // Build portal link — worker opens portal to fill in W-9 info
-    const baseUrl = (process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, '');
+    const baseUrl = (process.env.BASE_URL || (req ? `${req.protocol}://${req.get('host')}` : `http://localhost:${process.env.PORT || 3000}`)).replace(/\/+$/, '');
     const portalLink = `${baseUrl}/portal.html#w9`;
 
     let emailSent = false;
