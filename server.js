@@ -8382,9 +8382,12 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
 
     // Format period dates for display (MM/DD/YYYY)
     const fmtPeriod = (d) => { if (!d) return ''; const p = d.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}/${p[0]}` : d; };
+    // Generate invoice number early so we can pre-fill it in DocuSeal
+    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
     // Create DocuSeal submission — admin pre-fills date, period & service description; contractor fills amount
     const billToCompany = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
+      { name: 'invoice_number', default_value: invoiceNumber, readonly: true },
       { name: 'invoice_date', default_value: todayDate, readonly: true },
       { name: 'contractor_name', default_value: workerName, readonly: true },
       { name: 'bill_to_company', default_value: billToCompany, readonly: true },
@@ -8410,7 +8413,6 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const submitter = submitters[0];
     const submissionId = String(subRes.data?.id || submitter?.submission_id || '');
     // Create contractor_invoices record with pending status
-    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
     const sentBy = req.session?.username || 'admin';
     db.prepare(`INSERT INTO contractor_invoices
       (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
