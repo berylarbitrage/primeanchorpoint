@@ -1112,7 +1112,7 @@ function googleTranslateElementInit() {
           <div class="form-section">
             <h3>纳税人信息 / Taxpayer Information</h3>
             <div class="form-row full"><div class="form-group"><label>姓名 Name (as shown on income tax return) *</label><input name="name" required></div></div>
-            <div class="form-row full"><div class="form-group"><label>商业名称 Business Name (如有)</label><input name="business_name"></div></div>
+            <div class="form-row full"><div class="form-group"><label>商业名称 Business Name *</label><input name="business_name" required placeholder="如无请填 N/A / Enter N/A if not applicable"></div></div>
             <div class="form-row full">
               <div class="form-group"><label>税务分类 Tax Classification *</label>
                 <select name="tax_classification" required>
@@ -5631,8 +5631,8 @@ async function openWorkerW9Sign() {
     const form = document.createElement('docuseal-form');
     form.setAttribute('data-src', r.signUrl);
     form.setAttribute('data-with-draw-signature', 'true');
-    form.setAttribute('data-with-typed-signature', 'true');
-    form.setAttribute('data-with-upload-signature', 'true');
+    form.setAttribute('data-with-typed-signature', 'false');
+    form.setAttribute('data-with-upload-signature', 'false');
     form.style.width = '100%';
     form.addEventListener('completed', () => {
       closeWorkerW9Sign();
