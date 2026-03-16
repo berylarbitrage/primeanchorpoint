@@ -6360,12 +6360,21 @@ function verifyW9Address(workerId) {
   }
 }
 
+// Onboarding tasks auto-assigned per employment type (must match frontend W2_TASKS / C1099_TASKS)
+const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'gusto'];
+const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify'];
+
 // Check if all assigned onboarding tasks are done; update onboarded flag accordingly
 function syncOnboardedStatus(workerId) {
-  const w = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(workerId);
+  const w = db.prepare('SELECT assigned_tasks, employment_type FROM worker_accounts WHERE id=?').get(workerId);
   if (!w) return;
   let assigned = [];
   try { assigned = JSON.parse(w.assigned_tasks || '[]'); } catch {}
+  // Override with employment_type task list if available (matches frontend logic)
+  if (w.employment_type) {
+    const typeTasks = w.employment_type === 'w2' ? W2_TASKS : w.employment_type === '1099' ? C1099_TASKS : [];
+    if (typeTasks.length) assigned = [...typeTasks];
+  }
   if (!assigned.length) return; // no tasks assigned — don't auto-mark
   const tasks = db.prepare('SELECT task_key, status FROM worker_onboarding WHERE worker_account_id=?').all(workerId);
   const statusMap = Object.fromEntries(tasks.map(t => [t.task_key, t.status]));

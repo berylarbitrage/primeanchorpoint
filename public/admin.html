@@ -13980,7 +13980,18 @@ async function refreshOnboardingModal() {
   _onboardingRecommendedForm = (taxResData && taxResData.recommended_form) || null;
 
   const hasTasks = Array.isArray(tasks) && tasks.length > 0;
-  const allDone = hasTasks && tasks.every(t => t.status === 'completed' || t.status === 'waived');
+  // allDone: check only assigned tasks (matches backend syncOnboardedStatus logic)
+  let _assignedKeys = [];
+  try { _assignedKeys = JSON.parse((w && w.assigned_tasks) || '[]'); } catch {}
+  if (w && w.employment_type) {
+    const _empType = w.employment_type;
+    const _typeTasks = _empType === 'w2' ? W2_TASKS : _empType === '1099' ? C1099_TASKS : [];
+    if (_typeTasks.length) _assignedKeys = [..._typeTasks];
+  }
+  const relevantTasks = hasTasks && _assignedKeys.length
+    ? tasks.filter(t => _assignedKeys.includes(t.key))
+    : tasks;
+  const allDone = hasTasks && relevantTasks.length > 0 && relevantTasks.every(t => t.status === 'completed' || t.status === 'waived');
   const hasEmployee = !!(w && w.employee_id);
 
   // Show "转员工" only when all tasks done AND not yet linked to an employee record
