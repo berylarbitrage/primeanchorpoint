@@ -7395,44 +7395,46 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(workerId, changedBy, 'w9', '', '已发送', w9SubmissionId ? `W-9 DocuSeal 表格已创建，等待工人签署` : `W-9 填写请求已发送，等待工人在门户填写信息`);
 
-    // Build portal link — worker opens portal to fill in W-9 info
+    // Use DocuSeal direct signing link if available, otherwise fall back to portal
     const baseUrl = (process.env.BASE_URL || (req ? `${req.protocol}://${req.get('host')}` : `http://localhost:${process.env.PORT || 3000}`)).replace(/\/+$/, '');
     const portalLink = `${baseUrl}/portal.html#w9`;
+    const w9Link = w9SignUrl || portalLink;
+    const isDirect = !!w9SignUrl;
 
     let emailSent = false;
     let smsSent = false;
-    // Send email with portal link
+    // Send email with W-9 signing link
     if (workerEmail) {
-      const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${portalLink}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">填写 W-9 / Complete W-9 / Completar W-9</a></p>`;
+      const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${w9Link}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署 W-9 / Sign W-9 / Firmar W-9</a></p>`;
       emailSent = await sendEmail(workerEmail,
-        `Prime Anchorpoint — 请填写 W-9 税表 / Please Complete W-9 / Complete el W-9`,
-        `${workerName}，请点击链接填写并签署 W-9 税表。\n${portalLink}\n\n${workerName}, please click the link to complete your W-9 form.\n${portalLink}\n\n${workerName}, haga clic en el enlace para completar su formulario W-9.\n${portalLink}`,
+        `Prime Anchorpoint — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
+        `${workerName}，请点击链接签署 W-9 税表。\n${w9Link}\n\n${workerName}, please click the link to sign your W-9 form.\n${w9Link}\n\n${workerName}, haga clic en el enlace para firmar su formulario W-9.\n${w9Link}`,
         `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
-          <h2 style="color:#1a1a1a;text-align:center">请填写 W-9 税表</h2>
-          <p>您好 ${workerName}，请登录门户填写 W-9 税表信息（姓名、地址、税号），填写完成后系统将自动生成正式 W-9 表格供您签字确认。</p>
+          <h2 style="color:#1a1a1a;text-align:center">请签署 W-9 税表</h2>
+          <p>您好 ${workerName}，请点击下方按钮直接签署 W-9 税表。</p>
           ${signLink}
           <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
-          <h3 style="font-size:.95rem">Please Complete Your W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please log into the portal to fill in your W-9 information (name, address, TIN). After submitting, the system will generate the official W-9 form for your signature.</p>
+          <h3 style="font-size:.95rem">Please Sign Your W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please click the button below to sign your W-9 form directly.</p>
           ${signLink}
           <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
-          <h3 style="font-size:.95rem">Complete el Formulario W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hola ${workerName}, inicie sesión en el portal para completar su información W-9. Después de enviar, el sistema generará el formulario W-9 oficial para su firma.</p>
+          <h3 style="font-size:.95rem">Firme el Formulario W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic en el botón para firmar su formulario W-9 directamente.</p>
           ${signLink}
           <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
         </div>`
       );
     }
-    // Send SMS with portal link
+    // Send SMS with W-9 signing link
     if (workerPhone) {
-      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录门户填写 W-9 税表 / Please complete your W-9 info / Complete su W-9\n${portalLink}\nReply STOP to opt out.`);
+      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
     }
     const warnings = [];
     if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
     if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
     if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
     if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
-    res.json({ success: true, portalLink, emailSent, smsSent, warnings });
+    res.json({ success: true, portalLink, w9Link, isDirect, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[W-9 send error]', e.message);
     res.status(500).json({ error: e.message });
