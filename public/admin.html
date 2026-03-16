@@ -2177,6 +2177,15 @@ tr:hover td{background:var(--sky-light)}
     <!-- Connection status -->
     <div id="ds-conn-badge" style="margin-bottom:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap"></div>
 
+    <!-- Account email (needed for embedded editor JWT) -->
+    <div id="ds-account-email-bar" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.85rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <label style="display:block;font-size:.8rem;font-weight:600;color:#92400e;margin-bottom:.3rem">DocuSeal 帐号 Email（用于内嵌编辑器）</label>
+        <input type="email" id="ds-account-email-input" placeholder="your@docuseal-account.com" style="width:100%;border:1px solid #fde68a;border-radius:6px;padding:.4rem .7rem;font-size:.85rem;outline:none">
+      </div>
+      <button onclick="dsSaveAccountEmail()" style="padding:.45rem 1rem;border-radius:7px;background:#f59e0b;color:#fff;border:none;font-size:.84rem;font-weight:600;cursor:pointer;white-space:nowrap;margin-top:1.2rem">保存 Email</button>
+    </div>
+
     <!-- Current config -->
     <div style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1.5rem">
       <div style="font-size:1rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem">
@@ -20070,8 +20079,26 @@ async function _dsLoadConfig() {
     _dsConfig = await api('/admin/docuseal/config');
     _dsRefreshSelects();
     if (_dsMyTemplates.length) _dsRenderMyTemplates();
+    // Populate account email field
+    const emailBar = document.getElementById('ds-account-email-bar');
+    const emailInp = document.getElementById('ds-account-email-input');
+    if (emailBar && emailInp) {
+      emailBar.style.display = 'flex';
+      emailInp.value = _dsConfig.account_email || '';
+    }
   } catch(e) { showToast(e.message, 'error'); }
   await _dsTestConnection();
+}
+
+async function dsSaveAccountEmail() {
+  const emailInp = document.getElementById('ds-account-email-input');
+  const email = (emailInp?.value || '').trim();
+  if (!email || !email.includes('@')) { showToast('请输入有效的 email', 'error'); return; }
+  try {
+    await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ account_email: email }) });
+    _dsConfig.account_email = email;
+    showToast('帐号 email 已保存', 'success');
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
 async function _dsTestConnection() {
