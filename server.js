@@ -8507,7 +8507,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
 
 // Admin: preview the contractor invoice with pre-filled data (HTML rendering)
 app.get('/api/admin/contractor-invoices/preview-filled', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  const { contractor_name, invoice_date, service_description, period_start, period_end, lang: langParam } = req.query;
+  const { contractor_name, invoice_date, service_description, period_start, period_end, lang: langParam, invoice_number: invoiceNumberParam } = req.query;
   // Determine secondary language: 'zh' (default), 'en' (none), 'es' (Spanish)
   const langKey = langParam === 'contractor_invoice_en' ? 'en' : langParam === 'contractor_invoice_es' ? 'es' : 'zh';
   const L = {
@@ -8552,7 +8552,7 @@ app.get('/api/admin/contractor-invoices/preview-filled', requireAdmin, requireRo
 
   const subtitleSuffix = t ? ` / ${t.subtitle}` : '';
   const amberHint = t ? `Amber fields = contractor fills / ${t.amberHint}` : 'Amber fields = contractor fills &nbsp;|&nbsp; Grey fields = pre-filled';
-  const autoGenLabel = t ? t.autoGen : '(auto)';
+  const autoGenLabel = invoiceNumberParam || (t ? t.autoGen : '(auto)');
   const notesPlaceholder = t ? t.notesPlaceholder : '(contractor fills)';
   const quotedPlaceholder = t ? t.quotedPlaceholder : '(contractor fills)';
   const reimbPlaceholder = t ? t.reimbPlaceholder : '(optional)';
