@@ -16023,6 +16023,14 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
+  // Re-sync onboarded status for all workers with employment_type on startup
+  // This ensures the onboarded flag is recalculated after any logic changes
+  try {
+    const workers = db.prepare('SELECT id FROM worker_accounts WHERE employment_type IS NOT NULL').all();
+    let synced = 0;
+    for (const w of workers) { syncOnboardedStatus(w.id); synced++; }
+    if (synced) console.log(`[startup] Re-synced onboarded status for ${synced} workers`);
+  } catch(e) { console.error('[startup] onboarded sync error:', e.message); }
   // Auto-regenerate contractor invoice templates if bill_to_company field is missing (old static-text templates)
   setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 5000);
 });
