@@ -1711,6 +1711,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
  'expenses REAL DEFAULT 0','job_id INTEGER DEFAULT 0','job_title TEXT DEFAULT \'\'','service_type TEXT DEFAULT \'\'','confirmed INTEGER DEFAULT 0'
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
+// ─── App Settings (feature flags, portal config) ───
+db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+// Default: worker portal mode is 'none' (neither timeclock nor invoice enabled)
+db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('worker_portal_mode', 'none')`).run();
+
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
   .split(',').map(d => d.trim()).filter(Boolean);
@@ -12892,6 +12901,32 @@ app.put('/api/admin/integrations/:provider', requireAdmin, (req, res) => {
   db.prepare('UPDATE integration_settings SET enabled=COALESCE(?,enabled), api_key=COALESCE(?,api_key), api_secret=COALESCE(?,api_secret), config=COALESCE(?,config), updated_at=CURRENT_TIMESTAMP WHERE provider=?')
     .run(enabled !== undefined ? (enabled ? 1 : 0) : null, api_key || null, api_secret || null, config ? JSON.stringify(config) : null, req.params.provider);
   res.json({ success: true });
+});
+
+// ─── Admin: App Settings (feature flags) ───
+app.get('/api/admin/app-settings', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT key, value FROM app_settings').all();
+  const settings = {};
+  rows.forEach(r => { settings[r.key] = r.value; });
+  res.json(settings);
+});
+
+app.put('/api/admin/app-settings', requireAdmin, blockManager, (req, res) => {
+  const allowed = ['worker_portal_mode'];
+  const updates = req.body;
+  const stmt = db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
+  for (const key of allowed) {
+    if (updates[key] !== undefined) {
+      stmt.run(key, String(updates[key]));
+    }
+  }
+  res.json({ success: true });
+});
+
+// ─── Public: Worker Portal Config ───
+app.get('/api/worker/portal-config', (req, res) => {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='worker_portal_mode'").get();
+  res.json({ worker_portal_mode: row ? row.value : 'none' });
 });
 
 // ─── Admin: Worker Compliance Review ───

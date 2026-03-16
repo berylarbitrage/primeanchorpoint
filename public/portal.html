@@ -2026,6 +2026,7 @@ applyPortalLang();
 let WORKER_TOKEN = localStorage.getItem('pa_worker_token') || '';
 let _allJobs = [];
 let _forgotLogin = '';
+let _workerPortalMode = 'none'; // set from /api/worker/portal-config on login
 
 function showToast(msg, type='success') {
   const wrap = document.getElementById('toast-wrap');
@@ -2221,8 +2222,12 @@ let _pendingSlot = null;
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  const [me, interview, personaStatus] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status')]);
+  const [me, interview, personaStatus, portalCfg] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status'), fetch('/api/worker/portal-config').then(r=>r.json()).catch(()=>({worker_portal_mode:'none'}))]);
   if (!me) return;
+  // Apply worker portal mode (controls which features are visible)
+  _workerPortalMode = (portalCfg && portalCfg.worker_portal_mode) || 'none';
+  const navTimeclock = document.querySelector('.sidebar-nav a[data-tab="timeclock"]');
+  if (navTimeclock) navTimeclock.style.display = _workerPortalMode === 'timeclock' ? '' : 'none';
   _workerInfo = me;
   _workerEmploymentType = me.account?.employment_type || '';
   const firstName = me.employee
@@ -4132,10 +4137,11 @@ async function submitContractorInvoice(e) {
 async function loadContractorInvoices() {
   const card = document.getElementById('contractorInvoiceCard');
   if (!card) return;
-  // Only show for 1099 contractors
+  // Only show for 1099 contractors AND when invoice mode is enabled by admin
   const is1099 = _workerEmploymentType === '1099';
-  card.style.display = is1099 ? 'block' : 'none';
-  if (!is1099) return;
+  const invoiceEnabled = _workerPortalMode === 'invoice';
+  card.style.display = (is1099 && invoiceEnabled) ? 'block' : 'none';
+  if (!is1099 || !invoiceEnabled) return;
 
   const invoices = await wApi('/contractor-invoices');
   const el = document.getElementById('contractorInvoiceList');
