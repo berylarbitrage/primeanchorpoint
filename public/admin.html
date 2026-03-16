@@ -2808,6 +2808,7 @@ tr:hover td{background:var(--sky-light)}
     <button onclick="navigator.clipboard.writeText(document.getElementById('w9SignLink').href);showToast('已复制链接','success')" style="margin-left:.5rem;background:none;border:1px solid #86efac;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.78rem;color:#065f46">复制</button>
   </div>
   <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <div id="w9AddrVerify" style="display:none;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line"></div>
   <div style="margin:.75rem 0;padding:.6rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1">
     <b>流程：</b>点击「发送」后，系统自动生成 W-9 表格并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。
   </div>
@@ -17099,6 +17100,7 @@ async function openW9SendModal() {
       // Always auto-poll DocuSeal for current status when modal opens —
       // so if worker already signed, the download button appears immediately
       updateW9DsStatusUI('checking');
+      document.getElementById('w9AddrVerify').style.display = 'none';
       try {
         const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-status`);
         if (r && r.status) {
@@ -17106,6 +17108,17 @@ async function openW9SendModal() {
           if (r.status === 'completed') {
             document.getElementById('w9DownloadBtn').style.display = '';
             refreshOnboardingModal();
+          }
+          // Show address verification result
+          if (r.addressCheck) {
+            const addrEl = document.getElementById('w9AddrVerify');
+            if (r.addressCheck.match) {
+              addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+              addrEl.textContent = '📍 ' + r.addressCheck.note;
+            } else {
+              addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+              addrEl.textContent = '📍 ' + r.addressCheck.note;
+            }
           }
         } else {
           updateW9DsStatusUI(w9Task.ds_status || 'sent');
@@ -17190,6 +17203,17 @@ async function refreshW9Status() {
     if (r.declineReason) info += ` | 拒签原因: ${r.declineReason}`;
     showToast(info, 'info', 5000);
     if (r.status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
+    // Show address verification result
+    if (r.addressCheck) {
+      const addrEl = document.getElementById('w9AddrVerify');
+      if (r.addressCheck.match) {
+        addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+        addrEl.textContent = '📍 ' + r.addressCheck.note;
+      } else {
+        addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;white-space:pre-line;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+        addrEl.textContent = '📍 ' + r.addressCheck.note;
+      }
+    }
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
