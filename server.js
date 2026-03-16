@@ -3422,7 +3422,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
 
   const ro = 'border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;';
   const ed = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
-  const companyName = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
   const companyAddr = process.env.COMPANY_ADDRESS || '';
   const companyEmail = process.env.COMPANY_EMAIL || '';
   const c = 'padding:3px 5px;border:1px solid #ccc;vertical-align:top;';
@@ -6269,9 +6269,30 @@ function saveW9AddressFromDocuSeal(workerId, submitters) {
       return;
     }
     if (!w9Address && !w9CityStateZip) {
-      const fieldNames = Array.isArray(rawFields) ? rawFields.map(f => f.name||f.field).join(', ') : Object.keys(rawFields).join(', ');
-      console.log(`[saveW9AddressFromDocuSeal] worker ${workerId}: no address/city fields matched among: ${fieldNames}`);
-      return;
+      // Fallback: detect generic "Text Field N" positional naming used by some DocuSeal W-9 templates
+      // Standard W-9 layout: Text Field 1 = name, Text Field 2 = street address, Text Field 3 = city/state/zip
+      const textFields = [];
+      if (Array.isArray(rawFields)) {
+        for (const f of rawFields) {
+          const fname = (f.name || f.field || f.title || '').toLowerCase().trim();
+          const m = fname.match(/^text field (\d+)$/);
+          if (m) textFields[parseInt(m[1])] = String(f.value || f.default_value || '').trim();
+        }
+      } else if (rawFields && typeof rawFields === 'object') {
+        for (const [key, val] of Object.entries(rawFields)) {
+          const m = key.toLowerCase().trim().match(/^text field (\d+)$/);
+          if (m) textFields[parseInt(m[1])] = String(val || '').trim();
+        }
+      }
+      if (textFields[2]) w9Address = textFields[2];
+      if (textFields[3]) w9CityStateZip = textFields[3];
+      if (!w9Name && textFields[1]) w9Name = textFields[1];
+      if (!w9Address && !w9CityStateZip) {
+        const fieldNames = Array.isArray(rawFields) ? rawFields.map(f => f.name||f.field).join(', ') : Object.keys(rawFields).join(', ');
+        console.log(`[saveW9AddressFromDocuSeal] worker ${workerId}: no address/city fields matched among: ${fieldNames}`);
+        return;
+      }
+      console.log(`[saveW9AddressFromDocuSeal] worker ${workerId}: used generic text field fallback: addr="${w9Address}" csz="${w9CityStateZip}"`);
     }
     // Parse city, state, zip from "city, state, zip" format
     let city = '', state = '', zip = '';
@@ -6350,9 +6371,9 @@ function verifyW9Address(workerId) {
 
     const match = w9Addr === trAddr && w9City === trCity && w9State === trState && w9Zip === trZip;
     if (match) {
-      return { match: true, note: `W-9 已签署完成 ✅ 地址核对通过\n地址: ${w9Full}` };
+      return { match: true, note: `W-9 已签署完成 ✅ 地址核对通过\n地址: ${w9Full}`, w9Full, trFull, trAddr: trq.addr_street, trCity: trq.addr_city, trState: trq.addr_state, trZip: trq.addr_zip };
     } else {
-      return { match: false, note: `⚠️ W-9 已签署但地址不一致，需人工核对\nW-9 地址: ${w9Full}\n税务问卷地址: ${trFull}` };
+      return { match: false, note: `⚠️ W-9 已签署但地址不一致，需人工核对\nW-9 地址: ${w9Full}\n税务问卷地址: ${trFull}`, w9Full, trFull, trAddr: trq.addr_street, trCity: trq.addr_city, trState: trq.addr_state, trZip: trq.addr_zip };
     }
   } catch (e) {
     console.error(`[verifyW9Address] Error for worker ${workerId}:`, e.message);
@@ -6379,7 +6400,9 @@ function syncOnboardedStatus(workerId) {
   const tasks = db.prepare('SELECT task_key, status FROM worker_onboarding WHERE worker_account_id=?').all(workerId);
   const statusMap = Object.fromEntries(tasks.map(t => [t.task_key, t.status]));
   const allDone = assigned.every(key => statusMap[key] === 'completed' || statusMap[key] === 'waived');
-  db.prepare('UPDATE worker_accounts SET onboarded=? WHERE id=?').run(allDone ? 1 : 0, workerId);
+  // When all assigned tasks are done, mark onboarded AND auto-enable dispatch_ready
+  // When not all done, clear onboarded and dispatch_ready
+  db.prepare('UPDATE worker_accounts SET onboarded=?, dispatch_ready=? WHERE id=?').run(allDone ? 1 : 0, allDone ? 1 : 0, workerId);
 }
 
 function getOnboardingTasks(workerId) {
@@ -7917,6 +7940,49 @@ app.get('/api/admin/worker-accounts/:id/w9-signed-pdf', requireAdmin, async (req
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Update tax questionnaire address and re-verify W-9 address match
+app.put('/api/admin/worker-accounts/:id/tax-address', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const { addr_street, addr_city, addr_state, addr_zip } = req.body;
+    const existing = db.prepare("SELECT id FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY updated_at DESC LIMIT 1").get(workerId);
+    if (!existing) return res.status(404).json({ error: '税务问卷记录未找到' });
+    db.prepare("UPDATE tax_residency_questionnaire SET addr_street=?, addr_city=?, addr_state=?, addr_zip=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(addr_street || '', addr_city || '', addr_state || '', addr_zip || '', existing.id);
+    const addrCheck = verifyW9Address(workerId);
+    if (addrCheck.match) {
+      db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+        .run(addrCheck.note, workerId);
+      syncOnboardedStatus(workerId);
+    }
+    res.json({ success: true, addressCheck: addrCheck });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Approve W-9 address mismatch — force-complete the W-9 task
+app.post('/api/admin/worker-accounts/:id/w9-approve-address', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const { note } = req.body;
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+      .run(note || '管理员已确认地址一致（手动批准）', workerId);
+    syncOnboardedStatus(workerId);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Reset W-9 — void current signed form so admin can resend for rewrite
+app.post('/api/admin/worker-accounts/:id/w9-reset', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    db.prepare("UPDATE worker_compliance_docs SET form_data=NULL, status='pending', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND doc_type='w9'")
+      .run(workerId);
+    db.prepare(`UPDATE worker_onboarding SET status='pending', ds_envelope_id=NULL, ds_status=NULL, completed_at=NULL, admin_note='W-9 已被管理员打回重填', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+      .run(workerId);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Send Work Authorization verification task to worker
 app.post('/api/admin/worker-accounts/:id/send-work-auth', requireAdmin, async (req, res) => {
   try {
@@ -8394,7 +8460,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     // Generate invoice number early so we can pre-fill it in DocuSeal
     const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
     // Create DocuSeal submission — admin pre-fills date, period & service description; contractor fills amount
-    const billToCompany = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+    const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
       { name: 'invoice_number', default_value: invoiceNumber, readonly: true },
       { name: 'invoice_date', default_value: todayDate, readonly: true },
@@ -8446,6 +8512,120 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     console.error('[Send DocuSeal Invoice]', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+// Admin: preview the contractor invoice with pre-filled data (HTML rendering)
+app.get('/api/admin/contractor-invoices/preview-filled', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { contractor_name, invoice_date, service_description, period_start, period_end, lang: langParam, invoice_number: invoiceNumberParam } = req.query;
+  // Determine secondary language: 'zh' (default), 'en' (none), 'es' (Spanish)
+  const langKey = langParam === 'contractor_invoice_en' ? 'en' : langParam === 'contractor_invoice_es' ? 'es' : 'zh';
+  const L = {
+    zh: { subtitle: '承包商发票', amberHint: '橙色栏位 = 承包商填写 &nbsp;|&nbsp; 灰色 = 系统自动带出',
+      date: '日期', periodFrom: '起始', periodTo: '截止', fromContractor: '承包商', prefilled: '系统带出',
+      name: '姓名', billTo: '公司', serviceDesc: '服务内容', serviceHint: '系统自动带出，不可修改',
+      additionalNotes: '补充说明', notesHint: '选填', notesPlaceholder: '(承包商填写)',
+      compMethod: '补偿方式', compValue: '承包商报价固定项目费用',
+      quotedAmt: '报价金额', quotedPlaceholder: '(承包商填写)',
+      reimbursable: '可报销费用', reimbPlaceholder: '(可选)',
+      totalDue: '应付总额', totalPlaceholder: '(承包商填写)',
+      payTerms: '付款条件', dueDate: '到期日',
+      certTitle: '承包商声明', certBody: '本人确认服务已完成、金额准确。承包商保留自行决定服务执行方式与方法的权利。',
+      sigLabel: '承包商签名 *', sigPlaceholder: '(承包商签名)', dateLabel: '日期',
+      footer: 'IL FWPA: 合同未注明付款日→完工后30天内付款 / Payment due within 30 days of completion if contract is silent.',
+      legend: '承包商填写', legendGrey: '系统自动带出', autoGen: '(自动生成)' },
+    es: { subtitle: 'Factura de Contratista', amberHint: 'Campos ámbar = contratista completa &nbsp;|&nbsp; Campos grises = prellenado',
+      date: 'Fecha', periodFrom: 'Período Desde', periodTo: 'Período Hasta', fromContractor: 'Contratista', prefilled: '(prellenado)',
+      name: 'Nombre', billTo: 'Empresa', serviceDesc: 'Descripción del Servicio', serviceHint: 'Prellenado por la empresa, no editable',
+      additionalNotes: 'Notas Adicionales', notesHint: 'opcional', notesPlaceholder: '(contratista completa)',
+      compMethod: 'Método de Compensación', compValue: 'Tarifa fija de proyecto propuesta por el contratista',
+      quotedAmt: 'Monto Cotizado', quotedPlaceholder: '(contratista completa)',
+      reimbursable: 'Gastos Reembolsables', reimbPlaceholder: '(opcional)',
+      totalDue: 'TOTAL A PAGAR', totalPlaceholder: '(contratista completa)',
+      payTerms: 'Términos de Pago', dueDate: 'Fecha de Vencimiento',
+      certTitle: 'CERTIFICACIÓN DEL CONTRATISTA', certBody: 'Certifico que los servicios anteriores fueron realizados y los montos son correctos. El contratista retiene el derecho de determinar la manera y los medios de realizar los servicios.',
+      sigLabel: 'Firma del Contratista *', sigPlaceholder: '(firma del contratista)', dateLabel: 'Fecha',
+      footer: 'IL FWPA: Pago dentro de 30 días de finalización si el contrato no lo especifica.',
+      legend: 'Contratista completa', legendGrey: 'Prellenado por el sistema', autoGen: '(auto)' },
+  };
+  const t = langKey === 'en' ? null : L[langKey]; // secondary language (null if EN-only)
+  const bi = (enText, locText) => t && locText ? `${enText} ${locText}` : enText;
+
+  const invDate = invoice_date || new Date().toISOString().slice(0, 10);
+  const invDateObj = new Date(invDate + 'T12:00:00');
+  const periodEnd = period_end || invDate;
+  const periodStart = period_start || new Date(invDateObj.getTime() - 6 * 86400000).toISOString().slice(0, 10);
+  const dueDate = new Date(invDateObj.getTime() + 30 * 86400000).toISOString().slice(0, 10);
+  const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const contractorName = contractor_name || (t ? `(${t.name})` : '(Contractor Name)');
+  const serviceDesc = service_description || (t ? `(${t.serviceDesc})` : '(Service Description)');
+
+  const subtitleSuffix = t ? ` / ${t.subtitle}` : '';
+  const amberHint = t ? `Amber fields = contractor fills / ${t.amberHint}` : 'Amber fields = contractor fills &nbsp;|&nbsp; Grey fields = pre-filled';
+  const autoGenLabel = invoiceNumberParam || (t ? t.autoGen : '(auto)');
+  const notesPlaceholder = t ? t.notesPlaceholder : '(contractor fills)';
+  const quotedPlaceholder = t ? t.quotedPlaceholder : '(contractor fills)';
+  const reimbPlaceholder = t ? t.reimbPlaceholder : '(optional)';
+  const totalPlaceholder = t ? t.totalPlaceholder : '(contractor fills)';
+  const sigPlaceholder = t ? t.sigPlaceholder : '(contractor signature)';
+  const certBodySecondary = t ? `<br>${t.certBody}` : '';
+  const footerSecondary = t ? `<br>${t.footer}` : '';
+
+  const fieldStyle = 'border:1px solid #ddd;border-radius:2px;padding:1px 4px;background:#f5f5f5;display:inline-block;min-width:120px;font-size:8pt;color:#333';
+  const amberFieldStyle = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 4px;background:#fffbeb;display:inline-block;min-width:120px;font-size:8pt;color:#666';
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice Preview</title><style>@page{size:letter;margin:0.5in}body{background:#fff;padding:0;margin:0}</style></head><body>
+<div style="font-family:Arial,Helvetica,sans-serif;font-size:8pt;max-width:680px;margin:0 auto;padding:10px 16px;color:#111;line-height:1.35">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
+  <div style="font-size:14pt;font-weight:900;letter-spacing:2px">INVOICE</div>
+  <div style="font-size:7.5pt;color:#555">1099 Contractor Invoice${subtitleSuffix}</div>
+  <div style="font-size:6.5pt;color:#f59e0b;margin-top:2px">${amberHint}</div>
+</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
+  <tr>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Invoice #</b><br><span style="${fieldStyle}">${autoGenLabel}</span></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>${bi('Date', t ? t.date : '')}</b><br><span style="${fieldStyle}">${invDate}</span></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%;background:#fffbeb"><b>${bi('Period From', t ? t.periodFrom : '')} *</b><br><span style="${amberFieldStyle}">${periodStart}</span></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%;background:#fffbeb"><b>${bi('Period To', t ? t.periodTo : '')} *</b><br><span style="${amberFieldStyle}">${periodEnd}</span></td>
+  </tr>
+</table>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
+  <tr>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%">
+      <b>${bi('FROM — Contractor', t ? t.fromContractor : '')}</b> <span style="font-size:6.5pt;color:#999">(pre-filled)</span><br>
+      ${bi('Name', t ? t.name : '')}: <span style="${fieldStyle};width:100%;box-sizing:border-box">${contractorName}</span>
+    </td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%">
+      <b>${bi('BILL TO — Company', t ? t.billTo : '')}</b><br>
+      <div style="font-weight:600">${billToCompany}</div>
+    </td>
+  </tr>
+</table>
+<div style="font-weight:700;margin:4px 0 2px">${bi('SERVICE DESCRIPTION', t ? t.serviceDesc : '')} <span style="font-weight:400;color:#999;font-size:7pt">(${bi('Pre-filled by company', t ? t.serviceHint : '')})</span></div>
+<div style="${fieldStyle};width:100%;box-sizing:border-box;min-height:36px;padding:3px 4px;white-space:pre-wrap">${serviceDesc}</div>
+<div style="font-weight:700;margin:4px 0 2px">${bi('Additional Notes', t ? t.additionalNotes : '')} <span style="font-weight:400;color:#999;font-size:7pt">(${bi('optional', t ? t.notesHint : '')})</span></div>
+<div style="${amberFieldStyle};width:100%;box-sizing:border-box;min-height:24px;color:#aaa">${notesPlaceholder}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin:6px 0">
+  <tr><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:65%"><b>${bi('Compensation Method', t ? t.compMethod : '')}</b></td><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;text-align:right"><span style="${fieldStyle}">${bi('Contractor-proposed flat project fee', t ? t.compValue : '')}</span></td></tr>
+  <tr style="background:#fffbeb"><td style="padding:3px 5px;border:1px solid #ccc;background:#fffbeb;width:65%"><b>${bi('Quoted Amount', t ? t.quotedAmt : '')}</b></td><td style="padding:3px 5px;border:1px solid #ccc;background:#fffbeb;text-align:right">$ <span style="${amberFieldStyle};color:#aaa">${quotedPlaceholder}</span></td></tr>
+  <tr style="background:#fffbeb"><td style="padding:3px 5px;border:1px solid #ccc;background:#fffbeb;">${bi('Reimbursable Expenses', t ? t.reimbursable : '')}</td><td style="padding:3px 5px;border:1px solid #ccc;background:#fffbeb;text-align:right">$ <span style="${amberFieldStyle};color:#aaa">${reimbPlaceholder}</span></td></tr>
+  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">${bi('TOTAL DUE', t ? t.totalDue : '')}</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <span style="${amberFieldStyle};color:#aaa;font-weight:700;font-size:10pt">${totalPlaceholder}</span></td></tr>
+</table>
+<div style="font-weight:700;margin:4px 0 2px">${bi('PAYMENT TERMS', t ? t.payTerms : '')} <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled)</span></div>
+<span style="${fieldStyle}">Net 30</span>
+<span style="font-size:7pt;color:#999;margin-left:6px">${bi('Due Date', t ? t.dueDate : '')}: </span><span style="${fieldStyle}">${dueDate}</span>
+<div style="background:#fffbeb;border:2px solid #f59e0b;padding:6px;font-size:8pt;margin-top:6px;border-radius:4px">
+  <b>${bi('CONTRACTOR CERTIFICATION', t ? t.certTitle : '')}</b>
+  <div style="font-size:7.5pt;margin:3px 0">I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.${certBodySecondary}</div>
+  <table style="width:100%;margin-top:4px"><tr>
+    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi('Contractor Signature', t ? t.sigLabel : '')} *:</div><div style="width:100%;height:44px;border:2px solid #f59e0b;border-radius:2px;background:#fff;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:7pt">${sigPlaceholder}</div></td>
+    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi('Date', t ? t.dateLabel : '')}:</div><div style="height:22px;border:1px solid #999;border-radius:2px;background:#fff"></div></td>
+  </tr></table>
+</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">Independent contractor arrangement — contractor responsible for all applicable taxes and retains control over manner and means of service delivery.${footerSecondary}<br><span style="color:#f59e0b">■</span> = ${bi('Contractor fills', t ? t.legend : '')} &nbsp; <span style="color:#ddd;background:#888">■</span> = ${bi('Pre-filled by system', t ? t.legendGrey : '')}</div>
+</div></body></html>`;
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
 });
 
 // Admin: preview the contractor invoice DocuSeal template (proxied PDF)
@@ -15366,7 +15546,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','invoice_approval_template_id'];
+    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id'];
   const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
   const out = { connected: dsealEnabled(), url: _publicUrl };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
@@ -15400,7 +15580,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','invoice_approval_template_id',
+    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id',
     'invoice_approval_en_template_id','invoice_approval_es_template_id',
     'contract_template_id' /* legacy */,
     'account_email' /* DocuSeal account email for embedded builder JWT */];
