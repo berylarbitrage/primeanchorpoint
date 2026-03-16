@@ -6391,7 +6391,9 @@ function syncOnboardedStatus(workerId) {
   const tasks = db.prepare('SELECT task_key, status FROM worker_onboarding WHERE worker_account_id=?').all(workerId);
   const statusMap = Object.fromEntries(tasks.map(t => [t.task_key, t.status]));
   const allDone = assigned.every(key => statusMap[key] === 'completed' || statusMap[key] === 'waived');
-  db.prepare('UPDATE worker_accounts SET onboarded=? WHERE id=?').run(allDone ? 1 : 0, workerId);
+  // When all assigned tasks are done, mark onboarded AND auto-enable dispatch_ready
+  // When not all done, clear onboarded and dispatch_ready
+  db.prepare('UPDATE worker_accounts SET onboarded=?, dispatch_ready=? WHERE id=?').run(allDone ? 1 : 0, allDone ? 1 : 0, workerId);
 }
 
 function getOnboardingTasks(workerId) {
