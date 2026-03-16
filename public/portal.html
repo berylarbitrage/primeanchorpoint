@@ -5647,6 +5647,14 @@ async function openWorkerW9Sign() {
   try {
     const r = await wApi('/w9-sign-url');
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
+    // If URL is not embeddable (slug URL), open in new tab instead
+    if (r.embeddable === false) {
+      modal.style.display = 'none';
+      window.open(r.signUrl, '_blank');
+      showToast('✅ W-9 签署页面已在新标签页打开 / W-9 signing page opened in new tab');
+      setTimeout(() => loadOnboarding(), 5000);
+      return;
+    }
     // Use iframe for universal compatibility (works with both cloud and self-hosted DocuSeal,
     // and does not depend on the cdn.docuseal.com/js/form.js CDN script being loaded)
     const iframe = document.createElement('iframe');
@@ -5660,16 +5668,31 @@ async function openWorkerW9Sign() {
       const t = d.type || d.action || '';
       if (t === 'docuseal:form:completed' || t === 'form:completed' || t === 'completed') {
         window.removeEventListener('message', window._w9MsgHandler); window._w9MsgHandler = null;
+        clearTimeout(loadTimeout);
         closeWorkerW9Sign();
         showToast('✅ W-9 已签署完成！', 'success', 6000);
         loadOnboarding();
       } else if (t === 'docuseal:form:declined' || t === 'form:declined' || t === 'declined') {
         window.removeEventListener('message', window._w9MsgHandler); window._w9MsgHandler = null;
+        clearTimeout(loadTimeout);
         closeWorkerW9Sign();
         showToast('您已拒绝签署 W-9', 'info');
       }
     };
     window.addEventListener('message', window._w9MsgHandler);
+    // Detect load failure — if iframe fails to load content after timeout, offer new-tab fallback
+    const loadTimeout = setTimeout(() => {
+      try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!iframeDoc || !iframeDoc.body || iframeDoc.body.childElementCount === 0) {
+          formDiv.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1rem;color:#64748b;font-size:.9rem">
+            <div>⚠️ 表单加载失败 / Form failed to load</div>
+            <button onclick="window.open('${r.signUrl.replace(/'/g, "\\'")}','_blank');closeWorkerW9Sign();showToast('✅ W-9 签署页面已在新标签页打开')" style="padding:.5rem 1.5rem;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">在新标签页打开 / Open in New Tab</button>
+            <button onclick="closeWorkerW9Sign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭 / Close</button>
+          </div>`;
+        }
+      } catch (_) { /* cross-origin iframe — content loaded, no fallback needed */ }
+    }, 8000);
     formDiv.appendChild(iframe);
     loading.style.display = 'none';
     formDiv.style.display = '';
