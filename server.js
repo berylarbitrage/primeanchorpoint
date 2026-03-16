@@ -8142,15 +8142,16 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id, worker_email, worker_phone, service_period_start, service_period_end, invoice_date, service_description } = req.body;
+    const { worker_account_id, worker_email, worker_phone, service_period_start, service_period_end, invoice_date, service_description, template_lang } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
     if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务周期 / Service period required' });
     if (!service_description) return res.status(400).json({ error: '请填写服务内容描述 / Service description required' });
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
     if (!w) return res.status(404).json({ error: '承包商不存在' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    const templateId = getDsealConfigTemplateId('contractor_invoice');
-    if (!templateId) return res.status(400).json({ error: '未配置承包商發票模板，请到 DocuSeal 模板管理中设置' });
+    const langType = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'].includes(template_lang) ? template_lang : 'contractor_invoice';
+    const templateId = getDsealConfigTemplateId(langType);
+    if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商發票模板，请先到 DocuSeal 模板管理中生成对应模板' });
     const workerEmail = worker_email || w.email || `worker-${w.id}@placeholder.local`;
     const workerPhone = worker_phone || w.phone || '';
     const workerName = w.name || w.username || `Worker #${w.id}`;
@@ -8226,8 +8227,9 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
 // Admin: preview the contractor invoice DocuSeal template (proxied PDF)
 app.get('/api/admin/contractor-invoices/preview-template', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-  const templateId = getDsealConfigTemplateId('contractor_invoice');
-  if (!templateId) return res.status(400).json({ error: '未配置承包商發票模板' });
+  const langType = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'].includes(req.query.lang) ? req.query.lang : 'contractor_invoice';
+  const templateId = getDsealConfigTemplateId(langType);
+  if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商發票模板，请先到 DocuSeal 模板管理中生成对应模板' });
   try {
     const r = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
     if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
