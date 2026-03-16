@@ -18260,7 +18260,7 @@ function previewInvoiceTemplate() {
       `<b>服务周期:</b> ${periodStart || '—'} ~ ${periodEnd || '—'}<br>` +
       `<b>服务内容:</b> ${esc(serviceDesc) || '—'}<br>` +
       `<span style="font-size:.77rem;color:#6b7280">※ 以下PDF为预览；发送后承包商收到的版本将自动带入上述数据。</span>`;
-    const params = new URLSearchParams({ contractor_name: contractorName, invoice_date: invoiceDate, service_description: serviceDesc, period_start: periodStart, period_end: periodEnd });
+    const params = new URLSearchParams({ contractor_name: contractorName, invoice_date: invoiceDate, service_description: serviceDesc, period_start: periodStart, period_end: periodEnd, lang });
     frame.src = '/api/admin/contractor-invoices/preview-filled?' + params.toString();
     section.style.display = 'block';
     btn.textContent = '✖ 关闭预览';
