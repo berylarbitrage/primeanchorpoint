@@ -3468,12 +3468,12 @@ function generateContractorInvoiceHtmlTemplate(lang) {
 <div style="font-weight:700;margin:4px 0 2px">${bi('SERVICE DESCRIPTION', t ? t.serviceDesc : '')} <span style="font-weight:400;color:#999;font-size:7pt">(${bi(en.serviceHint, t ? t.serviceHint : '')})</span></div>
 <text-field name="service_description" role="First Party" required="true" readonly="true" style="${ro}width:100%;min-height:48px" placeholder="e.g. Warehouse sorting and loading services for the period of [Start Date] to [End Date]"></text-field>
 <div style="font-weight:700;margin:4px 0 2px">${bi(en.additionalNotes, t ? t.additionalNotes : '')} <span style="font-weight:400;color:#999;font-size:7pt">${bi(en.notesHint, t ? t.notesHint : '')}</span></div>
-<text-field name="additional_notes" role="First Party" style="${ed}width:100%;min-height:32px" placeholder="${t ? bi('Additional details or clarifications', t.additionalNotes) : 'Additional details or clarifications'}"></text-field>
+<text-field name="additional_notes" role="Contractor" style="${ed}width:100%;min-height:32px" placeholder="${t ? bi('Additional details or clarifications', t.additionalNotes) : 'Additional details or clarifications'}"></text-field>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin:6px 0">
   <tr><td style="${c}width:65%"><b>${bi('Compensation Method', t ? t.compMethod : '')}</b></td><td style="${c}text-align:right"><text-field name="compensation_method" role="First Party" readonly="true" style="${ro}width:240px" placeholder="${en.compValue}">${bi(en.compValue, t ? t.compValue : '')}</text-field></td></tr>
-  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>${bi('Quoted Amount', t ? t.quotedAmt : '')}</b></td><td style="${hi}text-align:right">$ <text-field name="quoted_amount" role="First Party" required="true" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
-  <tr style="background:#fffbeb"><td style="${hi}">${bi('Reimbursable Expenses', t ? t.reimbursable : '')}</td><td style="${hi}text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
-  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">${bi('TOTAL DUE', t ? t.totalDue : '')}</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" required="true" style="${ed}width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>${bi('Quoted Amount', t ? t.quotedAmt : '')}</b></td><td style="${hi}text-align:right">$ <number-field name="quoted_amount" role="Contractor" required="true" style="${ed}width:100px" placeholder="0.00"></number-field></td></tr>
+  <tr style="background:#fffbeb"><td style="${hi}">${bi('Reimbursable Expenses', t ? t.reimbursable : '')}</td><td style="${hi}text-align:right">$ <number-field name="reimbursable_amount" role="Contractor" style="${ed}width:100px" placeholder="0.00"></number-field></td></tr>
+  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">${bi('TOTAL DUE', t ? t.totalDue : '')}</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <number-field name="total_amount" role="Contractor" required="true" style="${ed}width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></number-field></td></tr>
 </table>
 <div style="font-weight:700;margin:4px 0 2px">${bi('PAYMENT TERMS', t ? t.payTerms : '')} <span style="font-weight:400;color:#999;font-size:7pt">(${en.prefilled})</span></div>
 <text-field name="payment_terms" role="First Party" readonly="true" style="${ro}width:200px" placeholder="Net 30"></text-field>
@@ -9109,32 +9109,36 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const fmtPeriod = (d) => { if (!d) return ''; const p = d.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}/${p[0]}` : d; };
     // Reuse pre-generated invoice number if provided, otherwise generate a new one
     const invoiceNumber = pre_generated_invoice_number || generateContractorInvoiceNumber(workerName, w.state || '');
-    // Create DocuSeal submission — admin pre-fills date, period & service description; contractor fills amount
-    const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
-    const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
+    // Create DocuSeal submission — system pre-fills First Party readonly fields; contractor fills amounts & signs
+    const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+    // First Party submitter: system auto-completes all pre-filled readonly fields
+    const firstPartySubmitter = { role: 'First Party', name: 'System', email: process.env.COMPANY_EMAIL || workerEmail, is_completed: true, fields: [
       { name: 'invoice_number', default_value: invoiceNumber, readonly: true },
       { name: 'invoice_date', default_value: todayDate, readonly: true },
       { name: 'contractor_name', default_value: workerName, readonly: true },
       { name: 'bill_to_company', default_value: billToCompany, readonly: true },
       { name: 'service_period_start', default_value: fmtPeriod(service_period_start), readonly: true },
       { name: 'service_period_end', default_value: fmtPeriod(service_period_end), readonly: true },
-      { name: 'service_description', default_value: serviceDescValue, readonly: false },
+      { name: 'service_description', default_value: serviceDescValue, readonly: true },
       { name: 'payment_terms', default_value: 'Net 30', readonly: true },
       { name: 'payment_due_date', default_value: dueDate, readonly: true }
     ] };
+    // Contractor submitter: fills quoted_amount, reimbursable_amount, total_amount, additional_notes, and signs
+    const invoiceSubmitter = { role: 'Contractor', name: workerName, email: workerEmail };
     if (workerPhone) invoiceSubmitter.phone = formatPhoneE164(workerPhone);
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
       send_sms: true,
-      submitters: [invoiceSubmitter]
+      submitters: [firstPartySubmitter, invoiceSubmitter]
     });
     console.log(`[DocuSeal Invoice] submission status=${subRes.status}`);
     const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
     if (subRes.status >= 400 || !submitters.length) {
       return res.status(500).json({ error: `DocuSeal 提交失败: ${JSON.stringify(subRes.data)}` });
     }
-    const submitter = submitters[0];
+    // Contractor is the second submitter (index 1); First Party (index 0) is auto-completed by system
+    const submitter = submitters.find(s => s.role === 'Contractor') || submitters[submitters.length - 1];
     const submissionId = String(subRes.data?.id || submitter?.submission_id || '');
     // Update pre-generated record or create new contractor_invoices record
     const sentBy = req.session?.username || 'admin';
