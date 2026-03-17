@@ -16859,8 +16859,14 @@ app.get('/api/admin/docuseal/check-updates', requireAdmin, (req, res) => {
     const dbRow = db.prepare('SELECT content_hash, confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(existingId);
     if (dbRow?.confirmed) continue; // confirmed — never suggest update
     const currentHash = crypto.createHash('md5').update(tmplDef.generator()).digest('hex');
-    const hasUpdate = !dbRow?.content_hash || dbRow.content_hash !== currentHash;
-    if (hasUpdate) updates.push({ type, name: tmplDef.name, template_id: existingId });
+    if (!dbRow?.content_hash) {
+      // No hash stored yet — backfill silently so future checks work correctly
+      db.prepare('UPDATE docuseal_templates SET content_hash=? WHERE docuseal_template_id=?').run(currentHash, existingId);
+      continue;
+    }
+    if (dbRow.content_hash !== currentHash) {
+      updates.push({ type, name: tmplDef.name, template_id: existingId });
+    }
   }
   res.json({ updates });
 });
