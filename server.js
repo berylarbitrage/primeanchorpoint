@@ -17058,6 +17058,36 @@ async function autoRegenerateContractorInvoiceTemplates() {
   }
 }
 
+// Deduplication: for each (category, languages) group keep only the latest (highest id), delete the rest
+async function deduplicateDocusealTemplates() {
+  if (!dsealEnabled()) return;
+  const allRows = db.prepare('SELECT * FROM docuseal_templates ORDER BY id DESC').all();
+  const seen = new Map();
+  const toDelete = [];
+  for (const row of allRows) {
+    const key = `${row.category}|${row.languages || ''}`;
+    if (!seen.has(key)) { seen.set(key, row); }
+    else { toDelete.push(row); }
+  }
+  if (!toDelete.length) return;
+  console.log(`[dedup] Removing ${toDelete.length} duplicate template(s)...`);
+  for (const row of toDelete) {
+    await dsealApiCall('DELETE', `/api/templates/${row.docuseal_template_id}`).catch(() => {});
+    db.prepare('DELETE FROM docuseal_templates WHERE id=?').run(row.id);
+    console.log(`[dedup] Deleted: "${row.name}" id=${row.id} ds_id=${row.docuseal_template_id}`);
+  }
+  console.log('[dedup] Done.');
+}
+
+// POST /api/admin/docuseal/deduplicate — manually trigger deduplication
+app.post('/api/admin/docuseal/deduplicate', requireAdmin, async (req, res) => {
+  try {
+    await deduplicateDocusealTemplates();
+    const remaining = db.prepare('SELECT COUNT(*) as n FROM docuseal_templates').get().n;
+    res.json({ success: true, remaining });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
@@ -17074,4 +17104,6 @@ app.listen(PORT, () => {
   setTimeout(() => autoRegenerateTemplatesForCompanyName().catch(e => console.error('[startup] Company name template regen error:', e.message)), 3000);
   // Auto-regenerate contractor invoice templates if bill_to_company field is missing (old static-text templates)
   setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 8000);
+  // Deduplicate DocuSeal templates (keep latest per category+language)
+  setTimeout(() => deduplicateDocusealTemplates().catch(e => console.error('[startup] Dedup error:', e.message)), 12000);
 });
