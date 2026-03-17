@@ -16840,6 +16840,11 @@ app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, r
     if (!tmplDef) { results.push({ type, error: 'Unknown type' }); continue; }
     // Skip if already configured (unless force=true)
     if (!force && cfg[tmplDef.configKey]) { results.push({ type, skipped: true, template_id: cfg[tmplDef.configKey] }); continue; }
+    // Skip confirmed templates even on force regen
+    if (force && cfg[tmplDef.configKey]) {
+      const existing = db.prepare('SELECT confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(cfg[tmplDef.configKey]);
+      if (existing?.confirmed) { results.push({ type, skipped: true, confirmed: true, template_id: cfg[tmplDef.configKey] }); continue; }
+    }
     try {
       const html = tmplDef.generator();
       const r = await dsealApiCall('POST', '/api/templates/html', {
@@ -16919,6 +16924,9 @@ async function autoRegenerateTemplatesForCompanyName() {
   for (const [type, tmplDef] of Object.entries(DOCUSEAL_AUTO_TEMPLATES)) {
     const existingId = cfg[tmplDef.configKey];
     if (!existingId) continue; // not configured, skip (will be created on demand)
+    // Skip confirmed templates
+    const _confirmed = db.prepare('SELECT confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(existingId);
+    if (_confirmed?.confirmed) { console.log(`[startup] Skipping confirmed template: ${type}`); continue; }
     try {
       const html = tmplDef.generator();
       const r = await dsealApiCall('POST', '/api/templates/html', {
