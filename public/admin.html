@@ -2729,6 +2729,36 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Payment Method Authorization Modal -->
+<div class="modal-bg" id="paymentAuthModal"><div class="modal" style="max-width:520px">
+  <h2>💳 付款方式确认</h2>
+  <div style="margin-bottom:1rem">
+    <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">选择付款方式</label>
+    <select id="payAuthMethodSelect" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none">
+      <option value="direct_deposit">🏦 ACH / Direct Deposit — 银行直接转账授权</option>
+      <option value="wire">🔁 Wire Transfer — 电汇付款授权</option>
+      <option value="check">✉️ Check / 支票 — 支票邮寄地址确认</option>
+      <option value="zelle">📱 Zelle — Zelle 账号授权确认</option>
+      <option value="third_party">💳 PayPal / Venmo / CashApp — 第三方平台付款授权</option>
+      <option value="cash">💵 现金签收 — Cash Payment Receipt</option>
+    </select>
+  </div>
+  <div id="payAuthMethodDesc" style="padding:.6rem .8rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1;margin-bottom:1rem"></div>
+  <div id="payAuthStatusBox" style="display:none;padding:.6rem .8rem;border-radius:8px;font-size:.83rem;margin-bottom:1rem"></div>
+  <div id="payAuthWorkerEmail" style="margin-bottom:1rem">
+    <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">工人邮箱（用于发送签署链接）</label>
+    <input type="email" id="payAuthEmail" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none" placeholder="worker@example.com">
+  </div>
+  <div id="payAuthSignLink" style="display:none;padding:.6rem .8rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.82rem;margin-bottom:1rem;word-break:break-all">
+    🔗 签署链接：<a id="payAuthSignLinkAnchor" href="#" target="_blank" style="color:var(--sky)"></a>
+  </div>
+  <div class="modal-actions" style="margin-top:.5rem;gap:.5rem;display:flex;justify-content:flex-end;flex-wrap:wrap">
+    <button class="btn btn-outline" onclick="closeModal('paymentAuthModal')">取消</button>
+    <button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a" onclick="refreshPaymentAuthStatus()">🔄 刷新状态</button>
+    <button class="btn btn-green" id="payAuthSendBtn" onclick="doSendPaymentAuth()">📨 发送授权表单</button>
+  </div>
+</div></div>
+
 <!-- Worker Pay History Modal -->
 <div class="modal-bg" id="workerPayHistoryModal"><div class="modal" style="max-width:640px">
   <h2>💰 薪资记录 — <span id="payHistoryWorkerName" style="color:var(--sky)"></span></h2>
@@ -14146,7 +14176,7 @@ async function refreshOnboardingModal() {
 }
 
 function renderOnboardingTasks(tasks) {
-  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', tin_verify:'🔢', contract:'✍️', gusto:'💸', work_permit:'🛂',
+  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', tin_verify:'🔢', contract:'✍️', gusto:'💸', work_permit:'🛂', payment_method:'💳',
     tax_doc_w8ben:'📄', tax_doc_w8bene:'📄', tax_doc_8233:'📄', tax_doc_passport:'🛂', tax_doc_visa:'📋', tax_doc_i94:'📋', tax_doc_work_auth:'📋', tax_doc_w7_itin:'📄', tax_doc_8833:'📄', tax_doc_corp_cert:'📋', tax_doc_sign_auth:'📋', tax_doc_treaty_docs:'📋', tax_doc_treaty_stmt:'📋' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
@@ -14248,6 +14278,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openWorkPermitModal()">🛂 ${s==='completed'?'查看/修改验证':'开始工作许可验证'}</button>`
             : t.key==='tin_verify'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button>`
+            : t.key==='payment_method'
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;font-weight:700" onclick="openPaymentAuthModal()">💳 ${t.ds_status==='completed'?'✅ 已签署':t.ds_status==='sent'?'⏳ 等待签署':'发送付款授权'}</button>`
             : (t.key==='i9'||t.key==='ead_upload')
             ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openIdVerifyModal(${_onboardingWorkerId},'${esc((_onboardingWorkerData&&(_onboardingWorkerData.name||_onboardingWorkerData.username))||'').replace(/'/g,"\\'")}','${esc((_onboardingWorkerData&&_onboardingWorkerData.work_status)||'other')}')">🪪 ${s==='completed'?'✅ 已验证':s==='submitted'?'📋 查看/审核文件':'📋 查看身份文件'}</button>${isVisible?'':` <button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="toggleOnboardingVisibility('${t.key}',1)">📤 发送给工人</button>`}`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
@@ -14408,8 +14440,8 @@ function selectEntityType(type) {
 }
 
 // Onboarding tasks auto-assigned per employment type
-const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'gusto'];
-const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify'];
+const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
+const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
 
 
 // ─── Tax Wizard (standalone modal, opens from onboarding task list) ───
@@ -17500,6 +17532,109 @@ async function w9ResendForRewrite() {
   } else {
     showToast('❌ ' + (r?.error || '发送失败'), 'error');
   }
+}
+
+// ─── Payment Method Authorization Modal ───
+const _PM_DESCS = {
+  direct_deposit: '🏦 发送 ACH / Direct Deposit 银行直接转账授权表单，工人需填写银行账户信息并签署授权。',
+  wire: '🔁 发送电汇授权表单，工人需提供银行账号及路由号并签署确认。',
+  check: '✉️ 发送支票邮寄地址确认表单，工人需确认接收支票的邮寄地址。',
+  zelle: '📱 发送 Zelle 账号授权确认表单，工人需填写 Zelle 绑定的邮箱或手机号并签署。',
+  third_party: '💳 发送第三方平台（PayPal / Venmo / CashApp）付款授权表单，工人需填写账号信息并签署。',
+  cash: '💵 发送现金签收表单，工人需签署确认现金付款协议。'
+};
+
+async function openPaymentAuthModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  const sel = document.getElementById('payAuthMethodSelect');
+  // Pre-select worker's current payment method
+  const pm = (w && w.payment_method) || 'cash';
+  if (sel) sel.value = pm;
+  _updatePayAuthDesc();
+  sel.onchange = _updatePayAuthDesc;
+  // Pre-fill email
+  document.getElementById('payAuthEmail').value = (w && w.email) || '';
+  // Check existing status
+  document.getElementById('payAuthStatusBox').style.display = 'none';
+  document.getElementById('payAuthSignLink').style.display = 'none';
+  try {
+    const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
+    const pmTask = tasks && tasks.find(t => t.key === 'payment_method');
+    if (pmTask && pmTask.ds_envelope_id) {
+      _showPayAuthStatus(pmTask.ds_status, pmTask.action_url, pmTask.admin_note);
+    }
+  } catch {}
+  document.getElementById('paymentAuthModal').classList.add('show');
+}
+
+function _updatePayAuthDesc() {
+  const v = document.getElementById('payAuthMethodSelect').value;
+  document.getElementById('payAuthMethodDesc').textContent = _PM_DESCS[v] || '';
+}
+
+function _showPayAuthStatus(dsStatus, signUrl, note) {
+  const box = document.getElementById('payAuthStatusBox');
+  const statusText = { sent: '⏳ 已发送，等待工人签署', completed: '✅ 工人已签署完成' }[dsStatus] || ('状态：' + (dsStatus || '未知'));
+  box.style.display = '';
+  box.style.background = dsStatus === 'completed' ? '#d1fae5' : '#fef3c7';
+  box.style.border = `1px solid ${dsStatus === 'completed' ? '#6ee7b7' : '#fde68a'}`;
+  box.style.color = dsStatus === 'completed' ? '#065f46' : '#92400e';
+  box.textContent = (note || statusText);
+  if (signUrl) {
+    const linkBox = document.getElementById('payAuthSignLink');
+    const anchor = document.getElementById('payAuthSignLinkAnchor');
+    anchor.href = signUrl;
+    anchor.textContent = signUrl.length > 60 ? signUrl.substring(0, 60) + '…' : signUrl;
+    linkBox.style.display = '';
+  }
+}
+
+async function doSendPaymentAuth() {
+  if (!_onboardingWorkerId) return;
+  const method = document.getElementById('payAuthMethodSelect').value;
+  const email = document.getElementById('payAuthEmail').value.trim();
+  if (!email) { showToast('请填写工人邮箱', 'error'); return; }
+  const btn = document.getElementById('payAuthSendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-payment-auth`, {
+      method: 'POST',
+      body: JSON.stringify({ payment_method: method, worker_email: email })
+    });
+    if (r && r.success) {
+      if (r.signUrl) {
+        const anchor = document.getElementById('payAuthSignLinkAnchor');
+        anchor.href = r.signUrl;
+        anchor.textContent = r.signUrl.length > 60 ? r.signUrl.substring(0, 60) + '…' : r.signUrl;
+        document.getElementById('payAuthSignLink').style.display = '';
+      }
+      _showPayAuthStatus('sent', r.signUrl, `${r.pmLabel} 授权表单已发送，等待工人签署`);
+      if (r.warnings && r.warnings.length) showToast('⚠️ ' + r.warnings.join('；'), 'warning');
+      else showToast(`✅ ${r.pmLabel} 授权表单已发送`, 'success');
+      refreshOnboardingModal();
+    } else {
+      showToast('❌ ' + (r?.error || '发送失败'), 'error');
+    }
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
+  btn.disabled = false; btn.textContent = '📨 发送授权表单';
+}
+
+async function refreshPaymentAuthStatus() {
+  if (!_onboardingWorkerId) return;
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/payment-auth-status`);
+    if (r && r.status) {
+      _showPayAuthStatus(r.status, null, null);
+      if (r.status === 'completed') {
+        showToast('✅ 工人已完成签署', 'success');
+        closeModal('paymentAuthModal');
+        refreshOnboardingModal();
+      } else {
+        showToast('⏳ 工人尚未签署', 'info');
+      }
+    }
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
 }
 
 // ─── Work Auth Modal Functions ───

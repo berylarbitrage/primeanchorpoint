@@ -6162,6 +6162,7 @@ const ONBOARDING_STEPS = [
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
   { key: 'tin_verify',      title: '核对税号',              desc: 'Admin 核对工人税号（SSN/EIN/ITIN）后方可入职',   required: true  },
+  { key: 'payment_method',  title: '付款方式确认',           desc: '确认付款方式并签署相应付款授权文件',               required: false },
   { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
   // Tax document tasks (auto-created by tax residency questionnaire)
   { key: 'tax_doc_w8ben',    title: 'W-8BEN 表格',           desc: '非居民外国个人预扣税声明',                       required: true  },
@@ -6384,8 +6385,8 @@ function verifyW9Address(workerId) {
 }
 
 // Onboarding tasks auto-assigned per employment type (must match frontend W2_TASKS / C1099_TASKS)
-const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'gusto'];
-const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify'];
+const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
+const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
 
 // Check if all assigned onboarding tasks are done; update onboarded flag accordingly
 function syncOnboardedStatus(workerId) {
@@ -7813,6 +7814,93 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     res.json({ success: true, w9Link, isDirect, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[W-9 send error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Send payment method authorization form via DocuSeal ──
+app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerEmail = req.body.worker_email || w.email || '';
+    const workerPhone = w.phone || '';
+    const paymentMethod = req.body.payment_method || w.payment_method || 'cash';
+
+    const templateTypeMap = {
+      direct_deposit: 'ach_auth',
+      wire: 'wire_auth',
+      check: 'check_instruction',
+      zelle: 'zelle_auth',
+      third_party: 'third_party_pay',
+      cash: 'cash_receipt'
+    };
+    const pmLabel = { direct_deposit: 'ACH / Direct Deposit', wire: 'Wire Transfer', check: 'Check / 支票', zelle: 'Zelle', third_party: 'PayPal / Venmo / CashApp', cash: '现金签收' }[paymentMethod] || paymentMethod;
+    const templateType = templateTypeMap[paymentMethod] || 'cash_receipt';
+    const templateId = getDsealConfigTemplateId(templateType);
+
+    let submissionId = '', signUrl = '', dsealError = '';
+    if (!dsealEnabled()) {
+      dsealError = 'DocuSeal 未配置';
+    } else if (!templateId) {
+      dsealError = `未配置 ${pmLabel} 授权模板，请在 DocuSeal 配置页面设置对应模板`;
+    } else {
+      try {
+        const submitter = { role: 'First Party', name: workerName, email: workerEmail };
+        if (workerPhone) submitter.phone = formatPhoneE164(workerPhone);
+        const subRes = await dsealApiCall('POST', '/api/submissions', {
+          template_id: parseInt(templateId),
+          send_email: true,
+          send_sms: true,
+          submitters: [submitter]
+        });
+        const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+        if (subRes.status >= 400 || !submitters.length) throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+        const signer = submitters[0];
+        submissionId = String(subRes.data?.id || signer?.submission_id || signer?.id || '');
+        signUrl = signer?.embed_src || '';
+        if (!signUrl && signer?.slug) signUrl = `${dsealPublicHost()}/s/${signer.slug}`;
+        console.log(`[payment-auth send] DocuSeal submission ${submissionId}, method=${paymentMethod}`);
+      } catch (e) {
+        dsealError = e.message;
+        console.error('[payment-auth send] DocuSeal error:', e.message);
+      }
+    }
+
+    const note = submissionId
+      ? `${pmLabel} 授权表单已发送 (${new Date().toLocaleString('zh-CN')})，等待工人签署`
+      : `${pmLabel} 付款方式已确认 (${new Date().toLocaleString('zh-CN')})`;
+    db.prepare(`UPDATE worker_onboarding SET status='pending', visible_to_worker=1, ds_envelope_id=?, ds_status=?, action_url=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method'`)
+      .run(submissionId || null, submissionId ? 'sent' : null, signUrl || '', note, workerId);
+    if (paymentMethod !== w.payment_method) {
+      db.prepare('UPDATE worker_accounts SET payment_method=? WHERE id=?').run(paymentMethod, workerId);
+    }
+    const warnings = dsealError ? [dsealError] : [];
+    res.json({ success: true, signUrl, submissionId, warnings, pmLabel });
+  } catch (e) {
+    console.error('[payment-auth send error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Get payment method authorization signing status from DocuSeal
+app.get('/api/admin/worker-accounts/:id/payment-auth-status', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='payment_method'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '付款授权表单未发送' });
+    if (!dsealEnabled()) return res.json({ status: onb.ds_status });
+    const r = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
+    if (r.status !== 200) throw new Error(`DocuSeal 获取状态失败 ${r.status}`);
+    const status = r.data?.status === 'completed' ? 'completed' : 'sent';
+    db.prepare("UPDATE worker_onboarding SET ds_status=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method'").run(status, workerId);
+    if (status === 'completed') {
+      db.prepare("UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method' AND status!='completed'").run(workerId);
+    }
+    res.json({ status });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
