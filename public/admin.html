@@ -13983,8 +13983,8 @@ async function loadWorkerAccounts() {
     <td style="text-align:center;white-space:nowrap">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
-    <td style="text-align:center">${w.cinv_total > 0
-      ? `<span style="cursor:pointer;padding:1px 6px;border-radius:6px;font-size:.72rem;font-weight:600;${w.cinv_pending>0?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#15803d'}" onclick="event.stopPropagation();openContractorInvoicesModal()" title="Contractor Invoices">📄${w.cinv_total}${w.cinv_pending>0?' ('+w.cinv_pending+'⏳)':''}</span>`
+    <td style="text-align:center;white-space:nowrap">${w.cinv_total > 0
+      ? `<span style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:6px;font-size:.82rem;font-weight:600;${w.cinv_pending>0?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#15803d'}" onclick="event.stopPropagation();openContractorInvoicesModal()" title="Contractor Invoices">📄 ${w.cinv_total}${w.cinv_pending>0?'<span style="margin-left:2px;font-size:.75rem">('+ w.cinv_pending+' 待处理)</span>':''}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
     <td style="text-align:center;vertical-align:middle">${(() => {
       const emp = w.employment_type || '';
