@@ -16863,6 +16863,7 @@ app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, r
       if (existing?.confirmed) { results.push({ type, skipped: true, confirmed: true, template_id: cfg[tmplDef.configKey] }); continue; }
     }
     try {
+      const oldId = cfg[tmplDef.configKey];
       const html = tmplDef.generator();
       const r = await dsealApiCall('POST', '/api/templates/html', {
         name: tmplDef.name,
@@ -16871,7 +16872,12 @@ app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, r
       if (r.status >= 400) { results.push({ type, error: `DocuSeal ${r.status}` }); continue; }
       const dsId = r.data?.id || r.data?.template_id;
       if (dsId) {
-        db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, dsId, tmplDef.category || 'contract');
+        // Delete old template from DocuSeal and local DB
+        if (oldId && oldId !== dsId) {
+          await dsealApiCall('DELETE', `/api/templates/${oldId}`).catch(() => {});
+          db.prepare('DELETE FROM docuseal_templates WHERE docuseal_template_id=?').run(oldId);
+        }
+        db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, dsId, tmplDef.category || 'contract');
         cfg[tmplDef.configKey] = dsId;
       }
       results.push({ type, success: true, template_id: dsId, name: tmplDef.name });
@@ -16956,10 +16962,15 @@ async function autoRegenerateTemplatesForCompanyName() {
       }
       const dsId = r.data?.id || r.data?.template_id;
       if (dsId) {
-        db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, String(dsId), tmplDef.category || 'contract');
+        // Delete old template from DocuSeal and local DB
+        if (existingId && String(existingId) !== String(dsId)) {
+          await dsealApiCall('DELETE', `/api/templates/${existingId}`).catch(() => {});
+          db.prepare('DELETE FROM docuseal_templates WHERE docuseal_template_id=?').run(existingId);
+        }
+        db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, String(dsId), tmplDef.category || 'contract');
         cfg[tmplDef.configKey] = dsId;
         cfgChanged = true;
-        console.log(`[startup] Regenerated ${type} template (company name update) → new ID: ${dsId}`);
+        console.log(`[startup] Regenerated ${type} template → new ID: ${dsId} (old ${existingId} deleted)`);
       }
     } catch (e) {
       console.error(`[startup] Failed to check/regenerate ${type} template: ${e.message}`);
