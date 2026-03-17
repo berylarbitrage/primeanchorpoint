@@ -3760,10 +3760,10 @@ function _buildThirdPartyPayForm(lang) {
   <tr>
     <td style="${c}width:100%" colspan="2">
       <b>${lPlatform}</b> <span style="font-size:7.5pt;color:#555;font-weight:400">${lSelectOne}</span>&nbsp;&nbsp;
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><check-box-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></check-box-field> PayPal</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><check-box-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></check-box-field> Venmo</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><check-box-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></check-box-field> Cash App</label>
-      <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_other" role="First Party" style="width:13px;height:13px"></check-box-field> Other: <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #999;width:80px;display:inline-block;margin-left:4px;background:transparent"></text-field></label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="platform_selection" role="First Party" value="PayPal" style="width:13px;height:13px"></radio-button-field> PayPal</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="platform_selection" role="First Party" value="Venmo" style="width:13px;height:13px"></radio-button-field> Venmo</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="platform_selection" role="First Party" value="Cash App" style="width:13px;height:13px"></radio-button-field> Cash App</label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="platform_selection" role="First Party" value="Other" style="width:13px;height:13px"></radio-button-field> Other: <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #999;width:80px;display:inline-block;margin-left:4px;background:transparent"></text-field></label>
     </td>
   </tr>
   <tr>
