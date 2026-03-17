@@ -3690,10 +3690,12 @@ function _buildThirdPartyPayForm(lang) {
 
   const s2          = zh ? '2. PAYMENT PLATFORM &amp; ACCOUNT 付款平台及账户' : es ? '2. PAYMENT PLATFORM &amp; ACCOUNT / PLATAFORMA Y CUENTA DE PAGO' : '2. PAYMENT PLATFORM &amp; ACCOUNT';
   const lPlatform   = L('Platform', '平台', 'Plataforma');
-  const lSelectOne  = zh ? 'Select one 请选择一项:' : es ? 'Select one / Seleccione una:' : 'Select one:';
-  const lHandle     = L('Account Handle / Username', '账号 / 用户名', 'Usuario / Handle de Cuenta');
-  const lHandleHint = zh ? '例如：PayPal 绑定邮箱、Venmo 用户名或 Cash App 的 $cashtag' : es ? 'Ej.: correo de PayPal, usuario de Venmo o $cashtag de Cash App' : 'e.g. PayPal registered email, Venmo username, or Cash App $cashtag';
-  const lContact    = L('Associated Email or Phone (if applicable)', '关联邮箱或手机（如适用）', 'Email o Teléfono Asociado (si aplica)');
+  const lSelectOne  = zh ? '（可多选 Check all that apply）' : es ? '（Seleccione todas las que apliquen）' : '(Check all that apply)';
+  const lHandle     = L('Account / Username', '账号 / 用户名', 'Usuario / Cuenta');
+  const lHandleHint = zh ? 'PayPal 邮箱 / Venmo 用户名 / $cashtag' : es ? 'Correo PayPal / usuario Venmo / $cashtag' : 'PayPal email / Venmo username / $cashtag';
+  const lContact    = L('Associated Email or Phone', '关联邮箱或手机', 'Email o Teléfono Asociado');
+  const lOther      = L('Other', '其他', 'Otro');
+  const lOtherName  = L('Platform name', '平台名称', 'Nombre de plataforma');
   const lReference  = L('Reference / Invoice # (optional)', '参考号 / 发票号（可选）', 'Referencia / N.º de Factura (opcional)');
 
   const s3 = zh ? '3. ACKNOWLEDGMENT 确认事项' : es ? '3. ACKNOWLEDGMENT / DECLARACIÓN Y ACUERDO' : '3. ACKNOWLEDGMENT';
@@ -3756,22 +3758,35 @@ function _buildThirdPartyPayForm(lang) {
 </table>
 
 <div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s2}</div>
+<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${lSelectOne}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr>
-    <td style="${c}width:100%" colspan="2">
-      <b>${lPlatform}</b> <span style="font-size:7.5pt;color:#555;font-weight:400">${lSelectOne}</span>&nbsp;&nbsp;
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="platform_selection" role="First Party" value="PayPal" style="width:13px;height:13px"></radio-button-field> PayPal</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="platform_selection" role="First Party" value="Venmo" style="width:13px;height:13px"></radio-button-field> Venmo</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="platform_selection" role="First Party" value="Cash App" style="width:13px;height:13px"></radio-button-field> Cash App</label>
-      <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="platform_selection" role="First Party" value="Other" style="width:13px;height:13px"></radio-button-field> Other: <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #999;width:80px;display:inline-block;margin-left:4px;background:transparent"></text-field></label>
-    </td>
+  <tr style="background:#f1f5f9">
+    <td style="${c}width:22%;font-weight:700;font-size:7.5pt">${lPlatform}</td>
+    <td style="${c}width:42%;font-weight:700;font-size:7.5pt">${lHandle}<br><span style="font-weight:400;color:#777;font-size:6.5pt">${lHandleHint}</span></td>
+    <td style="${c}width:36%;font-weight:700;font-size:7.5pt">${lContact}</td>
   </tr>
   <tr>
-    <td style="${c}width:55%"><b>${lHandle}</b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username / $cashtag"></text-field><div style="font-size:6.5pt;color:#777;margin-top:2px">${lHandleHint}</div></td>
-    <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="platform_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+    <td style="${c}"><label style="display:inline-flex;align-items:center;gap:5px"><check-box-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></check-box-field> <b>PayPal</b></label></td>
+    <td style="${c}"><text-field name="paypal_account" role="First Party" style="${w}" placeholder="PayPal email / @username"></text-field></td>
+    <td style="${c}"><text-field name="paypal_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
   </tr>
   <tr>
-    <td style="${c}width:100%" colspan="2"><b>${lReference}</b><br><text-field name="reference_invoice" role="First Party" style="${w}" placeholder="e.g. INV-001"></text-field></td>
+    <td style="${c}"><label style="display:inline-flex;align-items:center;gap:5px"><check-box-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></check-box-field> <b>Venmo</b></label></td>
+    <td style="${c}"><text-field name="venmo_account" role="First Party" style="${w}" placeholder="@username"></text-field></td>
+    <td style="${c}"><text-field name="venmo_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}"><label style="display:inline-flex;align-items:center;gap:5px"><check-box-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></check-box-field> <b>Cash App</b></label></td>
+    <td style="${c}"><text-field name="cashapp_account" role="First Party" style="${w}" placeholder="$cashtag"></text-field></td>
+    <td style="${c}"><text-field name="cashapp_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}"><label style="display:inline-flex;align-items:center;gap:5px"><check-box-field name="platform_other" role="First Party" style="width:13px;height:13px"></check-box-field> <b>${lOther}:</b></label><br><text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #aaa;width:100%;background:transparent;font-size:8pt;margin-top:2px" placeholder="${lOtherName}"></text-field></td>
+    <td style="${c}"><text-field name="other_account" role="First Party" style="${w}" placeholder="@username / account ID"></text-field></td>
+    <td style="${c}"><text-field name="other_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}" colspan="3"><b>${lReference}</b><br><text-field name="reference_invoice" role="First Party" style="${w}" placeholder="e.g. INV-001"></text-field></td>
   </tr>
 </table>
 
