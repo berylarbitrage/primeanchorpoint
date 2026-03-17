@@ -3628,19 +3628,19 @@ function _buildInvoiceApprovalForm(lang) {
 <div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s2}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:34%">
+    <td style="${c}width:34%;background:#eaf0fb">
       <b>${lDecision}</b><br>
-      <text-field name="approval_decision" role="Contractor" required="true" style="${w}" placeholder="Approved / Partially Approved / Rejected"></text-field>
+      <text-field name="approval_decision" role="First Party" required="true" style="${w}" placeholder="Approved / Partially Approved / Rejected"></text-field>
       <div style="font-size:6.5pt;color:#666;margin-top:2px">${lDecisionHint}</div>
     </td>
-    <td style="${c}width:33%;background:#f9f9f0">
+    <td style="${c}width:33%;background:#eaf0fb">
       <b>${lApprovedAmt}</b><br>
-      <div style="font-size:11pt;font-weight:700">$ <text-field name="approved_amount" role="Contractor" required="true" style="${f}width:110px;font-size:11pt;font-weight:700" placeholder="0.00"></text-field></div>
+      <div style="font-size:11pt;font-weight:700">$ <text-field name="approved_amount" role="First Party" required="true" style="${f}width:110px;font-size:11pt;font-weight:700" placeholder="0.00"></text-field></div>
     </td>
-    <td style="${c}width:33%">
+    <td style="${c}width:33%;background:#eaf0fb">
       <b>${lNotes}</b><br>
       <div style="font-size:6.5pt;color:#888;margin-bottom:2px">${lNotesNote}</div>
-      <text-field name="adjustment_reason" role="Contractor" style="${w};min-height:32px" placeholder=""></text-field>
+      <text-field name="adjustment_reason" role="First Party" style="${w};min-height:32px" placeholder=""></text-field>
     </td>
   </tr>
 </table>
@@ -3656,16 +3656,16 @@ function _buildInvoiceApprovalForm(lang) {
 <div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s3}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:50%"><b>${lPayDate}</b><br><text-field name="payment_date" role="Contractor" required="true" style="${f}width:140px" placeholder="MM/DD/YYYY"></text-field></td>
-    <td style="${c}width:50%"><b>${lReviewer}</b><br><text-field name="reviewer_name" role="Contractor" required="true" style="${w}" placeholder="Full Name"></text-field></td>
+    <td style="${c}width:50%;background:#edfaed"><b>${lPayDate}</b><br><text-field name="payment_date" role="Contractor" required="true" style="${f}width:140px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="${c}width:50%;background:#edfaed"><b>${lReviewer}</b><br><text-field name="reviewer_name" role="Contractor" required="true" style="${w}" placeholder="Full Name"></text-field></td>
   </tr>
 </table>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:6px;font-size:8pt">
+<div style="background:#edfaed;border:1px solid #5a9e5a;padding:6px;font-size:8pt">
   <b>${sigPaymentHeader}</b> — ${paymentAuthSentence}
   <table style="width:100%;margin-top:4px"><tr>
-    <td style="width:60%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="payment_signature" role="Contractor" style="width:100%;height:48px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
-    <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lPaySigDate}:</div><date-field name="payment_signed_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+    <td style="width:60%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="payment_signature" role="Contractor" style="width:100%;height:48px;display:block;border:1px solid #5a9e5a;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lPaySigDate}:</div><date-field name="payment_signed_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #5a9e5a;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
