@@ -4005,7 +4005,7 @@ function generateCashReceiptHtmlTemplate() {
   <div style="font-size:9pt;color:#555;margin-top:4px">现金付款签收表 — ${companyName}</div>
 </div>
 
-<p style="font-size:8.5pt">This receipt confirms that the undersigned has received a cash payment from ${companyName} for services rendered. 本签收表确认签署人已从 ${companyName} 收到现金付款。</p>
+<p style="font-size:8.5pt">This receipt confirms that the undersigned recipient has received the cash payment described below from ${companyName} and acknowledges such payment for the services or invoice referenced in this receipt. 本收据确认下述签署收款人已从 ${companyName} 收到以下所列现金付款，并确认该付款对应本收据所载明的服务或发票。</p>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">1. PAYMENT DETAILS 付款详情</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
@@ -4017,36 +4017,46 @@ function generateCashReceiptHtmlTemplate() {
     <td style="${c}"><b>Amount Received 收到金额</b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:140px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
     <td style="${c}"><b>Amount in Words 大写金额</b><br><text-field name="cash_amount_words" role="First Party" style="${w}" placeholder="e.g., Five Hundred Dollars"></text-field></td>
   </tr>
+  <tr>
+    <td style="${c}"><b>Payment Type 付款类型</b><br><text-field name="cash_payment_type" role="First Party" required="true" style="${w}" placeholder="Full Payment / Partial Payment"></text-field></td>
+    <td style="${c}"><b>Remaining Balance 剩余金额 (if partial 如为部分付款)</b><br><div style="font-size:11pt;font-weight:700">$ <text-field name="cash_remaining" role="First Party" style="${f}width:140px;font-size:11pt;font-weight:700" placeholder="0.00"></text-field></div></td>
+  </tr>
 </table>
 
 <div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">2. PURPOSE / DESCRIPTION 付款用途</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr><td style="${c}"><b>Services / Description 服务说明</b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:40px" placeholder="Description of services rendered..."></text-field></td></tr>
+  <tr><td style="${c}"><b>Services / Description 服务说明</b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:40px" placeholder="e.g., Warehouse sorting and loading services for week of 03/10/2026"></text-field></td></tr>
   <tr>
     <td style="${c}"><b>Service Period 服务期间</b> <text-field name="cash_period" role="First Party" style="${f}width:220px" placeholder="e.g., Mar 1–15, 2026"></text-field>
-    <b style="margin-left:16px">Reference # 参考编号</b> <text-field name="cash_ref" role="First Party" style="${f}width:160px"></text-field></td>
+    <b style="margin-left:16px">Invoice # / Job # / Payment Ref. 发票编号 / 工作编号 / 付款参考号</b> <text-field name="cash_ref" role="First Party" style="${f}width:160px"></text-field></td>
   </tr>
 </table>
 
 <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:10px">
-  <b>NOTICE 注意:</b> Both parties must sign below to confirm the cash payment. This receipt serves as proof of payment for tax and record-keeping purposes. 双方必须签署以确认现金付款。本签收表作为税务和记录保存的付款证明。
+  <b>NOTICE 注意:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is intended for record-keeping and tax documentation purposes only. 双方应在下方签署，以确认本收据所列现金付款。本收据仅用于留档及税务记录用途。
 </div>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:10px;font-size:8.5pt">
   <b>SIGNATURES 签名</b>
   <table style="width:100%;margin-top:6px"><tr>
     <td style="width:50%;padding-right:10px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700">Recipient Signature 收款人签名:</div>
+      <div style="font-size:7.5pt;font-weight:700">Recipient 收款人:</div>
+      <div style="margin-top:4px"><b style="font-size:7pt">Printed Name 正楷姓名:</b> <text-field name="cash_print1" role="First Party" style="${f}width:70%"></text-field></div>
+      <div style="font-size:7pt;font-weight:700;margin-top:4px">Signature 签名:</div>
       <signature-field name="cash_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
+      <div style="margin-top:4px"><b style="font-size:7pt">Date 日期:</b> <date-field name="cash_date1" role="First Party" style="${f}width:140px"></date-field></div>
     </td>
     <td style="width:50%;padding-left:10px;vertical-align:top">
       <div style="font-size:7.5pt;font-weight:700">Company Representative 公司代表:</div>
+      <div style="margin-top:4px"><b style="font-size:7pt">Printed Name 正楷姓名:</b> <text-field name="cash_print2" role="Second Party" style="${f}width:70%"></text-field></div>
+      <div style="font-size:7pt;font-weight:700;margin-top:4px">Signature 签名:</div>
       <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
+      <div style="margin-top:4px"><b style="font-size:7pt">Date 日期:</b> <date-field name="cash_date2" role="Second Party" style="${f}width:140px"></date-field></div>
     </td>
   </tr></table>
 </div>
+
+<div style="font-size:7pt;color:#888;margin-top:8px;text-align:center">This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质。</div>
 </div>`;
 }
 
