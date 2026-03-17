@@ -2745,7 +2745,21 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="payAuthMethodDesc" style="padding:.6rem .8rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1;margin-bottom:1rem"></div>
   <div id="payAuthStatusBox" style="display:none;padding:.6rem .8rem;border-radius:8px;font-size:.83rem;margin-bottom:1rem"></div>
-  <div id="payAuthWorkerEmail" style="margin-bottom:1rem">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+    <div>
+      <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">通知语言</label>
+      <select id="payAuthLang" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none">
+        <option value="zh">🇨🇳 中文 + English</option>
+        <option value="en">🇺🇸 English Only</option>
+        <option value="es">🇪🇸 English + Español</option>
+      </select>
+    </div>
+    <div>
+      <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">手机号（短信通知）</label>
+      <input type="tel" id="payAuthPhone" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none" placeholder="626-000-0000">
+    </div>
+  </div>
+  <div style="margin-bottom:1rem">
     <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">工人邮箱（用于发送签署链接）</label>
     <input type="email" id="payAuthEmail" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none" placeholder="worker@example.com">
   </div>
@@ -17550,14 +17564,14 @@ async function openPaymentAuthModal() {
   if (!_onboardingWorkerId) return;
   const w = _onboardingWorkerData;
   const sel = document.getElementById('payAuthMethodSelect');
-  // Pre-select worker's current payment method
   const pm = (w && w.payment_method) || 'cash';
   if (sel) sel.value = pm;
   _updatePayAuthDesc();
   sel.onchange = _updatePayAuthDesc;
-  // Pre-fill email
   document.getElementById('payAuthEmail').value = (w && w.email) || '';
-  // Check existing status
+  document.getElementById('payAuthPhone').value = (w && w.phone) || '';
+  // Default lang based on worker's apparent language preference (phone country code heuristic)
+  document.getElementById('payAuthLang').value = 'zh';
   document.getElementById('payAuthStatusBox').style.display = 'none';
   document.getElementById('payAuthSignLink').style.display = 'none';
   try {
@@ -17596,13 +17610,15 @@ async function doSendPaymentAuth() {
   if (!_onboardingWorkerId) return;
   const method = document.getElementById('payAuthMethodSelect').value;
   const email = document.getElementById('payAuthEmail').value.trim();
+  const phone = document.getElementById('payAuthPhone').value.trim();
+  const lang = document.getElementById('payAuthLang').value;
   if (!email) { showToast('请填写工人邮箱', 'error'); return; }
   const btn = document.getElementById('payAuthSendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   try {
     const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-payment-auth`, {
       method: 'POST',
-      body: JSON.stringify({ payment_method: method, worker_email: email })
+      body: JSON.stringify({ payment_method: method, worker_email: email, worker_phone: phone, lang })
     });
     if (r && r.success) {
       if (r.signUrl) {

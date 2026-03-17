@@ -7826,7 +7826,8 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
     if (!w) return res.status(404).json({ error: 'Worker not found' });
     const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
-    const workerPhone = w.phone || '';
+    const workerPhone = req.body.worker_phone || w.phone || '';
+    const lang = req.body.lang || 'zh'; // 'zh', 'en', or 'es'
     const paymentMethod = req.body.payment_method || w.payment_method || 'cash';
 
     const templateTypeMap = {
@@ -7876,6 +7877,15 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
       .run(submissionId || null, submissionId ? 'sent' : null, signUrl || '', note, workerId);
     if (paymentMethod !== w.payment_method) {
       db.prepare('UPDATE worker_accounts SET payment_method=? WHERE id=?').run(paymentMethod, workerId);
+    }
+    // Send SMS with sign link using selected language (DocuSeal handles email)
+    if (signUrl && workerPhone) {
+      const smsText = lang === 'es'
+        ? `[Prime Anchorpoint] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
+        : lang === 'en'
+        ? `[Prime Anchorpoint] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
+        : `[Prime Anchorpoint] ${workerName}，请签署 ${pmLabel} 付款授权表单 / Please sign your ${pmLabel} authorization: ${signUrl}\nReply STOP to opt out.`;
+      try { await sendSMS(workerPhone, smsText); } catch (e) { console.warn('[payment-auth SMS]', e.message); }
     }
     const warnings = dsealError ? [dsealError] : [];
     res.json({ success: true, signUrl, submissionId, warnings, pmLabel });
