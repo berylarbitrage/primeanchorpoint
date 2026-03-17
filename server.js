@@ -2783,6 +2783,7 @@ function generateW9HtmlTemplate(workerName) {
 <div style="font-size:7pt;color:#555;margin-top:6px;border-top:1px solid #999;padding-top:4px">
   <strong>General Instructions</strong> — Form W-9 (Rev. March 2024) — Department of the Treasury, Internal Revenue Service. Purpose: An individual or entity who is required to file an information return with the IRS must obtain your correct TIN to report on an information return the amount paid to you. For the latest information about developments related to Form W-9 and its instructions, go to <em>www.irs.gov/FormW9</em>.
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-15 21:19 CDT</div>
 </div>`;
 }
 
@@ -2875,6 +2876,7 @@ function generateW4HtmlTemplate() {
 <div style="font-size:7pt;color:#555;margin-top:6px;border-top:1px solid #999;padding-top:4px">
   <strong>Employers Only</strong> — Employer's name and address / First date of employment / EIN — to be completed by employer.
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-15 21:19 CDT</div>
 </div>`;
 }
 
@@ -2962,6 +2964,7 @@ function generateW8BENHtmlTemplate() {
     </td>
   </tr></table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-15 21:19 CDT</div>
 </div>`;
 }
 
@@ -3054,6 +3057,7 @@ function generateW8BENEHtmlTemplate() {
     <text-field name="w8bene_print_name" role="Signer" required="true" style="${tf}"></text-field>
   </div>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-15 21:19 CDT</div>
 </div>`;
 }
 
@@ -3136,6 +3140,7 @@ function generateForm8233HtmlTemplate() {
     </td>
   </tr></table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-15 21:19 CDT</div>
 </div>`;
 }
 
@@ -3229,6 +3234,7 @@ function generateI9HtmlTemplate() {
 <div style="font-size:7pt;color:#555;margin-top:6px;border-top:1px solid #999;padding-top:4px">
   <strong>Section 2 &amp; 3</strong> — Employer or Authorized Representative review and verification, and Reverification and Rehires — to be completed and signed by employer.
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-15 21:19 CDT</div>
 </div>`;
 }
 
@@ -3283,6 +3289,7 @@ function generateCompanyContractHtmlTemplate() {
     </td>
   </tr></table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 
@@ -3337,6 +3344,7 @@ function generateContractor1099HtmlTemplate() {
     </td>
   </tr></table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 
@@ -3395,6 +3403,7 @@ function generateW2EmploymentHtmlTemplate() {
     </td>
   </tr></table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 
@@ -3507,6 +3516,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${en.footer}${t ? ` ${t.footer}` : ''}<br>${t ? `${t.ilFwpa} / ` : ''}${en.ilFwpa}<br><span style="color:#f59e0b">■</span> = ${bi(en.legend, t ? t.legend : '')} &nbsp; <span style="color:#ddd">■</span> = ${bi(en.legendGrey, t ? t.legendGrey : '')}</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-15 21:19 CDT</div>
 </div>`;
 }
 // Convenience wrappers for each language variant
@@ -3637,6 +3647,7 @@ function _buildInvoiceApprovalForm(lang) {
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 
@@ -3787,6 +3798,7 @@ function _buildThirdPartyPayForm(lang) {
   </table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 11:19 CDT</div>
 </div>`;
 }
 
@@ -3845,6 +3857,7 @@ function generateW7HtmlTemplate() {
     <td style="width:40%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">Date 日期:</div><date-field name="w7_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
   </tr></table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-15 21:19 CDT</div>
 </div>`;
 }
 
@@ -3904,6 +3917,7 @@ function generateACHAuthHtmlTemplate() {
     </td>
   </tr></table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 
@@ -4090,6 +4104,7 @@ function _buildWireAuthForm(lang) {
     </td>
   </tr>
 </table>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 function generateWireAuthHtmlTemplate()    { return _buildWireAuthForm('zh-en'); }
@@ -4226,6 +4241,7 @@ function _buildCheckInstructionForm(lang) {
     </tr>
   </table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 function generateCheckInstructionHtmlTemplate()    { return _buildCheckInstructionForm('zh-en'); }
@@ -4353,6 +4369,7 @@ function _buildZelleAuthForm(lang) {
     </tr>
   </table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 
@@ -4436,6 +4453,7 @@ function generateCashReceiptHtmlTemplate() {
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收表 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质.</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 
@@ -4512,6 +4530,7 @@ function generateCashReceiptEnHtmlTemplate() {
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status.</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 
@@ -4589,6 +4608,7 @@ function generateCashReceiptEsHtmlTemplate() {
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / Recibo de Pago en Efectivo — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. Este recibo solo reconoce el pago y no altera ninguna obligación fiscal ni el estado de contratista independiente.</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
 </div>`;
 }
 
