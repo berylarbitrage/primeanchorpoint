@@ -3679,11 +3679,10 @@ function _buildThirdPartyPayForm(lang) {
 
   const s2          = zh ? '2. PAYMENT PLATFORM &amp; ACCOUNT 付款平台及账户' : es ? '2. PAYMENT PLATFORM &amp; ACCOUNT / PLATAFORMA Y CUENTA DE PAGO' : '2. PAYMENT PLATFORM &amp; ACCOUNT';
   const lPlatform   = L('Platform', '平台', 'Plataforma');
-  const lSelectOne  = zh ? 'Select all that apply 请选择所有适用项:' : es ? 'Select all that apply / Seleccione todas las que apliquen:' : 'Select all that apply:';
+  const lSelectOne  = zh ? 'Select one 请选择一项:' : es ? 'Select one / Seleccione una:' : 'Select one:';
   const lHandle     = L('Account Handle / Username', '账号 / 用户名', 'Usuario / Handle de Cuenta');
   const lHandleHint = zh ? '例如：PayPal 绑定邮箱、Venmo 用户名或 Cash App 的 $cashtag' : es ? 'Ej.: correo de PayPal, usuario de Venmo o $cashtag de Cash App' : 'e.g. PayPal registered email, Venmo username, or Cash App $cashtag';
   const lContact    = L('Associated Email or Phone (if applicable)', '关联邮箱或手机（如适用）', 'Email o Teléfono Asociado (si aplica)');
-  const lOptional   = zh ? '(optional 可选)' : es ? '(opcional)' : '(optional)';
   const lReference  = L('Reference / Invoice # (optional)', '参考号 / 发票号（可选）', 'Referencia / N.º de Factura (opcional)');
 
   const s3 = zh ? '3. ACKNOWLEDGMENT 确认事项' : es ? '3. ACKNOWLEDGMENT / DECLARACIÓN Y ACUERDO' : '3. ACKNOWLEDGMENT';
