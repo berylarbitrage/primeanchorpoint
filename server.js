@@ -3679,7 +3679,7 @@ function _buildThirdPartyPayForm(lang) {
 
   const s2          = zh ? '2. PAYMENT PLATFORM &amp; ACCOUNT 付款平台及账户' : es ? '2. PAYMENT PLATFORM &amp; ACCOUNT / PLATAFORMA Y CUENTA DE PAGO' : '2. PAYMENT PLATFORM &amp; ACCOUNT';
   const lPlatform   = L('Platform', '平台', 'Plataforma');
-  const lSelectOne  = zh ? 'Select one 请选择一种:' : es ? 'Select one / Seleccione una:' : 'Select one:';
+  const lSelectOne  = zh ? 'Select all that apply 请选择所有适用项:' : es ? 'Select all that apply / Seleccione todas las que apliquen:' : 'Select all that apply:';
   const lHandle     = L('Account Handle / Username', '账号 / 用户名', 'Usuario / Handle de Cuenta');
   const lHandleHint = zh ? '例如：PayPal 绑定邮箱、Venmo 用户名或 Cash App 的 $cashtag' : es ? 'Ej.: correo de PayPal, usuario de Venmo o $cashtag de Cash App' : 'e.g. PayPal registered email, Venmo username, or Cash App $cashtag';
   const lContact    = L('Associated Email or Phone (if applicable)', '关联邮箱或手机（如适用）', 'Email o Teléfono Asociado (si aplica)');
@@ -3721,7 +3721,7 @@ function _buildThirdPartyPayForm(lang) {
   const sigHeader    = zh ? 'PAYEE AUTHORIZATION AND SIGNATURE 收款人确认与签名' : es ? 'PAYEE AUTHORIZATION AND SIGNATURE / FIRMA Y AUTORIZACIÓN DEL BENEFICIARIO' : 'PAYEE AUTHORIZATION AND SIGNATURE';
   const lPrintedName = L('Printed Name', '姓名（正楷）', 'Nombre en Letra de Imprenta');
   const lSig         = L('Signature', '签名', 'Firma');
-  const lDate        = L('Date', '日期', 'Fecha');
+  const lDate        = L('Date Signed', '签署日期', 'Fecha de Firma');
   const footer       = zh
     ? `${companyName} — 第三方收款账户授权 — For payment authorization records.`
     : es
@@ -3731,7 +3731,7 @@ function _buildThirdPartyPayForm(lang) {
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
   <div style="font-size:11pt;font-weight:900;letter-spacing:0.5px">${formTitle}</div>
-  <div style="font-size:7.5pt;color:#555;margin-top:2px">${companyName}</div>
+  <div style="font-size:9pt;font-weight:600;color:#222;margin-top:3px">${companyName}</div>
 </div>
 <div style="font-size:8.5pt;margin-bottom:10px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc">
   ${intro}
@@ -3750,9 +3750,10 @@ function _buildThirdPartyPayForm(lang) {
   <tr>
     <td style="${c}width:100%" colspan="2">
       <b>${lPlatform}</b> <span style="font-size:7.5pt;color:#555;font-weight:400">${lSelectOne}</span>&nbsp;&nbsp;
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="payment_platform" value="PayPal" role="First Party" style="width:13px;height:13px"></radio-button-field> PayPal</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="payment_platform" value="Venmo" role="First Party" style="width:13px;height:13px"></radio-button-field> Venmo</label>
-      <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_platform" value="Cash App" role="First Party" style="width:13px;height:13px"></radio-button-field> Cash App</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><check-box-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></check-box-field> PayPal</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><check-box-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></check-box-field> Venmo</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><check-box-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></check-box-field> Cash App</label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_other" role="First Party" style="width:13px;height:13px"></check-box-field> Other: <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #999;width:80px;display:inline-block;margin-left:4px;background:transparent"></text-field></label>
     </td>
   </tr>
   <tr>
