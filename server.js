@@ -3579,15 +3579,24 @@ function _buildInvoiceApprovalForm(lang) {
   const lPayDate        = L('Payment Date', '付款日期', 'Fecha de Pago');
   const lReviewer       = L('Reviewer', '审批人', 'Revisor');
 
-  // Section 4 — Signature
-  const authSentence    = zh
+  // Section 4 — Approval Signature
+  const approvalAuthSentence = zh
+    ? `I approve the above invoice on behalf of ${companyName}. 本人代表公司审批上述发票。`
+    : es
+    ? `I approve the above invoice on behalf of ${companyName}. Apruebo la factura anterior en nombre de ${companyName}.`
+    : `I approve the above invoice on behalf of ${companyName}.`;
+  const sigApprovalHeader = zh ? 'APPROVAL SIGNATURE 审批签名' : es ? 'APPROVAL SIGNATURE / FIRMA DE APROBACIÓN' : 'APPROVAL SIGNATURE';
+
+  // Section 5 — Payment Signature
+  const paymentAuthSentence = zh
     ? `I authorize the above payment on behalf of ${companyName}. 本人代表公司授权上述付款。`
     : es
     ? `I authorize the above payment on behalf of ${companyName}. Autorizo el pago anterior en nombre de ${companyName}.`
     : `I authorize the above payment on behalf of ${companyName}.`;
-  const sigHeader       = zh ? 'COMPANY APPROVAL SIGNATURE 公司审批签名' : es ? 'COMPANY APPROVAL SIGNATURE / FIRMA DE APROBACIÓN' : 'COMPANY APPROVAL SIGNATURE';
+  const sigPaymentHeader = zh ? 'PAYMENT SIGNATURE 付款签名' : es ? 'PAYMENT SIGNATURE / FIRMA DE PAGO' : 'PAYMENT SIGNATURE';
   const lSig            = L('Signature', '签名', 'Firma');
   const lApprDate       = L('Approval Date', '审批日期', 'Fecha de Aprobación');
+  const lPaySigDate     = L('Payment Date', '付款日期', 'Fecha de Pago');
   const footer          = zh
     ? `INTERNAL DOCUMENT — ${companyName} — Invoice records the contractor's request; this form records company approval. 内部文件——发票记录请求，本表记录批准。`
     : es
@@ -3636,6 +3645,14 @@ function _buildInvoiceApprovalForm(lang) {
   </tr>
 </table>
 
+<div style="background:#f0f5ff;border:1px solid #6699cc;padding:6px;font-size:8pt;margin-bottom:6px">
+  <b>${sigApprovalHeader}</b> — ${approvalAuthSentence}
+  <table style="width:100%;margin-top:4px"><tr>
+    <td style="width:60%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="approval_signature" role="First Party" style="width:100%;height:48px;display:block;border:1px solid #6699cc;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lApprDate}:</div><date-field name="approval_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #6699cc;border-radius:2px;background:#fff"></date-field></td>
+  </tr></table>
+</div>
+
 <div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s3}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
@@ -3645,10 +3662,10 @@ function _buildInvoiceApprovalForm(lang) {
 </table>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:6px;font-size:8pt">
-  <b>${sigHeader}</b> — ${authSentence}
+  <b>${sigPaymentHeader}</b> — ${paymentAuthSentence}
   <table style="width:100%;margin-top:4px"><tr>
-    <td style="width:60%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="approval_signature" role="Contractor" style="width:100%;height:48px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
-    <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lApprDate}:</div><date-field name="approval_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+    <td style="width:60%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="payment_signature" role="Contractor" style="width:100%;height:48px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lPaySigDate}:</div><date-field name="payment_signed_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
