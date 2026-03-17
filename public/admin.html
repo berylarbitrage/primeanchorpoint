@@ -21271,18 +21271,6 @@ async function dsDeleteMyTemplate(localId, dsId, name) {
   } catch(e) { showToast(e.message, 'error'); }
 }
 
-async function dsRenameMyTemplate(localId, currentName) {
-  const newName = prompt('请输入新的模板名称：', currentName);
-  if (!newName || newName.trim() === currentName) return;
-  try {
-    await api(`/admin/docuseal/my-templates/${localId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName.trim() }) });
-    const t = _dsMyTemplates.find(t => t.id === localId);
-    if (t) t.name = newName.trim();
-    _dsRenderMyTemplates();
-    _dsRefreshSelects();
-    showToast('模板已改名', 'success');
-  } catch(e) { showToast(e.message, 'error'); }
-}
 
 function dsChangeCategoryModal(dsTemplateId) {
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
