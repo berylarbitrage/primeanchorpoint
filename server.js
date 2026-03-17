@@ -3679,7 +3679,7 @@ function _buildThirdPartyPayForm(lang) {
 
   const s2          = zh ? '2. PAYMENT PLATFORM &amp; ACCOUNT 付款平台及账户' : es ? '2. PAYMENT PLATFORM &amp; ACCOUNT / PLATAFORMA Y CUENTA DE PAGO' : '2. PAYMENT PLATFORM &amp; ACCOUNT';
   const lPlatform   = L('Platform', '平台', 'Plataforma');
-  const lSelectOne  = zh ? 'Select one 请选择一种:' : es ? 'Select one / Seleccione una:' : 'Select one:';
+  const lSelectOne  = zh ? 'Select all that apply 请选择所有适用项:' : es ? 'Select all that apply / Seleccione todas las que apliquen:' : 'Select all that apply:';
   const lHandle     = L('Account Handle / Username', '账号 / 用户名', 'Usuario / Handle de Cuenta');
   const lHandleHint = zh ? '例如：PayPal 绑定邮箱、Venmo 用户名或 Cash App 的 $cashtag' : es ? 'Ej.: correo de PayPal, usuario de Venmo o $cashtag de Cash App' : 'e.g. PayPal registered email, Venmo username, or Cash App $cashtag';
   const lContact    = L('Associated Email or Phone (if applicable)', '关联邮箱或手机（如适用）', 'Email o Teléfono Asociado (si aplica)');
@@ -3750,9 +3750,10 @@ function _buildThirdPartyPayForm(lang) {
   <tr>
     <td style="${c}width:100%" colspan="2">
       <b>${lPlatform}</b> <span style="font-size:7.5pt;color:#555;font-weight:400">${lSelectOne}</span>&nbsp;&nbsp;
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="payment_platform" value="PayPal" role="First Party" style="width:13px;height:13px"></radio-button-field> PayPal</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="payment_platform" value="Venmo" role="First Party" style="width:13px;height:13px"></radio-button-field> Venmo</label>
-      <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_platform" value="Cash App" role="First Party" style="width:13px;height:13px"></radio-button-field> Cash App</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><check-box-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></check-box-field> PayPal</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><check-box-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></check-box-field> Venmo</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><check-box-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></check-box-field> Cash App</label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_other" role="First Party" style="width:13px;height:13px"></check-box-field> Other: <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #999;width:80px;display:inline-block;margin-left:4px;background:transparent"></text-field></label>
     </td>
   </tr>
   <tr>
