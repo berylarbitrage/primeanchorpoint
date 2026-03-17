@@ -32,6 +32,10 @@
 .field label{display:block;font-size:.75rem;font-weight:700;color:var(--gray-600);margin-bottom:.15rem;line-height:1.4}
 .field label span{display:block;font-size:.7rem;font-weight:400;color:var(--gray-400)}
 .field .line{border-bottom:2px solid var(--gray-800);min-height:2rem;margin-top:.35rem}
+.checkbox-row{display:flex;gap:2rem;align-items:center;margin-top:.35rem}
+.checkbox-row label{font-size:.82rem;font-weight:600;color:var(--gray-800);display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0}
+.checkbox-row label span{display:inline;font-size:.72rem;font-weight:400;color:var(--gray-400)}
+.checkbox-row input[type="checkbox"]{width:16px;height:16px;accent-color:var(--blue)}
 .cert-block{background:#f8faff;border:2px solid var(--blue);border-radius:10px;padding:1.75rem;margin-bottom:2.5rem}
 .cert-block p{font-size:.93rem;color:var(--gray-800);margin-bottom:.4rem}
 .cert-block p span{display:block;font-size:.85rem;color:var(--gray-600);margin-top:.1rem}
@@ -45,6 +49,7 @@
 .sig-field .sig-line{border-bottom:2px solid var(--gray-800);padding-bottom:.3rem;min-height:2.5rem;margin-top:.35rem}
 .sig-divider{width:1px;background:var(--gray-200);display:none}
 @media(min-width:581px){.sig-divider{display:block}}
+.disclaimer{font-size:.78rem;color:var(--gray-400);text-align:center;margin-top:2rem;line-height:1.6}
 .page-footer{background:var(--blue-dark);padding:1.75rem 2rem;text-align:center;font-size:.8rem;color:rgba(255,255,255,.3)}
 .page-footer a{color:rgba(255,255,255,.5)}.page-footer a:hover{color:#fff}
 .legal-nav{display:flex;flex-wrap:wrap;gap:.5rem .75rem;justify-content:center;margin-top:.75rem}
@@ -59,21 +64,21 @@
     <img src="logo.svg" alt="Prime Anchorpoint">
     <span>PRIME <em>ANCHORPOINT</em></span>
   </a>
-  <a href="/" class="back-link">← Back to Home</a>
+  <a href="/" class="back-link">&larr; Back to Home</a>
 </header>
 
 <div class="page-hero">
   <h1>Cash Payment Receipt
     <small>现金付款签收表</small>
   </h1>
-  <p>Prime Anchorpoint &nbsp;·&nbsp; Cash Disbursement Record &nbsp;·&nbsp; 现金支付记录</p>
+  <p>Prime Anchorpoint &nbsp;&middot;&nbsp; Cash Disbursement Record &nbsp;&middot;&nbsp; 现金支付记录</p>
 </div>
 
 <div class="content-wrap">
 
   <div class="auth-statement">
-    <p>This receipt confirms that the undersigned has received a cash payment from Prime Anchorpoint for services rendered.</p>
-    <p>本签收表确认签署人已从 Prime Anchorpoint 收到服务报酬现金付款。</p>
+    <p>This receipt confirms that the undersigned recipient has received the cash payment described below from Prime Anchorpoint LLC and acknowledges such payment for the services or invoice referenced in this receipt.</p>
+    <p>本收据确认下述签署收款人已从 Prime Anchorpoint LLC 收到以下所列现金付款，并确认该付款对应本收据所载明的服务或发票。</p>
   </div>
 
   <!-- 1. Payment Details -->
@@ -98,6 +103,19 @@
         <div class="line"></div>
       </div>
     </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Payment Type <span>付款类型</span></label>
+        <div class="checkbox-row">
+          <label><input type="checkbox"> Full Payment <span>全额付款</span></label>
+          <label><input type="checkbox"> Partial Payment <span>部分付款</span></label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Remaining Balance (if partial) <span>剩余金额（如为部分付款）</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
   </div>
 
   <!-- 2. Purpose / Description -->
@@ -108,7 +126,7 @@
     </div>
     <div class="field-row full">
       <div class="field">
-        <label>Service Description / Invoice Reference <span>服务说明 / 发票参考编号</span></label>
+        <label>Service Description <span>服务说明</span></label>
         <div class="line"></div>
       </div>
     </div>
@@ -118,7 +136,7 @@
         <div class="line"></div>
       </div>
       <div class="field">
-        <label>Reference # <span>参考编号</span></label>
+        <label>Invoice # / Job # / Payment Reference <span>发票编号 / 工作编号 / 付款参考号</span></label>
         <div class="line"></div>
       </div>
     </div>
@@ -131,8 +149,8 @@
       <small>确认事项</small>
     </div>
     <p>
-      The recipient confirms that the cash amount was counted and received in full.
-      <span>收款人确认已当场点清并足额收到上述现金。</span>
+      Both parties should sign below to confirm the cash payment described in this receipt. This receipt is intended for record-keeping and tax documentation purposes only.
+      <span>双方应在下方签署，以确认本收据所列现金付款。本收据仅用于留档及税务记录用途。</span>
     </p>
   </div>
 
@@ -144,6 +162,10 @@
   <div class="sig-grid">
     <div class="sig-block">
       <div class="sig-field">
+        <label>Printed Name <span>正楷姓名</span></label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
         <label>Recipient Signature <span>收款人签名</span></label>
         <div class="sig-line"></div>
       </div>
@@ -153,6 +175,10 @@
       </div>
     </div>
     <div class="sig-block">
+      <div class="sig-field">
+        <label>Printed Name <span>正楷姓名</span></label>
+        <div class="sig-line"></div>
+      </div>
       <div class="sig-field">
         <label>Authorized Company Representative <span>公司授权代表</span></label>
         <div class="sig-line"></div>
@@ -164,14 +190,16 @@
     </div>
   </div>
 
+  <div class="disclaimer">This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status.<br>本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质。</div>
+
 </div>
 
 <footer class="page-footer">
   <div>&copy; 2026 Prime Anchorpoint. All rights reserved.</div>
   <div class="legal-nav">
-    <a href="/privacy">Privacy Policy</a><span>·</span>
-    <a href="/terms">Terms of Service</a><span>·</span>
-    <a href="/sms-terms">SMS Terms</a><span>·</span>
+    <a href="/privacy">Privacy Policy</a><span>&middot;</span>
+    <a href="/terms">Terms of Service</a><span>&middot;</span>
+    <a href="/sms-terms">SMS Terms</a><span>&middot;</span>
     <a href="/data-deletion">Data Deletion Policy</a>
   </div>
 </footer>
