@@ -2324,10 +2324,23 @@ tr:hover td{background:var(--sky-light)}
           <div id="ds-cfg-wire-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">Check / 支票</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">支票邮寄地址确认</div>
-          <select id="ds-sel-check" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('check_instruction', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-check-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">✉️ Check / 支票</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">支票付款及邮寄地址确认 — 三种语言版本</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
+            <select id="ds-sel-check" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('check_instruction', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-check-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-check-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('check_instruction_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-check-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-check-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('check_instruction_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-check-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">Zelle</div>
@@ -2448,7 +2461,9 @@ tr:hover td{background:var(--sky-light)}
             <optgroup label="付款授权表格">
               <option value="ach_auth">ACH / Direct Deposit</option>
               <option value="wire_auth">Wire Transfer</option>
-              <option value="check_instruction">Check / 支票</option>
+              <option value="check_instruction">Check / 支票 (ZH+EN)</option>
+              <option value="check_instruction_en">Check / 支票 (EN)</option>
+              <option value="check_instruction_es">Check / 支票 (EN+ES)</option>
               <option value="zelle_auth">Zelle (中英 ZH+EN)</option>
               <option value="zelle_auth_en">Zelle (英文 EN)</option>
               <option value="zelle_auth_es">Zelle (英西 EN+ES)</option>
@@ -20978,7 +20993,9 @@ const _DS_SELECTORS = [
   // 付款授权
   { key: 'ach_auth_template_id',         selId: 'ds-sel-ach',                infoId: 'ds-cfg-ach-info',               label: 'ACH授权',      doc_type: 'ach_auth' },
   { key: 'wire_auth_template_id',        selId: 'ds-sel-wire',               infoId: 'ds-cfg-wire-info',              label: '电汇授权',     doc_type: 'wire_auth' },
-  { key: 'check_instruction_template_id',selId: 'ds-sel-check',              infoId: 'ds-cfg-check-info',             label: '支票指引',     doc_type: 'check_instruction' },
+  { key: 'check_instruction_template_id',    selId: 'ds-sel-check',    infoId: 'ds-cfg-check-info',    label: '支票(中英)', doc_type: 'check_instruction' },
+  { key: 'check_instruction_en_template_id', selId: 'ds-sel-check-en', infoId: 'ds-cfg-check-en-info', label: '支票(英文)', doc_type: 'check_instruction_en' },
+  { key: 'check_instruction_es_template_id', selId: 'ds-sel-check-es', infoId: 'ds-cfg-check-es-info', label: '支票(英西)', doc_type: 'check_instruction_es' },
   { key: 'zelle_auth_template_id',       selId: 'ds-sel-zelle',              infoId: 'ds-cfg-zelle-info',             label: 'Zelle(中英)',   doc_type: 'zelle_auth' },
   { key: 'zelle_auth_en_template_id',    selId: 'ds-sel-zelle-en',           infoId: 'ds-cfg-zelle-en-info',          label: 'Zelle(英文)',   doc_type: 'zelle_auth_en' },
   { key: 'zelle_auth_es_template_id',    selId: 'ds-sel-zelle-es',           infoId: 'ds-cfg-zelle-es-info',          label: 'Zelle(英西)',   doc_type: 'zelle_auth_es' },
@@ -21017,7 +21034,7 @@ function _dsRefreshSelects() {
 const _DS_CAT_GROUPS = {
   __contract__: ['company_contract','worker_1099','worker_w2','contract'],
   __tax__:      ['w4','w9','w8ben','w8bene','form8233','i9','w7','tax'],
-  __payment__:  ['ach_auth','wire_auth','check_instruction','zelle_auth','zelle_auth_en','zelle_auth_es','third_party_pay','third_party_pay_en','third_party_pay_es','cash_receipt','payment'],
+  __payment__:  ['ach_auth','wire_auth','check_instruction','check_instruction_en','check_instruction_es','zelle_auth','zelle_auth_en','zelle_auth_es','third_party_pay','third_party_pay_en','third_party_pay_es','cash_receipt','payment'],
   __invoice__:  ['contractor_invoice','contractor_invoice_en','contractor_invoice_es','invoice'],
   __approval__: ['invoice_approval','invoice_approval_en','invoice_approval_es'],
 };
@@ -21063,7 +21080,9 @@ function _dsRenderMyTemplates() {
     w7_template_id:                { bg:'#f0fdf4', color:'#15803d', label:'W-7' },
     ach_auth_template_id:          { bg:'#f0f9ff', color:'#0c4a6e', label:'ACH' },
     wire_auth_template_id:         { bg:'#fffbeb', color:'#78350f', label:'电汇' },
-    check_instruction_template_id: { bg:'#fafaf9', color:'#292524', label:'支票' },
+    check_instruction_template_id:    { bg:'#fafaf9', color:'#292524', label:'支票' },
+    check_instruction_en_template_id: { bg:'#fafaf9', color:'#292524', label:'支票' },
+    check_instruction_es_template_id: { bg:'#fafaf9', color:'#292524', label:'支票' },
     zelle_auth_template_id:        { bg:'#fdf4ff', color:'#86198f', label:'Zelle' },
     zelle_auth_en_template_id:     { bg:'#fdf4ff', color:'#86198f', label:'Zelle' },
     zelle_auth_es_template_id:     { bg:'#fdf4ff', color:'#86198f', label:'Zelle' },
@@ -21081,7 +21100,7 @@ function _dsRenderMyTemplates() {
   const _CAT_BADGE = {
     company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
     w4:{bg:'#e0f2fe',color:'#0369a1',label:'W-4'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'W-9'}, w8ben:{bg:'#fae8ff',color:'#6b21a8',label:'W-8BEN'}, w8bene:{bg:'#ede9fe',color:'#5b21b6',label:'W-8BEN-E'}, form8233:{bg:'#fce7f3',color:'#9d174d',label:'8233'}, i9:{bg:'#dcfce7',color:'#166534',label:'I-9'}, w7:{bg:'#f0fdf4',color:'#15803d',label:'W-7'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
-    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_en:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_es:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_en:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_es:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
+    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_en:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_es:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_en:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_es:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_en:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_es:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
     contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_en:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_es:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
     invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_en:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_es:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
   };

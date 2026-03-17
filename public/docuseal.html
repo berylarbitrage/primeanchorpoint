@@ -179,7 +179,9 @@
           <optgroup label="付款授权表格">
             <option value="ach_auth_template_id">ACH / Direct Deposit</option>
             <option value="wire_auth_template_id">Wire Transfer</option>
-            <option value="check_instruction_template_id">Check / 支票</option>
+            <option value="check_instruction_template_id">Check / 支票 (ZH+EN)</option>
+            <option value="check_instruction_en_template_id">Check / 支票 (EN)</option>
+            <option value="check_instruction_es_template_id">Check / 支票 (EN+ES)</option>
             <option value="zelle_auth_template_id">Zelle (中英 ZH+EN)</option>
             <option value="zelle_auth_en_template_id">Zelle (英文 EN)</option>
             <option value="zelle_auth_es_template_id">Zelle (英西 EN+ES)</option>
@@ -252,7 +254,9 @@ const TEMPLATE_DEFS = [
   // 付款授权表格
   { key: 'ach_auth_template_id',         label: 'ACH / Direct Deposit', desc: '银行直接转账授权',      cat: '付款授权表格', catIcon: '💳' },
   { key: 'wire_auth_template_id',        label: 'Wire Transfer',        desc: '电汇付款授权',          cat: '付款授权表格', catIcon: '💳' },
-  { key: 'check_instruction_template_id',label: 'Check / 支票',         desc: '支票邮寄地址确认',       cat: '付款授权表格', catIcon: '💳' },
+  { key: 'check_instruction_template_id',    label: 'Check / 支票 (ZH+EN)', desc: '支票付款及邮寄地址确认（中英）', cat: '付款授权表格', catIcon: '💳', type: 'check_instruction' },
+  { key: 'check_instruction_en_template_id', label: 'Check / 支票 (EN)',    desc: '支票付款及邮寄地址确认（英文）', cat: '付款授权表格', catIcon: '💳', type: 'check_instruction_en' },
+  { key: 'check_instruction_es_template_id', label: 'Check / 支票 (EN+ES)', desc: '支票付款及邮寄地址确认（英西）', cat: '付款授权表格', catIcon: '💳', type: 'check_instruction_es' },
   { key: 'zelle_auth_template_id',       label: 'Zelle (中英)',         desc: 'Zelle 收款授权及账户确认',  cat: '付款授权表格', catIcon: '💳' },
   { key: 'zelle_auth_en_template_id',    label: 'Zelle (EN)',           desc: 'Zelle Payment Authorization & Account Confirmation', cat: '付款授权表格', catIcon: '💳' },
   { key: 'zelle_auth_es_template_id',    label: 'Zelle (EN+ES)',        desc: 'Autorización de Pago Zelle', cat: '付款授权表格', catIcon: '💳' },

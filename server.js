@@ -3940,52 +3940,140 @@ function generateWireAuthHtmlTemplate() {
 }
 
 // ── Check / 支票 Instruction Form ──
-function generateCheckInstructionHtmlTemplate() {
+function _buildCheckInstructionForm(lang) {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const zh = lang === 'zh-en';
+  const es = lang === 'en-es';
+  const L = (en, zhTxt, esTxt) => {
+    if (zh && zhTxt) return `${en} ${zhTxt}`;
+    if (es && esTxt) return `${en} / ${esTxt}`;
+    return en;
+  };
+
+  const formTitle = zh
+    ? 'CHECK PAYMENT MAILING INSTRUCTION & PAYEE CONFIRMATION / 支票付款及邮寄地址确认表'
+    : es
+    ? 'CHECK PAYMENT MAILING INSTRUCTION & PAYEE CONFIRMATION / INSTRUCCIÓN DE PAGO Y CONFIRMACIÓN DE BENEFICIARIO'
+    : 'CHECK PAYMENT MAILING INSTRUCTION & PAYEE CONFIRMATION';
+  const subtitle = zh
+    ? `支票付款及邮寄地址确认表 — ${companyName}`
+    : es
+    ? `Instrucción de Pago con Cheque — ${companyName}`
+    : `Check Payment & Mailing Confirmation — ${companyName}`;
+
+  const introPara = zh
+    ? `I request that ${companyName} issue payment by check to the payee name and mailing address provided below. 本人要求 ${companyName} 按以下收款人名称及邮寄地址签发并寄送支票。`
+    : es
+    ? `I request that ${companyName} issue payment by check to the payee name and mailing address provided below. Solicito que ${companyName} emita el pago mediante cheque al nombre y dirección postal indicados a continuación.`
+    : `I request that ${companyName} issue payment by check to the payee name and mailing address provided below.`;
+
+  const s1 = L('1. PAYEE INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
+  const lPayeeName   = L('Payee Name (as printed on check)', '收款人姓名（与支票抬头一致）', 'Nombre del Beneficiario (tal como aparece en el cheque)');
+  const lContact     = zh ? 'Phone / Email 电话/电邮 (optional 可选)' : es ? 'Phone / Email (opcional)' : 'Phone / Email (optional)';
+
+  const s2 = L('2. MAILING ADDRESS', '邮寄地址', 'DIRECCIÓN POSTAL');
+  const lStreet  = L('Street Address', '街道地址', 'Dirección');
+  const lApt     = zh ? 'Apt / Suite / Unit 门牌号 (optional 可选)' : es ? 'Apt / Suite / Unit (opcional)' : 'Apt / Suite / Unit (optional)';
+  const lCity    = L('City', '城市', 'Ciudad');
+  const lState   = L('State', '州', 'Estado');
+  const lZip     = 'ZIP';
+  const lCountry = zh ? 'Country 国家 (if outside U.S. 境外填写)' : es ? 'Country / País (si fuera de EE.UU.)' : 'Country (if outside U.S.)';
+
+  const s3 = L('3. PAYMENT REFERENCE', '付款参考', 'REFERENCIA DE PAGO');
+  const lRef = zh ? 'Invoice # / Job # / Payment Reference 发票号/工作号/付款参考号' : es ? 'N.º de Factura / Trabajo / Referencia de Pago' : 'Invoice # / Job # / Payment Reference';
+
+  const s4 = zh ? '4. SPECIAL INSTRUCTIONS 特别说明 (optional 可选)' : es ? '4. SPECIAL INSTRUCTIONS / INSTRUCCIONES ESPECIALES (opcional)' : '4. SPECIAL INSTRUCTIONS (optional)';
+
+  const s5 = L('5. CONFIRMATION & AGREEMENT', '确认与承诺', 'CONFIRMACIÓN Y ACUERDO');
+  const confirmLine1 = zh
+    ? 'I confirm that the payee name and mailing address provided above are accurate. 本人确认以上收款人名称及邮寄地址真实准确。'
+    : es
+    ? 'I confirm that the payee name and mailing address provided above are accurate. Confirmo que el nombre del beneficiario y la dirección postal indicados son correctos.'
+    : 'I confirm that the payee name and mailing address provided above are accurate.';
+  const confirmLine2 = zh
+    ? `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing. 除非本人在支票寄出前以书面形式提供更新信息，否则按上述信息签发并邮寄支票即视为 ${companyName} 已正确送达付款。`
+    : es
+    ? `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing. El envío del cheque a la información indicada se considerará entrega válida del pago, salvo que se proporcionen instrucciones actualizadas por escrito antes del envío.`
+    : `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing.`;
+  const confirmLine3 = zh
+    ? `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect. 如本人收款人名称或邮寄地址发生变化，本人同意在支票寄出前以书面形式通知 ${companyName}。`
+    : es
+    ? `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect. Acepto notificar a ${companyName} por escrito antes de que entre en vigor cualquier cambio en mi nombre o dirección postal.`
+    : `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect.`;
+
+  const sigHeader = zh ? 'PAYEE SIGNATURE 收款人签名' : es ? 'FIRMA DEL BENEFICIARIO' : 'PAYEE SIGNATURE';
+  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en letra de molde');
+  const lSig  = L('Signature', '签名', 'Firma');
+  const lDate = L('Date', '日期', 'Fecha');
+
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px">CHECK PAYMENT INSTRUCTION</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">支票邮寄地址确认表 — ${companyName}</div>
+  <div style="font-size:12pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
+  <div style="font-size:8.5pt;color:#555;margin-top:4px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt">I request that ${companyName} issue payment by check to the name and address below. 本人要求 ${companyName} 按以下姓名和地址签发支票付款。</p>
+<p style="font-size:8.5pt;margin-bottom:12px">${introPara}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">1. PAYEE INFORMATION 收款人信息</div>
+<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
-    <td style="${c}width:50%"><b>Payee Name (as printed on check) 收款人姓名</b><br><text-field name="check_payee" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Phone / Email 电话/电邮</b><br><text-field name="check_contact" role="First Party" style="${w}"></text-field></td>
+    <td style="${c}width:55%"><b>${lPayeeName}</b><br><text-field name="check_payee" role="Contractor" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="check_contact" role="Contractor" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">2. MAILING ADDRESS 邮寄地址</div>
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr><td style="${c}"><b>Street Address 街道地址</b><br><text-field name="check_street" role="First Party" required="true" style="${w}"></text-field></td></tr>
   <tr>
-    <td style="${c}">
-      <b>City 城市</b> <text-field name="check_city" role="First Party" required="true" style="${f}width:180px"></text-field>
-      <b style="margin-left:12px">State 州</b> <text-field name="check_state" role="First Party" required="true" style="${f}width:80px"></text-field>
-      <b style="margin-left:12px">ZIP</b> <text-field name="check_zip" role="First Party" required="true" style="${f}width:100px"></text-field>
+    <td style="${c}width:60%"><b>${lStreet}</b><br><text-field name="check_street" role="Contractor" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:40%"><b>${lApt}</b><br><text-field name="check_apt" role="Contractor" style="${w}"></text-field></td>
+  </tr>
+  <tr>
+    <td colspan="2" style="${c}">
+      <b>${lCity}</b> <text-field name="check_city" role="Contractor" required="true" style="${f}width:160px"></text-field>
+      &nbsp;&nbsp;<b>${lState}</b> <text-field name="check_state" role="Contractor" required="true" style="${f}width:70px"></text-field>
+      &nbsp;&nbsp;<b>${lZip}</b> <text-field name="check_zip" role="Contractor" required="true" style="${f}width:90px"></text-field>
     </td>
   </tr>
-  <tr><td style="${c}"><b>Country 国家 (if outside U.S.)</b><br><text-field name="check_country" role="First Party" style="${f}width:220px" placeholder="United States"></text-field></td></tr>
+  <tr><td colspan="2" style="${c}"><b>${lCountry}</b>&nbsp;<text-field name="check_country" role="Contractor" style="${f}width:200px" placeholder="United States"></text-field></td></tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">3. SPECIAL INSTRUCTIONS 特别说明</div>
-<text-field name="check_notes" role="First Party" style="${w};min-height:40px" placeholder="e.g., Attn: ..., c/o ..."></text-field>
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
+<text-field name="check_reference" role="Contractor" style="${w}" placeholder="e.g., INV-2026-001"></text-field>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
-  <b>PAYEE SIGNATURE 收款人签名</b> — I confirm the above mailing information is correct. 本人确认以上邮寄信息正确。
-  <table style="width:100%;margin-top:6px"><tr>
-    <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">Signature 签名:</div><signature-field name="check_sig" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-    <td style="width:40%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">Date 日期:</div><date-field name="check_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
-  </tr></table>
+<div style="font-weight:700;margin:10px 0 3px;font-size:9.5pt">${s4}</div>
+<text-field name="check_notes" role="Contractor" style="${w};min-height:36px" placeholder="e.g., Attn: ..., c/o ..."></text-field>
+
+<div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:12px;font-size:8pt;line-height:1.55">
+  <div style="font-weight:700;margin-bottom:4px">${s5}</div>
+  <div style="margin-bottom:4px">${confirmLine1}</div>
+  <div style="margin-bottom:4px">${confirmLine2}</div>
+  <div>${confirmLine3}</div>
+</div>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:10px;font-size:8.5pt;border-radius:3px">
+  <b>${sigHeader}</b>
+  <table style="width:100%;margin-top:6px">
+    <tr>
+      <td colspan="2" style="padding-bottom:6px;vertical-align:top">
+        <div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div>
+        <text-field name="check_printed_name" role="Contractor" required="true" style="${w}"></text-field>
+      </td>
+    </tr>
+    <tr>
+      <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="check_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:40%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate}:</div><date-field name="check_date" role="Contractor" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+    </tr>
+  </table>
 </div>
 </div>`;
 }
+function generateCheckInstructionHtmlTemplate()    { return _buildCheckInstructionForm('zh-en'); }
+function generateCheckInstructionHtmlTemplate_EN() { return _buildCheckInstructionForm('en'); }
+function generateCheckInstructionHtmlTemplate_ES() { return _buildCheckInstructionForm('en-es'); }
 
 // ── Zelle Authorization — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
@@ -4198,7 +4286,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   w7: { name: 'W-7 ITIN Application / ITIN 申请表', configKey: 'w7_template_id', category: 'w7', generator: generateW7HtmlTemplate },
   ach_auth: { name: 'ACH / Direct Deposit Authorization / 银行直接转账授权', configKey: 'ach_auth_template_id', category: 'ach_auth', generator: generateACHAuthHtmlTemplate },
   wire_auth: { name: 'Wire Transfer Authorization / 电汇付款授权', configKey: 'wire_auth_template_id', category: 'wire_auth', generator: generateWireAuthHtmlTemplate },
-  check_instruction: { name: 'Check Payment Instruction / 支票邮寄地址确认', configKey: 'check_instruction_template_id', category: 'check_instruction', generator: generateCheckInstructionHtmlTemplate },
+  check_instruction:    { name: 'Check Payment Mailing Instruction (ZH+EN) / 支票付款及邮寄地址确认表', configKey: 'check_instruction_template_id',    category: 'check_instruction',    generator: generateCheckInstructionHtmlTemplate },
+  check_instruction_en: { name: 'Check Payment Mailing Instruction (EN)',                                  configKey: 'check_instruction_en_template_id', category: 'check_instruction_en', generator: generateCheckInstructionHtmlTemplate_EN },
+  check_instruction_es: { name: 'Check Payment Mailing Instruction (EN+ES)',                               configKey: 'check_instruction_es_template_id', category: 'check_instruction_es', generator: generateCheckInstructionHtmlTemplate_ES },
   zelle_auth:    { name: 'Zelle Payment Authorization & Account Confirmation (EN+ZH)', configKey: 'zelle_auth_template_id',    category: 'zelle_auth',    generator: generateZelleAuthHtmlTemplate },
   zelle_auth_en: { name: 'Zelle Payment Authorization & Account Confirmation (EN)',    configKey: 'zelle_auth_en_template_id', category: 'zelle_auth_en', generator: generateZelleAuthHtmlTemplate_EN },
   zelle_auth_es: { name: 'Zelle Payment Authorization & Account Confirmation (EN+ES)', configKey: 'zelle_auth_es_template_id', category: 'zelle_auth_es', generator: generateZelleAuthHtmlTemplate_ES },
