@@ -16543,6 +16543,54 @@ app.use((err, req, res, _next) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// Auto-regenerate all configured auto templates when the company name env vars have changed.
+// This handles cases where templates were generated with a different COMPANY_SIGNER_NAME /
+// COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
+async function autoRegenerateTemplatesForCompanyName() {
+  if (!dsealEnabled()) return;
+  const currentSigner = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const currentLegal  = process.env.COMPANY_LEGAL_NAME  || 'Prime Anchorpoint LLC';
+  const combinedKey   = `${currentSigner}|||${currentLegal}`;
+
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+
+  // Skip if company name hasn't changed since last regeneration
+  if (cfg._company_name_regen_key === combinedKey) return;
+
+  console.log(`[startup] Company name changed or first run — regenerating all auto templates...`);
+  let cfgChanged = false;
+
+  for (const [type, tmplDef] of Object.entries(DOCUSEAL_AUTO_TEMPLATES)) {
+    const existingId = cfg[tmplDef.configKey];
+    if (!existingId) continue; // not configured, skip (will be created on demand)
+    try {
+      const html = tmplDef.generator();
+      const r = await dsealApiCall('POST', '/api/templates/html', {
+        name: tmplDef.name,
+        documents: [{ name: tmplDef.name, html, size: 'Letter' }]
+      });
+      if (r.status >= 400) {
+        console.error(`[startup] Failed to regenerate ${type} template: DocuSeal ${r.status}`);
+        continue;
+      }
+      const dsId = r.data?.id || r.data?.template_id;
+      if (dsId) {
+        db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, String(dsId), tmplDef.category || 'contract');
+        cfg[tmplDef.configKey] = dsId;
+        cfgChanged = true;
+        console.log(`[startup] Regenerated ${type} template (company name update) → new ID: ${dsId}`);
+      }
+    } catch (e) {
+      console.error(`[startup] Failed to check/regenerate ${type} template: ${e.message}`);
+    }
+  }
+
+  // Record the company name used for this regeneration pass
+  cfg._company_name_regen_key = combinedKey;
+  db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+}
+
 // Auto-regenerate contractor invoice templates if they're missing the bill_to_company field
 // (handles case where old template had company name baked in as static text)
 async function autoRegenerateContractorInvoiceTemplates() {
@@ -16602,6 +16650,8 @@ app.listen(PORT, () => {
     for (const w of workers) { syncOnboardedStatus(w.id); synced++; }
     if (synced) console.log(`[startup] Re-synced onboarded status for ${synced} workers`);
   } catch(e) { console.error('[startup] onboarded sync error:', e.message); }
+  // Auto-regenerate all templates if company name env vars have changed (e.g. "Qiushi Zhang" → correct name)
+  setTimeout(() => autoRegenerateTemplatesForCompanyName().catch(e => console.error('[startup] Company name template regen error:', e.message)), 3000);
   // Auto-regenerate contractor invoice templates if bill_to_company field is missing (old static-text templates)
-  setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 5000);
+  setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 8000);
 });
