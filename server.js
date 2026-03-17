@@ -4057,8 +4057,7 @@ function generateCashReceiptHtmlTemplate() {
     <td style="${c}width:50%"><b>Payment Date 付款日期</b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:160px"></date-field></td>
   </tr>
   <tr>
-    <td style="${c}"><b>Amount Received 收到金额</b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:140px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
-    <td style="${c}"><b>Amount in Words 大写金额</b><br><text-field name="cash_amount_words" role="First Party" style="${w}" placeholder="e.g., Five Hundred Dollars"></text-field></td>
+    <td style="${c}" colspan="2"><b>Amount Received 收到金额</b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:140px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
   </tr>
 </table>
 
