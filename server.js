@@ -4470,8 +4470,8 @@ function generateCashReceiptHtmlTemplate() {
     <td style="${c}width:50%">
       <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">付款性质</span></b><br>
       <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><radio-button-field name="payment_type" value="full" role="First Party" style="width:13px;height:13px"></radio-button-field> Full Payment / 全额付款</label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_type" value="partial" role="First Party" style="width:13px;height:13px"></radio-button-field> Partial Payment / 部分付款</label>
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment / 全额付款</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / 部分付款</label>
       </div>
     </td>
   </tr>
@@ -4557,8 +4557,8 @@ function generateCashReceiptEnHtmlTemplate() {
     <td style="${c}width:50%">
       <b>Payment Type</b><br>
       <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><radio-button-field name="payment_type" value="full" role="First Party" style="width:13px;height:13px"></radio-button-field> Full Payment</label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_type" value="partial" role="First Party" style="width:13px;height:13px"></radio-button-field> Partial Payment</label>
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment</label>
       </div>
     </td>
   </tr>
@@ -4645,8 +4645,8 @@ function generateCashReceiptEsHtmlTemplate() {
     <td style="${c}width:50%">
       <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">Tipo de Pago</span></b><br>
       <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><radio-button-field name="payment_type" value="full" role="First Party" style="width:13px;height:13px"></radio-button-field> Full Payment / Pago Total</label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_type" value="partial" role="First Party" style="width:13px;height:13px"></radio-button-field> Partial Payment / Pago Parcial</label>
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment / Pago Total</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / Pago Parcial</label>
       </div>
     </td>
   </tr>
