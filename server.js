@@ -3721,7 +3721,7 @@ function _buildThirdPartyPayForm(lang) {
   const sigHeader    = zh ? 'PAYEE AUTHORIZATION AND SIGNATURE 收款人确认与签名' : es ? 'PAYEE AUTHORIZATION AND SIGNATURE / FIRMA Y AUTORIZACIÓN DEL BENEFICIARIO' : 'PAYEE AUTHORIZATION AND SIGNATURE';
   const lPrintedName = L('Printed Name', '姓名（正楷）', 'Nombre en Letra de Imprenta');
   const lSig         = L('Signature', '签名', 'Firma');
-  const lDate        = L('Date', '日期', 'Fecha');
+  const lDate        = L('Date Signed', '签署日期', 'Fecha de Firma');
   const footer       = zh
     ? `${companyName} — 第三方收款账户授权 — For payment authorization records.`
     : es
@@ -3731,7 +3731,7 @@ function _buildThirdPartyPayForm(lang) {
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
   <div style="font-size:11pt;font-weight:900;letter-spacing:0.5px">${formTitle}</div>
-  <div style="font-size:7.5pt;color:#555;margin-top:2px">${companyName}</div>
+  <div style="font-size:9pt;font-weight:600;color:#222;margin-top:3px">${companyName}</div>
 </div>
 <div style="font-size:8.5pt;margin-bottom:10px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc">
   ${intro}
