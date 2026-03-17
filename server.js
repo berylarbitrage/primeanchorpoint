@@ -1571,6 +1571,9 @@ try {
 try {
   db.exec("ALTER TABLE docuseal_templates ADD COLUMN confirmed INTEGER DEFAULT 0");
 } catch(e) { /* column already exists */ }
+try {
+  db.exec("ALTER TABLE docuseal_templates ADD COLUMN content_hash TEXT DEFAULT NULL");
+} catch(e) { /* column already exists */ }
 
 // Migrate: update broad categories (tax, contract, payment, invoice) to specific doc_types
 try {
@@ -16844,6 +16847,24 @@ app.post('/api/admin/docuseal/create-html-template', requireAdmin, async (req, r
   }
 });
 
+// GET /api/admin/docuseal/check-updates — compare current generator output with stored hash
+app.get('/api/admin/docuseal/check-updates', requireAdmin, (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  const updates = [];
+  for (const [type, tmplDef] of Object.entries(DOCUSEAL_AUTO_TEMPLATES)) {
+    const existingId = cfg[tmplDef.configKey];
+    if (!existingId) continue; // not yet created, skip
+    const dbRow = db.prepare('SELECT content_hash, confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(existingId);
+    if (dbRow?.confirmed) continue; // confirmed — never suggest update
+    const currentHash = crypto.createHash('md5').update(tmplDef.generator()).digest('hex');
+    const hasUpdate = !dbRow?.content_hash || dbRow.content_hash !== currentHash;
+    if (hasUpdate) updates.push({ type, name: tmplDef.name, template_id: existingId });
+  }
+  res.json({ updates });
+});
+
 // POST /api/admin/docuseal/create-all-templates — create all templates at once
 app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
@@ -16865,6 +16886,7 @@ app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, r
     try {
       const oldId = cfg[tmplDef.configKey];
       const html = tmplDef.generator();
+      const newHash = crypto.createHash('md5').update(html).digest('hex');
       const r = await dsealApiCall('POST', '/api/templates/html', {
         name: tmplDef.name,
         documents: [{ name: tmplDef.name, html, size: 'Letter' }]
@@ -16877,7 +16899,7 @@ app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, r
           await dsealApiCall('DELETE', `/api/templates/${oldId}`).catch(() => {});
           db.prepare('DELETE FROM docuseal_templates WHERE docuseal_template_id=?').run(oldId);
         }
-        db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, dsId, tmplDef.category || 'contract');
+        db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category, content_hash) VALUES (?, ?, ?, ?)').run(tmplDef.name, dsId, tmplDef.category || 'contract', newHash);
         cfg[tmplDef.configKey] = dsId;
       }
       results.push({ type, success: true, template_id: dsId, name: tmplDef.name });
@@ -16952,6 +16974,7 @@ async function autoRegenerateTemplatesForCompanyName() {
     if (_confirmed?.confirmed) { console.log(`[startup] Skipping confirmed template: ${type}`); continue; }
     try {
       const html = tmplDef.generator();
+      const newHash = crypto.createHash('md5').update(html).digest('hex');
       const r = await dsealApiCall('POST', '/api/templates/html', {
         name: tmplDef.name,
         documents: [{ name: tmplDef.name, html, size: 'Letter' }]
@@ -16967,7 +16990,7 @@ async function autoRegenerateTemplatesForCompanyName() {
           await dsealApiCall('DELETE', `/api/templates/${existingId}`).catch(() => {});
           db.prepare('DELETE FROM docuseal_templates WHERE docuseal_template_id=?').run(existingId);
         }
-        db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, String(dsId), tmplDef.category || 'contract');
+        db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category, content_hash) VALUES (?, ?, ?, ?)').run(tmplDef.name, String(dsId), tmplDef.category || 'contract', newHash);
         cfg[tmplDef.configKey] = dsId;
         cfgChanged = true;
         console.log(`[startup] Regenerated ${type} template → new ID: ${dsId} (old ${existingId} deleted)`);
