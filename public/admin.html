@@ -2579,6 +2579,7 @@ tr:hover td{background:var(--sky-light)}
         </select>
         <button onclick="_dsFilterLang='';_dsFilterCat='';document.getElementById('ds-filter-lang').value='';document.getElementById('ds-filter-cat').value='';_dsRenderMyTemplates()" style="padding:.3rem .65rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.8rem;cursor:pointer">重置</button>
         <span id="ds-filter-count" style="font-size:.78rem;color:#94a3b8;margin-left:.2rem"></span>
+        <button id="ds-regen-btn" onclick="dsForceRegenTemplates()" style="margin-left:auto;padding:.3rem .8rem;border-radius:7px;border:1px solid #fde68a;background:#fffbeb;color:#92400e;font-size:.8rem;font-weight:600;cursor:pointer">🔄 强制重新生成所有模板</button>
       </div>
       <div id="ds-my-templates-wrap">
         <div style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:.9rem">正在加载…</div>
@@ -21232,6 +21233,24 @@ function _dsRenderMyTemplates() {
     </div>`;
   }).join('');
   wrap.innerHTML = rows;
+}
+
+async function dsForceRegenTemplates() {
+  const btn = document.getElementById('ds-regen-btn');
+  if (!btn) return;
+  if (!confirm('将强制重新生成所有系统模板并上传到 DocuSeal，原有模板会被替换。确认继续？')) return;
+  btn.disabled = true;
+  btn.textContent = '⟳ 生成中…';
+  try {
+    const r = await api('/admin/docuseal/create-all-templates', { method: 'POST', body: JSON.stringify({ force: true }) });
+    showToast(`✅ 已重新生成 ${r.created || 0} 个模板`, 'success', 5000);
+    await _dsLoadMyTemplates();
+  } catch(e) {
+    showToast('生成失败: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 强制重新生成所有模板';
+  }
 }
 
 async function dsSetTemplate(type, id) {

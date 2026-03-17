@@ -3798,7 +3798,7 @@ function _buildThirdPartyPayForm(lang) {
   </table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 11:19 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 11:38 CDT</div>
 </div>`;
 }
 
