@@ -9116,7 +9116,6 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
       { name: 'service_period_start', default_value: fmtPeriod(service_period_start), readonly: true },
       { name: 'service_period_end', default_value: fmtPeriod(service_period_end), readonly: true },
       { name: 'service_description', default_value: serviceDescValue, readonly: false },
-      { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
       { name: 'payment_terms', default_value: 'Net 30', readonly: true },
       { name: 'payment_due_date', default_value: dueDate, readonly: true }
     ] };
