@@ -3216,7 +3216,7 @@ function generateI9HtmlTemplate() {
 function generateCompanyContractHtmlTemplate() {
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
   <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">SERVICE AGREEMENT</div>
@@ -3270,7 +3270,7 @@ function generateCompanyContractHtmlTemplate() {
 function generateContractor1099HtmlTemplate() {
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
   <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">INDEPENDENT CONTRACTOR AGREEMENT</div>
@@ -3324,7 +3324,7 @@ function generateContractor1099HtmlTemplate() {
 function generateW2EmploymentHtmlTemplate() {
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
   <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">EMPLOYMENT AGREEMENT</div>
@@ -3432,7 +3432,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
 
   const ro = 'border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;';
   const ed = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const companyAddr = process.env.COMPANY_ADDRESS || '';
   const companyEmail = process.env.COMPANY_EMAIL || '';
   const c = 'padding:3px 5px;border:1px solid #ccc;vertical-align:top;';
@@ -3497,7 +3497,7 @@ function generateContractorInvoiceHtmlTemplate_ES() { return generateContractorI
 // ── Invoice Approval Form — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
 function _buildInvoiceApprovalForm(lang) {
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
   const w = `${f}width:100%;min-height:16px;`;
   const c = 'padding:3px 5px;border:1px solid #ccc;vertical-align:top;';
@@ -3628,7 +3628,7 @@ function generateInvoiceApprovalHtmlTemplate_ES() { return _buildInvoiceApproval
 // ── Third-Party Payment Authorization — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
 function _buildThirdPartyPayForm(lang) {
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
   const w = `${f}width:100%;min-height:16px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
@@ -3641,7 +3641,7 @@ function _buildThirdPartyPayForm(lang) {
   };
 
   const formTitle = zh
-    ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM 第三方平台收款授权表'
+    ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM 第三方平台收款授权及账户确认表'
     : es
     ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM / AUTORIZACIÓN PARA RECIBIR PAGOS VÍA PLATAFORMA DE TERCEROS'
     : 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM';
@@ -3657,9 +3657,11 @@ function _buildThirdPartyPayForm(lang) {
 
   const s2          = zh ? '2. PAYMENT PLATFORM &amp; ACCOUNT 付款平台及账户' : es ? '2. PAYMENT PLATFORM &amp; ACCOUNT / PLATAFORMA Y CUENTA DE PAGO' : '2. PAYMENT PLATFORM &amp; ACCOUNT';
   const lPlatform   = L('Platform', '平台', 'Plataforma');
+  const lSelectOne  = zh ? 'Select one 请选择一种:' : es ? 'Select one / Seleccione una:' : 'Select one:';
   const lHandle     = L('Account Handle / Username', '账号', 'Usuario / Handle de Cuenta');
-  const lContact    = L('Associated Email or Phone', '关联邮箱或手机', 'Email o Teléfono Asociado');
+  const lContact    = L('Associated Email or Phone (if applicable)', '关联邮箱或手机（如适用）', 'Email o Teléfono Asociado (si aplica)');
   const lOptional   = zh ? '(optional 可选)' : es ? '(opcional)' : '(optional)';
+  const lReference  = L('Reference / Invoice # (optional)', '参考号 / 发票号（可选）', 'Referencia / N.º de Factura (opcional)');
 
   const s3 = zh ? '3. ACKNOWLEDGMENT 确认事项' : es ? '3. ACKNOWLEDGMENT / DECLARACIÓN Y ACUERDO' : '3. ACKNOWLEDGMENT';
 
@@ -3668,9 +3670,9 @@ function _buildThirdPartyPayForm(lang) {
     : es ? `${ack1en} &nbsp;<span style="color:#555">Certifico que la información de cuenta proporcionada es precisa y que soy el titular de la cuenta o estoy autorizado a recibir pagos a través de ella.</span>`
     : ack1en;
 
-  const ack2en = `<b>Payment sent to the account information provided by me will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation, unless ${companyName} was notified in writing of updated account information before the payment was sent.</b>`;
-  const ack2   = zh ? `${ack2en} &nbsp;<span style="color:#555">只要 ${companyName} 按本人所提供的账户信息付款，即视为完成付款义务；除非本人已在付款前以书面形式通知新的账户信息。</span>`
-    : es ? `${ack2en} &nbsp;<span style="color:#555">El pago enviado a la información de cuenta proporcionada se considerará pago válido y cumplimiento total de la obligación de pago, salvo que se haya notificado por escrito un cambio de cuenta antes del envío.</span>`
+  const ack2en = `<b>Payment sent to the account information provided by me will be deemed valid payment to the extent of the amount sent, unless ${companyName} was notified in writing of updated account information before the payment was sent.</b>`;
+  const ack2   = zh ? `${ack2en} &nbsp;<span style="color:#555">${companyName} 按本人提供的账户信息发送付款后，就该笔已发送金额而言，视为已有效履行相应付款义务；除非本人已在付款发送前以书面形式通知 ${companyName} 更新后的账户信息。</span>`
+    : es ? `${ack2en} &nbsp;<span style="color:#555">El pago enviado a la información de cuenta proporcionada se considerará pago válido por el monto enviado, salvo que se haya notificado por escrito un cambio de cuenta antes del envío.</span>`
     : ack2en;
 
   const ack3en = `I agree to notify ${companyName} in writing before any change to my payment platform or account details.`;
@@ -3698,10 +3700,10 @@ function _buildThirdPartyPayForm(lang) {
   const lSig         = L('Signature', '签名', 'Firma');
   const lDate        = L('Date', '日期', 'Fecha');
   const footer       = zh
-    ? `${companyName} — 第三方平台收款授权表 — For internal records only.`
+    ? `${companyName} — 第三方平台收款授权及账户确认表 — For payment authorization records.`
     : es
-    ? `${companyName} — Authorization to Receive Payment via Third-Party Platform — Solo para registros internos.`
-    : `${companyName} — Authorization to Receive Payment via Third-Party Platform — For internal records only.`;
+    ? `${companyName} — Authorization to Receive Payment via Third-Party Platform — For payment authorization records.`
+    : `${companyName} — Authorization to Receive Payment via Third-Party Platform — For payment authorization records.`;
 
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
@@ -3723,15 +3725,18 @@ function _buildThirdPartyPayForm(lang) {
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
     <td style="${c}width:100%" colspan="2">
-      <b>${lPlatform}:</b>&nbsp;&nbsp;
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><checkbox-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></checkbox-field> PayPal</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><checkbox-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></checkbox-field> Venmo</label>
-      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></checkbox-field> Cash App</label>
+      <b>${lPlatform}</b> <span style="font-size:7.5pt;color:#555;font-weight:400">${lSelectOne}</span>&nbsp;&nbsp;
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="payment_platform" value="PayPal" role="First Party" style="width:13px;height:13px"></radio-button-field> PayPal</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="payment_platform" value="Venmo" role="First Party" style="width:13px;height:13px"></radio-button-field> Venmo</label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_platform" value="Cash App" role="First Party" style="width:13px;height:13px"></radio-button-field> Cash App</label>
     </td>
   </tr>
   <tr>
-    <td style="${c}width:55%"><b>${lHandle}</b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username"></text-field></td>
-    <td style="${c}width:45%"><b>${lContact}</b> <span style="font-size:7pt;color:#999">${lOptional}</span><br><text-field name="platform_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+    <td style="${c}width:55%"><b>${lHandle}</b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username / $cashtag"></text-field></td>
+    <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="platform_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}width:100%" colspan="2"><b>${lReference}</b><br><text-field name="reference_invoice" role="First Party" style="${w}" placeholder="e.g. INV-001"></text-field></td>
   </tr>
 </table>
 
@@ -3824,7 +3829,7 @@ function generateACHAuthHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
   <div style="font-size:14pt;font-weight:900;letter-spacing:1px">ACH / DIRECT DEPOSIT AUTHORIZATION</div>
@@ -3883,7 +3888,7 @@ function _buildWireAuthForm(lang) {
   const f  = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w  = `${f}width:100%;min-height:22px;`;
   const c  = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
   const L  = (en, zhTxt, esTxt) => {
@@ -4072,7 +4077,7 @@ function _buildCheckInstructionForm(lang) {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
   const L = (en, zhTxt, esTxt) => {
@@ -4209,7 +4214,7 @@ function _buildZelleAuthForm(lang) {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
   const L = (en, zhTxt, esTxt) => {
@@ -4338,17 +4343,16 @@ function generateCashReceiptHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
-  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">现金付款签收表</div>
-  <div style="font-size:8pt;color:#777;margin-top:2px">${companyName}</div>
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">CASH PAYMENT RECEIPT</div>
+  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">现金付款签收表 — ${companyName}</div>
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received the cash payment described below from <b>${companyName}</b>, and acknowledges such payment for the services or invoice referenced in this receipt.<br>
-  <span style="color:#555">本收据确认下述签署收款人已从 <b>${companyName}</b> 收到以下所列现金付款，并确认该付款对应本收据所载明的服务或发票。</span>
+  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services or payment reference described below.<br>
+  <span style="color:#555">本收据确认下述签署收款人已收到 <b>${companyName}</b> 支付的现金款项，对应以下所述服务或付款参考事项。</span>
 </div>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款详情</span></div>
@@ -4407,7 +4411,7 @@ function generateCashReceiptHtmlTemplate() {
     </td>
   </tr></table>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质.</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收表 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质.</div>
 </div>`;
 }
 
@@ -4416,15 +4420,15 @@ function generateCashReceiptEnHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">CASH PAYMENT RECEIPT</div>
   <div style="font-size:8pt;color:#777;margin-top:4px">${companyName}</div>
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received the cash payment described below from <b>${companyName}</b>, and acknowledges such payment for the services or invoice referenced in this receipt.
+  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services or payment reference described below.
 </div>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details</div>
@@ -4492,17 +4496,16 @@ function generateCashReceiptEsHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
-  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">Recibo de Pago en Efectivo</div>
-  <div style="font-size:8pt;color:#777;margin-top:2px">${companyName}</div>
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">CASH PAYMENT RECEIPT</div>
+  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">Recibo de Pago en Efectivo — ${companyName}</div>
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received the cash payment described below from <b>${companyName}</b>, and acknowledges such payment for the services or invoice referenced in this receipt.<br>
-  <span style="color:#555">Este recibo confirma que el destinatario firmante ha recibido el pago en efectivo descrito a continuación de <b>${companyName}</b>, y reconoce dicho pago por los servicios o factura referenciados en este recibo.</span>
+  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services or payment reference described below.<br>
+  <span style="color:#555">Este recibo confirma que el destinatario firmante ha recibido un pago en efectivo de <b>${companyName}</b> por los servicios o referencia de pago descritos a continuación.</span>
 </div>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Detalles del Pago</span></div>
@@ -4999,7 +5002,7 @@ function buildContractPdf(plainText) {
 }
 
 function generatePartnerContractText({ partnerName, companyName, partnerAddress, dateStr }) {
-  const cname = companyName || 'Prime Anchorpoint LLC';
+  const cname = companyName || 'Prime Anchor Point LLC';
   return [
     'PARTNERSHIP SERVICE AGREEMENT', '',
     `Date: ${dateStr}`, '',
@@ -5036,7 +5039,7 @@ function generatePartnerContractText({ partnerName, companyName, partnerAddress,
 }
 
 function generateWorkerContractText({ workerName, companyName, employmentType, dateStr, position }) {
-  const cname = companyName || 'Prime Anchorpoint LLC';
+  const cname = companyName || 'Prime Anchor Point LLC';
   const pos = position || 'General Worker';
   if (employmentType === '1099') {
     return [
@@ -5114,7 +5117,7 @@ function generateWorkerContractText({ workerName, companyName, employmentType, d
 }
 
 function generateTerminationNoticeText({ partnerName, companyName, dateStr }) {
-  const c = companyName || 'Prime Anchorpoint LLC';
+  const c = companyName || 'Prime Anchor Point LLC';
   return [
     'NOTICE OF SERVICE TERMINATION', '服务终止通知书', '',
     `Date / 日期: ${dateStr}`, '',
@@ -5139,7 +5142,7 @@ function generateTerminationNoticeText({ partnerName, companyName, dateStr }) {
 }
 
 function generateBreachNoticeText({ partnerName, companyName, dateStr }) {
-  const c = companyName || 'Prime Anchorpoint LLC';
+  const c = companyName || 'Prime Anchor Point LLC';
   return [
     'NOTICE OF TERMINATION FOR BREACH', '违约终止通知书', '',
     `Date / 日期: ${dateStr}`, '',
@@ -5163,7 +5166,7 @@ function generateBreachNoticeText({ partnerName, companyName, dateStr }) {
 }
 
 function generateAmendmentText({ partnerName, companyName, dateStr }) {
-  const c = companyName || 'Prime Anchorpoint LLC';
+  const c = companyName || 'Prime Anchor Point LLC';
   return [
     'CONTRACT AMENDMENT AGREEMENT', '合同修改协议', '',
     `This Amendment is entered into as of ${dateStr}, by and between:`, '',
@@ -5187,7 +5190,7 @@ function generateAmendmentText({ partnerName, companyName, dateStr }) {
 }
 
 function generateMutualTerminationText({ partnerName, companyName, dateStr }) {
-  const c = companyName || 'Prime Anchorpoint LLC';
+  const c = companyName || 'Prime Anchor Point LLC';
   return [
     'MUTUAL TERMINATION AGREEMENT', '协商解除协议', '',
     `This Mutual Termination Agreement is entered into as of ${dateStr},`,
@@ -5217,7 +5220,7 @@ function generateMutualTerminationText({ partnerName, companyName, dateStr }) {
 }
 
 function generateAssignmentContractText({ workerName, companyName, jobTitle, payRate, payType, startDate, workLocation, contractType }) {
-  const cname = companyName || 'Prime Anchorpoint LLC';
+  const cname = companyName || 'Prime Anchor Point LLC';
   const payLabels = { hourly: 'per hour', salary: 'per month', annual: 'per year', per_piece: 'per piece' };
   const payLabel = payLabels[payType] || 'per hour';
   const dateStr = startDate || new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -7239,7 +7242,7 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
   const onb = db.prepare("SELECT contract_content, ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
   const empType = w.employment_type || 'w2';
   const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const dateStr = new Date().toISOString().slice(0, 10);
   // If already has saved content, use that; otherwise generate default
   const content = (onb && onb.contract_content) || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
@@ -7276,7 +7279,7 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     if (!w) return res.status(404).json({ error: 'Worker not found' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置，请在 .env 设置 DOCUSEAL_API_KEY 和 DOCUSEAL_URL' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     if (!companyEmail) return res.status(503).json({ error: '请在 .env 设置 COMPANY_SIGNER_EMAIL' });
     const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
@@ -7396,7 +7399,7 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
           const contractTypeCn = empType === '1099' ? '承包商协议' : '雇佣合同';
           const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
           const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
-          const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+          const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
           const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
           if (workerEmail) {
             sendEmail(workerEmail,
@@ -7501,7 +7504,7 @@ app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async 
     const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
     const signUrl = await dsealGetCompanySignUrl(onb.ds_envelope_id);
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     console.log(`[CompanySign] workerId=${workerId}, submissionId=${onb.ds_envelope_id}, signUrl=${signUrl ? signUrl.substring(0, 80) + '...' : 'NULL'}`);
     res.json({ signUrl, companyName });
   } catch (e) { console.error('[CompanySign Error]', e.message); res.status(500).json({ error: e.message }); }
@@ -7540,7 +7543,7 @@ app.post('/api/admin/worker-accounts/:id/resend-sign-notification', requireAdmin
     const contractTypeCn = empType === '1099' ? '承包商协议' : '雇佣合同';
     const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
     const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
     let emailSent = false, smsSent = false;
     if (workerEmail) {
@@ -9213,7 +9216,7 @@ app.get('/api/admin/contractor-invoices/preview-filled', requireAdmin, requireRo
   const periodEnd = period_end || invDate;
   const periodStart = period_start || new Date(invDateObj.getTime() - 6 * 86400000).toISOString().slice(0, 10);
   const dueDate = new Date(invDateObj.getTime() + 30 * 86400000).toISOString().slice(0, 10);
-  const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const contractorName = contractor_name || (t ? `(${t.name})` : '(Contractor Name)');
   const serviceDesc = service_description || (t ? `(${t.serviceDesc})` : '(Service Description)');
 
@@ -10060,7 +10063,7 @@ function buildMinimalPdf(pageLines) {
 }
 
 function generatePartnerContractLines({ partnerName, companyName, partnerAddress, dateStr }) {
-  const cname = companyName || 'Prime Anchorpoint LLC';
+  const cname = companyName || 'Prime Anchor Point LLC';
   return [
     { text: 'PARTNERSHIP SERVICE AGREEMENT', size: 15 },
     { text: '' },
@@ -10127,7 +10130,7 @@ app.post('/api/admin/partners/:id/reset-contract', requireAdmin, blockManager, a
   }
   // Generate new default contract
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const content = generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
   const pdfBuf = buildContractPdf(content);
   const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
@@ -10142,7 +10145,7 @@ app.post('/api/admin/partners/:id/generate-default-contract', requireAdmin, bloc
   const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'Partner not found' });
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const content = generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
   const pdfBuf = buildContractPdf(content);
   const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
@@ -10157,7 +10160,7 @@ app.get('/api/admin/partners/:id/contract-template', requireAdmin, blockManager,
   const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'Partner not found' });
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   res.json({ content: generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr }) });
 });
 
@@ -10183,7 +10186,7 @@ app.get('/api/admin/partner-files/:id/contract-content', requireAdmin, blockMana
   if (f.contract_content) return res.json({ content: f.contract_content });
   // Generate default content from partner data
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   res.json({ content: generatePartnerContractText({ partnerName: f.partner_name || '', companyName, partnerAddress: f.partner_address || '', dateStr }) });
 });
 
@@ -10208,7 +10211,7 @@ app.get('/api/admin/partners/:id/legal-template', requireAdmin, blockManager, (r
   if (!p) return res.status(404).json({ error: 'Partner not found' });
   const type = req.query.type || 'termination';
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const args = { partnerName: p.name, companyName, dateStr };
   let content = '';
   if (type === 'termination') content = generateTerminationNoticeText(args);
@@ -10270,7 +10273,7 @@ app.post('/api/admin/partner-files/:id/send-notice-email', requireAdmin, blockMa
     mutual_termination: 'Mutual Termination Agreement — 协商解除协议',
   };
   const subject = typeSubjects[f.file_type] || `Legal Notice — ${f.file_name}`;
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const text = `Dear ${toName || 'Partner'},\n\nPlease find attached the following document: ${f.file_name}.\n\nThis document requires your attention. Please review and respond accordingly.\n\nBest regards,\n${companyName}`;
   const ok = await sendEmailWithAttachment(toEmail, subject, text, pdfBuffer, f.file_name || 'notice.pdf');
   if (ok) res.json({ success: true, sentTo: toEmail });
@@ -10376,7 +10379,7 @@ app.post('/api/admin/partners/:id/generate-agreement', requireAdmin, blockManage
       // ── Column 1: Service Provider ──────────────────────────
       let y1 = startY;
       doc.fontSize(11).font('Helvetica-Bold').fillColor('black')
-        .text('Prime Anchorpoint LLC', col1X, y1, { width: colW });
+        .text('Prime Anchor Point LLC', col1X, y1, { width: colW });
       y1 += 16;
       doc.fontSize(10).font('Helvetica').fillColor('#555')
         .text('(Service Provider)', col1X, y1, { width: colW });
@@ -10570,7 +10573,7 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     }
     if (!partnerEmail) return res.status(400).json({ error: '合作方邮箱未找到，请在请求体中传 partner_email' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, f.file_path);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
@@ -10787,7 +10790,7 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
     const workerName = req.body.worker_name || a.inquiry_name || '工人';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱未找到，请在请求体中传 worker_email' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, a.contract_file);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '合同文件不存在' });
@@ -10814,7 +10817,7 @@ app.get('/api/admin/assignments/:id/docusign-sign-url', requireAdmin, blockManag
     const a = db.prepare("SELECT id, ds_envelope_id FROM assignments WHERE id=?").get(req.params.id);
     if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     const _proto4 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
     const _host4 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
     const returnUrl = `${_proto4}://${_host4}/docusign-return`;
@@ -10870,7 +10873,7 @@ app.get('/api/admin/assignments/:id/contract-template', requireAdmin, blockManag
   const a = db.prepare(`SELECT a.*, i.name as inquiry_name, i.email as inquiry_email FROM assignments a LEFT JOIN inquiries i ON a.inquiry_id=i.id WHERE a.id=?`).get(req.params.id);
   if (!a) return res.status(404).json({ error: 'Not found' });
   if (a.contract_content) return res.json({ content: a.contract_content });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const content = generateAssignmentContractText({
     workerName: a.inquiry_name || '', companyName,
     jobTitle: a.category || '', payRate: a.pay_rate || '', payType: a.pay_type || 'hourly',
@@ -13558,7 +13561,7 @@ app.get('/api/worker/invoice-prefill', requireWorker, (req, res) => {
     payment_terms: paymentTerms,
     invoice_date: today,
     payment_due_date: dueDate,
-    bill_to: 'Prime Anchorpoint LLC'
+    bill_to: 'Prime Anchor Point LLC'
   });
 });
 
@@ -15431,7 +15434,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                   db.prepare("UPDATE worker_onboarding SET ds_status='company_signed', action_url=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
                     .run(workerSignUrl, `公司已签署，等待工人签署 (${new Date().toLocaleString('zh-CN')})`, wid);
                 }
-                const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+                const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
                 const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
                 // Send email to worker (trilingual: Chinese / English / Spanish)
                 if (workerEmail) {
@@ -16772,6 +16775,54 @@ app.use((err, req, res, _next) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// Auto-regenerate all configured auto templates when the company name env vars have changed.
+// This handles cases where templates were generated with a different COMPANY_SIGNER_NAME /
+// COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
+async function autoRegenerateTemplatesForCompanyName() {
+  if (!dsealEnabled()) return;
+  const currentSigner = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
+  const currentLegal  = process.env.COMPANY_LEGAL_NAME  || 'Prime Anchor Point LLC';
+  const combinedKey   = `${currentSigner}|||${currentLegal}`;
+
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+
+  // Skip if company name hasn't changed since last regeneration
+  if (cfg._company_name_regen_key === combinedKey) return;
+
+  console.log(`[startup] Company name changed or first run — regenerating all auto templates...`);
+  let cfgChanged = false;
+
+  for (const [type, tmplDef] of Object.entries(DOCUSEAL_AUTO_TEMPLATES)) {
+    const existingId = cfg[tmplDef.configKey];
+    if (!existingId) continue; // not configured, skip (will be created on demand)
+    try {
+      const html = tmplDef.generator();
+      const r = await dsealApiCall('POST', '/api/templates/html', {
+        name: tmplDef.name,
+        documents: [{ name: tmplDef.name, html, size: 'Letter' }]
+      });
+      if (r.status >= 400) {
+        console.error(`[startup] Failed to regenerate ${type} template: DocuSeal ${r.status}`);
+        continue;
+      }
+      const dsId = r.data?.id || r.data?.template_id;
+      if (dsId) {
+        db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, String(dsId), tmplDef.category || 'contract');
+        cfg[tmplDef.configKey] = dsId;
+        cfgChanged = true;
+        console.log(`[startup] Regenerated ${type} template (company name update) → new ID: ${dsId}`);
+      }
+    } catch (e) {
+      console.error(`[startup] Failed to check/regenerate ${type} template: ${e.message}`);
+    }
+  }
+
+  // Record the company name used for this regeneration pass
+  cfg._company_name_regen_key = combinedKey;
+  db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+}
+
 // Auto-regenerate contractor invoice templates if they're missing the bill_to_company field
 // (handles case where old template had company name baked in as static text)
 async function autoRegenerateContractorInvoiceTemplates() {
@@ -16831,6 +16882,8 @@ app.listen(PORT, () => {
     for (const w of workers) { syncOnboardedStatus(w.id); synced++; }
     if (synced) console.log(`[startup] Re-synced onboarded status for ${synced} workers`);
   } catch(e) { console.error('[startup] onboarded sync error:', e.message); }
+  // Auto-regenerate all templates if company name env vars have changed (e.g. "Qiushi Zhang" → correct name)
+  setTimeout(() => autoRegenerateTemplatesForCompanyName().catch(e => console.error('[startup] Company name template regen error:', e.message)), 3000);
   // Auto-regenerate contractor invoice templates if bill_to_company field is missing (old static-text templates)
-  setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 5000);
+  setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 8000);
 });
