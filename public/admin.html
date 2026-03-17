@@ -2336,10 +2336,23 @@ tr:hover td{background:var(--sky-light)}
           <div id="ds-cfg-zelle-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">PayPal / Venmo / CashApp</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">第三方平台付款授权</div>
-          <select id="ds-sel-third-party" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-third-party-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">💳 PayPal / Venmo / CashApp</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">第三方平台付款授权 — 三种语言版本</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
+            <select id="ds-sel-third-party" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-third-party-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-third-party-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-third-party-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-third-party-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-third-party-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">💵 现金签收</div>
@@ -2437,14 +2450,18 @@ tr:hover td{background:var(--sky-light)}
               <option value="wire_auth">Wire Transfer</option>
               <option value="check_instruction">Check / 支票</option>
               <option value="zelle_auth">Zelle</option>
-              <option value="third_party_pay">PayPal / Venmo / CashApp</option>
+              <option value="third_party_pay">PayPal / Venmo / CashApp (ZH+EN)</option>
+              <option value="third_party_pay_en">PayPal / Venmo / CashApp (EN)</option>
+              <option value="third_party_pay_es">PayPal / Venmo / CashApp (EN+ES)</option>
               <option value="cash_receipt">现金签收</option>
-              <option value="contractor_invoice">承包商发票 (中英) / Contractor Invoice (EN+ZH)</option>
-              <option value="contractor_invoice_en">承包商发票 (英文) / Contractor Invoice (EN)</option>
-              <option value="contractor_invoice_es">承包商发票 (英西) / Contractor Invoice (EN+ES)</option>
-              <option value="invoice_approval">发票审批表 / Invoice Approval (EN+ZH)</option>
-              <option value="invoice_approval_en">Invoice Approval (EN)</option>
-              <option value="invoice_approval_es">Invoice Approval (EN+ES)</option>
+            </optgroup>
+            <optgroup label="发票">
+              <option value="contractor_invoice">承包商发票 (ZH+EN)</option>
+              <option value="contractor_invoice_en">承包商发票 (EN)</option>
+              <option value="contractor_invoice_es">承包商发票 (EN+ES)</option>
+              <option value="invoice_approval">发票审批表 (ZH+EN)</option>
+              <option value="invoice_approval_en">发票审批表 (EN)</option>
+              <option value="invoice_approval_es">发票审批表 (EN+ES)</option>
             </optgroup>
           </select>
         </div>
@@ -2997,18 +3014,21 @@ tr:hover td{background:var(--sky-light)}
       </div>
     </div>
     <div id="dsInvPreviewInfo" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.4rem;flex-shrink:0"></div>
-    <div id="dsInvPreviewFrameWrap" style="flex:1;position:relative;min-height:0">
+    <div id="dsInvPreviewFrameWrap" style="flex:1;position:relative;min-height:0;overflow:auto">
       <iframe id="dsInvPreviewFrame" src="about:blank"
         style="width:100%;height:100%;border:1px solid var(--gray-200);border-radius:8px;display:block"
         allow="camera;microphone;clipboard-write">
       </iframe>
-      <div id="dsInvPreviewFallback" style="display:none;position:absolute;inset:0;background:#f9fafb;border:1px solid var(--gray-200);border-radius:8px;align-items:center;justify-content:center;flex-direction:column;gap:1rem;text-align:center;padding:2rem">
-        <div style="font-size:2rem">⚠️</div>
-        <div style="font-size:.9rem;color:var(--gray-600)">该页面不允许嵌入显示</div>
+      <div id="dsInvPreviewFormContainer" style="display:none;width:100%;height:100%;overflow:auto"></div>
+      <div id="dsInvPreviewFallback" style="display:none;position:absolute;inset:0;background:#f9fafb;border:1px solid var(--gray-200);border-radius:8px;align-items:center;justify-content:center;flex-direction:column;gap:1.25rem;text-align:center;padding:2rem">
+        <div style="font-size:2.5rem" id="dsInvPreviewFallbackIcon">📄</div>
+        <div style="font-size:.95rem;font-weight:600;color:var(--gray-700)" id="dsInvPreviewFallbackTitle">发票签署页面</div>
+        <div style="font-size:.82rem;color:var(--gray-500);max-width:380px" id="dsInvPreviewFallbackDesc">DocuSeal 签署页面需在新标签页中打开。</div>
         <a id="dsInvPreviewFallbackLink" href="#" target="_blank" rel="noopener"
-          style="display:inline-block;padding:.6rem 1.5rem;background:#0369a1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;font-size:.9rem">
-          📄 点此在新标签页打开
+          style="display:inline-block;padding:.65rem 1.75rem;background:#0369a1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;font-size:.9rem">
+          ↗ 在新标签页打开
         </a>
+        <div style="font-size:.75rem;color:var(--gray-400)" id="dsInvPreviewFallbackNote">承包商将在该页面填写并签署发票</div>
       </div>
     </div>
   </div>
@@ -14040,8 +14060,8 @@ async function loadWorkerAccounts() {
     <td style="text-align:center;white-space:nowrap">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
-    <td style="text-align:center">${w.cinv_total > 0
-      ? `<span style="cursor:pointer;padding:1px 6px;border-radius:6px;font-size:.72rem;font-weight:600;${w.cinv_pending>0?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#15803d'}" onclick="event.stopPropagation();openContractorInvoicesModal()" title="Contractor Invoices">📄${w.cinv_total}${w.cinv_pending>0?' ('+w.cinv_pending+'⏳)':''}</span>`
+    <td style="text-align:center;white-space:nowrap">${w.cinv_total > 0
+      ? `<span style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:6px;font-size:.82rem;font-weight:600;${w.cinv_pending>0?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#15803d'}" onclick="event.stopPropagation();openContractorInvoicesModal()" title="Contractor Invoices">📄 ${w.cinv_total}${w.cinv_pending>0?'<span style="margin-left:2px;font-size:.75rem">('+ w.cinv_pending+' 待处理)</span>':''}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
     <td style="text-align:center;vertical-align:middle">${(() => {
       const emp = w.employment_type || '';
@@ -18700,6 +18720,10 @@ function closeDsInvPreview() {
   const frame = document.getElementById('dsInvPreviewFrame');
   frame.src = 'about:blank';
   document.getElementById('dsInvPreviewFallback').style.display = 'none';
+  // Clear docuseal-form container
+  const formContainer = document.getElementById('dsInvPreviewFormContainer');
+  formContainer.innerHTML = '';
+  formContainer.style.display = 'none';
   frame.style.display = 'block';
 }
 
@@ -18713,48 +18737,52 @@ async function previewDsInvoice(invoiceId) {
       const fallbackLink = document.getElementById('dsInvPreviewFallbackLink');
       const info = document.getElementById('dsInvPreviewInfo');
       const frame = document.getElementById('dsInvPreviewFrame');
+      const formContainer = document.getElementById('dsInvPreviewFormContainer');
       const fallback = document.getElementById('dsInvPreviewFallback');
 
       link.href = r.url;
       fallbackLink.href = r.url;
+
+      // Reset state
+      fallback.style.display = 'none';
+      frame.style.display = 'none';
+      formContainer.style.display = 'none';
+      formContainer.innerHTML = '';
+      frame.src = 'about:blank';
+
       if (r.completed || r.type === 'document') {
+        // Completed PDF — use iframe with proxy
         info.textContent = '该发票已签署完成（PDF 文件）。';
         link.textContent = '↗ 新标签页打开';
-      } else {
-        info.textContent = '该发票尚未签署，以下为 DocuSeal 签署页面（承包商视角）。';
-        link.textContent = '↗ 新标签页打开';
-      }
-
-      modal.style.display = 'flex';
-
-      // For completed PDFs, use proxy so the PDF can be embedded directly.
-      // For unsigned invoices, only embed if DocuSeal provided an embed_src (iframe-safe URL).
-      // If no embed_src is available, the slug URL has X-Frame-Options and cannot be iframed.
-      if (r.completed || r.type === 'document') {
-        const embedUrl = `/api/admin/contractor-invoices/${invoiceId}/pdf-proxy`;
+        // Completed PDF — embed via proxy iframe
+        document.getElementById('dsInvPreviewFallbackIcon').textContent = '📑';
+        document.getElementById('dsInvPreviewFallbackTitle').textContent = '已签署发票 PDF';
+        document.getElementById('dsInvPreviewFallbackDesc').textContent = 'PDF 嵌入失败，请在新标签页中查看。';
+        document.getElementById('dsInvPreviewFallbackNote').textContent = '';
         fallback.style.display = 'none';
         frame.style.display = 'block';
-        frame.src = embedUrl;
-        frame.onerror = () => {
-          fallback.style.display = 'flex';
-          frame.style.display = 'none';
-        };
-      } else if (r.embeddable && r.embed_src) {
-        fallback.style.display = 'none';
-        frame.style.display = 'block';
-        frame.src = 'about:blank';
+        modal.style.display = 'flex';
+        frame.onerror = () => { fallback.style.display = 'flex'; frame.style.display = 'none'; };
         setTimeout(() => {
-          frame.src = r.embed_src;
-          frame.onerror = () => {
-            fallback.style.display = 'flex';
-            frame.style.display = 'none';
-          };
+          frame.src = `/api/admin/contractor-invoices/${invoiceId}/pdf-proxy`;
         }, 50);
       } else {
-        // No embeddable URL — show fallback with link immediately
-        frame.src = 'about:blank';
-        frame.style.display = 'none';
-        fallback.style.display = 'flex';
+        // Unsigned — use <docuseal-form> web component (same as contract signing)
+        info.textContent = '该发票尚未签署，以下为 DocuSeal 签署页面（承包商视角）。';
+        link.textContent = '↗ 新标签页打开';
+        const embedSrc = r.embed_src || r.url;
+        const form = document.createElement('docuseal-form');
+        form.setAttribute('data-src', embedSrc);
+        form.setAttribute('data-expand', 'false');
+        form.setAttribute('data-order-as-on-page', 'true');
+        form.setAttribute('data-with-draw-signature', 'true');
+        form.setAttribute('data-with-typed-signature', 'true');
+        form.setAttribute('data-with-upload-signature', 'true');
+        form.setAttribute('data-with-send-copy-button', 'false');
+        form.style.width = '100%';
+        formContainer.appendChild(form);
+        formContainer.style.display = 'block';
+        modal.style.display = 'flex';
       }
     } else {
       showToast(r?.error || '无法获取预览链接', 'error');
@@ -20950,10 +20978,12 @@ const _DS_SELECTORS = [
   { key: 'wire_auth_template_id',        selId: 'ds-sel-wire',               infoId: 'ds-cfg-wire-info',              label: '电汇授权',     doc_type: 'wire_auth' },
   { key: 'check_instruction_template_id',selId: 'ds-sel-check',              infoId: 'ds-cfg-check-info',             label: '支票指引',     doc_type: 'check_instruction' },
   { key: 'zelle_auth_template_id',       selId: 'ds-sel-zelle',              infoId: 'ds-cfg-zelle-info',             label: 'Zelle授权',    doc_type: 'zelle_auth' },
-  { key: 'third_party_pay_template_id',  selId: 'ds-sel-third-party',        infoId: 'ds-cfg-third-party-info',       label: '第三方平台',   doc_type: 'third_party_pay' },
+  { key: 'third_party_pay_template_id',    selId: 'ds-sel-third-party',    infoId: 'ds-cfg-third-party-info',    label: '第三方平台(中英)', doc_type: 'third_party_pay' },
+  { key: 'third_party_pay_en_template_id', selId: 'ds-sel-third-party-en', infoId: 'ds-cfg-third-party-en-info', label: '第三方平台(英文)', doc_type: 'third_party_pay_en' },
+  { key: 'third_party_pay_es_template_id', selId: 'ds-sel-third-party-es', infoId: 'ds-cfg-third-party-es-info', label: '第三方平台(英西)', doc_type: 'third_party_pay_es' },
   { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收(中英)', doc_type: 'cash_receipt' },
-  { key: 'cash_receipt_en_template_id', selId: 'ds-sel-cash-en',            infoId: 'ds-cfg-cash-en-info',           label: '现金签收(英文)', doc_type: 'cash_receipt_en' },
-  { key: 'cash_receipt_es_template_id', selId: 'ds-sel-cash-es',            infoId: 'ds-cfg-cash-es-info',           label: '现金签收(英西)', doc_type: 'cash_receipt_es' },
+  { key: 'cash_receipt_en_template_id',  selId: 'ds-sel-cash-en',            infoId: 'ds-cfg-cash-en-info',           label: '现金签收(英文)', doc_type: 'cash_receipt_en' },
+  { key: 'cash_receipt_es_template_id',  selId: 'ds-sel-cash-es',            infoId: 'ds-cfg-cash-es-info',           label: '现金签收(英西)', doc_type: 'cash_receipt_es' },
   // 发票
   { key: 'contractor_invoice_template_id',    selId: 'ds-sel-contractor-inv',    infoId: 'ds-cfg-contractor-inv-info',    label: '发票(中英)',        doc_type: 'contractor_invoice' },
   { key: 'contractor_invoice_en_template_id', selId: 'ds-sel-contractor-inv-en', infoId: 'ds-cfg-contractor-inv-en-info', label: '发票(英文)',        doc_type: 'contractor_invoice_en' },
@@ -20985,7 +21015,7 @@ function _dsRefreshSelects() {
 const _DS_CAT_GROUPS = {
   __contract__: ['company_contract','worker_1099','worker_w2','contract'],
   __tax__:      ['w4','w9','w8ben','w8bene','form8233','i9','w7','tax'],
-  __payment__:  ['ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt','cash_receipt_en','cash_receipt_es','payment'],
+  __payment__:  ['ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','third_party_pay_en','third_party_pay_es','cash_receipt','cash_receipt_en','cash_receipt_es','payment'],
   __invoice__:  ['contractor_invoice','contractor_invoice_en','contractor_invoice_es','invoice'],
   __approval__: ['invoice_approval','invoice_approval_en','invoice_approval_es'],
 };
@@ -21033,7 +21063,9 @@ function _dsRenderMyTemplates() {
     wire_auth_template_id:         { bg:'#fffbeb', color:'#78350f', label:'电汇' },
     check_instruction_template_id: { bg:'#fafaf9', color:'#292524', label:'支票' },
     zelle_auth_template_id:        { bg:'#fdf4ff', color:'#86198f', label:'Zelle' },
-    third_party_pay_template_id:   { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
+    third_party_pay_template_id:    { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
+    third_party_pay_en_template_id: { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
+    third_party_pay_es_template_id: { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金(中英)' },
     cash_receipt_en_template_id:   { bg:'#fff1f2', color:'#9f1239', label:'现金(英文)' },
     cash_receipt_es_template_id:   { bg:'#fff1f2', color:'#9f1239', label:'现金(英西)' },
@@ -21041,11 +21073,13 @@ function _dsRenderMyTemplates() {
     contractor_invoice_en_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     contractor_invoice_es_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     invoice_approval_template_id:    { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
+    invoice_approval_en_template_id: { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
+    invoice_approval_es_template_id: { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
   };
   const _CAT_BADGE = {
     company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
     w4:{bg:'#e0f2fe',color:'#0369a1',label:'W-4'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'W-9'}, w8ben:{bg:'#fae8ff',color:'#6b21a8',label:'W-8BEN'}, w8bene:{bg:'#ede9fe',color:'#5b21b6',label:'W-8BEN-E'}, form8233:{bg:'#fce7f3',color:'#9d174d',label:'8233'}, i9:{bg:'#dcfce7',color:'#166534',label:'I-9'}, w7:{bg:'#f0fdf4',color:'#15803d',label:'W-7'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
-    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, cash_receipt_en:{bg:'#fff1f2',color:'#9f1239',label:'现金(EN)'}, cash_receipt_es:{bg:'#fff1f2',color:'#9f1239',label:'现金(ES)'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
+    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_en:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_es:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, cash_receipt_en:{bg:'#fff1f2',color:'#9f1239',label:'现金(EN)'}, cash_receipt_es:{bg:'#fff1f2',color:'#9f1239',label:'现金(ES)'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
     contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_en:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_es:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
     invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_en:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_es:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
   };
