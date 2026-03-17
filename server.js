@@ -16782,19 +16782,23 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // Auto-regenerate all configured auto templates when the company name env vars have changed.
 // This handles cases where templates were generated with a different COMPANY_SIGNER_NAME /
 // COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
+//
+// TEMPLATE_REGEN_VERSION: bump this number to force a one-time regen of ALL templates on next startup.
+const TEMPLATE_REGEN_VERSION = 2;
+
 async function autoRegenerateTemplatesForCompanyName() {
   if (!dsealEnabled()) return;
   const currentSigner = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const currentLegal  = process.env.COMPANY_LEGAL_NAME  || 'Prime Anchor Point LLC';
-  const combinedKey   = `${currentSigner}|||${currentLegal}`;
+  const combinedKey   = `${currentSigner}|||${currentLegal}|||v${TEMPLATE_REGEN_VERSION}`;
 
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
 
-  // Skip if company name hasn't changed since last regeneration
+  // Skip if company name and version haven't changed since last regeneration
   if (cfg._company_name_regen_key === combinedKey) return;
 
-  console.log(`[startup] Company name changed or first run — regenerating all auto templates...`);
+  console.log(`[startup] Company name or template version changed — regenerating all auto templates... (key: ${combinedKey})`);
   let cfgChanged = false;
 
   for (const [type, tmplDef] of Object.entries(DOCUSEAL_AUTO_TEMPLATES)) {
@@ -16822,7 +16826,7 @@ async function autoRegenerateTemplatesForCompanyName() {
     }
   }
 
-  // Record the company name used for this regeneration pass
+  // Record the company name + version used for this regeneration pass
   cfg._company_name_regen_key = combinedKey;
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
 }
