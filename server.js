@@ -3993,46 +3993,64 @@ function generateZelleAuthHtmlTemplate() {
 function generateThirdPartyPayHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
   const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px">THIRD-PARTY PAYMENT AUTHORIZATION</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">第三方平台付款授权表 (PayPal / Venmo / CashApp) — ${companyName}</div>
+  <div style="font-size:13pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Authorization to Receive Payment via Third-Party Platform</div>
+  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">通过第三方平台收款授权表 (PayPal / Venmo / Cash App)</div>
+  <div style="font-size:8pt;color:#777;margin-top:2px">${companyName}</div>
 </div>
 
-<p style="font-size:8.5pt">I authorize ${companyName} to send payments via the third-party platform specified below. 本人授权 ${companyName} 通过以下第三方平台发送付款。</p>
+<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
+  I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform specified below.<br>
+  <span style="color:#555">本人授权 <b>${companyName}</b> 及其授权代表，通过以下指定的第三方平台向本人支付已批准服务的应付款项。</span>
+</div>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">1. PAYEE INFORMATION 收款人信息</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payee Information &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">收款人信息</span></div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
   <tr>
-    <td style="${c}width:50%"><b>Full Name 全名</b><br><text-field name="tpp_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Email 电邮</b><br><text-field name="tpp_email" role="First Party" style="${w}"></text-field></td>
+    <td style="${c}"><b>Full Legal Name &nbsp;<span style="font-weight:400;color:#555">法定全名</span></b><br><text-field name="payee_full_name" role="First Party" required="true" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">2. PAYMENT PLATFORM 付款平台</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Payment Platform &amp; Account &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款平台与账号</span></div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
   <tr>
-    <td style="${c}width:50%"><b>Platform 平台</b><br><text-field name="tpp_platform" role="First Party" required="true" style="${f}width:220px" placeholder="PayPal / Venmo / CashApp / Other"></text-field></td>
-    <td style="${c}width:50%"><b>Account Handle / Username / Email 账号</b><br><text-field name="tpp_handle" role="First Party" required="true" style="${w}" placeholder="@username or email"></text-field></td>
+    <td style="${c}" colspan="2">
+      <b>Platform 平台:</b>&nbsp;&nbsp;
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:18px"><checkbox-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></checkbox-field> PayPal</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:18px"><checkbox-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></checkbox-field> Venmo</label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></checkbox-field> Cash App</label>
+    </td>
   </tr>
   <tr>
-    <td colspan="2" style="${c}"><b>Preferred Payment Type 付款类型偏好</b><br><text-field name="tpp_type" role="First Party" style="${f}width:280px" placeholder="Goods & Services / Friends & Family / Business"></text-field></td>
+    <td style="${c}width:55%"><b>Account Handle / Username &nbsp;<span style="font-weight:400;color:#555">账号 / 用户名</span></b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username"></text-field></td>
+    <td style="${c}width:45%"><b>Associated Email or Phone &nbsp;<span style="font-weight:400;color:#555">关联邮箱或手机号</span></b> <span style="font-size:7.5pt;color:#999">(optional 可选)</span><br><text-field name="platform_email_phone" role="First Party" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">3. ACKNOWLEDGMENT 确认事项</div>
-<p style="font-size:8pt">I understand that: (a) third-party platforms may charge transaction fees which are my responsibility; (b) ${companyName} is not liable for platform outages or delays; (c) I am responsible for maintaining an active account on the selected platform.</p>
-<p style="font-size:8pt">本人理解：(a) 第三方平台可能收取交易费用，由本人承担；(b) ${companyName} 不对平台故障或延迟承担责任；(c) 本人负责在所选平台上保持账户有效。</p>
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">3. Acknowledgment &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">确认事项</span></div>
+<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8pt;line-height:1.75;margin-bottom:12px">
+  <div>☑ <b>I certify that the account information provided above is accurate and that I am the owner of, or am authorized to receive payments through, that account.</b><br>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#555">本人证明以上所填账号信息准确无误，且本人为该账户的所有人或获授权通过该账户收款的人。</span></div>
+  <div style="margin-top:6px">☑ <b>Payment sent to the account information provided by me will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation, unless ${companyName} was notified in writing of updated account information before the payment was sent.</b><br>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#555">按本人所提供账号信息发送的付款，将被视为有效付款并完全履行了 ${companyName} 的付款义务，除非在付款发出前 ${companyName} 已收到本人的书面账号变更通知。</span></div>
+  <div style="margin-top:6px">☑ I agree to notify ${companyName} in writing before any change to my payment platform or account details. &nbsp;<span style="color:#555">如付款平台或账号信息有任何变更，本人同意事先以书面形式通知 ${companyName}。</span></div>
+  <div style="margin-top:4px">☑ ${companyName} is not responsible for delays, holds, service interruptions, or fees imposed by the selected third-party platform after payment is sent successfully. &nbsp;<span style="color:#555">付款成功发出后，${companyName} 不对第三方平台造成的延迟、冻结、服务中断或费用承担责任。</span></div>
+  <div style="margin-top:4px">☑ I understand that transaction fees charged by the platform are my responsibility. &nbsp;<span style="color:#555">本人理解平台收取的手续费由本人自行承担。</span></div>
+  <div style="margin-top:4px">☑ This authorization is for payment method purposes only and does not alter any tax reporting obligations or independent contractor status. &nbsp;<span style="color:#555">本授权仅用于确认付款方式，不影响任何税务申报义务或独立承包商身份。</span></div>
+</div>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
-  <b>PAYEE SIGNATURE 收款人签名</b>
-  <table style="width:100%;margin-top:6px"><tr>
-    <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">Signature 签名:</div><signature-field name="tpp_sig" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-    <td style="width:40%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">Date 日期:</div><date-field name="tpp_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
+  <div style="font-size:8pt;font-weight:700;margin-bottom:7px">PAYEE SIGNATURE &nbsp;<span style="font-weight:400;color:#555">收款人签名</span></div>
+  <table style="width:100%;margin-bottom:6px"><tr>
+    <td style="vertical-align:top;padding-right:10px"><div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Printed Name 打印姓名:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${w}"></text-field></td>
+  </tr></table>
+  <table style="width:100%"><tr>
+    <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Signature 签名:</div><signature-field name="payee_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+    <td style="width:40%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Date 日期:</div><date-field name="signature_date" role="First Party" style="width:100%;height:26px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
   </tr></table>
 </div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Authorization to Receive Payment via Third-Party Platform — 通过第三方平台收款授权 — For internal records only.</div>
 </div>`;
 }
 
@@ -4109,7 +4127,7 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   wire_auth: { name: 'Wire Transfer Authorization / 电汇付款授权', configKey: 'wire_auth_template_id', category: 'wire_auth', generator: generateWireAuthHtmlTemplate },
   check_instruction: { name: 'Check Payment Instruction / 支票邮寄地址确认', configKey: 'check_instruction_template_id', category: 'check_instruction', generator: generateCheckInstructionHtmlTemplate },
   zelle_auth: { name: 'Zelle Payment Authorization / Zelle 账号授权', configKey: 'zelle_auth_template_id', category: 'zelle_auth', generator: generateZelleAuthHtmlTemplate },
-  third_party_pay: { name: 'Third-Party Payment Authorization (PayPal/Venmo/CashApp)', configKey: 'third_party_pay_template_id', category: 'third_party_pay', generator: generateThirdPartyPayHtmlTemplate },
+  third_party_pay: { name: 'Third-Party Payment Authorization / 第三方平台收款授权 (PayPal/Venmo/Cash App)', configKey: 'third_party_pay_template_id', category: 'third_party_pay', generator: generateThirdPartyPayHtmlTemplate },
   cash_receipt: { name: 'Cash Payment Receipt / 现金付款签收', configKey: 'cash_receipt_template_id', category: 'cash_receipt', generator: generateCashReceiptHtmlTemplate },
   contractor_invoice:    { name: '1099 Contractor Invoice (EN+ZH)', configKey: 'contractor_invoice_template_id',    category: 'contractor_invoice',    generator: generateContractorInvoiceHtmlTemplate_ZH },
   contractor_invoice_en: { name: '1099 Contractor Invoice (EN)',    configKey: 'contractor_invoice_en_template_id', category: 'contractor_invoice_en', generator: generateContractorInvoiceHtmlTemplate_EN },
