@@ -4341,14 +4341,13 @@ function generateCashReceiptHtmlTemplate() {
   const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
-  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">现金付款签收表</div>
-  <div style="font-size:8pt;color:#777;margin-top:2px">${companyName}</div>
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">CASH PAYMENT RECEIPT</div>
+  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">现金付款签收表 — ${companyName}</div>
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received the cash payment described below from <b>${companyName}</b>, and acknowledges such payment for the services or invoice referenced in this receipt.<br>
-  <span style="color:#555">本收据确认下述签署收款人已从 <b>${companyName}</b> 收到以下所列现金付款，并确认该付款对应本收据所载明的服务或发票。</span>
+  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services or payment reference described below.<br>
+  <span style="color:#555">本收据确认下述签署收款人已收到 <b>${companyName}</b> 支付的现金款项，对应以下所述服务或付款参考事项。</span>
 </div>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款详情</span></div>
@@ -4407,7 +4406,7 @@ function generateCashReceiptHtmlTemplate() {
     </td>
   </tr></table>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质.</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收表 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质.</div>
 </div>`;
 }
 
@@ -4419,12 +4418,12 @@ function generateCashReceiptEnHtmlTemplate() {
   const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">CASH PAYMENT RECEIPT</div>
   <div style="font-size:8pt;color:#777;margin-top:4px">${companyName}</div>
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received the cash payment described below from <b>${companyName}</b>, and acknowledges such payment for the services or invoice referenced in this receipt.
+  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services or payment reference described below.
 </div>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details</div>
@@ -4495,14 +4494,13 @@ function generateCashReceiptEsHtmlTemplate() {
   const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
-  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">Recibo de Pago en Efectivo</div>
-  <div style="font-size:8pt;color:#777;margin-top:2px">${companyName}</div>
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">CASH PAYMENT RECEIPT</div>
+  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">Recibo de Pago en Efectivo — ${companyName}</div>
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received the cash payment described below from <b>${companyName}</b>, and acknowledges such payment for the services or invoice referenced in this receipt.<br>
-  <span style="color:#555">Este recibo confirma que el destinatario firmante ha recibido el pago en efectivo descrito a continuación de <b>${companyName}</b>, y reconoce dicho pago por los servicios o factura referenciados en este recibo.</span>
+  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services or payment reference described below.<br>
+  <span style="color:#555">Este recibo confirma que el destinatario firmante ha recibido un pago en efectivo de <b>${companyName}</b> por los servicios o referencia de pago descritos a continuación.</span>
 </div>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Detalles del Pago</span></div>
