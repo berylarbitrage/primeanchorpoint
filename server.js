@@ -4367,10 +4367,10 @@ function generateCashReceiptHtmlTemplate() {
   </tr>
   <tr>
     <td colspan="2" style="${c}">
-      <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">付款性质</span></b>&nbsp;&nbsp;
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Full Payment / 全额付款</b></label>
-      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / 部分付款</label>
-      &nbsp;&nbsp;<span style="color:#555">Remaining Balance / 剩余金额:</span> $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field>
+      <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">付款性质</span></b><br>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:24px;margin-top:4px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment / 全额付款</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-top:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / 部分付款</label>
+      <div style="margin-top:4px"><span style="color:#555">Remaining Balance / 剩余金额:</span> $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field></div>
     </td>
   </tr>
 </table>
@@ -4379,8 +4379,8 @@ function generateCashReceiptHtmlTemplate() {
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
   <tr><td style="${c}"><b>Services / Description &nbsp;<span style="font-weight:400;color:#555">服务说明</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
   <tr>
-    <td style="${c}"><b>Service Period &nbsp;<span style="font-weight:400;color:#555">服务期间</span></b> <text-field name="cash_period" role="First Party" style="${f}width:200px" placeholder="e.g., Mar 10–16, 2026"></text-field>
-    &nbsp;&nbsp;<b>Invoice # / Job # / Payment Ref &nbsp;<span style="font-weight:400;color:#555">发票 / 工作编号</span></b> <text-field name="cash_ref" role="First Party" style="${f}width:160px"></text-field></td>
+    <td style="${c}width:50%"><b>Service Period &nbsp;<span style="font-weight:400;color:#555">服务期间</span></b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
+    <td style="${c}width:50%"><b>Invoice # / Job # / Payment Ref &nbsp;<span style="font-weight:400;color:#555">发票 / 工作编号</span></b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
   </tr>
 </table>
 
@@ -4401,7 +4401,7 @@ function generateCashReceiptHtmlTemplate() {
       <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
     </td>
     <td style="width:50%;padding-left:12px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Company Representative / 公司代表</div>
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Authorized Representative of ${companyName}<br><span style="font-weight:400;color:#555">${companyName} 授权代表</span></div>
       <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name 正楷姓名:</div>
       <text-field name="cash_printed2" role="Second Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature 签名:</div>
@@ -4411,7 +4411,7 @@ function generateCashReceiptHtmlTemplate() {
     </td>
   </tr></table>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收表 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质.</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收表 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质。</div>
 </div>`;
 }
 
@@ -4443,10 +4443,10 @@ function generateCashReceiptEnHtmlTemplate() {
   </tr>
   <tr>
     <td colspan="2" style="${c}">
-      <b>Payment Type</b>&nbsp;&nbsp;
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Full Payment — in full satisfaction of the referenced services/invoice</b></label>
-      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment Only</label>
-      &nbsp;&nbsp;Remaining Balance: $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field>
+      <b>Payment Type</b><br>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:24px;margin-top:4px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-top:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment</label>
+      <div style="margin-top:4px">Remaining Balance: $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field></div>
     </td>
   </tr>
 </table>
@@ -4455,8 +4455,8 @@ function generateCashReceiptEnHtmlTemplate() {
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
   <tr><td style="${c}"><b>Services / Description</b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
   <tr>
-    <td style="${c}"><b>Service Period</b> <text-field name="cash_period" role="First Party" style="${f}width:200px" placeholder="e.g., Mar 10–16, 2026"></text-field>
-    &nbsp;&nbsp;<b>Invoice # / Job # / Payment Reference</b> <text-field name="cash_ref" role="First Party" style="${f}width:160px"></text-field></td>
+    <td style="${c}width:50%"><b>Service Period</b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
+    <td style="${c}width:50%"><b>Invoice # / Job # / Payment Reference</b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
   </tr>
 </table>
 
@@ -4477,7 +4477,7 @@ function generateCashReceiptEnHtmlTemplate() {
       <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
     </td>
     <td style="width:50%;padding-left:12px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Company Representative</div>
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Authorized Representative of ${companyName}</div>
       <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name:</div>
       <text-field name="cash_printed2" role="Second Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature:</div>
@@ -4520,10 +4520,10 @@ function generateCashReceiptEsHtmlTemplate() {
   </tr>
   <tr>
     <td colspan="2" style="${c}">
-      <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">Tipo de Pago</span></b>&nbsp;&nbsp;
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Full Payment / Pago Total</b></label>
-      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / Pago Parcial</label>
-      &nbsp;&nbsp;<span style="color:#555">Remaining Balance / Saldo Pendiente:</span> $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field>
+      <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">Tipo de Pago</span></b><br>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:24px;margin-top:4px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment / Pago Total</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-top:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / Pago Parcial</label>
+      <div style="margin-top:4px"><span style="color:#555">Remaining Balance / Saldo Pendiente:</span> $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field></div>
     </td>
   </tr>
 </table>
@@ -4532,8 +4532,8 @@ function generateCashReceiptEsHtmlTemplate() {
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
   <tr><td style="${c}"><b>Services / Description &nbsp;<span style="font-weight:400;color:#555">Servicios / Descripción</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
   <tr>
-    <td style="${c}"><b>Service Period &nbsp;<span style="font-weight:400;color:#555">Período de Servicio</span></b> <text-field name="cash_period" role="First Party" style="${f}width:200px" placeholder="e.g., Mar 10–16, 2026"></text-field>
-    &nbsp;&nbsp;<b>Invoice # / Job # / Payment Ref &nbsp;<span style="font-weight:400;color:#555">Factura / Trabajo</span></b> <text-field name="cash_ref" role="First Party" style="${f}width:160px"></text-field></td>
+    <td style="${c}width:50%"><b>Service Period &nbsp;<span style="font-weight:400;color:#555">Período de Servicio</span></b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
+    <td style="${c}width:50%"><b>Invoice # / Job # / Payment Ref &nbsp;<span style="font-weight:400;color:#555">Factura / Trabajo</span></b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
   </tr>
 </table>
 
@@ -4554,7 +4554,7 @@ function generateCashReceiptEsHtmlTemplate() {
       <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
     </td>
     <td style="width:50%;padding-left:12px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Company Representative / Representante de la Empresa</div>
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Authorized Representative of ${companyName}<br><span style="font-weight:400;color:#555">Representante Autorizado de ${companyName}</span></div>
       <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name / Nombre en Letra de Molde:</div>
       <text-field name="cash_printed2" role="Second Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature / Firma:</div>
