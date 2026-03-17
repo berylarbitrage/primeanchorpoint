@@ -21123,9 +21123,9 @@ function _dsRenderMyTemplates() {
     third_party_pay_template_id:    { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     third_party_pay_en_template_id: { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     third_party_pay_es_template_id: { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
-    cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金(中英)' },
-    cash_receipt_en_template_id:   { bg:'#fff1f2', color:'#9f1239', label:'现金(英文)' },
-    cash_receipt_es_template_id:   { bg:'#fff1f2', color:'#9f1239', label:'现金(英西)' },
+    cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金' },
+    cash_receipt_en_template_id:   { bg:'#fff1f2', color:'#9f1239', label:'现金' },
+    cash_receipt_es_template_id:   { bg:'#fff1f2', color:'#9f1239', label:'现金' },
     contractor_invoice_template_id:    { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     contractor_invoice_en_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     contractor_invoice_es_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
@@ -21290,18 +21290,6 @@ async function dsDeleteMyTemplate(localId, dsId, name) {
   } catch(e) { showToast(e.message, 'error'); }
 }
 
-async function dsRenameMyTemplate(localId, currentName) {
-  const newName = prompt('请输入新的模板名称：', currentName);
-  if (!newName || newName.trim() === currentName) return;
-  try {
-    await api(`/admin/docuseal/my-templates/${localId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName.trim() }) });
-    const t = _dsMyTemplates.find(t => t.id === localId);
-    if (t) t.name = newName.trim();
-    _dsRenderMyTemplates();
-    _dsRefreshSelects();
-    showToast('模板已改名', 'success');
-  } catch(e) { showToast(e.message, 'error'); }
-}
 
 function dsChangeCategoryModal(dsTemplateId) {
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
@@ -21331,9 +21319,7 @@ function dsChangeCategoryModal(dsTemplateId) {
       { cat: 'zelle_auth_en',     label: 'Zelle', bg:'#fdf4ff', color:'#86198f' },
       { cat: 'zelle_auth_es',     label: 'Zelle', bg:'#fdf4ff', color:'#86198f' },
       { cat: 'third_party_pay',   label: '第三方',bg:'#ecfdf5', color:'#065f46' },
-      { cat: 'cash_receipt',      label: '现金(中英)', bg:'#fff1f2', color:'#9f1239' },
-      { cat: 'cash_receipt_en',   label: '现金(英文)', bg:'#fff1f2', color:'#9f1239' },
-      { cat: 'cash_receipt_es',   label: '现金(英西)', bg:'#fff1f2', color:'#9f1239' },
+      { cat: 'cash_receipt',      label: '现金',  bg:'#fff1f2', color:'#9f1239' },
     ]},
     { title: 'Invoice', items: [
       { cat: 'contractor_invoice', label: '员工Invoice', bg:'#fef3c7', color:'#92400e' },
