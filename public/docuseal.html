@@ -179,7 +179,9 @@
           <optgroup label="付款授权表格">
             <option value="ach_auth_template_id">ACH / Direct Deposit</option>
             <option value="wire_auth_template_id">Wire Transfer</option>
-            <option value="check_instruction_template_id">Check / 支票</option>
+            <option value="check_instruction_template_id">Check / 支票 (ZH+EN)</option>
+            <option value="check_instruction_en_template_id">Check / 支票 (EN)</option>
+            <option value="check_instruction_es_template_id">Check / 支票 (EN+ES)</option>
             <option value="zelle_auth_template_id">Zelle</option>
             <option value="third_party_pay_template_id">PayPal / Venmo / CashApp</option>
             <option value="cash_receipt_template_id">现金签收</option>
@@ -250,7 +252,9 @@ const TEMPLATE_DEFS = [
   // 付款授权表格
   { key: 'ach_auth_template_id',         label: 'ACH / Direct Deposit', desc: '银行直接转账授权',      cat: '付款授权表格', catIcon: '💳' },
   { key: 'wire_auth_template_id',        label: 'Wire Transfer',        desc: '电汇付款授权',          cat: '付款授权表格', catIcon: '💳' },
-  { key: 'check_instruction_template_id',label: 'Check / 支票',         desc: '支票邮寄地址确认',       cat: '付款授权表格', catIcon: '💳' },
+  { key: 'check_instruction_template_id',    label: 'Check / 支票 (ZH+EN)', desc: '支票付款及邮寄地址确认（中英）', cat: '付款授权表格', catIcon: '💳', type: 'check_instruction' },
+  { key: 'check_instruction_en_template_id', label: 'Check / 支票 (EN)',    desc: '支票付款及邮寄地址确认（英文）', cat: '付款授权表格', catIcon: '💳', type: 'check_instruction_en' },
+  { key: 'check_instruction_es_template_id', label: 'Check / 支票 (EN+ES)', desc: '支票付款及邮寄地址确认（英西）', cat: '付款授权表格', catIcon: '💳', type: 'check_instruction_es' },
   { key: 'zelle_auth_template_id',       label: 'Zelle',               desc: 'Zelle 账号授权确认',     cat: '付款授权表格', catIcon: '💳' },
   { key: 'third_party_pay_template_id',    label: 'Third-Party Pay (ZH+EN)', desc: '第三方平台收款授权（中英）', cat: '付款授权表格', catIcon: '💳', type: 'third_party_pay' },
   { key: 'third_party_pay_en_template_id', label: 'Third-Party Pay (EN)',    desc: '第三方平台收款授权（英文）', cat: '付款授权表格', catIcon: '💳', type: 'third_party_pay_en' },
