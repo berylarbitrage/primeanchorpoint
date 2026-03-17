@@ -8759,9 +8759,12 @@ app.get('/api/admin/contractor-invoices/:id/signing-url', requireAdmin, requireR
     const freshEmbedSrc = u.data?.embed_src || '';
     const slug = u.data?.slug || submitter.slug || '';
     const baseHost = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
-    const signingUrl = freshEmbedSrc || (slug ? `${baseHost}/s/${slug}` : '');
+    const slugUrl = slug ? `${baseHost}/s/${slug}` : '';
+    const signingUrl = freshEmbedSrc || slugUrl;
     if (!signingUrl) return res.status(404).json({ error: '无法获取预览链接' });
-    res.json({ url: signingUrl, embed_src: freshEmbedSrc || signingUrl, status: submitter.status, completed: sub.status === 'completed', type: 'signing' });
+    // embed_src is the iframe-safe URL (only set when DocuSeal provides it)
+    // url is always the slug-based URL for "open in new tab"
+    res.json({ url: slugUrl || freshEmbedSrc, embed_src: freshEmbedSrc, embeddable: !!freshEmbedSrc, status: submitter.status, completed: sub.status === 'completed', type: 'signing' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
