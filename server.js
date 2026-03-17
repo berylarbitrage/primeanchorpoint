@@ -3482,8 +3482,8 @@ function generateContractorInvoiceHtmlTemplate(lang) {
   <b>${bi(en.certTitle, t ? t.certTitle : '')}</b>
   <div style="font-size:7.5pt;margin:3px 0">${en.certBody}${t ? `<br>${t.certBody}` : ''}</div>
   <table style="width:100%;margin-top:4px"><tr>
-    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.sigLabel, t ? t.sigLabel : '')}:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:2px solid #f59e0b;border-radius:2px;background:#fff"></signature-field></td>
-    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.dateLabel, t ? t.dateLabel : '')}:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.sigLabel, t ? t.sigLabel : '')}:</div><signature-field name="contractor_signature" role="Contractor" style="width:100%;height:44px;display:block;border:2px solid #f59e0b;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.dateLabel, t ? t.dateLabel : '')}:</div><date-field name="signature_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${en.footer}${t ? ` ${t.footer}` : ''}<br>${t ? `${t.ilFwpa} / ` : ''}${en.ilFwpa}<br><span style="color:#f59e0b">■</span> = ${bi(en.legend, t ? t.legend : '')} &nbsp; <span style="color:#ddd">■</span> = ${bi(en.legendGrey, t ? t.legendGrey : '')}</div>
@@ -3752,8 +3752,8 @@ function _buildThirdPartyPayForm(lang) {
       <td colspan="2" style="padding-bottom:5px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${f}width:100%;margin-top:2px"></text-field></td>
     </tr>
     <tr>
-      <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
-      <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lDate}:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+      <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="contractor_signature" role="Contractor" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
+      <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lDate}:</div><date-field name="signature_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
