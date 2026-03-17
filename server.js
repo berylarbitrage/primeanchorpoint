@@ -3216,7 +3216,7 @@ function generateI9HtmlTemplate() {
 function generateCompanyContractHtmlTemplate() {
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
   <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">SERVICE AGREEMENT</div>
@@ -3270,7 +3270,7 @@ function generateCompanyContractHtmlTemplate() {
 function generateContractor1099HtmlTemplate() {
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
   <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">INDEPENDENT CONTRACTOR AGREEMENT</div>
@@ -3324,7 +3324,7 @@ function generateContractor1099HtmlTemplate() {
 function generateW2EmploymentHtmlTemplate() {
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
   <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">EMPLOYMENT AGREEMENT</div>
@@ -3432,7 +3432,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
 
   const ro = 'border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;';
   const ed = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const companyAddr = process.env.COMPANY_ADDRESS || '';
   const companyEmail = process.env.COMPANY_EMAIL || '';
   const c = 'padding:3px 5px;border:1px solid #ccc;vertical-align:top;';
@@ -3497,7 +3497,7 @@ function generateContractorInvoiceHtmlTemplate_ES() { return generateContractorI
 // ── Invoice Approval Form — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
 function _buildInvoiceApprovalForm(lang) {
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
   const w = `${f}width:100%;min-height:16px;`;
   const c = 'padding:3px 5px;border:1px solid #ccc;vertical-align:top;';
@@ -3628,7 +3628,7 @@ function generateInvoiceApprovalHtmlTemplate_ES() { return _buildInvoiceApproval
 // ── Third-Party Payment Authorization — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
 function _buildThirdPartyPayForm(lang) {
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
   const w = `${f}width:100%;min-height:16px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
@@ -3824,7 +3824,7 @@ function generateACHAuthHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
   <div style="font-size:14pt;font-weight:900;letter-spacing:1px">ACH / DIRECT DEPOSIT AUTHORIZATION</div>
@@ -3883,7 +3883,7 @@ function generateWireAuthHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
   <div style="font-size:14pt;font-weight:900;letter-spacing:1px">WIRE TRANSFER AUTHORIZATION</div>
@@ -3944,7 +3944,7 @@ function _buildCheckInstructionForm(lang) {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
   const L = (en, zhTxt, esTxt) => {
@@ -4080,7 +4080,7 @@ function generateZelleAuthHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
   <div style="font-size:14pt;font-weight:900;letter-spacing:1px">ZELLE PAYMENT AUTHORIZATION</div>
@@ -4123,7 +4123,7 @@ function generateCashReceiptHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
   <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
@@ -4201,7 +4201,7 @@ function generateCashReceiptEnHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
   <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
@@ -4277,7 +4277,7 @@ function generateCashReceiptEsHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
   <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
@@ -4778,7 +4778,7 @@ function buildContractPdf(plainText) {
 }
 
 function generatePartnerContractText({ partnerName, companyName, partnerAddress, dateStr }) {
-  const cname = companyName || 'Prime Anchorpoint LLC';
+  const cname = companyName || 'Prime Anchor Point LLC';
   return [
     'PARTNERSHIP SERVICE AGREEMENT', '',
     `Date: ${dateStr}`, '',
@@ -4815,7 +4815,7 @@ function generatePartnerContractText({ partnerName, companyName, partnerAddress,
 }
 
 function generateWorkerContractText({ workerName, companyName, employmentType, dateStr, position }) {
-  const cname = companyName || 'Prime Anchorpoint LLC';
+  const cname = companyName || 'Prime Anchor Point LLC';
   const pos = position || 'General Worker';
   if (employmentType === '1099') {
     return [
@@ -4893,7 +4893,7 @@ function generateWorkerContractText({ workerName, companyName, employmentType, d
 }
 
 function generateTerminationNoticeText({ partnerName, companyName, dateStr }) {
-  const c = companyName || 'Prime Anchorpoint LLC';
+  const c = companyName || 'Prime Anchor Point LLC';
   return [
     'NOTICE OF SERVICE TERMINATION', '服务终止通知书', '',
     `Date / 日期: ${dateStr}`, '',
@@ -4918,7 +4918,7 @@ function generateTerminationNoticeText({ partnerName, companyName, dateStr }) {
 }
 
 function generateBreachNoticeText({ partnerName, companyName, dateStr }) {
-  const c = companyName || 'Prime Anchorpoint LLC';
+  const c = companyName || 'Prime Anchor Point LLC';
   return [
     'NOTICE OF TERMINATION FOR BREACH', '违约终止通知书', '',
     `Date / 日期: ${dateStr}`, '',
@@ -4942,7 +4942,7 @@ function generateBreachNoticeText({ partnerName, companyName, dateStr }) {
 }
 
 function generateAmendmentText({ partnerName, companyName, dateStr }) {
-  const c = companyName || 'Prime Anchorpoint LLC';
+  const c = companyName || 'Prime Anchor Point LLC';
   return [
     'CONTRACT AMENDMENT AGREEMENT', '合同修改协议', '',
     `This Amendment is entered into as of ${dateStr}, by and between:`, '',
@@ -4966,7 +4966,7 @@ function generateAmendmentText({ partnerName, companyName, dateStr }) {
 }
 
 function generateMutualTerminationText({ partnerName, companyName, dateStr }) {
-  const c = companyName || 'Prime Anchorpoint LLC';
+  const c = companyName || 'Prime Anchor Point LLC';
   return [
     'MUTUAL TERMINATION AGREEMENT', '协商解除协议', '',
     `This Mutual Termination Agreement is entered into as of ${dateStr},`,
@@ -4996,7 +4996,7 @@ function generateMutualTerminationText({ partnerName, companyName, dateStr }) {
 }
 
 function generateAssignmentContractText({ workerName, companyName, jobTitle, payRate, payType, startDate, workLocation, contractType }) {
-  const cname = companyName || 'Prime Anchorpoint LLC';
+  const cname = companyName || 'Prime Anchor Point LLC';
   const payLabels = { hourly: 'per hour', salary: 'per month', annual: 'per year', per_piece: 'per piece' };
   const payLabel = payLabels[payType] || 'per hour';
   const dateStr = startDate || new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -7018,7 +7018,7 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
   const onb = db.prepare("SELECT contract_content, ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
   const empType = w.employment_type || 'w2';
   const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const dateStr = new Date().toISOString().slice(0, 10);
   // If already has saved content, use that; otherwise generate default
   const content = (onb && onb.contract_content) || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
@@ -7055,7 +7055,7 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     if (!w) return res.status(404).json({ error: 'Worker not found' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置，请在 .env 设置 DOCUSEAL_API_KEY 和 DOCUSEAL_URL' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     if (!companyEmail) return res.status(503).json({ error: '请在 .env 设置 COMPANY_SIGNER_EMAIL' });
     const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
@@ -7175,7 +7175,7 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
           const contractTypeCn = empType === '1099' ? '承包商协议' : '雇佣合同';
           const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
           const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
-          const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+          const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
           const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
           if (workerEmail) {
             sendEmail(workerEmail,
@@ -7280,7 +7280,7 @@ app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async 
     const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
     const signUrl = await dsealGetCompanySignUrl(onb.ds_envelope_id);
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     console.log(`[CompanySign] workerId=${workerId}, submissionId=${onb.ds_envelope_id}, signUrl=${signUrl ? signUrl.substring(0, 80) + '...' : 'NULL'}`);
     res.json({ signUrl, companyName });
   } catch (e) { console.error('[CompanySign Error]', e.message); res.status(500).json({ error: e.message }); }
@@ -7319,7 +7319,7 @@ app.post('/api/admin/worker-accounts/:id/resend-sign-notification', requireAdmin
     const contractTypeCn = empType === '1099' ? '承包商协议' : '雇佣合同';
     const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
     const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
     let emailSent = false, smsSent = false;
     if (workerEmail) {
@@ -8886,7 +8886,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     // Reuse pre-generated invoice number if provided, otherwise generate a new one
     const invoiceNumber = pre_generated_invoice_number || generateContractorInvoiceNumber(workerName, w.state || '');
     // Create DocuSeal submission — admin pre-fills date, period & service description; contractor fills amount
-    const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+    const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
     const invoiceSubmitter = { role: 'First Party', name: workerName, email: workerEmail, fields: [
       { name: 'invoice_number', default_value: invoiceNumber, readonly: true },
       { name: 'invoice_date', default_value: todayDate, readonly: true },
@@ -8989,7 +8989,7 @@ app.get('/api/admin/contractor-invoices/preview-filled', requireAdmin, requireRo
   const periodEnd = period_end || invDate;
   const periodStart = period_start || new Date(invDateObj.getTime() - 6 * 86400000).toISOString().slice(0, 10);
   const dueDate = new Date(invDateObj.getTime() + 30 * 86400000).toISOString().slice(0, 10);
-  const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const billToCompany = process.env.COMPANY_LEGAL_NAME || 'Prime Anchor Point LLC';
   const contractorName = contractor_name || (t ? `(${t.name})` : '(Contractor Name)');
   const serviceDesc = service_description || (t ? `(${t.serviceDesc})` : '(Service Description)');
 
@@ -9836,7 +9836,7 @@ function buildMinimalPdf(pageLines) {
 }
 
 function generatePartnerContractLines({ partnerName, companyName, partnerAddress, dateStr }) {
-  const cname = companyName || 'Prime Anchorpoint LLC';
+  const cname = companyName || 'Prime Anchor Point LLC';
   return [
     { text: 'PARTNERSHIP SERVICE AGREEMENT', size: 15 },
     { text: '' },
@@ -9903,7 +9903,7 @@ app.post('/api/admin/partners/:id/reset-contract', requireAdmin, blockManager, a
   }
   // Generate new default contract
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const content = generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
   const pdfBuf = buildContractPdf(content);
   const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
@@ -9918,7 +9918,7 @@ app.post('/api/admin/partners/:id/generate-default-contract', requireAdmin, bloc
   const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'Partner not found' });
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const content = generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
   const pdfBuf = buildContractPdf(content);
   const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
@@ -9933,7 +9933,7 @@ app.get('/api/admin/partners/:id/contract-template', requireAdmin, blockManager,
   const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'Partner not found' });
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   res.json({ content: generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr }) });
 });
 
@@ -9959,7 +9959,7 @@ app.get('/api/admin/partner-files/:id/contract-content', requireAdmin, blockMana
   if (f.contract_content) return res.json({ content: f.contract_content });
   // Generate default content from partner data
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   res.json({ content: generatePartnerContractText({ partnerName: f.partner_name || '', companyName, partnerAddress: f.partner_address || '', dateStr }) });
 });
 
@@ -9984,7 +9984,7 @@ app.get('/api/admin/partners/:id/legal-template', requireAdmin, blockManager, (r
   if (!p) return res.status(404).json({ error: 'Partner not found' });
   const type = req.query.type || 'termination';
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const args = { partnerName: p.name, companyName, dateStr };
   let content = '';
   if (type === 'termination') content = generateTerminationNoticeText(args);
@@ -10046,7 +10046,7 @@ app.post('/api/admin/partner-files/:id/send-notice-email', requireAdmin, blockMa
     mutual_termination: 'Mutual Termination Agreement — 协商解除协议',
   };
   const subject = typeSubjects[f.file_type] || `Legal Notice — ${f.file_name}`;
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const text = `Dear ${toName || 'Partner'},\n\nPlease find attached the following document: ${f.file_name}.\n\nThis document requires your attention. Please review and respond accordingly.\n\nBest regards,\n${companyName}`;
   const ok = await sendEmailWithAttachment(toEmail, subject, text, pdfBuffer, f.file_name || 'notice.pdf');
   if (ok) res.json({ success: true, sentTo: toEmail });
@@ -10152,7 +10152,7 @@ app.post('/api/admin/partners/:id/generate-agreement', requireAdmin, blockManage
       // ── Column 1: Service Provider ──────────────────────────
       let y1 = startY;
       doc.fontSize(11).font('Helvetica-Bold').fillColor('black')
-        .text('Prime Anchorpoint LLC', col1X, y1, { width: colW });
+        .text('Prime Anchor Point LLC', col1X, y1, { width: colW });
       y1 += 16;
       doc.fontSize(10).font('Helvetica').fillColor('#555')
         .text('(Service Provider)', col1X, y1, { width: colW });
@@ -10346,7 +10346,7 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     }
     if (!partnerEmail) return res.status(400).json({ error: '合作方邮箱未找到，请在请求体中传 partner_email' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, f.file_path);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
@@ -10563,7 +10563,7 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
     const workerName = req.body.worker_name || a.inquiry_name || '工人';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱未找到，请在请求体中传 worker_email' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, a.contract_file);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '合同文件不存在' });
@@ -10590,7 +10590,7 @@ app.get('/api/admin/assignments/:id/docusign-sign-url', requireAdmin, blockManag
     const a = db.prepare("SELECT id, ds_envelope_id FROM assignments WHERE id=?").get(req.params.id);
     if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
     const _proto4 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
     const _host4 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
     const returnUrl = `${_proto4}://${_host4}/docusign-return`;
@@ -10646,7 +10646,7 @@ app.get('/api/admin/assignments/:id/contract-template', requireAdmin, blockManag
   const a = db.prepare(`SELECT a.*, i.name as inquiry_name, i.email as inquiry_email FROM assignments a LEFT JOIN inquiries i ON a.inquiry_id=i.id WHERE a.id=?`).get(req.params.id);
   if (!a) return res.status(404).json({ error: 'Not found' });
   if (a.contract_content) return res.json({ content: a.contract_content });
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
   const content = generateAssignmentContractText({
     workerName: a.inquiry_name || '', companyName,
     jobTitle: a.category || '', payRate: a.pay_rate || '', payType: a.pay_type || 'hourly',
@@ -13334,7 +13334,7 @@ app.get('/api/worker/invoice-prefill', requireWorker, (req, res) => {
     payment_terms: paymentTerms,
     invoice_date: today,
     payment_due_date: dueDate,
-    bill_to: 'Prime Anchorpoint LLC'
+    bill_to: 'Prime Anchor Point LLC'
   });
 });
 
@@ -15202,7 +15202,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                   db.prepare("UPDATE worker_onboarding SET ds_status='company_signed', action_url=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
                     .run(workerSignUrl, `公司已签署，等待工人签署 (${new Date().toLocaleString('zh-CN')})`, wid);
                 }
-                const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+                const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
                 const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
                 // Send email to worker (trilingual: Chinese / English / Spanish)
                 if (workerEmail) {
@@ -16548,8 +16548,8 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
 async function autoRegenerateTemplatesForCompanyName() {
   if (!dsealEnabled()) return;
-  const currentSigner = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
-  const currentLegal  = process.env.COMPANY_LEGAL_NAME  || 'Prime Anchorpoint LLC';
+  const currentSigner = process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
+  const currentLegal  = process.env.COMPANY_LEGAL_NAME  || 'Prime Anchor Point LLC';
   const combinedKey   = `${currentSigner}|||${currentLegal}`;
 
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
