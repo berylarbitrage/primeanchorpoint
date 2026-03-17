@@ -3768,10 +3768,10 @@ function _buildThirdPartyPayForm(lang) {
 <div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s2}</div>
 <div style="font-size:7.5pt;color:#555;margin-bottom:4px">${lSelectOne}</div>
 <div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:8.5pt">
-  <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></check-box-field> <b>PayPal</b></label>
-  <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></check-box-field> <b>Venmo</b></label>
-  <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></check-box-field> <b>Cash App</b></label>
-  <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_other" role="First Party" style="width:13px;height:13px"></check-box-field> <b>${lOther}:</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>PayPal</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Venmo</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Cash App</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_other" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>${lOther}:</b></label>
   <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #aaa;min-width:90px;background:transparent;font-size:8pt" placeholder="${lOtherName}"></text-field>
 </div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
