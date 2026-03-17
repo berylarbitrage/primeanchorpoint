@@ -3879,65 +3879,193 @@ function generateACHAuthHtmlTemplate() {
 }
 
 // ── Wire Transfer Authorization ──
-function generateWireAuthHtmlTemplate() {
-  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
-  const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px">WIRE TRANSFER AUTHORIZATION</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">电汇付款授权表 — ${companyName}</div>
+function _buildWireAuthForm(lang) {
+  const f  = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const w  = `${f}width:100%;min-height:22px;`;
+  const c  = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const zh = lang === 'zh-en';
+  const es = lang === 'en-es';
+  const L  = (en, zhTxt, esTxt) => {
+    if (zh && zhTxt) return `${en} ${zhTxt}`;
+    if (es && esTxt) return `${en} / ${esTxt}`;
+    return en;
+  };
+
+  const formTitle = zh
+    ? 'WIRE TRANSFER AUTHORIZATION & BANK ACCOUNT CONFIRMATION / 电汇付款授权及银行账户确认表'
+    : es
+    ? 'WIRE TRANSFER AUTHORIZATION & BANK ACCOUNT CONFIRMATION / AUTORIZACIÓN DE TRANSFERENCIA BANCARIA'
+    : 'WIRE TRANSFER AUTHORIZATION & BANK ACCOUNT CONFIRMATION';
+  const subtitle = zh
+    ? `电汇付款授权及银行账户确认表 — ${companyName}`
+    : es
+    ? `Autorización de Transferencia Bancaria — ${companyName}`
+    : `Wire Transfer Authorization — ${companyName}`;
+
+  const introPara = zh
+    ? `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments to the bank account information provided below. 本人特此授权 ${companyName} 及其授权代表根据以下提供的银行账户信息进行电汇付款。`
+    : es
+    ? `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments to the bank account information provided below. Por medio del presente, autorizo a ${companyName} y sus representantes autorizados a enviar transferencias bancarias a la información de cuenta bancaria proporcionada a continuación.`
+    : `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments to the bank account information provided below.`;
+
+  // Section labels
+  const s1 = L('1. BENEFICIARY INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
+  const lBeneName   = L('Beneficiary Full Legal Name', '收款人全名（法定姓名）', 'Nombre Legal Completo del Beneficiario');
+  const lContact    = zh ? 'Phone / Email 电话/电邮 (optional 可选)' : es ? 'Phone / Email (opcional)' : 'Phone / Email (optional)';
+  const lBeneAddr   = zh ? 'Beneficiary Address 收款人地址 (if required 如需要)' : es ? 'Dirección del Beneficiario (si se requiere)' : 'Beneficiary Address (if required by receiving bank)';
+
+  const s2dom = L('2A. DOMESTIC WIRE (U.S.)', '国内电汇（美国境内）', 'TRANSFERENCIA DOMÉSTICA (EE.UU.)');
+  const s2int = L('2B. INTERNATIONAL WIRE', '国际电汇', 'TRANSFERENCIA INTERNACIONAL');
+  const domHint = zh
+    ? '境内电汇请填写本节；国际电汇请跳至 2B。Complete this section for U.S. domestic wires; skip to 2B for international.'
+    : es
+    ? 'Complete esta sección para transferencias domésticas en EE.UU.; vaya a 2B para internacionales.'
+    : 'Complete this section for U.S. domestic wires; skip to 2B for international.';
+  const intHint = zh
+    ? '国际电汇请填写本节；国内电汇请仅填写 2A。Complete this section for international wires; domestic wires fill 2A only.'
+    : es
+    ? 'Complete esta sección para transferencias internacionales; las domésticas solo completan 2A.'
+    : 'Complete this section for international wires; domestic wires fill 2A only.';
+  const intBankAddr = zh ? 'Bank Address 银行地址 (if required 如需要)' : es ? 'Dirección del Banco (si se requiere)' : 'Bank Address (if required)';
+  const intIntermediary = zh
+    ? 'Intermediary / Correspondent Bank (if applicable) 中间行/代理行（如适用）'
+    : es
+    ? 'Banco Intermediario / Corresponsal (si aplica)'
+    : 'Intermediary / Correspondent Bank (if applicable)';
+  const intIntermediaryHint = zh
+    ? '仅在收款银行要求通过中间行/代理行接收电汇时填写。Complete only if your receiving bank requires an intermediary or correspondent bank for incoming wire transfers.'
+    : es
+    ? 'Complete solo si su banco receptor requiere un banco intermediario o corresponsal para recibir transferencias.'
+    : 'Complete only if your receiving bank requires an intermediary or correspondent bank for incoming wire transfers.';
+
+  const s3 = zh ? '3. SPECIAL WIRE INSTRUCTIONS 电汇特别说明 (optional 可选)' : es ? '3. INSTRUCCIONES ESPECIALES (opcional)' : '3. SPECIAL WIRE INSTRUCTIONS (optional)';
+  const s3hint = zh
+    ? 'e.g., Reference #, Further Credit To, additional routing notes'
+    : es
+    ? 'p. ej., N.º de referencia, instrucciones adicionales de enrutamiento'
+    : 'e.g., Reference #, Further Credit To, additional routing notes';
+
+  const s4 = L('4. CERTIFICATION & AGREEMENT', '声明与承诺', 'CERTIFICACIÓN Y ACUERDO');
+  const cert1 = zh
+    ? 'I certify that the beneficiary and bank account information provided below is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account. 本人确认以下收款人及银行账户信息真实、完整、准确，且本人系该账户持有人或有权通过该账户收取款项。'
+    : es
+    ? 'I certify that the beneficiary and bank account information provided is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account. Certifico que la información del beneficiario y de la cuenta bancaria proporcionada es verdadera, completa y precisa, y que soy el titular de dicha cuenta o estoy autorizado a recibir pagos a través de ella.'
+    : 'I certify that the beneficiary and bank account information provided is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account.';
+  const cert2 = zh
+    ? `A wire transfer sent in accordance with the account information provided by me will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated. 付款方依照本人提供的账户信息发起电汇后，即视为已有效履行付款义务；除非本人已在电汇发起前以书面形式提供更正后的付款指示。`
+    : es
+    ? `A wire transfer sent in accordance with the account information I provided will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated. Una transferencia bancaria enviada de acuerdo con la información proporcionada se considerará pago válido y total cumplimiento de la obligación de pago, salvo que yo haya proporcionado instrucciones corregidas por escrito antes de iniciar la transferencia.`
+    : `A wire transfer sent in accordance with the account information I provided will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated.`;
+  const cert3 = zh
+    ? `I agree to notify ${companyName} in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions. 如本人收款人名称、银行账户、路由号、SWIFT、IBAN 或其他付款信息发生变化，本人同意在电汇发起前以书面形式通知 ${companyName}。`
+    : es
+    ? `I agree to notify ${companyName} in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions. Me comprometo a notificar a ${companyName} por escrito antes de cualquier cambio en mi nombre de beneficiario, cuenta bancaria, número de ruta, SWIFT, IBAN u otras instrucciones de pago.`
+    : `I agree to notify ${companyName} in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions.`;
+  const cert4 = zh
+    ? 'I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing. 本人理解，中间行费用、收款银行费用及其他电汇相关费用可能产生，除非双方另有书面约定，否则实际到账金额可能因此减少。'
+    : es
+    ? 'I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing. Entiendo que pueden aplicarse cargos de bancos intermediarios, bancos receptores y otros relacionados con la transferencia, lo que puede reducir el monto recibido, salvo acuerdo escrito en contrario.'
+    : 'I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing.';
+
+  const s5ben = L('BENEFICIARY SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
+  const s5co  = L('COMPANY APPROVAL', '公司审批', 'APROBACIÓN DE LA EMPRESA');
+  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en letra de molde');
+  const lTitle       = L('Title', '职位', 'Cargo');
+  const lSig         = L('Signature', '签名', 'Firma');
+  const lDate        = L('Date', '日期', 'Fecha');
+
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:18px;color:#111;line-height:1.5">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px">
+  <div style="font-size:11.5pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
+  <div style="font-size:8pt;color:#555;margin-top:3px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt">I hereby authorize ${companyName} to send wire transfer payments to the bank account specified below. 本人特此授权 ${companyName} 通过电汇方式向以下银行账户发送付款。</p>
+<p style="font-size:8pt;margin-bottom:10px">${introPara}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">1. BENEFICIARY INFORMATION 收款人信息</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:10px 0 4px;font-size:9pt">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:50%"><b>Beneficiary Name 收款人姓名</b><br><text-field name="wire_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Phone / Email 电话/电邮</b><br><text-field name="wire_contact" role="First Party" style="${w}"></text-field></td>
+    <td style="${c}width:55%"><b>${lBeneName}</b><br><text-field name="wire_name" role="Contractor" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="wire_contact" role="Contractor" style="${w}"></text-field></td>
   </tr>
   <tr>
-    <td colspan="2" style="${c}"><b>Address 地址</b><br><text-field name="wire_address" role="First Party" style="${w}"></text-field></td>
+    <td colspan="2" style="${c}"><b>${lBeneAddr}</b><br><text-field name="wire_bene_address" role="Contractor" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">2. BANK DETAILS 银行信息</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr>
-    <td style="${c}width:50%"><b>Bank Name 银行名称</b><br><text-field name="wire_bank_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Bank Address 银行地址</b><br><text-field name="wire_bank_address" role="First Party" style="${w}"></text-field></td>
+<div style="font-weight:700;margin:10px 0 2px;font-size:9pt">${s2dom}</div>
+<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${domHint}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px;border:1px solid #d0d8e8;border-radius:4px">
+  <tr style="background:#f0f4ff">
+    <td style="${c}width:50%"><b>Bank Name ${zh ? '银行名称' : ''}</b><br><text-field name="wire_dom_bank_name" role="Contractor" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>ABA / Routing Number ${zh ? '路由号' : ''}</b><br><text-field name="wire_dom_routing" role="Contractor" style="${f}width:100%" placeholder="9-digit ABA routing number"></text-field></td>
   </tr>
-  <tr>
-    <td style="${c}"><b>Routing / ABA / SWIFT</b><br><text-field name="wire_routing" role="First Party" required="true" style="${f}width:220px"></text-field></td>
-    <td style="${c}"><b>Account Number / IBAN 账号</b><br><text-field name="wire_account" role="First Party" required="true" style="${w}"></text-field></td>
-  </tr>
-  <tr>
-    <td colspan="2" style="${c}"><b>Intermediary Bank (if applicable) 中间行</b><br><text-field name="wire_intermediary" role="First Party" style="${w}" placeholder="Name, SWIFT, Account # (if required)"></text-field></td>
+  <tr style="background:#f0f4ff">
+    <td colspan="2" style="${c}"><b>Account Number ${zh ? '账号' : ''}</b><br><text-field name="wire_dom_account" role="Contractor" style="${f}width:60%"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">3. ADDITIONAL NOTES 备注</div>
-<text-field name="wire_notes" role="First Party" style="${w};min-height:40px" placeholder="Reference number, special instructions..."></text-field>
+<div style="font-weight:700;margin:10px 0 2px;font-size:9pt">${s2int}</div>
+<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${intHint}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px;border:1px solid #d8e8d0;border-radius:4px">
+  <tr style="background:#f0fff4">
+    <td style="${c}width:50%"><b>Bank Name ${zh ? '银行名称' : ''}</b><br><text-field name="wire_int_bank_name" role="Contractor" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>SWIFT / BIC</b><br><text-field name="wire_int_swift" role="Contractor" style="${f}width:100%" placeholder="e.g., CHASUS33"></text-field></td>
+  </tr>
+  <tr style="background:#f0fff4">
+    <td style="${c}"><b>IBAN / Account Number ${zh ? '账号' : ''}</b><br><text-field name="wire_int_iban" role="Contractor" style="${w}"></text-field></td>
+    <td style="${c}"><b>${intBankAddr}</b><br><text-field name="wire_int_bank_addr" role="Contractor" style="${w}"></text-field></td>
+  </tr>
+  <tr style="background:#f0fff4">
+    <td colspan="2" style="${c}">
+      <b>${intIntermediary}</b>
+      <div style="font-size:7pt;color:#777;margin-bottom:2px">${intIntermediaryHint}</div>
+      <text-field name="wire_intermediary" role="Contractor" style="${w}" placeholder="Bank Name, SWIFT/BIC, Account # (if required)"></text-field>
+    </td>
+  </tr>
+</table>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
-  <b>SIGNATURES 签名</b>
-  <table style="width:100%;margin-top:6px"><tr>
-    <td style="width:50%;padding-right:10px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700">Beneficiary Signature 收款人签名:</div>
-      <signature-field name="wire_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><date-field name="wire_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
-    </td>
-    <td style="width:50%;padding-left:10px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700">Company Approval 公司审批:</div>
-      <signature-field name="wire_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><date-field name="wire_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
-    </td>
-  </tr></table>
+<div style="font-weight:700;margin:8px 0 2px;font-size:9pt">${s3}</div>
+<text-field name="wire_notes" role="Contractor" style="${w};min-height:34px" placeholder="${s3hint}"></text-field>
+
+<div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:10px;font-size:7.5pt;line-height:1.6">
+  <div style="font-weight:700;margin-bottom:4px;font-size:8.5pt">${s4}</div>
+  <div style="margin-bottom:3px">① ${cert1}</div>
+  <div style="margin-bottom:3px">② ${cert2}</div>
+  <div style="margin-bottom:3px">③ ${cert3}</div>
+  <div>④ ${cert4}</div>
 </div>
+
+<table style="width:100%;border-collapse:collapse;margin-top:10px;border:1px solid #999;border-radius:3px">
+  <tr>
+    <td style="width:50%;padding:7px 8px;border-right:1px solid #ccc;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${s5ben}</div>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
+      <text-field name="wire_printed_name" role="Contractor" required="true" style="${w};margin-bottom:5px"></text-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
+      <signature-field name="wire_sig" role="Contractor" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
+      <date-field name="wire_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+    <td style="width:50%;padding:7px 8px;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${s5co}</div>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
+      <text-field name="wire_co_printed_name" role="First Party" style="${w};margin-bottom:5px"></text-field>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lTitle}:</div>
+      <text-field name="wire_co_title" role="First Party" style="${w};margin-bottom:5px"></text-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
+      <signature-field name="wire_co_sig" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
+      <date-field name="wire_co_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr>
+</table>
 </div>`;
 }
+function generateWireAuthHtmlTemplate()    { return _buildWireAuthForm('zh-en'); }
+function generateWireAuthHtmlTemplate_EN() { return _buildWireAuthForm('en'); }
+function generateWireAuthHtmlTemplate_ES() { return _buildWireAuthForm('en-es'); }
 
 // ── Check / 支票 Instruction Form ──
 function _buildCheckInstructionForm(lang) {
@@ -4363,7 +4491,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'i9', generator: generateI9HtmlTemplate },
   w7: { name: 'W-7 ITIN Application / ITIN 申请表', configKey: 'w7_template_id', category: 'w7', generator: generateW7HtmlTemplate },
   ach_auth: { name: 'ACH / Direct Deposit Authorization / 银行直接转账授权', configKey: 'ach_auth_template_id', category: 'ach_auth', generator: generateACHAuthHtmlTemplate },
-  wire_auth: { name: 'Wire Transfer Authorization / 电汇付款授权', configKey: 'wire_auth_template_id', category: 'wire_auth', generator: generateWireAuthHtmlTemplate },
+  wire_auth:    { name: 'Wire Transfer Authorization (ZH+EN) / 电汇付款授权及银行账户确认', configKey: 'wire_auth_template_id',    category: 'wire_auth',    generator: generateWireAuthHtmlTemplate },
+  wire_auth_en: { name: 'Wire Transfer Authorization (EN)',                                   configKey: 'wire_auth_en_template_id', category: 'wire_auth_en', generator: generateWireAuthHtmlTemplate_EN },
+  wire_auth_es: { name: 'Wire Transfer Authorization (EN+ES)',                                configKey: 'wire_auth_es_template_id', category: 'wire_auth_es', generator: generateWireAuthHtmlTemplate_ES },
   check_instruction:    { name: 'Check Payment Mailing Instruction (ZH+EN) / 支票付款及邮寄地址确认表', configKey: 'check_instruction_template_id',    category: 'check_instruction',    generator: generateCheckInstructionHtmlTemplate },
   check_instruction_en: { name: 'Check Payment Mailing Instruction (EN)',                                  configKey: 'check_instruction_en_template_id', category: 'check_instruction_en', generator: generateCheckInstructionHtmlTemplate_EN },
   check_instruction_es: { name: 'Check Payment Mailing Instruction (EN+ES)',                               configKey: 'check_instruction_es_template_id', category: 'check_instruction_es', generator: generateCheckInstructionHtmlTemplate_ES },
