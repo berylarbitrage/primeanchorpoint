@@ -1,6 +1,6 @@
 <!DOCTYPE html><html><head><meta charset="utf-8"><title>Approval</title><style>@page{size:letter;margin:0.5in}</style></head><body style="background:#fff;padding:0;margin:0"><div style="font-family:Arial,Helvetica,sans-serif;font-size:8pt;max-width:680px;margin:0 auto;padding:10px 16px;color:#111;line-height:1.35">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:2px">INVOICE APPROVAL FORM</div>
+  <div style="font-size:13pt;font-weight:900;letter-spacing:1px">INVOICE APPROVAL FORM / 发票审批表</div>
   <div style="font-size:7.5pt;color:#555">Internal Use Only — 公司内部审批专用 (Prime Anchorpoint LLC)</div>
 </div>
 <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:4px 8px;font-size:7.5pt;color:#856404;margin-bottom:8px">
@@ -12,8 +12,8 @@
   <tr>
     <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Customer Invoice # 客户发票号</b><br><span style="font-size:6.5pt;color:#888">合作公司出具的发票</span><br><text-field name="customer_invoice_number" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%" placeholder="CUS-2026-001"></text-field></td>
     <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Contractor Invoice # 承包商发票号</b><br><span style="font-size:6.5pt;color:#888">我方承包商出具的发票</span><br><text-field name="linked_invoice_number" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%" placeholder="INV-2026-001"></text-field></td>
-    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Contractor 承包商</b><br><br><text-field name="contractor_name" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%"></text-field></td>
-    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Service Period 服务期间</b><br><br><text-field name="service_period" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%" placeholder="May 1–7, 2026"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Contractor 承包商</b><br><br><text-field name="contractor_name" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Service Period 服务期间</b><br><br><text-field name="service_period" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;" placeholder="May 1–7, 2026"></text-field></td>
   </tr>
   <tr>
     <td colspan="4" style="padding:3px 5px;border:1px solid #ccc;vertical-align:top"><b>Requested Amount 请求金额</b>&nbsp;&nbsp;$ <text-field name="requested_amount" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:130px" placeholder="0.00"></text-field></td>
@@ -25,8 +25,8 @@
   <tr>
     <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:34%">
       <b>Decision 审批结果</b><br>
-      <text-field name="approval_decision" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%" placeholder="Approved / Partially Approved / Rejected"></text-field>
-      <div style="font-size:6.5pt;color:#666">Approved 批准 / Partially Approved 部分批准 / Rejected 拒绝</div>
+      <text-field name="approval_decision" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;" placeholder="Approved / Partially Approved / Rejected"></text-field>
+      <div style="font-size:6.5pt;color:#666;margin-top:2px">Approved 批准 / Partially Approved 部分批准 / Rejected 拒绝</div>
     </td>
     <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:33%;background:#f9f9f0">
       <b>Approved Amount 批准金额</b><br>
@@ -34,8 +34,8 @@
     </td>
     <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:33%">
       <b>Notes / Reason 备注 / 原因</b><br>
-      <span style="font-size:6.5pt;color:#888">（部分批准或拒绝时填写）</span><br>
-      <text-field name="adjustment_reason" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:32px" placeholder="Required if Partially Approved or Rejected"></text-field>
+      <div style="font-size:6.5pt;color:#888;margin-bottom:2px">（部分批准或拒绝时填写）</div>
+      <text-field name="adjustment_reason" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:32px" placeholder=""></text-field>
     </td>
   </tr>
 </table>
@@ -44,11 +44,10 @@
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
     <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%"><b>Payment Date 付款日期</b><br><text-field name="payment_date" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:140px" placeholder="MM/DD/YYYY"></text-field></td>
-    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%"><b>Reviewer 审批人</b><br><text-field name="reviewer_name" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%"><b>Reviewer 审批人</b><br><text-field name="reviewer_name" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">4. SIGNATURE 签字</div>
 <div style="background:#f5f5f5;border:1px solid #999;padding:6px;font-size:8pt">
   <b>COMPANY APPROVAL SIGNATURE 公司审批签名</b> — I authorize the above payment on behalf of Prime Anchorpoint LLC. 本人代表公司授权上述付款。
   <table style="width:100%;margin-top:4px"><tr>
@@ -56,5 +55,5 @@
     <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Approval Date 审批日期:</div><date-field name="approval_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">INTERNAL DOCUMENT — Prime Anchorpoint LLC — Invoice proves the contractor's request; this form proves the company's approval. 内部文件——发票证明请求，本表证明批准。</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">INTERNAL DOCUMENT — Prime Anchorpoint LLC — Invoice records the contractor's request; this form records company approval. 内部文件——发票记录请求，本表记录批准。</div>
 </div></body></html>
