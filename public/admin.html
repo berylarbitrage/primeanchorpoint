@@ -2381,10 +2381,23 @@ tr:hover td{background:var(--sky-light)}
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">现金签收</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Cash Payment Receipt</div>
-          <select id="ds-sel-cash" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('cash_receipt', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-cash-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">💵 现金签收</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">Cash Payment Receipt — 三种语言版本</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
+            <select id="ds-sel-cash" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('cash_receipt', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-cash-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-cash-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('cash_receipt_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-cash-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-cash-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('cash_receipt_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-cash-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商發票</div>
@@ -2792,7 +2805,21 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="payAuthMethodDesc" style="padding:.6rem .8rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1;margin-bottom:1rem"></div>
   <div id="payAuthStatusBox" style="display:none;padding:.6rem .8rem;border-radius:8px;font-size:.83rem;margin-bottom:1rem"></div>
-  <div id="payAuthWorkerEmail" style="margin-bottom:1rem">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+    <div>
+      <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">通知语言</label>
+      <select id="payAuthLang" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none">
+        <option value="zh">🇨🇳 中文 + English</option>
+        <option value="en">🇺🇸 English Only</option>
+        <option value="es">🇪🇸 English + Español</option>
+      </select>
+    </div>
+    <div>
+      <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">手机号（短信通知）</label>
+      <input type="tel" id="payAuthPhone" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none" placeholder="626-000-0000">
+    </div>
+  </div>
+  <div style="margin-bottom:1rem">
     <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">工人邮箱（用于发送签署链接）</label>
     <input type="email" id="payAuthEmail" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none" placeholder="worker@example.com">
   </div>
@@ -17597,14 +17624,14 @@ async function openPaymentAuthModal() {
   if (!_onboardingWorkerId) return;
   const w = _onboardingWorkerData;
   const sel = document.getElementById('payAuthMethodSelect');
-  // Pre-select worker's current payment method
   const pm = (w && w.payment_method) || 'cash';
   if (sel) sel.value = pm;
   _updatePayAuthDesc();
   sel.onchange = _updatePayAuthDesc;
-  // Pre-fill email
   document.getElementById('payAuthEmail').value = (w && w.email) || '';
-  // Check existing status
+  document.getElementById('payAuthPhone').value = (w && w.phone) || '';
+  // Default lang based on worker's apparent language preference (phone country code heuristic)
+  document.getElementById('payAuthLang').value = 'zh';
   document.getElementById('payAuthStatusBox').style.display = 'none';
   document.getElementById('payAuthSignLink').style.display = 'none';
   try {
@@ -17643,13 +17670,15 @@ async function doSendPaymentAuth() {
   if (!_onboardingWorkerId) return;
   const method = document.getElementById('payAuthMethodSelect').value;
   const email = document.getElementById('payAuthEmail').value.trim();
+  const phone = document.getElementById('payAuthPhone').value.trim();
+  const lang = document.getElementById('payAuthLang').value;
   if (!email) { showToast('请填写工人邮箱', 'error'); return; }
   const btn = document.getElementById('payAuthSendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   try {
     const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-payment-auth`, {
       method: 'POST',
-      body: JSON.stringify({ payment_method: method, worker_email: email })
+      body: JSON.stringify({ payment_method: method, worker_email: email, worker_phone: phone, lang })
     });
     if (r && r.success) {
       if (r.signUrl) {
@@ -18492,15 +18521,15 @@ async function openContractorInvoicesModal() {
 async function reviewContractorInvoice(id, status) {
   let reject_reason = '';
   if (status === 'rejected') {
-    reject_reason = prompt('请输入拒绝原因 / Rejection reason:');
+    reject_reason = await adminPrompt('请输入拒绝原因（将通过邮件和短信通知承包商）\nRejection reason (will be sent to contractor via email & SMS):', '拒绝 Invoice');
     if (reject_reason === null) return;
+    if (!reject_reason.trim()) { showToast('请填写拒绝原因', 'error'); return; }
   }
-  if (!await showConfirm(`确认${status==='approved'?'批准':'拒绝'}该 Invoice？`)) return;
+  if (!await adminConfirm(`确认${status==='approved'?'批准':'拒绝'}该 Invoice？${status==='rejected' && reject_reason ? '\n\n原因：'+reject_reason : ''}`, status==='approved'?'批准确认':'拒绝确认', status==='approved'?'✅ 确认批准':'❌ 确认拒绝', '取消', status==='rejected'?'btn-red':'')) return;
   const r = await api(`/admin/contractor-invoices/${id}`, { method:'PUT', body:JSON.stringify({ status, reject_reason }) });
   if (r && r.success) {
-    showToast(status === 'approved' ? '✅ Invoice 已批准' : '❌ Invoice 已拒绝');
+    showToast(status === 'approved' ? '✅ Invoice 已批准' : '❌ Invoice 已拒绝，已通知承包商');
     openContractorInvoicesModal();
-    // Also refresh the tab view if it's visible
     if (document.getElementById('tab-ts-emp-invoice')?.style.display !== 'none') loadEmpInvoiceTab();
   }
 }
@@ -20986,7 +21015,9 @@ const _DS_SELECTORS = [
   { key: 'third_party_pay_template_id',    selId: 'ds-sel-third-party',    infoId: 'ds-cfg-third-party-info',    label: '第三方平台(中英)', doc_type: 'third_party_pay' },
   { key: 'third_party_pay_en_template_id', selId: 'ds-sel-third-party-en', infoId: 'ds-cfg-third-party-en-info', label: '第三方平台(英文)', doc_type: 'third_party_pay_en' },
   { key: 'third_party_pay_es_template_id', selId: 'ds-sel-third-party-es', infoId: 'ds-cfg-third-party-es-info', label: '第三方平台(英西)', doc_type: 'third_party_pay_es' },
-  { key: 'cash_receipt_template_id',       selId: 'ds-sel-cash',           infoId: 'ds-cfg-cash-info',           label: '现金签收',        doc_type: 'cash_receipt' },
+  { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收(中英)', doc_type: 'cash_receipt' },
+  { key: 'cash_receipt_en_template_id',  selId: 'ds-sel-cash-en',            infoId: 'ds-cfg-cash-en-info',           label: '现金签收(英文)', doc_type: 'cash_receipt_en' },
+  { key: 'cash_receipt_es_template_id',  selId: 'ds-sel-cash-es',            infoId: 'ds-cfg-cash-es-info',           label: '现金签收(英西)', doc_type: 'cash_receipt_es' },
   // 发票
   { key: 'contractor_invoice_template_id',    selId: 'ds-sel-contractor-inv',    infoId: 'ds-cfg-contractor-inv-info',    label: '发票(中英)',        doc_type: 'contractor_invoice' },
   { key: 'contractor_invoice_en_template_id', selId: 'ds-sel-contractor-inv-en', infoId: 'ds-cfg-contractor-inv-en-info', label: '发票(英文)',        doc_type: 'contractor_invoice_en' },
@@ -21018,7 +21049,7 @@ function _dsRefreshSelects() {
 const _DS_CAT_GROUPS = {
   __contract__: ['company_contract','worker_1099','worker_w2','contract'],
   __tax__:      ['w4','w9','w8ben','w8bene','form8233','i9','w7','tax'],
-  __payment__:  ['ach_auth','wire_auth','wire_auth_en','wire_auth_es','check_instruction','check_instruction_en','check_instruction_es','zelle_auth','third_party_pay','third_party_pay_en','third_party_pay_es','cash_receipt','payment'],
+  __payment__:  ['ach_auth','wire_auth','wire_auth_en','wire_auth_es','check_instruction','check_instruction_en','check_instruction_es','zelle_auth','third_party_pay','third_party_pay_en','third_party_pay_es','cash_receipt','cash_receipt_en','cash_receipt_es','payment'],
   __invoice__:  ['contractor_invoice','contractor_invoice_en','contractor_invoice_es','invoice'],
   __approval__: ['invoice_approval','invoice_approval_en','invoice_approval_es'],
 };
@@ -21073,7 +21104,9 @@ function _dsRenderMyTemplates() {
     third_party_pay_template_id:    { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     third_party_pay_en_template_id: { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     third_party_pay_es_template_id: { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
-    cash_receipt_template_id:       { bg:'#fff1f2', color:'#9f1239', label:'现金' },
+    cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金(中英)' },
+    cash_receipt_en_template_id:   { bg:'#fff1f2', color:'#9f1239', label:'现金(英文)' },
+    cash_receipt_es_template_id:   { bg:'#fff1f2', color:'#9f1239', label:'现金(英西)' },
     contractor_invoice_template_id:    { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     contractor_invoice_en_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     contractor_invoice_es_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
@@ -21084,7 +21117,7 @@ function _dsRenderMyTemplates() {
   const _CAT_BADGE = {
     company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
     w4:{bg:'#e0f2fe',color:'#0369a1',label:'W-4'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'W-9'}, w8ben:{bg:'#fae8ff',color:'#6b21a8',label:'W-8BEN'}, w8bene:{bg:'#ede9fe',color:'#5b21b6',label:'W-8BEN-E'}, form8233:{bg:'#fce7f3',color:'#9d174d',label:'8233'}, i9:{bg:'#dcfce7',color:'#166534',label:'I-9'}, w7:{bg:'#f0fdf4',color:'#15803d',label:'W-7'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
-    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_en:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_es:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_en:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_es:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_en:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_es:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
+    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_en:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_es:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_en:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_es:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_en:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_es:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, cash_receipt_en:{bg:'#fff1f2',color:'#9f1239',label:'现金(EN)'}, cash_receipt_es:{bg:'#fff1f2',color:'#9f1239',label:'现金(ES)'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
     contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_en:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_es:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
     invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_en:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_es:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
   };
@@ -21277,7 +21310,9 @@ function dsChangeCategoryModal(dsTemplateId) {
       { cat: 'check_instruction', label: '支票',  bg:'#fafaf9', color:'#292524' },
       { cat: 'zelle_auth',        label: 'Zelle', bg:'#fdf4ff', color:'#86198f' },
       { cat: 'third_party_pay',   label: '第三方',bg:'#ecfdf5', color:'#065f46' },
-      { cat: 'cash_receipt',      label: '现金',  bg:'#fff1f2', color:'#9f1239' },
+      { cat: 'cash_receipt',      label: '现金(中英)', bg:'#fff1f2', color:'#9f1239' },
+      { cat: 'cash_receipt_en',   label: '现金(英文)', bg:'#fff1f2', color:'#9f1239' },
+      { cat: 'cash_receipt_es',   label: '现金(英西)', bg:'#fff1f2', color:'#9f1239' },
     ]},
     { title: 'Invoice', items: [
       { cat: 'contractor_invoice', label: '员工Invoice', bg:'#fef3c7', color:'#92400e' },
