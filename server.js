@@ -3615,13 +3615,13 @@ function _buildInvoiceApprovalForm(lang) {
 <div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:25%"><b>${lCustInvNum}</b><br><span style="font-size:6.5pt;color:#888">${lCustInvNote}</span><br><text-field name="customer_invoice_number" role="First Party" required="true" style="${f}width:100%" placeholder="CUS-2026-001"></text-field></td>
-    <td style="${c}width:25%"><b>${lContInvNum}</b><br><span style="font-size:6.5pt;color:#888">${lContInvNote}</span><br><text-field name="linked_invoice_number" role="First Party" required="true" style="${f}width:100%" placeholder="INV-2026-001"></text-field></td>
-    <td style="${c}width:25%"><b>${lContractor}</b><br><br><text-field name="contractor_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:25%"><b>${lSvcPeriod}</b><br><br><text-field name="service_period" role="First Party" style="${w}" placeholder="May 1–7, 2026"></text-field></td>
+    <td style="${c}width:25%;background:#eaf0fb"><b>${lCustInvNum}</b><br><span style="font-size:6.5pt;color:#888">${lCustInvNote}</span><br><text-field name="customer_invoice_number" role="First Party" required="true" style="${f}width:100%" placeholder="CUS-2026-001"></text-field></td>
+    <td style="${c}width:25%;background:#eaf0fb"><b>${lContInvNum}</b><br><span style="font-size:6.5pt;color:#888">${lContInvNote}</span><br><text-field name="linked_invoice_number" role="First Party" required="true" style="${f}width:100%" placeholder="INV-2026-001"></text-field></td>
+    <td style="${c}width:25%;background:#eaf0fb"><b>${lContractor}</b><br><br><text-field name="contractor_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:25%;background:#eaf0fb"><b>${lSvcPeriod}</b><br><br><text-field name="service_period" role="First Party" style="${w}" placeholder="May 1–7, 2026"></text-field></td>
   </tr>
   <tr>
-    <td colspan="4" style="${c}"><b>${lReqAmt}</b>&nbsp;&nbsp;$ <text-field name="requested_amount" role="First Party" required="true" style="${f}width:130px" placeholder="0.00"></text-field></td>
+    <td colspan="4" style="${c}background:#eaf0fb"><b>${lReqAmt}</b>&nbsp;&nbsp;$ <text-field name="requested_amount" role="First Party" required="true" style="${f}width:130px" placeholder="0.00"></text-field></td>
   </tr>
 </table>
 
