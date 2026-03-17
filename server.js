@@ -3879,65 +3879,193 @@ function generateACHAuthHtmlTemplate() {
 }
 
 // ── Wire Transfer Authorization ──
-function generateWireAuthHtmlTemplate() {
-  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
-  const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px">WIRE TRANSFER AUTHORIZATION</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">电汇付款授权表 — ${companyName}</div>
+function _buildWireAuthForm(lang) {
+  const f  = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const w  = `${f}width:100%;min-height:22px;`;
+  const c  = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
+  const zh = lang === 'zh-en';
+  const es = lang === 'en-es';
+  const L  = (en, zhTxt, esTxt) => {
+    if (zh && zhTxt) return `${en} ${zhTxt}`;
+    if (es && esTxt) return `${en} / ${esTxt}`;
+    return en;
+  };
+
+  const formTitle = zh
+    ? 'WIRE TRANSFER AUTHORIZATION & BANK ACCOUNT CONFIRMATION / 电汇付款授权及银行账户确认表'
+    : es
+    ? 'WIRE TRANSFER AUTHORIZATION & BANK ACCOUNT CONFIRMATION / AUTORIZACIÓN DE TRANSFERENCIA BANCARIA'
+    : 'WIRE TRANSFER AUTHORIZATION & BANK ACCOUNT CONFIRMATION';
+  const subtitle = zh
+    ? `电汇付款授权及银行账户确认表 — ${companyName}`
+    : es
+    ? `Autorización de Transferencia Bancaria — ${companyName}`
+    : `Wire Transfer Authorization — ${companyName}`;
+
+  const introPara = zh
+    ? `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments to the bank account information provided below. 本人特此授权 ${companyName} 及其授权代表根据以下提供的银行账户信息进行电汇付款。`
+    : es
+    ? `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments to the bank account information provided below. Por medio del presente, autorizo a ${companyName} y sus representantes autorizados a enviar transferencias bancarias a la información de cuenta bancaria proporcionada a continuación.`
+    : `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments to the bank account information provided below.`;
+
+  // Section labels
+  const s1 = L('1. BENEFICIARY INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
+  const lBeneName   = L('Beneficiary Full Legal Name', '收款人全名（法定姓名）', 'Nombre Legal Completo del Beneficiario');
+  const lContact    = zh ? 'Phone / Email 电话/电邮 (optional 可选)' : es ? 'Phone / Email (opcional)' : 'Phone / Email (optional)';
+  const lBeneAddr   = zh ? 'Beneficiary Address 收款人地址 (if required 如需要)' : es ? 'Dirección del Beneficiario (si se requiere)' : 'Beneficiary Address (if required by receiving bank)';
+
+  const s2dom = L('2A. DOMESTIC WIRE (U.S.)', '国内电汇（美国境内）', 'TRANSFERENCIA DOMÉSTICA (EE.UU.)');
+  const s2int = L('2B. INTERNATIONAL WIRE', '国际电汇', 'TRANSFERENCIA INTERNACIONAL');
+  const domHint = zh
+    ? '境内电汇请填写本节；国际电汇请跳至 2B。Complete this section for U.S. domestic wires; skip to 2B for international.'
+    : es
+    ? 'Complete esta sección para transferencias domésticas en EE.UU.; vaya a 2B para internacionales.'
+    : 'Complete this section for U.S. domestic wires; skip to 2B for international.';
+  const intHint = zh
+    ? '国际电汇请填写本节；国内电汇请仅填写 2A。Complete this section for international wires; domestic wires fill 2A only.'
+    : es
+    ? 'Complete esta sección para transferencias internacionales; las domésticas solo completan 2A.'
+    : 'Complete this section for international wires; domestic wires fill 2A only.';
+  const intBankAddr = zh ? 'Bank Address 银行地址 (if required 如需要)' : es ? 'Dirección del Banco (si se requiere)' : 'Bank Address (if required)';
+  const intIntermediary = zh
+    ? 'Intermediary / Correspondent Bank (if applicable) 中间行/代理行（如适用）'
+    : es
+    ? 'Banco Intermediario / Corresponsal (si aplica)'
+    : 'Intermediary / Correspondent Bank (if applicable)';
+  const intIntermediaryHint = zh
+    ? '仅在收款银行要求通过中间行/代理行接收电汇时填写。Complete only if your receiving bank requires an intermediary or correspondent bank for incoming wire transfers.'
+    : es
+    ? 'Complete solo si su banco receptor requiere un banco intermediario o corresponsal para recibir transferencias.'
+    : 'Complete only if your receiving bank requires an intermediary or correspondent bank for incoming wire transfers.';
+
+  const s3 = zh ? '3. SPECIAL WIRE INSTRUCTIONS 电汇特别说明 (optional 可选)' : es ? '3. INSTRUCCIONES ESPECIALES (opcional)' : '3. SPECIAL WIRE INSTRUCTIONS (optional)';
+  const s3hint = zh
+    ? 'e.g., Reference #, Further Credit To, additional routing notes'
+    : es
+    ? 'p. ej., N.º de referencia, instrucciones adicionales de enrutamiento'
+    : 'e.g., Reference #, Further Credit To, additional routing notes';
+
+  const s4 = L('4. CERTIFICATION & AGREEMENT', '声明与承诺', 'CERTIFICACIÓN Y ACUERDO');
+  const cert1 = zh
+    ? 'I certify that the beneficiary and bank account information provided below is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account. 本人确认以下收款人及银行账户信息真实、完整、准确，且本人系该账户持有人或有权通过该账户收取款项。'
+    : es
+    ? 'I certify that the beneficiary and bank account information provided is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account. Certifico que la información del beneficiario y de la cuenta bancaria proporcionada es verdadera, completa y precisa, y que soy el titular de dicha cuenta o estoy autorizado a recibir pagos a través de ella.'
+    : 'I certify that the beneficiary and bank account information provided is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account.';
+  const cert2 = zh
+    ? `A wire transfer sent in accordance with the account information provided by me will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated. 付款方依照本人提供的账户信息发起电汇后，即视为已有效履行付款义务；除非本人已在电汇发起前以书面形式提供更正后的付款指示。`
+    : es
+    ? `A wire transfer sent in accordance with the account information I provided will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated. Una transferencia bancaria enviada de acuerdo con la información proporcionada se considerará pago válido y total cumplimiento de la obligación de pago, salvo que yo haya proporcionado instrucciones corregidas por escrito antes de iniciar la transferencia.`
+    : `A wire transfer sent in accordance with the account information I provided will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated.`;
+  const cert3 = zh
+    ? `I agree to notify ${companyName} in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions. 如本人收款人名称、银行账户、路由号、SWIFT、IBAN 或其他付款信息发生变化，本人同意在电汇发起前以书面形式通知 ${companyName}。`
+    : es
+    ? `I agree to notify ${companyName} in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions. Me comprometo a notificar a ${companyName} por escrito antes de cualquier cambio en mi nombre de beneficiario, cuenta bancaria, número de ruta, SWIFT, IBAN u otras instrucciones de pago.`
+    : `I agree to notify ${companyName} in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions.`;
+  const cert4 = zh
+    ? 'I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing. 本人理解，中间行费用、收款银行费用及其他电汇相关费用可能产生，除非双方另有书面约定，否则实际到账金额可能因此减少。'
+    : es
+    ? 'I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing. Entiendo que pueden aplicarse cargos de bancos intermediarios, bancos receptores y otros relacionados con la transferencia, lo que puede reducir el monto recibido, salvo acuerdo escrito en contrario.'
+    : 'I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing.';
+
+  const s5ben = L('BENEFICIARY SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
+  const s5co  = L('COMPANY APPROVAL', '公司审批', 'APROBACIÓN DE LA EMPRESA');
+  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en letra de molde');
+  const lTitle       = L('Title', '职位', 'Cargo');
+  const lSig         = L('Signature', '签名', 'Firma');
+  const lDate        = L('Date', '日期', 'Fecha');
+
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:18px;color:#111;line-height:1.5">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px">
+  <div style="font-size:11.5pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
+  <div style="font-size:8pt;color:#555;margin-top:3px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt">I hereby authorize ${companyName} to send wire transfer payments to the bank account specified below. 本人特此授权 ${companyName} 通过电汇方式向以下银行账户发送付款。</p>
+<p style="font-size:8pt;margin-bottom:10px">${introPara}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">1. BENEFICIARY INFORMATION 收款人信息</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:10px 0 4px;font-size:9pt">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:50%"><b>Beneficiary Name 收款人姓名</b><br><text-field name="wire_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Phone / Email 电话/电邮</b><br><text-field name="wire_contact" role="First Party" style="${w}"></text-field></td>
+    <td style="${c}width:55%"><b>${lBeneName}</b><br><text-field name="wire_name" role="Contractor" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="wire_contact" role="Contractor" style="${w}"></text-field></td>
   </tr>
   <tr>
-    <td colspan="2" style="${c}"><b>Address 地址</b><br><text-field name="wire_address" role="First Party" style="${w}"></text-field></td>
+    <td colspan="2" style="${c}"><b>${lBeneAddr}</b><br><text-field name="wire_bene_address" role="Contractor" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">2. BANK DETAILS 银行信息</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr>
-    <td style="${c}width:50%"><b>Bank Name 银行名称</b><br><text-field name="wire_bank_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Bank Address 银行地址</b><br><text-field name="wire_bank_address" role="First Party" style="${w}"></text-field></td>
+<div style="font-weight:700;margin:10px 0 2px;font-size:9pt">${s2dom}</div>
+<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${domHint}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px;border:1px solid #d0d8e8;border-radius:4px">
+  <tr style="background:#f0f4ff">
+    <td style="${c}width:50%"><b>Bank Name ${zh ? '银行名称' : ''}</b><br><text-field name="wire_dom_bank_name" role="Contractor" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>ABA / Routing Number ${zh ? '路由号' : ''}</b><br><text-field name="wire_dom_routing" role="Contractor" style="${f}width:100%" placeholder="9-digit ABA routing number"></text-field></td>
   </tr>
-  <tr>
-    <td style="${c}"><b>Routing / ABA / SWIFT</b><br><text-field name="wire_routing" role="First Party" required="true" style="${f}width:220px"></text-field></td>
-    <td style="${c}"><b>Account Number / IBAN 账号</b><br><text-field name="wire_account" role="First Party" required="true" style="${w}"></text-field></td>
-  </tr>
-  <tr>
-    <td colspan="2" style="${c}"><b>Intermediary Bank (if applicable) 中间行</b><br><text-field name="wire_intermediary" role="First Party" style="${w}" placeholder="Name, SWIFT, Account # (if required)"></text-field></td>
+  <tr style="background:#f0f4ff">
+    <td colspan="2" style="${c}"><b>Account Number ${zh ? '账号' : ''}</b><br><text-field name="wire_dom_account" role="Contractor" style="${f}width:60%"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">3. ADDITIONAL NOTES 备注</div>
-<text-field name="wire_notes" role="First Party" style="${w};min-height:40px" placeholder="Reference number, special instructions..."></text-field>
+<div style="font-weight:700;margin:10px 0 2px;font-size:9pt">${s2int}</div>
+<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${intHint}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px;border:1px solid #d8e8d0;border-radius:4px">
+  <tr style="background:#f0fff4">
+    <td style="${c}width:50%"><b>Bank Name ${zh ? '银行名称' : ''}</b><br><text-field name="wire_int_bank_name" role="Contractor" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>SWIFT / BIC</b><br><text-field name="wire_int_swift" role="Contractor" style="${f}width:100%" placeholder="e.g., CHASUS33"></text-field></td>
+  </tr>
+  <tr style="background:#f0fff4">
+    <td style="${c}"><b>IBAN / Account Number ${zh ? '账号' : ''}</b><br><text-field name="wire_int_iban" role="Contractor" style="${w}"></text-field></td>
+    <td style="${c}"><b>${intBankAddr}</b><br><text-field name="wire_int_bank_addr" role="Contractor" style="${w}"></text-field></td>
+  </tr>
+  <tr style="background:#f0fff4">
+    <td colspan="2" style="${c}">
+      <b>${intIntermediary}</b>
+      <div style="font-size:7pt;color:#777;margin-bottom:2px">${intIntermediaryHint}</div>
+      <text-field name="wire_intermediary" role="Contractor" style="${w}" placeholder="Bank Name, SWIFT/BIC, Account # (if required)"></text-field>
+    </td>
+  </tr>
+</table>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
-  <b>SIGNATURES 签名</b>
-  <table style="width:100%;margin-top:6px"><tr>
-    <td style="width:50%;padding-right:10px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700">Beneficiary Signature 收款人签名:</div>
-      <signature-field name="wire_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><date-field name="wire_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
-    </td>
-    <td style="width:50%;padding-left:10px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700">Company Approval 公司审批:</div>
-      <signature-field name="wire_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><date-field name="wire_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
-    </td>
-  </tr></table>
+<div style="font-weight:700;margin:8px 0 2px;font-size:9pt">${s3}</div>
+<text-field name="wire_notes" role="Contractor" style="${w};min-height:34px" placeholder="${s3hint}"></text-field>
+
+<div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:10px;font-size:7.5pt;line-height:1.6">
+  <div style="font-weight:700;margin-bottom:4px;font-size:8.5pt">${s4}</div>
+  <div style="margin-bottom:3px">① ${cert1}</div>
+  <div style="margin-bottom:3px">② ${cert2}</div>
+  <div style="margin-bottom:3px">③ ${cert3}</div>
+  <div>④ ${cert4}</div>
 </div>
+
+<table style="width:100%;border-collapse:collapse;margin-top:10px;border:1px solid #999;border-radius:3px">
+  <tr>
+    <td style="width:50%;padding:7px 8px;border-right:1px solid #ccc;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${s5ben}</div>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
+      <text-field name="wire_printed_name" role="Contractor" required="true" style="${w};margin-bottom:5px"></text-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
+      <signature-field name="wire_sig" role="Contractor" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
+      <date-field name="wire_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+    <td style="width:50%;padding:7px 8px;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${s5co}</div>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
+      <text-field name="wire_co_printed_name" role="First Party" style="${w};margin-bottom:5px"></text-field>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lTitle}:</div>
+      <text-field name="wire_co_title" role="First Party" style="${w};margin-bottom:5px"></text-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
+      <signature-field name="wire_co_sig" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
+      <date-field name="wire_co_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr>
+</table>
 </div>`;
 }
+function generateWireAuthHtmlTemplate()    { return _buildWireAuthForm('zh-en'); }
+function generateWireAuthHtmlTemplate_EN() { return _buildWireAuthForm('en'); }
+function generateWireAuthHtmlTemplate_ES() { return _buildWireAuthForm('en-es'); }
 
 // ── Check / 支票 Instruction Form ──
 function _buildCheckInstructionForm(lang) {
@@ -4205,70 +4333,235 @@ function generateZelleAuthHtmlTemplate_EN() { return _buildZelleAuthForm('en'); 
 function generateZelleAuthHtmlTemplate_ES() { return _buildZelleAuthForm('en-es'); }
 
 
-// ── Cash Payment Receipt ──
+// ── Cash Payment Receipt (ZH+EN) ──
 function generateCashReceiptHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
   const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px">CASH PAYMENT RECEIPT</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">现金付款签收表 — ${companyName}</div>
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
+  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">现金付款签收表</div>
+  <div style="font-size:8pt;color:#777;margin-top:2px">${companyName}</div>
 </div>
 
-<p style="font-size:8.5pt">This receipt confirms that the undersigned recipient has received the cash payment described below from ${companyName} and acknowledges such payment for the services or invoice referenced in this receipt. 本收据确认下述签署收款人已从 ${companyName} 收到以下所列现金付款，并确认该付款对应本收据所载明的服务或发票。</p>
-
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">1. PAYMENT DETAILS 付款详情</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr>
-    <td style="${c}width:50%"><b>Recipient Name 收款人姓名</b><br><text-field name="cash_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Payment Date 付款日期</b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:160px"></date-field></td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>Amount Received 收到金额</b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:140px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
-    <td style="${c}"><b>Amount in Words 大写金额</b><br><text-field name="cash_amount_words" role="First Party" style="${w}" placeholder="e.g., Five Hundred Dollars"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>Payment Type 付款类型</b><br><text-field name="cash_payment_type" role="First Party" required="true" style="${w}" placeholder="Full Payment / Partial Payment"></text-field></td>
-    <td style="${c}"><b>Remaining Balance 剩余金额 (if partial 如为部分付款)</b><br><div style="font-size:11pt;font-weight:700">$ <text-field name="cash_remaining" role="First Party" style="${f}width:140px;font-size:11pt;font-weight:700" placeholder="0.00"></text-field></div></td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">2. PURPOSE / DESCRIPTION 付款用途</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr><td style="${c}"><b>Services / Description 服务说明</b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:40px" placeholder="e.g., Warehouse sorting and loading services for week of 03/10/2026"></text-field></td></tr>
-  <tr>
-    <td style="${c}"><b>Service Period 服务期间</b> <text-field name="cash_period" role="First Party" style="${f}width:220px" placeholder="e.g., Mar 1–15, 2026"></text-field>
-    <b style="margin-left:16px">Invoice # / Job # / Payment Ref. 发票编号 / 工作编号 / 付款参考号</b> <text-field name="cash_ref" role="First Party" style="${f}width:160px"></text-field></td>
-  </tr>
-</table>
-
-<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:10px">
-  <b>NOTICE 注意:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is intended for record-keeping and tax documentation purposes only. 双方应在下方签署，以确认本收据所列现金付款。本收据仅用于留档及税务记录用途。
+<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
+  This receipt confirms that the undersigned recipient has received the cash payment described below from <b>${companyName}</b>, and acknowledges such payment for the services or invoice referenced in this receipt.<br>
+  <span style="color:#555">本收据确认下述签署收款人已从 <b>${companyName}</b> 收到以下所列现金付款，并确认该付款对应本收据所载明的服务或发票。</span>
 </div>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:10px;font-size:8.5pt">
-  <b>SIGNATURES 签名</b>
-  <table style="width:100%;margin-top:6px"><tr>
-    <td style="width:50%;padding-right:10px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700">Recipient 收款人:</div>
-      <div style="margin-top:4px"><b style="font-size:7pt">Printed Name 正楷姓名:</b> <text-field name="cash_print1" role="First Party" style="${f}width:70%"></text-field></div>
-      <div style="font-size:7pt;font-weight:700;margin-top:4px">Signature 签名:</div>
-      <signature-field name="cash_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><b style="font-size:7pt">Date 日期:</b> <date-field name="cash_date1" role="First Party" style="${f}width:140px"></date-field></div>
+<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款详情</span></div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
+  <tr>
+    <td style="${c}width:50%"><b>Recipient Name &nbsp;<span style="font-weight:400;color:#555">收款人姓名</span></b><br><text-field name="cash_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>Payment Date &nbsp;<span style="font-weight:400;color:#555">付款日期</span></b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
+  </tr>
+  <tr>
+    <td style="${c}"><b>Amount Received &nbsp;<span style="font-weight:400;color:#555">收到金额</span></b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
+    <td style="${c}"><b>Amount in Words &nbsp;<span style="font-weight:400;color:#555">大写金额</span></b> <span style="font-size:7.5pt;color:#999">(optional 可选)</span><br><text-field name="cash_amount_words" role="First Party" style="${w}" placeholder="e.g., Five Hundred Dollars"></text-field></td>
+  </tr>
+  <tr>
+    <td colspan="2" style="${c}">
+      <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">付款性质</span></b>&nbsp;&nbsp;
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Full Payment / 全额付款</b></label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / 部分付款</label>
+      &nbsp;&nbsp;<span style="color:#555">Remaining Balance / 剩余金额:</span> $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field>
     </td>
-    <td style="width:50%;padding-left:10px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700">Company Representative 公司代表:</div>
-      <div style="margin-top:4px"><b style="font-size:7pt">Printed Name 正楷姓名:</b> <text-field name="cash_print2" role="Second Party" style="${f}width:70%"></text-field></div>
-      <div style="font-size:7pt;font-weight:700;margin-top:4px">Signature 签名:</div>
+  </tr>
+</table>
+
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款用途</span></div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
+  <tr><td style="${c}"><b>Services / Description &nbsp;<span style="font-weight:400;color:#555">服务说明</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
+  <tr>
+    <td style="${c}"><b>Service Period &nbsp;<span style="font-weight:400;color:#555">服务期间</span></b> <text-field name="cash_period" role="First Party" style="${f}width:200px" placeholder="e.g., Mar 10–16, 2026"></text-field>
+    &nbsp;&nbsp;<b>Invoice # / Job # / Payment Ref &nbsp;<span style="font-weight:400;color:#555">发票 / 工作编号</span></b> <text-field name="cash_ref" role="First Party" style="${f}width:160px"></text-field></td>
+  </tr>
+</table>
+
+<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
+  <b>NOTICE 注意:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is intended for record-keeping and tax documentation purposes only. 双方应在下方签署以确认本收据所列现金付款。本收据仅用于留档及税务记录用途。
+</div>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
+  <div style="font-size:8pt;font-weight:700;margin-bottom:8px">SIGNATURES &nbsp;<span style="font-weight:400;color:#555">签名</span></div>
+  <table style="width:100%"><tr>
+    <td style="width:50%;padding-right:12px;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Recipient / 收款人</div>
+      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name 正楷姓名:</div>
+      <text-field name="cash_printed1" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature 签名:</div>
+      <signature-field name="cash_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date 日期:</div>
+      <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+    <td style="width:50%;padding-left:12px;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Company Representative / 公司代表</div>
+      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name 正楷姓名:</div>
+      <text-field name="cash_printed2" role="Second Party" required="true" style="${w};margin-bottom:4px"></text-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature 签名:</div>
       <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><b style="font-size:7pt">Date 日期:</b> <date-field name="cash_date2" role="Second Party" style="${f}width:140px"></date-field></div>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date 日期:</div>
+      <date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
     </td>
   </tr></table>
 </div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质.</div>
+</div>`;
+}
 
-<div style="font-size:7pt;color:#888;margin-top:8px;text-align:center">This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质。</div>
+// ── Cash Payment Receipt (EN only) ──
+function generateCashReceiptEnHtmlTemplate() {
+  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const w = `${f}width:100%;min-height:22px;`;
+  const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
+  <div style="font-size:8pt;color:#777;margin-top:4px">${companyName}</div>
+</div>
+
+<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
+  This receipt confirms that the undersigned recipient has received the cash payment described below from <b>${companyName}</b>, and acknowledges such payment for the services or invoice referenced in this receipt.
+</div>
+
+<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details</div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
+  <tr>
+    <td style="${c}width:50%"><b>Recipient Name</b><br><text-field name="cash_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>Payment Date</b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
+  </tr>
+  <tr>
+    <td style="${c}"><b>Amount Received</b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
+    <td style="${c}"><b>Amount in Words</b> <span style="font-size:7.5pt;color:#999">(optional)</span><br><text-field name="cash_amount_words" role="First Party" style="${w}" placeholder="e.g., Five Hundred Dollars"></text-field></td>
+  </tr>
+  <tr>
+    <td colspan="2" style="${c}">
+      <b>Payment Type</b>&nbsp;&nbsp;
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Full Payment — in full satisfaction of the referenced services/invoice</b></label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment Only</label>
+      &nbsp;&nbsp;Remaining Balance: $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field>
+    </td>
+  </tr>
+</table>
+
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description</div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
+  <tr><td style="${c}"><b>Services / Description</b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
+  <tr>
+    <td style="${c}"><b>Service Period</b> <text-field name="cash_period" role="First Party" style="${f}width:200px" placeholder="e.g., Mar 10–16, 2026"></text-field>
+    &nbsp;&nbsp;<b>Invoice # / Job # / Payment Reference</b> <text-field name="cash_ref" role="First Party" style="${f}width:160px"></text-field></td>
+  </tr>
+</table>
+
+<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
+  <b>NOTICE:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is intended for record-keeping and tax documentation purposes only.
+</div>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
+  <div style="font-size:8pt;font-weight:700;margin-bottom:8px">SIGNATURES</div>
+  <table style="width:100%"><tr>
+    <td style="width:50%;padding-right:12px;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Recipient</div>
+      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name:</div>
+      <text-field name="cash_printed1" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature:</div>
+      <signature-field name="cash_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date:</div>
+      <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+    <td style="width:50%;padding-left:12px;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Company Representative</div>
+      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name:</div>
+      <text-field name="cash_printed2" role="Second Party" required="true" style="${w};margin-bottom:4px"></text-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature:</div>
+      <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date:</div>
+      <date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status.</div>
+</div>`;
+}
+
+// ── Cash Payment Receipt (EN+ES) ──
+function generateCashReceiptEsHtmlTemplate() {
+  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const w = `${f}width:100%;min-height:22px;`;
+  const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">Cash Payment Receipt</div>
+  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">Recibo de Pago en Efectivo</div>
+  <div style="font-size:8pt;color:#777;margin-top:2px">${companyName}</div>
+</div>
+
+<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
+  This receipt confirms that the undersigned recipient has received the cash payment described below from <b>${companyName}</b>, and acknowledges such payment for the services or invoice referenced in this receipt.<br>
+  <span style="color:#555">Este recibo confirma que el destinatario firmante ha recibido el pago en efectivo descrito a continuación de <b>${companyName}</b>, y reconoce dicho pago por los servicios o factura referenciados en este recibo.</span>
+</div>
+
+<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Detalles del Pago</span></div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
+  <tr>
+    <td style="${c}width:50%"><b>Recipient Name &nbsp;<span style="font-weight:400;color:#555">Nombre del Destinatario</span></b><br><text-field name="cash_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>Payment Date &nbsp;<span style="font-weight:400;color:#555">Fecha de Pago</span></b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
+  </tr>
+  <tr>
+    <td style="${c}"><b>Amount Received &nbsp;<span style="font-weight:400;color:#555">Monto Recibido</span></b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
+    <td style="${c}"><b>Amount in Words &nbsp;<span style="font-weight:400;color:#555">Monto en Letras</span></b> <span style="font-size:7.5pt;color:#999">(optional / opcional)</span><br><text-field name="cash_amount_words" role="First Party" style="${w}" placeholder="e.g., Five Hundred Dollars"></text-field></td>
+  </tr>
+  <tr>
+    <td colspan="2" style="${c}">
+      <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">Tipo de Pago</span></b>&nbsp;&nbsp;
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Full Payment / Pago Total</b></label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / Pago Parcial</label>
+      &nbsp;&nbsp;<span style="color:#555">Remaining Balance / Saldo Pendiente:</span> $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field>
+    </td>
+  </tr>
+</table>
+
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Propósito / Descripción</span></div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
+  <tr><td style="${c}"><b>Services / Description &nbsp;<span style="font-weight:400;color:#555">Servicios / Descripción</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
+  <tr>
+    <td style="${c}"><b>Service Period &nbsp;<span style="font-weight:400;color:#555">Período de Servicio</span></b> <text-field name="cash_period" role="First Party" style="${f}width:200px" placeholder="e.g., Mar 10–16, 2026"></text-field>
+    &nbsp;&nbsp;<b>Invoice # / Job # / Payment Ref &nbsp;<span style="font-weight:400;color:#555">Factura / Trabajo</span></b> <text-field name="cash_ref" role="First Party" style="${f}width:160px"></text-field></td>
+  </tr>
+</table>
+
+<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
+  <b>NOTICE / AVISO:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is intended for record-keeping and tax documentation purposes only. Ambas partes deben firmar para confirmar el pago en efectivo descrito en este recibo. Este recibo es solo para fines de registro y documentación fiscal.
+</div>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
+  <div style="font-size:8pt;font-weight:700;margin-bottom:8px">SIGNATURES &nbsp;<span style="font-weight:400;color:#555">Firmas</span></div>
+  <table style="width:100%"><tr>
+    <td style="width:50%;padding-right:12px;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Recipient / Destinatario</div>
+      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name / Nombre en Letra de Molde:</div>
+      <text-field name="cash_printed1" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature / Firma:</div>
+      <signature-field name="cash_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date / Fecha:</div>
+      <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+    <td style="width:50%;padding-left:12px;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Company Representative / Representante de la Empresa</div>
+      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name / Nombre en Letra de Molde:</div>
+      <text-field name="cash_printed2" role="Second Party" required="true" style="${w};margin-bottom:4px"></text-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature / Firma:</div>
+      <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date / Fecha:</div>
+      <date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / Recibo de Pago en Efectivo — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. Este recibo solo reconoce el pago y no altera ninguna obligación fiscal ni el estado de contratista independiente.</div>
 </div>`;
 }
 
@@ -4285,7 +4578,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'i9', generator: generateI9HtmlTemplate },
   w7: { name: 'W-7 ITIN Application / ITIN 申请表', configKey: 'w7_template_id', category: 'w7', generator: generateW7HtmlTemplate },
   ach_auth: { name: 'ACH / Direct Deposit Authorization / 银行直接转账授权', configKey: 'ach_auth_template_id', category: 'ach_auth', generator: generateACHAuthHtmlTemplate },
-  wire_auth: { name: 'Wire Transfer Authorization / 电汇付款授权', configKey: 'wire_auth_template_id', category: 'wire_auth', generator: generateWireAuthHtmlTemplate },
+  wire_auth:    { name: 'Wire Transfer Authorization (ZH+EN) / 电汇付款授权及银行账户确认', configKey: 'wire_auth_template_id',    category: 'wire_auth',    generator: generateWireAuthHtmlTemplate },
+  wire_auth_en: { name: 'Wire Transfer Authorization (EN)',                                   configKey: 'wire_auth_en_template_id', category: 'wire_auth_en', generator: generateWireAuthHtmlTemplate_EN },
+  wire_auth_es: { name: 'Wire Transfer Authorization (EN+ES)',                                configKey: 'wire_auth_es_template_id', category: 'wire_auth_es', generator: generateWireAuthHtmlTemplate_ES },
   check_instruction:    { name: 'Check Payment Mailing Instruction (ZH+EN) / 支票付款及邮寄地址确认表', configKey: 'check_instruction_template_id',    category: 'check_instruction',    generator: generateCheckInstructionHtmlTemplate },
   check_instruction_en: { name: 'Check Payment Mailing Instruction (EN)',                                  configKey: 'check_instruction_en_template_id', category: 'check_instruction_en', generator: generateCheckInstructionHtmlTemplate_EN },
   check_instruction_es: { name: 'Check Payment Mailing Instruction (EN+ES)',                               configKey: 'check_instruction_es_template_id', category: 'check_instruction_es', generator: generateCheckInstructionHtmlTemplate_ES },
@@ -4295,7 +4590,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方平台收款授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
   third_party_pay_en: { name: 'Third-Party Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
   third_party_pay_es: { name: 'Third-Party Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
-  cash_receipt: { name: 'Cash Payment Receipt / 现金付款签收', configKey: 'cash_receipt_template_id', category: 'cash_receipt', generator: generateCashReceiptHtmlTemplate },
+  cash_receipt:    { name: 'Cash Payment Receipt (ZH+EN) / 现金付款签收',  configKey: 'cash_receipt_template_id',    category: 'cash_receipt',    generator: generateCashReceiptHtmlTemplate },
+  cash_receipt_en: { name: 'Cash Payment Receipt (EN)',                   configKey: 'cash_receipt_en_template_id', category: 'cash_receipt_en', generator: generateCashReceiptEnHtmlTemplate },
+  cash_receipt_es: { name: 'Cash Payment Receipt (EN+ES) / Recibo de Pago en Efectivo', configKey: 'cash_receipt_es_template_id', category: 'cash_receipt_es', generator: generateCashReceiptEsHtmlTemplate },
   contractor_invoice:    { name: '1099 Contractor Invoice (EN+ZH)', configKey: 'contractor_invoice_template_id',    category: 'contractor_invoice',    generator: generateContractorInvoiceHtmlTemplate_ZH },
   contractor_invoice_en: { name: '1099 Contractor Invoice (EN)',    configKey: 'contractor_invoice_en_template_id', category: 'contractor_invoice_en', generator: generateContractorInvoiceHtmlTemplate_EN },
   contractor_invoice_es: { name: '1099 Contractor Invoice (EN+ES)', configKey: 'contractor_invoice_es_template_id', category: 'contractor_invoice_es', generator: generateContractorInvoiceHtmlTemplate_ES },
@@ -16033,7 +16330,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id'];
   const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
   const out = { connected: dsealEnabled(), url: _publicUrl };
@@ -16067,7 +16364,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id',
     'invoice_approval_en_template_id','invoice_approval_es_template_id',
     'contract_template_id' /* legacy */,
@@ -16181,7 +16478,7 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
         'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
         'i9_template_id','w7_template_id',
         'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
-        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id',
+        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
         'contractor_invoice_template_id','invoice_approval_template_id',
         'invoice_approval_en_template_id','invoice_approval_es_template_id'
       ];
