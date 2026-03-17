@@ -2336,10 +2336,23 @@ tr:hover td{background:var(--sky-light)}
           <div id="ds-cfg-zelle-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">PayPal / Venmo / CashApp</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">第三方平台付款授权</div>
-          <select id="ds-sel-third-party" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-third-party-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">💳 PayPal / Venmo / CashApp</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">第三方平台付款授权 — 三种语言版本</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
+            <select id="ds-sel-third-party" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-third-party-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-third-party-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-third-party-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-third-party-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-third-party-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">现金签收</div>
@@ -2424,14 +2437,18 @@ tr:hover td{background:var(--sky-light)}
               <option value="wire_auth">Wire Transfer</option>
               <option value="check_instruction">Check / 支票</option>
               <option value="zelle_auth">Zelle</option>
-              <option value="third_party_pay">PayPal / Venmo / CashApp</option>
+              <option value="third_party_pay">PayPal / Venmo / CashApp (ZH+EN)</option>
+              <option value="third_party_pay_en">PayPal / Venmo / CashApp (EN)</option>
+              <option value="third_party_pay_es">PayPal / Venmo / CashApp (EN+ES)</option>
               <option value="cash_receipt">现金签收</option>
-              <option value="contractor_invoice">承包商发票 (中英) / Contractor Invoice (EN+ZH)</option>
-              <option value="contractor_invoice_en">承包商发票 (英文) / Contractor Invoice (EN)</option>
-              <option value="contractor_invoice_es">承包商发票 (英西) / Contractor Invoice (EN+ES)</option>
-              <option value="invoice_approval">发票审批表 / Invoice Approval (EN+ZH)</option>
-              <option value="invoice_approval_en">Invoice Approval (EN)</option>
-              <option value="invoice_approval_es">Invoice Approval (EN+ES)</option>
+            </optgroup>
+            <optgroup label="发票">
+              <option value="contractor_invoice">承包商发票 (ZH+EN)</option>
+              <option value="contractor_invoice_en">承包商发票 (EN)</option>
+              <option value="contractor_invoice_es">承包商发票 (EN+ES)</option>
+              <option value="invoice_approval">发票审批表 (ZH+EN)</option>
+              <option value="invoice_approval_en">发票审批表 (EN)</option>
+              <option value="invoice_approval_es">发票审批表 (EN+ES)</option>
             </optgroup>
           </select>
         </div>
@@ -20948,8 +20965,10 @@ const _DS_SELECTORS = [
   { key: 'wire_auth_template_id',        selId: 'ds-sel-wire',               infoId: 'ds-cfg-wire-info',              label: '电汇授权',     doc_type: 'wire_auth' },
   { key: 'check_instruction_template_id',selId: 'ds-sel-check',              infoId: 'ds-cfg-check-info',             label: '支票指引',     doc_type: 'check_instruction' },
   { key: 'zelle_auth_template_id',       selId: 'ds-sel-zelle',              infoId: 'ds-cfg-zelle-info',             label: 'Zelle授权',    doc_type: 'zelle_auth' },
-  { key: 'third_party_pay_template_id',  selId: 'ds-sel-third-party',        infoId: 'ds-cfg-third-party-info',       label: '第三方平台',   doc_type: 'third_party_pay' },
-  { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收',     doc_type: 'cash_receipt' },
+  { key: 'third_party_pay_template_id',    selId: 'ds-sel-third-party',    infoId: 'ds-cfg-third-party-info',    label: '第三方平台(中英)', doc_type: 'third_party_pay' },
+  { key: 'third_party_pay_en_template_id', selId: 'ds-sel-third-party-en', infoId: 'ds-cfg-third-party-en-info', label: '第三方平台(英文)', doc_type: 'third_party_pay_en' },
+  { key: 'third_party_pay_es_template_id', selId: 'ds-sel-third-party-es', infoId: 'ds-cfg-third-party-es-info', label: '第三方平台(英西)', doc_type: 'third_party_pay_es' },
+  { key: 'cash_receipt_template_id',       selId: 'ds-sel-cash',           infoId: 'ds-cfg-cash-info',           label: '现金签收',        doc_type: 'cash_receipt' },
   // 发票
   { key: 'contractor_invoice_template_id',    selId: 'ds-sel-contractor-inv',    infoId: 'ds-cfg-contractor-inv-info',    label: '发票(中英)',        doc_type: 'contractor_invoice' },
   { key: 'contractor_invoice_en_template_id', selId: 'ds-sel-contractor-inv-en', infoId: 'ds-cfg-contractor-inv-en-info', label: '发票(英文)',        doc_type: 'contractor_invoice_en' },
@@ -20981,7 +21000,7 @@ function _dsRefreshSelects() {
 const _DS_CAT_GROUPS = {
   __contract__: ['company_contract','worker_1099','worker_w2','contract'],
   __tax__:      ['w4','w9','w8ben','w8bene','form8233','i9','w7','tax'],
-  __payment__:  ['ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt','payment'],
+  __payment__:  ['ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','third_party_pay_en','third_party_pay_es','cash_receipt','payment'],
   __invoice__:  ['contractor_invoice','contractor_invoice_en','contractor_invoice_es','invoice'],
   __approval__: ['invoice_approval','invoice_approval_en','invoice_approval_es'],
 };
@@ -21029,17 +21048,21 @@ function _dsRenderMyTemplates() {
     wire_auth_template_id:         { bg:'#fffbeb', color:'#78350f', label:'电汇' },
     check_instruction_template_id: { bg:'#fafaf9', color:'#292524', label:'支票' },
     zelle_auth_template_id:        { bg:'#fdf4ff', color:'#86198f', label:'Zelle' },
-    third_party_pay_template_id:   { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
-    cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金' },
+    third_party_pay_template_id:    { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
+    third_party_pay_en_template_id: { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
+    third_party_pay_es_template_id: { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
+    cash_receipt_template_id:       { bg:'#fff1f2', color:'#9f1239', label:'现金' },
     contractor_invoice_template_id:    { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     contractor_invoice_en_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     contractor_invoice_es_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     invoice_approval_template_id:    { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
+    invoice_approval_en_template_id: { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
+    invoice_approval_es_template_id: { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
   };
   const _CAT_BADGE = {
     company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
     w4:{bg:'#e0f2fe',color:'#0369a1',label:'W-4'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'W-9'}, w8ben:{bg:'#fae8ff',color:'#6b21a8',label:'W-8BEN'}, w8bene:{bg:'#ede9fe',color:'#5b21b6',label:'W-8BEN-E'}, form8233:{bg:'#fce7f3',color:'#9d174d',label:'8233'}, i9:{bg:'#dcfce7',color:'#166534',label:'I-9'}, w7:{bg:'#f0fdf4',color:'#15803d',label:'W-7'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
-    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
+    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_en:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_es:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
     contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_en:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_es:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
     invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_en:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_es:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
   };
