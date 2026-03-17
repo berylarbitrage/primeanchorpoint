@@ -3767,6 +3767,13 @@ function _buildThirdPartyPayForm(lang) {
 
 <div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s2}</div>
 <div style="font-size:7.5pt;color:#555;margin-bottom:4px">${lSelectOne}</div>
+<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:8.5pt">
+  <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></check-box-field> <b>PayPal</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></check-box-field> <b>Venmo</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></check-box-field> <b>Cash App</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><check-box-field name="platform_other" role="First Party" style="width:13px;height:13px"></check-box-field> <b>${lOther}:</b></label>
+  <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #aaa;min-width:90px;background:transparent;font-size:8pt" placeholder="${lOtherName}"></text-field>
+</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr style="background:#f1f5f9">
     <td style="${c}width:22%;font-weight:700;font-size:7.5pt">${lPlatform}</td>
@@ -3774,22 +3781,22 @@ function _buildThirdPartyPayForm(lang) {
     <td style="${c}width:36%;font-weight:700;font-size:7.5pt">${lContact}</td>
   </tr>
   <tr>
-    <td style="${c}"><label style="display:inline-flex;align-items:center;gap:5px"><check-box-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></check-box-field> <b>PayPal</b></label></td>
+    <td style="${c}"><b>PayPal</b></td>
     <td style="${c}"><text-field name="paypal_account" role="First Party" style="${w}" placeholder="PayPal email / @username"></text-field></td>
     <td style="${c}"><text-field name="paypal_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
   </tr>
   <tr>
-    <td style="${c}"><label style="display:inline-flex;align-items:center;gap:5px"><check-box-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></check-box-field> <b>Venmo</b></label></td>
+    <td style="${c}"><b>Venmo</b></td>
     <td style="${c}"><text-field name="venmo_account" role="First Party" style="${w}" placeholder="@username"></text-field></td>
     <td style="${c}"><text-field name="venmo_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
   </tr>
   <tr>
-    <td style="${c}"><label style="display:inline-flex;align-items:center;gap:5px"><check-box-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></check-box-field> <b>Cash App</b></label></td>
+    <td style="${c}"><b>Cash App</b></td>
     <td style="${c}"><text-field name="cashapp_account" role="First Party" style="${w}" placeholder="$cashtag"></text-field></td>
     <td style="${c}"><text-field name="cashapp_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
   </tr>
   <tr>
-    <td style="${c}"><label style="display:inline-flex;align-items:center;gap:5px"><check-box-field name="platform_other" role="First Party" style="width:13px;height:13px"></check-box-field> <b>${lOther}:</b></label><br><text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #aaa;width:100%;background:transparent;font-size:8pt;margin-top:2px" placeholder="${lOtherName}"></text-field></td>
+    <td style="${c}"><b>${lOther}</b></td>
     <td style="${c}"><text-field name="other_account" role="First Party" style="${w}" placeholder="@username / account ID"></text-field></td>
     <td style="${c}"><text-field name="other_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
   </tr>
