@@ -5665,13 +5665,13 @@ function adminAlert(msg, title = '提示') {
     document.getElementById('admDlgBg').classList.add('show');
   });
 }
-function adminConfirm(msg, title = '确认', confirmTxt = '确认', cancelTxt = '取消') {
+function adminConfirm(msg, title = '确认', confirmTxt = '确认', cancelTxt = '取消', confirmClass = '') {
   return new Promise(resolve => {
     _admDlgResolve = resolve;
     document.getElementById('admDlgTitle').textContent = title;
     document.getElementById('admDlgMsg').textContent = msg;
     document.getElementById('admDlgInputWrap').style.display = 'none';
-    document.getElementById('admDlgBtns').innerHTML = `<button class="btn btn-sm btn-outline" onclick="_admDlgClose(false)">${cancelTxt}</button><button class="btn btn-sm" onclick="_admDlgClose(true)">${confirmTxt}</button>`;
+    document.getElementById('admDlgBtns').innerHTML = `<button class="btn btn-sm btn-outline" onclick="_admDlgClose(false)">${cancelTxt}</button><button class="btn btn-sm ${confirmClass}" onclick="_admDlgClose(true)">${confirmTxt}</button>`;
     document.getElementById('admDlgBg').classList.add('show');
   });
 }
@@ -21022,7 +21022,7 @@ function dsCloseBuilderModal() {
 }
 
 async function dsDeleteMyTemplate(localId, dsId, name) {
-  if (!confirm(`确定要删除模板「${name}」吗？\n\n这会同时从 DocuSeal 中删除此模板，不可撤销。`)) return;
+  if (!await adminConfirm(`确定要删除模板「${name}」吗？\n\n这会同时从 DocuSeal 中删除此模板，不可撤销。`, '删除模板', '删除', '取消', 'btn-red')) return;
   try {
     await api(`/admin/docuseal/my-templates/${localId}`, { method: 'DELETE' });
     for (const s of _DS_SELECTORS) { if (_dsConfig[s.key] == dsId) _dsConfig[s.key] = null; }

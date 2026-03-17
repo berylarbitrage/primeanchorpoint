@@ -3515,53 +3515,41 @@ function _buildInvoiceApprovalForm(lang) {
     ? '<b>CONFIDENTIAL:</b> Internal company approval only. Do not share with contractor. Solo para aprobación interna. No compartir con el contratista.'
     : '<b>CONFIDENTIAL:</b> Internal company approval only. Do not share with contractor.';
 
-  const s1 = zh ? '1. INVOICE REFERENCE 关联发票' : es ? '1. INVOICE REFERENCE / REFERENCIA DE FACTURA' : '1. INVOICE REFERENCE';
-  const lInvNum     = L('Invoice #', '发票编号', 'N.º de Factura');
-  const lInvDate    = L('Invoice Date', '发票日期', 'Fecha de Factura');
-  const lContractor = L('Contractor', '承包商', 'Contratista');
-  const lSvcPeriod  = L('Service Period', '服务期间', 'Período de Servicio');
-  const lInvUrl     = L('Company Invoice URL', '公司发票链接', 'URL de Factura Interna');
-  const lInvUrlNote = zh ? '(内部文件链接或路径)' : es ? '(enlace interno o ruta de archivo)' : '(internal link or file path)';
+  // Section 1 — Invoice Info
+  const s1              = zh ? '1. INVOICE INFO 发票信息' : es ? '1. INVOICE INFO / INFORMACIÓN DE FACTURA' : '1. INVOICE INFO';
+  const lCustInvNum     = L('Customer Invoice #', '客户发票号', 'N.º de Factura del Cliente');
+  const lCustInvNote    = zh ? '合作公司出具的发票' : es ? 'Factura emitida por la empresa cliente' : 'Invoice issued by the client/partner company';
+  const lContInvNum     = L('Contractor Invoice #', '承包商发票号', 'N.º de Factura del Contratista');
+  const lContInvNote    = zh ? '我方承包商出具的发票' : es ? 'Factura emitida por nuestro contratista' : 'Invoice issued by our contractor';
+  const lContractor     = L('Contractor', '承包商', 'Contratista');
+  const lSvcPeriod      = L('Service Period', '服务期间', 'Período de Servicio');
+  const lReqAmt         = L('Requested Amount', '请求金额', 'Monto Solicitado');
 
-  const s2       = zh ? '2. AMOUNT REVIEW 金额审核' : es ? '2. AMOUNT REVIEW / REVISIÓN DE MONTO' : '2. AMOUNT REVIEW';
-  const lReqAmt  = L('Requested Amount (per invoice)', '发票请求金额', 'Monto Solicitado (según factura)');
-  const lSvcDesc = L('Service Description Summary', '服务内容摘要', 'Resumen de Descripción del Servicio');
-
-  const s3          = zh ? '3. APPROVAL DECISION 审批决定' : es ? '3. APPROVAL DECISION / DECISIÓN DE APROBACIÓN' : '3. APPROVAL DECISION';
-  const lDecision   = L('Decision', '审批结果', 'Decisión');
-  const lDecisionHint = zh ? 'Approved 批准 / Partially Approved 部分批准 / Rejected 拒绝' :
+  // Section 2 — Approval
+  const s2              = zh ? '2. APPROVAL 审批' : es ? '2. APPROVAL / APROBACIÓN' : '2. APPROVAL';
+  const lDecision       = L('Decision', '审批结果', 'Decisión');
+  const lDecisionHint   = zh ? 'Approved 批准 / Partially Approved 部分批准 / Rejected 拒绝' :
     es ? 'Approved / Partially Approved / Rejected — Aprobado / Aprobado Parcialmente / Rechazado' :
     'Approved / Partially Approved / Rejected';
-  const lApprovedAmt = L('Approved Amount', '批准金额', 'Monto Aprobado');
-  const lAdjReason   = L('Adjustment Reason', '调整原因', 'Razón de Ajuste');
-  const lAdjNote     = zh ? '(部分批准或拒绝时必填 — Required if Partially Approved or Rejected)' :
-    es ? '(Requerido si Parcialmente Aprobado o Rechazado)' : '(Required if Partially Approved or Rejected)';
+  const lApprovedAmt    = L('Approved Amount', '批准金额', 'Monto Aprobado');
+  const lNotes          = L('Notes / Reason', '备注 / 原因', 'Notas / Razón');
+  const lNotesNote      = zh ? '（部分批准或拒绝时填写）' : es ? '(Requerido si Parcialmente Aprobado o Rechazado)' : '(Required if Partially Approved or Rejected)';
 
-  const s4         = zh ? '4. PAYMENT SCHEDULE 付款安排' : es ? '4. PAYMENT SCHEDULE / PROGRAMA DE PAGO' : '4. PAYMENT SCHEDULE';
-  const lPayDate   = L('Payment Date', '付款日期', 'Fecha de Pago');
-  const lPayMethod = L('Payment Method', '付款方式', 'Método de Pago');
-  const ilNote     = zh
-    ? 'IL FWPA: 合同未注明→完工后30天内付款 / Payment due within 30 days of completion if contract is silent.'
-    : es
-    ? 'IL FWPA: Payment due within 30 days of completion if contract is silent. / Pago vence 30 días tras completar si el contrato no especifica.'
-    : 'IL FWPA: Payment due within 30 days of completion if contract is silent.';
+  // Section 3 — Payment
+  const s3              = zh ? '3. PAYMENT 付款' : es ? '3. PAYMENT / PAGO' : '3. PAYMENT';
+  const lPayDate        = L('Payment Date', '付款日期', 'Fecha de Pago');
+  const lReviewer       = L('Reviewer', '审批人', 'Revisor');
 
-  const s5           = zh ? '5. REVIEWED BY 审批人信息' : es ? '5. REVIEWED BY / REVISADO POR' : '5. REVIEWED BY';
-  const lReviewedBy  = L('Reviewed By', '审批人', 'Revisado Por');
-  const lTitle       = L('Title', '职位', 'Cargo');
-  const lReviewDate  = L('Reviewed Date', '审核日期', 'Fecha de Revisión');
-  const lNotes       = L('Internal Notes', '内部备注', 'Notas Internas');
-  const lNotesNote   = zh ? '(不分享给承包商)' : es ? '(no compartir con el contratista)' : '(not shared with contractor)';
-
-  const authSentence = zh
+  // Section 4 — Signature
+  const authSentence    = zh
     ? `I authorize the above payment on behalf of ${companyName}. 本人代表公司授权上述付款。`
     : es
     ? `I authorize the above payment on behalf of ${companyName}. Autorizo el pago anterior en nombre de ${companyName}.`
     : `I authorize the above payment on behalf of ${companyName}.`;
-  const sigHeader  = zh ? 'COMPANY APPROVAL SIGNATURE 公司审批签名' : es ? 'COMPANY APPROVAL SIGNATURE / FIRMA DE APROBACIÓN' : 'COMPANY APPROVAL SIGNATURE';
-  const lSig       = L('Signature', '签名', 'Firma');
-  const lApprDate  = L('Approval Date', '审批日期', 'Fecha de Aprobación');
-  const footer     = zh
+  const sigHeader       = zh ? 'COMPANY APPROVAL SIGNATURE 公司审批签名' : es ? 'COMPANY APPROVAL SIGNATURE / FIRMA DE APROBACIÓN' : 'COMPANY APPROVAL SIGNATURE';
+  const lSig            = L('Signature', '签名', 'Firma');
+  const lApprDate       = L('Approval Date', '审批日期', 'Fecha de Aprobación');
+  const footer          = zh
     ? `INTERNAL DOCUMENT — ${companyName} — Invoice records the contractor's request; this form records company approval. 内部文件——发票记录请求，本表记录批准。`
     : es
     ? `INTERNAL DOCUMENT — ${companyName} — Invoice records the contractor's request; this form records company approval. La factura registra la solicitud; este formulario registra la aprobación.`
@@ -3579,25 +3567,17 @@ function _buildInvoiceApprovalForm(lang) {
 <div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:22%"><b>${lInvNum}</b><br><text-field name="linked_invoice_number" role="First Party" required="true" style="${f}width:140px" placeholder="INV-2026-001"></text-field></td>
-    <td style="${c}width:22%"><b>${lInvDate}</b><br><text-field name="linked_invoice_date" role="First Party" style="${f}width:100px" placeholder="MM/DD/YYYY"></text-field></td>
-    <td style="${c}width:28%"><b>${lContractor}</b><br><text-field name="contractor_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:28%"><b>${lSvcPeriod}</b><br><text-field name="service_period" role="First Party" style="${w}" placeholder="May 1–7, 2026"></text-field></td>
+    <td style="${c}width:25%"><b>${lCustInvNum}</b><br><span style="font-size:6.5pt;color:#888">${lCustInvNote}</span><br><text-field name="customer_invoice_number" role="First Party" required="true" style="${f}width:100%" placeholder="CUS-2026-001"></text-field></td>
+    <td style="${c}width:25%"><b>${lContInvNum}</b><br><span style="font-size:6.5pt;color:#888">${lContInvNote}</span><br><text-field name="linked_invoice_number" role="First Party" required="true" style="${f}width:100%" placeholder="INV-2026-001"></text-field></td>
+    <td style="${c}width:25%"><b>${lContractor}</b><br><br><text-field name="contractor_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:25%"><b>${lSvcPeriod}</b><br><br><text-field name="service_period" role="First Party" style="${w}" placeholder="May 1–7, 2026"></text-field></td>
   </tr>
   <tr>
-    <td colspan="4" style="${c}"><b>${lInvUrl}</b> <span style="font-size:6.5pt;color:#888">${lInvUrlNote}</span><br><text-field name="company_invoice_url" role="First Party" style="${w}" placeholder="https://... or /files/INV-2026-001.pdf"></text-field></td>
+    <td colspan="4" style="${c}"><b>${lReqAmt}</b>&nbsp;&nbsp;$ <text-field name="requested_amount" role="First Party" required="true" style="${f}width:130px" placeholder="0.00"></text-field></td>
   </tr>
 </table>
 
 <div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s2}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
-  <tr>
-    <td style="${c}width:40%"><b>${lReqAmt}</b><br>$ <text-field name="requested_amount" role="First Party" required="true" style="${f}width:120px" placeholder="0.00"></text-field></td>
-    <td style="${c}width:60%"><b>${lSvcDesc}</b><br><text-field name="service_description" role="First Party" style="${w}" placeholder="Brief summary of services rendered"></text-field></td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s3}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
     <td style="${c}width:34%">
@@ -3610,41 +3590,18 @@ function _buildInvoiceApprovalForm(lang) {
       <div style="font-size:11pt;font-weight:700">$ <text-field name="approved_amount" role="First Party" required="true" style="${f}width:110px;font-size:11pt;font-weight:700" placeholder="0.00"></text-field></div>
     </td>
     <td style="${c}width:33%">
-      <b>${lAdjReason}</b><br>
-      <div style="font-size:6.5pt;color:#c0392b;margin-bottom:2px">${lAdjNote}</div>
-      <text-field name="adjustment_reason" role="First Party" style="${w}" placeholder="Explain if amount differs from requested"></text-field>
+      <b>${lNotes}</b><br>
+      <div style="font-size:6.5pt;color:#888;margin-bottom:2px">${lNotesNote}</div>
+      <text-field name="adjustment_reason" role="First Party" style="${w};min-height:32px" placeholder=""></text-field>
     </td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s4}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:4px">
-  <tr>
-    <td style="${c}width:40%"><b>${lPayDate}</b><br><text-field name="payment_date" role="First Party" required="true" style="${f}width:120px" placeholder="MM/DD/YYYY"></text-field></td>
-    <td style="${c}width:60%">
-      <b>${lPayMethod}</b><br>
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px;font-size:8pt">
-        <label style="display:flex;align-items:center;gap:3px"><checkbox-field name="pm_ach" role="First Party" style="width:13px;height:13px"></checkbox-field> ACH</label>
-        <label style="display:flex;align-items:center;gap:3px"><checkbox-field name="pm_wire" role="First Party" style="width:13px;height:13px"></checkbox-field> Wire</label>
-        <label style="display:flex;align-items:center;gap:3px"><checkbox-field name="pm_check" role="First Party" style="width:13px;height:13px"></checkbox-field> Check</label>
-        <label style="display:flex;align-items:center;gap:3px"><checkbox-field name="pm_zelle" role="First Party" style="width:13px;height:13px"></checkbox-field> Zelle</label>
-      </div>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" style="font-size:7pt;color:#888;padding:2px 5px;border:1px solid #ccc">${ilNote}</td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s5}</div>
+<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s3}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:34%"><b>${lReviewedBy}</b><br><text-field name="reviewer_name" role="First Party" required="true" style="${w}" placeholder="Full Name"></text-field></td>
-    <td style="${c}width:33%"><b>${lTitle}</b><br><text-field name="reviewer_title" role="First Party" style="${w}" placeholder="Operations Manager"></text-field></td>
-    <td style="${c}width:33%"><b>${lReviewDate}</b><br><text-field name="reviewed_date" role="First Party" style="${f}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
-  </tr>
-  <tr>
-    <td colspan="3" style="${c}"><b>${lNotes}</b> <span style="font-size:6.5pt;color:#888">${lNotesNote}</span><br><text-field name="internal_notes" role="First Party" style="${w};min-height:32px" placeholder="Internal notes..."></text-field></td>
+    <td style="${c}width:50%"><b>${lPayDate}</b><br><text-field name="payment_date" role="First Party" required="true" style="${f}width:140px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="${c}width:50%"><b>${lReviewer}</b><br><text-field name="reviewer_name" role="First Party" required="true" style="${w}" placeholder="Full Name"></text-field></td>
   </tr>
 </table>
 
@@ -8759,9 +8716,12 @@ app.get('/api/admin/contractor-invoices/:id/signing-url', requireAdmin, requireR
     const freshEmbedSrc = u.data?.embed_src || '';
     const slug = u.data?.slug || submitter.slug || '';
     const baseHost = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
-    const signingUrl = freshEmbedSrc || (slug ? `${baseHost}/s/${slug}` : '');
+    const slugUrl = slug ? `${baseHost}/s/${slug}` : '';
+    const signingUrl = freshEmbedSrc || slugUrl;
     if (!signingUrl) return res.status(404).json({ error: '无法获取预览链接' });
-    res.json({ url: signingUrl, embed_src: freshEmbedSrc || signingUrl, status: submitter.status, completed: sub.status === 'completed', type: 'signing' });
+    // embed_src is the iframe-safe URL (only set when DocuSeal provides it)
+    // url is always the slug-based URL for "open in new tab"
+    res.json({ url: slugUrl || freshEmbedSrc, embed_src: freshEmbedSrc, embeddable: !!freshEmbedSrc, status: submitter.status, completed: sub.status === 'completed', type: 'signing' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -15882,32 +15842,28 @@ app.get('/api/admin/docuseal/builder-token/:id', requireAdmin, async (req, res) 
   if (!templateId) return res.status(400).json({ error: '无效的模板 ID' });
 
   // Fetch the actual DocuSeal account user email (required by the builder JWT)
-  // Strategy 1: GET /api/users
+  // Priority 1: read cached account_email from DB (instant, no network)
   let userEmail = '';
   try {
-    const r = await dsealApiCall('GET', '/api/users', null);
-    if (r.status === 200) {
-      const users = Array.isArray(r.data) ? r.data : (r.data?.data || []);
-      if (users.length > 0) userEmail = users[0].email || '';
-    }
+    const cfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    userEmail = JSON.parse(cfgRow?.config || '{}').account_email || '';
   } catch {}
 
-  // Strategy 2: GET /api/templates/:id — author email sometimes embedded in template
+  // Priority 2: fetch from DocuSeal in parallel (both /api/users and /api/templates/:id)
   if (!userEmail) {
     try {
-      const r = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
-      if (r.status === 200 && r.data) {
-        userEmail = r.data.author?.email || r.data.created_by?.email || r.data.user?.email || '';
+      const [usersRes, tplRes] = await Promise.allSettled([
+        dsealApiCall('GET', '/api/users', null),
+        dsealApiCall('GET', `/api/templates/${templateId}`, null)
+      ]);
+      if (usersRes.status === 'fulfilled' && usersRes.value.status === 200) {
+        const users = Array.isArray(usersRes.value.data) ? usersRes.value.data : (usersRes.value.data?.data || []);
+        userEmail = users[0]?.email || '';
       }
-    } catch {}
-  }
-
-  // Strategy 3: read cached account_email stored in docuseal config
-  if (!userEmail) {
-    try {
-      const cfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
-      const cfg = JSON.parse(cfgRow?.config || '{}');
-      userEmail = cfg.account_email || '';
+      if (!userEmail && tplRes.status === 'fulfilled' && tplRes.value.status === 200 && tplRes.value.data) {
+        const d = tplRes.value.data;
+        userEmail = d.author?.email || d.created_by?.email || d.user?.email || '';
+      }
     } catch {}
   }
 
