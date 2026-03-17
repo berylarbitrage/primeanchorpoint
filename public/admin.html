@@ -2940,12 +2940,13 @@ tr:hover td{background:var(--sky-light)}
       </div>
     </div>
     <div id="dsInvPreviewInfo" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.4rem;flex-shrink:0"></div>
-    <div id="dsInvPreviewFrameWrap" style="flex:1;position:relative;min-height:0">
+    <div id="dsInvPreviewFrameWrap" style="flex:1;position:relative;min-height:0;overflow:auto">
       <iframe id="dsInvPreviewFrame" src="about:blank"
         style="width:100%;height:100%;border:1px solid var(--gray-200);border-radius:8px;display:block"
         allow="camera;microphone;clipboard-write">
       </iframe>
-      <div id="dsInvPreviewFallback" style="display:none;position:absolute;inset:0;background:#f9fafb;border:1px solid var(--gray-200);border-radius:8px;display:none;align-items:center;justify-content:center;flex-direction:column;gap:1rem;text-align:center;padding:2rem">
+      <div id="dsInvPreviewFormContainer" style="display:none;width:100%;height:100%;overflow:auto"></div>
+      <div id="dsInvPreviewFallback" style="display:none;position:absolute;inset:0;background:#f9fafb;border:1px solid var(--gray-200);border-radius:8px;align-items:center;justify-content:center;flex-direction:column;gap:1rem;text-align:center;padding:2rem">
         <div style="font-size:2rem">⚠️</div>
         <div style="font-size:.9rem;color:var(--gray-600)">该页面不允许嵌入显示</div>
         <a id="dsInvPreviewFallbackLink" href="#" target="_blank" rel="noopener"
@@ -18536,6 +18537,10 @@ function closeDsInvPreview() {
   const frame = document.getElementById('dsInvPreviewFrame');
   frame.src = 'about:blank';
   document.getElementById('dsInvPreviewFallback').style.display = 'none';
+  // Clear docuseal-form container
+  const formContainer = document.getElementById('dsInvPreviewFormContainer');
+  formContainer.innerHTML = '';
+  formContainer.style.display = 'none';
   frame.style.display = 'block';
 }
 
@@ -18549,64 +18554,46 @@ async function previewDsInvoice(invoiceId) {
       const fallbackLink = document.getElementById('dsInvPreviewFallbackLink');
       const info = document.getElementById('dsInvPreviewInfo');
       const frame = document.getElementById('dsInvPreviewFrame');
+      const formContainer = document.getElementById('dsInvPreviewFormContainer');
       const fallback = document.getElementById('dsInvPreviewFallback');
 
       link.href = r.url;
       fallbackLink.href = r.url;
-      // For completed PDFs, use proxy so the PDF can be embedded directly
-      const embedUrl = (r.completed || r.type === 'document')
-        ? `/api/admin/contractor-invoices/${invoiceId}/pdf-proxy`
-        : r.url;
-      if (r.completed || r.type === 'document') {
-        info.textContent = '该发票已签署完成（PDF 文件）。';
-        link.textContent = '↗ 新标签页打开';
-      } else {
-        info.textContent = '该发票尚未签署，以下为 DocuSeal 签署页面（承包商视角）。';
-        link.textContent = '↗ 新标签页打开';
-      }
 
       // Reset state
       fallback.style.display = 'none';
-      frame.style.display = 'block';
+      frame.style.display = 'none';
+      formContainer.style.display = 'none';
+      formContainer.innerHTML = '';
       frame.src = 'about:blank';
 
-      modal.style.display = 'flex';
-
-      // Load URL in iframe; if X-Frame-Options blocks it show fallback
-      setTimeout(() => {
-        frame.src = embedUrl;
-        // Detect load failure (X-Frame-Options / CSP) after a delay
-        const timer = setTimeout(() => {
-          // If iframe loaded an error page or is blank, show fallback
-          try {
-            const doc = frame.contentDocument || frame.contentWindow?.document;
-            if (!doc || doc.title === '' || frame.contentWindow?.location?.href === 'about:blank') {
-              fallback.style.display = 'flex';
-              frame.style.display = 'none';
-            }
-          } catch(e) {
-            // Cross-origin access blocked = iframe loaded external content (good)
-          }
-        }, 4000);
-        frame.onload = () => {
-          clearTimeout(timer);
-          try {
-            // If we CAN read contentDocument, it means same-origin loaded
-            const doc = frame.contentDocument;
-            if (doc && (doc.body?.innerHTML === '' || doc.title === 'about:blank')) {
-              fallback.style.display = 'flex';
-              frame.style.display = 'none';
-            }
-          } catch(e) {
-            // Cross-origin = normal, iframe is showing external content
-          }
-        };
-        frame.onerror = () => {
-          clearTimeout(timer);
-          fallback.style.display = 'flex';
-          frame.style.display = 'none';
-        };
-      }, 50);
+      if (r.completed || r.type === 'document') {
+        // Completed PDF — use iframe with proxy
+        info.textContent = '该发票已签署完成（PDF 文件）。';
+        link.textContent = '↗ 新标签页打开';
+        frame.style.display = 'block';
+        modal.style.display = 'flex';
+        setTimeout(() => {
+          frame.src = `/api/admin/contractor-invoices/${invoiceId}/pdf-proxy`;
+        }, 50);
+      } else {
+        // Unsigned — use <docuseal-form> web component (same as contract signing)
+        info.textContent = '该发票尚未签署，以下为 DocuSeal 签署页面（承包商视角）。';
+        link.textContent = '↗ 新标签页打开';
+        const embedSrc = r.embed_src || r.url;
+        const form = document.createElement('docuseal-form');
+        form.setAttribute('data-src', embedSrc);
+        form.setAttribute('data-expand', 'false');
+        form.setAttribute('data-order-as-on-page', 'true');
+        form.setAttribute('data-with-draw-signature', 'true');
+        form.setAttribute('data-with-typed-signature', 'true');
+        form.setAttribute('data-with-upload-signature', 'true');
+        form.setAttribute('data-with-send-copy-button', 'false');
+        form.style.width = '100%';
+        formContainer.appendChild(form);
+        formContainer.style.display = 'block';
+        modal.style.display = 'flex';
+      }
     } else {
       showToast(r?.error || '无法获取预览链接', 'error');
     }
