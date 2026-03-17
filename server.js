@@ -1548,7 +1548,8 @@ try {
       form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
       ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
       zelle_auth_template_id: 'zelle_auth', zelle_auth_en_template_id: 'zelle_auth_en', zelle_auth_es_template_id: 'zelle_auth_es',
-      third_party_pay_template_id: 'third_party_pay', cash_receipt_template_id: 'cash_receipt',
+      third_party_pay_template_id: 'third_party_pay', third_party_pay_en_template_id: 'third_party_pay_en', third_party_pay_es_template_id: 'third_party_pay_es',
+      cash_receipt_template_id: 'cash_receipt',
       contractor_invoice_template_id: 'contractor_invoice',
       invoice_approval_template_id: 'invoice_approval',
       invoice_approval_en_template_id: 'invoice_approval_en',
@@ -1577,7 +1578,8 @@ try {
       form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
       ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
       zelle_auth_template_id: 'zelle_auth', zelle_auth_en_template_id: 'zelle_auth_en', zelle_auth_es_template_id: 'zelle_auth_es',
-      third_party_pay_template_id: 'third_party_pay', cash_receipt_template_id: 'cash_receipt',
+      third_party_pay_template_id: 'third_party_pay', third_party_pay_en_template_id: 'third_party_pay_en', third_party_pay_es_template_id: 'third_party_pay_es',
+      cash_receipt_template_id: 'cash_receipt',
       contractor_invoice_template_id: 'contractor_invoice',
       invoice_approval_template_id: 'invoice_approval',
       invoice_approval_en_template_id: 'invoice_approval_en',
@@ -3480,8 +3482,8 @@ function generateContractorInvoiceHtmlTemplate(lang) {
   <b>${bi(en.certTitle, t ? t.certTitle : '')}</b>
   <div style="font-size:7.5pt;margin:3px 0">${en.certBody}${t ? `<br>${t.certBody}` : ''}</div>
   <table style="width:100%;margin-top:4px"><tr>
-    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.sigLabel, t ? t.sigLabel : '')}:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:2px solid #f59e0b;border-radius:2px;background:#fff"></signature-field></td>
-    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.dateLabel, t ? t.dateLabel : '')}:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.sigLabel, t ? t.sigLabel : '')}:</div><signature-field name="contractor_signature" role="Contractor" style="width:100%;height:44px;display:block;border:2px solid #f59e0b;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.dateLabel, t ? t.dateLabel : '')}:</div><date-field name="signature_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${en.footer}${t ? ` ${t.footer}` : ''}<br>${t ? `${t.ilFwpa} / ` : ''}${en.ilFwpa}<br><span style="color:#f59e0b">■</span> = ${bi(en.legend, t ? t.legend : '')} &nbsp; <span style="color:#ddd">■</span> = ${bi(en.legendGrey, t ? t.legendGrey : '')}</div>
@@ -3584,17 +3586,17 @@ function _buildInvoiceApprovalForm(lang) {
   <tr>
     <td style="${c}width:34%">
       <b>${lDecision}</b><br>
-      <text-field name="approval_decision" role="First Party" required="true" style="${w}" placeholder="Approved / Partially Approved / Rejected"></text-field>
+      <text-field name="approval_decision" role="Contractor" required="true" style="${w}" placeholder="Approved / Partially Approved / Rejected"></text-field>
       <div style="font-size:6.5pt;color:#666;margin-top:2px">${lDecisionHint}</div>
     </td>
     <td style="${c}width:33%;background:#f9f9f0">
       <b>${lApprovedAmt}</b><br>
-      <div style="font-size:11pt;font-weight:700">$ <text-field name="approved_amount" role="First Party" required="true" style="${f}width:110px;font-size:11pt;font-weight:700" placeholder="0.00"></text-field></div>
+      <div style="font-size:11pt;font-weight:700">$ <text-field name="approved_amount" role="Contractor" required="true" style="${f}width:110px;font-size:11pt;font-weight:700" placeholder="0.00"></text-field></div>
     </td>
     <td style="${c}width:33%">
       <b>${lNotes}</b><br>
       <div style="font-size:6.5pt;color:#888;margin-bottom:2px">${lNotesNote}</div>
-      <text-field name="adjustment_reason" role="First Party" style="${w};min-height:32px" placeholder=""></text-field>
+      <text-field name="adjustment_reason" role="Contractor" style="${w};min-height:32px" placeholder=""></text-field>
     </td>
   </tr>
 </table>
@@ -3602,16 +3604,16 @@ function _buildInvoiceApprovalForm(lang) {
 <div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">${s3}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:50%"><b>${lPayDate}</b><br><text-field name="payment_date" role="First Party" required="true" style="${f}width:140px" placeholder="MM/DD/YYYY"></text-field></td>
-    <td style="${c}width:50%"><b>${lReviewer}</b><br><text-field name="reviewer_name" role="First Party" required="true" style="${w}" placeholder="Full Name"></text-field></td>
+    <td style="${c}width:50%"><b>${lPayDate}</b><br><text-field name="payment_date" role="Contractor" required="true" style="${f}width:140px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="${c}width:50%"><b>${lReviewer}</b><br><text-field name="reviewer_name" role="Contractor" required="true" style="${w}" placeholder="Full Name"></text-field></td>
   </tr>
 </table>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:6px;font-size:8pt">
   <b>${sigHeader}</b> — ${authSentence}
   <table style="width:100%;margin-top:4px"><tr>
-    <td style="width:60%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="approval_signature" role="First Party" style="width:100%;height:48px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
-    <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lApprDate}:</div><date-field name="approval_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+    <td style="width:60%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="approval_signature" role="Contractor" style="width:100%;height:48px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lApprDate}:</div><date-field name="approval_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
@@ -3623,65 +3625,145 @@ function generateInvoiceApprovalHtmlTemplate_EN() { return _buildInvoiceApproval
 function generateInvoiceApprovalHtmlTemplate_ES() { return _buildInvoiceApprovalForm('en-es'); }
 
 // ── Third-Party Payment Authorization (PayPal / Venmo / Cash App) ──
-function generateThirdPartyPayHtmlTemplate() {
+// ── Third-Party Payment Authorization — shared builder (3 language editions) ──
+// lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
+function _buildThirdPartyPayForm(lang) {
   const companyName = process.env.COMPANY_LEGAL_NAME || 'Prime Anchorpoint LLC';
   const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
   const w = `${f}width:100%;min-height:16px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const zh = lang === 'zh-en';
+  const es = lang === 'en-es';
+  const L = (en, zhTxt, esTxt) => {
+    if (zh && zhTxt) return `${en} ${zhTxt}`;
+    if (es && esTxt) return `${en} / ${esTxt}`;
+    return en;
+  };
+
+  const formTitle = zh
+    ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM 第三方平台收款授权表'
+    : es
+    ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM / AUTORIZACIÓN PARA RECIBIR PAGOS VÍA PLATAFORMA DE TERCEROS'
+    : 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM';
+
+  const intro = zh
+    ? `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform specified below. 本人授权 <b>${companyName}</b> 及其授权代表通过以下第三方平台向本人支付应付款项。`
+    : es
+    ? `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform specified below. Autorizo a <b>${companyName}</b> y sus representantes autorizados a enviar los pagos correspondientes a través de la plataforma de terceros indicada.`
+    : `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform specified below.`;
+
+  const s1          = zh ? '1. PAYEE INFORMATION 收款人信息' : es ? '1. PAYEE INFORMATION / INFORMACIÓN DEL BENEFICIARIO' : '1. PAYEE INFORMATION';
+  const lLegalName  = L('Full Legal Name', '法定全名', 'Nombre Legal Completo');
+
+  const s2          = zh ? '2. PAYMENT PLATFORM &amp; ACCOUNT 付款平台及账户' : es ? '2. PAYMENT PLATFORM &amp; ACCOUNT / PLATAFORMA Y CUENTA DE PAGO' : '2. PAYMENT PLATFORM &amp; ACCOUNT';
+  const lPlatform   = L('Platform', '平台', 'Plataforma');
+  const lHandle     = L('Account Handle / Username', '账号', 'Usuario / Handle de Cuenta');
+  const lContact    = L('Associated Email or Phone', '关联邮箱或手机', 'Email o Teléfono Asociado');
+  const lOptional   = zh ? '(optional 可选)' : es ? '(opcional)' : '(optional)';
+
+  const s3 = zh ? '3. ACKNOWLEDGMENT 确认事项' : es ? '3. ACKNOWLEDGMENT / DECLARACIÓN Y ACUERDO' : '3. ACKNOWLEDGMENT';
+
+  const ack1en = `<b>I certify that the account information provided above is accurate and that I am the owner of, or am authorized to receive payments through, that account.</b>`;
+  const ack1   = zh ? `${ack1en} &nbsp;<span style="color:#555">本人确认以上账户信息真实准确，且本人系该账户持有人，或有权通过该账户收取款项。</span>`
+    : es ? `${ack1en} &nbsp;<span style="color:#555">Certifico que la información de cuenta proporcionada es precisa y que soy el titular de la cuenta o estoy autorizado a recibir pagos a través de ella.</span>`
+    : ack1en;
+
+  const ack2en = `<b>Payment sent to the account information provided by me will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation, unless ${companyName} was notified in writing of updated account information before the payment was sent.</b>`;
+  const ack2   = zh ? `${ack2en} &nbsp;<span style="color:#555">只要 ${companyName} 按本人所提供的账户信息付款，即视为完成付款义务；除非本人已在付款前以书面形式通知新的账户信息。</span>`
+    : es ? `${ack2en} &nbsp;<span style="color:#555">El pago enviado a la información de cuenta proporcionada se considerará pago válido y cumplimiento total de la obligación de pago, salvo que se haya notificado por escrito un cambio de cuenta antes del envío.</span>`
+    : ack2en;
+
+  const ack3en = `I agree to notify ${companyName} in writing before any change to my payment platform or account details.`;
+  const ack3   = zh ? `${ack3en} &nbsp;<span style="color:#555">如收款平台或账户信息发生变化，本人同意在变更生效前以书面形式通知 ${companyName}。</span>`
+    : es ? `${ack3en} &nbsp;<span style="color:#555">Acepto notificar por escrito a ${companyName} antes de cualquier cambio en mi plataforma de pago o datos de cuenta.</span>`
+    : ack3en;
+
+  const ack4en = `${companyName} is not responsible for delays, holds, service interruptions, or fees imposed by the selected third-party platform after payment is sent successfully.`;
+  const ack4   = zh ? `${ack4en} &nbsp;<span style="color:#555">付款成功发送后，如第三方平台产生延迟、冻结、中断或手续费，由该平台规则处理，${companyName} 不承担相应责任。</span>`
+    : es ? `${ack4en} &nbsp;<span style="color:#555">${companyName} no es responsable de demoras, retenciones, interrupciones de servicio o cargos impuestos por la plataforma de terceros seleccionada una vez que el pago haya sido enviado exitosamente.</span>`
+    : ack4en;
+
+  const ack5en = `I understand that transaction fees charged by the platform are my responsibility.`;
+  const ack5   = zh ? `${ack5en} &nbsp;<span style="color:#555">本人理解平台可能收取手续费，由本人承担。</span>`
+    : es ? `${ack5en} &nbsp;<span style="color:#555">Entiendo que las comisiones por transacción cobradas por la plataforma son mi responsabilidad.</span>`
+    : ack5en;
+
+  const ack6en = `This authorization is for payment method purposes only and does not alter any tax reporting obligations or independent contractor status.`;
+  const ack6   = zh ? `${ack6en} &nbsp;<span style="color:#555">本授权仅用于付款方式确认，不改变任何税务申报义务或承包关系性质。</span>`
+    : es ? `${ack6en} &nbsp;<span style="color:#555">Esta autorización es únicamente para fines del método de pago y no altera ninguna obligación de declaración fiscal ni el estatus de contratista independiente.</span>`
+    : ack6en;
+
+  const sigHeader    = zh ? 'PAYEE SIGNATURE 收款人签名' : es ? 'PAYEE SIGNATURE / FIRMA DEL BENEFICIARIO' : 'PAYEE SIGNATURE';
+  const lPrintedName = L('Printed Name', '姓名（正楷）', 'Nombre en Letra de Imprenta');
+  const lSig         = L('Signature', '签名', 'Firma');
+  const lDate        = L('Date', '日期', 'Fecha');
+  const footer       = zh
+    ? `${companyName} — 第三方平台收款授权表 — For internal records only.`
+    : es
+    ? `${companyName} — Authorization to Receive Payment via Third-Party Platform — Solo para registros internos.`
+    : `${companyName} — Authorization to Receive Payment via Third-Party Platform — For internal records only.`;
+
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
-  <div style="font-size:13pt;font-weight:900;letter-spacing:1px">THIRD-PARTY PAYMENT AUTHORIZATION</div>
-  <div style="font-size:9pt;font-weight:700">第三方平台付款授权表</div>
+  <div style="font-size:11pt;font-weight:900;letter-spacing:0.5px">${formTitle}</div>
   <div style="font-size:7.5pt;color:#555;margin-top:2px">${companyName}</div>
 </div>
 <div style="font-size:8.5pt;margin-bottom:10px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc">
-  I authorize <b>${companyName}</b> to send payments owed to me / my business for approved services through the third-party platform listed below.<br>
-  <span style="color:#555">本人授权 <b>${companyName}</b> 将应付给本人/本人公司的服务款项通过以下第三方平台支付。</span>
+  ${intro}
 </div>
 
-<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">1. PAYEE INFORMATION &nbsp;<span style="font-weight:400;font-size:8pt;color:#555">收款人信息</span></div>
+<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
-    <td style="${c}width:50%"><b>Full Name 全名</b><br><text-field name="payee_full_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Email 电邮</b><br><text-field name="payee_email" role="First Party" style="${w}" placeholder="email@example.com"></text-field></td>
+    <td style="${c}width:100%"><b>${lLegalName}</b><br><text-field name="payee_full_name" role="First Party" required="true" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">2. PAYMENT PLATFORM &nbsp;<span style="font-weight:400;font-size:8pt;color:#555">付款平台</span></div>
+<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s2}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
     <td style="${c}width:100%" colspan="2">
-      <b>Platform 平台:</b>&nbsp;&nbsp;
+      <b>${lPlatform}:</b>&nbsp;&nbsp;
       <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><checkbox-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></checkbox-field> PayPal</label>
       <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><checkbox-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></checkbox-field> Venmo</label>
       <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></checkbox-field> Cash App</label>
     </td>
   </tr>
   <tr>
-    <td style="${c}width:55%"><b>Account Handle / Username / Email &nbsp;<span style="font-weight:400;color:#555">账号</span></b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username or email"></text-field></td>
-    <td style="${c}width:45%"><b>Payee Name on Account &nbsp;<span style="font-weight:400;color:#555">账户显示名称</span></b> <span style="font-size:7pt;color:#999">(optional 可选)</span><br><text-field name="platform_account_name" role="First Party" style="${w}"></text-field></td>
+    <td style="${c}width:55%"><b>${lHandle}</b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username"></text-field></td>
+    <td style="${c}width:45%"><b>${lContact}</b> <span style="font-size:7pt;color:#999">${lOptional}</span><br><text-field name="platform_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">3. ACKNOWLEDGMENT &nbsp;<span style="font-weight:400;font-size:8pt;color:#555">确认事项</span></div>
-<div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.7;background:#fafafa;margin-bottom:8px">
-  <div>☑ I understand that transaction fees charged by the platform are my responsibility. &nbsp;<span style="color:#555">本人理解平台可能收取手续费，由本人承担。</span></div>
-  <div>☑ I am responsible for ensuring that the account handle / username / email provided above is accurate. &nbsp;<span style="color:#555">本人对所填账号的准确性负责；因账号填写错误导致的付款损失由本人自行承担。</span></div>
-  <div>☑ I am responsible for keeping my account active and accessible. &nbsp;<span style="color:#555">本人负责确保账户持续有效且可正常收款。</span></div>
-  <div>☑ ${companyName} is not liable for platform outages, processing delays, or failed transactions caused by platform issues. &nbsp;<span style="color:#555">${companyName} 不对平台故障、延误或技术原因导致的付款失败承担责任。</span></div>
-  <div>☑ Any future change to my payment account must be submitted in writing to ${companyName}. &nbsp;<span style="color:#555">如付款账户信息有任何变更，须以书面形式通知 ${companyName}。</span></div>
+<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
+<div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.8;background:#fafafa;margin-bottom:8px">
+  <div>☑ ${ack1}</div>
+  <div>☑ ${ack2}</div>
+  <div>☑ ${ack3}</div>
+  <div>☑ ${ack4}</div>
+  <div>☑ ${ack5}</div>
+  <div>☑ ${ack6}</div>
 </div>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:7px 8px;font-size:8.5pt">
-  <div style="font-size:7.5pt;font-weight:700;margin-bottom:5px">CONTRACTOR SIGNATURE 承包商签名</div>
-  <table style="width:100%"><tr>
-    <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Signature 签名:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
-    <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Date 日期:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
-  </tr></table>
+  <div style="font-size:7.5pt;font-weight:700;margin-bottom:5px">${sigHeader}</div>
+  <table style="width:100%">
+    <tr>
+      <td colspan="2" style="padding-bottom:5px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${f}width:100%;margin-top:2px"></text-field></td>
+    </tr>
+    <tr>
+      <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="contractor_signature" role="Contractor" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
+      <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lDate}:</div><date-field name="signature_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+    </tr>
+  </table>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${companyName} — Third-Party Payment Authorization — For internal records only.</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
 </div>`;
 }
+
+function generateThirdPartyPayHtmlTemplate()    { return _buildThirdPartyPayForm('zh-en'); }
+function generateThirdPartyPayHtmlTemplate_EN() { return _buildThirdPartyPayForm('en'); }
+function generateThirdPartyPayHtmlTemplate_ES() { return _buildThirdPartyPayForm('en-es'); }
 
 // ── W-7 (ITIN Application) ──
 function generateW7HtmlTemplate() {
@@ -4034,52 +4116,6 @@ function generateZelleAuthHtmlTemplate()    { return _buildZelleAuthForm('zh-en'
 function generateZelleAuthHtmlTemplate_EN() { return _buildZelleAuthForm('en'); }
 function generateZelleAuthHtmlTemplate_ES() { return _buildZelleAuthForm('en-es'); }
 
-// ── Third-Party Payment Authorization (PayPal / Venmo / CashApp) ──
-function generateThirdPartyPayHtmlTemplate() {
-  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
-  const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px">THIRD-PARTY PAYMENT AUTHORIZATION</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">第三方平台付款授权表 (PayPal / Venmo / CashApp) — ${companyName}</div>
-</div>
-
-<p style="font-size:8.5pt">I authorize ${companyName} to send payments via the third-party platform specified below. 本人授权 ${companyName} 通过以下第三方平台发送付款。</p>
-
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">1. PAYEE INFORMATION 收款人信息</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr>
-    <td style="${c}width:50%"><b>Full Name 全名</b><br><text-field name="tpp_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Email 电邮</b><br><text-field name="tpp_email" role="First Party" style="${w}"></text-field></td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">2. PAYMENT PLATFORM 付款平台</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr>
-    <td style="${c}width:50%"><b>Platform 平台</b><br><text-field name="tpp_platform" role="First Party" required="true" style="${f}width:220px" placeholder="PayPal / Venmo / CashApp / Other"></text-field></td>
-    <td style="${c}width:50%"><b>Account Handle / Username / Email 账号</b><br><text-field name="tpp_handle" role="First Party" required="true" style="${w}" placeholder="@username or email"></text-field></td>
-  </tr>
-  <tr>
-    <td colspan="2" style="${c}"><b>Preferred Payment Type 付款类型偏好</b><br><text-field name="tpp_type" role="First Party" style="${f}width:280px" placeholder="Goods & Services / Friends & Family / Business"></text-field></td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">3. ACKNOWLEDGMENT 确认事项</div>
-<p style="font-size:8pt">I understand that: (a) third-party platforms may charge transaction fees which are my responsibility; (b) ${companyName} is not liable for platform outages or delays; (c) I am responsible for maintaining an active account on the selected platform.</p>
-<p style="font-size:8pt">本人理解：(a) 第三方平台可能收取交易费用，由本人承担；(b) ${companyName} 不对平台故障或延迟承担责任；(c) 本人负责在所选平台上保持账户有效。</p>
-
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
-  <b>PAYEE SIGNATURE 收款人签名</b>
-  <table style="width:100%;margin-top:6px"><tr>
-    <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">Signature 签名:</div><signature-field name="tpp_sig" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-    <td style="width:40%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">Date 日期:</div><date-field name="tpp_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
-  </tr></table>
-</div>
-</div>`;
-}
 
 // ── Cash Payment Receipt ──
 function generateCashReceiptHtmlTemplate() {
@@ -4166,7 +4202,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   zelle_auth:    { name: 'Zelle Payment Authorization & Account Confirmation (EN+ZH)', configKey: 'zelle_auth_template_id',    category: 'zelle_auth',    generator: generateZelleAuthHtmlTemplate },
   zelle_auth_en: { name: 'Zelle Payment Authorization & Account Confirmation (EN)',    configKey: 'zelle_auth_en_template_id', category: 'zelle_auth_en', generator: generateZelleAuthHtmlTemplate_EN },
   zelle_auth_es: { name: 'Zelle Payment Authorization & Account Confirmation (EN+ES)', configKey: 'zelle_auth_es_template_id', category: 'zelle_auth_es', generator: generateZelleAuthHtmlTemplate_ES },
-  third_party_pay: { name: 'Third-Party Payment Authorization (PayPal/Venmo/CashApp)', configKey: 'third_party_pay_template_id', category: 'third_party_pay', generator: generateThirdPartyPayHtmlTemplate },
+  third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方平台收款授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
+  third_party_pay_en: { name: 'Third-Party Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
+  third_party_pay_es: { name: 'Third-Party Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
   cash_receipt: { name: 'Cash Payment Receipt / 现金付款签收', configKey: 'cash_receipt_template_id', category: 'cash_receipt', generator: generateCashReceiptHtmlTemplate },
   contractor_invoice:    { name: '1099 Contractor Invoice (EN+ZH)', configKey: 'contractor_invoice_template_id',    category: 'contractor_invoice',    generator: generateContractorInvoiceHtmlTemplate_ZH },
   contractor_invoice_en: { name: '1099 Contractor Invoice (EN)',    configKey: 'contractor_invoice_en_template_id', category: 'contractor_invoice_en', generator: generateContractorInvoiceHtmlTemplate_EN },
@@ -6225,6 +6263,7 @@ const ONBOARDING_STEPS = [
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
   { key: 'tin_verify',      title: '核对税号',              desc: 'Admin 核对工人税号（SSN/EIN/ITIN）后方可入职',   required: true  },
+  { key: 'payment_method',  title: '付款方式确认',           desc: '确认付款方式并签署相应付款授权文件',               required: false },
   { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
   // Tax document tasks (auto-created by tax residency questionnaire)
   { key: 'tax_doc_w8ben',    title: 'W-8BEN 表格',           desc: '非居民外国个人预扣税声明',                       required: true  },
@@ -6447,8 +6486,8 @@ function verifyW9Address(workerId) {
 }
 
 // Onboarding tasks auto-assigned per employment type (must match frontend W2_TASKS / C1099_TASKS)
-const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'gusto'];
-const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify'];
+const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
+const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
 
 // Check if all assigned onboarding tasks are done; update onboarded flag accordingly
 function syncOnboardedStatus(workerId) {
@@ -7880,6 +7919,103 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
   }
 });
 
+// ── Send payment method authorization form via DocuSeal ──
+app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerEmail = req.body.worker_email || w.email || '';
+    const workerPhone = req.body.worker_phone || w.phone || '';
+    const lang = req.body.lang || 'zh'; // 'zh', 'en', or 'es'
+    const paymentMethod = req.body.payment_method || w.payment_method || 'cash';
+
+    const templateTypeMap = {
+      direct_deposit: 'ach_auth',
+      wire: 'wire_auth',
+      check: 'check_instruction',
+      zelle: 'zelle_auth',
+      third_party: 'third_party_pay',
+      cash: 'cash_receipt'
+    };
+    const pmLabel = { direct_deposit: 'ACH / Direct Deposit', wire: 'Wire Transfer', check: 'Check / 支票', zelle: 'Zelle', third_party: 'PayPal / Venmo / CashApp', cash: '现金签收' }[paymentMethod] || paymentMethod;
+    const templateType = templateTypeMap[paymentMethod] || 'cash_receipt';
+    const templateId = getDsealConfigTemplateId(templateType);
+
+    let submissionId = '', signUrl = '', dsealError = '';
+    if (!dsealEnabled()) {
+      dsealError = 'DocuSeal 未配置';
+    } else if (!templateId) {
+      dsealError = `未配置 ${pmLabel} 授权模板，请在 DocuSeal 配置页面设置对应模板`;
+    } else {
+      try {
+        const submitter = { role: 'First Party', name: workerName, email: workerEmail };
+        if (workerPhone) submitter.phone = formatPhoneE164(workerPhone);
+        const subRes = await dsealApiCall('POST', '/api/submissions', {
+          template_id: parseInt(templateId),
+          send_email: true,
+          send_sms: true,
+          submitters: [submitter]
+        });
+        const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+        if (subRes.status >= 400 || !submitters.length) throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+        const signer = submitters[0];
+        submissionId = String(subRes.data?.id || signer?.submission_id || signer?.id || '');
+        signUrl = signer?.embed_src || '';
+        if (!signUrl && signer?.slug) signUrl = `${dsealPublicHost()}/s/${signer.slug}`;
+        console.log(`[payment-auth send] DocuSeal submission ${submissionId}, method=${paymentMethod}`);
+      } catch (e) {
+        dsealError = e.message;
+        console.error('[payment-auth send] DocuSeal error:', e.message);
+      }
+    }
+
+    const note = submissionId
+      ? `${pmLabel} 授权表单已发送 (${new Date().toLocaleString('zh-CN')})，等待工人签署`
+      : `${pmLabel} 付款方式已确认 (${new Date().toLocaleString('zh-CN')})`;
+    db.prepare(`UPDATE worker_onboarding SET status='pending', visible_to_worker=1, ds_envelope_id=?, ds_status=?, action_url=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method'`)
+      .run(submissionId || null, submissionId ? 'sent' : null, signUrl || '', note, workerId);
+    if (paymentMethod !== w.payment_method) {
+      db.prepare('UPDATE worker_accounts SET payment_method=? WHERE id=?').run(paymentMethod, workerId);
+    }
+    // Send SMS with sign link using selected language (DocuSeal handles email)
+    if (signUrl && workerPhone) {
+      const smsText = lang === 'es'
+        ? `[Prime Anchorpoint] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
+        : lang === 'en'
+        ? `[Prime Anchorpoint] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
+        : `[Prime Anchorpoint] ${workerName}，请签署 ${pmLabel} 付款授权表单 / Please sign your ${pmLabel} authorization: ${signUrl}\nReply STOP to opt out.`;
+      try { await sendSMS(workerPhone, smsText); } catch (e) { console.warn('[payment-auth SMS]', e.message); }
+    }
+    const warnings = dsealError ? [dsealError] : [];
+    res.json({ success: true, signUrl, submissionId, warnings, pmLabel });
+  } catch (e) {
+    console.error('[payment-auth send error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Get payment method authorization signing status from DocuSeal
+app.get('/api/admin/worker-accounts/:id/payment-auth-status', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='payment_method'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '付款授权表单未发送' });
+    if (!dsealEnabled()) return res.json({ status: onb.ds_status });
+    const r = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
+    if (r.status !== 200) throw new Error(`DocuSeal 获取状态失败 ${r.status}`);
+    const status = r.data?.status === 'completed' ? 'completed' : 'sent';
+    db.prepare("UPDATE worker_onboarding SET ds_status=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method'").run(status, workerId);
+    if (status === 'completed') {
+      db.prepare("UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method' AND status!='completed'").run(workerId);
+    }
+    res.json({ status });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Get W-9 signing status from DocuSeal
 app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, res) => {
   try {
@@ -8472,19 +8608,56 @@ app.get('/api/admin/contractor-invoices', requireAdmin, (req, res) => {
   res.json(rows);
 });
 
-app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { status, reject_reason } = req.body;
-  if (!['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
-  const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
-  if (!inv) return res.status(404).json({ error: 'Not found' });
-  const reviewedBy = req.session && req.session.username ? req.session.username : 'admin';
-  db.prepare('UPDATE contractor_invoices SET status=?, reviewed_by=?, reviewed_at=?, reject_reason=? WHERE id=?')
-    .run(status, reviewedBy, new Date().toISOString(), status === 'rejected' ? (reject_reason || '') : '', req.params.id);
-  // Log to worker history
-  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-    .run(inv.worker_account_id, reviewedBy, 'contractor_invoice', inv.status, status,
-      `Invoice ${inv.invoice_number}: $${inv.total_amount} — ${status === 'approved' ? '已批准' : '已拒绝' + (reject_reason ? ': ' + reject_reason : '')}`);
-  res.json({ success: true });
+app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const { status, reject_reason } = req.body;
+    if (!['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Not found' });
+    const reviewedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('UPDATE contractor_invoices SET status=?, reviewed_by=?, reviewed_at=?, reject_reason=? WHERE id=?')
+      .run(status, reviewedBy, new Date().toISOString(), status === 'rejected' ? (reject_reason || '') : '', req.params.id);
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(inv.worker_account_id, reviewedBy, 'contractor_invoice', inv.status, status,
+        `Invoice ${inv.invoice_number}: $${inv.total_amount} — ${status === 'approved' ? '已批准' : '已拒绝' + (reject_reason ? ': ' + reject_reason : '')}`);
+    // Send email + SMS to worker on rejection
+    if (status === 'rejected') {
+      const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(inv.worker_account_id);
+      if (w) {
+        const workerName = w.name || w.username || '';
+        const reasonText = reject_reason ? reject_reason.trim() : '（未注明原因）';
+        const invNum = inv.invoice_number || '';
+        const amt = inv.total_amount ? `$${(+inv.total_amount).toFixed(2)}` : '';
+        if (w.email) {
+          const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+            <h2 style="color:#dc2626">Invoice 已被拒绝 / Invoice Rejected</h2>
+            <p>您好 ${workerName}，</p>
+            <p>您提交的以下 Invoice 已被管理员拒绝：</p>
+            <table style="border-collapse:collapse;width:100%;margin:1rem 0">
+              <tr><td style="padding:.4rem .8rem;font-weight:600;background:#f9fafb;border:1px solid #e5e7eb">Invoice #</td><td style="padding:.4rem .8rem;border:1px solid #e5e7eb;font-family:monospace">${invNum}</td></tr>
+              ${amt ? `<tr><td style="padding:.4rem .8rem;font-weight:600;background:#f9fafb;border:1px solid #e5e7eb">金额</td><td style="padding:.4rem .8rem;border:1px solid #e5e7eb">${amt}</td></tr>` : ''}
+              <tr><td style="padding:.4rem .8rem;font-weight:600;background:#f9fafb;border:1px solid #e5e7eb">拒绝原因</td><td style="padding:.4rem .8rem;border:1px solid #e5e7eb;color:#dc2626">${reasonText}</td></tr>
+            </table>
+            <p>如有疑问请联系 HR。</p>
+            <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+            <h3 style="color:#dc2626;font-size:.95rem">Invoice Rejected</h3>
+            <p style="color:#555;font-size:.9rem">Hi ${workerName}, your invoice <strong>${invNum}</strong> has been rejected.</p>
+            <p style="color:#555;font-size:.9rem"><strong>Reason:</strong> ${reasonText}</p>
+            <p style="color:#555;font-size:.9rem">Please contact HR if you have questions.</p>
+            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+          </div>`;
+          await sendEmail(w.email, `[Prime Anchorpoint] Invoice ${invNum} 已被拒绝 / Rejected`, `您好 ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}`, html);
+        }
+        if (w.phone) {
+          await sendSMS(w.phone, `[Prime Anchorpoint] ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}\nReply STOP to opt out.`);
+        }
+      }
+    }
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[invoice review error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
@@ -15770,7 +15943,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','cash_receipt_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id'];
   const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
   const out = { connected: dsealEnabled(), url: _publicUrl };
@@ -15804,7 +15977,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','cash_receipt_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id',
     'invoice_approval_en_template_id','invoice_approval_es_template_id',
     'contract_template_id' /* legacy */,
@@ -15918,7 +16091,7 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
         'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
         'i9_template_id','w7_template_id',
         'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
-        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','cash_receipt_template_id',
+        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id',
         'contractor_invoice_template_id','invoice_approval_template_id',
         'invoice_approval_en_template_id','invoice_approval_es_template_id'
       ];
