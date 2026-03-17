@@ -4319,11 +4319,11 @@ function _buildZelleAuthForm(lang) {
   };
 
   // Title
-  const formTitle = zh ? 'ZELLE PAYMENT AUTHORIZATION & ACCOUNT CONFIRMATION'
-    : es ? 'ZELLE PAYMENT AUTHORIZATION & ACCOUNT CONFIRMATION' : 'ZELLE PAYMENT AUTHORIZATION & ACCOUNT CONFIRMATION';
-  const subtitle = zh ? `Zelle 收款授权及账户确认表 — ${companyName}`
+  const formTitle = 'ZELLE PAYMENT AUTHORIZATION AND ACCOUNT CONFIRMATION';
+  const subtitle = zh
+    ? `Zelle 付款授权与账户确认 — ${companyName}`
     : es ? `Autorización de Pago y Confirmación de Cuenta Zelle — ${companyName}`
-    : `Zelle Payment Authorization & Account Confirmation — ${companyName}`;
+    : `Zelle Payment Authorization and Account Confirmation — ${companyName}`;
 
   // Intro paragraph — company as payer, not individual
   const intro = zh
@@ -4335,10 +4335,10 @@ function _buildZelleAuthForm(lang) {
   // Section 1 — Payee Info
   const s1 = L('1. PAYEE INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
   const lName = L('Full Legal Name', '法定全名', 'Nombre Legal Completo');
-  const lAccount = L('Zelle Registered Email or Phone', 'Zelle 注册邮箱或手机号', 'Correo Electrónico o Teléfono Registrado en Zelle');
+  const lAccount = L('Zelle Registered Email Address or Mobile Number', 'Zelle 注册邮箱地址或手机号', 'Correo Electrónico o Número de Teléfono Móvil Registrado en Zelle');
 
-  // Section 2 — Account Certification (NEW — key protection clause)
-  const s2 = L('2. ACCOUNT CERTIFICATION', '账户确认声明', 'CERTIFICACIÓN DE CUENTA');
+  // Section 2 — Account Certification
+  const s2 = L('2. ACCOUNT INFORMATION CONFIRMATION AND CERTIFICATION', '账户信息确认声明', 'CONFIRMACIÓN Y CERTIFICACIÓN DE INFORMACIÓN DE CUENTA');
   const certText = zh
     ? `I certify that the Zelle email address or phone number provided below is accurate, is registered to my active Zelle account, and that I am the owner of, or authorized to receive payments through, that account.\n\n本人确认以下提供的 Zelle 邮箱地址或手机号真实准确，已绑定并注册至本人有效的 Zelle 账户，且本人系该账户持有人或有权通过该账户收款。`
     : es
@@ -4384,7 +4384,7 @@ function _buildZelleAuthForm(lang) {
 
   // Signature labels
   const sigHeader = L('PAYEE SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
-  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en Letra de Imprenta');
+  const lPrintedName = L('Printed Name (same as Full Legal Name above)', '正楷姓名（与上方法定全名一致）', 'Nombre en Letra de Imprenta (igual al nombre legal completo indicado arriba)');
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
 
@@ -4399,8 +4399,9 @@ function _buildZelleAuthForm(lang) {
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
-    <td style="${c}width:50%"><b>${lName}</b><br><text-field name="zelle_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>${lAccount}</b><br><text-field name="zelle_account" role="First Party" required="true" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field></td>
+    <td style="${c}width:50%"><b>${lName}</b><br><text-field name="payee_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>${lAccount}</b><br><text-field name="zelle_contact" role="First Party" required="true" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field>
+    <div style="font-size:7pt;color:#c00;margin-top:3px">${L('Please verify this information is correct before signing. Payments sent to the information provided will be treated as valid payment.','请在签署前确认所填信息准确无误。按该信息付款后，通常将视为已有效完成付款。','Verifique que esta información sea correcta antes de firmar. Los pagos enviados a la información indicada se considerarán como pago válido.')}</div></td>
   </tr>
 </table>
 
@@ -4416,11 +4417,11 @@ function _buildZelleAuthForm(lang) {
   <b>${sigHeader}</b>
   <table style="width:100%;margin-top:6px">
     <tr>
-      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="zelle_printed_name" role="First Party" required="true" style="${w}"></text-field></td>
+      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${w}"></text-field></td>
     </tr>
     <tr>
-      <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="zelle_sig" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:40%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate}:</div><date-field name="zelle_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="payee_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
@@ -4686,9 +4687,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   check_instruction:    { name: 'Check Payment Mailing Instruction (ZH+EN) / 支票付款及邮寄地址确认表', configKey: 'check_instruction_template_id',    category: 'check_instruction',    generator: generateCheckInstructionHtmlTemplate },
   check_instruction_en: { name: 'Check Payment Mailing Instruction (EN)',                                  configKey: 'check_instruction_en_template_id', category: 'check_instruction_en', generator: generateCheckInstructionHtmlTemplate_EN },
   check_instruction_es: { name: 'Check Payment Mailing Instruction (EN+ES)',                               configKey: 'check_instruction_es_template_id', category: 'check_instruction_es', generator: generateCheckInstructionHtmlTemplate_ES },
-  zelle_auth:    { name: 'Zelle Payment Authorization & Account Confirmation (EN+ZH)', configKey: 'zelle_auth_template_id',    category: 'zelle_auth',    generator: generateZelleAuthHtmlTemplate },
-  zelle_auth_en: { name: 'Zelle Payment Authorization & Account Confirmation (EN)',    configKey: 'zelle_auth_en_template_id', category: 'zelle_auth_en', generator: generateZelleAuthHtmlTemplate_EN },
-  zelle_auth_es: { name: 'Zelle Payment Authorization & Account Confirmation (EN+ES)', configKey: 'zelle_auth_es_template_id', category: 'zelle_auth_es', generator: generateZelleAuthHtmlTemplate_ES },
+  zelle_auth:    { name: 'Zelle Payment Authorization and Account Confirmation (ZH+EN)', configKey: 'zelle_auth_template_id',    category: 'zelle_auth',    generator: generateZelleAuthHtmlTemplate },
+  zelle_auth_en: { name: 'Zelle Payment Authorization and Account Confirmation (EN)',   configKey: 'zelle_auth_en_template_id', category: 'zelle_auth_en', generator: generateZelleAuthHtmlTemplate_EN },
+  zelle_auth_es: { name: 'Zelle Payment Authorization and Account Confirmation (EN+ES)', configKey: 'zelle_auth_es_template_id', category: 'zelle_auth_es', generator: generateZelleAuthHtmlTemplate_ES },
   third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方收款账户授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
   third_party_pay_en: { name: 'Third-Party Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
   third_party_pay_es: { name: 'Third-Party Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
