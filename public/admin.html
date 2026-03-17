@@ -21218,12 +21218,18 @@ function _dsRenderMyTemplates() {
       return ls ? `<span style="display:inline-block;background:${ls.bg};color:${ls.color};border-radius:4px;padding:1px 6px;font-size:.72rem;font-weight:700;margin-left:.3rem;border:1px solid ${ls.color}22">${ls.label}</span>` : '';
     }).filter(Boolean).join('');
     const langSubtitle = tLangs.length ? ` · 语言: ${tLangs.join('+')}` : '';
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
+    const isConfirmed = !!t.confirmed;
+    const confirmBtnStyle = isConfirmed
+      ? 'padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #86efac;background:#f0fdf4;color:#16a34a;white-space:nowrap'
+      : 'padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#6b7280;white-space:nowrap';
+    const confirmBadge = isConfirmed ? ' <span style="display:inline-block;background:#dcfce7;color:#16a34a;border-radius:4px;padding:1px 6px;font-size:.72rem;font-weight:700;margin-left:.3rem;border:1px solid #86efac">✓ 已确定</span>' : '';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9${isConfirmed ? ';background:#fafffe' : ''}">
       <div>
-        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}${langBadges}
+        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}${langBadges}${confirmBadge}
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${(_CAT_BADGE[t.category]||{}).label||t.category||'未分类'}${langSubtitle} · 上传于 ${t.created_at ? (()=>{const d=new Date(t.created_at.replace(' ','T')+'Z');return d.toLocaleString('zh-CN',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-')+' CDT';})() : '—'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+        <button style="${confirmBtnStyle}" onclick="dsToggleConfirm(${t.id})">${isConfirmed ? '✓ 已确定' : '待确定'}</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;white-space:nowrap" onclick="dsChangeLanguageModal(${t.id})">改语言</button>
@@ -21233,6 +21239,15 @@ function _dsRenderMyTemplates() {
     </div>`;
   }).join('');
   wrap.innerHTML = rows;
+}
+
+async function dsToggleConfirm(id) {
+  try {
+    await api(`/admin/docuseal/my-templates/${id}/confirm`, { method: 'PUT' });
+    await _dsLoadMyTemplates();
+  } catch(e) {
+    showToast('操作失败: ' + e.message, 'error');
+  }
 }
 
 async function dsForceRegenTemplates() {

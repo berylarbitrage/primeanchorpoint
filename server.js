@@ -1567,6 +1567,11 @@ try {
   db.exec("ALTER TABLE docuseal_templates ADD COLUMN languages TEXT DEFAULT ''");
 } catch(e) { /* column already exists */ }
 
+// Migrate: add confirmed column if missing
+try {
+  db.exec("ALTER TABLE docuseal_templates ADD COLUMN confirmed INTEGER DEFAULT 0");
+} catch(e) { /* column already exists */ }
+
 // Migrate: update broad categories (tax, contract, payment, invoice) to specific doc_types
 try {
   const _dsRow2 = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
@@ -16734,6 +16739,15 @@ app.put('/api/admin/docuseal/my-templates/:id/category', requireAdmin, (req, res
   if (!local) return res.status(404).json({ error: '模板不存在' });
   db.prepare('UPDATE docuseal_templates SET category=? WHERE id=?').run(category.trim(), req.params.id);
   res.json({ success: true, category: category.trim() });
+});
+
+// PUT /api/admin/docuseal/my-templates/:id/confirm — toggle confirmed status
+app.put('/api/admin/docuseal/my-templates/:id/confirm', requireAdmin, (req, res) => {
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  const newVal = local.confirmed ? 0 : 1;
+  db.prepare('UPDATE docuseal_templates SET confirmed=? WHERE id=?').run(newVal, req.params.id);
+  res.json({ success: true, confirmed: newVal });
 });
 
 // PUT /api/admin/docuseal/my-templates/:id/languages — update languages of a template in local DB
