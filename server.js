@@ -3696,39 +3696,47 @@ function _buildThirdPartyPayForm(lang) {
   const lContact    = L('Associated Email or Phone', '关联邮箱或手机', 'Email o Teléfono Asociado');
   const lOther      = L('Other', '其他', 'Otro');
   const lOtherName  = L('Platform name', '平台名称', 'Nombre de plataforma');
-  const lReference  = L('Reference / Invoice # (optional)', '参考号 / 发票号（可选）', 'Referencia / N.º de Factura (opcional)');
+  const lReference  = zh ? 'Reference / Payment Note (optional) 参考编号 / 付款备注（可选）' : es ? 'Reference / Payment Note (optional) / Referencia / Nota de Pago (opcional)' : 'Reference / Payment Note (optional)';
 
   const s3 = zh ? '3. ACKNOWLEDGMENT 确认事项' : es ? '3. ACKNOWLEDGMENT / DECLARACIÓN Y ACUERDO' : '3. ACKNOWLEDGMENT';
 
-  const ack1en = `<b>I certify that the account information provided above is accurate and that the account is owned by me or under my control.</b>`;
-  const ack1   = zh ? `${ack1en} &nbsp;<span style="color:#555">本人证明上述账户信息真实准确，且该账户归本人所有或由本人控制。</span>`
-    : es ? `${ack1en} &nbsp;<span style="color:#555">Certifico que la información de cuenta proporcionada es precisa y que la cuenta es de mi propiedad o está bajo mi control.</span>`
-    : ack1en;
+  const _ack = (en, zhTxt, esTxt) => {
+    const enLine = `<b>${en}</b>`;
+    if (zh && zhTxt) return `${enLine}<br><span style="font-size:7.5pt;color:#555;font-weight:400">${zhTxt}</span>`;
+    if (es && esTxt) return `${enLine}<br><span style="font-size:7.5pt;color:#555;font-weight:400">${esTxt}</span>`;
+    return enLine;
+  };
 
-  const ack2en = `<b>Payment sent to the account information provided by me will be deemed valid payment to me. ${companyName}'s payment obligation for that payment will be satisfied unless I provided updated account information in writing before the payment was sent.</b>`;
-  const ack2   = zh ? `${ack2en} &nbsp;<span style="color:#555">${companyName} 按本人提供的账户信息发送付款后，视为已向本人完成有效付款；除非本人已在付款发送前以书面形式通知 ${companyName} 更新后的账户信息，否则 ${companyName} 就该笔款项的付款义务即告履行完毕。</span>`
-    : es ? `${ack2en} &nbsp;<span style="color:#555">El pago enviado a la información de cuenta proporcionada se considerará pago válido. La obligación de pago de ${companyName} quedará satisfecha salvo que se haya notificado por escrito un cambio de cuenta antes del envío.</span>`
-    : ack2en;
-
-  const ack3en = `I agree to notify ${companyName} in writing before any change to my payment platform or account details.`;
-  const ack3   = zh ? `${ack3en} &nbsp;<span style="color:#555">如收款平台或账户信息发生变化，本人同意在变更生效前以书面形式通知 ${companyName}。</span>`
-    : es ? `${ack3en} &nbsp;<span style="color:#555">Acepto notificar por escrito a ${companyName} antes de cualquier cambio en mi plataforma de pago o datos de cuenta.</span>`
-    : ack3en;
-
-  const ack4en = `${companyName} is not responsible for delays, holds, service interruptions, or fees imposed by the selected third-party platform after payment is sent successfully.`;
-  const ack4   = zh ? `${ack4en} &nbsp;<span style="color:#555">付款成功发送后，如第三方平台产生延迟、冻结、中断或手续费，由该平台规则处理，${companyName} 不承担相应责任。</span>`
-    : es ? `${ack4en} &nbsp;<span style="color:#555">${companyName} no es responsable de demoras, retenciones, interrupciones de servicio o cargos impuestos por la plataforma de terceros seleccionada una vez que el pago haya sido enviado exitosamente.</span>`
-    : ack4en;
-
-  const ack5en = `I understand that transaction fees charged by the platform are my responsibility.`;
-  const ack5   = zh ? `${ack5en} &nbsp;<span style="color:#555">本人理解平台可能收取手续费，由本人承担。</span>`
-    : es ? `${ack5en} &nbsp;<span style="color:#555">Entiendo que las comisiones por transacción cobradas por la plataforma son mi responsabilidad.</span>`
-    : ack5en;
-
-  const ack6en = `This authorization is for payment method purposes only and does not alter any tax reporting obligations or the underlying work relationship between the parties.`;
-  const ack6   = zh ? `${ack6en} &nbsp;<span style="color:#555">本授权仅用于确认付款方式，不改变任何税务申报义务或双方基础合作关系。</span>`
-    : es ? `${ack6en} &nbsp;<span style="color:#555">Esta autorización es únicamente para fines del método de pago y no altera ninguna obligación de declaración fiscal ni la relación laboral subyacente entre las partes.</span>`
-    : ack6en;
+  const ack1 = _ack(
+    'I certify that the account information provided above is accurate and that the account is owned by me or under my control.',
+    '本人证明上述账户信息真实准确，且该账户归本人所有或由本人控制。',
+    'Certifico que la información de cuenta es precisa y que la cuenta es de mi propiedad o está bajo mi control.'
+  );
+  const ack2 = _ack(
+    `Payment sent to the account information provided by me will be treated as payment made to me, and ${companyName}'s payment obligation will be satisfied unless I provided updated account information in writing before the payment was sent.`,
+    `${companyName} 按本人提供的账户信息发送付款后，视为已向本人完成有效付款；除非本人在付款发送前已以书面形式通知 ${companyName} 更新后的账户信息，否则 ${companyName} 就该笔款项的付款义务即告履行完毕。`,
+    `El pago enviado a la información de cuenta proporcionada se considerará pago válido. La obligación de pago de ${companyName} quedará satisfecha salvo notificación escrita previa al envío.`
+  );
+  const ack3 = _ack(
+    `I agree to notify ${companyName} in writing before any change to my payment platform or account details.`,
+    `如收款平台或账户信息发生变化，本人同意在变更生效前以书面形式通知 ${companyName}。`,
+    `Acepto notificar por escrito a ${companyName} antes de cualquier cambio en mi plataforma de pago o datos de cuenta.`
+  );
+  const ack4 = _ack(
+    `${companyName} is not responsible for delays, holds, service interruptions, or fees imposed by the selected third-party platform after payment is sent successfully.`,
+    `付款成功发送后，如第三方平台产生延迟、冻结、中断或手续费，${companyName} 不承担相应责任。`,
+    `${companyName} no es responsable de demoras, retenciones, interrupciones o cargos impuestos por la plataforma de terceros una vez enviado el pago.`
+  );
+  const ack5 = _ack(
+    'I understand that transaction fees charged by the platform are my responsibility.',
+    '本人理解平台可能收取手续费，由本人自行承担。',
+    'Entiendo que las comisiones por transacción cobradas por la plataforma son mi responsabilidad.'
+  );
+  const ack6 = _ack(
+    'This authorization is for payment method purposes only and does not alter any tax reporting obligations or the underlying work relationship between the parties.',
+    '本授权仅用于确认付款方式，不改变任何税务申报义务或双方基础合作关系。',
+    'Esta autorización es únicamente para fines del método de pago y no altera obligaciones fiscales ni la relación laboral entre las partes.'
+  );
 
   const sigHeader    = zh ? 'PAYEE AUTHORIZATION AND SIGNATURE 收款人确认与签名' : es ? 'PAYEE AUTHORIZATION AND SIGNATURE / FIRMA Y AUTORIZACIÓN DEL BENEFICIARIO' : 'PAYEE AUTHORIZATION AND SIGNATURE';
   const lPrintedName = L('Printed Name', '姓名（正楷）', 'Nombre en Letra de Imprenta');
@@ -3791,13 +3799,13 @@ function _buildThirdPartyPayForm(lang) {
 </table>
 
 <div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
-<div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.8;background:#fafafa;margin-bottom:8px">
-  <div>☑ ${ack1}</div>
-  <div>☑ ${ack2}</div>
-  <div>☑ ${ack3}</div>
-  <div>☑ ${ack4}</div>
-  <div>☑ ${ack5}</div>
-  <div>☑ ${ack6}</div>
+<div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.5;background:#fafafa;margin-bottom:8px">
+  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack1}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack2}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack3}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack4}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack5}</span></div>
+  <div style="display:flex;gap:5px"><span>☑</span><span>${ack6}</span></div>
 </div>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:7px 8px;font-size:8.5pt">
