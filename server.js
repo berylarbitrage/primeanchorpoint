@@ -4448,8 +4448,8 @@ function generateCashReceiptHtmlTemplate() {
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services or payment reference described below.<br>
-  <span style="color:#555">本收据确认下述签署收款人已收到 <b>${companyName}</b> 支付的现金款项，对应以下所述服务或付款参考事项。</span>
+  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services, invoice, job, or other payment reference described below.<br>
+  <span style="color:#555">本收据确认，下述签署收款人已收到 <b>${companyName}</b> 支付的现金款项，对应下列服务、发票、工作编号或其他付款参考信息。</span>
 </div>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款详情</span></div>
@@ -4459,30 +4459,40 @@ function generateCashReceiptHtmlTemplate() {
     <td style="${c}width:50%"><b>Payment Date &nbsp;<span style="font-weight:400;color:#555">付款日期</span></b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
   </tr>
   <tr>
-    <td style="${c}"><b>Amount Received &nbsp;<span style="font-weight:400;color:#555">收到金额</span></b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
+    <td style="${c}"><b>Amount Received (USD) &nbsp;<span style="font-weight:400;color:#555">收到金额（美元）</span></b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
     <td style="${c}"><b>Amount in Words &nbsp;<span style="font-weight:400;color:#555">大写金额</span></b> <span style="font-size:7.5pt;color:#999">(optional 可选)</span><br><text-field name="cash_amount_words" role="First Party" style="${w}" placeholder="e.g., Five Hundred Dollars"></text-field></td>
   </tr>
   <tr>
-    <td colspan="2" style="${c}">
+    <td style="${c}width:50%">
+      <b>Payment Method &nbsp;<span style="font-weight:400;color:#555">付款方式</span></b><br>
+      <div style="margin-top:3px;font-weight:700">Cash / 现金</div>
+    </td>
+    <td style="${c}width:50%">
       <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">付款性质</span></b><br>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:24px;margin-top:4px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment / 全额付款</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-top:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / 部分付款</label>
-      <div style="margin-top:4px"><span style="color:#555">Remaining Balance / 剩余金额:</span> $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field></div>
+      <div style="margin-top:3px">
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><radio-button-field name="payment_type" value="full" role="First Party" style="width:13px;height:13px"></radio-button-field> Full Payment / 全额付款</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_type" value="partial" role="First Party" style="width:13px;height:13px"></radio-button-field> Partial Payment / 部分付款</label>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="${c}"><b>Remaining Balance (if Partial Payment) &nbsp;<span style="font-weight:400;color:#555">剩余金额（仅部分付款时填写）</span></b><br>
+      <div style="margin-top:3px">$ <text-field name="cash_remaining" role="First Party" style="${f}width:180px" placeholder="0.00"></text-field></div>
     </td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款用途</span></div>
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款用途说明</span></div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr><td style="${c}"><b>Services / Description &nbsp;<span style="font-weight:400;color:#555">服务说明</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
+  <tr><td style="${c}"><b>Description of Services or Payment Purpose &nbsp;<span style="font-weight:400;color:#555">服务或付款用途说明</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
   <tr>
-    <td style="${c}width:50%"><b>Service Period &nbsp;<span style="font-weight:400;color:#555">服务期间</span></b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
-    <td style="${c}width:50%"><b>Invoice # / Job # / Payment Ref &nbsp;<span style="font-weight:400;color:#555">发票 / 工作编号</span></b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
+    <td style="${c}width:50%"><b>Service Period (if applicable) &nbsp;<span style="font-weight:400;color:#555">服务期间（如适用）</span></b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
+    <td style="${c}width:50%"><b>Invoice / Job / Payment Reference &nbsp;<span style="font-weight:400;color:#555">发票号 / 工作编号 / 付款参考号</span></b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
   </tr>
 </table>
 
 <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
-  <b>NOTICE 注意:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is intended for record-keeping and tax documentation purposes only. 双方应在下方签署以确认本收据所列现金付款。本收据仅用于留档及税务记录用途。
+  <b>NOTICE 注意:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is for record-keeping and tax documentation purposes only. 双方应在下方签字确认本收据所载现金付款事项。本收据仅用于留档及税务记录。
 </div>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
@@ -4509,7 +4519,7 @@ function generateCashReceiptHtmlTemplate() {
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收表 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质。</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 14:10 CDT</div>
 </div>`;
 }
 
@@ -4526,7 +4536,7 @@ function generateCashReceiptEnHtmlTemplate() {
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services or payment reference described below.
+  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services, invoice, job, or other payment reference described below.
 </div>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details</div>
@@ -4536,30 +4546,40 @@ function generateCashReceiptEnHtmlTemplate() {
     <td style="${c}width:50%"><b>Payment Date</b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
   </tr>
   <tr>
-    <td style="${c}"><b>Amount Received</b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
+    <td style="${c}"><b>Amount Received (USD)</b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
     <td style="${c}"><b>Amount in Words</b> <span style="font-size:7.5pt;color:#999">(optional)</span><br><text-field name="cash_amount_words" role="First Party" style="${w}" placeholder="e.g., Five Hundred Dollars"></text-field></td>
   </tr>
   <tr>
-    <td colspan="2" style="${c}">
+    <td style="${c}width:50%">
+      <b>Payment Method</b><br>
+      <div style="margin-top:3px;font-weight:700">Cash</div>
+    </td>
+    <td style="${c}width:50%">
       <b>Payment Type</b><br>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:24px;margin-top:4px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-top:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment</label>
-      <div style="margin-top:4px">Remaining Balance: $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field></div>
+      <div style="margin-top:3px">
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><radio-button-field name="payment_type" value="full" role="First Party" style="width:13px;height:13px"></radio-button-field> Full Payment</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_type" value="partial" role="First Party" style="width:13px;height:13px"></radio-button-field> Partial Payment</label>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="${c}"><b>Remaining Balance (if Partial Payment)</b><br>
+      <div style="margin-top:3px">$ <text-field name="cash_remaining" role="First Party" style="${f}width:180px" placeholder="0.00"></text-field></div>
     </td>
   </tr>
 </table>
 
 <div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr><td style="${c}"><b>Services / Description</b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
+  <tr><td style="${c}"><b>Description of Services or Payment Purpose</b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
   <tr>
-    <td style="${c}width:50%"><b>Service Period</b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
-    <td style="${c}width:50%"><b>Invoice # / Job # / Payment Reference</b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
+    <td style="${c}width:50%"><b>Service Period (if applicable)</b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
+    <td style="${c}width:50%"><b>Invoice / Job / Payment Reference</b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
   </tr>
 </table>
 
 <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
-  <b>NOTICE:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is intended for record-keeping and tax documentation purposes only.
+  <b>NOTICE:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is for record-keeping and tax documentation purposes only.
 </div>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
@@ -4586,7 +4606,7 @@ function generateCashReceiptEnHtmlTemplate() {
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status.</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 14:10 CDT</div>
 </div>`;
 }
 
@@ -4603,8 +4623,8 @@ function generateCashReceiptEsHtmlTemplate() {
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services or payment reference described below.<br>
-  <span style="color:#555">Este recibo confirma que el destinatario firmante ha recibido un pago en efectivo de <b>${companyName}</b> por los servicios o referencia de pago descritos a continuación.</span>
+  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services, invoice, job, or other payment reference described below.<br>
+  <span style="color:#555">Este recibo confirma que el destinatario firmante ha recibido un pago en efectivo de <b>${companyName}</b> por los servicios, factura, trabajo u otra referencia de pago descritos a continuación.</span>
 </div>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Detalles del Pago</span></div>
@@ -4614,30 +4634,40 @@ function generateCashReceiptEsHtmlTemplate() {
     <td style="${c}width:50%"><b>Payment Date &nbsp;<span style="font-weight:400;color:#555">Fecha de Pago</span></b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
   </tr>
   <tr>
-    <td style="${c}"><b>Amount Received &nbsp;<span style="font-weight:400;color:#555">Monto Recibido</span></b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
+    <td style="${c}"><b>Amount Received (USD) &nbsp;<span style="font-weight:400;color:#555">Monto Recibido (USD)</span></b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
     <td style="${c}"><b>Amount in Words &nbsp;<span style="font-weight:400;color:#555">Monto en Letras</span></b> <span style="font-size:7.5pt;color:#999">(optional / opcional)</span><br><text-field name="cash_amount_words" role="First Party" style="${w}" placeholder="e.g., Five Hundred Dollars"></text-field></td>
   </tr>
   <tr>
-    <td colspan="2" style="${c}">
+    <td style="${c}width:50%">
+      <b>Payment Method &nbsp;<span style="font-weight:400;color:#555">Método de Pago</span></b><br>
+      <div style="margin-top:3px;font-weight:700">Cash / Efectivo</div>
+    </td>
+    <td style="${c}width:50%">
       <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">Tipo de Pago</span></b><br>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:24px;margin-top:4px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment / Pago Total</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-top:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / Pago Parcial</label>
-      <div style="margin-top:4px"><span style="color:#555">Remaining Balance / Saldo Pendiente:</span> $ <text-field name="cash_remaining" role="First Party" style="${f}width:120px" placeholder="0.00 (if partial)"></text-field></div>
+      <div style="margin-top:3px">
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><radio-button-field name="payment_type" value="full" role="First Party" style="width:13px;height:13px"></radio-button-field> Full Payment / Pago Total</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_type" value="partial" role="First Party" style="width:13px;height:13px"></radio-button-field> Partial Payment / Pago Parcial</label>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="${c}"><b>Remaining Balance (if Partial Payment) &nbsp;<span style="font-weight:400;color:#555">Saldo Pendiente (solo si Pago Parcial)</span></b><br>
+      <div style="margin-top:3px">$ <text-field name="cash_remaining" role="First Party" style="${f}width:180px" placeholder="0.00"></text-field></div>
     </td>
   </tr>
 </table>
 
 <div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Propósito / Descripción</span></div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr><td style="${c}"><b>Services / Description &nbsp;<span style="font-weight:400;color:#555">Servicios / Descripción</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
+  <tr><td style="${c}"><b>Description of Services or Payment Purpose &nbsp;<span style="font-weight:400;color:#555">Descripción de Servicios o Propósito del Pago</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
   <tr>
-    <td style="${c}width:50%"><b>Service Period &nbsp;<span style="font-weight:400;color:#555">Período de Servicio</span></b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
-    <td style="${c}width:50%"><b>Invoice # / Job # / Payment Ref &nbsp;<span style="font-weight:400;color:#555">Factura / Trabajo</span></b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
+    <td style="${c}width:50%"><b>Service Period (if applicable) &nbsp;<span style="font-weight:400;color:#555">Período de Servicio (si aplica)</span></b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
+    <td style="${c}width:50%"><b>Invoice / Job / Payment Reference &nbsp;<span style="font-weight:400;color:#555">Factura / Trabajo / Referencia de Pago</span></b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
   </tr>
 </table>
 
 <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
-  <b>NOTICE / AVISO:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is intended for record-keeping and tax documentation purposes only. Ambas partes deben firmar para confirmar el pago en efectivo descrito en este recibo. Este recibo es solo para fines de registro y documentación fiscal.
+  <b>NOTICE / AVISO:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is for record-keeping and tax documentation purposes only. Ambas partes deben firmar para confirmar el pago en efectivo descrito en este recibo. Este recibo es solo para fines de registro y documentación fiscal.
 </div>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
@@ -4664,7 +4694,7 @@ function generateCashReceiptEsHtmlTemplate() {
   </tr></table>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / Recibo de Pago en Efectivo — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. Este recibo solo reconoce el pago y no altera ninguna obligación fiscal ni el estado de contratista independiente.</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 14:10 CDT</div>
 </div>`;
 }
 
