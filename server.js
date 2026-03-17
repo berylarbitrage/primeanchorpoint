@@ -15207,7 +15207,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
 
     // Normalize event type: cloud uses form.*, self-hosted uses submission.*/submitter.*
     const isCompleted = eventType === 'submission.completed' || eventType === 'form.completed';
-    const isSubmitterCompleted = eventType === 'submitter.completed' || eventType === 'form.started';
+    const isSubmitterCompleted = eventType === 'submitter.completed';
     const isDeclined = eventType === 'submitter.declined' || eventType === 'form.declined';
     const isCreated = eventType === 'submission.created';
 
