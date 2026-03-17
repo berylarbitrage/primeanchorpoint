@@ -16715,7 +16715,7 @@ app.post('/api/admin/docuseal/create-html-template', requireAdmin, async (req, r
 // POST /api/admin/docuseal/create-all-templates — create all templates at once
 app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-  const { types } = req.body; // optional: array of types to create; if empty, create all
+  const { types, force } = req.body; // optional: array of types to create; if empty, create all; force=true to regenerate existing
   const targetTypes = (types && types.length) ? types : Object.keys(DOCUSEAL_AUTO_TEMPLATES);
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
@@ -16723,8 +16723,8 @@ app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, r
   for (const type of targetTypes) {
     const tmplDef = DOCUSEAL_AUTO_TEMPLATES[type];
     if (!tmplDef) { results.push({ type, error: 'Unknown type' }); continue; }
-    // Skip if already configured
-    if (cfg[tmplDef.configKey]) { results.push({ type, skipped: true, template_id: cfg[tmplDef.configKey] }); continue; }
+    // Skip if already configured (unless force=true)
+    if (!force && cfg[tmplDef.configKey]) { results.push({ type, skipped: true, template_id: cfg[tmplDef.configKey] }); continue; }
     try {
       const html = tmplDef.generator();
       const r = await dsealApiCall('POST', '/api/templates/html', {
@@ -16741,6 +16741,10 @@ app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, r
     } catch (e) {
       results.push({ type, error: e.message });
     }
+  }
+  // If forced regeneration, reset the company-name regen key so startup regen also re-runs next time
+  if (force) {
+    delete cfg._company_name_regen_key;
   }
   // Save updated config
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
