@@ -18442,15 +18442,15 @@ async function openContractorInvoicesModal() {
 async function reviewContractorInvoice(id, status) {
   let reject_reason = '';
   if (status === 'rejected') {
-    reject_reason = prompt('请输入拒绝原因 / Rejection reason:');
+    reject_reason = await adminPrompt('请输入拒绝原因（将通过邮件和短信通知承包商）\nRejection reason (will be sent to contractor via email & SMS):', '拒绝 Invoice');
     if (reject_reason === null) return;
+    if (!reject_reason.trim()) { showToast('请填写拒绝原因', 'error'); return; }
   }
-  if (!await showConfirm(`确认${status==='approved'?'批准':'拒绝'}该 Invoice？`)) return;
+  if (!await adminConfirm(`确认${status==='approved'?'批准':'拒绝'}该 Invoice？${status==='rejected' && reject_reason ? '\n\n原因：'+reject_reason : ''}`, status==='approved'?'批准确认':'拒绝确认', status==='approved'?'✅ 确认批准':'❌ 确认拒绝', '取消', status==='rejected'?'btn-red':'')) return;
   const r = await api(`/admin/contractor-invoices/${id}`, { method:'PUT', body:JSON.stringify({ status, reject_reason }) });
   if (r && r.success) {
-    showToast(status === 'approved' ? '✅ Invoice 已批准' : '❌ Invoice 已拒绝');
+    showToast(status === 'approved' ? '✅ Invoice 已批准' : '❌ Invoice 已拒绝，已通知承包商');
     openContractorInvoicesModal();
-    // Also refresh the tab view if it's visible
     if (document.getElementById('tab-ts-emp-invoice')?.style.display !== 'none') loadEmpInvoiceTab();
   }
 }

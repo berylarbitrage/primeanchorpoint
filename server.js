@@ -8501,19 +8501,56 @@ app.get('/api/admin/contractor-invoices', requireAdmin, (req, res) => {
   res.json(rows);
 });
 
-app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { status, reject_reason } = req.body;
-  if (!['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
-  const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
-  if (!inv) return res.status(404).json({ error: 'Not found' });
-  const reviewedBy = req.session && req.session.username ? req.session.username : 'admin';
-  db.prepare('UPDATE contractor_invoices SET status=?, reviewed_by=?, reviewed_at=?, reject_reason=? WHERE id=?')
-    .run(status, reviewedBy, new Date().toISOString(), status === 'rejected' ? (reject_reason || '') : '', req.params.id);
-  // Log to worker history
-  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-    .run(inv.worker_account_id, reviewedBy, 'contractor_invoice', inv.status, status,
-      `Invoice ${inv.invoice_number}: $${inv.total_amount} — ${status === 'approved' ? '已批准' : '已拒绝' + (reject_reason ? ': ' + reject_reason : '')}`);
-  res.json({ success: true });
+app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const { status, reject_reason } = req.body;
+    if (!['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Not found' });
+    const reviewedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('UPDATE contractor_invoices SET status=?, reviewed_by=?, reviewed_at=?, reject_reason=? WHERE id=?')
+      .run(status, reviewedBy, new Date().toISOString(), status === 'rejected' ? (reject_reason || '') : '', req.params.id);
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(inv.worker_account_id, reviewedBy, 'contractor_invoice', inv.status, status,
+        `Invoice ${inv.invoice_number}: $${inv.total_amount} — ${status === 'approved' ? '已批准' : '已拒绝' + (reject_reason ? ': ' + reject_reason : '')}`);
+    // Send email + SMS to worker on rejection
+    if (status === 'rejected') {
+      const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(inv.worker_account_id);
+      if (w) {
+        const workerName = w.name || w.username || '';
+        const reasonText = reject_reason ? reject_reason.trim() : '（未注明原因）';
+        const invNum = inv.invoice_number || '';
+        const amt = inv.total_amount ? `$${(+inv.total_amount).toFixed(2)}` : '';
+        if (w.email) {
+          const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+            <h2 style="color:#dc2626">Invoice 已被拒绝 / Invoice Rejected</h2>
+            <p>您好 ${workerName}，</p>
+            <p>您提交的以下 Invoice 已被管理员拒绝：</p>
+            <table style="border-collapse:collapse;width:100%;margin:1rem 0">
+              <tr><td style="padding:.4rem .8rem;font-weight:600;background:#f9fafb;border:1px solid #e5e7eb">Invoice #</td><td style="padding:.4rem .8rem;border:1px solid #e5e7eb;font-family:monospace">${invNum}</td></tr>
+              ${amt ? `<tr><td style="padding:.4rem .8rem;font-weight:600;background:#f9fafb;border:1px solid #e5e7eb">金额</td><td style="padding:.4rem .8rem;border:1px solid #e5e7eb">${amt}</td></tr>` : ''}
+              <tr><td style="padding:.4rem .8rem;font-weight:600;background:#f9fafb;border:1px solid #e5e7eb">拒绝原因</td><td style="padding:.4rem .8rem;border:1px solid #e5e7eb;color:#dc2626">${reasonText}</td></tr>
+            </table>
+            <p>如有疑问请联系 HR。</p>
+            <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+            <h3 style="color:#dc2626;font-size:.95rem">Invoice Rejected</h3>
+            <p style="color:#555;font-size:.9rem">Hi ${workerName}, your invoice <strong>${invNum}</strong> has been rejected.</p>
+            <p style="color:#555;font-size:.9rem"><strong>Reason:</strong> ${reasonText}</p>
+            <p style="color:#555;font-size:.9rem">Please contact HR if you have questions.</p>
+            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+          </div>`;
+          await sendEmail(w.email, `[Prime Anchorpoint] Invoice ${invNum} 已被拒绝 / Rejected`, `您好 ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}`, html);
+        }
+        if (w.phone) {
+          await sendSMS(w.phone, `[Prime Anchorpoint] ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}\nReply STOP to opt out.`);
+        }
+      }
+    }
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[invoice review error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
