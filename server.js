@@ -3661,38 +3661,41 @@ function _buildThirdPartyPayForm(lang) {
   };
 
   const formTitle = zh
-    ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM 第三方平台收款授权及账户确认表'
+    ? 'Third-Party Payment Authorization / 第三方收款账户授权'
     : es
-    ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM / AUTORIZACIÓN PARA RECIBIR PAGOS VÍA PLATAFORMA DE TERCEROS'
-    : 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM';
+    ? 'Third-Party Payment Account Authorization / Autorización de Cuenta de Pago a Tercero'
+    : 'Third-Party Payment Account Authorization';
 
   const intro = zh
-    ? `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform specified below. 本人授权 <b>${companyName}</b> 及其授权代表通过以下第三方平台向本人支付应付款项。`
+    ? `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform and account specified below. 本人授权 <b>${companyName}</b> 及其授权代表通过下方指定的第三方支付平台及收款账户向本人支付经批准的应付款项。`
     : es
-    ? `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform specified below. Autorizo a <b>${companyName}</b> y sus representantes autorizados a enviar los pagos correspondientes a través de la plataforma de terceros indicada.`
-    : `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform specified below.`;
+    ? `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform and account specified below. Autorizo a <b>${companyName}</b> y sus representantes autorizados a enviar los pagos correspondientes a través de la plataforma de terceros y la cuenta especificadas a continuación.`
+    : `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform and account specified below.`;
 
   const s1          = zh ? '1. PAYEE INFORMATION 收款人信息' : es ? '1. PAYEE INFORMATION / INFORMACIÓN DEL BENEFICIARIO' : '1. PAYEE INFORMATION';
   const lLegalName  = L('Full Legal Name', '法定全名', 'Nombre Legal Completo');
+  const lEmail      = L('Email Address', '电子邮箱', 'Correo Electrónico');
+  const lOptEmail   = zh ? '(optional 可选)' : es ? '(opcional)' : '(optional)';
 
   const s2          = zh ? '2. PAYMENT PLATFORM &amp; ACCOUNT 付款平台及账户' : es ? '2. PAYMENT PLATFORM &amp; ACCOUNT / PLATAFORMA Y CUENTA DE PAGO' : '2. PAYMENT PLATFORM &amp; ACCOUNT';
   const lPlatform   = L('Platform', '平台', 'Plataforma');
   const lSelectOne  = zh ? 'Select one 请选择一种:' : es ? 'Select one / Seleccione una:' : 'Select one:';
-  const lHandle     = L('Account Handle / Username', '账号', 'Usuario / Handle de Cuenta');
+  const lHandle     = L('Account Handle / Username', '账号 / 用户名', 'Usuario / Handle de Cuenta');
+  const lHandleHint = zh ? '例如：PayPal 绑定邮箱、Venmo 用户名或 Cash App 的 $cashtag' : es ? 'Ej.: correo de PayPal, usuario de Venmo o $cashtag de Cash App' : 'e.g. PayPal registered email, Venmo username, or Cash App $cashtag';
   const lContact    = L('Associated Email or Phone (if applicable)', '关联邮箱或手机（如适用）', 'Email o Teléfono Asociado (si aplica)');
   const lOptional   = zh ? '(optional 可选)' : es ? '(opcional)' : '(optional)';
   const lReference  = L('Reference / Invoice # (optional)', '参考号 / 发票号（可选）', 'Referencia / N.º de Factura (opcional)');
 
   const s3 = zh ? '3. ACKNOWLEDGMENT 确认事项' : es ? '3. ACKNOWLEDGMENT / DECLARACIÓN Y ACUERDO' : '3. ACKNOWLEDGMENT';
 
-  const ack1en = `<b>I certify that the account information provided above is accurate and that I am the owner of, or am authorized to receive payments through, that account.</b>`;
-  const ack1   = zh ? `${ack1en} &nbsp;<span style="color:#555">本人确认以上账户信息真实准确，且本人系该账户持有人，或有权通过该账户收取款项。</span>`
-    : es ? `${ack1en} &nbsp;<span style="color:#555">Certifico que la información de cuenta proporcionada es precisa y que soy el titular de la cuenta o estoy autorizado a recibir pagos a través de ella.</span>`
+  const ack1en = `<b>I certify that the account information provided above is accurate and that the account is owned by me or under my control.</b>`;
+  const ack1   = zh ? `${ack1en} &nbsp;<span style="color:#555">本人证明上述账户信息真实准确，且该账户归本人所有或由本人控制。</span>`
+    : es ? `${ack1en} &nbsp;<span style="color:#555">Certifico que la información de cuenta proporcionada es precisa y que la cuenta es de mi propiedad o está bajo mi control.</span>`
     : ack1en;
 
-  const ack2en = `<b>Payment sent to the account information provided by me will be deemed valid payment to the extent of the amount sent, unless ${companyName} was notified in writing of updated account information before the payment was sent.</b>`;
-  const ack2   = zh ? `${ack2en} &nbsp;<span style="color:#555">${companyName} 按本人提供的账户信息发送付款后，就该笔已发送金额而言，视为已有效履行相应付款义务；除非本人已在付款发送前以书面形式通知 ${companyName} 更新后的账户信息。</span>`
-    : es ? `${ack2en} &nbsp;<span style="color:#555">El pago enviado a la información de cuenta proporcionada se considerará pago válido por el monto enviado, salvo que se haya notificado por escrito un cambio de cuenta antes del envío.</span>`
+  const ack2en = `<b>Payment sent to the account information provided by me will be deemed valid payment to me. ${companyName}'s payment obligation for that payment will be satisfied unless I provided updated account information in writing before the payment was sent.</b>`;
+  const ack2   = zh ? `${ack2en} &nbsp;<span style="color:#555">${companyName} 按本人提供的账户信息发送付款后，视为已向本人完成有效付款；除非本人已在付款发送前以书面形式通知 ${companyName} 更新后的账户信息，否则 ${companyName} 就该笔款项的付款义务即告履行完毕。</span>`
+    : es ? `${ack2en} &nbsp;<span style="color:#555">El pago enviado a la información de cuenta proporcionada se considerará pago válido. La obligación de pago de ${companyName} quedará satisfecha salvo que se haya notificado por escrito un cambio de cuenta antes del envío.</span>`
     : ack2en;
 
   const ack3en = `I agree to notify ${companyName} in writing before any change to my payment platform or account details.`;
@@ -3710,20 +3713,20 @@ function _buildThirdPartyPayForm(lang) {
     : es ? `${ack5en} &nbsp;<span style="color:#555">Entiendo que las comisiones por transacción cobradas por la plataforma son mi responsabilidad.</span>`
     : ack5en;
 
-  const ack6en = `This authorization is for payment method purposes only and does not alter any tax reporting obligations or independent contractor status.`;
-  const ack6   = zh ? `${ack6en} &nbsp;<span style="color:#555">本授权仅用于付款方式确认，不改变任何税务申报义务或承包关系性质。</span>`
-    : es ? `${ack6en} &nbsp;<span style="color:#555">Esta autorización es únicamente para fines del método de pago y no altera ninguna obligación de declaración fiscal ni el estatus de contratista independiente.</span>`
+  const ack6en = `This authorization is for payment method purposes only and does not alter any tax reporting obligations or the underlying work relationship between the parties.`;
+  const ack6   = zh ? `${ack6en} &nbsp;<span style="color:#555">本授权仅用于确认付款方式，不改变任何税务申报义务或双方基础合作关系。</span>`
+    : es ? `${ack6en} &nbsp;<span style="color:#555">Esta autorización es únicamente para fines del método de pago y no altera ninguna obligación de declaración fiscal ni la relación laboral subyacente entre las partes.</span>`
     : ack6en;
 
-  const sigHeader    = zh ? 'PAYEE SIGNATURE 收款人签名' : es ? 'PAYEE SIGNATURE / FIRMA DEL BENEFICIARIO' : 'PAYEE SIGNATURE';
+  const sigHeader    = zh ? 'PAYEE AUTHORIZATION AND SIGNATURE 收款人确认与签名' : es ? 'PAYEE AUTHORIZATION AND SIGNATURE / FIRMA Y AUTORIZACIÓN DEL BENEFICIARIO' : 'PAYEE AUTHORIZATION AND SIGNATURE';
   const lPrintedName = L('Printed Name', '姓名（正楷）', 'Nombre en Letra de Imprenta');
   const lSig         = L('Signature', '签名', 'Firma');
   const lDate        = L('Date', '日期', 'Fecha');
   const footer       = zh
-    ? `${companyName} — 第三方平台收款授权及账户确认表 — For payment authorization records.`
+    ? `${companyName} — 第三方收款账户授权 — For payment authorization records.`
     : es
-    ? `${companyName} — Authorization to Receive Payment via Third-Party Platform — For payment authorization records.`
-    : `${companyName} — Authorization to Receive Payment via Third-Party Platform — For payment authorization records.`;
+    ? `${companyName} — Third-Party Payment Account Authorization — For payment authorization records.`
+    : `${companyName} — Third-Party Payment Account Authorization — For payment authorization records.`;
 
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
@@ -3737,7 +3740,8 @@ function _buildThirdPartyPayForm(lang) {
 <div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
-    <td style="${c}width:100%"><b>${lLegalName}</b><br><text-field name="payee_full_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:55%"><b>${lLegalName}</b><br><text-field name="payee_full_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:45%"><b>${lEmail}</b> <span style="font-size:7pt;color:#777;font-weight:400">${lOptEmail}</span><br><text-field name="payee_email" role="First Party" style="${w}"></text-field></td>
   </tr>
 </table>
 
@@ -3752,7 +3756,7 @@ function _buildThirdPartyPayForm(lang) {
     </td>
   </tr>
   <tr>
-    <td style="${c}width:55%"><b>${lHandle}</b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username / $cashtag"></text-field></td>
+    <td style="${c}width:55%"><b>${lHandle}</b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username / $cashtag"></text-field><div style="font-size:6.5pt;color:#777;margin-top:2px">${lHandleHint}</div></td>
     <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="platform_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
   </tr>
   <tr>
@@ -4610,7 +4614,7 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   zelle_auth:    { name: 'Zelle Payment Authorization & Account Confirmation (EN+ZH)', configKey: 'zelle_auth_template_id',    category: 'zelle_auth',    generator: generateZelleAuthHtmlTemplate },
   zelle_auth_en: { name: 'Zelle Payment Authorization & Account Confirmation (EN)',    configKey: 'zelle_auth_en_template_id', category: 'zelle_auth_en', generator: generateZelleAuthHtmlTemplate_EN },
   zelle_auth_es: { name: 'Zelle Payment Authorization & Account Confirmation (EN+ES)', configKey: 'zelle_auth_es_template_id', category: 'zelle_auth_es', generator: generateZelleAuthHtmlTemplate_ES },
-  third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方平台收款授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
+  third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方收款账户授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
   third_party_pay_en: { name: 'Third-Party Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
   third_party_pay_es: { name: 'Third-Party Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
   cash_receipt:    { name: 'Cash Payment Receipt (ZH+EN) / 现金付款签收',  configKey: 'cash_receipt_template_id',    category: 'cash_receipt',    generator: generateCashReceiptHtmlTemplate },
