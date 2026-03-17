@@ -3641,7 +3641,7 @@ function _buildThirdPartyPayForm(lang) {
   };
 
   const formTitle = zh
-    ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM 第三方平台收款授权表'
+    ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM 第三方平台收款授权及账户确认表'
     : es
     ? 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM / AUTORIZACIÓN PARA RECIBIR PAGOS VÍA PLATAFORMA DE TERCEROS'
     : 'AUTHORIZATION TO RECEIVE PAYMENT VIA THIRD-PARTY PLATFORM';
@@ -3657,9 +3657,11 @@ function _buildThirdPartyPayForm(lang) {
 
   const s2          = zh ? '2. PAYMENT PLATFORM &amp; ACCOUNT 付款平台及账户' : es ? '2. PAYMENT PLATFORM &amp; ACCOUNT / PLATAFORMA Y CUENTA DE PAGO' : '2. PAYMENT PLATFORM &amp; ACCOUNT';
   const lPlatform   = L('Platform', '平台', 'Plataforma');
+  const lSelectOne  = zh ? 'Select one 请选择一种:' : es ? 'Select one / Seleccione una:' : 'Select one:';
   const lHandle     = L('Account Handle / Username', '账号', 'Usuario / Handle de Cuenta');
-  const lContact    = L('Associated Email or Phone', '关联邮箱或手机', 'Email o Teléfono Asociado');
+  const lContact    = L('Associated Email or Phone (if applicable)', '关联邮箱或手机（如适用）', 'Email o Teléfono Asociado (si aplica)');
   const lOptional   = zh ? '(optional 可选)' : es ? '(opcional)' : '(optional)';
+  const lReference  = L('Reference / Invoice # (optional)', '参考号 / 发票号（可选）', 'Referencia / N.º de Factura (opcional)');
 
   const s3 = zh ? '3. ACKNOWLEDGMENT 确认事项' : es ? '3. ACKNOWLEDGMENT / DECLARACIÓN Y ACUERDO' : '3. ACKNOWLEDGMENT';
 
@@ -3668,9 +3670,9 @@ function _buildThirdPartyPayForm(lang) {
     : es ? `${ack1en} &nbsp;<span style="color:#555">Certifico que la información de cuenta proporcionada es precisa y que soy el titular de la cuenta o estoy autorizado a recibir pagos a través de ella.</span>`
     : ack1en;
 
-  const ack2en = `<b>Payment sent to the account information provided by me will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation, unless ${companyName} was notified in writing of updated account information before the payment was sent.</b>`;
-  const ack2   = zh ? `${ack2en} &nbsp;<span style="color:#555">只要 ${companyName} 按本人所提供的账户信息付款，即视为完成付款义务；除非本人已在付款前以书面形式通知新的账户信息。</span>`
-    : es ? `${ack2en} &nbsp;<span style="color:#555">El pago enviado a la información de cuenta proporcionada se considerará pago válido y cumplimiento total de la obligación de pago, salvo que se haya notificado por escrito un cambio de cuenta antes del envío.</span>`
+  const ack2en = `<b>Payment sent to the account information provided by me will be deemed valid payment to the extent of the amount sent, unless ${companyName} was notified in writing of updated account information before the payment was sent.</b>`;
+  const ack2   = zh ? `${ack2en} &nbsp;<span style="color:#555">${companyName} 按本人提供的账户信息发送付款后，就该笔已发送金额而言，视为已有效履行相应付款义务；除非本人已在付款发送前以书面形式通知 ${companyName} 更新后的账户信息。</span>`
+    : es ? `${ack2en} &nbsp;<span style="color:#555">El pago enviado a la información de cuenta proporcionada se considerará pago válido por el monto enviado, salvo que se haya notificado por escrito un cambio de cuenta antes del envío.</span>`
     : ack2en;
 
   const ack3en = `I agree to notify ${companyName} in writing before any change to my payment platform or account details.`;
@@ -3698,10 +3700,10 @@ function _buildThirdPartyPayForm(lang) {
   const lSig         = L('Signature', '签名', 'Firma');
   const lDate        = L('Date', '日期', 'Fecha');
   const footer       = zh
-    ? `${companyName} — 第三方平台收款授权表 — For internal records only.`
+    ? `${companyName} — 第三方平台收款授权及账户确认表 — For payment authorization records.`
     : es
-    ? `${companyName} — Authorization to Receive Payment via Third-Party Platform — Solo para registros internos.`
-    : `${companyName} — Authorization to Receive Payment via Third-Party Platform — For internal records only.`;
+    ? `${companyName} — Authorization to Receive Payment via Third-Party Platform — For payment authorization records.`
+    : `${companyName} — Authorization to Receive Payment via Third-Party Platform — For payment authorization records.`;
 
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
@@ -3723,15 +3725,18 @@ function _buildThirdPartyPayForm(lang) {
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
     <td style="${c}width:100%" colspan="2">
-      <b>${lPlatform}:</b>&nbsp;&nbsp;
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><checkbox-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></checkbox-field> PayPal</label>
-      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><checkbox-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></checkbox-field> Venmo</label>
-      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></checkbox-field> Cash App</label>
+      <b>${lPlatform}</b> <span style="font-size:7.5pt;color:#555;font-weight:400">${lSelectOne}</span>&nbsp;&nbsp;
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="payment_platform" value="PayPal" role="First Party" style="width:13px;height:13px"></radio-button-field> PayPal</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><radio-button-field name="payment_platform" value="Venmo" role="First Party" style="width:13px;height:13px"></radio-button-field> Venmo</label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><radio-button-field name="payment_platform" value="Cash App" role="First Party" style="width:13px;height:13px"></radio-button-field> Cash App</label>
     </td>
   </tr>
   <tr>
-    <td style="${c}width:55%"><b>${lHandle}</b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username"></text-field></td>
-    <td style="${c}width:45%"><b>${lContact}</b> <span style="font-size:7pt;color:#999">${lOptional}</span><br><text-field name="platform_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+    <td style="${c}width:55%"><b>${lHandle}</b><br><text-field name="platform_account" role="First Party" required="true" style="${w}" placeholder="@username / $cashtag"></text-field></td>
+    <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="platform_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}width:100%" colspan="2"><b>${lReference}</b><br><text-field name="reference_invoice" role="First Party" style="${w}" placeholder="e.g. INV-001"></text-field></td>
   </tr>
 </table>
 
