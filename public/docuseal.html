@@ -129,10 +129,16 @@
     <div class="info">
       <strong>一键创建所有模板</strong> — 自动在 DocuSeal 中创建合同和税务表格模板，并完成配置。已有模板不会重复创建。
     </div>
-    <button class="btn btn-orange" id="createAllBtn" onclick="createAllTemplates()">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-      一键创建
-    </button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-orange" id="createAllBtn" onclick="createAllTemplates()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        一键创建
+      </button>
+      <button class="btn btn-secondary" id="forceRegenBtn" onclick="forceRegenerateAllTemplates()" title="强制重新生成所有已配置模板（包括已存在的），用于更新公司名称等内容">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+        强制重新生成
+      </button>
+    </div>
   </div>
   <div class="progress-log" id="createLog" style="display:none"></div>
 
@@ -482,6 +488,46 @@ async function createAllTemplates() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> 一键创建`;
+  }
+}
+
+// ── Force regenerate all templates (even already configured ones) ──
+async function forceRegenerateAllTemplates() {
+  if (!confirm('将重新生成所有已配置模板（包括已存在的），使其反映最新公司名称等内容。确认继续？')) return;
+  const btn = document.getElementById('forceRegenBtn');
+  const log = document.getElementById('createLog');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 重新生成中…';
+  log.style.display = 'block';
+  log.innerHTML = '<div>开始强制重新生成所有模板…</div>';
+  try {
+    const result = await api('/api/admin/docuseal/create-all-templates', {
+      method: 'POST',
+      body: JSON.stringify({ force: true })
+    });
+    let okCount = 0, skipCount = 0, errCount = 0;
+    (result.results || []).forEach(r => {
+      if (r.success) {
+        log.innerHTML += `<div class="ok">✓ ${escHtml(r.name)} — 重新生成成功 (ID: ${r.template_id})</div>`;
+        okCount++;
+      } else if (r.skipped) {
+        log.innerHTML += `<div class="skip">⏭ ${escHtml(r.type)} — 跳过</div>`;
+        skipCount++;
+      } else {
+        log.innerHTML += `<div class="err">✗ ${escHtml(r.type)} — ${escHtml(r.error)}</div>`;
+        errCount++;
+      }
+    });
+    log.innerHTML += `<div style="margin-top:4px;font-weight:600">完成: ${okCount} 个重新生成, ${skipCount} 个跳过, ${errCount} 个失败</div>`;
+    toast(`模板重新生成完成: ${okCount} 个成功`, 'success');
+    await loadConfig();
+    await loadAllTemplates();
+  } catch(e) {
+    log.innerHTML += `<div class="err">✗ 失败: ${escHtml(e.message)}</div>`;
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg> 强制重新生成`;
   }
 }
 
