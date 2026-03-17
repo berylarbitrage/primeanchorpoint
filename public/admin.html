@@ -2579,7 +2579,7 @@ tr:hover td{background:var(--sky-light)}
         </select>
         <button onclick="_dsFilterLang='';_dsFilterCat='';document.getElementById('ds-filter-lang').value='';document.getElementById('ds-filter-cat').value='';_dsRenderMyTemplates()" style="padding:.3rem .65rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.8rem;cursor:pointer">重置</button>
         <span id="ds-filter-count" style="font-size:.78rem;color:#94a3b8;margin-left:.2rem"></span>
-        <button id="ds-regen-btn" onclick="dsForceRegenTemplates()" style="margin-left:auto;padding:.3rem .8rem;border-radius:7px;border:1px solid #fde68a;background:#fffbeb;color:#92400e;font-size:.8rem;font-weight:600;cursor:pointer">🔄 强制重新生成所有模板</button>
+        <button id="ds-check-updates-btn" onclick="dsCheckUpdates()" style="margin-left:auto;padding:.3rem .8rem;border-radius:7px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:.8rem;font-weight:600;cursor:pointer">🔍 检查可用更新</button>
       </div>
       <div id="ds-my-templates-wrap">
         <div style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:.9rem">正在加载…</div>
@@ -21250,21 +21250,62 @@ async function dsToggleConfirm(id) {
   }
 }
 
-async function dsForceRegenTemplates() {
-  const btn = document.getElementById('ds-regen-btn');
+async function dsCheckUpdates() {
+  const btn = document.getElementById('ds-check-updates-btn');
   if (!btn) return;
-  if (!confirm('将强制重新生成所有系统模板并上传到 DocuSeal，原有模板会被替换。确认继续？')) return;
   btn.disabled = true;
-  btn.textContent = '⟳ 生成中…';
+  btn.textContent = '⟳ 检查中…';
   try {
-    const r = await api('/admin/docuseal/create-all-templates', { method: 'POST', body: JSON.stringify({ force: true }) });
-    showToast(`✅ 已重新生成 ${r.created || 0} 个模板`, 'success', 5000);
-    await _dsLoadMyTemplates();
+    const r = await api('/admin/docuseal/check-updates');
+    if (!r.updates || r.updates.length === 0) {
+      showToast('✅ 所有模板均为最新版本', 'success', 3000);
+      return;
+    }
+    // Show modal with checkboxes
+    const items = r.updates.map(u =>
+      `<label style="display:flex;align-items:center;gap:.6rem;padding:.5rem .25rem;border-bottom:1px solid #f1f5f9;cursor:pointer">
+        <input type="checkbox" value="${u.type}" checked style="width:15px;height:15px;cursor:pointer">
+        <span style="font-size:.88rem;color:#1e293b">${u.name}</span>
+      </label>`
+    ).join('');
+    const modal = document.createElement('div');
+    modal.id = 'ds-update-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:12px;padding:1.5rem;width:420px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+        <div style="font-size:1rem;font-weight:700;margin-bottom:.3rem">🔄 有可用更新</div>
+        <div style="font-size:.82rem;color:#64748b;margin-bottom:1rem">以下模板有内容更新，勾选后点击「更新所选」：</div>
+        <div id="ds-update-list">${items}</div>
+        <div style="display:flex;gap:.6rem;margin-top:1.2rem;justify-content:flex-end">
+          <button onclick="document.getElementById('ds-update-modal').remove()" style="padding:.4rem .9rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.85rem;cursor:pointer">取消</button>
+          <button id="ds-do-update-btn" onclick="dsApplyUpdates()" style="padding:.4rem .9rem;border-radius:7px;border:none;background:#2563eb;color:#fff;font-size:.85rem;font-weight:600;cursor:pointer">更新所选</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
   } catch(e) {
-    showToast('生成失败: ' + e.message, 'error');
+    showToast('检查失败: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = '🔄 强制重新生成所有模板';
+    btn.textContent = '🔍 检查可用更新';
+  }
+}
+
+async function dsApplyUpdates() {
+  const modal = document.getElementById('ds-update-modal');
+  const checked = [...modal.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+  if (!checked.length) { showToast('请至少勾选一个模板', 'error'); return; }
+  const doBtn = document.getElementById('ds-do-update-btn');
+  doBtn.disabled = true;
+  doBtn.textContent = '⟳ 更新中…';
+  try {
+    await api('/admin/docuseal/create-all-templates', { method: 'POST', body: JSON.stringify({ types: checked, force: true }) });
+    showToast(`✅ 已更新 ${checked.length} 个模板`, 'success', 4000);
+    modal.remove();
+    await _dsLoadMyTemplates();
+  } catch(e) {
+    showToast('更新失败: ' + e.message, 'error');
+    doBtn.disabled = false;
+    doBtn.textContent = '更新所选';
   }
 }
 
