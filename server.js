@@ -15885,32 +15885,28 @@ app.get('/api/admin/docuseal/builder-token/:id', requireAdmin, async (req, res) 
   if (!templateId) return res.status(400).json({ error: '无效的模板 ID' });
 
   // Fetch the actual DocuSeal account user email (required by the builder JWT)
-  // Strategy 1: GET /api/users
+  // Priority 1: read cached account_email from DB (instant, no network)
   let userEmail = '';
   try {
-    const r = await dsealApiCall('GET', '/api/users', null);
-    if (r.status === 200) {
-      const users = Array.isArray(r.data) ? r.data : (r.data?.data || []);
-      if (users.length > 0) userEmail = users[0].email || '';
-    }
+    const cfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    userEmail = JSON.parse(cfgRow?.config || '{}').account_email || '';
   } catch {}
 
-  // Strategy 2: GET /api/templates/:id — author email sometimes embedded in template
+  // Priority 2: fetch from DocuSeal in parallel (both /api/users and /api/templates/:id)
   if (!userEmail) {
     try {
-      const r = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
-      if (r.status === 200 && r.data) {
-        userEmail = r.data.author?.email || r.data.created_by?.email || r.data.user?.email || '';
+      const [usersRes, tplRes] = await Promise.allSettled([
+        dsealApiCall('GET', '/api/users', null),
+        dsealApiCall('GET', `/api/templates/${templateId}`, null)
+      ]);
+      if (usersRes.status === 'fulfilled' && usersRes.value.status === 200) {
+        const users = Array.isArray(usersRes.value.data) ? usersRes.value.data : (usersRes.value.data?.data || []);
+        userEmail = users[0]?.email || '';
       }
-    } catch {}
-  }
-
-  // Strategy 3: read cached account_email stored in docuseal config
-  if (!userEmail) {
-    try {
-      const cfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
-      const cfg = JSON.parse(cfgRow?.config || '{}');
-      userEmail = cfg.account_email || '';
+      if (!userEmail && tplRes.status === 'fulfilled' && tplRes.value.status === 200 && tplRes.value.data) {
+        const d = tplRes.value.data;
+        userEmail = d.author?.email || d.created_by?.email || d.user?.email || '';
+      }
     } catch {}
   }
 
