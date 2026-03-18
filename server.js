@@ -4123,8 +4123,8 @@ function _buildWireAuthForm(lang) {
     <td style="${c}width:40%">
       <b>${wireTypeLabel}</b><br>
       <div style="margin-top:3px">
-        <span style="${chk}"></span> ${wireTypeDom}<br>
-        <span style="${chk}"></span> ${wireTypeInt}
+        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="wire_type_domestic" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${wireTypeDom}</label><br>
+        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="wire_type_international" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${wireTypeInt}</label>
       </div>
     </td>
     <td style="${c}width:60%">
@@ -4160,8 +4160,8 @@ function _buildWireAuthForm(lang) {
     <td colspan="2" style="${c}">
       <b>${acctTypeLabel}</b><br>
       <div style="margin-top:2px">
-        <span style="${chk}"></span> ${acctChecking} &nbsp;&nbsp;
-        <span style="${chk}"></span> ${acctSavings}
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="wire_acct_checking" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${acctChecking}</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="wire_acct_savings" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${acctSavings}</label>
       </div>
     </td>
   </tr>
