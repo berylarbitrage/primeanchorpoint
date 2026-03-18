@@ -2626,7 +2626,10 @@ tr:hover td{background:var(--sky-light)}
         </select>
         <button onclick="_dsFilterLang='';_dsFilterCat='';document.getElementById('ds-filter-lang').value='';document.getElementById('ds-filter-cat').value='';_dsRenderMyTemplates()" style="padding:.3rem .65rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.8rem;cursor:pointer">重置</button>
         <span id="ds-filter-count" style="font-size:.78rem;color:#94a3b8;margin-left:.2rem"></span>
-        <button id="ds-check-updates-btn" onclick="dsCheckUpdates()" style="margin-left:auto;padding:.3rem .8rem;border-radius:7px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:.8rem;font-weight:600;cursor:pointer">🔍 检查可用更新</button>
+        <div style="margin-left:auto;display:flex;gap:.5rem">
+          <button id="ds-sync-btn" onclick="dsSyncFromDocuSeal()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #d1fae5;background:#f0fdf4;color:#15803d;font-size:.8rem;font-weight:600;cursor:pointer">↓ 从 DocuSeal 同步</button>
+          <button id="ds-check-updates-btn" onclick="dsCheckUpdates()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:.8rem;font-weight:600;cursor:pointer">🔍 检查可用更新</button>
+        </div>
       </div>
       <div id="ds-my-templates-wrap">
         <div style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:.9rem">正在加载…</div>
@@ -21308,6 +21311,20 @@ async function dsToggleConfirm(id) {
     await _dsLoadMyTemplates();
   } catch(e) {
     showToast('操作失败: ' + e.message, 'error');
+  }
+}
+
+async function dsSyncFromDocuSeal() {
+  const btn = document.getElementById('ds-sync-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ 同步中…'; }
+  try {
+    const r = await api('/admin/docuseal/sync-from-docuseal', { method: 'POST' });
+    showToast(r.added > 0 ? `同步完成，新导入 ${r.added} 个模板` : '同步完成，无新模板', 'success');
+    await _dsLoadMyTemplates();
+  } catch(e) {
+    showToast('同步失败：' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↓ 从 DocuSeal 同步'; }
   }
 }
 
