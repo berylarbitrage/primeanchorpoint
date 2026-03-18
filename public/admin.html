@@ -2337,9 +2337,22 @@ tr:hover td{background:var(--sky-light)}
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem">
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">ACH / Direct Deposit</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">银行直接转账授权</div>
-          <select id="ds-sel-ach" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('ach_auth', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-ach-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">银行直接转账授权 — 三种语言版本</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
+            <select id="ds-sel-ach" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('ach_auth', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-ach-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-ach-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('ach_auth_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-ach-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-ach-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('ach_auth_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-ach-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">🏦 Wire Transfer</div>
@@ -2509,7 +2522,9 @@ tr:hover td{background:var(--sky-light)}
               <option value="w7">W-7</option>
             </optgroup>
             <optgroup label="付款授权表格">
-              <option value="ach_auth">ACH / Direct Deposit</option>
+              <option value="ach_auth">ACH / Direct Deposit (ZH+EN)</option>
+              <option value="ach_auth_en">ACH / Direct Deposit (EN)</option>
+              <option value="ach_auth_es">ACH / Direct Deposit (EN+ES)</option>
               <option value="wire_auth">Wire Transfer (ZH+EN)</option>
               <option value="wire_auth_en">Wire Transfer (EN)</option>
               <option value="wire_auth_es">Wire Transfer (EN+ES)</option>
@@ -21070,7 +21085,9 @@ const _DS_SELECTORS = [
   { key: 'i9_template_id',               selId: 'ds-sel-i9',                 infoId: 'ds-cfg-i9-info',                label: 'I-9',          doc_type: 'i9' },
   { key: 'w7_template_id',               selId: 'ds-sel-w7',                 infoId: 'ds-cfg-w7-info',                label: 'W-7',          doc_type: 'w7' },
   // 付款授权
-  { key: 'ach_auth_template_id',         selId: 'ds-sel-ach',                infoId: 'ds-cfg-ach-info',               label: 'ACH授权',      doc_type: 'ach_auth' },
+  { key: 'ach_auth_template_id',    selId: 'ds-sel-ach',    infoId: 'ds-cfg-ach-info',    label: 'ACH(中英)', doc_type: 'ach_auth' },
+  { key: 'ach_auth_en_template_id', selId: 'ds-sel-ach-en', infoId: 'ds-cfg-ach-en-info', label: 'ACH(英文)', doc_type: 'ach_auth_en' },
+  { key: 'ach_auth_es_template_id', selId: 'ds-sel-ach-es', infoId: 'ds-cfg-ach-es-info', label: 'ACH(英西)', doc_type: 'ach_auth_es' },
   { key: 'wire_auth_template_id',    selId: 'ds-sel-wire',    infoId: 'ds-cfg-wire-info',    label: '电汇(中英)', doc_type: 'wire_auth' },
   { key: 'wire_auth_en_template_id', selId: 'ds-sel-wire-en', infoId: 'ds-cfg-wire-en-info', label: '电汇(英文)', doc_type: 'wire_auth_en' },
   { key: 'wire_auth_es_template_id', selId: 'ds-sel-wire-es', infoId: 'ds-cfg-wire-es-info', label: '电汇(英西)', doc_type: 'wire_auth_es' },
@@ -21161,7 +21178,9 @@ function _dsRenderMyTemplates() {
     form8233_template_id:          { bg:'#fce7f3', color:'#9d174d', label:'8233' },
     i9_template_id:                { bg:'#dcfce7', color:'#166534', label:'I-9' },
     w7_template_id:                { bg:'#f0fdf4', color:'#15803d', label:'W-7' },
-    ach_auth_template_id:          { bg:'#f0f9ff', color:'#0c4a6e', label:'ACH' },
+    ach_auth_template_id:    { bg:'#f0f9ff', color:'#0c4a6e', label:'ACH' },
+    ach_auth_en_template_id: { bg:'#f0f9ff', color:'#0c4a6e', label:'ACH' },
+    ach_auth_es_template_id: { bg:'#f0f9ff', color:'#0c4a6e', label:'ACH' },
     wire_auth_template_id:    { bg:'#fffbeb', color:'#78350f', label:'电汇' },
     wire_auth_en_template_id: { bg:'#fffbeb', color:'#78350f', label:'电汇' },
     wire_auth_es_template_id: { bg:'#fffbeb', color:'#78350f', label:'电汇' },
@@ -21187,7 +21206,7 @@ function _dsRenderMyTemplates() {
   const _CAT_BADGE = {
     company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
     w4:{bg:'#e0f2fe',color:'#0369a1',label:'W-4'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'W-9'}, w8ben:{bg:'#fae8ff',color:'#6b21a8',label:'W-8BEN'}, w8bene:{bg:'#ede9fe',color:'#5b21b6',label:'W-8BEN-E'}, form8233:{bg:'#fce7f3',color:'#9d174d',label:'8233'}, i9:{bg:'#dcfce7',color:'#166534',label:'I-9'}, w7:{bg:'#f0fdf4',color:'#15803d',label:'W-7'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
-    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_en:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_es:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_en:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_es:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_en:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_es:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_en:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_es:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, cash_receipt_en:{bg:'#fff1f2',color:'#9f1239',label:'现金(EN)'}, cash_receipt_es:{bg:'#fff1f2',color:'#9f1239',label:'现金(ES)'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
+    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, ach_auth_en:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, ach_auth_es:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_en:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_es:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_en:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_es:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_en:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_es:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_en:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_es:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, cash_receipt_en:{bg:'#fff1f2',color:'#9f1239',label:'现金(EN)'}, cash_receipt_es:{bg:'#fff1f2',color:'#9f1239',label:'现金(ES)'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
     contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_en:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_es:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
     invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_en:{bg:'#d1fae5',color:'#065f46',label:'发票审批'}, invoice_approval_es:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
   };
