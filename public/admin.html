@@ -2267,21 +2267,60 @@ tr:hover td{background:var(--sky-light)}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.5rem">
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">公司合同</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">与客户/合作方签署</div>
-          <select id="ds-sel-company-contract" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('company_contract', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-company-contract-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">与客户/合作方签署 — 三种语言版本</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
+            <select id="ds-sel-company-contract" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('company_contract', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-company-contract-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-company-contract-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('company_contract_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-company-contract-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-company-contract-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('company_contract_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-company-contract-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">劳务合同 — 1099</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">独立承包商</div>
-          <select id="ds-sel-worker-1099" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_1099', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-worker-1099-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">独立承包商 — 三种语言版本</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
+            <select id="ds-sel-worker-1099" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_1099', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-worker-1099-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-worker-1099-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_1099_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-worker-1099-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-worker-1099-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_1099_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-worker-1099-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">劳务合同 — W2</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">正式雇员</div>
-          <select id="ds-sel-worker-w2" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_w2', this.value)"><option value="">— 未设置 —</option></select>
-          <div id="ds-cfg-worker-w2-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">正式雇员 — 三种语言版本</div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
+            <select id="ds-sel-worker-w2" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_w2', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-worker-w2-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-bottom:.6rem">
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
+            <select id="ds-sel-worker-w2-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_w2_en', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-worker-w2-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
+          <div>
+            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
+            <select id="ds-sel-worker-w2-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_w2_es', this.value)"><option value="">— 未设置 —</option></select>
+            <div id="ds-cfg-worker-w2-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+          </div>
         </div>
       </div>
 
@@ -2508,9 +2547,15 @@ tr:hover td{background:var(--sky-light)}
           <select id="ds-upload-category" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none;background:#fff">
             <option value="">— 不自动分配 —</option>
             <optgroup label="合同">
-              <option value="company_contract">公司合同</option>
-              <option value="worker_1099">劳务合同 — 1099</option>
-              <option value="worker_w2">劳务合同 — W2</option>
+              <option value="company_contract">公司合同 (ZH+EN)</option>
+              <option value="company_contract_en">公司合同 (EN)</option>
+              <option value="company_contract_es">公司合同 (EN+ES)</option>
+              <option value="worker_1099">劳务合同 — 1099 (ZH+EN)</option>
+              <option value="worker_1099_en">劳务合同 — 1099 (EN)</option>
+              <option value="worker_1099_es">劳务合同 — 1099 (EN+ES)</option>
+              <option value="worker_w2">劳务合同 — W2 (ZH+EN)</option>
+              <option value="worker_w2_en">劳务合同 — W2 (EN)</option>
+              <option value="worker_w2_es">劳务合同 — W2 (EN+ES)</option>
             </optgroup>
             <optgroup label="税务表格">
               <option value="w4">W-4</option>
@@ -21073,9 +21118,15 @@ async function _dsLoadMyTemplates() {
 
 const _DS_SELECTORS = [
   // 合同
-  { key: 'company_contract_template_id',  selId: 'ds-sel-company-contract',  infoId: 'ds-cfg-company-contract-info',  label: '公司合同',      doc_type: 'company_contract' },
-  { key: 'worker_1099_template_id',       selId: 'ds-sel-worker-1099',        infoId: 'ds-cfg-worker-1099-info',       label: '劳务合同 1099', doc_type: 'worker_1099' },
-  { key: 'worker_w2_template_id',         selId: 'ds-sel-worker-w2',          infoId: 'ds-cfg-worker-w2-info',         label: '劳务合同 W2',   doc_type: 'worker_w2' },
+  { key: 'company_contract_template_id',    selId: 'ds-sel-company-contract',    infoId: 'ds-cfg-company-contract-info',    label: '公司合同(中英)',  doc_type: 'company_contract' },
+  { key: 'company_contract_en_template_id', selId: 'ds-sel-company-contract-en', infoId: 'ds-cfg-company-contract-en-info', label: '公司合同(英文)',  doc_type: 'company_contract_en' },
+  { key: 'company_contract_es_template_id', selId: 'ds-sel-company-contract-es', infoId: 'ds-cfg-company-contract-es-info', label: '公司合同(英西)',  doc_type: 'company_contract_es' },
+  { key: 'worker_1099_template_id',         selId: 'ds-sel-worker-1099',         infoId: 'ds-cfg-worker-1099-info',         label: '1099合同(中英)', doc_type: 'worker_1099' },
+  { key: 'worker_1099_en_template_id',      selId: 'ds-sel-worker-1099-en',      infoId: 'ds-cfg-worker-1099-en-info',      label: '1099合同(英文)', doc_type: 'worker_1099_en' },
+  { key: 'worker_1099_es_template_id',      selId: 'ds-sel-worker-1099-es',      infoId: 'ds-cfg-worker-1099-es-info',      label: '1099合同(英西)', doc_type: 'worker_1099_es' },
+  { key: 'worker_w2_template_id',           selId: 'ds-sel-worker-w2',           infoId: 'ds-cfg-worker-w2-info',           label: 'W2合同(中英)',   doc_type: 'worker_w2' },
+  { key: 'worker_w2_en_template_id',        selId: 'ds-sel-worker-w2-en',        infoId: 'ds-cfg-worker-w2-en-info',        label: 'W2合同(英文)',   doc_type: 'worker_w2_en' },
+  { key: 'worker_w2_es_template_id',        selId: 'ds-sel-worker-w2-es',        infoId: 'ds-cfg-worker-w2-es-info',        label: 'W2合同(英西)',   doc_type: 'worker_w2_es' },
   // 税务表格
   { key: 'w4_template_id',               selId: 'ds-sel-w4',                 infoId: 'ds-cfg-w4-info',                label: 'W-4',          doc_type: 'w4' },
   { key: 'w9_template_id',               selId: 'ds-sel-w9',                 infoId: 'ds-cfg-w9-info',                label: 'W-9',          doc_type: 'w9' },
@@ -21132,7 +21183,7 @@ function _dsRefreshSelects() {
 }
 
 const _DS_CAT_GROUPS = {
-  __contract__: ['company_contract','worker_1099','worker_w2','contract'],
+  __contract__: ['company_contract','company_contract_en','company_contract_es','worker_1099','worker_1099_en','worker_1099_es','worker_w2','worker_w2_en','worker_w2_es','contract'],
   __tax__:      ['w4','w9','w8ben','w8bene','form8233','i9','w7','tax'],
   __payment__:  ['ach_auth','wire_auth','wire_auth_en','wire_auth_es','check_instruction','check_instruction_en','check_instruction_es','zelle_auth','zelle_auth_en','zelle_auth_es','third_party_pay','third_party_pay_en','third_party_pay_es','cash_receipt','cash_receipt_en','cash_receipt_es','payment'],
   __invoice__:  ['contractor_invoice','contractor_invoice_en','contractor_invoice_es','invoice'],
@@ -21168,7 +21219,9 @@ function _dsRenderMyTemplates() {
   }
   const dsUrl = _dsConfig.url || '';
   const _BADGE_STYLES = {
-    company_contract_template_id:  { bg:'#dbeafe', color:'#1e40af', label:'公司合同' },
+    company_contract_template_id:    { bg:'#dbeafe', color:'#1e40af', label:'公司合同' },
+    company_contract_en_template_id: { bg:'#dbeafe', color:'#1e40af', label:'公司合同' },
+    company_contract_es_template_id: { bg:'#dbeafe', color:'#1e40af', label:'公司合同' },
     worker_1099_template_id:       { bg:'#d1fae5', color:'#065f46', label:'1099' },
     worker_w2_template_id:         { bg:'#fef9c3', color:'#854d0e', label:'W2' },
     w4_template_id:                { bg:'#e0f2fe', color:'#0369a1', label:'W-4' },
@@ -21204,7 +21257,7 @@ function _dsRenderMyTemplates() {
     invoice_approval_es_template_id: { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
   };
   const _CAT_BADGE = {
-    company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
+    company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, company_contract_en:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, company_contract_es:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_1099_en:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_1099_es:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, worker_w2_en:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, worker_w2_es:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
     w4:{bg:'#e0f2fe',color:'#0369a1',label:'W-4'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'W-9'}, w8ben:{bg:'#fae8ff',color:'#6b21a8',label:'W-8BEN'}, w8bene:{bg:'#ede9fe',color:'#5b21b6',label:'W-8BEN-E'}, form8233:{bg:'#fce7f3',color:'#9d174d',label:'8233'}, i9:{bg:'#dcfce7',color:'#166534',label:'I-9'}, w7:{bg:'#f0fdf4',color:'#15803d',label:'W-7'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
     ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, ach_auth_en:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, ach_auth_es:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_en:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, wire_auth_es:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_en:{bg:'#fafaf9',color:'#292524',label:'支票'}, check_instruction_es:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_en:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, zelle_auth_es:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_en:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, third_party_pay_es:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, cash_receipt_en:{bg:'#fff1f2',color:'#9f1239',label:'现金(EN)'}, cash_receipt_es:{bg:'#fff1f2',color:'#9f1239',label:'现金(ES)'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
     contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_en:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, contractor_invoice_es:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
@@ -21442,9 +21495,15 @@ function dsChangeCategoryModal(dsTemplateId) {
 
   const groups = [
     { title: '合同', items: [
-      { cat: 'company_contract', label: '公司合同', bg:'#dbeafe', color:'#1e40af' },
-      { cat: 'worker_1099',     label: '1099',    bg:'#d1fae5', color:'#065f46' },
-      { cat: 'worker_w2',       label: 'W-2',     bg:'#fef9c3', color:'#854d0e' },
+      { cat: 'company_contract',    label: '公司合同 (ZH+EN)', bg:'#dbeafe', color:'#1e40af' },
+      { cat: 'company_contract_en', label: '公司合同 (EN)',    bg:'#dbeafe', color:'#1e40af' },
+      { cat: 'company_contract_es', label: '公司合同 (EN+ES)', bg:'#dbeafe', color:'#1e40af' },
+      { cat: 'worker_1099',         label: '1099 (ZH+EN)',    bg:'#d1fae5', color:'#065f46' },
+      { cat: 'worker_1099_en',      label: '1099 (EN)',       bg:'#d1fae5', color:'#065f46' },
+      { cat: 'worker_1099_es',      label: '1099 (EN+ES)',    bg:'#d1fae5', color:'#065f46' },
+      { cat: 'worker_w2',           label: 'W-2 (ZH+EN)',     bg:'#fef9c3', color:'#854d0e' },
+      { cat: 'worker_w2_en',        label: 'W-2 (EN)',        bg:'#fef9c3', color:'#854d0e' },
+      { cat: 'worker_w2_es',        label: 'W-2 (EN+ES)',     bg:'#fef9c3', color:'#854d0e' },
     ]},
     { title: '税务表格', items: [
       { cat: 'w4',       label: 'W-4',      bg:'#e0f2fe', color:'#0369a1' },
