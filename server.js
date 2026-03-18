@@ -5029,8 +5029,6 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   worker_w2_en:        { name: 'Employment Agreement (W-2) (EN)',                                          configKey: 'worker_w2_en_template_id',        category: 'worker_w2_en',        generator: generateW2EmploymentHtmlTemplate_EN },
   worker_w2_es:        { name: 'Employment Agreement (W-2) (EN+ES) / Contrato de Empleo (EN+ES)',          configKey: 'worker_w2_es_template_id',        category: 'worker_w2_es',        generator: generateW2EmploymentHtmlTemplate_ES },
   w4: { name: 'W-4 Employee Withholding Certificate', configKey: 'w4_template_id', category: 'w4', generator: generateW4HtmlTemplate },
-  w9: { name: 'W-9 Request for TIN', configKey: 'w9_template_id', category: 'w9', generator: generateW9HtmlTemplate },
-  w9_individual: { name: 'W-9 Request for TIN (Individual)', configKey: 'w9_individual_template_id', category: 'w9_individual', generator: generateW9HtmlTemplate },
   w8ben: { name: 'W-8BEN Certificate of Foreign Status (Individual)', configKey: 'w8ben_template_id', category: 'w8ben', generator: generateW8BENHtmlTemplate },
   w8bene: { name: 'W-8BEN-E Certificate of Foreign Status (Entity)', configKey: 'w8bene_template_id', category: 'w8bene', generator: generateW8BENEHtmlTemplate },
   form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', category: 'form8233', generator: generateForm8233HtmlTemplate },
@@ -17244,12 +17242,9 @@ app.get('/api/admin/docuseal/check-updates', requireAdmin, (req, res) => {
     }
     const dbRow = db.prepare('SELECT content_hash, confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(existingId);
     if (dbRow?.confirmed) continue; // confirmed — never suggest update
+    // If no content_hash: this is a user-uploaded PDF — skip entirely, never overwrite with generated hash
+    if (!dbRow?.content_hash) continue;
     const currentHash = crypto.createHash('md5').update(tmplDef.generator()).digest('hex');
-    if (!dbRow?.content_hash) {
-      // No hash stored yet — backfill silently so future checks work correctly
-      db.prepare('UPDATE docuseal_templates SET content_hash=? WHERE docuseal_template_id=?').run(currentHash, existingId);
-      continue;
-    }
     if (dbRow.content_hash !== currentHash) {
       updates.push({ type, name: tmplDef.name, template_id: existingId });
     }
