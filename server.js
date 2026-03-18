@@ -1544,7 +1544,7 @@ try {
     const _dsCfg = JSON.parse(_dsRow.config || '{}');
     const _catMap = {
       company_contract_template_id: 'company_contract', worker_1099_template_id: 'worker_1099', worker_w2_template_id: 'worker_w2',
-      w4_template_id: 'w4', w9_template_id: 'w9', w8ben_template_id: 'w8ben', w8bene_template_id: 'w8bene',
+      w4_template_id: 'w4', w9_template_id: 'w9', w9_individual_template_id: 'w9_individual', w8ben_template_id: 'w8ben', w8bene_template_id: 'w8bene',
       form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
       ach_auth_template_id: 'ach_auth', ach_auth_en_template_id: 'ach_auth_en', ach_auth_es_template_id: 'ach_auth_es',
       wire_auth_template_id: 'wire_auth', wire_auth_en_template_id: 'wire_auth_en', wire_auth_es_template_id: 'wire_auth_es',
@@ -1584,7 +1584,7 @@ try {
     const _dsCfg2 = JSON.parse(_dsRow2.config || '{}');
     const _dtMap = {
       company_contract_template_id: 'company_contract', worker_1099_template_id: 'worker_1099', worker_w2_template_id: 'worker_w2',
-      w4_template_id: 'w4', w9_template_id: 'w9', w8ben_template_id: 'w8ben', w8bene_template_id: 'w8bene',
+      w4_template_id: 'w4', w9_template_id: 'w9', w9_individual_template_id: 'w9_individual', w8ben_template_id: 'w8ben', w8bene_template_id: 'w8bene',
       form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
       ach_auth_template_id: 'ach_auth', ach_auth_en_template_id: 'ach_auth_en', ach_auth_es_template_id: 'ach_auth_es',
       wire_auth_template_id: 'wire_auth', wire_auth_en_template_id: 'wire_auth_en', wire_auth_es_template_id: 'wire_auth_es',
@@ -1618,6 +1618,7 @@ try {
     'Employment Agreement (W-2) (EN+ES) / Contrato de Empleo (EN+ES)':        { category: 'worker_w2_es',        configKey: 'worker_w2_es_template_id' },
     'W-4 Employee Withholding Certificate':                      { category: 'w4',               configKey: 'w4_template_id' },
     'W-9 Request for TIN':                                       { category: 'w9',               configKey: 'w9_template_id' },
+    'W-9 Request for TIN (Individual)':                          { category: 'w9_individual',    configKey: 'w9_individual_template_id' },
     'W-8BEN Certificate of Foreign Status (Individual)':         { category: 'w8ben',            configKey: 'w8ben_template_id' },
     'W-8BEN-E Certificate of Foreign Status (Entity)':           { category: 'w8bene',           configKey: 'w8bene_template_id' },
     'Form 8233 Exemption From Withholding':                      { category: 'form8233',         configKey: 'form8233_template_id' },
@@ -16837,7 +16838,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const allKeys = ['company_contract_template_id','company_contract_en_template_id','company_contract_es_template_id',
     'worker_1099_template_id','worker_1099_en_template_id','worker_1099_es_template_id',
     'worker_w2_template_id','worker_w2_en_template_id','worker_w2_es_template_id',
-    'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
+    'w4_template_id','w9_template_id','w9_individual_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
@@ -16876,7 +16877,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const _configKeys = ['company_contract_template_id','company_contract_en_template_id','company_contract_es_template_id',
     'worker_1099_template_id','worker_1099_en_template_id','worker_1099_es_template_id',
     'worker_w2_template_id','worker_w2_en_template_id','worker_w2_es_template_id',
-    'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
+    'w4_template_id','w9_template_id','w9_individual_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
@@ -16992,7 +16993,7 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
       // Auto-update integration_settings config if a valid config key was provided as category
       const validConfigKeys = [
         'company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
-        'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
+        'w4_template_id','w9_template_id','w9_individual_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
         'i9_template_id','w7_template_id',
         'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','check_instruction_template_id',
         'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
