@@ -17440,7 +17440,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
 //
 // TEMPLATE_REGEN_VERSION: bump this number to force a one-time regen of ALL templates on next startup.
-const TEMPLATE_REGEN_VERSION = 2;
+const TEMPLATE_REGEN_VERSION = 3;
 
 async function autoRegenerateTemplatesForCompanyName() {
   if (!dsealEnabled()) return;
@@ -17459,10 +17459,11 @@ async function autoRegenerateTemplatesForCompanyName() {
 
   for (const [type, tmplDef] of Object.entries(DOCUSEAL_AUTO_TEMPLATES)) {
     const existingId = cfg[tmplDef.configKey];
-    if (!existingId) continue; // not configured, skip (will be created on demand)
     // Skip confirmed templates
-    const _confirmed = db.prepare('SELECT confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(existingId);
-    if (_confirmed?.confirmed) { console.log(`[startup] Skipping confirmed template: ${type}`); continue; }
+    if (existingId) {
+      const _confirmed = db.prepare('SELECT confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(existingId);
+      if (_confirmed?.confirmed) { console.log(`[startup] Skipping confirmed template: ${type}`); continue; }
+    }
     try {
       const html = tmplDef.generator();
       const newHash = crypto.createHash('md5').update(html).digest('hex');
@@ -17471,7 +17472,7 @@ async function autoRegenerateTemplatesForCompanyName() {
         documents: [{ name: tmplDef.name, html, size: 'Letter' }]
       });
       if (r.status >= 400) {
-        console.error(`[startup] Failed to regenerate ${type} template: DocuSeal ${r.status}`);
+        console.error(`[startup] Failed to ${existingId ? 'regenerate' : 'create'} ${type} template: DocuSeal ${r.status}`);
         continue;
       }
       const dsId = r.data?.id || r.data?.template_id;
@@ -17484,10 +17485,10 @@ async function autoRegenerateTemplatesForCompanyName() {
         db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category, content_hash) VALUES (?, ?, ?, ?)').run(tmplDef.name, String(dsId), tmplDef.category || 'contract', newHash);
         cfg[tmplDef.configKey] = dsId;
         cfgChanged = true;
-        console.log(`[startup] Regenerated ${type} template → new ID: ${dsId} (old ${existingId} deleted)`);
+        console.log(`[startup] ${existingId ? 'Regenerated' : 'Created'} ${type} template → ID: ${dsId}${existingId ? ` (old ${existingId} deleted)` : ''}`);
       }
     } catch (e) {
-      console.error(`[startup] Failed to check/regenerate ${type} template: ${e.message}`);
+      console.error(`[startup] Failed to ${existingId ? 'regenerate' : 'create'} ${type} template: ${e.message}`);
     }
   }
 
