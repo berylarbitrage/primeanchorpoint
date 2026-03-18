@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wire Transfer Authorization — Prime Anchorpoint</title>
+<title>Wire Transfer Authorization & Bank Account Confirmation — Prime Anchorpoint</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -16,7 +16,7 @@
 .header-logo span em{color:var(--sky);font-style:normal}
 .back-link{font-size:.83rem;color:rgba(255,255,255,.6);transition:color .2s}.back-link:hover{color:#fff;text-decoration:none}
 .page-hero{background:var(--blue);padding:3.5rem 2rem 3rem;text-align:center}
-.page-hero h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:2rem;color:#fff;margin-bottom:.5rem}
+.page-hero h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:1.85rem;color:#fff;margin-bottom:.5rem}
 .page-hero p{color:rgba(255,255,255,.6);font-size:.9rem}
 .content-wrap{max-width:720px;margin:0 auto;padding:3rem 2rem 5rem}
 .auth-statement{background:#f8faff;border-left:4px solid var(--blue);border-radius:6px;padding:1.25rem 1.5rem;margin-bottom:2.5rem;font-size:.95rem;color:var(--gray-800);line-height:1.75}
@@ -28,13 +28,25 @@
 .field label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-400);margin-bottom:.4rem}
 .field .line{border-bottom:2px solid var(--gray-800);min-height:2rem}
 .field .optional{font-size:.7rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gray-400);font-style:italic}
-.cert-block{background:#f8faff;border:2px solid var(--blue);border-radius:10px;padding:1.75rem;margin-bottom:2.5rem}
+.check-row{display:flex;gap:1.5rem;margin-bottom:.5rem;font-size:.85rem;color:var(--gray-800)}
+.check-row label{font-size:.85rem;font-weight:500;text-transform:none;letter-spacing:0;color:var(--gray-800);display:flex;align-items:center;gap:.35rem}
+.wire-type-box{background:#f8faff;border:2px solid var(--gray-200);border-radius:8px;padding:1.25rem 1.5rem;margin-bottom:2rem}
+.wire-type-box .wt-label{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-400);margin-bottom:.6rem}
+.domestic-section{border:2px solid #d0d8e8;border-radius:10px;padding:1.5rem;margin-bottom:2rem;background:#fafcff}
+.domestic-section .section-title{color:#1a4fa0;border-bottom-color:#d0d8e8}
+.intl-section{border:2px solid #d0e8d0;border-radius:10px;padding:1.5rem;margin-bottom:2rem;background:#f8fff8}
+.intl-section .section-title{color:#1a7a3a;border-bottom-color:#d0e8d0}
+.hint{font-size:.8rem;color:var(--gray-400);margin-bottom:1rem;font-style:italic}
+.cert-block{background:#fffcf0;border:2px solid #e5c96a;border-radius:10px;padding:1.75rem;margin-bottom:2.5rem}
+.cert-block .section-title{color:#8a6d00;border-bottom-color:#e5c96a}
 .cert-block p{font-size:.93rem;color:var(--gray-800);margin-bottom:.6rem}
-.cert-block p:last-child{margin-bottom:0;font-size:.88rem;color:var(--gray-600);font-style:italic}
-.sig-row{display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;margin-top:2.5rem}
-@media(max-width:580px){.sig-row{grid-template-columns:1fr}}
+.cert-block p:last-child{margin-bottom:0}
+.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:2.5rem;border:2px solid var(--gray-200);border-radius:10px;padding:1.5rem}
+@media(max-width:580px){.sig-grid{grid-template-columns:1fr}}
+.sig-grid .sig-col-title{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue);margin-bottom:1rem;padding-bottom:.3rem;border-bottom:1px solid var(--gray-200)}
 .sig-field label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-400);margin-bottom:.4rem}
 .sig-field .sig-line{border-bottom:2px solid var(--gray-800);padding-bottom:.3rem;min-height:2.5rem}
+.sig-field{margin-bottom:1rem}
 .page-footer{background:var(--blue-dark);padding:1.75rem 2rem;text-align:center;font-size:.8rem;color:rgba(255,255,255,.3)}
 .page-footer a{color:rgba(255,255,255,.5)}.page-footer a:hover{color:#fff}
 .legal-nav{display:flex;flex-wrap:wrap;gap:.5rem .75rem;justify-content:center;margin-top:.75rem}
@@ -53,70 +65,192 @@
 </header>
 
 <div class="page-hero">
-  <h1>Wire Transfer Authorization</h1>
+  <h1>Wire Transfer Authorization &amp; Bank Account Confirmation Form</h1>
   <p>Payee Banking Information Form</p>
 </div>
 
 <div class="content-wrap">
 
   <div class="auth-statement">
-    I authorize Prime Anchorpoint to send payments owed to me / my business to the bank account listed below.
+    I hereby authorize Prime Anchorpoint and its authorized representatives to send wire transfer payments using the beneficiary and bank account information provided in this form.
+  </div>
+
+  <!-- Wire Type & Payment Reference -->
+  <div class="wire-type-box">
+    <div class="field-row">
+      <div class="field">
+        <div class="wt-label">Wire Type</div>
+        <div class="check-row">
+          <label><input type="checkbox"> Domestic (U.S.)</label>
+          <label><input type="checkbox"> International</label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Payment Reference / Invoice No. / Project Name <span class="optional">(optional)</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
   </div>
 
   <!-- 1. Beneficiary Information -->
   <div class="form-section">
     <div class="section-title">1. Beneficiary Information</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Beneficiary Full Legal Name</label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>Phone / Email <span class="optional">(optional)</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
     <div class="field-row full">
       <div class="field">
-        <label>Beneficiary Name</label>
+        <label>Beneficiary Address <span class="optional">(if required)</span></label>
         <div class="line"></div>
       </div>
     </div>
   </div>
 
-  <!-- 2. Bank Details -->
-  <div class="form-section">
-    <div class="section-title">2. Bank Details</div>
-    <div class="field-row full">
+  <!-- 2A. Domestic Wire -->
+  <div class="domestic-section">
+    <div class="section-title">2A. Domestic Wire (U.S.)</div>
+    <div class="hint">Complete this section for U.S. domestic wires; skip to 2B for international.</div>
+    <div class="field-row">
       <div class="field">
         <label>Bank Name</label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>ABA / Routing Number</label>
         <div class="line"></div>
       </div>
     </div>
     <div class="field-row">
       <div class="field">
-        <label>Routing / ABA / SWIFT</label>
+        <label>Account Number</label>
         <div class="line"></div>
       </div>
       <div class="field">
-        <label>Account Number / IBAN</label>
+        <label>Confirm Account Number</label>
         <div class="line"></div>
       </div>
     </div>
     <div class="field-row full">
       <div class="field">
-        <label>Intermediary Bank <span class="optional">(if applicable)</span></label>
+        <label>Account Type</label>
+        <div class="check-row">
+          <label><input type="checkbox"> Checking</label>
+          <label><input type="checkbox"> Savings</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2B. International Wire -->
+  <div class="intl-section">
+    <div class="section-title">2B. International Wire</div>
+    <div class="hint">Complete this section for international wires; domestic wires fill 2A only.</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Bank Name</label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>SWIFT / BIC</label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>IBAN / Account Number</label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>Confirm Account Number</label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Bank Country</label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>Preferred Currency</label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row full">
+      <div class="field">
+        <label>Bank Address <span class="optional">(if required)</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row full">
+      <div class="field">
+        <label>Intermediary / Correspondent Bank <span class="optional">(if applicable)</span></label>
         <div class="line"></div>
       </div>
     </div>
   </div>
 
-  <!-- 3. Certification -->
+  <!-- 3. Special Wire Instructions -->
+  <div class="form-section">
+    <div class="section-title">3. Special Wire Instructions <span class="optional" style="text-transform:none;letter-spacing:0">(optional)</span></div>
+    <div class="field-row full">
+      <div class="field">
+        <div class="line" style="min-height:3rem"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Certification & Agreement -->
   <div class="cert-block">
-    <div class="section-title" style="margin-bottom:1rem">3. Certification</div>
-    <p>I certify that the banking information above is true and correct.</p>
-    <p>Any future change to the bank account must be submitted in writing.</p>
+    <div class="section-title" style="margin-bottom:1rem">4. Certification &amp; Agreement</div>
+    <p>① I certify that the beneficiary and bank account information provided in this form is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account.</p>
+    <p>② A wire transfer sent in accordance with the account information I provided will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated.</p>
+    <p>③ I agree to notify Prime Anchorpoint in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions.</p>
+    <p>④ I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing.</p>
+    <p>⑤ Prime Anchorpoint is not responsible for delays, rejection, misdirection, or additional fees resulting from inaccurate, incomplete, or outdated banking information provided by the beneficiary.</p>
   </div>
 
   <!-- Signature -->
-  <div class="sig-row">
-    <div class="sig-field">
-      <label>Signature</label>
-      <div class="sig-line"></div>
+  <div class="sig-grid">
+    <div>
+      <div class="sig-col-title">Beneficiary Signature</div>
+      <div class="sig-field">
+        <label>Printed Name</label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Signature</label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Date</label>
+        <div class="sig-line"></div>
+      </div>
     </div>
-    <div class="sig-field">
-      <label>Date</label>
-      <div class="sig-line"></div>
+    <div>
+      <div class="sig-col-title">Company Approval</div>
+      <div class="sig-field">
+        <label>Printed Name</label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Title</label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Signature</label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Date</label>
+        <div class="sig-line"></div>
+      </div>
     </div>
   </div>
 

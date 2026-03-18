@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wire Transfer Authorization / 电汇付款授权表 — Prime Anchorpoint</title>
+<title>Wire Transfer Authorization & Bank Account Confirmation Form / 电汇付款授权及银行账户确认表 — Prime Anchorpoint</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -16,8 +16,8 @@
 .header-logo span em{color:var(--sky);font-style:normal}
 .back-link{font-size:.83rem;color:rgba(255,255,255,.6);transition:color .2s}.back-link:hover{color:#fff;text-decoration:none}
 .page-hero{background:var(--blue);padding:3.5rem 2rem 3rem;text-align:center}
-.page-hero h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:1.9rem;color:#fff;margin-bottom:.4rem}
-.page-hero h1 small{display:block;font-size:1.2rem;font-weight:600;margin-top:.3rem;color:rgba(255,255,255,.75)}
+.page-hero h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:1.7rem;color:#fff;margin-bottom:.4rem}
+.page-hero h1 small{display:block;font-size:1.15rem;font-weight:600;margin-top:.3rem;color:rgba(255,255,255,.75)}
 .page-hero p{color:rgba(255,255,255,.6);font-size:.88rem}
 .content-wrap{max-width:720px;margin:0 auto;padding:3rem 2rem 5rem}
 .auth-statement{background:#f8faff;border-left:4px solid var(--blue);border-radius:6px;padding:1.25rem 1.5rem;margin-bottom:2.5rem}
@@ -33,17 +33,31 @@
 .field label span{display:block;font-size:.7rem;font-weight:400;color:var(--gray-400)}
 .field .line{border-bottom:2px solid var(--gray-800);min-height:2rem;margin-top:.35rem}
 .field .optional{font-size:.7rem;font-weight:400;color:var(--gray-400);font-style:italic}
-.cert-block{background:#f8faff;border:2px solid var(--blue);border-radius:10px;padding:1.75rem;margin-bottom:2.5rem}
-.cert-block p{font-size:.93rem;color:var(--gray-800);margin-bottom:.4rem}
-.cert-block p span{display:block;font-size:.85rem;color:var(--gray-600);margin-top:.1rem}
-.cert-block p:last-child{margin-bottom:0;margin-top:.8rem}
-.cert-block p:last-child,
-.cert-block p:last-child span{font-size:.87rem;color:var(--gray-600);font-style:italic}
-.sig-row{display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;margin-top:2.5rem}
-@media(max-width:580px){.sig-row{grid-template-columns:1fr}}
+.check-row{display:flex;gap:1.5rem;margin-top:.3rem;font-size:.85rem;color:var(--gray-800)}
+.check-row label{font-size:.85rem;font-weight:500;text-transform:none;letter-spacing:0;color:var(--gray-800);display:flex;align-items:center;gap:.35rem}
+.check-row label span{display:inline;font-size:.78rem;color:var(--gray-400)}
+.wire-type-box{background:#f8faff;border:2px solid var(--gray-200);border-radius:8px;padding:1.25rem 1.5rem;margin-bottom:2rem}
+.wire-type-box .wt-label{font-size:.75rem;font-weight:700;color:var(--gray-600);margin-bottom:.15rem;line-height:1.4}
+.wire-type-box .wt-label span{display:block;font-size:.7rem;font-weight:400;color:var(--gray-400)}
+.domestic-section{border:2px solid #d0d8e8;border-radius:10px;padding:1.5rem;margin-bottom:2rem;background:#fafcff}
+.domestic-section .section-title{color:#1a4fa0;border-bottom-color:#d0d8e8}
+.intl-section{border:2px solid #d0e8d0;border-radius:10px;padding:1.5rem;margin-bottom:2rem;background:#f8fff8}
+.intl-section .section-title{color:#1a7a3a;border-bottom-color:#d0e8d0}
+.hint{font-size:.8rem;color:var(--gray-400);margin-bottom:1rem;font-style:italic}
+.hint span{display:block;font-size:.75rem}
+.cert-block{background:#fffcf0;border:2px solid #e5c96a;border-radius:10px;padding:1.75rem;margin-bottom:2.5rem}
+.cert-block .section-title{color:#8a6d00;border-bottom-color:#e5c96a}
+.cert-block p{font-size:.93rem;color:var(--gray-800);margin-bottom:.6rem}
+.cert-block p .zh{display:block;font-size:.85rem;color:var(--gray-600);margin-top:.1rem}
+.cert-block p:last-child{margin-bottom:0}
+.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:2.5rem;border:2px solid var(--gray-200);border-radius:10px;padding:1.5rem}
+@media(max-width:580px){.sig-grid{grid-template-columns:1fr}}
+.sig-grid .sig-col-title{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue);margin-bottom:1rem;padding-bottom:.3rem;border-bottom:1px solid var(--gray-200)}
+.sig-grid .sig-col-title small{display:block;font-size:.7rem;font-weight:500;letter-spacing:.3px;color:var(--gray-400);text-transform:none;margin-top:.1rem}
 .sig-field label{display:block;font-size:.75rem;font-weight:700;color:var(--gray-600);margin-bottom:.15rem;line-height:1.4}
-.sig-field label span{display:block;font-size:.7rem;font-weight:400;color:var(--gray-400)}
+.sig-field label span{display:inline;font-size:.7rem;font-weight:400;color:var(--gray-400)}
 .sig-field .sig-line{border-bottom:2px solid var(--gray-800);padding-bottom:.3rem;min-height:2.5rem;margin-top:.35rem}
+.sig-field{margin-bottom:1rem}
 .page-footer{background:var(--blue-dark);padding:1.75rem 2rem;text-align:center;font-size:.8rem;color:rgba(255,255,255,.3)}
 .page-footer a{color:rgba(255,255,255,.5)}.page-footer a:hover{color:#fff}
 .legal-nav{display:flex;flex-wrap:wrap;gap:.5rem .75rem;justify-content:center;margin-top:.75rem}
@@ -62,8 +76,8 @@
 </header>
 
 <div class="page-hero">
-  <h1>Wire Transfer Authorization
-    <small>电汇付款授权表</small>
+  <h1>Wire Transfer Authorization &amp; Bank Account Confirmation Form
+    <small>电汇付款授权及银行账户确认表</small>
   </h1>
   <p>Payee Banking Information Form &nbsp;·&nbsp; 收款方银行信息表</p>
 </div>
@@ -71,8 +85,25 @@
 <div class="content-wrap">
 
   <div class="auth-statement">
-    <p>I authorize Prime Anchorpoint to send payments owed to me / my business to the bank account listed below.</p>
-    <p>本人授权 Prime Anchorpoint 将应付给本人 / 本人公司的款项电汇至以下银行账户。</p>
+    <p>I hereby authorize Prime Anchorpoint and its authorized representatives to send wire transfer payments using the beneficiary and bank account information provided in this form.</p>
+    <p>本人特此授权 Prime Anchorpoint 及其授权代表按照本表所提供的收款人及银行账户信息进行电汇付款。</p>
+  </div>
+
+  <!-- Wire Type & Payment Reference -->
+  <div class="wire-type-box">
+    <div class="field-row">
+      <div class="field">
+        <div class="wt-label">Wire Type <span>电汇类型</span></div>
+        <div class="check-row">
+          <label><input type="checkbox"> Domestic (U.S.) <span>美国境内电汇</span></label>
+          <label><input type="checkbox"> International <span>国际电汇</span></label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Payment Reference / Invoice No. / Project Name <span>付款参考 / 发票号 / 项目名称 (optional 可选)</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
   </div>
 
   <!-- 1. Beneficiary Information -->
@@ -81,69 +112,189 @@
       1. Beneficiary Information
       <small>收款人信息</small>
     </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Beneficiary Full Legal Name <span>收款人全名（法定姓名）</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>Phone / Email <span>电话/电邮 (optional 可选)</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
     <div class="field-row full">
       <div class="field">
-        <label>Beneficiary Name <span>收款人姓名</span></label>
+        <label>Beneficiary Address (if required) <span>收款人地址（如需要）</span></label>
         <div class="line"></div>
       </div>
     </div>
   </div>
 
-  <!-- 2. Bank Details -->
-  <div class="form-section">
+  <!-- 2A. Domestic Wire -->
+  <div class="domestic-section">
     <div class="section-title">
-      2. Bank Details
-      <small>银行信息</small>
+      2A. Domestic Wire (U.S.)
+      <small>国内电汇（美国境内）</small>
     </div>
-    <div class="field-row full">
+    <div class="hint">Complete this section for U.S. domestic wires; skip to 2B for international.<span>境内电汇请填写本节；国际电汇请跳至 2B。</span></div>
+    <div class="field-row">
       <div class="field">
         <label>Bank Name <span>银行名称</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>ABA / Routing Number <span>路由号</span></label>
         <div class="line"></div>
       </div>
     </div>
     <div class="field-row">
       <div class="field">
-        <label>Routing / ABA / SWIFT <span>路由号 / ABA / SWIFT</span></label>
+        <label>Account Number <span>账号</span></label>
         <div class="line"></div>
       </div>
       <div class="field">
-        <label>Account Number / IBAN <span>账号 / IBAN</span></label>
+        <label>Confirm Account Number <span>确认账号</span></label>
         <div class="line"></div>
       </div>
     </div>
     <div class="field-row full">
       <div class="field">
-        <label>Intermediary Bank <span class="optional">(if applicable)</span> <span>中间行（如适用）</span></label>
+        <label>Account Type <span>账户类型</span></label>
+        <div class="check-row">
+          <label><input type="checkbox"> Checking <span>支票账户</span></label>
+          <label><input type="checkbox"> Savings <span>储蓄账户</span></label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2B. International Wire -->
+  <div class="intl-section">
+    <div class="section-title">
+      2B. International Wire
+      <small>国际电汇</small>
+    </div>
+    <div class="hint">Complete this section for international wires; domestic wires fill 2A only.<span>国际电汇请填写本节；国内电汇请仅填写 2A。</span></div>
+    <div class="field-row">
+      <div class="field">
+        <label>Bank Name <span>银行名称</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>SWIFT / BIC</label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>IBAN / Account Number <span>账号</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>Confirm Account Number <span>确认账号</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Bank Country <span>银行所在国家</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>Preferred Currency <span>收款币种</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row full">
+      <div class="field">
+        <label>Bank Address (if required) <span>银行地址（如需要）</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row full">
+      <div class="field">
+        <label>Intermediary / Correspondent Bank (if applicable) <span>中间行/代理行（如适用）</span></label>
         <div class="line"></div>
       </div>
     </div>
   </div>
 
-  <!-- 3. Certification -->
+  <!-- 3. Special Wire Instructions -->
+  <div class="form-section">
+    <div class="section-title">
+      3. Special Wire Instructions
+      <small>电汇特别说明 (optional 可选)</small>
+    </div>
+    <div class="field-row full">
+      <div class="field">
+        <div class="line" style="min-height:3rem"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Certification & Agreement -->
   <div class="cert-block">
     <div class="section-title" style="margin-bottom:1rem">
-      3. Certification
-      <small>确认声明</small>
+      4. Certification &amp; Agreement
+      <small>声明与承诺</small>
     </div>
     <p>
-      I certify that the banking information above is true and correct.
-      <span>本人确认以上银行信息真实准确。</span>
+      ① I certify that the beneficiary and bank account information provided in this form is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account.
+      <span class="zh">本人确认本表所提供的收款人及银行账户信息真实、完整、准确，且本人系该账户持有人或有权通过该账户收取款项。</span>
     </p>
     <p>
-      Any future change to the bank account must be submitted in writing.
-      <span>如银行账户信息有变更，须书面通知公司。</span>
+      ② A wire transfer sent in accordance with the account information I provided will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated.
+      <span class="zh">付款方依照本人提供的账户信息发起电汇后，即视为已有效履行付款义务；除非本人已在电汇发起前以书面形式提供更正后的付款指示。</span>
+    </p>
+    <p>
+      ③ I agree to notify Prime Anchorpoint in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions.
+      <span class="zh">如本人收款人名称、银行账户、路由号、SWIFT、IBAN 或其他付款信息发生变化，本人同意在电汇发起前以书面形式通知 Prime Anchorpoint。</span>
+    </p>
+    <p>
+      ④ I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing.
+      <span class="zh">本人理解，中间行费用、收款银行费用及其他电汇相关费用可能产生，除非双方另有书面约定，否则实际到账金额可能因此减少。</span>
+    </p>
+    <p>
+      ⑤ Prime Anchorpoint is not responsible for delays, rejection, misdirection, or additional fees resulting from inaccurate, incomplete, or outdated banking information provided by the beneficiary.
+      <span class="zh">因收款人提供的银行信息不准确、不完整或已过时而导致的延迟、退汇、误汇或额外费用，Prime Anchorpoint 不承担相应责任。</span>
     </p>
   </div>
 
   <!-- Signature -->
-  <div class="sig-row">
-    <div class="sig-field">
-      <label>Signature <span>签字</span></label>
-      <div class="sig-line"></div>
+  <div class="sig-grid">
+    <div>
+      <div class="sig-col-title">Beneficiary Signature <small>收款人签名</small></div>
+      <div class="sig-field">
+        <label>Printed Name <span>正楷姓名</span></label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Signature <span>签名</span></label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Date <span>日期</span></label>
+        <div class="sig-line"></div>
+      </div>
     </div>
-    <div class="sig-field">
-      <label>Date <span>日期</span></label>
-      <div class="sig-line"></div>
+    <div>
+      <div class="sig-col-title">Company Approval <small>公司审批</small></div>
+      <div class="sig-field">
+        <label>Printed Name <span>正楷姓名</span></label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Title <span>职位</span></label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Signature <span>签名</span></label>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-field">
+        <label>Date <span>日期</span></label>
+        <div class="sig-line"></div>
+      </div>
     </div>
   </div>
 
