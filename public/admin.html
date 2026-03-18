@@ -2879,6 +2879,17 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Onboarding Task Form Preview Modal -->
+<div class="modal-bg" id="onboardingPreviewModal" style="z-index:2000">
+  <div class="modal" style="max-width:860px;width:95vw;height:90vh;display:flex;flex-direction:column;padding:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem;flex-shrink:0">
+      <h2 style="margin:0;font-size:1rem" id="onboardingPreviewTitle">📄 表单预览</h2>
+      <button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-600)" onclick="closeModal('onboardingPreviewModal');document.getElementById('onboardingPreviewFrame').src=''">✕ 关闭</button>
+    </div>
+    <iframe id="onboardingPreviewFrame" style="flex:1;border:1px solid var(--gray-200);border-radius:6px;background:#f8fafc" src="about:blank"></iframe>
+  </div>
+</div>
+
 <!-- Payment Method Authorization Modal -->
 <div class="modal-bg" id="paymentAuthModal"><div class="modal" style="max-width:520px">
   <h2>💳 付款方式确认</h2>
@@ -2918,6 +2929,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="modal-actions" style="margin-top:.5rem;gap:.5rem;display:flex;justify-content:flex-end;flex-wrap:wrap">
     <button class="btn btn-outline" onclick="closeModal('paymentAuthModal')">取消</button>
+    <button class="btn btn-sm" style="background:#fdf4ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="previewPaymentAuthTemplate()">🔍 预览表格</button>
     <button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a" onclick="refreshPaymentAuthStatus()">🔄 刷新状态</button>
     <button class="btn btn-green" id="payAuthSendBtn" onclick="doSendPaymentAuth()">📨 发送授权表单</button>
   </div>
@@ -14255,6 +14267,7 @@ async function loadWorkerAccounts() {
 let _onboardingWorkerId = null;
 let _onboardingDispatchReady = false;
 let _onboardingWorkerData = null;
+let _onboardingDsConfig = null;
 
 async function openOnboardingModal(workerId, workerName) {
   _onboardingWorkerId = workerId;
@@ -14270,17 +14283,58 @@ async function openOnboardingModalById(workerId) {
 }
 
 let _onboardingInterviewInfo = null;
+
+// Task key → DocuSeal config keys (in priority order)
+const _TASK_TEMPLATE_MAP = {
+  w9:              ['w9_template_id','w9_individual_template_id'],
+  contract:        ['company_contract_template_id','company_contract_en_template_id','company_contract_es_template_id','worker_1099_template_id','worker_1099_en_template_id','worker_w2_template_id'],
+  payment_method:  ['ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','wire_auth_en_template_id','zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id'],
+  i9:              ['i9_template_id'],
+  ead_upload:      ['i9_template_id'],
+  tax_doc_w8ben:   ['w8ben_template_id'],
+  tax_doc_w8bene:  ['w8bene_template_id'],
+  tax_doc_8233:    ['form8233_template_id'],
+  tax_doc_w7_itin: ['w7_template_id'],
+  tin_verify:      ['w9_template_id','w9_individual_template_id'],
+};
+
+function _getOnboardingTaskTemplateId(taskKey) {
+  if (!_onboardingDsConfig) return null;
+  const cfg = _onboardingDsConfig;
+  // For contract: pick based on employment type
+  if (taskKey === 'contract' && _onboardingWorkerData) {
+    const emp = _onboardingWorkerData.employment_type;
+    if (emp === '1099') return cfg.worker_1099_template_id || cfg.company_contract_template_id || null;
+    if (emp === 'w2') return cfg.company_contract_template_id || null;
+  }
+  const keys = _TASK_TEMPLATE_MAP[taskKey] || [];
+  for (const k of keys) {
+    if (cfg[k]) return String(cfg[k]);
+  }
+  return null;
+}
+
+function openOnboardingTaskPreview(taskKey, title) {
+  const tid = _getOnboardingTaskTemplateId(taskKey);
+  if (!tid) { showToast('未找到对应模板，请先在 DocuSeal 设置中配置该表格', 'error'); return; }
+  document.getElementById('onboardingPreviewTitle').textContent = `📄 预览：${title}`;
+  document.getElementById('onboardingPreviewFrame').src = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
+  document.getElementById('onboardingPreviewModal').classList.add('show');
+}
 let _onboardingRecommendedForm = null;
 
 async function refreshOnboardingModal() {
   let tasks, rows, intvInfo, taxResData;
   try {
-    [tasks, rows, intvInfo, taxResData] = await Promise.all([
+    let dsConfigRes;
+    [tasks, rows, intvInfo, taxResData, dsConfigRes] = await Promise.all([
       api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`),
       api('/admin/worker-accounts'),
       api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`),
-      api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`)
+      api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`),
+      api('/admin/docuseal/config')
     ]);
+    _onboardingDsConfig = dsConfigRes || null;
   } catch (e) {
     console.error('[onboarding] API error:', e);
     document.getElementById('onboardingTaskList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:#dc2626">加载失败，请刷新页面重试。<br><span style="font-size:.78rem;color:var(--gray-400)">' + e.message + '</span></div>';
@@ -14426,6 +14480,7 @@ function renderOnboardingTasks(tasks) {
           ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="confirmOnboardingWaive(${tk},${tt})">⏭️ Waive</button>`:''}
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
+          ${_TASK_TEMPLATE_MAP[t.key]?`<button class="btn btn-sm" style="background:#fdf4ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="openOnboardingTaskPreview('${t.key}',${tt})">🔍 预览表格</button>`:''}
           ${t.key==='contract'
             ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>`
             : t.key==='persona_verify'
@@ -17709,6 +17764,30 @@ const _PM_DESCS = {
   third_party: '💳 发送第三方平台（PayPal / Venmo / CashApp）付款授权表单，工人需填写账号信息并签署。',
   cash: '💵 发送现金签收表单，工人需签署确认现金付款协议。'
 };
+
+// method × lang → config key
+const _PM_TEMPLATE_KEYS = {
+  direct_deposit: { zh: 'ach_auth_template_id',         en: 'ach_auth_en_template_id',         es: 'ach_auth_es_template_id' },
+  wire:           { zh: 'wire_auth_template_id',         en: 'wire_auth_en_template_id',         es: 'wire_auth_es_template_id' },
+  zelle:          { zh: 'zelle_auth_template_id',        en: 'zelle_auth_en_template_id',        es: 'zelle_auth_es_template_id' },
+  third_party:    { zh: 'third_party_pay_template_id',   en: 'third_party_pay_en_template_id',   es: 'third_party_pay_es_template_id' },
+  cash:           { zh: 'cash_receipt_template_id',      en: 'cash_receipt_en_template_id',      es: 'cash_receipt_es_template_id' },
+  check:          { zh: 'check_instruction_template_id', en: 'check_instruction_en_template_id', es: 'check_instruction_es_template_id' },
+};
+
+function previewPaymentAuthTemplate() {
+  const method = document.getElementById('payAuthMethodSelect').value;
+  const lang = document.getElementById('payAuthLang').value;
+  const cfg = _onboardingDsConfig || {};
+  const keyMap = _PM_TEMPLATE_KEYS[method] || {};
+  // Try exact lang, then zh fallback, then any configured key for this method
+  const tid = cfg[keyMap[lang]] || cfg[keyMap['zh']] || cfg[keyMap['en']] || cfg[keyMap['es']];
+  if (!tid) { showToast('未找到该付款方式的表格模板，请先在 DocuSeal 设置中配置', 'error'); return; }
+  const methodLabels = { direct_deposit:'ACH Direct Deposit', wire:'Wire Transfer', check:'Check', zelle:'Zelle', third_party:'第三方付款', cash:'现金签收' };
+  document.getElementById('onboardingPreviewTitle').textContent = `📄 预览：${methodLabels[method]||method} 授权表格`;
+  document.getElementById('onboardingPreviewFrame').src = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
+  document.getElementById('onboardingPreviewModal').classList.add('show');
+}
 
 async function openPaymentAuthModal() {
   if (!_onboardingWorkerId) return;
