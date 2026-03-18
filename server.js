@@ -17452,6 +17452,8 @@ async function deduplicateDocusealTemplates() {
   const seen = new Map();
   const toDelete = [];
   for (const row of allRows) {
+    // Never dedup user-uploaded PDF templates (content_hash IS NULL = uploaded by user, not system-generated)
+    if (!row.content_hash) continue;
     const key = `${row.category}|${row.languages || ''}`;
     if (!seen.has(key)) { seen.set(key, row); }
     else { toDelete.push(row); }
