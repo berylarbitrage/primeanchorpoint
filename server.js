@@ -4174,47 +4174,68 @@ function _buildCheckInstructionForm(lang) {
   const companyName = getCompanyLegalName();
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
-  const L = (en, zhTxt, esTxt) => {
-    if (zh && zhTxt) return `${en} ${zhTxt}`;
-    if (es && esTxt) return `${en} / ${esTxt}`;
-    return en;
-  };
+  // bilingual helper: English bold, secondary language normal weight
+  const bi = (en, secondary) => secondary ? `<b>${en}</b> <span style="font-weight:400;color:#555">${secondary}</span>` : `<b>${en}</b>`;
 
+  // ── 1. Title ──
   const formTitle = zh
-    ? 'CHECK PAYMENT MAILING INSTRUCTION & PAYEE CONFIRMATION / 支票付款及邮寄地址确认表'
+    ? 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM / 支票收款人及邮寄地址确认表'
     : es
-    ? 'CHECK PAYMENT MAILING INSTRUCTION & PAYEE CONFIRMATION / INSTRUCCIÓN DE PAGO Y CONFIRMACIÓN DE BENEFICIARIO'
-    : 'CHECK PAYMENT MAILING INSTRUCTION & PAYEE CONFIRMATION';
+    ? 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM / FORMULARIO DE CONFIRMACIÓN DE BENEFICIARIO Y DIRECCIÓN POSTAL'
+    : 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM';
   const subtitle = zh
-    ? `支票付款及邮寄地址确认表 — ${companyName}`
+    ? `支票收款人及邮寄地址确认表 — ${companyName}`
     : es
-    ? `Instrucción de Pago con Cheque — ${companyName}`
-    : `Check Payment & Mailing Confirmation — ${companyName}`;
+    ? `Confirmación de Beneficiario y Dirección Postal — ${companyName}`
+    : `Check Payee & Mailing Address Confirmation — ${companyName}`;
 
+  // ── 2. Intro paragraph ──
   const introPara = zh
-    ? `I request that ${companyName} issue payment by check to the payee name and mailing address provided below. 本人要求 ${companyName} 按以下收款人名称及邮寄地址签发并寄送支票。`
+    ? `I request that ${companyName} issue payment by check using the payee name and mailing address provided below. 本人要求 ${companyName} 按以下提供的收款人名称及邮寄地址开具并邮寄支票。`
     : es
-    ? `I request that ${companyName} issue payment by check to the payee name and mailing address provided below. Solicito que ${companyName} emita el pago mediante cheque al nombre y dirección postal indicados a continuación.`
-    : `I request that ${companyName} issue payment by check to the payee name and mailing address provided below.`;
+    ? `I request that ${companyName} issue payment by check using the payee name and mailing address provided below. Solicito que ${companyName} emita el pago mediante cheque utilizando el nombre del beneficiario y la dirección postal indicados a continuación.`
+    : `I request that ${companyName} issue payment by check using the payee name and mailing address provided below.`;
 
-  const s1 = L('1. PAYEE INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
-  const lPayeeName   = L('Payee Name (as printed on check)', '收款人姓名（与支票抬头一致）', 'Nombre del Beneficiario (tal como aparece en el cheque)');
-  const lContact     = zh ? 'Phone / Email 电话/电邮 (optional 可选)' : es ? 'Phone / Email (opcional)' : 'Phone / Email (optional)';
+  // ── Section 1: Payee Information ──
+  const s1 = zh ? '1. PAYEE INFORMATION 收款人信息' : es ? '1. PAYEE INFORMATION / INFORMACIÓN DEL BENEFICIARIO' : '1. PAYEE INFORMATION';
 
-  const s2 = L('2. MAILING ADDRESS', '邮寄地址', 'DIRECCIÓN POSTAL');
-  const lStreet  = L('Street Address', '街道地址', 'Dirección');
+  // ── 9. Payee Type ──
+  const lPayeeType = zh ? 'Payee Type 收款人类型' : es ? 'Payee Type / Tipo de Beneficiario' : 'Payee Type';
+  const lIndividual = zh ? 'Individual 个人' : es ? 'Individual / Persona Física' : 'Individual';
+  const lBusiness   = zh ? 'Business 公司' : es ? 'Business / Empresa' : 'Business';
+
+  const lPayeeName = zh ? 'Payee Name (as printed on check) 收款人姓名（与支票抬头一致）' : es ? 'Payee Name (as printed on check) / Nombre del Beneficiario (tal como aparece en el cheque)' : 'Payee Name (as printed on check)';
+  // ── 3. Payee Name hint ──
+  const payeeHint = zh
+    ? 'Must match the payee name used for tax and payment records (e.g. W-9 / invoice), unless otherwise approved in writing. 除非经书面批准，否则应与税务及付款记录中的收款人名称一致（如 W-9 / 发票）。'
+    : es
+    ? 'Must match the payee name used for tax and payment records (e.g. W-9 / invoice), unless otherwise approved in writing. Debe coincidir con el nombre del beneficiario utilizado en los registros fiscales y de pago (p. ej., W-9 / factura), salvo aprobación por escrito.'
+    : 'Must match the payee name used for tax and payment records (e.g. W-9 / invoice), unless otherwise approved in writing.';
+  const lContact = zh ? 'Phone / Email 电话/电邮 (optional 可选)' : es ? 'Phone / Email (opcional)' : 'Phone / Email (optional)';
+
+  // ── 4. Section 2: Payment Mailing Address ──
+  const s2 = zh ? '2. PAYMENT MAILING ADDRESS 付款邮寄地址' : es ? '2. PAYMENT MAILING ADDRESS / DIRECCIÓN POSTAL DE PAGO' : '2. PAYMENT MAILING ADDRESS';
+  const lStreet  = zh ? 'Street Address 街道地址' : es ? 'Street Address / Dirección' : 'Street Address';
   const lApt     = zh ? 'Apt / Suite / Unit 门牌号 (optional 可选)' : es ? 'Apt / Suite / Unit (opcional)' : 'Apt / Suite / Unit (optional)';
-  const lCity    = L('City', '城市', 'Ciudad');
-  const lState   = L('State', '州', 'Estado');
+  const lCity    = zh ? 'City 城市' : es ? 'City / Ciudad' : 'City';
+  const lState   = zh ? 'State 州' : es ? 'State / Estado' : 'State';
   const lZip     = 'ZIP';
   const lCountry = zh ? 'Country 国家 (if outside U.S. 境外填写)' : es ? 'Country / País (si fuera de EE.UU.)' : 'Country (if outside U.S.)';
 
-  const s3 = L('3. PAYMENT REFERENCE', '付款参考', 'REFERENCIA DE PAGO');
-  const lRef = zh ? 'Invoice # / Job # / Payment Reference 发票号/工作号/付款参考号' : es ? 'N.º de Factura / Trabajo / Referencia de Pago' : 'Invoice # / Job # / Payment Reference';
+  // ── 5. Section 3: Payment Reference ──
+  const s3 = zh ? '3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME 付款参考 / 发票号 / 项目名称' : es ? '3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME / REFERENCIA DE PAGO' : '3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME';
+  const refPlaceholder = 'e.g., INV-2026-001 / Project Alpha';
 
+  // ── 6. Section 4: Special Instructions ──
   const s4 = zh ? '4. SPECIAL INSTRUCTIONS 特别说明 (optional 可选)' : es ? '4. SPECIAL INSTRUCTIONS / INSTRUCCIONES ESPECIALES (opcional)' : '4. SPECIAL INSTRUCTIONS (optional)';
+  const specialHint = zh
+    ? 'Special instructions are subject to company review and may require additional verification. 特殊说明需经公司审核，必要时可能需要额外核实。'
+    : es
+    ? 'Special instructions are subject to company review and may require additional verification. Las instrucciones especiales están sujetas a revisión de la empresa y pueden requerir verificación adicional.'
+    : 'Special instructions are subject to company review and may require additional verification.';
 
-  const s5 = L('5. CONFIRMATION & AGREEMENT', '确认与承诺', 'CONFIRMACIÓN Y ACUERDO');
+  // ── Section 5: Confirmation & Agreement ──
+  const s5 = zh ? '5. CONFIRMATION & AGREEMENT 确认与承诺' : es ? '5. CONFIRMATION & AGREEMENT / CONFIRMACIÓN Y ACUERDO' : '5. CONFIRMATION & AGREEMENT';
   const confirmLine1 = zh
     ? 'I confirm that the payee name and mailing address provided above are accurate. 本人确认以上收款人名称及邮寄地址真实准确。'
     : es
@@ -4230,11 +4251,21 @@ function _buildCheckInstructionForm(lang) {
     : es
     ? `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect. Acepto notificar a ${companyName} por escrito antes de que entre en vigor cualquier cambio en mi nombre o dirección postal.`
     : `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect.`;
+  // ── 7. Change effectiveness clause ──
+  const confirmLine4 = zh
+    ? `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions. 任何收款人名称或邮寄地址的变更，仅在 ${companyName} 收到并处理更新后的书面指示后生效。`
+    : es
+    ? `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions. Cualquier cambio en el nombre del beneficiario o la dirección postal solo entrará en vigor después de que ${companyName} reciba y procese las instrucciones escritas actualizadas.`
+    : `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions.`;
 
+  // ── Signature section ──
   const sigHeader = zh ? 'PAYEE SIGNATURE 收款人签名' : es ? 'FIRMA DEL BENEFICIARIO' : 'PAYEE SIGNATURE';
-  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en letra de molde');
-  const lSig  = L('Signature', '签名', 'Firma');
-  const lDate = L('Date', '日期', 'Fecha');
+  const lPrintedName = zh ? 'Printed Name 正楷姓名' : es ? 'Printed Name / Nombre en letra de molde' : 'Printed Name';
+  // ── 8. Title / Relationship ──
+  const lTitleRel = zh ? 'Title / Relationship 职务 / 与收款人关系' : es ? 'Title / Relationship / Cargo / Relación con el Beneficiario' : 'Title / Relationship';
+  const titlePlaceholder = zh ? 'e.g., Owner, Manager, Self' : es ? 'e.g., Owner, Manager, Self' : 'e.g., Owner, Manager, Self';
+  const lSig  = zh ? 'Signature 签名' : es ? 'Signature / Firma' : 'Signature';
+  const lDate = zh ? 'Date 日期' : es ? 'Date / Fecha' : 'Date';
 
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
@@ -4245,9 +4276,20 @@ function _buildCheckInstructionForm(lang) {
 <p style="font-size:8.5pt;margin-bottom:12px">${introPara}</p>
 
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:2px">
   <tr>
-    <td style="${c}width:55%"><b>${lPayeeName}</b><br><text-field name="check_payee" role="Contractor" required="true" style="${w}"></text-field></td>
+    <td colspan="2" style="${c}">
+      <b>${lPayeeType}</b>
+      <div style="margin-top:3px">
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payee_individual" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${lIndividual}</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payee_business" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${lBusiness}</label>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td style="${c}width:55%"><b>${lPayeeName}</b><br><text-field name="check_payee" role="Contractor" required="true" style="${w}"></text-field>
+      <div style="font-size:7pt;color:#888;margin-top:2px;line-height:1.35">${payeeHint}</div>
+    </td>
     <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="check_contact" role="Contractor" style="${w}"></text-field></td>
   </tr>
 </table>
@@ -4269,34 +4311,40 @@ function _buildCheckInstructionForm(lang) {
 </table>
 
 <div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
-<text-field name="check_reference" role="Contractor" style="${w}" placeholder="e.g., INV-2026-001"></text-field>
+<text-field name="check_reference" role="Contractor" style="${w}" placeholder="${refPlaceholder}"></text-field>
 
 <div style="font-weight:700;margin:10px 0 3px;font-size:9.5pt">${s4}</div>
+<div style="font-size:7pt;color:#888;margin-bottom:3px;line-height:1.35">${specialHint}</div>
 <text-field name="check_notes" role="Contractor" style="${w};min-height:36px" placeholder="e.g., Attn: ..., c/o ..."></text-field>
 
 <div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:12px;font-size:8pt;line-height:1.55">
   <div style="font-weight:700;margin-bottom:4px">${s5}</div>
   <div style="margin-bottom:4px">${confirmLine1}</div>
   <div style="margin-bottom:4px">${confirmLine2}</div>
-  <div>${confirmLine3}</div>
+  <div style="margin-bottom:4px">${confirmLine3}</div>
+  <div>${confirmLine4}</div>
 </div>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:10px;font-size:8.5pt;border-radius:3px">
   <b>${sigHeader}</b>
   <table style="width:100%;margin-top:6px">
     <tr>
-      <td colspan="2" style="padding-bottom:6px;vertical-align:top">
+      <td style="width:55%;padding-right:8px;padding-bottom:6px;vertical-align:top">
         <div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div>
         <text-field name="check_printed_name" role="Contractor" required="true" style="${w}"></text-field>
       </td>
+      <td style="width:45%;padding-bottom:6px;vertical-align:top">
+        <div style="font-size:7.5pt;font-weight:700">${lTitleRel}:</div>
+        <text-field name="check_title_relationship" role="Contractor" style="${w}" placeholder="${titlePlaceholder}"></text-field>
+      </td>
     </tr>
     <tr>
-      <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="check_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:40%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate}:</div><date-field name="check_date" role="Contractor" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="width:55%;padding-right:8px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="check_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:45%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate}:</div><date-field name="check_date" role="Contractor" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-18 CDT</div>
 </div>`;
 }
 function generateCheckInstructionHtmlTemplate()    { return _buildCheckInstructionForm('zh-en'); }
@@ -4711,9 +4759,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   wire_auth:    { name: 'Wire Transfer Authorization (ZH+EN) / 电汇付款授权及银行账户确认', configKey: 'wire_auth_template_id',    category: 'wire_auth',    generator: generateWireAuthHtmlTemplate },
   wire_auth_en: { name: 'Wire Transfer Authorization (EN)',                                   configKey: 'wire_auth_en_template_id', category: 'wire_auth_en', generator: generateWireAuthHtmlTemplate_EN },
   wire_auth_es: { name: 'Wire Transfer Authorization (EN+ES)',                                configKey: 'wire_auth_es_template_id', category: 'wire_auth_es', generator: generateWireAuthHtmlTemplate_ES },
-  check_instruction:    { name: 'Check Payment Mailing Instruction (ZH+EN) / 支票付款及邮寄地址确认表', configKey: 'check_instruction_template_id',    category: 'check_instruction',    generator: generateCheckInstructionHtmlTemplate },
-  check_instruction_en: { name: 'Check Payment Mailing Instruction (EN)',                                  configKey: 'check_instruction_en_template_id', category: 'check_instruction_en', generator: generateCheckInstructionHtmlTemplate_EN },
-  check_instruction_es: { name: 'Check Payment Mailing Instruction (EN+ES)',                               configKey: 'check_instruction_es_template_id', category: 'check_instruction_es', generator: generateCheckInstructionHtmlTemplate_ES },
+  check_instruction:    { name: 'Check Payee & Mailing Address Confirmation Form (ZH+EN) / 支票收款人及邮寄地址确认表', configKey: 'check_instruction_template_id',    category: 'check_instruction',    generator: generateCheckInstructionHtmlTemplate },
+  check_instruction_en: { name: 'Check Payee & Mailing Address Confirmation Form (EN)',                                             configKey: 'check_instruction_en_template_id', category: 'check_instruction_en', generator: generateCheckInstructionHtmlTemplate_EN },
+  check_instruction_es: { name: 'Check Payee & Mailing Address Confirmation Form (EN+ES)',                                          configKey: 'check_instruction_es_template_id', category: 'check_instruction_es', generator: generateCheckInstructionHtmlTemplate_ES },
   zelle_auth:    { name: 'Zelle Payment Authorization and Account Confirmation (ZH+EN)', configKey: 'zelle_auth_template_id',    category: 'zelle_auth',    generator: generateZelleAuthHtmlTemplate },
   zelle_auth_en: { name: 'Zelle Payment Authorization and Account Confirmation (EN)',   configKey: 'zelle_auth_en_template_id', category: 'zelle_auth_en', generator: generateZelleAuthHtmlTemplate_EN },
   zelle_auth_es: { name: 'Zelle Payment Authorization and Account Confirmation (EN+ES)', configKey: 'zelle_auth_es_template_id', category: 'zelle_auth_es', generator: generateZelleAuthHtmlTemplate_ES },
