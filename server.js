@@ -16740,9 +16740,12 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const allKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
-    'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','check_instruction_template_id',
+    'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
+    'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
+    'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
     'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
-    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id'];
+    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
+    'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id'];
   const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
   const out = { connected: dsealEnabled(), url: _publicUrl };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
@@ -16774,10 +16777,12 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const _configKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
-    'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','check_instruction_template_id',
+    'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
+    'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
+    'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
     'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
-    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id',
-    'invoice_approval_en_template_id','invoice_approval_es_template_id',
+    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
+    'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id',
     'contract_template_id' /* legacy */,
     'account_email' /* DocuSeal account email for embedded builder JWT */];
   _configKeys.forEach(k => {
