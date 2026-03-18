@@ -1549,7 +1549,7 @@ try {
       ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
       zelle_auth_template_id: 'zelle_auth', zelle_auth_en_template_id: 'zelle_auth_en', zelle_auth_es_template_id: 'zelle_auth_es',
       third_party_pay_template_id: 'third_party_pay', third_party_pay_en_template_id: 'third_party_pay_en', third_party_pay_es_template_id: 'third_party_pay_es',
-      cash_receipt_template_id: 'cash_receipt',
+      cash_receipt_template_id: 'cash_receipt', cash_receipt_en_template_id: 'cash_receipt_en', cash_receipt_es_template_id: 'cash_receipt_es',
       contractor_invoice_template_id: 'contractor_invoice',
       invoice_approval_template_id: 'invoice_approval',
       invoice_approval_en_template_id: 'invoice_approval_en',
@@ -1587,7 +1587,7 @@ try {
       ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
       zelle_auth_template_id: 'zelle_auth', zelle_auth_en_template_id: 'zelle_auth_en', zelle_auth_es_template_id: 'zelle_auth_es',
       third_party_pay_template_id: 'third_party_pay', third_party_pay_en_template_id: 'third_party_pay_en', third_party_pay_es_template_id: 'third_party_pay_es',
-      cash_receipt_template_id: 'cash_receipt',
+      cash_receipt_template_id: 'cash_receipt', cash_receipt_en_template_id: 'cash_receipt_en', cash_receipt_es_template_id: 'cash_receipt_es',
       contractor_invoice_template_id: 'contractor_invoice',
       invoice_approval_template_id: 'invoice_approval',
       invoice_approval_en_template_id: 'invoice_approval_en',
@@ -4755,6 +4755,8 @@ function getDsealConfigTemplateId(type) {
       zelle_auth_es: cfg.zelle_auth_es_template_id,
       third_party_pay: cfg.third_party_pay_template_id,
       cash_receipt: cfg.cash_receipt_template_id,
+      cash_receipt_en: cfg.cash_receipt_en_template_id,
+      cash_receipt_es: cfg.cash_receipt_es_template_id,
       contractor_invoice: cfg.contractor_invoice_template_id,
       contractor_invoice_en: cfg.contractor_invoice_en_template_id,
       contractor_invoice_es: cfg.contractor_invoice_es_template_id,
@@ -8457,7 +8459,13 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
       cash: 'cash_receipt'
     };
     const pmLabel = { direct_deposit: 'ACH / Direct Deposit', wire: 'Wire Transfer', check: 'Check / 支票', zelle: 'Zelle', third_party: 'PayPal / Venmo / CashApp', cash: '现金签收' }[paymentMethod] || paymentMethod;
-    const templateType = templateTypeMap[paymentMethod] || 'cash_receipt';
+    let templateType = templateTypeMap[paymentMethod] || 'cash_receipt';
+    // Apply language suffix for templates that have EN/ES variants
+    const langSuffix = lang === 'en' ? '_en' : lang === 'es' ? '_es' : '';
+    if (langSuffix && ['zelle_auth', 'third_party_pay', 'cash_receipt'].includes(templateType)) {
+      const langTemplate = templateType + langSuffix;
+      if (getDsealConfigTemplateId(langTemplate)) templateType = langTemplate;
+    }
     const templateId = getDsealConfigTemplateId(templateType);
 
     let submissionId = '', signUrl = '', dsealError = '';
