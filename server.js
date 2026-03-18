@@ -1607,9 +1607,15 @@ try {
 // Migrate: fix wrong category assignments and config slot assignments based on known auto-generated template names
 try {
   const _nameToSlot = {
-    'Company Contract / 公司合同':                               { category: 'company_contract', configKey: 'company_contract_template_id' },
-    'Independent Contractor Agreement (1099) / 劳务合同—1099':  { category: 'worker_1099',      configKey: 'worker_1099_template_id' },
-    'Employment Agreement (W-2) / 劳务合同—W2':                 { category: 'worker_w2',        configKey: 'worker_w2_template_id' },
+    'Company Contract / 公司合同 (ZH+EN)':                                    { category: 'company_contract',    configKey: 'company_contract_template_id' },
+    'Company Contract (EN)':                                                   { category: 'company_contract_en', configKey: 'company_contract_en_template_id' },
+    'Company Contract (EN+ES) / Contrato de Empresa (EN+ES)':                 { category: 'company_contract_es', configKey: 'company_contract_es_template_id' },
+    'Independent Contractor Agreement (1099) / 劳务合同—1099 (ZH+EN)':       { category: 'worker_1099',         configKey: 'worker_1099_template_id' },
+    'Independent Contractor Agreement (1099) (EN)':                            { category: 'worker_1099_en',      configKey: 'worker_1099_en_template_id' },
+    'Independent Contractor Agreement (1099) (EN+ES) / Contrato Contratista': { category: 'worker_1099_es',      configKey: 'worker_1099_es_template_id' },
+    'Employment Agreement (W-2) / 劳务合同—W2 (ZH+EN)':                      { category: 'worker_w2',           configKey: 'worker_w2_template_id' },
+    'Employment Agreement (W-2) (EN)':                                         { category: 'worker_w2_en',        configKey: 'worker_w2_en_template_id' },
+    'Employment Agreement (W-2) (EN+ES) / Contrato de Empleo (EN+ES)':        { category: 'worker_w2_es',        configKey: 'worker_w2_es_template_id' },
     'W-4 Employee Withholding Certificate':                      { category: 'w4',               configKey: 'w4_template_id' },
     'W-9 Request for TIN':                                       { category: 'w9',               configKey: 'w9_template_id' },
     'W-8BEN Certificate of Foreign Status (Individual)':         { category: 'w8ben',            configKey: 'w8ben_template_id' },
@@ -3251,173 +3257,258 @@ function generateI9HtmlTemplate() {
 }
 
 // ── Company Contract Template ──
-function generateCompanyContractHtmlTemplate() {
+function _buildCompanyContract(lang) {
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
   const companyName = getCompanySignerName();
+  const zh = lang === 'zh-en', es = lang === 'en-es';
+  const L = (en, z, e) => zh && z ? `${en} / ${z}` : es && e ? `${en} / ${e}` : en;
+  const title = zh ? 'SERVICE AGREEMENT / 服务合同' : es ? 'SERVICE AGREEMENT / CONTRATO DE SERVICIOS' : 'SERVICE AGREEMENT';
+  const subtitle    = L('Company Contract', '公司合同', 'Contrato de Empresa');
+  const lParty1     = L('First Party (Company):', '甲方（公司）:', 'Primera Parte (Empresa):');
+  const lParty2     = L('Second Party (Client/Partner):', '乙方（客户/合作方）:', 'Segunda Parte (Cliente/Socio):');
+  const lParty2Co   = L('Company/Organization:', '公司/机构:', 'Empresa/Organización:');
+  const s1 = L('1. SCOPE OF SERVICES', '1. 服务范围', '1. ALCANCE DE SERVICIOS');
+  const s2 = L('2. COMPENSATION', '2. 报酬', '2. COMPENSACIÓN');
+  const s3 = L('3. TERM', '3. 期限', '3. VIGENCIA');
+  const s4 = L('4. CONFIDENTIALITY', '4. 保密条款', '4. CONFIDENCIALIDAD');
+  const s5 = L('5. GOVERNING LAW', '5. 管辖法律', '5. LEY APLICABLE');
+  const lSig      = L('SIGNATURES', '签名', 'FIRMAS');
+  const lSig1     = L(`Company (${companyName}):`, `甲方（${companyName}）:`, `Empresa (${companyName}):`);
+  const lSig2     = L('Second Party:', '乙方:', 'Segunda Parte:');
+  const pEntered  = zh ? '本服务合同（"协议"）于' : es ? 'Este Contrato de Servicios ("Acuerdo") se celebra a partir del' : 'This Service Agreement ("Agreement") is entered into as of';
+  const pEnteredB = zh ? '由以下双方签订：' : es ? 'por y entre:' : 'by and between:';
+  const p1 = L('The Company agrees to provide, or cause to be provided, the following services:', '公司同意提供或安排提供以下服务：', 'La Empresa acuerda proporcionar los siguientes servicios:');
+  const p2 = L('Compensation shall be as follows:', '报酬如下：', 'La compensación será la siguiente:');
+  const p3a = L('This Agreement begins on', '本协议自', 'Este Acuerdo comienza el');
+  const p3b = L('and continues until terminated by either party with', '开始，持续至任一方提前', 'y continúa hasta que cualquiera de las partes lo rescinda con');
+  const p3c = L("days' written notice.", '天书面通知终止。', 'días de aviso escrito.');
+  const p4 = L('Each party agrees to maintain the confidentiality of all proprietary information, trade secrets, and business processes of the other party.', '各方同意对对方所有专有信息、商业秘密和业务流程予以保密。', 'Cada parte acuerda mantener la confidencialidad de toda la información propietaria, secretos comerciales y procesos comerciales de la otra parte.');
+  const p5 = L('This Agreement shall be governed by the laws of the state where the Company is registered.', '本协议受公司注册所在州的法律管辖。', 'Este Acuerdo se regirá por las leyes del estado donde está registrada la Empresa.');
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
-  <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">SERVICE AGREEMENT</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">Company Contract / 公司合同</div>
+  <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">${title}</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
 </div>
-<p style="font-size:9pt">This Service Agreement ("Agreement") is entered into as of <date-field name="contract_date" role="First Party" style="${fs}width:140px"></date-field> by and between:</p>
+<p style="font-size:9pt">${pEntered} <date-field name="contract_date" role="First Party" style="${fs}width:140px"></date-field> ${pEnteredB}</p>
 <table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
   <tr><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-    <div style="font-weight:700;margin-bottom:4px">First Party (Company):</div>
+    <div style="font-weight:700;margin-bottom:4px">${lParty1}</div>
     <div>${companyName}</div>
   </td><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-    <div style="font-weight:700;margin-bottom:4px">Second Party (Client/Partner):</div>
+    <div style="font-weight:700;margin-bottom:4px">${lParty2}</div>
     <text-field name="contract_party2_name" role="Second Party" required="true" style="${tf}"></text-field>
-    <div style="font-size:8pt;margin-top:4px">Company/Organization:</div>
+    <div style="font-size:8pt;margin-top:4px">${lParty2Co}</div>
     <text-field name="contract_party2_company" role="Second Party" style="${tf}"></text-field>
   </td></tr>
 </table>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">1. SCOPE OF SERVICES</div>
-<p style="font-size:9pt">The parties agree to collaborate on the following services:</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s1}</div>
+<p style="font-size:9pt">${p1}</p>
 <text-field name="contract_scope" role="First Party" required="true" style="${tf};min-height:60px" placeholder="Description of services to be provided..."></text-field>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">2. TERM</div>
-<p style="font-size:9pt">This Agreement shall commence on <text-field name="contract_start_date" role="First Party" style="${fs}width:120px" placeholder="Start date"></text-field> and continue until <text-field name="contract_end_date" role="First Party" style="${fs}width:120px" placeholder="End date"></text-field>, unless terminated earlier in accordance with this Agreement.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">3. COMPENSATION</div>
-<p style="font-size:9pt">In consideration of the services provided, the payment terms shall be:</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s2}</div>
+<p style="font-size:9pt">${p2}</p>
 <text-field name="contract_compensation" role="First Party" required="true" style="${tf}" placeholder="Payment amount, schedule, and terms..."></text-field>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">4. CONFIDENTIALITY</div>
-<p style="font-size:9pt">Both parties agree to maintain the confidentiality of any proprietary information disclosed during the course of this Agreement. This obligation shall survive the termination of this Agreement.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">5. TERMINATION</div>
-<p style="font-size:9pt">Either party may terminate this Agreement with 30 days' written notice. Upon termination, all outstanding payments for services rendered shall become due.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">6. GOVERNING LAW</div>
-<p style="font-size:9pt">This Agreement shall be governed by the laws of the State of <text-field name="contract_state" role="First Party" style="${fs}width:140px" placeholder="State"></text-field>.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s3}</div>
+<p style="font-size:9pt">${p3a} <text-field name="contract_start" role="First Party" style="${fs}width:130px" placeholder="Start date"></text-field> ${p3b} <text-field name="contract_notice" role="First Party" style="${fs}width:70px" placeholder="30"></text-field> ${p3c}</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s4}</div>
+<p style="font-size:9pt">${p4}</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s5}</div>
+<p style="font-size:9pt">${p5}</p>
 <div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
-  <div style="font-weight:700;margin-bottom:8px">SIGNATURES</div>
+  <div style="font-weight:700;margin-bottom:8px">${lSig}</div>
   <table style="width:100%"><tr>
     <td style="width:50%;padding-right:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">First Party (${companyName}):</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${lSig1}</div>
       <signature-field name="sig1" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       <div style="margin-top:4px"><date-field name="date1" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
     </td>
     <td style="width:50%;padding-left:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Second Party:</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${lSig2}</div>
       <signature-field name="sig2" role="Second Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       <div style="margin-top:4px"><date-field name="date2" role="Second Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
     </td>
   </tr></table>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
-</div>`;
-}
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-18 CDT</div>
+</div>`;}
+function generateCompanyContractHtmlTemplate()    { return _buildCompanyContract('zh-en'); }
+function generateCompanyContractHtmlTemplate_EN() { return _buildCompanyContract('en'); }
+function generateCompanyContractHtmlTemplate_ES() { return _buildCompanyContract('en-es'); }
 
 // ── Independent Contractor Agreement (1099) ──
-function generateContractor1099HtmlTemplate() {
+function _buildContractor1099(lang) {
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
   const companyName = getCompanySignerName();
+  const zh = lang === 'zh-en', es = lang === 'en-es';
+  const L = (en, z, e) => zh && z ? `${en} / ${z}` : es && e ? `${en} / ${e}` : en;
+  const title = zh ? 'INDEPENDENT CONTRACTOR AGREEMENT / 独立承包商协议' : es ? 'INDEPENDENT CONTRACTOR AGREEMENT / CONTRATO DE CONTRATISTA INDEPENDIENTE' : 'INDEPENDENT CONTRACTOR AGREEMENT';
+  const subtitle  = L('1099 Contractor', '劳务合同 — 1099', 'Contratista 1099');
+  const lParty1   = L('Company (First Party):', '甲方（公司）:', 'Empresa (Primera Parte):');
+  const lParty2   = L('Independent Contractor (Second Party):', '乙方（独立承包商）:', 'Contratista Independiente (Segunda Parte):');
+  const s1 = L('1. INDEPENDENT CONTRACTOR STATUS', '1. 独立承包商身份', '1. ESTATUS DE CONTRATISTA INDEPENDIENTE');
+  const s2 = L('2. SERVICES', '2. 服务内容', '2. SERVICIOS');
+  const s3 = L('3. COMPENSATION', '3. 报酬', '3. COMPENSACIÓN');
+  const s4 = L('4. TERM AND TERMINATION', '4. 期限与终止', '4. VIGENCIA Y TERMINACIÓN');
+  const s5 = L('5. CONFIDENTIALITY & NON-DISCLOSURE', '5. 保密与不披露', '5. CONFIDENCIALIDAD Y NO DIVULGACIÓN');
+  const s6 = L('6. INTELLECTUAL PROPERTY', '6. 知识产权', '6. PROPIEDAD INTELECTUAL');
+  const s7 = L('7. INDEMNIFICATION', '7. 赔偿', '7. INDEMNIZACIÓN');
+  const lSig  = L('SIGNATURES', '签名', 'FIRMAS');
+  const lSig1 = L(`Company (${companyName}):`, `甲方（${companyName}）:`, `Empresa (${companyName}):`);
+  const lSig2 = L('Independent Contractor:', '乙方（独立承包商）:', 'Contratista Independiente:');
+  const pEntered  = zh ? '本独立承包商协议（"协议"）于' : es ? 'Este Contrato de Contratista Independiente ("Acuerdo") se celebra a partir del' : 'This Independent Contractor Agreement ("Agreement") is made and entered into as of';
+  const pEnteredB = zh ? '由以下双方签订：' : es ? 'por y entre:' : ', by and between:';
+  const p1 = L('The Contractor is an independent contractor and not an employee, agent, or partner of the Company. The Contractor shall be responsible for all federal and state taxes, including self-employment tax, and the Company will issue a Form 1099-NEC for annual compensation of $600 or more.', '承包商为独立承包商，而非公司的员工、代理人或合伙人。承包商负责缴纳包括自雇税在内的所有联邦和州税款；年度报酬达600美元或以上时，公司将发放1099-NEC表格。', 'El Contratista es un contratista independiente y no un empleado de la Empresa. Será responsable de todos los impuestos federales y estatales, y la Empresa emitirá un Formulario 1099-NEC para compensaciones anuales de $600 o más.');
+  const p2 = L('The Contractor agrees to perform the following services:', '承包商同意提供以下服务：', 'El Contratista acuerda realizar los siguientes servicios:');
+  const p3 = L('The Company shall pay the Contractor:', '公司应向承包商支付：', 'La Empresa pagará al Contratista:');
+  const p4a = L('This Agreement begins on', '本协议自', 'Este Acuerdo comienza el');
+  const p4b = L('and may be terminated by either party with', '开始，任一方可提前', 'y puede ser rescindido por cualquiera de las partes con');
+  const p4c = L("days' written notice.", '天书面通知终止。', 'días de aviso escrito.');
+  const p5 = L('The Contractor agrees to keep confidential all proprietary information, trade secrets, and business processes of the Company, both during and after the term of this Agreement.', '承包商同意在协议有效期内及之后，对公司所有专有信息、商业秘密和业务流程予以保密。', 'El Contratista acuerda mantener en confidencialidad toda información propietaria, secretos comerciales y procesos comerciales de la Empresa, tanto durante como después del plazo de este Acuerdo.');
+  const p6 = L('All work product created by the Contractor in the performance of services under this Agreement shall be the sole property of the Company.', '承包商在履行本协议服务过程中创作的所有工作成果，均为公司的专属财产。', 'Todo producto de trabajo creado por el Contratista en la prestación de servicios bajo este Acuerdo será propiedad exclusiva de la Empresa.');
+  const p7 = L("The Contractor shall indemnify and hold harmless the Company from any claims, damages, or expenses arising from the Contractor's performance of services.", '承包商应就因其履行服务而引起的任何索赔、损失或费用，对公司予以赔偿并使其免受损害。', 'El Contratista indemnizará y eximirá de responsabilidad a la Empresa de cualquier reclamación, daño o gasto que surja de la prestación de servicios del Contratista.');
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
-  <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">INDEPENDENT CONTRACTOR AGREEMENT</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">1099 Contractor / 劳务合同 — 1099</div>
+  <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">${title}</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
 </div>
-<p style="font-size:9pt">This Independent Contractor Agreement ("Agreement") is made and entered into as of <date-field name="contract_date" role="First Party" style="${fs}width:140px"></date-field>, by and between:</p>
+<p style="font-size:9pt">${pEntered} <date-field name="contract_date" role="First Party" style="${fs}width:140px"></date-field>${pEnteredB}</p>
 <table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
   <tr><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-    <div style="font-weight:700;margin-bottom:4px">Company (First Party):</div>
+    <div style="font-weight:700;margin-bottom:4px">${lParty1}</div>
     <div>${companyName}</div>
   </td><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-    <div style="font-weight:700;margin-bottom:4px">Independent Contractor (Second Party):</div>
+    <div style="font-weight:700;margin-bottom:4px">${lParty2}</div>
     <text-field name="contractor_name" role="Second Party" required="true" style="${tf}"></text-field>
   </td></tr>
 </table>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">1. INDEPENDENT CONTRACTOR STATUS</div>
-<p style="font-size:9pt">The Contractor is an independent contractor and not an employee, agent, or partner of the Company. The Contractor shall be responsible for all federal and state taxes, including self-employment tax, and the Company will issue a Form 1099-NEC for annual compensation of $600 or more.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">2. SERVICES</div>
-<p style="font-size:9pt">The Contractor agrees to perform the following services:</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s1}</div>
+<p style="font-size:9pt">${p1}</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s2}</div>
+<p style="font-size:9pt">${p2}</p>
 <text-field name="contractor_services" role="First Party" required="true" style="${tf};min-height:60px" placeholder="Description of services..."></text-field>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">3. COMPENSATION</div>
-<p style="font-size:9pt">The Company shall pay the Contractor:</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s3}</div>
+<p style="font-size:9pt">${p3}</p>
 <text-field name="contractor_pay" role="First Party" required="true" style="${tf}" placeholder="Rate/amount and payment schedule..."></text-field>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">4. TERM AND TERMINATION</div>
-<p style="font-size:9pt">This Agreement begins on <text-field name="contractor_start" role="First Party" style="${fs}width:120px" placeholder="Start date"></text-field> and may be terminated by either party with <text-field name="contractor_notice" role="First Party" style="${fs}width:80px" placeholder="14"></text-field> days' written notice.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">5. CONFIDENTIALITY &amp; NON-DISCLOSURE</div>
-<p style="font-size:9pt">The Contractor agrees to keep confidential all proprietary information, trade secrets, and business processes of the Company, both during and after the term of this Agreement.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">6. INTELLECTUAL PROPERTY</div>
-<p style="font-size:9pt">All work product created by the Contractor in the performance of services under this Agreement shall be the sole property of the Company.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">7. INDEMNIFICATION</div>
-<p style="font-size:9pt">The Contractor shall indemnify and hold harmless the Company from any claims, damages, or expenses arising from the Contractor's performance of services.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s4}</div>
+<p style="font-size:9pt">${p4a} <text-field name="contractor_start" role="First Party" style="${fs}width:120px" placeholder="Start date"></text-field> ${p4b} <text-field name="contractor_notice" role="First Party" style="${fs}width:80px" placeholder="14"></text-field> ${p4c}</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s5}</div>
+<p style="font-size:9pt">${p5}</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s6}</div>
+<p style="font-size:9pt">${p6}</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s7}</div>
+<p style="font-size:9pt">${p7}</p>
 <div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
-  <div style="font-weight:700;margin-bottom:8px">SIGNATURES</div>
+  <div style="font-weight:700;margin-bottom:8px">${lSig}</div>
   <table style="width:100%"><tr>
     <td style="width:50%;padding-right:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Company (${companyName}):</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${lSig1}</div>
       <signature-field name="sig1" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       <div style="margin-top:4px"><date-field name="date1" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
     </td>
     <td style="width:50%;padding-left:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Independent Contractor:</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${lSig2}</div>
       <signature-field name="sig2" role="Second Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       <div style="margin-top:4px"><date-field name="date2" role="Second Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
     </td>
   </tr></table>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
-</div>`;
-}
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-18 CDT</div>
+</div>`;}
+function generateContractor1099HtmlTemplate()    { return _buildContractor1099('zh-en'); }
+function generateContractor1099HtmlTemplate_EN() { return _buildContractor1099('en'); }
+function generateContractor1099HtmlTemplate_ES() { return _buildContractor1099('en-es'); }
 
 // ── W-2 Employment Agreement ──
-function generateW2EmploymentHtmlTemplate() {
+function _buildW2Employment(lang) {
   const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const tf = `${fs}width:100%;min-height:22px;`;
   const companyName = getCompanySignerName();
+  const zh = lang === 'zh-en', es = lang === 'en-es';
+  const L = (en, z, e) => zh && z ? `${en} / ${z}` : es && e ? `${en} / ${e}` : en;
+  const title    = zh ? 'EMPLOYMENT AGREEMENT / 雇佣协议' : es ? 'EMPLOYMENT AGREEMENT / CONTRATO DE EMPLEO' : 'EMPLOYMENT AGREEMENT';
+  const subtitle = L('W-2 Employee', '劳务合同 — W2', 'Empleado W-2');
+  const lEmployer  = L('Employer (First Party):', '甲方（雇主）:', 'Empleador (Primera Parte):');
+  const lEmployee  = L('Employee (Second Party):', '乙方（雇员）:', 'Empleado (Segunda Parte):');
+  const s1 = L('1. POSITION AND DUTIES', '1. 职位与职责', '1. PUESTO Y FUNCIONES');
+  const s2 = L('2. EMPLOYMENT TYPE', '2. 雇佣类型', '2. TIPO DE EMPLEO');
+  const s3 = L('3. COMPENSATION AND BENEFITS', '3. 薪酬与福利', '3. COMPENSACIÓN Y BENEFICIOS');
+  const s4 = L('4. START DATE', '4. 入职日期', '4. FECHA DE INICIO');
+  const s5 = L('5. AT-WILL EMPLOYMENT', '5. 自由雇佣', '5. EMPLEO A VOLUNTAD');
+  const s6 = L('6. CONFIDENTIALITY', '6. 保密条款', '6. CONFIDENCIALIDAD');
+  const s7 = L('7. TAX WITHHOLDING', '7. 税款代扣', '7. RETENCIÓN DE IMPUESTOS');
+  const lSig  = L('SIGNATURES', '签名', 'FIRMAS');
+  const lSig1 = L(`Employer (${companyName}):`, `甲方（${companyName}）:`, `Empleador (${companyName}):`);
+  const lSig2 = L('Employee:', '乙方（雇员）:', 'Empleado:');
+  const pEntered  = zh ? '本雇佣协议（"协议"）于' : es ? 'Este Contrato de Empleo ("Acuerdo") se celebra a partir del' : 'This Employment Agreement ("Agreement") is made and entered into as of';
+  const pEnteredB = zh ? '由以下双方签订：' : es ? 'por y entre:' : ', by and between:';
+  const lPosition = L('The Employee is hired for the position of:', '雇员受聘担任以下职位：', 'El Empleado es contratado para el puesto de:');
+  const lDuties   = L('Job duties and responsibilities:', '工作职责与责任：', 'Funciones y responsabilidades del puesto:');
+  const lEmpType  = L('Employment type:', '雇佣类型：', 'Tipo de empleo:');
+  const lSchedule = L('Work schedule:', '工作时间：', 'Horario de trabajo:');
+  const lSalary   = L('Base salary/wage: $', '基本薪资：$', 'Salario base: $');
+  const lPer      = L('per', '每', 'por');
+  const lPayFreq  = L('Pay frequency:', '发薪频率：', 'Frecuencia de pago:');
+  const lBenefits = L("Benefits: The Employee shall be entitled to participate in the Company's benefit programs as described in the Employee Handbook, including health insurance, paid time off, and retirement plans, subject to eligibility requirements.", '福利：雇员有权按《员工手册》参加公司福利计划，包括医疗保险、带薪休假和退休计划（须符合资格要求）。', 'Beneficios: El Empleado tendrá derecho a participar en los programas de beneficios de la Empresa según el Manual del Empleado, incluidos seguro médico, tiempo libre remunerado y planes de jubilación, sujeto a requisitos de elegibilidad.');
+  const lStart    = L('Employment shall commence on', '雇佣关系自', 'El empleo comenzará el');
+  const lAtWill   = L('This employment is at-will. Either party may terminate this Agreement at any time, with or without cause or notice, subject to applicable law.', '本雇佣为自由雇佣。在法律允许范围内，任何一方均可随时以任何理由或无理由、有无通知地终止本协议。', 'Este empleo es a voluntad. Cualquiera de las partes puede rescindir este Acuerdo en cualquier momento, con o sin causa o aviso, sujeto a la ley aplicable.');
+  const lConf     = L('The Employee agrees to maintain the confidentiality of all proprietary information and trade secrets, both during and after employment.', '雇员同意在任职期间及离职后，对所有专有信息和商业秘密予以保密。', 'El Empleado acuerda mantener la confidencialidad de toda la información propietaria y secretos comerciales, tanto durante como después del empleo.');
+  const lTax      = L("The Employer shall withhold all applicable federal, state, and local taxes from the Employee's compensation, including income tax, Social Security, and Medicare, and shall issue Form W-2 annually.", '雇主应从雇员薪酬中代扣所有适用的联邦、州及地方税款，包括所得税、社会安全税及医疗保险税，并每年发放W-2表格。', 'El Empleador retendrá todos los impuestos federales, estatales y locales aplicables de la compensación del Empleado, incluidos el impuesto sobre la renta, el Seguro Social y Medicare, y emitirá el Formulario W-2 anualmente.');
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
-  <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">EMPLOYMENT AGREEMENT</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">W-2 Employee / 劳务合同 — W2</div>
+  <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">${title}</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
 </div>
-<p style="font-size:9pt">This Employment Agreement ("Agreement") is made and entered into as of <date-field name="contract_date" role="First Party" style="${fs}width:140px"></date-field>, by and between:</p>
+<p style="font-size:9pt">${pEntered} <date-field name="contract_date" role="First Party" style="${fs}width:140px"></date-field>${pEnteredB}</p>
 <table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
   <tr><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-    <div style="font-weight:700;margin-bottom:4px">Employer (First Party):</div>
+    <div style="font-weight:700;margin-bottom:4px">${lEmployer}</div>
     <div>${companyName}</div>
   </td><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
-    <div style="font-weight:700;margin-bottom:4px">Employee (Second Party):</div>
+    <div style="font-weight:700;margin-bottom:4px">${lEmployee}</div>
     <text-field name="employee_name" role="Second Party" required="true" style="${tf}"></text-field>
   </td></tr>
 </table>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">1. POSITION AND DUTIES</div>
-<p style="font-size:9pt">The Employee is hired for the position of:</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s1}</div>
+<p style="font-size:9pt">${lPosition}</p>
 <text-field name="employee_position" role="First Party" required="true" style="${tf}" placeholder="Job title"></text-field>
-<p style="font-size:9pt;margin-top:4px">Job duties and responsibilities:</p>
+<p style="font-size:9pt;margin-top:4px">${lDuties}</p>
 <text-field name="employee_duties" role="First Party" required="true" style="${tf};min-height:60px" placeholder="Description of duties..."></text-field>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">2. EMPLOYMENT TYPE</div>
-<p style="font-size:9pt">Employment type: <text-field name="employee_type" role="First Party" style="${fs}width:200px" placeholder="Full-time / Part-time"></text-field></p>
-<p style="font-size:9pt">Work schedule: <text-field name="employee_schedule" role="First Party" style="${fs}width:250px" placeholder="Monday-Friday, 9am-5pm"></text-field></p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">3. COMPENSATION AND BENEFITS</div>
-<p style="font-size:9pt">Base salary/wage: $ <text-field name="employee_salary" role="First Party" required="true" style="${fs}width:120px"></text-field> per <text-field name="employee_pay_period" role="First Party" style="${fs}width:100px" placeholder="year/hour"></text-field></p>
-<p style="font-size:9pt">Pay frequency: <text-field name="employee_pay_freq" role="First Party" style="${fs}width:150px" placeholder="Bi-weekly / Monthly"></text-field></p>
-<p style="font-size:9pt">Benefits: The Employee shall be entitled to participate in the Company's benefit programs as described in the Employee Handbook, including health insurance, paid time off, and retirement plans, subject to eligibility requirements.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">4. START DATE</div>
-<p style="font-size:9pt">Employment shall commence on <text-field name="employee_start" role="First Party" required="true" style="${fs}width:140px" placeholder="Start date"></text-field>.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">5. AT-WILL EMPLOYMENT</div>
-<p style="font-size:9pt">This employment is at-will. Either party may terminate this Agreement at any time, with or without cause or notice, subject to applicable law.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">6. CONFIDENTIALITY</div>
-<p style="font-size:9pt">The Employee agrees to maintain the confidentiality of all proprietary information and trade secrets, both during and after employment.</p>
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">7. TAX WITHHOLDING</div>
-<p style="font-size:9pt">The Employer shall withhold all applicable federal, state, and local taxes from the Employee's compensation, including income tax, Social Security, and Medicare, and shall issue Form W-2 annually.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s2}</div>
+<p style="font-size:9pt">${lEmpType} <text-field name="employee_type" role="First Party" style="${fs}width:200px" placeholder="Full-time / Part-time"></text-field></p>
+<p style="font-size:9pt">${lSchedule} <text-field name="employee_schedule" role="First Party" style="${fs}width:250px" placeholder="Monday-Friday, 9am-5pm"></text-field></p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s3}</div>
+<p style="font-size:9pt">${lSalary} <text-field name="employee_salary" role="First Party" required="true" style="${fs}width:120px"></text-field> ${lPer} <text-field name="employee_pay_period" role="First Party" style="${fs}width:100px" placeholder="year/hour"></text-field></p>
+<p style="font-size:9pt">${lPayFreq} <text-field name="employee_pay_freq" role="First Party" style="${fs}width:150px" placeholder="Bi-weekly / Monthly"></text-field></p>
+<p style="font-size:9pt">${lBenefits}</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s4}</div>
+<p style="font-size:9pt">${lStart} <text-field name="employee_start" role="First Party" required="true" style="${fs}width:140px" placeholder="Start date"></text-field>.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s5}</div>
+<p style="font-size:9pt">${lAtWill}</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s6}</div>
+<p style="font-size:9pt">${lConf}</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">${s7}</div>
+<p style="font-size:9pt">${lTax}</p>
 <div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
-  <div style="font-weight:700;margin-bottom:8px">SIGNATURES</div>
+  <div style="font-weight:700;margin-bottom:8px">${lSig}</div>
   <table style="width:100%"><tr>
     <td style="width:50%;padding-right:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Employer (${companyName}):</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${lSig1}</div>
       <signature-field name="sig1" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       <div style="margin-top:4px"><date-field name="date1" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
     </td>
     <td style="width:50%;padding-left:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Employee:</div>
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">${lSig2}</div>
       <signature-field name="sig2" role="Second Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       <div style="margin-top:4px"><date-field name="date2" role="Second Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
     </td>
   </tr></table>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
-</div>`;
-}
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-18 CDT</div>
+</div>`;}
+function generateW2EmploymentHtmlTemplate()    { return _buildW2Employment('zh-en'); }
+function generateW2EmploymentHtmlTemplate_EN() { return _buildW2Employment('en'); }
+function generateW2EmploymentHtmlTemplate_ES() { return _buildW2Employment('en-es'); }
 
 // ── 1099 Contractor Invoice Template (Letter-size single page) ──
 // lang: 'en' | 'zh' | 'es' — secondary language paired with English
@@ -4927,9 +5018,15 @@ function generateCashReceiptEsHtmlTemplate() {
 
 // ── Map of all auto-creatable templates ──
 const DOCUSEAL_AUTO_TEMPLATES = {
-  company_contract: { name: 'Company Contract / 公司合同', configKey: 'company_contract_template_id', category: 'company_contract', generator: generateCompanyContractHtmlTemplate },
-  worker_1099: { name: 'Independent Contractor Agreement (1099) / 劳务合同—1099', configKey: 'worker_1099_template_id', category: 'worker_1099', generator: generateContractor1099HtmlTemplate },
-  worker_w2: { name: 'Employment Agreement (W-2) / 劳务合同—W2', configKey: 'worker_w2_template_id', category: 'worker_w2', generator: generateW2EmploymentHtmlTemplate },
+  company_contract:    { name: 'Company Contract / 公司合同 (ZH+EN)',                                     configKey: 'company_contract_template_id',    category: 'company_contract',    generator: generateCompanyContractHtmlTemplate },
+  company_contract_en: { name: 'Company Contract (EN)',                                                    configKey: 'company_contract_en_template_id', category: 'company_contract_en', generator: generateCompanyContractHtmlTemplate_EN },
+  company_contract_es: { name: 'Company Contract (EN+ES) / Contrato de Empresa (EN+ES)',                   configKey: 'company_contract_es_template_id', category: 'company_contract_es', generator: generateCompanyContractHtmlTemplate_ES },
+  worker_1099:         { name: 'Independent Contractor Agreement (1099) / 劳务合同—1099 (ZH+EN)',          configKey: 'worker_1099_template_id',         category: 'worker_1099',         generator: generateContractor1099HtmlTemplate },
+  worker_1099_en:      { name: 'Independent Contractor Agreement (1099) (EN)',                             configKey: 'worker_1099_en_template_id',      category: 'worker_1099_en',      generator: generateContractor1099HtmlTemplate_EN },
+  worker_1099_es:      { name: 'Independent Contractor Agreement (1099) (EN+ES) / Contrato Contratista',  configKey: 'worker_1099_es_template_id',      category: 'worker_1099_es',      generator: generateContractor1099HtmlTemplate_ES },
+  worker_w2:           { name: 'Employment Agreement (W-2) / 劳务合同—W2 (ZH+EN)',                        configKey: 'worker_w2_template_id',           category: 'worker_w2',           generator: generateW2EmploymentHtmlTemplate },
+  worker_w2_en:        { name: 'Employment Agreement (W-2) (EN)',                                          configKey: 'worker_w2_en_template_id',        category: 'worker_w2_en',        generator: generateW2EmploymentHtmlTemplate_EN },
+  worker_w2_es:        { name: 'Employment Agreement (W-2) (EN+ES) / Contrato de Empleo (EN+ES)',          configKey: 'worker_w2_es_template_id',        category: 'worker_w2_es',        generator: generateW2EmploymentHtmlTemplate_ES },
   w4: { name: 'W-4 Employee Withholding Certificate', configKey: 'w4_template_id', category: 'w4', generator: generateW4HtmlTemplate },
   w9: { name: 'W-9 Request for TIN', configKey: 'w9_template_id', category: 'w9', generator: generateW9HtmlTemplate },
   w8ben: { name: 'W-8BEN Certificate of Foreign Status (Individual)', configKey: 'w8ben_template_id', category: 'w8ben', generator: generateW8BENHtmlTemplate },
@@ -16737,7 +16834,9 @@ app.delete('/api/admin/invoices/:id', requireAdmin, blockManager, (req, res) => 
 app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const row = db.prepare("SELECT * FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
-  const allKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
+  const allKeys = ['company_contract_template_id','company_contract_en_template_id','company_contract_es_template_id',
+    'worker_1099_template_id','worker_1099_en_template_id','worker_1099_es_template_id',
+    'worker_w2_template_id','worker_w2_en_template_id','worker_w2_es_template_id',
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
@@ -16774,7 +16873,9 @@ app.get('/api/admin/docuseal/test', requireAdmin, async (req, res) => {
 app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
-  const _configKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
+  const _configKeys = ['company_contract_template_id','company_contract_en_template_id','company_contract_es_template_id',
+    'worker_1099_template_id','worker_1099_en_template_id','worker_1099_es_template_id',
+    'worker_w2_template_id','worker_w2_en_template_id','worker_w2_es_template_id',
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
