@@ -21489,22 +21489,30 @@ async function dsDeleteMyTemplate(localId, dsId, name) {
 }
 
 
+// Returns the lang suffix (_en/_es/'' ) from a languages string like "EN,ZH" or "EN,ES"
+function _dsCatLangSuffix(langsStr) {
+  const langs = (langsStr || '').split(',').map(l => l.trim().toUpperCase()).filter(Boolean);
+  if (langs.includes('ES')) return '_es';
+  if (langs.includes('EN') && !langs.includes('ZH')) return '_en';
+  return '';
+}
+// Strip _en/_es suffix to get base category
+function _dsCatBase(cat) {
+  return (cat || '').replace(/(_en|_es)$/, '');
+}
+
 function dsChangeCategoryModal(dsTemplateId) {
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
   const tplName = tpl ? tpl.name : `#${dsTemplateId}`;
   const currentCat = tpl ? (tpl.category || '') : '';
+  const currentBase = _dsCatBase(currentCat);
 
+  // Base categories only — language is set via 改语言
   const groups = [
     { title: '合同', items: [
-      { cat: 'company_contract',    label: '公司合同 (ZH+EN)', bg:'#dbeafe', color:'#1e40af' },
-      { cat: 'company_contract_en', label: '公司合同 (EN)',    bg:'#dbeafe', color:'#1e40af' },
-      { cat: 'company_contract_es', label: '公司合同 (EN+ES)', bg:'#dbeafe', color:'#1e40af' },
-      { cat: 'worker_1099',         label: '1099 (ZH+EN)',    bg:'#d1fae5', color:'#065f46' },
-      { cat: 'worker_1099_en',      label: '1099 (EN)',       bg:'#d1fae5', color:'#065f46' },
-      { cat: 'worker_1099_es',      label: '1099 (EN+ES)',    bg:'#d1fae5', color:'#065f46' },
-      { cat: 'worker_w2',           label: 'W-2 (ZH+EN)',     bg:'#fef9c3', color:'#854d0e' },
-      { cat: 'worker_w2_en',        label: 'W-2 (EN)',        bg:'#fef9c3', color:'#854d0e' },
-      { cat: 'worker_w2_es',        label: 'W-2 (EN+ES)',     bg:'#fef9c3', color:'#854d0e' },
+      { cat: 'company_contract', label: '公司合同', bg:'#dbeafe', color:'#1e40af' },
+      { cat: 'worker_1099',      label: '1099',     bg:'#d1fae5', color:'#065f46' },
+      { cat: 'worker_w2',        label: 'W-2',      bg:'#fef9c3', color:'#854d0e' },
     ]},
     { title: '税务表格', items: [
       { cat: 'w4',       label: 'W-4',      bg:'#e0f2fe', color:'#0369a1' },
@@ -21516,38 +21524,22 @@ function dsChangeCategoryModal(dsTemplateId) {
       { cat: 'w7',       label: 'W-7',      bg:'#f0fdf4', color:'#15803d' },
     ]},
     { title: '付款授权', items: [
-      { cat: 'ach_auth',              label: 'ACH (ZH+EN)',    bg:'#f0f9ff', color:'#0c4a6e' },
-      { cat: 'ach_auth_en',           label: 'ACH (EN)',       bg:'#f0f9ff', color:'#0c4a6e' },
-      { cat: 'ach_auth_es',           label: 'ACH (EN+ES)',    bg:'#f0f9ff', color:'#0c4a6e' },
-      { cat: 'wire_auth',             label: '电汇 (ZH+EN)',   bg:'#fffbeb', color:'#78350f' },
-      { cat: 'wire_auth_en',          label: '电汇 (EN)',      bg:'#fffbeb', color:'#78350f' },
-      { cat: 'wire_auth_es',          label: '电汇 (EN+ES)',   bg:'#fffbeb', color:'#78350f' },
-      { cat: 'check_instruction',     label: '支票 (ZH+EN)',   bg:'#fafaf9', color:'#292524' },
-      { cat: 'check_instruction_en',  label: '支票 (EN)',      bg:'#fafaf9', color:'#292524' },
-      { cat: 'check_instruction_es',  label: '支票 (EN+ES)',   bg:'#fafaf9', color:'#292524' },
-      { cat: 'zelle_auth',            label: 'Zelle (ZH+EN)', bg:'#fdf4ff', color:'#86198f' },
-      { cat: 'zelle_auth_en',         label: 'Zelle (EN)',    bg:'#fdf4ff', color:'#86198f' },
-      { cat: 'zelle_auth_es',         label: 'Zelle (EN+ES)', bg:'#fdf4ff', color:'#86198f' },
-      { cat: 'third_party_pay',       label: '第三方 (ZH+EN)', bg:'#ecfdf5', color:'#065f46' },
-      { cat: 'third_party_pay_en',    label: '第三方 (EN)',    bg:'#ecfdf5', color:'#065f46' },
-      { cat: 'third_party_pay_es',    label: '第三方 (EN+ES)', bg:'#ecfdf5', color:'#065f46' },
-      { cat: 'cash_receipt',          label: '现金 (ZH+EN)',   bg:'#fff1f2', color:'#9f1239' },
-      { cat: 'cash_receipt_en',       label: '现金 (EN)',      bg:'#fff1f2', color:'#9f1239' },
-      { cat: 'cash_receipt_es',       label: '现金 (EN+ES)',   bg:'#fff1f2', color:'#9f1239' },
+      { cat: 'ach_auth',       label: 'ACH',    bg:'#f0f9ff', color:'#0c4a6e' },
+      { cat: 'wire_auth',      label: '电汇',   bg:'#fffbeb', color:'#78350f' },
+      { cat: 'check_instruction', label: '支票', bg:'#fafaf9', color:'#292524' },
+      { cat: 'zelle_auth',     label: 'Zelle', bg:'#fdf4ff', color:'#86198f' },
+      { cat: 'third_party_pay',label: '第三方', bg:'#ecfdf5', color:'#065f46' },
+      { cat: 'cash_receipt',   label: '现金',   bg:'#fff1f2', color:'#9f1239' },
     ]},
     { title: 'Invoice', items: [
-      { cat: 'contractor_invoice',    label: '员工Invoice (ZH+EN)', bg:'#fef3c7', color:'#92400e' },
-      { cat: 'contractor_invoice_en', label: '员工Invoice (EN)',    bg:'#fef3c7', color:'#92400e' },
-      { cat: 'contractor_invoice_es', label: '员工Invoice (EN+ES)', bg:'#fef3c7', color:'#92400e' },
-      { cat: 'invoice_approval',      label: '发票审批 (EN+ZH)',    bg:'#d1fae5', color:'#065f46' },
-      { cat: 'invoice_approval_en',   label: '发票审批 (EN)',       bg:'#d1fae5', color:'#065f46' },
-      { cat: 'invoice_approval_es',   label: '发票审批 (EN+ES)',    bg:'#d1fae5', color:'#065f46' },
+      { cat: 'contractor_invoice', label: '员工Invoice', bg:'#fef3c7', color:'#92400e' },
+      { cat: 'invoice_approval',   label: '发票审批',    bg:'#d1fae5', color:'#065f46' },
     ]},
   ];
 
   const rowsHtml = groups.map(g => {
     const items = g.items.map(it => {
-      const checked = currentCat === it.cat ? 'checked' : '';
+      const checked = currentBase === it.cat ? 'checked' : '';
       return `<label style="display:flex;align-items:center;gap:.5rem;padding:.28rem .2rem;cursor:pointer">
         <input type="radio" name="ds-cat-radio" value="${it.cat}" ${checked} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
         <span style="display:inline-block;background:${it.bg};color:${it.color};border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700">${it.label}</span>
@@ -21574,9 +21566,15 @@ async function dsApplyCategoryChanges(dsTemplateId) {
   const overlay = document.getElementById('ds-cat-modal-overlay');
   const selected = overlay.querySelector('input[name="ds-cat-radio"]:checked');
   if (!selected) { overlay.remove(); return; }
-  const newCat = selected.value;
+  const baseCat = selected.value;
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
-  if (!tpl || tpl.category === newCat) { overlay.remove(); return; }
+  if (!tpl) { overlay.remove(); return; }
+  // Derive full category key from base + current languages
+  const suffix = _dsCatLangSuffix(tpl.languages);
+  // Only apply suffix to categories that have multi-language variants
+  const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt','contractor_invoice','invoice_approval']);
+  const newCat = multiLangBases.has(baseCat) ? baseCat + suffix : baseCat;
+  if (tpl.category === newCat) { overlay.remove(); return; }
   try {
     await api(`/admin/docuseal/my-templates/${tpl.id}/category`, { method: 'PUT', body: JSON.stringify({ category: newCat }) });
     tpl.category = newCat;
@@ -21629,6 +21627,16 @@ async function dsApplyLanguageChanges(localId) {
   try {
     await api(`/admin/docuseal/my-templates/${localId}/languages`, { method: 'PUT', body: JSON.stringify({ languages: checked }) });
     tpl.languages = checked.join(',');
+    // If the template has a multi-language base category, sync the category suffix to match new languages
+    const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt','contractor_invoice','invoice_approval']);
+    const base = _dsCatBase(tpl.category || '');
+    if (multiLangBases.has(base)) {
+      const newCat = base + _dsCatLangSuffix(tpl.languages);
+      if (newCat !== tpl.category) {
+        await api(`/admin/docuseal/my-templates/${localId}/category`, { method: 'PUT', body: JSON.stringify({ category: newCat }) });
+        tpl.category = newCat;
+      }
+    }
     overlay.remove();
     _dsRenderMyTemplates();
     showToast('语言已更新', 'success');
