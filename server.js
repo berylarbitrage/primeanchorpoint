@@ -8834,8 +8834,11 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
     const note = submissionId
       ? `${pmLabel} 授权表单已发送 (${new Date().toLocaleString('zh-CN')})，等待工人签署`
       : `${pmLabel} 付款方式已确认 (${new Date().toLocaleString('zh-CN')})`;
-    db.prepare(`UPDATE worker_onboarding SET status='pending', visible_to_worker=1, ds_envelope_id=?, ds_status=?, action_url=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method'`)
-      .run(submissionId || null, submissionId ? 'sent' : null, signUrl || '', note, workerId);
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, ds_envelope_id, ds_status, action_url, admin_note, updated_at)
+      VALUES (?, 'payment_method', 'pending', 1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id, task_key) DO UPDATE SET
+        status='pending', visible_to_worker=1, ds_envelope_id=excluded.ds_envelope_id, ds_status=excluded.ds_status, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, submissionId || null, submissionId ? 'sent' : null, signUrl || '', note);
     if (paymentMethod !== w.payment_method) {
       db.prepare('UPDATE worker_accounts SET payment_method=? WHERE id=?').run(paymentMethod, workerId);
     }
