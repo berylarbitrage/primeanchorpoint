@@ -16985,10 +16985,12 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
       documents: [{ name: name + '.pdf', file }]
     });
     if (r.status !== 200 && r.status !== 201) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
-    // Save to local DB
-    const dsId = r.data?.id || r.data?.template_id;
-    if (dsId) {
-      db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(name, dsId, cat);
+    // Save to local DB — try multiple common response shapes
+    const dsId = r.data?.id || r.data?.template_id || r.data?.data?.id;
+    console.log('[upload-template] DocuSeal response status:', r.status, '  dsId:', dsId, '  data keys:', Object.keys(r.data || {}).join(','));
+    if (!dsId) return res.status(502).json({ error: '上传成功但未能获取模板 ID', detail: r.data });
+    db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(name, String(dsId), cat);
+    {
       // Auto-update integration_settings config if a valid config key was provided as category
       const validConfigKeys = [
         'company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
@@ -17078,6 +17080,29 @@ app.get('/api/admin/docuseal/builder-token/:id', requireAdmin, async (req, res) 
 app.get('/api/admin/docuseal/my-templates', requireAdmin, (req, res) => {
   const rows = db.prepare('SELECT * FROM docuseal_templates ORDER BY created_at DESC').all();
   res.json(rows);
+});
+
+// POST /api/admin/docuseal/sync-from-docuseal — import any templates in DocuSeal that are missing from local DB
+app.post('/api/admin/docuseal/sync-from-docuseal', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const r = await dsealApiCall('GET', '/api/templates', null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+    const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+    let added = 0;
+    for (const t of templates) {
+      const id = t.id || t.template_id;
+      if (!id) continue;
+      const existing = db.prepare('SELECT id FROM docuseal_templates WHERE docuseal_template_id=?').get(String(id));
+      if (!existing) {
+        db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(t.name || `Template #${id}`, String(id), '');
+        added++;
+      }
+    }
+    res.json({ success: true, added, total: templates.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // PATCH /api/admin/docuseal/my-templates/:id — rename template in local DB
