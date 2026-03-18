@@ -2929,6 +2929,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="modal-actions" style="margin-top:.5rem;gap:.5rem;display:flex;justify-content:flex-end;flex-wrap:wrap">
     <button class="btn btn-outline" onclick="closeModal('paymentAuthModal')">取消</button>
+    <button class="btn btn-sm" style="background:#fdf4ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="previewPaymentAuthTemplate()">🔍 预览表格</button>
     <button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a" onclick="refreshPaymentAuthStatus()">🔄 刷新状态</button>
     <button class="btn btn-green" id="payAuthSendBtn" onclick="doSendPaymentAuth()">📨 发送授权表单</button>
   </div>
@@ -17763,6 +17764,30 @@ const _PM_DESCS = {
   third_party: '💳 发送第三方平台（PayPal / Venmo / CashApp）付款授权表单，工人需填写账号信息并签署。',
   cash: '💵 发送现金签收表单，工人需签署确认现金付款协议。'
 };
+
+// method × lang → config key
+const _PM_TEMPLATE_KEYS = {
+  direct_deposit: { zh: 'ach_auth_template_id',         en: 'ach_auth_en_template_id',         es: 'ach_auth_es_template_id' },
+  wire:           { zh: 'wire_auth_template_id',         en: 'wire_auth_en_template_id',         es: 'wire_auth_es_template_id' },
+  zelle:          { zh: 'zelle_auth_template_id',        en: 'zelle_auth_en_template_id',        es: 'zelle_auth_es_template_id' },
+  third_party:    { zh: 'third_party_pay_template_id',   en: 'third_party_pay_en_template_id',   es: 'third_party_pay_es_template_id' },
+  cash:           { zh: 'cash_receipt_template_id',      en: 'cash_receipt_en_template_id',      es: 'cash_receipt_es_template_id' },
+  check:          { zh: 'check_instruction_template_id', en: 'check_instruction_en_template_id', es: 'check_instruction_es_template_id' },
+};
+
+function previewPaymentAuthTemplate() {
+  const method = document.getElementById('payAuthMethodSelect').value;
+  const lang = document.getElementById('payAuthLang').value;
+  const cfg = _onboardingDsConfig || {};
+  const keyMap = _PM_TEMPLATE_KEYS[method] || {};
+  // Try exact lang, then zh fallback, then any configured key for this method
+  const tid = cfg[keyMap[lang]] || cfg[keyMap['zh']] || cfg[keyMap['en']] || cfg[keyMap['es']];
+  if (!tid) { showToast('未找到该付款方式的表格模板，请先在 DocuSeal 设置中配置', 'error'); return; }
+  const methodLabels = { direct_deposit:'ACH Direct Deposit', wire:'Wire Transfer', check:'Check', zelle:'Zelle', third_party:'第三方付款', cash:'现金签收' };
+  document.getElementById('onboardingPreviewTitle').textContent = `📄 预览：${methodLabels[method]||method} 授权表格`;
+  document.getElementById('onboardingPreviewFrame').src = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
+  document.getElementById('onboardingPreviewModal').classList.add('show');
+}
 
 async function openPaymentAuthModal() {
   if (!_onboardingWorkerId) return;
