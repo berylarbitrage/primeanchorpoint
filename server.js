@@ -17227,7 +17227,7 @@ app.post('/api/admin/docuseal/create-html-template', requireAdmin, async (req, r
   }
 });
 
-// GET /api/admin/docuseal/check-updates — compare current generator output with stored hash
+// GET /api/admin/docuseal/check-updates — compare current generator output with stored hash; also report missing templates
 app.get('/api/admin/docuseal/check-updates', requireAdmin, (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
@@ -17235,7 +17235,11 @@ app.get('/api/admin/docuseal/check-updates', requireAdmin, (req, res) => {
   const updates = [];
   for (const [type, tmplDef] of Object.entries(DOCUSEAL_AUTO_TEMPLATES)) {
     const existingId = cfg[tmplDef.configKey];
-    if (!existingId) continue; // not yet created, skip
+    if (!existingId) {
+      // Template not yet created — surface as a "new" item
+      updates.push({ type, name: tmplDef.name, template_id: null, missing: true });
+      continue;
+    }
     const dbRow = db.prepare('SELECT content_hash, confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(existingId);
     if (dbRow?.confirmed) continue; // confirmed — never suggest update
     const currentHash = crypto.createHash('md5').update(tmplDef.generator()).digest('hex');
