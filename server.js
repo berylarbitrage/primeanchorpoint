@@ -1546,7 +1546,8 @@ try {
       company_contract_template_id: 'company_contract', worker_1099_template_id: 'worker_1099', worker_w2_template_id: 'worker_w2',
       w4_template_id: 'w4', w9_template_id: 'w9', w8ben_template_id: 'w8ben', w8bene_template_id: 'w8bene',
       form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
-      ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
+      ach_auth_template_id: 'ach_auth', ach_auth_en_template_id: 'ach_auth_en', ach_auth_es_template_id: 'ach_auth_es',
+      wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
       zelle_auth_template_id: 'zelle_auth', zelle_auth_en_template_id: 'zelle_auth_en', zelle_auth_es_template_id: 'zelle_auth_es',
       third_party_pay_template_id: 'third_party_pay', third_party_pay_en_template_id: 'third_party_pay_en', third_party_pay_es_template_id: 'third_party_pay_es',
       cash_receipt_template_id: 'cash_receipt', cash_receipt_en_template_id: 'cash_receipt_en', cash_receipt_es_template_id: 'cash_receipt_es',
@@ -1584,7 +1585,8 @@ try {
       company_contract_template_id: 'company_contract', worker_1099_template_id: 'worker_1099', worker_w2_template_id: 'worker_w2',
       w4_template_id: 'w4', w9_template_id: 'w9', w8ben_template_id: 'w8ben', w8bene_template_id: 'w8bene',
       form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
-      ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
+      ach_auth_template_id: 'ach_auth', ach_auth_en_template_id: 'ach_auth_en', ach_auth_es_template_id: 'ach_auth_es',
+      wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
       zelle_auth_template_id: 'zelle_auth', zelle_auth_en_template_id: 'zelle_auth_en', zelle_auth_es_template_id: 'zelle_auth_es',
       third_party_pay_template_id: 'third_party_pay', third_party_pay_en_template_id: 'third_party_pay_en', third_party_pay_es_template_id: 'third_party_pay_es',
       cash_receipt_template_id: 'cash_receipt', cash_receipt_en_template_id: 'cash_receipt_en', cash_receipt_es_template_id: 'cash_receipt_es',
@@ -3917,64 +3919,165 @@ function generateW7HtmlTemplate() {
 }
 
 // ── ACH / Direct Deposit Authorization ──
-function generateACHAuthHtmlTemplate() {
-  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
-  const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+function _buildACHAuthForm(lang) {
+  const f  = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const w  = `${f}width:100%;min-height:22px;`;
+  const c  = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
   const companyName = getCompanySignerName();
+  const zh = lang === 'zh-en';
+  const es = lang === 'en-es';
+  const L  = (en, zhTxt, esTxt) => {
+    if (zh && zhTxt) return `${en} ${zhTxt}`;
+    if (es && esTxt) return `${en} / ${esTxt}`;
+    return en;
+  };
+
+  const formTitle = zh
+    ? 'ACH / DIRECT DEPOSIT AUTHORIZATION FORM / ACH / 直接存款授权表'
+    : es
+    ? 'ACH / DIRECT DEPOSIT AUTHORIZATION FORM / FORMULARIO DE AUTORIZACIÓN DE DEPÓSITO DIRECTO ACH'
+    : 'ACH / DIRECT DEPOSIT AUTHORIZATION FORM';
+  const subtitle = zh
+    ? `ACH / 直接存款授权表 — ${companyName}`
+    : es
+    ? `Formulario de Autorización de Depósito Directo ACH — ${companyName}`
+    : `ACH / Direct Deposit Authorization Form — ${companyName}`;
+
+  const introPara = zh
+    ? `I hereby authorize ${companyName} to initiate ACH credit entries (direct deposits) to the bank account listed below. This authorization will remain in effect until ${companyName} receives and has a reasonable opportunity to process written notice of cancellation or change. 本人特此授权 ${companyName} 通过 ACH 电子转账方式向以下银行账户发起付款（直接存款）。本授权在 ${companyName} 收到并有合理时间处理本人书面撤销或变更通知前持续有效。`
+    : es
+    ? `I hereby authorize ${companyName} to initiate ACH credit entries (direct deposits) to the bank account listed below. This authorization will remain in effect until ${companyName} receives and has a reasonable opportunity to process written notice of cancellation or change. Por medio del presente, autorizo a ${companyName} a iniciar créditos ACH (depósitos directos) en la cuenta bancaria indicada a continuación. Esta autorización permanecerá vigente hasta que ${companyName} reciba y tenga un tiempo razonable para procesar una notificación escrita de cancelación o cambio.`
+    : `I hereby authorize ${companyName} to initiate ACH credit entries (direct deposits) to the bank account listed below. This authorization will remain in effect until ${companyName} receives and has a reasonable opportunity to process written notice of cancellation or change.`;
+
+  // Section labels
+  const s1 = L('1. PAYEE INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
+  const lPayeeName = zh
+    ? 'Payee / Account Holder Full Legal Name 收款人 / 账户持有人法定全名'
+    : es
+    ? 'Payee / Account Holder Full Legal Name / Nombre Legal Completo del Beneficiario / Titular de la Cuenta'
+    : 'Payee / Account Holder Full Legal Name';
+  const lEmail = L('Email', '电邮', 'Correo Electrónico');
+  const lAddress = L('Address', '地址', 'Dirección');
+
+  const s2 = L('2. BANK ACCOUNT DETAILS', '银行账户信息', 'DATOS DE LA CUENTA BANCARIA');
+  const lBankName = L('Bank Name', '银行名称', 'Nombre del Banco');
+  const acctTypeLabel = L('Account Type', '账户类型', 'Tipo de Cuenta');
+  const acctChecking = L('Checking', '支票账户', 'Cuenta Corriente');
+  const acctSavings = L('Savings', '储蓄账户', 'Cuenta de Ahorros');
+  const lRouting = zh ? 'Routing Number (ABA) 路由号码' : es ? 'Routing Number (ABA) / Número de Ruta (ABA)' : 'Routing Number (ABA)';
+  const lAccount = L('Account Number', '账号', 'Número de Cuenta');
+  const lConfirmAccount = zh ? 'Confirm Account Number 确认账号' : es ? 'Confirm Account Number / Confirmar Número de Cuenta' : 'Confirm Account Number';
+  const confirmPlaceholder = zh ? 'Re-enter account number 再次输入账号' : es ? 'Re-enter account number / Reingrese el número de cuenta' : 'Re-enter account number';
+
+  // Account ownership disclaimer
+  const ownershipNote = zh
+    ? 'The account must be owned by the payee or an authorized entity of the payee. 该账户须属于收款人本人或其授权实体。'
+    : es
+    ? 'The account must be owned by the payee or an authorized entity of the payee. La cuenta debe pertenecer al beneficiario o a una entidad autorizada del beneficiario.'
+    : 'The account must be owned by the payee or an authorized entity of the payee.';
+
+  // Authorization section
+  const s3 = L('3. AUTHORIZATION', '授权', 'AUTORIZACIÓN');
+  const auth1 = zh
+    ? `I agree that ACH transactions I authorize comply with all applicable U.S. law. I understand that this authorization may be revoked by notifying ${companyName} in writing. 本人同意所授权的 ACH 交易符合所有适用的美国法律。本人理解可通过书面通知 ${companyName} 撤销本授权。`
+    : es
+    ? `I agree that ACH transactions I authorize comply with all applicable U.S. law. I understand that this authorization may be revoked by notifying ${companyName} in writing. Acepto que las transacciones ACH que autorizo cumplen con todas las leyes aplicables de los EE.UU. Entiendo que esta autorización puede ser revocada notificando a ${companyName} por escrito.`
+    : `I agree that ACH transactions I authorize comply with all applicable U.S. law. I understand that this authorization may be revoked by notifying ${companyName} in writing.`;
+  const auth2 = zh
+    ? `This authorization will remain in effect until ${companyName} receives and has a reasonable opportunity to process written notice of cancellation or change. 本授权在 ${companyName} 收到并有合理时间处理本人书面撤销或变更通知前持续有效。`
+    : es
+    ? `This authorization will remain in effect until ${companyName} receives and has a reasonable opportunity to process written notice of cancellation or change. Esta autorización permanecerá vigente hasta que ${companyName} reciba y tenga un tiempo razonable para procesar una notificación escrita de cancelación o cambio.`
+    : `This authorization will remain in effect until ${companyName} receives and has a reasonable opportunity to process written notice of cancellation or change.`;
+  const auth3 = zh
+    ? `${companyName} is not responsible for delays, rejected payments, or other issues resulting from inaccurate, incomplete, or outdated banking information provided by the payee. 因收款人提供的银行信息不准确、不完整或已过时而导致的延迟、退回、拒付或其他问题，${companyName} 不承担相应责任。`
+    : es
+    ? `${companyName} is not responsible for delays, rejected payments, or other issues resulting from inaccurate, incomplete, or outdated banking information provided by the payee. ${companyName} no se hace responsable de retrasos, pagos rechazados u otros problemas derivados de información bancaria inexacta, incompleta o desactualizada proporcionada por el beneficiario.`
+    : `${companyName} is not responsible for delays, rejected payments, or other issues resulting from inaccurate, incomplete, or outdated banking information provided by the payee.`;
+
+  // Signature labels
+  const sSigTitle = L('SIGNATURES', '签名', 'FIRMAS');
+  const sPayeeSig = L('PAYEE SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
+  const sCompany = L('COMPANY APPROVAL', '公司审批', 'APROBACIÓN DE LA EMPRESA');
+  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en letra de molde');
+  const lSig = L('Signature', '签名', 'Firma');
+  const lDate = L('Date', '日期', 'Fecha');
+
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px">ACH / DIRECT DEPOSIT AUTHORIZATION</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">银行直接转账授权表 — ${companyName}</div>
+  <div style="font-size:12pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
+  <div style="font-size:8.5pt;color:#555;margin-top:4px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt">I hereby authorize ${companyName} to initiate ACH credit entries (direct deposits) to the bank account listed below. This authorization will remain in effect until I provide written notice of cancellation.</p>
-<p style="font-size:8.5pt">本人特此授权 ${companyName} 通过 ACH 电子转账方式向以下银行账户发起付款。本授权将持续有效，直至本人书面通知取消。</p>
+<p style="font-size:8.5pt;margin-bottom:10px">${introPara}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">1. PAYEE INFORMATION 收款人信息</div>
+<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
-    <td style="${c}width:50%"><b>Full Name 全名</b><br><text-field name="ach_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Email 电邮</b><br><text-field name="ach_email" role="First Party" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>${lPayeeName}</b><br><text-field name="ach_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>${lEmail}</b><br><text-field name="ach_email" role="First Party" style="${w}"></text-field></td>
   </tr>
   <tr>
-    <td colspan="2" style="${c}"><b>Address 地址</b><br><text-field name="ach_address" role="First Party" style="${w}"></text-field></td>
+    <td colspan="2" style="${c}"><b>${lAddress}</b><br><text-field name="ach_address" role="First Party" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">2. BANK ACCOUNT DETAILS 银行账户信息</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:4px">
   <tr>
-    <td style="${c}width:50%"><b>Bank Name 银行名称</b><br><text-field name="ach_bank_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Account Type 账户类型</b><br><text-field name="ach_account_type" role="First Party" required="true" style="${f}width:180px" placeholder="Checking / Savings"></text-field></td>
+    <td style="${c}width:50%"><b>${lBankName}</b><br><text-field name="ach_bank_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:50%">
+      <b>${acctTypeLabel}</b><br>
+      <div style="margin-top:3px">
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><checkbox-field name="ach_acct_checking" role="First Party" style="width:13px;height:13px"></checkbox-field> ${acctChecking}</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="ach_acct_savings" role="First Party" style="width:13px;height:13px"></checkbox-field> ${acctSavings}</label>
+      </div>
+    </td>
   </tr>
   <tr>
-    <td style="${c}"><b>Routing Number (ABA) 路由号码</b><br><text-field name="ach_routing" role="First Party" required="true" style="${f}width:200px" placeholder="9 digits"></text-field></td>
-    <td style="${c}"><b>Account Number 账号</b><br><text-field name="ach_account" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}"><b>${lRouting}</b><br><text-field name="ach_routing" role="First Party" required="true" style="${f}width:100%" placeholder="9 digits"></text-field></td>
+    <td style="${c}"><b>${lAccount}</b><br><text-field name="ach_account" role="First Party" required="true" style="${f}width:100%"></text-field></td>
+  </tr>
+  <tr>
+    <td colspan="2" style="${c}"><b>${lConfirmAccount}</b><br><text-field name="ach_account_confirm" role="First Party" required="true" style="${f}width:100%" placeholder="${confirmPlaceholder}"></text-field></td>
   </tr>
 </table>
+<div style="font-size:7.5pt;color:#555;font-style:italic;margin-bottom:8px;padding:0 6px">${ownershipNote}</div>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">3. AUTHORIZATION 授权</div>
-<p style="font-size:8pt">I agree that ACH transactions I authorize comply with all applicable U.S. law. I understand that this authorization may be revoked by notifying ${companyName} in writing.</p>
-
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
-  <b>SIGNATURES 签名</b>
-  <table style="width:100%;margin-top:6px"><tr>
-    <td style="width:50%;padding-right:10px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700">Payee Signature 收款人签名:</div>
-      <signature-field name="ach_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><date-field name="ach_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
-    </td>
-    <td style="width:50%;padding-left:10px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700">Company Approval 公司审批:</div>
-      <signature-field name="ach_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="margin-top:4px"><date-field name="ach_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
-    </td>
-  </tr></table>
+<div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:8px;font-size:7.5pt;line-height:1.6">
+  <div style="font-weight:700;margin-bottom:4px;font-size:9pt">${s3}</div>
+  <div style="margin-bottom:3px">① ${auth1}</div>
+  <div style="margin-bottom:3px">② ${auth2}</div>
+  <div>③ ${auth3}</div>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 10:32 CDT</div>
+
+<table style="width:100%;border-collapse:collapse;margin-top:12px;border:1px solid #999;border-radius:3px">
+  <tr>
+    <td style="width:50%;padding:7px 8px;border-right:1px solid #ccc;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${sPayeeSig}</div>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
+      <text-field name="ach_printed_name" role="First Party" required="true" style="${w};margin-bottom:5px"></text-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
+      <signature-field name="ach_sig1" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
+      <date-field name="ach_date1" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+    <td style="width:50%;padding:7px 8px;vertical-align:top">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${sCompany}</div>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
+      <text-field name="ach_co_printed_name" role="Second Party" style="${w};margin-bottom:5px"></text-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
+      <signature-field name="ach_sig2" role="Second Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
+      <date-field name="ach_date2" role="Second Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr>
+</table>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-18 CDT</div>
 </div>`;
 }
+function generateACHAuthHtmlTemplate()    { return _buildACHAuthForm('zh-en'); }
+function generateACHAuthHtmlTemplate_EN() { return _buildACHAuthForm('en'); }
+function generateACHAuthHtmlTemplate_ES() { return _buildACHAuthForm('en-es'); }
 
 // ── Wire Transfer Authorization ──
 function _buildWireAuthForm(lang) {
@@ -4831,7 +4934,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', category: 'form8233', generator: generateForm8233HtmlTemplate },
   i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'i9', generator: generateI9HtmlTemplate },
   w7: { name: 'W-7 ITIN Application / ITIN 申请表', configKey: 'w7_template_id', category: 'w7', generator: generateW7HtmlTemplate },
-  ach_auth: { name: 'ACH / Direct Deposit Authorization / 银行直接转账授权', configKey: 'ach_auth_template_id', category: 'ach_auth', generator: generateACHAuthHtmlTemplate },
+  ach_auth:    { name: 'ACH / Direct Deposit Authorization / ACH 直接存款授权 (ZH+EN)', configKey: 'ach_auth_template_id',    category: 'ach_auth',    generator: generateACHAuthHtmlTemplate },
+  ach_auth_en: { name: 'ACH / Direct Deposit Authorization (EN)',                       configKey: 'ach_auth_en_template_id', category: 'ach_auth_en', generator: generateACHAuthHtmlTemplate_EN },
+  ach_auth_es: { name: 'ACH / Direct Deposit Authorization (EN+ES)',                    configKey: 'ach_auth_es_template_id', category: 'ach_auth_es', generator: generateACHAuthHtmlTemplate_ES },
   wire_auth:    { name: 'Wire Transfer Authorization & Bank Account Confirmation Form (ZH+EN) / 电汇付款授权及银行账户确认表', configKey: 'wire_auth_template_id',    category: 'wire_auth',    generator: generateWireAuthHtmlTemplate },
   wire_auth_en: { name: 'Wire Transfer Authorization & Bank Account Confirmation Form (EN)',                                                    configKey: 'wire_auth_en_template_id', category: 'wire_auth_en', generator: generateWireAuthHtmlTemplate_EN },
   wire_auth_es: { name: 'Wire Transfer Authorization & Bank Account Confirmation Form (EN+ES)',                                                 configKey: 'wire_auth_es_template_id', category: 'wire_auth_es', generator: generateWireAuthHtmlTemplate_ES },
@@ -4872,6 +4977,8 @@ function getDsealConfigTemplateId(type) {
       i9: cfg.i9_template_id,
       w7: cfg.w7_template_id,
       ach_auth: cfg.ach_auth_template_id,
+      ach_auth_en: cfg.ach_auth_en_template_id,
+      ach_auth_es: cfg.ach_auth_es_template_id,
       wire_auth: cfg.wire_auth_template_id,
       check_instruction: cfg.check_instruction_template_id,
       zelle_auth: cfg.zelle_auth_template_id,
@@ -8586,7 +8693,7 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
     let templateType = templateTypeMap[paymentMethod] || 'cash_receipt';
     // Apply language suffix for templates that have EN/ES variants
     const langSuffix = lang === 'en' ? '_en' : lang === 'es' ? '_es' : '';
-    if (langSuffix && ['zelle_auth', 'third_party_pay', 'cash_receipt'].includes(templateType)) {
+    if (langSuffix && ['ach_auth', 'zelle_auth', 'third_party_pay', 'cash_receipt'].includes(templateType)) {
       const langTemplate = templateType + langSuffix;
       if (getDsealConfigTemplateId(langTemplate)) templateType = langTemplate;
     }
@@ -16626,7 +16733,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const allKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
-    'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
+    'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id'];
   const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
@@ -16660,7 +16767,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const _configKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
-    'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
+    'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id',
     'invoice_approval_en_template_id','invoice_approval_es_template_id',
@@ -16774,7 +16881,7 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
         'company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
         'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
         'i9_template_id','w7_template_id',
-        'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
+        'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','check_instruction_template_id',
         'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
         'contractor_invoice_template_id','invoice_approval_template_id',
         'invoice_approval_en_template_id','invoice_approval_es_template_id'
