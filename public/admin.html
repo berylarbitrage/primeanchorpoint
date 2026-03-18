@@ -21699,7 +21699,8 @@ async function dsUploadTemplate() {
   btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite"></span> 上传中…';
   status.textContent = '';
   try {
-    await api('/api/admin/docuseal/upload-template', { method: 'POST', body: JSON.stringify({ name, file: _dsFileData, category }) });
+    const result = await api('/admin/docuseal/upload-template', { method: 'POST', body: JSON.stringify({ name, file: _dsFileData, category }) });
+    if (result?.error) throw new Error(result.error);
     showToast(`模板「${name}」上传成功`, 'success');
     status.textContent = '✓ 上传成功';
     document.getElementById('ds-upload-name').value = '';
