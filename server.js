@@ -4174,14 +4174,16 @@ function _buildCheckInstructionForm(lang) {
   const companyName = getCompanyLegalName();
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
-  // bilingual helper: English bold, secondary language normal weight
+  // bilingual helper: English bold, secondary language lighter
   const bi = (en, secondary) => secondary ? `<b>${en}</b> <span style="font-weight:400;color:#555">${secondary}</span>` : `<b>${en}</b>`;
+  // section header helper
+  const sh = (en, secondary) => secondary ? `${en} <span style="font-weight:400;font-size:8pt;color:#555">${secondary}</span>` : en;
 
   // ── 1. Title ──
   const formTitle = zh
-    ? 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM / 支票收款人及邮寄地址确认表'
+    ? 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM<br><span style="font-size:9pt;font-weight:700;color:#444">支票收款人及邮寄地址确认表</span>'
     : es
-    ? 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM / FORMULARIO DE CONFIRMACIÓN DE BENEFICIARIO Y DIRECCIÓN POSTAL'
+    ? 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM<br><span style="font-size:9pt;font-weight:700;color:#444">FORMULARIO DE CONFIRMACIÓN DE BENEFICIARIO Y DIRECCIÓN POSTAL</span>'
     : 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM';
   const subtitle = zh
     ? `支票收款人及邮寄地址确认表 — ${companyName}`
@@ -4191,95 +4193,98 @@ function _buildCheckInstructionForm(lang) {
 
   // ── 2. Intro paragraph ──
   const introPara = zh
-    ? `I request that ${companyName} issue payment by check using the payee name and mailing address provided below. 本人要求 ${companyName} 按以下提供的收款人名称及邮寄地址开具并邮寄支票。`
+    ? `I request that ${companyName} issue payment by check using the payee name and mailing address provided below.<br><span style="color:#555">本人要求 ${companyName} 按以下提供的收款人名称及邮寄地址开具并邮寄支票。</span>`
     : es
-    ? `I request that ${companyName} issue payment by check using the payee name and mailing address provided below. Solicito que ${companyName} emita el pago mediante cheque utilizando el nombre del beneficiario y la dirección postal indicados a continuación.`
+    ? `I request that ${companyName} issue payment by check using the payee name and mailing address provided below.<br><span style="color:#555">Solicito que ${companyName} emita el pago mediante cheque utilizando el nombre del beneficiario y la dirección postal indicados a continuación.</span>`
     : `I request that ${companyName} issue payment by check using the payee name and mailing address provided below.`;
 
   // ── Section 1: Payee Information ──
-  const s1 = zh ? '1. PAYEE INFORMATION 收款人信息' : es ? '1. PAYEE INFORMATION / INFORMACIÓN DEL BENEFICIARIO' : '1. PAYEE INFORMATION';
+  const s1 = zh ? sh('1. PAYEE INFORMATION', '收款人信息') : es ? sh('1. PAYEE INFORMATION', 'INFORMACIÓN DEL BENEFICIARIO') : '1. PAYEE INFORMATION';
 
-  // ── 9. Payee Type ──
-  const lPayeeType = zh ? 'Payee Type 收款人类型' : es ? 'Payee Type / Tipo de Beneficiario' : 'Payee Type';
+  // ── Payee Type ──
+  const lPayeeType = bi('Payee Type', zh ? '收款人类型' : es ? 'Tipo de Beneficiario' : '');
   const lIndividual = zh ? 'Individual 个人' : es ? 'Individual / Persona Física' : 'Individual';
   const lBusiness   = zh ? 'Business 公司' : es ? 'Business / Empresa' : 'Business';
 
-  const lPayeeName = zh ? 'Payee Name (as printed on check) 收款人姓名（与支票抬头一致）' : es ? 'Payee Name (as printed on check) / Nombre del Beneficiario (tal como aparece en el cheque)' : 'Payee Name (as printed on check)';
-  // ── 3. Payee Name hint ──
+  const lPayeeName = bi('Payee Name (as printed on check)', zh ? '收款人姓名（与支票抬头一致）' : es ? 'Nombre del Beneficiario (tal como aparece en el cheque)' : '');
+  // ── Payee Name hint ──
   const payeeHint = zh
-    ? 'Must match the payee name used for tax and payment records (e.g. W-9 / invoice), unless otherwise approved in writing. 除非经书面批准，否则应与税务及付款记录中的收款人名称一致（如 W-9 / 发票）。'
+    ? 'Must match the payee name used for tax and payment records (e.g. W-9 / invoice), unless otherwise approved in writing.<br><span style="color:#999">除非经书面批准，否则应与税务及付款记录中的收款人名称一致（如 W-9 / 发票）。</span>'
     : es
-    ? 'Must match the payee name used for tax and payment records (e.g. W-9 / invoice), unless otherwise approved in writing. Debe coincidir con el nombre del beneficiario utilizado en los registros fiscales y de pago (p. ej., W-9 / factura), salvo aprobación por escrito.'
+    ? 'Must match the payee name used for tax and payment records (e.g. W-9 / invoice), unless otherwise approved in writing.<br><span style="color:#999">Debe coincidir con el nombre del beneficiario utilizado en los registros fiscales y de pago (p. ej., W-9 / factura), salvo aprobación por escrito.</span>'
     : 'Must match the payee name used for tax and payment records (e.g. W-9 / invoice), unless otherwise approved in writing.';
-  const lContact = zh ? 'Phone / Email 电话/电邮 (optional 可选)' : es ? 'Phone / Email (opcional)' : 'Phone / Email (optional)';
+  const lContact = bi('Phone / Email', zh ? '电话/电邮' : es ? '' : '');
+  const lContactOpt = zh ? ' (optional 可选)' : es ? ' (opcional)' : ' (optional)';
 
-  // ── 4. Section 2: Payment Mailing Address ──
-  const s2 = zh ? '2. PAYMENT MAILING ADDRESS 付款邮寄地址' : es ? '2. PAYMENT MAILING ADDRESS / DIRECCIÓN POSTAL DE PAGO' : '2. PAYMENT MAILING ADDRESS';
-  const lStreet  = zh ? 'Street Address 街道地址' : es ? 'Street Address / Dirección' : 'Street Address';
-  const lApt     = zh ? 'Apt / Suite / Unit 门牌号 (optional 可选)' : es ? 'Apt / Suite / Unit (opcional)' : 'Apt / Suite / Unit (optional)';
-  const lCity    = zh ? 'City 城市' : es ? 'City / Ciudad' : 'City';
-  const lState   = zh ? 'State 州' : es ? 'State / Estado' : 'State';
-  const lZip     = 'ZIP';
-  const lCountry = zh ? 'Country 国家 (if outside U.S. 境外填写)' : es ? 'Country / País (si fuera de EE.UU.)' : 'Country (if outside U.S.)';
+  // ── Section 2: Payment Mailing Address ──
+  const s2 = zh ? sh('2. PAYMENT MAILING ADDRESS', '付款邮寄地址') : es ? sh('2. PAYMENT MAILING ADDRESS', 'DIRECCIÓN POSTAL DE PAGO') : '2. PAYMENT MAILING ADDRESS';
+  const lStreet  = bi('Street Address', zh ? '街道地址' : es ? 'Dirección' : '');
+  const lApt     = bi('Apt / Suite / Unit', zh ? '门牌号' : es ? '' : '');
+  const lAptOpt  = zh ? ' (optional 可选)' : es ? ' (opcional)' : ' (optional)';
+  const lCity    = bi('City', zh ? '城市' : es ? 'Ciudad' : '');
+  const lState   = bi('State', zh ? '州' : es ? 'Estado' : '');
+  const lZip     = '<b>ZIP</b>';
+  const lCountry = bi('Country', zh ? '国家' : es ? 'País' : '');
+  const lCountryNote = zh ? ' (if outside U.S. 境外填写)' : es ? ' (si fuera de EE.UU.)' : ' (if outside U.S.)';
 
-  // ── 5. Section 3: Payment Reference ──
-  const s3 = zh ? '3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME 付款参考 / 发票号 / 项目名称' : es ? '3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME / REFERENCIA DE PAGO' : '3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME';
+  // ── Section 3: Payment Reference ──
+  const s3 = zh ? sh('3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME', '付款参考 / 发票号 / 项目名称') : es ? sh('3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME', 'REFERENCIA DE PAGO') : '3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME';
   const refPlaceholder = 'e.g., INV-2026-001 / Project Alpha';
 
-  // ── 6. Section 4: Special Instructions ──
-  const s4 = zh ? '4. SPECIAL INSTRUCTIONS 特别说明 (optional 可选)' : es ? '4. SPECIAL INSTRUCTIONS / INSTRUCCIONES ESPECIALES (opcional)' : '4. SPECIAL INSTRUCTIONS (optional)';
+  // ── Section 4: Special Instructions ──
+  const s4 = zh ? sh('4. SPECIAL INSTRUCTIONS', '特别说明') + ' (optional 可选)' : es ? sh('4. SPECIAL INSTRUCTIONS', 'INSTRUCCIONES ESPECIALES') + ' (opcional)' : '4. SPECIAL INSTRUCTIONS (optional)';
   const specialHint = zh
-    ? 'Special instructions are subject to company review and may require additional verification. 特殊说明需经公司审核，必要时可能需要额外核实。'
+    ? 'Special instructions are subject to company review and may require additional verification.<br><span style="color:#999">特殊说明需经公司审核，必要时可能需要额外核实。</span>'
     : es
-    ? 'Special instructions are subject to company review and may require additional verification. Las instrucciones especiales están sujetas a revisión de la empresa y pueden requerir verificación adicional.'
+    ? 'Special instructions are subject to company review and may require additional verification.<br><span style="color:#999">Las instrucciones especiales están sujetas a revisión de la empresa y pueden requerir verificación adicional.</span>'
     : 'Special instructions are subject to company review and may require additional verification.';
 
   // ── Section 5: Confirmation & Agreement ──
-  const s5 = zh ? '5. CONFIRMATION & AGREEMENT 确认与承诺' : es ? '5. CONFIRMATION & AGREEMENT / CONFIRMACIÓN Y ACUERDO' : '5. CONFIRMATION & AGREEMENT';
+  const s5 = zh ? sh('5. CONFIRMATION & AGREEMENT', '确认与承诺') : es ? sh('5. CONFIRMATION & AGREEMENT', 'CONFIRMACIÓN Y ACUERDO') : '5. CONFIRMATION & AGREEMENT';
   const confirmLine1 = zh
-    ? 'I confirm that the payee name and mailing address provided above are accurate. 本人确认以上收款人名称及邮寄地址真实准确。'
+    ? 'I confirm that the payee name and mailing address provided above are accurate. <span style="color:#555">本人确认以上收款人名称及邮寄地址真实准确。</span>'
     : es
-    ? 'I confirm that the payee name and mailing address provided above are accurate. Confirmo que el nombre del beneficiario y la dirección postal indicados son correctos.'
+    ? 'I confirm that the payee name and mailing address provided above are accurate. <span style="color:#555">Confirmo que el nombre del beneficiario y la dirección postal indicados son correctos.</span>'
     : 'I confirm that the payee name and mailing address provided above are accurate.';
   const confirmLine2 = zh
-    ? `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing. 除非本人在支票寄出前以书面形式提供更新信息，否则按上述信息签发并邮寄支票即视为 ${companyName} 已正确送达付款。`
+    ? `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing. <span style="color:#555">除非本人在支票寄出前以书面形式提供更新信息，否则按上述信息签发并邮寄支票即视为 ${companyName} 已正确送达付款。</span>`
     : es
-    ? `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing. El envío del cheque a la información indicada se considerará entrega válida del pago, salvo que se proporcionen instrucciones actualizadas por escrito antes del envío.`
+    ? `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing. <span style="color:#555">El envío del cheque a la información indicada se considerará entrega válida del pago, salvo que se proporcionen instrucciones actualizadas por escrito antes del envío.</span>`
     : `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing.`;
   const confirmLine3 = zh
-    ? `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect. 如本人收款人名称或邮寄地址发生变化，本人同意在支票寄出前以书面形式通知 ${companyName}。`
+    ? `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect. <span style="color:#555">如本人收款人名称或邮寄地址发生变化，本人同意在支票寄出前以书面形式通知 ${companyName}。</span>`
     : es
-    ? `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect. Acepto notificar a ${companyName} por escrito antes de que entre en vigor cualquier cambio en mi nombre o dirección postal.`
+    ? `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect. <span style="color:#555">Acepto notificar a ${companyName} por escrito antes de que entre en vigor cualquier cambio en mi nombre o dirección postal.</span>`
     : `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect.`;
-  // ── 7. Change effectiveness clause ──
+  // ── Change effectiveness clause ──
   const confirmLine4 = zh
-    ? `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions. 任何收款人名称或邮寄地址的变更，仅在 ${companyName} 收到并处理更新后的书面指示后生效。`
+    ? `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions. <span style="color:#555">任何收款人名称或邮寄地址的变更，仅在 ${companyName} 收到并处理更新后的书面指示后生效。</span>`
     : es
-    ? `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions. Cualquier cambio en el nombre del beneficiario o la dirección postal solo entrará en vigor después de que ${companyName} reciba y procese las instrucciones escritas actualizadas.`
+    ? `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions. <span style="color:#555">Cualquier cambio en el nombre del beneficiario o la dirección postal solo entrará en vigor después de que ${companyName} reciba y procese las instrucciones escritas actualizadas.</span>`
     : `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions.`;
 
   // ── Signature section ──
-  const sigHeader = zh ? 'PAYEE SIGNATURE 收款人签名' : es ? 'FIRMA DEL BENEFICIARIO' : 'PAYEE SIGNATURE';
-  const lPrintedName = zh ? 'Printed Name 正楷姓名' : es ? 'Printed Name / Nombre en letra de molde' : 'Printed Name';
-  // ── 8. Title / Relationship ──
-  const lTitleRel = zh ? 'Title / Relationship 职务 / 与收款人关系' : es ? 'Title / Relationship / Cargo / Relación con el Beneficiario' : 'Title / Relationship';
-  const titlePlaceholder = zh ? 'e.g., Owner, Manager, Self' : es ? 'e.g., Owner, Manager, Self' : 'e.g., Owner, Manager, Self';
-  const lSig  = zh ? 'Signature 签名' : es ? 'Signature / Firma' : 'Signature';
-  const lDate = zh ? 'Date 日期' : es ? 'Date / Fecha' : 'Date';
+  const sigHeader = zh ? sh('PAYEE SIGNATURE', '收款人签名') : es ? 'FIRMA DEL BENEFICIARIO' : 'PAYEE SIGNATURE';
+  const lPrintedName = zh ? 'Printed Name <span style="font-weight:400;color:#555">正楷姓名</span>' : es ? 'Printed Name / Nombre en letra de molde' : 'Printed Name';
+  // ── Title / Relationship ──
+  const lTitleRel = zh ? 'Title / Relationship <span style="font-weight:400;color:#555">职务 / 与收款人关系</span>' : es ? 'Title / Relationship / Cargo / Relación' : 'Title / Relationship';
+  const titlePlaceholder = 'e.g., Owner, Manager, Self';
+  const lSig  = zh ? 'Signature <span style="font-weight:400;color:#555">签名</span>' : es ? 'Signature / Firma' : 'Signature';
+  const lDate = zh ? 'Date <span style="font-weight:400;color:#555">日期</span>' : es ? 'Date / Fecha' : 'Date';
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:18px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:12pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
-  <div style="font-size:8.5pt;color:#555;margin-top:4px">${subtitle}</div>
+  <div style="font-size:11.5pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
+  <div style="font-size:8pt;color:#555;margin-top:4px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt;margin-bottom:12px">${introPara}</p>
+<p style="font-size:8pt;margin-bottom:10px;line-height:1.6">${introPara}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:2px">
+<div style="font-weight:700;margin:10px 0 4px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:2px">
   <tr>
     <td colspan="2" style="${c}">
-      <b>${lPayeeType}</b>
+      ${lPayeeType}
       <div style="margin-top:3px">
         <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payee_individual" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${lIndividual}</label>
         <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payee_business" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${lBusiness}</label>
@@ -4287,47 +4292,47 @@ function _buildCheckInstructionForm(lang) {
     </td>
   </tr>
   <tr>
-    <td style="${c}width:55%"><b>${lPayeeName}</b><br><text-field name="check_payee" role="Contractor" required="true" style="${w}"></text-field>
+    <td style="${c}width:55%">${lPayeeName}<br><text-field name="check_payee" role="Contractor" required="true" style="${w}"></text-field>
       <div style="font-size:7pt;color:#888;margin-top:2px;line-height:1.35">${payeeHint}</div>
     </td>
-    <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="check_contact" role="Contractor" style="${w}"></text-field></td>
+    <td style="${c}width:45%">${lContact}<span style="font-size:7.5pt;color:#888">${lContactOpt}</span><br><text-field name="check_contact" role="Contractor" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:10px 0 4px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s2}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:60%"><b>${lStreet}</b><br><text-field name="check_street" role="Contractor" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:40%"><b>${lApt}</b><br><text-field name="check_apt" role="Contractor" style="${w}"></text-field></td>
+    <td style="${c}width:60%">${lStreet}<br><text-field name="check_street" role="Contractor" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:40%">${lApt}<span style="font-size:7.5pt;color:#888">${lAptOpt}</span><br><text-field name="check_apt" role="Contractor" style="${w}"></text-field></td>
   </tr>
   <tr>
     <td colspan="2" style="${c}">
-      <b>${lCity}</b> <text-field name="check_city" role="Contractor" required="true" style="${f}width:160px"></text-field>
-      &nbsp;&nbsp;<b>${lState}</b> <text-field name="check_state" role="Contractor" required="true" style="${f}width:70px"></text-field>
-      &nbsp;&nbsp;<b>${lZip}</b> <text-field name="check_zip" role="Contractor" required="true" style="${f}width:90px"></text-field>
+      ${lCity} <text-field name="check_city" role="Contractor" required="true" style="${f}width:160px"></text-field>
+      &nbsp;&nbsp;${lState} <text-field name="check_state" role="Contractor" required="true" style="${f}width:70px"></text-field>
+      &nbsp;&nbsp;${lZip} <text-field name="check_zip" role="Contractor" required="true" style="${f}width:90px"></text-field>
     </td>
   </tr>
-  <tr><td colspan="2" style="${c}"><b>${lCountry}</b>&nbsp;<text-field name="check_country" role="Contractor" style="${f}width:200px" placeholder="United States"></text-field></td></tr>
+  <tr><td colspan="2" style="${c}">${lCountry}<span style="font-size:7.5pt;color:#888">${lCountryNote}</span>&nbsp;<text-field name="check_country" role="Contractor" style="${f}width:200px" placeholder="United States"></text-field></td></tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
+<div style="font-weight:700;margin:10px 0 4px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s3}</div>
 <text-field name="check_reference" role="Contractor" style="${w}" placeholder="${refPlaceholder}"></text-field>
 
-<div style="font-weight:700;margin:10px 0 3px;font-size:9.5pt">${s4}</div>
+<div style="font-weight:700;margin:10px 0 3px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s4}</div>
 <div style="font-size:7pt;color:#888;margin-bottom:3px;line-height:1.35">${specialHint}</div>
 <text-field name="check_notes" role="Contractor" style="${w};min-height:36px" placeholder="e.g., Attn: ..., c/o ..."></text-field>
 
-<div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:12px;font-size:8pt;line-height:1.55">
-  <div style="font-weight:700;margin-bottom:4px">${s5}</div>
-  <div style="margin-bottom:4px">${confirmLine1}</div>
-  <div style="margin-bottom:4px">${confirmLine2}</div>
-  <div style="margin-bottom:4px">${confirmLine3}</div>
-  <div>${confirmLine4}</div>
+<div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:12px;font-size:7.5pt;line-height:1.6">
+  <div style="font-weight:700;margin-bottom:5px;font-size:8.5pt">${s5}</div>
+  <div style="margin-bottom:3px">① ${confirmLine1}</div>
+  <div style="margin-bottom:3px">② ${confirmLine2}</div>
+  <div style="margin-bottom:3px">③ ${confirmLine3}</div>
+  <div>④ ${confirmLine4}</div>
 </div>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:10px;font-size:8.5pt;border-radius:3px">
-  <b>${sigHeader}</b>
-  <table style="width:100%;margin-top:6px">
+<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:10px;font-size:8pt;border-radius:3px">
+  <div style="font-weight:700;margin-bottom:5px;font-size:8.5pt">${sigHeader}</div>
+  <table style="width:100%;margin-top:4px">
     <tr>
       <td style="width:55%;padding-right:8px;padding-bottom:6px;vertical-align:top">
         <div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div>
