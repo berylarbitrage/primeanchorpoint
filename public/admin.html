@@ -15147,6 +15147,7 @@ function trEntNext() {
   if (eu === 'yes') {
     // Validate US entity fields
     if (!document.getElementById('trEntLegalName').value.trim()) return showToast('请填写 Legal Business Name', 'error');
+    if (!document.getElementById('trEntTaxClass').value) return showToast('请选择 Tax Classification', 'error');
     if (!document.getElementById('trEntEin').value.trim()) return showToast('请填写 EIN / TIN', 'error');
     if (!/^\d{2}-\d{7}$/.test(document.getElementById('trEntEin').value.trim())) return showToast('EIN 格式应为 XX-XXXXXXX（9位数字）', 'error');
     if (!document.getElementById('trEntAddrStreet').value.trim()) return showToast('请填写 Street Address', 'error');
@@ -16343,6 +16344,14 @@ async function saveTaxResidency() {
       if (!document.getElementById('trIndAddrState').value.trim()) return showToast('❌ 请填写 State', 'error');
       if (!document.getElementById('trIndAddrZip').value.trim()) return showToast('❌ 请填写 ZIP Code', 'error');
     }
+  }
+
+  // Validate Step 4 fields (Services & Treaty) — required for all paths that reach Step 4
+  const _step4El = document.getElementById('trStep4');
+  if (_step4El && _step4El.style.display !== 'none') {
+    if (!document.getElementById('trServicesLoc').value) return showToast('❌ 请选择服务是否在美国境内履行', 'error');
+    if (!document.getElementById('trWorkLoc').value.trim()) return showToast('❌ 请填写 Primary Work Location(s)', 'error');
+    if (!document.getElementById('trServiceDates').value.trim()) return showToast('❌ 请填写 Expected Service Dates（起止月份）', 'error');
   }
 
   const trData = trWizardCollectData();
