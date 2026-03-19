@@ -16955,16 +16955,22 @@ function wpDetectCategory(trData) {
   if (wa === 'F-1' || wa === 'F-2' || wa === 'M-1' || wa === 'M-2') return 'nra_visa';
   // B-1/B-2 visitors performing services
   if (wa.startsWith('B-')) return 'nra_visa';
-  // Also check immigration_status_periods for most recent visa type
-  const periods = trData.immigration_status_periods || [];
-  if (periods.length) {
-    const lastVisa = periods[periods.length - 1].visa || '';
-    if (lastVisa === 'F-1' || lastVisa === 'F-2' || lastVisa === 'M-1') return 'nra_visa';
-    if (VISA_TYPES.includes(lastVisa)) return 'work_visa';
-    if (lastVisa === 'J-1') return 'j1';
-    if (lastVisa.startsWith('EAD-C03')) return 'opt';
-    if (lastVisa.startsWith('EAD-')) return 'ead';
-  }
+  // Parse entry_exit_records timeline to detect visa type when immigration_status is not set
+  try {
+    const rec = trData.entry_exit_records ? JSON.parse(trData.entry_exit_records) : null;
+    const periods = (rec && (rec.status_periods || rec.periods)) || [];
+    if (periods.length) {
+      // Use the most recent period's visa
+      const lastVisa = (periods[periods.length - 1].visa || '').trim();
+      if (lastVisa === 'F-1' || lastVisa === 'F-2' || lastVisa === 'M-1' || lastVisa === 'M-2') return 'nra_visa';
+      if (lastVisa.startsWith('B-')) return 'nra_visa';
+      if (VISA_TYPES.includes(lastVisa)) return 'work_visa';
+      if (lastVisa === 'J-1') return 'j1';
+      if (lastVisa === 'F-1-CPT') return 'cpt';
+      if (lastVisa === 'EAD-C03A' || lastVisa === 'EAD-C03B') return 'opt';
+      if (EAD_TYPES.includes(lastVisa)) return 'ead';
+    }
+  } catch(e) {}
   return 'generic';
 }
 
