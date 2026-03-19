@@ -16811,10 +16811,67 @@ const WP_UPLOAD_DOCS = {
 
 let _wpUploadedDocs = []; // track uploaded docs for current session
 
-function wpRenderUploadZones(category) {
+// Per-visa-type required upload documents (for timeline-based rendering)
+const WP_VISA_DOCS = {
+  'F-1':    ['F-1 签证印件 Visa Copy', 'I-20 (Certificate of Eligibility)'],
+  'F-2':    ['F-2 签证印件 Visa Copy'],
+  'M-1':    ['M-1 签证印件 Visa Copy', 'I-20 (Form I-20 M)'],
+  'J-1':    ['J-1 签证印件 Visa Copy', 'DS-2019 (Certificate of Eligibility)'],
+  'J-2':    ['J-2 签证印件 Visa Copy', 'DS-2019 (Certificate of Eligibility)'],
+  'H-1B':   ['H-1B 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'H-1B1':  ['H-1B1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'L-1':    ['L-1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'O-1':    ['O-1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'TN':     ['TN 签证印件 / CBP 入境记录 TN Visa Copy or CBP Admission Record'],
+  'E-2':    ['E-2 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'E-3':    ['E-3 签证印件 Visa Copy'],
+  'R-1':    ['R-1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'P-1':    ['P-1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'B-1':    ['B-1/B-2 签证印件 Visa Copy'],
+  'B-2':    ['B-1/B-2 签证印件 Visa Copy'],
+  'B-1/B-2':['B-1/B-2 签证印件 Visa Copy'],
+};
+function _wpEadLabel(visa) {
+  return `EAD 工卡 I-766 正反面 (${visa.replace('EAD-','')})`;
+}
+
+function wpRenderUploadZones(category, trData) {
   const container = document.getElementById('wpUploadZones');
-  const docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
   container.innerHTML = '';
+  let docs = [];
+
+  // For NRA / complex cases: build per-period upload list from timeline
+  if (trData && trData.entry_exit_records && (category === 'nra_visa' || category === 'work_visa' || category === 'opt' || category === 'cpt' || category === 'j1' || category === 'ead')) {
+    try {
+      const rec = JSON.parse(trData.entry_exit_records);
+      const periods = rec.status_periods || rec.periods || [];
+      const seen = new Set();
+      const add = (label) => { if (!seen.has(label)) { seen.add(label); docs.push(label); } };
+
+      // Always: passport + I-94 for anyone with US presence
+      add('护照 Passport（所有有效护照页）');
+      add('I-94 入境记录 Arrival/Departure Record（最近入境）');
+
+      // Per-period documents
+      periods.forEach(p => {
+        const v = (p.visa || '').trim();
+        const dateRange = [p.start, p.end].filter(Boolean).join(' ~ ');
+        const periodLabel = dateRange ? ` (${dateRange})` : '';
+        if (WP_VISA_DOCS[v]) {
+          WP_VISA_DOCS[v].forEach(d => add(`${d}${periodLabel}`));
+        } else if (v.startsWith('EAD-')) {
+          add(_wpEadLabel(v) + periodLabel);
+        } else if (v) {
+          add(`${v} 签证印件 Visa Copy${periodLabel}`);
+        }
+      });
+    } catch(e) {
+      docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
+    }
+  } else {
+    docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
+  }
+
   docs.forEach((label, idx) => {
     const zoneId = `wpUploadZone_${idx}`;
     container.insertAdjacentHTML('beforeend', `
@@ -16990,8 +17047,10 @@ async function openWorkPermitModal() {
 
   // Load questionnaire data to determine category
   let wpCategory = 'generic';
+  let _wpTrData = null;
   try {
     const trData = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`);
+    _wpTrData = trData;
     if (trData) {
       wpCategory = wpDetectCategory(trData);
       // Show questionnaire-based hint
@@ -17015,7 +17074,7 @@ async function openWorkPermitModal() {
   // Populate dropdown and show required docs
   wpPopulateDocType(wpCategory);
   wpShowRequiredDocs(wpCategory);
-  wpRenderUploadZones(wpCategory);
+  wpRenderUploadZones(wpCategory, _wpTrData);
   wpLoadExistingDocs(wpCategory);
 
   // Load existing work permit data — pre-fill form fields from saved record
