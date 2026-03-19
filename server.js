@@ -7328,15 +7328,16 @@ function verifyW9Address(workerId) {
     const w9Zip = norm(w9Data.zip);
     const w9Full = [w9Data.address, w9Data.city, w9Data.state, w9Data.zip].filter(Boolean).map(s => s.trim()).join(', ');
 
-    const trq = db.prepare("SELECT addr_street, addr_city, addr_state, addr_zip FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY updated_at DESC LIMIT 1").get(workerId);
+    const trq = db.prepare("SELECT addr_street, addr_street2, addr_city, addr_state, addr_zip FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY updated_at DESC LIMIT 1").get(workerId);
     if (!trq || (!trq.addr_street && !trq.addr_city)) {
       return { match: false, note: `⚠️ 地址需人工核对（税务问卷无地址记录）\nW-9 地址: ${w9Full}` };
     }
-    const trAddr = norm(trq.addr_street);
+    const trStreetFull = [trq.addr_street, trq.addr_street2].filter(Boolean).map(s => s.trim()).join(' ');
+    const trAddr = norm(trStreetFull);
     const trCity = norm(trq.addr_city);
     const trState = norm(trq.addr_state);
     const trZip = norm(trq.addr_zip);
-    const trFull = [trq.addr_street, trq.addr_city, trq.addr_state, trq.addr_zip].filter(Boolean).map(s => s.trim()).join(', ');
+    const trFull = [trStreetFull, trq.addr_city, trq.addr_state, trq.addr_zip].filter(Boolean).map(s => s.trim()).join(', ');
 
     const match = w9Addr === trAddr && w9City === trCity && w9State === trState && w9Zip === trZip;
     if (match) {
