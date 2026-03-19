@@ -16228,9 +16228,6 @@ async function openTaxResidencyModal() {
     if (trData.treaty_country) { const el = document.getElementById('trTreatyCountry'); if (el) { el.value = trData.treaty_country; trOnTreatyCountryChange(); } }
     if (trData.claim_treaty_benefit && (trData.claim_treaty_benefit === 'yes' || trData.claim_treaty_benefit === 'no')) { trSetTreatyClaim(trData.claim_treaty_benefit); }
     if (trData.treaty_income_type) { const el = document.getElementById('trTreatyIncomeType'); if (el) el.value = trData.treaty_income_type; }
-    if (trData.work_permit_category) {
-      const el = document.getElementById('trWorkPermitCategory'); if (el) { el.value = trData.work_permit_category; trWorkPermitCategoryChange(); }
-    }
     if (trData.immigration_status) {
       const el = document.getElementById('trDocImmStatus'); if (el) el.value = trData.immigration_status;
     }
