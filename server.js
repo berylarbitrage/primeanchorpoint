@@ -6920,6 +6920,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   const getTaxFilingDocCount = db.prepare("SELECT COUNT(*) as cnt FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? AND file_path!=''");
   const getPaymentTotal = db.prepare("SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt FROM worker_payments WHERE employee_id=?");
   const getContractorInvCounts = db.prepare("SELECT COUNT(*) as total, SUM(CASE WHEN status='submitted' THEN 1 ELSE 0 END) as pending FROM contractor_invoices WHERE worker_account_id=?");
+  const getW9Task = db.prepare("SELECT status, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'");
+  const getI9CompDoc = db.prepare("SELECT id, status FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='i9' ORDER BY created_at DESC LIMIT 1");
+  const getW8BenTask = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='tax_doc_w8ben' ORDER BY id DESC LIMIT 1");
   const currentTaxYear = new Date().getFullYear() - 1; // filing for prior year
 
   const enriched = workers.map(w => {
@@ -6934,6 +6937,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const taxFilingDocCount = getTaxFilingDocCount.get(w.id, currentTaxYear);
     const payTotals = w.employee_id ? getPaymentTotal.get(w.employee_id) : null;
     const cinvCounts = getContractorInvCounts.get(w.id);
+    const w9Task = getW9Task.get(w.id);
+    const i9CompDoc = getI9CompDoc.get(w.id);
+    const w8BenTask = getW8BenTask.get(w.id);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -6958,7 +6964,12 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       tax_filing_doc_count: taxFilingDocCount?.cnt || 0,
       current_tax_year: currentTaxYear,
       total_paid: payTotals?.total || 0,
-      payment_count: payTotals?.cnt || 0
+      payment_count: payTotals?.cnt || 0,
+      w9_ds_status: w9Task?.ds_status || '',
+      w9_task_status: w9Task?.status || '',
+      i9_compliance_doc_id: i9CompDoc?.id || null,
+      i9_compliance_doc_status: i9CompDoc?.status || '',
+      w8ben_task_status: w8BenTask?.status || ''
     };
   });
 

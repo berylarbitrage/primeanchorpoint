@@ -14228,7 +14228,35 @@ async function loadWorkerAccounts() {
         : emp==='w2'&&(rf==='W-8BEN'||rf==='W-8BEN-E') ? 'W-2'
         : emp==='w2' ? 'W-2'
         : rf || '报税文件';
-      return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;white-space:nowrap;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${esc(filingLabel)}</button>`;
+      const filingBtn = `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;white-space:nowrap;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${esc(filingLabel)}</button>`;
+      let docBadge = '';
+      if (emp === '1099') {
+        const isW8 = rf==='W-8BEN'||rf==='W-8BEN-E'||rf==='Form 8233';
+        if (isW8) {
+          const w8Label = rf==='Form 8233' ? 'W-8BEN/8233' : rf==='W-8BEN-E' ? 'W-8BEN-E' : 'W-8BEN';
+          const w8Signed = w.w8ben_task_status==='completed';
+          const w8Style = w8Signed ? 'background:#dcfce7;color:#15803d;border:1px solid #86efac' : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a';
+          docBadge = `<span style="cursor:pointer;display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;white-space:nowrap;${w8Style}" onclick="event.stopPropagation();openOnboardingModal(${w.id},'${esc(w.name||w.username)}')" title="${w8Signed?'已签署 '+w8Label:'待签署 '+w8Label}">${w8Signed?'✅ ':'📋 '}${esc(w8Label)}</span>`;
+        } else {
+          const w9Signed = w.w9_ds_status==='completed' || (w.compliance&&w.compliance.w9==='completed');
+          if (w9Signed) {
+            docBadge = `<a href="/api/admin/worker-accounts/${w.id}/w9-signed-pdf" target="_blank" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#dcfce7;color:#15803d;border:1px solid #86efac;text-decoration:none;white-space:nowrap" onclick="event.stopPropagation()" title="查看已签署 W-9">✅ W-9</a>`;
+          } else {
+            docBadge = `<span style="cursor:pointer;display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap" onclick="event.stopPropagation();openOnboardingModal(${w.id},'${esc(w.name||w.username)}')" title="W-9 待签署">📋 W-9</span>`;
+          }
+        }
+      } else if (emp === 'w2') {
+        const i9Signed = w.i9_compliance_doc_status==='approved'||w.i9_compliance_doc_status==='completed';
+        const i9Submitted = w.i9_compliance_doc_status==='pending';
+        if (i9Signed && w.i9_compliance_doc_id) {
+          docBadge = `<a href="/api/admin/compliance-docs/${w.i9_compliance_doc_id}/download" target="_blank" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#dcfce7;color:#15803d;border:1px solid #86efac;text-decoration:none;white-space:nowrap" onclick="event.stopPropagation()" title="查看 I-9">✅ I-9</a>`;
+        } else if (i9Submitted && w.i9_compliance_doc_id) {
+          docBadge = `<a href="/api/admin/compliance-docs/${w.i9_compliance_doc_id}/download" target="_blank" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fde68a;text-decoration:none;white-space:nowrap" onclick="event.stopPropagation()" title="查看 I-9（待审核）">📋 I-9</a>`;
+        } else {
+          docBadge = `<span style="cursor:pointer;display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap" onclick="event.stopPropagation();openOnboardingModal(${w.id},'${esc(w.name||w.username)}')" title="I-9 待签署">📋 I-9</span>`;
+        }
+      }
+      return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">${filingBtn}${docBadge}</div>`;
     })()}</td>
     <td style="font-size:.78rem;white-space:nowrap;text-align:center">${(() => {
       const isCitizen = w.tax_status === 'citizen' || w.tax_status === 'us_citizen' || w.work_status === 'citizen';
