@@ -7443,6 +7443,14 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
     }
     db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, ds_company_signed_at=NULL, contract_content='', status='pending', admin_note='合同已重置', action_url='', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
       .run(req.params.id);
+  // When resetting W-9 to pending, also clear DocuSeal signing data
+  } else if (req.params.key === 'w9' && status === 'pending' && oldTask && oldTask.ds_status) {
+    const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(req.params.id);
+    if (onb && onb.ds_envelope_id) {
+      try { dsealArchive(onb.ds_envelope_id).catch(e => console.error('[w9 reset] archive error:', e.message)); } catch {}
+    }
+    db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, status='pending', admin_note='W-9 已重置', action_url='', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+      .run(req.params.id);
   } else {
     db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
       VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
