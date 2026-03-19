@@ -8859,6 +8859,19 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
   }
 });
 
+// Admin: view signed payment authorization PDF
+app.get('/api/admin/worker-accounts/:id/payment-auth-signed-pdf', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='payment_method'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '付款授权未发送' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-payment-auth-${workerId}.pdf"` });
+    res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Get payment method authorization signing status from DocuSeal
 app.get('/api/admin/worker-accounts/:id/payment-auth-status', requireAdmin, async (req, res) => {
   try {
