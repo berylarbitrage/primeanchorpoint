@@ -14345,6 +14345,7 @@ function openOnboardingTaskPreview(taskKey, title) {
   document.getElementById('onboardingPreviewModal').classList.add('show');
 }
 let _onboardingRecommendedForm = null;
+let _onboardingApplicantType = null;
 
 async function refreshOnboardingModal() {
   let tasks, rows, intvInfo, taxResData;
@@ -14369,6 +14370,7 @@ async function refreshOnboardingModal() {
   _onboardingWorkerData = w || null;
   _onboardingInterviewInfo = intvInfo || null;
   _onboardingRecommendedForm = (taxResData && taxResData.recommended_form) || null;
+  _onboardingApplicantType = (taxResData && taxResData.applicant_type) || null;
 
   const hasTasks = Array.isArray(tasks) && tasks.length > 0;
   // Use server-side onboarded flag (checks only assigned tasks) for accurate allDone state
@@ -17497,7 +17499,15 @@ async function openW9SendModal() {
       api('/admin/docuseal/my-templates')
     ]);
     const dsUrl = (cfg && cfg.url) || '';
-    const defaultId = cfg && cfg.w9_template_id ? String(Array.isArray(cfg.w9_template_id) ? cfg.w9_template_id[0] : cfg.w9_template_id) : '';
+    // Auto-select template based on applicant type: entity → w9 (company), individual → w9_individual
+    let defaultId = '';
+    if (_onboardingApplicantType === 'entity' && cfg && cfg.w9_template_id) {
+      defaultId = String(Array.isArray(cfg.w9_template_id) ? cfg.w9_template_id[0] : cfg.w9_template_id);
+    } else if (cfg && cfg.w9_individual_template_id) {
+      defaultId = String(Array.isArray(cfg.w9_individual_template_id) ? cfg.w9_individual_template_id[0] : cfg.w9_individual_template_id);
+    } else if (cfg && cfg.w9_template_id) {
+      defaultId = String(Array.isArray(cfg.w9_template_id) ? cfg.w9_template_id[0] : cfg.w9_template_id);
+    }
     const w9Templates = (myTemplates || []).filter(t => t.category === 'w9' || t.category === 'w9_individual');
     _renderW9TemplateList(w9Templates, dsUrl, defaultId);
   } catch(e) {
