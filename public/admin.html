@@ -2935,6 +2935,29 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Link DS Submission Modal -->
+<div class="modal-bg" id="linkDsSubmissionModal"><div class="modal" style="max-width:460px">
+  <h2>🔗 绑定已有 DocuSeal 签署</h2>
+  <p style="font-size:.85rem;color:var(--gray-500);margin:.25rem 0 1rem">将工人在系统外已签署的 DocuSeal 文件绑定到此入职任务。请在 DocuSeal 后台找到对应提交记录的 Submission ID（数字）。</p>
+  <div style="margin-bottom:.75rem">
+    <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">任务类型</label>
+    <select id="linkDsTaskKey" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none">
+      <option value="w9">📋 W-9 税表</option>
+      <option value="contract">✍️ 合同</option>
+      <option value="payment_method">💳 付款授权</option>
+    </select>
+  </div>
+  <div style="margin-bottom:.75rem">
+    <label style="font-size:.85rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">DocuSeal Submission ID</label>
+    <input id="linkDsSubmissionId" type="text" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none" placeholder="例如：123456">
+  </div>
+  <div id="linkDsResult" style="display:none;padding:.5rem .75rem;border-radius:8px;font-size:.83rem;margin-bottom:.75rem"></div>
+  <div class="modal-actions" style="margin-top:.5rem;gap:.5rem;display:flex;justify-content:flex-end">
+    <button class="btn btn-outline" onclick="closeModal('linkDsSubmissionModal')">取消</button>
+    <button class="btn btn-green" id="linkDsConfirmBtn" onclick="doLinkDsSubmission()">🔗 绑定</button>
+  </div>
+</div></div>
+
 <!-- Worker Pay History Modal -->
 <div class="modal-bg" id="workerPayHistoryModal"><div class="modal" style="max-width:640px">
   <h2>💰 薪资记录 — <span id="payHistoryWorkerName" style="color:var(--sky)"></span></h2>
@@ -14482,13 +14505,13 @@ function renderOnboardingTasks(tasks) {
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${_TASK_TEMPLATE_MAP[t.key]?`<button class="btn btn-sm" style="background:#fdf4ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="openOnboardingTaskPreview('${t.key}',${tt})">🔍 预览表格</button>`:''}
           ${t.key==='contract'
-            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>${t.ds_status==='completed'?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('contract')">🔗 绑定已签文件</button>`:''}`
             : t.key==='persona_verify'
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : t.key==='w9'
-            ? `<button class="btn btn-sm" style="background:${s==='submitted'&&t.ds_status==='completed'?'#fef2f2':'#fefce8'};color:${s==='submitted'&&t.ds_status==='completed'?'#dc2626':'#854d0e'};border:1px solid ${s==='submitted'&&t.ds_status==='completed'?'#fecaca':'#fde68a'};font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'&&s==='completed'?'✅ W-9 已签署':t.ds_status==='completed'&&s==='submitted'?'⚠️ 地址待核对':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>`
+            ? `<button class="btn btn-sm" style="background:${s==='submitted'&&t.ds_status==='completed'?'#fef2f2':'#fefce8'};color:${s==='submitted'&&t.ds_status==='completed'?'#dc2626':'#854d0e'};border:1px solid ${s==='submitted'&&t.ds_status==='completed'?'#fecaca':'#fde68a'};font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'&&s==='completed'?'✅ W-9 已签署':t.ds_status==='completed'&&s==='submitted'?'⚠️ 地址待核对':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>${t.ds_status==='completed'?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/w9-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('w9')">🔗 绑定已签文件</button>`:''}`
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : t.key==='work_auth'
@@ -14500,7 +14523,7 @@ function renderOnboardingTasks(tasks) {
             : t.key==='tin_verify'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button>`
             : t.key==='payment_method'
-            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;font-weight:700" onclick="openPaymentAuthModal()">💳 ${t.ds_status==='completed'?'✅ 已签署':t.ds_status==='sent'?'⏳ 等待签署':'发送付款授权'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;font-weight:700" onclick="openPaymentAuthModal()">💳 ${t.ds_status==='completed'?'✅ 已签署':t.ds_status==='sent'?'⏳ 等待签署':'发送付款授权'}</button>${t.ds_status==='completed'?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/payment-auth-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('payment_method')">🔗 绑定已签文件</button>`:''}`
             : (t.key==='i9'||t.key==='ead_upload')
             ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openIdVerifyModal(${_onboardingWorkerId},'${esc((_onboardingWorkerData&&(_onboardingWorkerData.name||_onboardingWorkerData.username))||'').replace(/'/g,"\\'")}','${esc((_onboardingWorkerData&&_onboardingWorkerData.work_status)||'other')}')">🪪 ${s==='completed'?'✅ 已验证':s==='submitted'?'📋 查看/审核文件':'📋 查看身份文件'}</button>${isVisible?'':` <button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="toggleOnboardingVisibility('${t.key}',1)">📤 发送给工人</button>`}`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
@@ -17787,6 +17810,43 @@ function previewPaymentAuthTemplate() {
   document.getElementById('onboardingPreviewTitle').textContent = `📄 预览：${methodLabels[method]||method} 授权表格`;
   document.getElementById('onboardingPreviewFrame').src = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
   document.getElementById('onboardingPreviewModal').classList.add('show');
+}
+
+function openLinkDsModal(taskKey) {
+  document.getElementById('linkDsTaskKey').value = taskKey || 'w9';
+  document.getElementById('linkDsSubmissionId').value = '';
+  document.getElementById('linkDsResult').style.display = 'none';
+  document.getElementById('linkDsConfirmBtn').disabled = false;
+  document.getElementById('linkDsSubmissionModal').classList.add('show');
+}
+
+async function doLinkDsSubmission() {
+  if (!_onboardingWorkerId) return;
+  const task_key = document.getElementById('linkDsTaskKey').value;
+  const submission_id = document.getElementById('linkDsSubmissionId').value.trim();
+  if (!submission_id) { showToast('请填写 DocuSeal Submission ID', 'error'); return; }
+  const btn = document.getElementById('linkDsConfirmBtn');
+  const resultEl = document.getElementById('linkDsResult');
+  btn.disabled = true; btn.textContent = '绑定中…';
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/link-ds-submission`, {
+      method: 'POST', body: JSON.stringify({ task_key, submission_id })
+    });
+    if (r && r.success) {
+      const msg = `✅ ${r.taskLabel} 已绑定 Submission #${submission_id}（状态：${r.allCompleted ? '已完成签署' : '待签署'}）`;
+      resultEl.style.cssText = 'display:block;background:#d1fae5;border:1px solid #6ee7b7;color:#065f46';
+      resultEl.textContent = msg;
+      showToast(msg, 'success');
+      refreshOnboardingModal();
+    } else {
+      resultEl.style.cssText = 'display:block;background:#fef2f2;border:1px solid #fecaca;color:#dc2626';
+      resultEl.textContent = '❌ ' + (r?.error || '绑定失败');
+    }
+  } catch (e) {
+    resultEl.style.cssText = 'display:block;background:#fef2f2;border:1px solid #fecaca;color:#dc2626';
+    resultEl.textContent = '❌ ' + e.message;
+  }
+  btn.disabled = false; btn.textContent = '🔗 绑定';
 }
 
 async function openPaymentAuthModal() {

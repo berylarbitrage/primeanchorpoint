@@ -8859,6 +8859,65 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
   }
 });
 
+// Admin: view signed payment authorization PDF
+app.get('/api/admin/worker-accounts/:id/payment-auth-signed-pdf', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='payment_method'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '付款授权未发送' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-payment-auth-${workerId}.pdf"` });
+    res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: manually link an existing DocuSeal submission to a worker onboarding task
+app.post('/api/admin/worker-accounts/:id/link-ds-submission', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const { task_key, submission_id } = req.body;
+    const VALID_TASKS = ['w9', 'contract', 'payment_method'];
+    if (!VALID_TASKS.includes(task_key)) return res.status(400).json({ error: '不支持的任务类型，仅支持：w9 / contract / payment_method' });
+    const sid = String(submission_id || '').trim();
+    if (!sid) return res.status(400).json({ error: '请提供 DocuSeal Submission ID' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+
+    // Verify the submission exists in DocuSeal and get its status
+    const r = await dsealApiCall('GET', `/api/submissions/${sid}`, null);
+    if (r.status === 404) return res.status(404).json({ error: `DocuSeal 中找不到 Submission ID: ${sid}` });
+    if (r.status >= 400) return res.status(400).json({ error: `DocuSeal 查询失败 ${r.status}: ${JSON.stringify(r.data)}` });
+    const sub = r.data;
+
+    // Determine ds_status from submitters
+    const submitters = sub.submitters || [];
+    const allCompleted = submitters.length > 0 && submitters.every(s => s.status === 'completed');
+    const anyCompleted = submitters.some(s => s.status === 'completed');
+    const dsStatus = allCompleted ? 'completed' : anyCompleted ? 'sent' : 'sent';
+
+    // Get sign URL for the first (worker) submitter
+    const firstSub = submitters[0] || {};
+    let actionUrl = firstSub.embed_src || '';
+    if (!actionUrl && firstSub.slug) actionUrl = `${dsealPublicHost()}/s/${firstSub.slug}`;
+
+    const taskLabel = { w9: 'W-9', contract: '合同', payment_method: '付款授权' }[task_key];
+    const note = `${taskLabel} 已手动绑定 DocuSeal 提交 #${sid} (${new Date().toLocaleString('zh-CN')})${allCompleted ? '，已完成签署' : ''}`;
+
+    const newStatus = allCompleted ? (task_key === 'w9' ? 'submitted' : 'completed') : 'pending';
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, ds_envelope_id, ds_status, action_url, admin_note, updated_at)
+      VALUES (?, ?, ?, 1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id, task_key) DO UPDATE SET
+        ds_envelope_id=excluded.ds_envelope_id, ds_status=excluded.ds_status, action_url=excluded.action_url,
+        admin_note=excluded.admin_note, visible_to_worker=1, status=excluded.status, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, task_key, newStatus, sid, dsStatus, actionUrl, note);
+
+    res.json({ success: true, dsStatus, actionUrl, allCompleted, taskLabel });
+  } catch (e) {
+    console.error('[link-ds-submission error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Get payment method authorization signing status from DocuSeal
 app.get('/api/admin/worker-accounts/:id/payment-auth-status', requireAdmin, async (req, res) => {
   try {
