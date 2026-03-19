@@ -16694,6 +16694,10 @@ const WP_DOC_OPTIONS = {
     { value: 'signing_auth', label: '授权签署人证明 Signing Authority / Board Resolution' },
     { value: 'other', label: '其他 Other' }
   ],
+  nra_visa: [
+    { value: 'nra_passport_visa', label: '护照 + 签证复印件 Passport + Visa Copy' },
+    { value: 'other', label: '其他 Other' }
+  ],
   generic: [
     { value: 'ead', label: 'EAD 工卡 (Employment Authorization Document)' },
     { value: 'work_visa', label: '工作签证 Work Visa (H-1B, L-1, etc.)' },
@@ -16764,7 +16768,8 @@ const WP_REQUIRED_DOCS = {
   cpt: { title: 'F-1 CPT', docs: ['最少需要的材料:', '• I-20（含 CPT 授权页 CPT authorization）', '• 护照 Passport'] },
   j1: { title: 'J-1', docs: ['最少需要的材料:', '• DS-2019', '• 护照 Passport'] },
   us_entity: { title: '美国实体 U.S. Entity → W-9', docs: ['需要的材料:', '• 公司注册文件 Articles / Certificate of Formation', '• EIN 确认函 IRS EIN Confirmation Letter (CP 575 / 147C)'] },
-  foreign_entity: { title: '外国实体 Foreign Entity → W-8BEN-E', docs: ['需要的材料:', '• 实体注册证明 Certificate of Incorporation / Formation', '• 授权签署人证明 Signing Authority / Board Resolution', '• ITIN/EIN 申请 Form W-7 / Form SS-4（如无美国税号）'] }
+  foreign_entity: { title: '外国实体 Foreign Entity → W-8BEN-E', docs: ['需要的材料:', '• 实体注册证明 Certificate of Incorporation / Formation', '• 授权签署人证明 Signing Authority / Board Resolution', '• ITIN/EIN 申请 Form W-7 / Form SS-4（如无美国税号）'] },
+  nra_visa: { title: '非居民外国人 Nonresident Alien (F-1/M-1/B 等)', docs: ['最少需要的材料:', '• 护照 Passport', '• 签证复印件 Visa Copy (F-1, M-1, B-1/B-2 等)', '• I-94 入境记录 Arrival/Departure Record'] }
 };
 
 function wpPopulateDocType(category, existingValue) {
@@ -16800,6 +16805,7 @@ const WP_UPLOAD_DOCS = {
   j1: ['DS-2019', '护照 Passport'],
   us_entity: ['公司注册文件 Articles of Formation', 'EIN 确认函 IRS EIN Letter'],
   foreign_entity: ['实体注册证明 Certificate of Incorporation', '授权签署人证明 Signing Authority'],
+  nra_visa: ['护照 Passport', '签证复印件 Visa Copy', 'I-94 入境记录 Arrival/Departure Record'],
   generic: ['证件文件 Document']
 };
 
@@ -16945,6 +16951,20 @@ function wpDetectCategory(trData) {
   if (EAD_TYPES.includes(wa)) return 'ead';
   if (wa === 'F-1-CPT') return 'cpt';
   if (wa === 'J-1') return 'j1';
+  // F-1 student (treaty / 8233 path) — needs passport + visa copy + I-94
+  if (wa === 'F-1' || wa === 'F-2' || wa === 'M-1' || wa === 'M-2') return 'nra_visa';
+  // B-1/B-2 visitors performing services
+  if (wa.startsWith('B-')) return 'nra_visa';
+  // Also check immigration_status_periods for most recent visa type
+  const periods = trData.immigration_status_periods || [];
+  if (periods.length) {
+    const lastVisa = periods[periods.length - 1].visa || '';
+    if (lastVisa === 'F-1' || lastVisa === 'F-2' || lastVisa === 'M-1') return 'nra_visa';
+    if (VISA_TYPES.includes(lastVisa)) return 'work_visa';
+    if (lastVisa === 'J-1') return 'j1';
+    if (lastVisa.startsWith('EAD-C03')) return 'opt';
+    if (lastVisa.startsWith('EAD-')) return 'ead';
+  }
   return 'generic';
 }
 
