@@ -3745,6 +3745,9 @@ tr:hover td{background:var(--sky-light)}
             <span id="trEntAddrStatus" style="font-size:.78rem;font-weight:600"></span>
           </div>
         </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:.5rem">
+          <button class="btn btn-green" style="font-size:.82rem" onclick="trEntNext()">下一步 Next →</button>
+        </div>
       </div>
       <div id="trEntForeignFields" style="display:none">
         <div class="field" style="margin-bottom:.5rem">
@@ -3780,6 +3783,9 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div id="trEntTreatyInfo" style="display:none;border-radius:6px;padding:.5rem .8rem;margin-bottom:.5rem;font-size:.8rem"></div>
         <input type="hidden" id="trEntTreaty" value="">
+        <div style="display:flex;justify-content:flex-end;margin-top:.5rem">
+          <button class="btn btn-green" style="font-size:.82rem" onclick="trEntNext()">下一步 Next →</button>
+        </div>
       </div>
     </div>
 
@@ -3825,6 +3831,9 @@ tr:hover td{background:var(--sky-light)}
             <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyTrIndAddr()">🔍 验证地址 Verify</button>
             <span id="trIndAddrStatus" style="font-size:.78rem;font-weight:600"></span>
           </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:.5rem">
+          <button class="btn btn-green" style="font-size:.82rem" onclick="trIndNext()">下一步 Next →</button>
         </div>
       </div>
     </div>
@@ -15113,17 +15122,13 @@ function trSelectIndStatus(s) {
   ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trFinalResult').style.display = 'none';
-  // Auto-show/hide steps based on status
-  if (s === 'citizen' || s === 'green_card') {
-    _trPath = 'individual_us';
-    document.getElementById('trStep3').style.display = 'none';
-    document.getElementById('trStep4').style.display = 'none';
-  } else if (s === 'neither') {
-    _trPath = 'individual_nr';
-    document.getElementById('trStep3').style.display = '';
-    document.getElementById('trStep4').style.display = 'none';
-  }
-  trCalcFinalResult();
+  // Show/hide steps — citizen/GC: wait for user to click 下一步 in trIndUsFields
+  // Neither: show Step 3 immediately (no extra fields in Step 2B)
+  document.getElementById('trStep3').style.display = s === 'neither' ? '' : 'none';
+  document.getElementById('trStep4').style.display = 'none';
+  document.getElementById('trFinalResult').style.display = 'none';
+  if (s === 'citizen' || s === 'green_card') _trPath = 'individual_us';
+  else if (s === 'neither') _trPath = 'individual_nr';
 }
 
 function trShowStep(n) {
@@ -15163,7 +15168,10 @@ function trEntNext() {
     if (!document.getElementById('trEntForeignAddrStreet').value.trim()) return showToast('请填写 Street Address', 'error');
     if (!document.getElementById('trEntForeignAddrCity').value.trim()) return showToast('请填写 City', 'error');
     _trPath = 'entity';
-    trShowStep(4);
+    trAutoDetectTreatyCountry();
+    document.getElementById('trStep4').style.display = '';
+    trStep4Toggle();
+    trCalcFinalResult();
   }
 }
 
@@ -15171,6 +15179,13 @@ function trIndNext() {
   const status = document.querySelector('input[name="trIndStatus"]:checked');
   if (!status) return showToast('请选择身份类型', 'error');
   if (status.value === 'citizen' || status.value === 'green_card') {
+    // Validate US person fields
+    if (!document.getElementById('trIndLegalName').value.trim()) return showToast('请填写 Legal Name', 'error');
+    if (!document.getElementById('trIndSsn').value.trim()) return showToast('请填写 SSN / ITIN', 'error');
+    if (!document.getElementById('trIndAddrStreet').value.trim()) return showToast('请填写 Street Address', 'error');
+    if (!document.getElementById('trIndAddrCity').value.trim()) return showToast('请填写 City', 'error');
+    if (!document.getElementById('trIndAddrState').value.trim()) return showToast('请填写 State', 'error');
+    if (!document.getElementById('trIndAddrZip').value.trim()) return showToast('请填写 ZIP Code', 'error');
     _trPath = 'individual_us';
     trCalcFinalResult();
   } else {
@@ -15222,14 +15237,7 @@ function trEntityToggle() {
   ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trFinalResult').style.display = 'none';
-  if (v === 'yes') {
-    document.getElementById('trStep4').style.display = 'none';
-  } else if (v === 'no') {
-    document.getElementById('trStep4').style.display = '';
-    trAutoDetectTreatyCountry();
-    trStep4Toggle();
-  }
-  trCalcFinalResult();
+  document.getElementById('trStep4').style.display = 'none';
 }
 
 function trResidentToggle() {
