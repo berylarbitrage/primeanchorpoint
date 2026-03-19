@@ -16985,14 +16985,19 @@ async function openWorkPermitModal() {
   try {
     const data = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`);
     if (data && data.doc_type) {
-      // Pre-fill form fields so user can directly verify or edit
-      const dtEl = document.getElementById('wpDocType');
-      if (dtEl) { dtEl.value = data.doc_type; }
-      if (data.doc_number) document.getElementById('wpDocNumber').value = data.doc_number;
-      if (data.issue_date) document.getElementById('wpIssueDate').value = data.issue_date;
-      if (data.expiry_date) document.getElementById('wpExpiryDate').value = data.expiry_date;
-      if (data.category) document.getElementById('wpCategory').value = data.category;
-      if (data.notes) document.getElementById('wpNotes').value = data.notes;
+      // If verification was reset (no verified_at), show info but do NOT pre-fill form fields
+      const wasReset = !data.verified_at;
+
+      if (!wasReset) {
+        // Pre-fill form fields so user can directly verify or edit
+        const dtEl = document.getElementById('wpDocType');
+        if (dtEl) { dtEl.value = data.doc_type; }
+        if (data.doc_number) document.getElementById('wpDocNumber').value = data.doc_number;
+        if (data.issue_date) document.getElementById('wpIssueDate').value = data.issue_date;
+        if (data.expiry_date) document.getElementById('wpExpiryDate').value = data.expiry_date;
+        if (data.category) document.getElementById('wpCategory').value = data.category;
+        if (data.notes) document.getElementById('wpNotes').value = data.notes;
+      }
 
       // Show current info summary
       const info = document.getElementById('wpCurrentInfo');
