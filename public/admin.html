@@ -14494,12 +14494,17 @@ function renderOnboardingTasks(tasks) {
   // Get assigned tasks for this worker (set after W2/1099 selection)
   const preInterviewKeys = ['phone_verify', 'email_verify', 'interview'];
   let assignedTasks = [];
-  try { assignedTasks = JSON.parse((_onboardingWorkerData && _onboardingWorkerData.assigned_tasks) || '[]'); } catch {}
-  // Use current type definition as the authoritative task list
+  let dbAssignedTasks = [];
+  try { dbAssignedTasks = JSON.parse((_onboardingWorkerData && _onboardingWorkerData.assigned_tasks) || '[]'); } catch {}
+  assignedTasks = [...dbAssignedTasks];
+  // Use employment-type task list as base, but preserve tax_doc_* keys the server set for this worker
   if (_onboardingWorkerData && _onboardingWorkerData.employment_type) {
     const empType = _onboardingWorkerData.employment_type;
     const typeTasks = empType === 'w2' ? W2_TASKS : empType === '1099' ? C1099_TASKS : [];
-    if (typeTasks.length) assignedTasks = [...typeTasks];
+    if (typeTasks.length) {
+      const dbTaxDocKeys = dbAssignedTasks.filter(k => k.startsWith('tax_doc_'));
+      assignedTasks = [...typeTasks, ...dbTaxDocKeys];
+    }
   }
   // Check if tax residency questionnaire is done
   const taxResTask = tasks.find(t => t.key === 'tax_residency');
@@ -14520,9 +14525,6 @@ function renderOnboardingTasks(tasks) {
       if (t.key === 'w9' && _onboardingRecommendedForm !== 'W-9') return false;
       if (taxDocKeys.includes(t.key) && _onboardingRecommendedForm === 'W-9') return false;
     }
-    // Tax doc tasks (w8ben, 8233, etc.) must always be shown once tax residency is done,
-    // regardless of assignedTasks — they are dynamically created per recommended form
-    if (taxResDone && taxDocKeys.includes(t.key)) return true;
     // If assigned_tasks is set, only show tasks in that list
     if (assignedTasks.length) return assignedTasks.includes(t.key);
     return true;
