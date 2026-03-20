@@ -5596,6 +5596,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <textarea id="ipmInput" rows="3" placeholder="" style="width:100%;box-sizing:border-box;border:1.5px solid var(--gray-200);border-radius:8px;padding:.5rem .7rem;font-size:.88rem;resize:vertical;outline:none;transition:border .15s;font-family:inherit" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'"></textarea>
+  <input type="date" id="ipmDateInput" style="display:none;width:100%;box-sizing:border-box;border:1.5px solid var(--gray-200);border-radius:8px;padding:.5rem .7rem;font-size:.88rem;outline:none;transition:border .15s" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'">
   <div style="display:flex;gap:.65rem;justify-content:flex-end;margin-top:.8rem">
     <button class="btn btn-outline" onclick="closeInputPrompt()">取消</button>
     <button class="btn" id="ipmBtn" onclick="execInputPrompt()">确认</button>
@@ -5626,9 +5627,11 @@ tr:hover td{background:var(--sky-light)}
 
 <script>
 let _ipmResolve = null;
-function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor) {
+let _ipmDateMode = false;
+function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor, inputType) {
   const colors = {
     blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
+    green: { bg:'#D1FAE5', stroke:'#059669', title:'#065F46' },
     red:   { bg:'#FEE2E2', stroke:'#DC2626', title:'#B91C1C' },
     amber: { bg:'#FEF3C7', stroke:'#D97706', title:'#92400E' }
   };
@@ -5638,17 +5641,30 @@ function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor)
   document.getElementById('ipmTitle').textContent = title;
   document.getElementById('ipmTitle').style.color = c.title;
   document.getElementById('ipmDesc').textContent = desc;
-  document.getElementById('ipmInput').value = '';
-  document.getElementById('ipmInput').placeholder = placeholder || '';
+  _ipmDateMode = inputType === 'date';
+  const ta = document.getElementById('ipmInput');
+  const di = document.getElementById('ipmDateInput');
+  if (_ipmDateMode) {
+    ta.style.display = 'none'; di.style.display = '';
+    di.value = placeholder || ''; // use placeholder as initial value for date
+    setTimeout(() => di.focus(), 100);
+  } else {
+    di.style.display = 'none'; ta.style.display = '';
+    ta.value = ''; ta.placeholder = placeholder || '';
+    setTimeout(() => ta.focus(), 100);
+  }
   const btn = document.getElementById('ipmBtn');
   btn.textContent = btnText || '确认';
   btn.className = 'btn ' + (btnClass || 'btn-red');
   document.getElementById('inputPromptModal').classList.add('show');
-  setTimeout(() => document.getElementById('ipmInput').focus(), 100);
   return new Promise(resolve => { _ipmResolve = resolve; });
 }
 function closeInputPrompt() { document.getElementById('inputPromptModal').classList.remove('show'); if (_ipmResolve) { _ipmResolve(null); _ipmResolve = null; } }
-function execInputPrompt() { const v = document.getElementById('ipmInput').value.trim(); document.getElementById('inputPromptModal').classList.remove('show'); if (_ipmResolve) { _ipmResolve(v || null); _ipmResolve = null; } }
+function execInputPrompt() {
+  const v = _ipmDateMode ? document.getElementById('ipmDateInput').value.trim() : document.getElementById('ipmInput').value.trim();
+  document.getElementById('inputPromptModal').classList.remove('show');
+  if (_ipmResolve) { _ipmResolve(v || null); _ipmResolve = null; }
+}
 
 let _gcmCallback = null;
 let _pendingDupSave = null; // { data, empId, field, fieldLabel, existingEmpName }
@@ -14448,6 +14464,9 @@ function renderOnboardingTasks(tasks) {
       if (t.key === 'w9' && _onboardingRecommendedForm !== 'W-9') return false;
       if (taxDocKeys.includes(t.key) && _onboardingRecommendedForm === 'W-9') return false;
     }
+    // Tax doc tasks (w8ben, 8233, etc.) must always be shown once tax residency is done,
+    // regardless of assignedTasks — they are dynamically created per recommended form
+    if (taxResDone && taxDocKeys.includes(t.key)) return true;
     // If assigned_tasks is set, only show tasks in that list
     if (assignedTasks.length) return assignedTasks.includes(t.key);
     return true;
@@ -17176,7 +17195,14 @@ async function saveWorkPermit(doVerify) {
   const docType = firstZone ? (document.getElementById(firstZone.id + '_type') || {}).value || '' : '';
   const docNumber = firstZone ? (document.getElementById(firstZone.id + '_number') || {}).value || '' : '';
   const issueDate = firstZone ? (document.getElementById(firstZone.id + '_start') || {}).value || '' : '';
-  const expiryDate = firstZone ? (document.getElementById(firstZone.id + '_expiry') || {}).value || '' : '';
+  // Find the earliest non-empty expiry date across all zones
+  const allZones = document.querySelectorAll('[id^="wpUploadZone_"]');
+  let earliestExpiry = '';
+  allZones.forEach(z => {
+    const exp = (document.getElementById(z.id + '_expiry') || {}).value || '';
+    if (exp && (!earliestExpiry || exp < earliestExpiry)) earliestExpiry = exp;
+  });
+  const expiryDate = earliestExpiry;
 
   // Save main work permit record
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`, {
@@ -17186,6 +17212,12 @@ async function saveWorkPermit(doVerify) {
 
   if (doVerify) {
     await updateOnboardingTask('work_permit', 'completed', `${docType}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}`);
+    // Auto-set reverify date from the earliest doc expiry date
+    if (expiryDate) {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/identity-reverify-date`, {
+        method: 'PATCH', body: JSON.stringify({ date: expiryDate })
+      });
+    }
     closeModal('workPermitModal');
     showToast('✅ 工作许可验证已通过', 'success');
   } else {
@@ -18755,10 +18787,10 @@ async function toggleWorkerFeature(id, field, enabled) {
 }
 
 async function setReverifyDate(id, el) {
-  const current = el.dataset.date || el.textContent.trim().replace('— 未设置 —','');
-  const val = prompt('身份 Reverify 日期（YYYY-MM-DD）：', current || '');
-  if (val === null) return;
-  await api(`/admin/worker-accounts/${id}/identity-reverify-date`, { method:'PATCH', body:JSON.stringify({ date: val.trim() }) });
+  const current = el.dataset.date || el.textContent.trim().replace('— 未设置 —', '');
+  const val = await showInputPrompt('设置 Reverify 日期', '设置身份证件的下次重新验证日期', current || '', '✅ 保存', 'btn-green', 'green', 'date');
+  if (!val) return;
+  await api(`/admin/worker-accounts/${id}/identity-reverify-date`, { method:'PATCH', body:JSON.stringify({ date: val }) });
   showToast('✅ Reverify 日期已更新');
   loadWorkerAccounts();
 }
