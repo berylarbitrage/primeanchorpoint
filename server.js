@@ -8303,6 +8303,20 @@ function _wpCategoryKey(tr) {
   if (EAD_TYPES.includes(wa)) return 'ead';
   if (wa === 'F-1-CPT') return 'cpt';
   if (wa === 'J-1') return 'j1';
+  if (wa === 'F-1' || wa === 'F-2' || wa === 'M-1' || wa === 'M-2' || wa.startsWith('B-')) return 'nra_visa';
+  try {
+    const rec = tr.entry_exit_records ? JSON.parse(tr.entry_exit_records) : null;
+    const periods = (rec && (rec.status_periods || rec.periods)) || [];
+    if (periods.length) {
+      const lastVisa = (periods[periods.length - 1].visa || '').trim();
+      if (lastVisa === 'F-1' || lastVisa === 'F-2' || lastVisa === 'M-1' || lastVisa === 'M-2' || lastVisa.startsWith('B-')) return 'nra_visa';
+      if (VISA_TYPES.includes(lastVisa)) return 'work_visa';
+      if (lastVisa === 'J-1') return 'j1';
+      if (lastVisa === 'F-1-CPT') return 'cpt';
+      if (lastVisa === 'EAD-C03A' || lastVisa === 'EAD-C03B') return 'opt';
+      if (EAD_TYPES.includes(lastVisa)) return 'ead';
+    }
+  } catch(e) {}
   return 'generic';
 }
 
