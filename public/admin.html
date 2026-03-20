@@ -16916,6 +16916,14 @@ function wpRenderUploadZones(category, trData) {
             onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
         </div>
         <div id="${zoneId}_existing" style="margin-bottom:.4rem"></div>
+        <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.4rem">
+          <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">開始日期 Start Date</label>
+          <input type="date" id="${zoneId}_start" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151"
+            onchange="wpSaveDocDates('${zoneId}')">
+          <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">過期日期 Expiry Date</label>
+          <input type="date" id="${zoneId}_expiry" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151"
+            onchange="wpSaveDocDates('${zoneId}')">
+        </div>
       </div>
     `);
   });
@@ -16953,7 +16961,11 @@ async function wpHandleFileSelect(idx, label, input) {
       _wpUploadedDocs.push(data.id);
       // Store doc id on zone for per-doc metadata save
       const zoneEl = document.getElementById(zoneId);
-      if (zoneEl) zoneEl.dataset.docId = data.id;
+      if (zoneEl) {
+        zoneEl.dataset.docId = data.id;
+        // Save any dates already entered before upload
+        wpSaveDocDates(zoneId);
+      }
     } else {
       statusEl.textContent = '上传失败';
       statusEl.style.color = '#dc2626';
@@ -16964,6 +16976,20 @@ async function wpHandleFileSelect(idx, label, input) {
     statusEl.style.color = '#dc2626';
     showToast('上传失败: ' + e.message, 'error');
   }
+}
+
+async function wpSaveDocDates(zoneId) {
+  const zoneEl = document.getElementById(zoneId);
+  if (!zoneEl || !zoneEl.dataset.docId) return; // no doc uploaded yet, nothing to save
+  const docId = zoneEl.dataset.docId;
+  const startVal = (document.getElementById(`${zoneId}_start`) || {}).value || '';
+  const expiryVal = (document.getElementById(`${zoneId}_expiry`) || {}).value || '';
+  try {
+    await api(`/admin/work-permit-docs/${docId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ issue_date: startVal, expiry_date: expiryVal })
+    });
+  } catch(e) { /* silent */ }
 }
 
 function wpDocFileHtml(docId, fileName) {
@@ -17012,6 +17038,13 @@ async function wpLoadExistingDocs(category) {
           const statusEl = document.getElementById(`${zoneId}_status`);
           if (statusEl) statusEl.innerHTML = `<span style="color:#059669">✅ 已上传</span>`;
         }
+        // Pre-populate date fields and link docId to zone
+        const zoneEl = document.getElementById(zoneId);
+        if (zoneEl) zoneEl.dataset.docId = doc.id;
+        const startEl = document.getElementById(`${zoneId}_start`);
+        if (startEl && doc.issue_date) startEl.value = doc.issue_date;
+        const expiryEl = document.getElementById(`${zoneId}_expiry`);
+        if (expiryEl && doc.expiry_date) expiryEl.value = doc.expiry_date;
       }
     });
   } catch(e) { /* no existing docs */ }
