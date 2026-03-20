@@ -3626,38 +3626,15 @@ tr:hover td{background:var(--sky-light)}
 
   <div id="wpRequiredDocs" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.8rem;color:#78350f"></div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
-    <div class="field">
-      <label style="font-size:.78rem;font-weight:600">证件类型 DOCUMENT TYPE</label>
-      <select id="wpDocType" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        <option value="">— 请选择 —</option>
-      </select>
-    </div>
-    <div class="field">
-      <label style="font-size:.78rem;font-weight:600">证件编号 DOCUMENT NUMBER</label>
-      <input id="wpDocNumber" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. SRC2190012345">
-    </div>
-  </div>
-
-  <div id="wpDateRow" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
-    <div class="field">
-      <label style="font-size:.78rem;font-weight:600">签发日期 ISSUE DATE</label>
-      <input type="date" id="wpIssueDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-    </div>
-    <div class="field">
-      <label style="font-size:.78rem;font-weight:600">到期日期 EXPIRY DATE</label>
-      <input type="date" id="wpExpiryDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-    </div>
-  </div>
-
-  <div id="wpCategoryRow" class="field" style="margin-bottom:.75rem">
-    <label style="font-size:.78rem;font-weight:600">签证类别 / USCIS CATEGORY</label>
-    <input id="wpCategory" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. C09, H-1B, F-1 OPT">
-  </div>
-
-  <div class="field" style="margin-bottom:.75rem">
-    <label style="font-size:.78rem;font-weight:600">备注 NOTES</label>
-    <textarea id="wpNotes" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="审核备注、附加信息..."></textarea>
+  <div style="display:none">
+    <select id="wpDocType"></select>
+    <input id="wpDocNumber">
+    <input type="date" id="wpIssueDate">
+    <input type="date" id="wpExpiryDate">
+    <input id="wpCategory">
+    <div id="wpDateRow"></div>
+    <div id="wpCategoryRow"></div>
+    <textarea id="wpNotes"></textarea>
   </div>
 
   <div id="wpDocUploads" style="margin-bottom:.75rem">
@@ -16903,6 +16880,9 @@ function wpRenderUploadZones(category, trData) {
     docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
   }
 
+  const typeOpts = (WP_DOC_OPTIONS[category] || WP_DOC_OPTIONS.generic)
+    .map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+
   docs.forEach((label, idx) => {
     const zoneId = `wpUploadZone_${idx}`;
     container.insertAdjacentHTML('beforeend', `
@@ -16916,13 +16896,24 @@ function wpRenderUploadZones(category, trData) {
             onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
         </div>
         <div id="${zoneId}_existing" style="margin-bottom:.4rem"></div>
-        <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.4rem">
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.4rem">
+          <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">號碼 Number</label>
+          <input type="text" id="${zoneId}_number" placeholder="證件號碼" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151;width:130px"
+            onchange="wpSaveDocMeta('${zoneId}')">
+          <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">類別 Type</label>
+          <select id="${zoneId}_type" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151"
+            onchange="wpSaveDocMeta('${zoneId}')">
+            <option value="">— 請選擇 —</option>
+            ${typeOpts}
+          </select>
+        </div>
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.35rem">
           <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">開始日期 Start Date</label>
           <input type="date" id="${zoneId}_start" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151"
-            onchange="wpSaveDocDates('${zoneId}')">
+            onchange="wpSaveDocMeta('${zoneId}')">
           <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">過期日期 Expiry Date</label>
           <input type="date" id="${zoneId}_expiry" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151"
-            onchange="wpSaveDocDates('${zoneId}')">
+            onchange="wpSaveDocMeta('${zoneId}')">
         </div>
       </div>
     `);
@@ -16978,19 +16969,23 @@ async function wpHandleFileSelect(idx, label, input) {
   }
 }
 
-async function wpSaveDocDates(zoneId) {
+async function wpSaveDocMeta(zoneId) {
   const zoneEl = document.getElementById(zoneId);
   if (!zoneEl || !zoneEl.dataset.docId) return; // no doc uploaded yet, nothing to save
   const docId = zoneEl.dataset.docId;
+  const docType = (document.getElementById(`${zoneId}_type`) || {}).value || '';
+  const docNumber = (document.getElementById(`${zoneId}_number`) || {}).value || '';
   const startVal = (document.getElementById(`${zoneId}_start`) || {}).value || '';
   const expiryVal = (document.getElementById(`${zoneId}_expiry`) || {}).value || '';
   try {
     await api(`/admin/work-permit-docs/${docId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ issue_date: startVal, expiry_date: expiryVal })
+      body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: startVal, expiry_date: expiryVal })
     });
   } catch(e) { /* silent */ }
 }
+// alias for backwards compatibility
+const wpSaveDocDates = wpSaveDocMeta;
 
 function wpDocFileHtml(docId, fileName) {
   const isImage = /\.(jpg|jpeg|png|gif|heic|heif)$/i.test(fileName);
@@ -17038,9 +17033,13 @@ async function wpLoadExistingDocs(category) {
           const statusEl = document.getElementById(`${zoneId}_status`);
           if (statusEl) statusEl.innerHTML = `<span style="color:#059669">✅ 已上传</span>`;
         }
-        // Pre-populate date fields and link docId to zone
+        // Pre-populate all meta fields and link docId to zone
         const zoneEl = document.getElementById(zoneId);
         if (zoneEl) zoneEl.dataset.docId = doc.id;
+        const numEl = document.getElementById(`${zoneId}_number`);
+        if (numEl && doc.doc_number) numEl.value = doc.doc_number;
+        const typeEl = document.getElementById(`${zoneId}_type`);
+        if (typeEl && doc.doc_type) typeEl.value = doc.doc_type;
         const startEl = document.getElementById(`${zoneId}_start`);
         if (startEl && doc.issue_date) startEl.value = doc.issue_date;
         const expiryEl = document.getElementById(`${zoneId}_expiry`);
@@ -17200,17 +17199,9 @@ async function openWorkPermitModal() {
 }
 
 function confirmWorkPermitVerify() {
-  const docType = document.getElementById('wpDocType').value;
-  if (!docType) return showToast('请选择证件类型', 'error');
-  const sel = document.getElementById('wpDocType');
-  const selOpt = sel.options[sel.selectedIndex];
-  const typeLabel = selOpt ? selOpt.text : docType;
-  const docNumber = document.getElementById('wpDocNumber').value.trim();
-  const expiryDate = document.getElementById('wpExpiryDate').value;
-  const summary = `${typeLabel}${docNumber ? ' #' + docNumber : ''}${expiryDate ? ' · 到期: ' + expiryDate : ''}`;
   showConfirmModal(
     '确认工作许可验证通过',
-    `请确认以下工作许可信息核验无误并标记为验证通过：\n\n${summary}`,
+    '请确认工作许可文件核验无误并标记为验证通过。',
     '🛂 确认验证通过',
     'btn-green',
     () => saveWorkPermit(true),
@@ -17219,39 +17210,30 @@ function confirmWorkPermitVerify() {
 }
 
 async function saveWorkPermit(doVerify) {
-  const docType = document.getElementById('wpDocType').value;
-  const docNumber = document.getElementById('wpDocNumber').value.trim();
-  const issueDate = document.getElementById('wpIssueDate').value;
-  const expiryDate = document.getElementById('wpExpiryDate').value;
-  const category = document.getElementById('wpCategory').value.trim();
   const notes = document.getElementById('wpNotes').value.trim();
 
-  if (!docType) return showToast('请选择证件类型', 'error');
+  // Collect first uploaded doc's type/number/dates as the main record summary
+  const firstZone = document.querySelector('[id^="wpUploadZone_"][data-doc-id]');
+  const docType = firstZone ? (document.getElementById(firstZone.id + '_type') || {}).value || '' : '';
+  const docNumber = firstZone ? (document.getElementById(firstZone.id + '_number') || {}).value || '' : '';
+  const issueDate = firstZone ? (document.getElementById(firstZone.id + '_start') || {}).value || '' : '';
+  const expiryDate = firstZone ? (document.getElementById(firstZone.id + '_expiry') || {}).value || '' : '';
 
   // Save main work permit record
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`, {
     method: 'POST',
-    body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: issueDate, expiry_date: expiryDate, category, notes, verified: doVerify })
+    body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: issueDate, expiry_date: expiryDate, category: '', notes, verified: doVerify })
   });
 
   if (doVerify) {
-    // Mark onboarding task as completed
-    const sel = document.getElementById('wpDocType');
-    const selOpt = sel.options[sel.selectedIndex];
-    const typeLabel = selOpt ? selOpt.text : docType;
-    const noteText = `${typeLabel}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}${notes?' · '+notes:''}`;
-    await updateOnboardingTask('work_permit', 'completed', noteText);
+    await updateOnboardingTask('work_permit', 'completed', `${docType}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}`);
     closeModal('workPermitModal');
     showToast('✅ 工作许可验证已通过', 'success');
   } else {
     showToast('💾 工作许可信息已保存', 'success');
-    // Refresh current info display
     const info = document.getElementById('wpCurrentInfo');
-    const sel = document.getElementById('wpDocType');
-    const selOpt = sel.options[sel.selectedIndex];
-    const typeLabel = selOpt && selOpt.value ? selOpt.text : docType;
     info.innerHTML = `<div style="font-weight:700;color:#065f46;margin-bottom:.3rem">📋 已有记录:</div>
-      <div>类型: <b>${typeLabel}</b>${docNumber?' · 编号: <b>'+docNumber+'</b>':''}${expiryDate?' · 到期: <b>'+expiryDate+'</b>':''}</div>`;
+      <div>${docType?'类型: <b>'+docType+'</b>':''}${docNumber?' · 编号: <b>'+docNumber+'</b>':''}${expiryDate?' · 到期: <b>'+expiryDate+'</b>':''}</div>`;
     info.style.display = 'block';
   }
 }

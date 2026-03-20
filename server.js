@@ -1447,6 +1447,7 @@ try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN doc_number TEXT DEFAULT '
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN issue_date TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN expiry_date TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN notes TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN doc_type TEXT DEFAULT ''"); } catch {}
 
 // ─── Tax Filing Documents (year-end 1099-NEC / W-2 / 1042-S etc.) ───
 db.exec(`CREATE TABLE IF NOT EXISTS tax_filing_docs (
@@ -8562,7 +8563,7 @@ app.post('/api/admin/worker-accounts/:id/work-permit', requireAdmin, (req, res) 
 
 // ─── Work Permit Document Uploads ───
 app.get('/api/admin/worker-accounts/:id/work-permit-docs', requireAdmin, (req, res) => {
-  const docs = db.prepare('SELECT id, doc_label, file_name, doc_number, issue_date, expiry_date, notes, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
+  const docs = db.prepare('SELECT id, doc_label, file_name, doc_type, doc_number, issue_date, expiry_date, notes, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
   res.json(docs);
 });
 
@@ -8598,13 +8599,13 @@ app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Update per-doc metadata (doc_number, issue_date, expiry_date, notes)
+// Update per-doc metadata (doc_type, doc_number, issue_date, expiry_date, notes)
 app.patch('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
   const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
   if (!doc) return res.status(404).json({ error: 'Not found' });
   const d = req.body;
-  db.prepare('UPDATE work_permit_docs SET doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=?')
-    .run(d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', req.params.docId);
+  db.prepare('UPDATE work_permit_docs SET doc_type=?, doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=?')
+    .run(d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', req.params.docId);
   res.json({ success: true });
 });
 
