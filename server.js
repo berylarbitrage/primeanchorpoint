@@ -7057,12 +7057,57 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
 
 app.patch('/api/admin/worker-accounts/:id/identity-reverify-date', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   const { date } = req.body;
-  const w = db.prepare('SELECT identity_reverify_date FROM worker_accounts WHERE id=?').get(req.params.id);
+  const w = db.prepare('SELECT identity_reverify_date, identity_reverify_dates FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = (req.session && req.session.username) || 'admin';
   db.prepare('UPDATE worker_accounts SET identity_reverify_date=? WHERE id=?').run(date || '', req.params.id);
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value) VALUES (?,?,?,?,?)').run(req.params.id, changedBy, 'identity_reverify_date', w.identity_reverify_date || '', date || '');
   res.json({ success: true });
+});
+
+// ─── Reverify Schedule (list of future dates) ───
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN identity_reverify_dates TEXT DEFAULT '[]'"); } catch {}
+
+app.get('/api/admin/worker-accounts/:id/reverify-schedule', requireAdmin, (req, res) => {
+  const w = db.prepare('SELECT identity_reverify_dates FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  let dates = [];
+  try { dates = JSON.parse(w.identity_reverify_dates || '[]'); } catch {}
+  res.json({ dates });
+});
+
+app.post('/api/admin/worker-accounts/:id/reverify-schedule', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { date, note } = req.body;
+  if (!date) return res.status(400).json({ error: 'date required' });
+  const w = db.prepare('SELECT identity_reverify_dates, identity_reverify_date FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  let dates = [];
+  try { dates = JSON.parse(w.identity_reverify_dates || '[]'); } catch {}
+  // Remove duplicate, add new entry, sort ascending
+  dates = dates.filter(d => d.date !== date);
+  dates.push({ date, note: note || '' });
+  dates.sort((a, b) => a.date.localeCompare(b.date));
+  const json = JSON.stringify(dates);
+  // Next upcoming date becomes the primary identity_reverify_date
+  const today = new Date().toISOString().slice(0, 10);
+  const nextDate = dates.find(d => d.date >= today);
+  db.prepare('UPDATE worker_accounts SET identity_reverify_dates=?, identity_reverify_date=? WHERE id=?')
+    .run(json, nextDate ? nextDate.date : (w.identity_reverify_date || ''), req.params.id);
+  res.json({ success: true, dates });
+});
+
+app.delete('/api/admin/worker-accounts/:id/reverify-schedule/:date', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const w = db.prepare('SELECT identity_reverify_dates, identity_reverify_date FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  let dates = [];
+  try { dates = JSON.parse(w.identity_reverify_dates || '[]'); } catch {}
+  dates = dates.filter(d => d.date !== req.params.date);
+  const json = JSON.stringify(dates);
+  const today = new Date().toISOString().slice(0, 10);
+  const nextDate = dates.find(d => d.date >= today);
+  db.prepare('UPDATE worker_accounts SET identity_reverify_dates=?, identity_reverify_date=? WHERE id=?')
+    .run(json, nextDate ? nextDate.date : '', req.params.id);
+  res.json({ success: true, dates });
 });
 
 app.get('/api/admin/worker-accounts/:id/assignments', requireAdmin, (req, res) => {
