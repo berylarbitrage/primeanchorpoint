@@ -5603,6 +5603,31 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<div class="modal-bg" id="reverifyScheduleModal" style="z-index:9999"><div class="modal" style="max-width:440px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+    <div style="display:flex;align-items:center;gap:.7rem">
+      <div style="width:38px;height:38px;border-radius:50%;background:#DBEAFE;display:flex;align-items:center;justify-content:center;font-size:1.1rem">🔄</div>
+      <div>
+        <h2 style="margin:0;font-size:1rem;color:#1E40AF" id="rvsWorkerName"></h2>
+        <p style="margin:.1rem 0 0;font-size:.8rem;color:var(--gray-500)">身份验证 Reverify 计划</p>
+      </div>
+    </div>
+    <button onclick="closeModal('reverifyScheduleModal')" style="background:none;border:none;font-size:1.2rem;color:var(--gray-400);cursor:pointer;line-height:1">✕</button>
+  </div>
+  <div id="rvsDateList" style="margin-bottom:1rem;min-height:48px"></div>
+  <div style="border-top:1px solid var(--gray-100);padding-top:.85rem">
+    <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.5px">添加日期</div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <input type="date" id="rvsNewDate" style="flex:1;padding:.38rem .55rem;border:1.5px solid var(--gray-200);border-radius:7px;font-size:.86rem;outline:none" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'">
+      <input type="text" id="rvsNewNote" placeholder="备注（可选）" style="flex:1.2;padding:.38rem .55rem;border:1.5px solid var(--gray-200);border-radius:7px;font-size:.86rem;outline:none" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'">
+      <button class="btn btn-green" style="white-space:nowrap;font-size:.82rem;padding:.38rem .75rem" onclick="rvsAddDate()">+ 添加</button>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:.85rem">
+    <button class="btn btn-outline" onclick="closeModal('reverifyScheduleModal')">关闭</button>
+  </div>
+</div></div>
+
 <div class="modal-bg" id="dangerConfirmModal"><div class="modal" style="max-width:420px">
   <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.1rem">
     <div style="width:44px;height:44px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -14267,8 +14292,9 @@ async function loadWorkerAccounts() {
       const today = new Date().toISOString().slice(0,10);
       const overdue = d && d < today;
       const soon = d && !overdue && d <= new Date(Date.now()+30*86400000).toISOString().slice(0,10);
-      if (!d) return `<span style="color:var(--gray-300);cursor:pointer" onclick="setReverifyDate(${w.id},this)" title="点击设置">— 未设置 —</span>`;
-      return `<span style="cursor:pointer;padding:2px 6px;border-radius:6px;font-weight:600;${overdue?'background:#fee2e2;color:#dc2626':soon?'background:#fef3c7;color:#92400e':'background:#f0fdf4;color:#15803d'}" onclick="setReverifyDate(${w.id},this)" title="点击修改">${d}</span>`;
+      const wName = esc(w.name || w.username || '');
+      if (!d) return `<span style="color:var(--gray-300);cursor:pointer" onclick="event.stopPropagation();setReverifyDate(${w.id},'${wName}')" title="点击设置">— 未设置 —</span>`;
+      return `<span style="cursor:pointer;padding:2px 6px;border-radius:6px;font-weight:600;${overdue?'background:#fee2e2;color:#dc2626':soon?'background:#fef3c7;color:#92400e':'background:#f0fdf4;color:#15803d'}" onclick="event.stopPropagation();setReverifyDate(${w.id},'${wName}')" title="点击查看计划">${d}</span>`;
     })()}</td>
     <td style="font-size:.8rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer" onchange="updateWorkerPayMethod(${w.id},this.value)">
       <option value="cash" ${(w.payment_method||'cash')==='cash'?'selected':''}>💵 现金</option>
@@ -17248,10 +17274,16 @@ async function saveWorkPermit(doVerify) {
 
   if (doVerify) {
     await updateOnboardingTask('work_permit', 'completed', `${docType}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}`);
-    // Auto-set reverify date from the earliest doc expiry date
-    if (expiryDate) {
-      await api(`/admin/worker-accounts/${_onboardingWorkerId}/identity-reverify-date`, {
-        method: 'PATCH', body: JSON.stringify({ date: expiryDate })
+    // Auto-add expiry dates from all zones to reverify schedule
+    const allExpiries = [];
+    document.querySelectorAll('[id^="wpUploadZone_"]').forEach(z => {
+      const exp = (document.getElementById(z.id + '_expiry') || {}).value || '';
+      const lbl = (document.querySelector(`#${z.id} span`) || {}).textContent || '';
+      if (exp) allExpiries.push({ date: exp, note: lbl.replace('📄 ', '').slice(0, 40) });
+    });
+    for (const e of allExpiries) {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/reverify-schedule`, {
+        method: 'POST', body: JSON.stringify({ date: e.date, note: e.note })
       });
     }
     closeModal('workPermitModal');
@@ -18830,12 +18862,69 @@ async function toggleWorkerFeature(id, field, enabled) {
   }
 }
 
-async function setReverifyDate(id, el) {
-  const current = el.dataset.date || el.textContent.trim().replace('— 未设置 —', '');
-  const val = await showInputPrompt('设置 Reverify 日期', '设置身份证件的下次重新验证日期', current || '', '✅ 保存', 'btn-green', 'green', 'date');
-  if (!val) return;
-  await api(`/admin/worker-accounts/${id}/identity-reverify-date`, { method:'PATCH', body:JSON.stringify({ date: val }) });
-  showToast('✅ Reverify 日期已更新');
+async function setReverifyDate(id, workerName) {
+  await openReverifySchedule(id, workerName || '');
+}
+
+let _rvsWorkerId = null;
+
+async function openReverifySchedule(id, workerName) {
+  _rvsWorkerId = id;
+  document.getElementById('rvsWorkerName').textContent = workerName || '';
+  document.getElementById('rvsNewDate').value = '';
+  document.getElementById('rvsNewNote').value = '';
+  document.getElementById('reverifyScheduleModal').classList.add('show');
+  await rvsLoadDates();
+}
+
+async function rvsLoadDates() {
+  const list = document.getElementById('rvsDateList');
+  list.innerHTML = '<div style="color:var(--gray-400);font-size:.83rem;padding:.3rem 0">加载中…</div>';
+  try {
+    const data = await api(`/admin/worker-accounts/${_rvsWorkerId}/reverify-schedule`);
+    const dates = (data && data.dates) || [];
+    const today = new Date().toISOString().slice(0, 10);
+    if (!dates.length) {
+      list.innerHTML = '<div style="color:var(--gray-400);font-size:.83rem;padding:.5rem 0;text-align:center">暂无计划日期</div>';
+      return;
+    }
+    list.innerHTML = dates.map((d, i) => {
+      const past = d.date < today;
+      const soon = !past && d.date <= new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+      const bg = past ? '#fef2f2' : soon ? '#fef3c7' : '#f0fdf4';
+      const color = past ? '#dc2626' : soon ? '#92400e' : '#065f46';
+      const border = past ? '#fecaca' : soon ? '#fde68a' : '#bbf7d0';
+      const badge = past ? '已过期' : soon ? '即将到期' : '计划中';
+      return `<div style="display:flex;align-items:center;gap:.6rem;padding:.45rem .6rem;border-radius:8px;background:${bg};border:1px solid ${border};margin-bottom:.4rem">
+        <div style="flex:1">
+          <span style="font-weight:700;font-size:.88rem;color:${color}">${d.date}</span>
+          ${d.note ? `<span style="font-size:.78rem;color:#6b7280;margin-left:.5rem">· ${esc(d.note)}</span>` : ''}
+        </div>
+        <span style="font-size:.7rem;font-weight:600;color:${color};background:${border};padding:.1rem .45rem;border-radius:20px;white-space:nowrap">${badge}</span>
+        <button onclick="rvsDeleteDate('${d.date}')" style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:.9rem;padding:0 .2rem;line-height:1" title="删除">✕</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div style="color:#dc2626;font-size:.83rem">加载失败</div>';
+  }
+}
+
+async function rvsAddDate() {
+  const date = document.getElementById('rvsNewDate').value;
+  const note = document.getElementById('rvsNewNote').value.trim();
+  if (!date) { showToast('请选择日期', 'error'); return; }
+  await api(`/admin/worker-accounts/${_rvsWorkerId}/reverify-schedule`, {
+    method: 'POST', body: JSON.stringify({ date, note })
+  });
+  document.getElementById('rvsNewDate').value = '';
+  document.getElementById('rvsNewNote').value = '';
+  await rvsLoadDates();
+  loadWorkerAccounts();
+}
+
+async function rvsDeleteDate(date) {
+  await api(`/admin/worker-accounts/${_rvsWorkerId}/reverify-schedule/${date}`, { method: 'DELETE' });
+  await rvsLoadDates();
   loadWorkerAccounts();
 }
 
