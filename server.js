@@ -8217,90 +8217,24 @@ function calculateTaxResidency(data) {
   return result;
 }
 
-// Determine onboarding tasks needed based on tax form recommendation
+// Determine onboarding tasks needed based on tax form recommendation.
+// Only includes actual forms to sign — supporting documents (passport, visa, I-94 etc.)
+// are handled by the Work Permit Verification step, not as separate onboarding tasks.
 function getTaxDocTasks(form, data) {
   const tasks = [];
   const isEntity = data.applicant_type === 'entity';
-  const servInUs = data.services_location === 'all_in_us' || data.services_location === 'partly_in_us';
   const treatyClaim = data.claim_treaty_benefit === 'yes';
-  const immStatus = data.immigration_status || '';
-  const VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
-  const EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-C03A','EAD-C03B','EAD-OTHER'];
 
   if (form === 'W-9') {
-    // W-9 handled by existing w9 task
-    if (isEntity) {
-      tasks.push({ key: 'tax_doc_corp_cert', note: '公司注册文件 Articles / Certificate of Formation' });
-      tasks.push({ key: 'tax_doc_ein_letter', note: 'EIN 确认函 IRS EIN Confirmation Letter (CP 575 / 147C)' });
-    }
-    if (data.is_us_citizen === 'yes') {
-      tasks.push({ key: 'tax_doc_id_proof', note: '身份证明（任一）: 美国护照 / 出生证明 / 入籍证书 N-550 / 公民证书 N-560 / FS-240' });
-    } else if (data.has_green_card === 'yes') {
-      tasks.push({ key: 'tax_doc_id_proof', note: '身份证明（任一）: 绿卡 I-551 正反面 / 护照+I-551章 / 过期绿卡+I-797延期' });
-    }
+    // W-9 is handled by the existing w9 task; entity docs via work permit
   } else if (form === 'W-8BEN') {
     tasks.push({ key: 'tax_doc_w8ben', note: 'W-8BEN 非居民外国个人预扣税声明' });
-    tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
-    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
-    if (servInUs) {
-      // Work authorization docs based on immigration status type
-      if (VISA_TYPES.includes(immStatus)) {
-        tasks.push({ key: 'tax_doc_i797', note: 'I-797 批准通知 Approval Notice (或有效签证页) — ' + immStatus });
-        tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-      } else if (EAD_TYPES.includes(immStatus)) {
-        tasks.push({ key: 'tax_doc_ead', note: 'EAD 工卡 (I-766) 正反面 — ' + immStatus });
-        if (immStatus === 'EAD-C03A' || immStatus === 'EAD-C03B') {
-          tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 OPT endorsement)' });
-        }
-      } else if (immStatus === 'F-1-CPT') {
-        tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 CPT 授权页)' });
-      } else if (immStatus === 'J-1') {
-        tasks.push({ key: 'tax_doc_ds2019', note: 'DS-2019' });
-        tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-      } else {
-        tasks.push({ key: 'tax_doc_visa', note: '签证复印件 Visa Copy' });
-        tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-        tasks.push({ key: 'tax_doc_work_auth', note: '工作授权文件 Work Authorization' });
-      }
-    }
-    if (treatyClaim) {
-      tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
-    }
   } else if (form === 'W-8BEN-E') {
     tasks.push({ key: 'tax_doc_w8bene', note: 'W-8BEN-E 外国实体预扣税声明' });
-    tasks.push({ key: 'tax_doc_corp_cert', note: '实体注册证明 Certificate of Incorporation' });
-    tasks.push({ key: 'tax_doc_sign_auth', note: '授权签署人证明 Signing Authority / Board Resolution' });
-    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7/SS-4 ITIN 或 EIN 申请（如无美国税号）' });
-    if (treatyClaim) {
-      tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
-      tasks.push({ key: 'tax_doc_treaty_docs', note: '条约优惠申请文件 Treaty Benefit Documentation' });
-    }
   } else if (form === 'Form 8233') {
     tasks.push({ key: 'tax_doc_8233', note: 'Form 8233 个人服务条约豁免申请' });
-    // Also require W-8BEN as fallback in case treaty conditions are not met (e.g. >183 days)
+    // W-8BEN as fallback in case treaty conditions are not met (e.g. >183 days)
     tasks.push({ key: 'tax_doc_w8ben', note: 'W-8BEN 备选表格（如条约条件不满足则使用此表）Fallback if treaty conditions not met' });
-    tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
-    tasks.push({ key: 'tax_doc_treaty_stmt', note: '条约条款声明 Treaty Statement' });
-    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
-    tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
-    // Work authorization docs based on immigration status type
-    if (VISA_TYPES.includes(immStatus)) {
-      tasks.push({ key: 'tax_doc_i797', note: 'I-797 批准通知 Approval Notice (或有效签证页) — ' + immStatus });
-      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-    } else if (EAD_TYPES.includes(immStatus)) {
-      tasks.push({ key: 'tax_doc_ead', note: 'EAD 工卡 (I-766) 正反面 — ' + immStatus });
-      if (immStatus === 'EAD-C03A' || immStatus === 'EAD-C03B') {
-        tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 OPT endorsement)' });
-      }
-    } else if (immStatus === 'F-1-CPT') {
-      tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 CPT 授权页)' });
-    } else if (immStatus === 'J-1') {
-      tasks.push({ key: 'tax_doc_ds2019', note: 'DS-2019' });
-      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-    } else {
-      tasks.push({ key: 'tax_doc_visa', note: '签证复印件 Visa Copy' });
-      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-    }
   }
   return tasks;
 }
@@ -16823,6 +16757,32 @@ app.use((err, req, res, next) => {
   console.error('[Unhandled Error]', err.message);
   res.status(500).json({ error: '服务器内部错误：' + err.message });
 });
+
+// ─── One-time migration: re-sync tax_doc tasks to only include form tasks ───
+try {
+  const completedTax = db.prepare(`
+    SELECT trq.worker_account_id, trq.recommended_form, trq.applicant_type,
+           trq.claim_treaty_benefit, trq.services_location, trq.immigration_status
+    FROM tax_residency_questionnaire trq
+    WHERE trq.recommended_form != '' AND trq.recommended_form IS NOT NULL
+  `).all();
+  const deleteOld = db.prepare(`DELETE FROM worker_onboarding WHERE worker_account_id=? AND task_key LIKE 'tax_doc_%'`);
+  const insertTask = db.prepare(`INSERT OR IGNORE INTO worker_onboarding (worker_account_id, task_key, status, admin_note, visible_to_worker, updated_at) VALUES (?,?,?,?,0,CURRENT_TIMESTAMP)`);
+  for (const tr of completedTax) {
+    const tasks = getTaxDocTasks(tr.recommended_form, tr);
+    deleteOld.run(tr.worker_account_id);
+    for (const t of tasks) insertTask.run(tr.worker_account_id, t.key, 'pending', t.note || '');
+    // Update assigned_tasks
+    const wa = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(tr.worker_account_id);
+    if (wa) {
+      let assigned = [];
+      try { assigned = JSON.parse(wa.assigned_tasks || '[]'); } catch {}
+      assigned = assigned.filter(k => !k.startsWith('tax_doc_'));
+      for (const t of tasks) assigned.push(t.key);
+      db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(assigned), tr.worker_account_id);
+    }
+  }
+} catch(e) { console.error('[migration] tax_doc task resync failed:', e.message); }
 
 // ─── Start ───
 // Periodic WAL checkpoint every 5 minutes
