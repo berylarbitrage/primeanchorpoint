@@ -64,7 +64,8 @@
   <div class="info-box">
     <h3>Purpose of This Page</h3>
     <p>This page provides publicly verifiable documentation of how Prime Anchorpoint collects SMS consent from end users. It is intended for carrier and campaign registry reviewers to verify our Call to Action (CTA) and opt-in compliance.</p>
-    <p><strong>Brand:</strong> Prime Anchorpoint &nbsp;|&nbsp; <strong>Campaign:</strong> Workforce Notifications (Mixed - OTP, Shift Reminders, HR Alerts)</p>
+    <p><strong>Brand:</strong> Prime Anchorpoint &nbsp;|&nbsp; <strong>Program:</strong> Prime Anchorpoint Workforce Notifications</p>
+    <p><strong>Message Type:</strong> Transactional / operational SMS only &mdash; verification codes, job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and direct responses to user inquiries.</p>
   </div>
 
   <h2>1. Worker Registration — Primary Opt-In (Explicit Checkbox)</h2>
@@ -74,12 +75,12 @@
     <p>Workers register at the following publicly accessible URL:</p>
     <div class="link-box"><a href="/register" target="_blank">https://www.primeanchorpoint.com/register</a></div>
 
-    <p style="margin-top:1rem">During registration, the worker must provide a phone number and <strong>explicitly check an unchecked SMS consent checkbox</strong> before the form can be submitted. The checkbox is <strong>not pre-checked</strong>. The exact consent language displayed is:</p>
+    <p style="margin-top:1rem">During registration, the worker provides a phone number and may check the SMS consent checkbox. The checkbox is <strong>unchecked by default</strong> and is <strong>optional</strong> — it is not a condition of employment or account creation. The exact consent language displayed is:</p>
 
     <div class="consent-demo">
       <label>
         <input type="checkbox" disabled>
-        <span>By providing your phone number and checking this box, you consent to receive text messages (SMS) from Prime Anchorpoint at the number provided, including verification codes, job assignment alerts, schedule reminders, and HR notifications. Msg &amp; data rates may apply. Frequency varies. Reply STOP to unsubscribe, HELP for help. See <a href="/sms-terms">SMS Terms</a> &amp; <a href="/privacy">Privacy Policy</a>.</span>
+        <span>By checking this box, you agree to receive transactional SMS from Prime Anchorpoint, including verification codes, job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to your direct inquiries. Message frequency varies. Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. View <a href="/sms-terms">SMS Terms</a> and <a href="/privacy">Privacy Policy</a>. Consent is not a condition of employment or account creation.</span>
       </label>
     </div>
 
@@ -99,7 +100,7 @@
       </div>
       <div class="flow-step">
         <div class="step-num">3</div>
-        <div class="step-text"><strong>User checks</strong> the SMS consent checkbox (unchecked by default). The full disclosure text including STOP/HELP instructions, frequency, rates, and links to SMS Terms &amp; Privacy Policy is displayed directly next to the checkbox.</div>
+        <div class="step-text"><strong>User optionally checks</strong> the SMS consent checkbox (unchecked by default). The full disclosure text — including message types, STOP/HELP instructions, frequency, rates, and links to SMS Terms &amp; Privacy Policy — is displayed directly next to the checkbox. Checking is optional and not required to register.</div>
       </div>
       <div class="flow-step">
         <div class="step-num">4</div>
@@ -107,7 +108,7 @@
       </div>
       <div class="flow-step">
         <div class="step-num">5</div>
-        <div class="step-text"><strong>System sends</strong> an OTP verification code via SMS only if consent was granted. No messages are sent without opt-in.</div>
+        <div class="step-text"><strong>Recurring operational SMS</strong> (job alerts, shift reminders, onboarding updates, payroll alerts) are sent only to users who checked the consent box. One-time verification codes (OTP) may be sent separately when the user initiates an account action such as login or identity verification.</div>
       </div>
     </div>
   </div>
@@ -120,7 +121,7 @@
 
     <div class="consent-demo" style="background:#fffbeb;border-color:#fde68a">
       <label style="cursor:default">
-        <span style="color:#78350f">By submitting this form with your phone number, you consent to receive text messages (SMS) from Prime Anchorpoint, including responses to your inquiry. Msg &amp; data rates may apply. Frequency varies. Reply STOP to opt out, HELP for help. <a href="/sms-terms">SMS Terms</a> &middot; <a href="/privacy">Privacy Policy</a>.</span>
+        <span style="color:#78350f">By submitting this form with your phone number, you agree to receive transactional SMS from Prime Anchorpoint, including responses to your inquiry. Message frequency varies. Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. <a href="/sms-terms">SMS Terms</a> &middot; <a href="/privacy">Privacy Policy</a>.</span>
       </label>
     </div>
 
@@ -135,7 +136,7 @@
 
     <div class="consent-demo" style="background:#fffbeb;border-color:#fde68a">
       <label style="cursor:default">
-        <span style="color:#78350f">By providing your phone number, you consent to receive SMS from Prime Anchorpoint regarding your quote request. Msg &amp; data rates may apply. Frequency varies. Reply STOP to opt out, HELP for help. <a href="/sms-terms">SMS Terms</a> &middot; <a href="/privacy">Privacy Policy</a>.</span>
+        <span style="color:#78350f">By providing your phone number, you agree to receive transactional SMS from Prime Anchorpoint regarding your quote request. Message frequency varies. Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. <a href="/sms-terms">SMS Terms</a> &middot; <a href="/privacy">Privacy Policy</a>.</span>
       </label>
     </div>
 
@@ -147,14 +148,16 @@
   <div class="proof-section">
     <h3>We send only transactional / operational messages</h3>
     <ul>
-      <li><strong>OTP / Verification Codes:</strong> Account registration, login, identity verification</li>
+      <li><strong>Verification Codes:</strong> Account registration, login, identity verification</li>
       <li><strong>Job Assignment Alerts:</strong> New assignment details including location, time, and supervisor</li>
       <li><strong>Shift Reminders:</strong> Upcoming shift start reminders and schedule changes</li>
-      <li><strong>Onboarding / HR Updates:</strong> Document submission reminders, background check status, compliance deadlines</li>
-      <li><strong>Interview Notifications:</strong> Interview scheduling and reminders</li>
+      <li><strong>Onboarding Updates:</strong> Document submission reminders, background check status, onboarding step completions</li>
+      <li><strong>Interview Notifications:</strong> Interview scheduling confirmations and reminders</li>
+      <li><strong>Payroll Alerts:</strong> Pay period reminders and direct deposit notifications</li>
+      <li><strong>Direct Responses to User Inquiries:</strong> Replies to messages or inquiries submitted through website forms</li>
     </ul>
-    <p><strong>We do not send marketing or promotional messages.</strong> All SMS is transactional and directly related to the user's employment or application.</p>
-    <p>Message frequency varies based on registration activity, active assignments, and onboarding status. Typically 1&ndash;5 messages per event, up to 10 per week during active onboarding periods.</p>
+    <p><strong>We do not send marketing or promotional messages.</strong> All SMS is transactional and directly related to the user's employment, application, or direct inquiry.</p>
+    <p>Message frequency varies based on user activity, assignments, onboarding status, and direct inquiries.</p>
   </div>
 
   <h2>5. Opt-Out and Help</h2>
