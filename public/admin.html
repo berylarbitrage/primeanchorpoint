@@ -14473,7 +14473,15 @@ function renderOnboardingTasks(tasks) {
     const typeTasks = empType === 'w2' ? W2_TASKS : empType === '1099' ? C1099_TASKS : [];
     if (typeTasks.length) {
       const dbTaxDocKeys = dbAssignedTasks.filter(k => k.startsWith('tax_doc_'));
-      assignedTasks = [...typeTasks, ...dbTaxDocKeys];
+      // Insert tax_doc tasks just before tin_verify so they appear in the right order
+      const tinIdx = typeTasks.indexOf('tin_verify');
+      if (dbTaxDocKeys.length && tinIdx >= 0) {
+        const merged = [...typeTasks];
+        merged.splice(tinIdx, 0, ...dbTaxDocKeys);
+        assignedTasks = merged;
+      } else {
+        assignedTasks = [...typeTasks, ...dbTaxDocKeys];
+      }
     }
   }
   // Check if tax residency questionnaire is done
