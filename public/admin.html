@@ -16880,40 +16880,35 @@ function wpRenderUploadZones(category, trData) {
     docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
   }
 
-  const typeOpts = (WP_DOC_OPTIONS[category] || WP_DOC_OPTIONS.generic)
-    .map(o => `<option value="${o.value}">${o.label}</option>`).join('');
-
   docs.forEach((label, idx) => {
     const zoneId = `wpUploadZone_${idx}`;
     container.insertAdjacentHTML('beforeend', `
-      <div id="${zoneId}" style="border:2px dashed var(--gray-200);border-radius:8px;padding:.8rem;margin-bottom:.75rem;background:#fafafa;transition:border-color .2s,background .2s">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem">
-          <span style="font-size:.82rem;font-weight:700;color:#374151;flex:1">📄 ${label}</span>
-          <div id="${zoneId}_status" style="font-size:.78rem;color:#999;flex-shrink:0">未上传</div>
+      <div id="${zoneId}" style="border:1px solid #e5e7eb;border-radius:10px;padding:.9rem 1rem;margin-bottom:.65rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.6rem">
+          <span style="font-size:.83rem;font-weight:700;color:#1f2937">📄 ${label}</span>
+          <span id="${zoneId}_status" style="font-size:.75rem;color:#9ca3af;background:#f3f4f6;padding:.15rem .55rem;border-radius:20px;white-space:nowrap">未上传</span>
         </div>
-        <div id="${zoneId}_file" style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
-          <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="font-size:.78rem;flex:1"
+        <div id="${zoneId}_file" style="margin-bottom:.55rem">
+          <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="font-size:.8rem;width:100%;color:#374151"
             onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
         </div>
         <div id="${zoneId}_existing" style="margin-bottom:.4rem"></div>
-        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.4rem">
-          <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">號碼 Number</label>
-          <input type="text" id="${zoneId}_number" placeholder="證件號碼" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151;width:130px"
-            onchange="wpSaveDocMeta('${zoneId}')">
-          <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">類別 Type</label>
-          <select id="${zoneId}_type" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151"
-            onchange="wpSaveDocMeta('${zoneId}')">
-            <option value="">— 請選擇 —</option>
-            ${typeOpts}
-          </select>
-        </div>
-        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.35rem">
-          <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">開始日期 Start Date</label>
-          <input type="date" id="${zoneId}_start" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151"
-            onchange="wpSaveDocMeta('${zoneId}')">
-          <label style="font-size:.78rem;color:#6b7280;white-space:nowrap">過期日期 Expiry Date</label>
-          <input type="date" id="${zoneId}_expiry" style="font-size:.78rem;padding:.25rem .4rem;border:1px solid #d1d5db;border-radius:5px;color:#374151"
-            onchange="wpSaveDocMeta('${zoneId}')">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;align-items:center">
+          <div>
+            <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">证件号码</div>
+            <input type="text" id="${zoneId}_number" placeholder="号码" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
+              onchange="wpSaveDocMeta('${zoneId}')">
+          </div>
+          <div>
+            <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">开始日期</div>
+            <input type="date" id="${zoneId}_start" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
+              onchange="wpSaveDocMeta('${zoneId}')">
+          </div>
+          <div>
+            <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">到期日期</div>
+            <input type="date" id="${zoneId}_expiry" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
+              onchange="wpSaveDocMeta('${zoneId}')">
+          </div>
         </div>
       </div>
     `);
