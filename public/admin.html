@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prime Anchorpoint — 管理后台</title>
+<title>Prime Anchor Point — 管理后台</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -376,8 +376,8 @@ tr:hover td{background:var(--sky-light)}
 <!-- LOGIN -->
 <div class="login-wrap" id="loginWrap">
 <div class="login-box">
-  <img src="/logo.svg" alt="Prime Anchorpoint" class="logo">
-  <h1>Prime Anchorpoint</h1>
+  <img src="/logo.svg" alt="Prime Anchor Point" class="logo">
+  <h1>Prime Anchor Point</h1>
   <p id="loginSubtitle">管理后台</p>
   <input type="text" id="userInput" placeholder="用户名" autocomplete="username">
   <div class="pass-wrap">
@@ -5433,7 +5433,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <!-- Print header (hidden on screen) -->
   <div id="tsPrintHeader" style="display:none;margin-bottom:1.5rem">
-    <h2 style="text-align:center;color:#92400e;margin-bottom:.5rem">Prime Anchorpoint — Employee Timesheet</h2>
+    <h2 style="text-align:center;color:#92400e;margin-bottom:.5rem">Prime Anchor Point — Employee Timesheet</h2>
     <div style="display:flex;justify-content:space-between;font-size:.9rem;border-bottom:2px solid #92400e;padding-bottom:.5rem;margin-bottom:.5rem">
       <div><strong>Employee:</strong> <span id="tsPrintName"></span></div>
       <div><strong>ID:</strong> <span id="tsPrintId"></span></div>
@@ -7769,7 +7769,7 @@ function shareJobPlatform(platform) {
   const link = document.getElementById('jobShareLink').value;
   const title = document.getElementById('jobShareTitle').textContent;
   const url = encodeURIComponent(link);
-  const text = encodeURIComponent('正在招聘：' + title + ' — Prime Anchorpoint');
+  const text = encodeURIComponent('正在招聘：' + title + ' — Prime Anchor Point');
   const platforms = {
     wa:     'https://wa.me/?text=' + text + '%20' + url,
     fb:     'https://www.facebook.com/sharer/sharer.php?u=' + url,
@@ -10511,7 +10511,7 @@ let _contractEditorPid = null;
 
 const DEFAULT_AGREEMENT_TEMPLATE = (partnerName, today) => `PARTNERSHIP AGREEMENT
 
-This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between Prime Anchorpoint LLC, a staffing and workforce solutions company ("Service Provider"), and ${partnerName} ("Partner").
+This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between Prime Anchor Point LLC, a staffing and workforce solutions company ("Service Provider"), and ${partnerName} ("Partner").
 
 1. SERVICES
 Service Provider agrees to provide staffing, recruitment, and workforce management services as mutually agreed upon by the parties in writing. Specific scope, timelines, and deliverables for each engagement shall be documented in separate statements of work.
@@ -10536,7 +10536,7 @@ This Agreement constitutes the entire understanding between the parties.
 
 SIGNATURES
 
-Prime Anchorpoint LLC (Service Provider)
+Prime Anchor Point LLC (Service Provider)
 Authorized Signature: /sig1/
 Date: /date1/
 
@@ -13337,14 +13337,14 @@ function openTsEmail() {
   const emp = _tsLinkEmp;
   const subject = encodeURIComponent('请确认您的工时记录 / Please confirm your timesheet');
   const body = encodeURIComponent(
-    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchorpoint`
+    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchor Point`
   );
   window.open(`mailto:${emp ? emp.email : ''}?subject=${subject}&body=${body}`);
 }
 function openTsSms() {
   const url = document.getElementById('tsLinkUrl').textContent;
   const emp = _tsLinkEmp;
-  const msg = encodeURIComponent(`[Prime Anchorpoint] 请确认您的工时记录: ${url}`);
+  const msg = encodeURIComponent(`[Prime Anchor Point] 请确认您的工时记录: ${url}`);
   window.open(`sms:${emp ? emp.phone : ''}?body=${msg}`);
 }
 
