@@ -182,7 +182,7 @@ function verificationCodeHtml(code, isAdminTest = false) {
 <tr><td align="center">
 <table width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
 <tr><td style="background:#1a1a2e;padding:24px 32px">
-  <p style="margin:0;color:#fff;font-size:18px;font-weight:600">Prime Anchorpoint</p>
+  <p style="margin:0;color:#fff;font-size:18px;font-weight:600">Prime Anchor Point</p>
   <p style="margin:4px 0 0;color:#a0aec0;font-size:12px">${label}</p>
 </td></tr>
 <tr><td style="padding:32px">
@@ -1959,7 +1959,7 @@ async function generateWeeklyShiftConfirmations() {
     if (!info.phone) continue;
     const greeting = info.name ? ` ${info.name}` : '';
     await sendSMS(info.phone,
-      `[Prime Anchorpoint] 您好${greeting}，本周有 ${info.count} 个班次待确认，请登录 Portal 查看并确认出勤。`
+      `[Prime Anchor Point] 您好${greeting}，本周有 ${info.count} 个班次待确认，请登录 Portal 查看并确认出勤。`
     ).catch(() => {});
     smsCount++;
   }
@@ -2041,7 +2041,7 @@ async function send24hShiftReminders() {
       ? `（${row.shift_start}–${row.shift_end}）`
       : '';
     await sendSMS(row.phone,
-      `[Prime Anchorpoint] 提醒：您明天${time}有 ${job} 的班次，请登录 Portal 确认是否出勤。`
+      `[Prime Anchor Point] 提醒：您明天${time}有 ${job} 的班次，请登录 Portal 确认是否出勤。`
     ).catch(() => {});
     db.prepare(`UPDATE shift_confirmations SET reminded_at=CURRENT_TIMESTAMP WHERE id=?`).run(row.id);
     sent++;
@@ -6402,7 +6402,7 @@ app.post('/api/admin-invite/send-email-code', async (req, res) => {
   if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchorpoint',
+  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchor Point',
     `您的邮箱验证码是 ${code}，15分钟内有效。\nYour email verification code is ${code}, valid for 15 minutes.`,
     verificationCodeHtml(code));
   if (sent) {
@@ -6452,7 +6452,7 @@ function serveAdminInvitePage(req, res) {
   res.send(`<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>账户注册 — Prime Anchorpoint</title>
+<title>账户注册 — Prime Anchor Point</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
@@ -6485,7 +6485,7 @@ input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
 </head>
 <body>
 <div class="card">
-  <div class="logo-wrap"><img src="/logo.svg" alt="Prime Anchorpoint" onerror="this.style.display='none'"></div>
+  <div class="logo-wrap"><img src="/logo.svg" alt="Prime Anchor Point" onerror="this.style.display='none'"></div>
   <h1>账户注册</h1>
   <div class="sub" id="sub">加载中…</div>
   <div id="form" style="display:none">
@@ -6830,9 +6830,9 @@ app.post('/api/public/manager-register/send-code', async (req, res) => {
 
   let delivered = false;
   if (contact_type === 'phone') {
-    delivered = await sendSMS(contact, `您的 Prime Anchorpoint 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
+    delivered = await sendSMS(contact, `您的 Prime Anchor Point 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
   } else {
-    delivered = await sendEmail(contact, '验证码 / Verification Code — Prime Anchorpoint',
+    delivered = await sendEmail(contact, '验证码 / Verification Code — Prime Anchor Point',
       `您的验证码是 ${code}，10分钟内有效。\nYour verification code is ${code}.`,
       verificationCodeHtml(code));
   }
@@ -7602,7 +7602,7 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
     let smsSent = false;
     if (w.phone) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
-      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照/ID+自拍）以继续入职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
+      const smsText = `[Prime Anchor Point] 您好 ${w.name||w.username||''}，请完成身份验证（驾照/ID+自拍）以继续入职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(w.phone, smsText);
     }
     // Send email
@@ -7610,7 +7610,7 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
     if (w.email) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(w.email,
-        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        'Prime Anchor Point — 身份验证请求 / Identity Verification',
         `请完成身份验证。您可以登录合作中心直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${w.name||w.username||''}，</p>
          <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
@@ -7693,7 +7693,7 @@ app.post('/api/admin/worker-accounts/:id/send-checkr', requireAdmin, async (req,
     // Notify worker via SMS
     let smsSent = false;
     if (w.phone) {
-      smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，我们已通过 Checkr 向您的邮箱 (${w.email}) 发送了背景调查邀请，请查收邮件并完成。`);
+      smsSent = await sendSMS(w.phone, `[Prime Anchor Point] 您好 ${w.name||w.username||''}，我们已通过 Checkr 向您的邮箱 (${w.email}) 发送了背景调查邀请，请查收邮件并完成。`);
     }
 
     res.json({ success: true, smsSent, candidateId, invitationId: invitation.id, invitationUrl: invitation.invitation_url || '' });
@@ -7933,7 +7933,7 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
           const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
           if (workerEmail) {
             sendEmail(workerEmail,
-              `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+              `Prime Anchor Point — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
               `${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署。\n${workerSignUrl || ''}\n\n${workerName}, ${companyName} has signed. Please sign here:\n${workerSignUrl || ''}\n\n${workerName}, ${companyName} ha firmado. Firme aquí:\n${workerSignUrl || ''}`,
               `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
                 <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
@@ -7948,15 +7948,15 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
                 <h3 style="font-size:.95rem">Firme Su ${contractTypeEs}</h3>
                 <p style="color:#555;font-size:.9rem">Hola ${workerName}, ${companyName} ha firmado. Ahora es su turno.</p>
                 ${signLink}
-                <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+                <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
               </div>`
             ).catch(e => console.error('[contract-status] fallback email error:', e.message));
             console.log(`[contract-status] Sent fallback signing email to ${workerEmail} (webhook may have missed)`);
           }
           if (workerPhone) {
             const smsText = workerSignUrl
-              ? `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
-              : `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+              ? `[Prime Anchor Point] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
+              : `[Prime Anchor Point] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
             sendSMS(workerPhone, smsText).catch(e => console.error('[contract-status] fallback SMS error:', e.message));
             console.log(`[contract-status] Sent fallback signing SMS to ${workerPhone} (webhook may have missed)`);
           }
@@ -8078,7 +8078,7 @@ app.post('/api/admin/worker-accounts/:id/resend-sign-notification', requireAdmin
     let emailSent = false, smsSent = false;
     if (workerEmail) {
       emailSent = await sendEmail(workerEmail,
-        `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+        `Prime Anchor Point — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
         `${workerName}，请点击链接完成签署。\n${workerSignUrl || ''}\n\n${workerName}, please sign here:\n${workerSignUrl || ''}\n\n${workerName}, firme aquí:\n${workerSignUrl || ''}`,
         `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
           <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
@@ -8093,14 +8093,14 @@ app.post('/api/admin/worker-accounts/:id/resend-sign-notification', requireAdmin
           <h3 style="font-size:.95rem">Firme Su ${contractTypeEs}</h3>
           <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic abajo para firmar su contrato.</p>
           ${signLink}
-          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
         </div>`
       );
     }
     if (workerPhone) {
       const smsText = workerSignUrl
-        ? `[Prime Anchorpoint] ${workerName}，请签署${contractTypeCn} / Please sign your contract / Firme su contrato:\n${workerSignUrl}\nReply STOP to opt out.`
-        : `[Prime Anchorpoint] ${workerName}，请查收邮件签署${contractTypeCn}。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+        ? `[Prime Anchor Point] ${workerName}，请签署${contractTypeCn} / Please sign your contract / Firme su contrato:\n${workerSignUrl}\nReply STOP to opt out.`
+        : `[Prime Anchor Point] ${workerName}，请查收邮件签署${contractTypeCn}。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
       smsSent = await sendSMS(workerPhone, smsText);
     }
     const warnings = [];
@@ -8748,7 +8748,7 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
       if (workerEmail) {
         const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${w9Link}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署 W-9 / Sign W-9 / Firmar W-9</a></p>`;
         emailSent = await sendEmail(workerEmail,
-          `Prime Anchorpoint — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
+          `Prime Anchor Point — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
           `${workerName}，请点击链接签署 W-9 税表。\n${w9Link}\n\n${workerName}, please click the link to sign your W-9 form.\n${w9Link}\n\n${workerName}, haga clic en el enlace para firmar su formulario W-9.\n${w9Link}`,
           `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
             <h2 style="color:#1a1a1a;text-align:center">请签署 W-9 税表</h2>
@@ -8762,12 +8762,12 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
             <h3 style="font-size:.95rem">Firme el Formulario W-9</h3>
             <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic en el botón para firmar su formulario W-9 directamente.</p>
             ${signLink}
-            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
           </div>`
         );
       }
       if (workerPhone) {
-        smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
+        smsSent = await sendSMS(workerPhone, `[Prime Anchor Point] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
       }
     }
     const warnings = [];
@@ -8859,10 +8859,10 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
     // Send SMS with sign link using selected language (DocuSeal handles email)
     if (signUrl && workerPhone) {
       const smsText = lang === 'es'
-        ? `[Prime Anchorpoint] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
+        ? `[Prime Anchor Point] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
         : lang === 'en'
-        ? `[Prime Anchorpoint] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
-        : `[Prime Anchorpoint] ${workerName}，请签署 ${pmLabel} 付款授权表单 / Please sign your ${pmLabel} authorization: ${signUrl}\nReply STOP to opt out.`;
+        ? `[Prime Anchor Point] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
+        : `[Prime Anchor Point] ${workerName}，请签署 ${pmLabel} 付款授权表单 / Please sign your ${pmLabel} authorization: ${signUrl}\nReply STOP to opt out.`;
       try { await sendSMS(workerPhone, smsText); } catch (e) { console.warn('[payment-auth SMS]', e.message); }
     }
     const warnings = dsealError ? [dsealError] : [];
@@ -9136,12 +9136,12 @@ app.post('/api/admin/worker-accounts/:id/send-work-auth', requireAdmin, async (r
     const workerPhone = w.phone || '';
     const workerEmail = w.email || '';
     if (workerPhone) {
-      await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录合作中心完成 Work Authorization 认证，上传所需身份证明文件。Reply STOP to opt out.`).catch(() => {});
+      await sendSMS(workerPhone, `[Prime Anchor Point] ${workerName}，请登录合作中心完成 Work Authorization 认证，上传所需身份证明文件。Reply STOP to opt out.`).catch(() => {});
     }
     if (workerEmail) {
       await sendEmail(workerEmail, 'Work Authorization 认证 — 请上传身份证明文件',
-        `${workerName}，\n请登录合作中心完成 Work Authorization 认证调查。\n\nPrime Anchorpoint`,
-        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem"><h2>Work Authorization 认证</h2><p>您好 ${workerName}，</p><p>请登录合作中心，在入职进度中完成 <strong>Work Authorization 认证</strong>，按要求上传身份证明文件。</p><p style="color:#64748b;font-size:.9rem">Prime Anchorpoint</p></div>`
+        `${workerName}，\n请登录合作中心完成 Work Authorization 认证调查。\n\nPrime Anchor Point`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem"><h2>Work Authorization 认证</h2><p>您好 ${workerName}，</p><p>请登录合作中心，在入职进度中完成 <strong>Work Authorization 认证</strong>，按要求上传身份证明文件。</p><p style="color:#64748b;font-size:.9rem">Prime Anchor Point</p></div>`
       ).catch(() => {});
     }
     res.json({ success: true });
@@ -9374,7 +9374,7 @@ app.post('/api/admin/worker-accounts/:id/send-reset-link', requireAdmin, require
     try {
       const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
       await twilio.messages.create({
-        body: `Prime Anchorpoint 密码重置链接 / Password Reset:\n${resetUrl}\n24小时内有效。`,
+        body: `Prime Anchor Point 密码重置链接 / Password Reset:\n${resetUrl}\n24小时内有效。`,
         from: process.env.TWILIO_PHONE_NUMBER,
         to: w.phone
       });
@@ -9390,7 +9390,7 @@ app.post('/api/admin/worker-accounts/:id/send-reset-link', requireAdmin, require
       await t.sendMail({
         from: process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com',
         to: w.email,
-        subject: 'Prime Anchorpoint - 密码重置 / Password Reset',
+        subject: 'Prime Anchor Point - 密码重置 / Password Reset',
         html: `<p>请点击以下链接重置密码 / Click to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>链接24小时内有效 / Valid for 24 hours.</p>`
       });
       results.email_sent = true;
@@ -9457,7 +9457,7 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
   }
 
   // Fallback to regular SMS
-  const result = await sendSMSWithDetail(to, '[Prime Anchorpoint] 测试短信 / SMS Test: Twilio is working!');
+  const result = await sendSMSWithDetail(to, '[Prime Anchor Point] 测试短信 / SMS Test: Twilio is working!');
   res.json({ configured, result, accountInfo, method: 'sms' });
 });
 
@@ -9475,7 +9475,7 @@ app.post('/api/admin/test-email', requireAdmin, requireRole('admin'), async (req
     transport: _sgKey ? 'sendgrid-api' : emailTransporter ? 'smtp' : 'none',
   };
   if (!_sgKey && !emailTransporter) return res.json({ configured, sent: false, error: 'No email transport configured' });
-  const sent = await sendEmail(to, 'Prime Anchorpoint Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
+  const sent = await sendEmail(to, 'Prime Anchor Point Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
   res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
 });
 
@@ -9496,7 +9496,7 @@ app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const sent = await sendEmail(
     to,
-    'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    'Prime Anchor Point 邮箱验证码 / Email Verification Code',
     `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
     verificationCodeHtml(code, true)
   );
@@ -9580,12 +9580,12 @@ app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin')
             <p style="color:#555;font-size:.9rem">Hi ${workerName}, your invoice <strong>${invNum}</strong> has been rejected.</p>
             <p style="color:#555;font-size:.9rem"><strong>Reason:</strong> ${reasonText}</p>
             <p style="color:#555;font-size:.9rem">Please contact HR if you have questions.</p>
-            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
           </div>`;
-          await sendEmail(w.email, `[Prime Anchorpoint] Invoice ${invNum} 已被拒绝 / Rejected`, `您好 ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}`, html);
+          await sendEmail(w.email, `[Prime Anchor Point] Invoice ${invNum} 已被拒绝 / Rejected`, `您好 ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}`, html);
         }
         if (w.phone) {
-          await sendSMS(w.phone, `[Prime Anchorpoint] ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}\nReply STOP to opt out.`);
+          await sendSMS(w.phone, `[Prime Anchor Point] ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}\nReply STOP to opt out.`);
         }
       }
     }
@@ -9708,7 +9708,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const warnings = [];
     if (workerPhone) {
       try {
-        smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请查收并填写承包商發票 / Please check your email and complete the Contractor Invoice.\nReply STOP to opt out.`);
+        smsSent = await sendSMS(workerPhone, `[Prime Anchor Point] ${workerName}，请查收并填写承包商發票 / Please check your email and complete the Contractor Invoice.\nReply STOP to opt out.`);
       } catch(e) { console.error('[Invoice SMS]', e.message); }
       if (!smsSent) warnings.push('短信发送失败，请检查手机号');
     } else {
@@ -10007,13 +10007,13 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
   } else if (canSMSFallback) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
-    smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+    smsSent = await sendSMS(w.phone, `[Prime Anchor Point] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
   }
   // Email
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
-    emailSent = await sendEmail(w.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    emailSent = await sendEmail(w.email, 'Prime Anchor Point 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
       verificationCodeHtml(emailCode));
   }
@@ -10121,7 +10121,7 @@ app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (re
         const dtHtmlRows = times.map((t, i) => `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📅 ${times.length > 1 ? `时间${i+1}` : '时间'}</td><td style="padding:.4rem 0">${fmtDt(t)}</td></tr>`).join('');
         const locStr = interview_location_text || '';
         const noteStr = admin_note || '';
-        const subject = 'Prime Anchorpoint — 面试通知 / Interview Scheduled';
+        const subject = 'Prime Anchor Point — 面试通知 / Interview Scheduled';
         const textMsg = `您好 ${workerName}，\n\n您申请的职位「${app2.job_title}」已安排面试：\n${dtLines ? dtLines + '\n' : ''}${locStr ? '地点：' + locStr + '\n' : ''}${noteStr ? '备注：' + noteStr + '\n' : ''}\n请登录合作中心查看详情。`;
         const htmlMsg = `<p>您好 ${workerName}，</p><p>您申请的职位 <strong>${app2.job_title}</strong> 已安排面试：</p>
           <table style="border-collapse:collapse;margin:1rem 0;font-size:15px">
@@ -10873,7 +10873,7 @@ app.post('/api/admin/partners/:id/generate-agreement', requireAdmin, blockManage
 
       // ── Parties ──────────────────────────────────────────────
       doc.fontSize(11).font('Helvetica-Bold').fillColor('black').text('Service Provider:');
-      doc.font('Helvetica').fillColor('#333').text('Prime Anchorpoint LLC, a staffing and workforce solutions company ("Service Provider").');
+      doc.font('Helvetica').fillColor('#333').text('Prime Anchor Point LLC, a staffing and workforce solutions company ("Service Provider").');
       doc.moveDown(0.8);
       doc.font('Helvetica-Bold').fillColor('black').text('Partner:');
       doc.font('Helvetica').fillColor('#333').text(`${partnerName} ("Partner").`);
@@ -11125,7 +11125,7 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
     const { submissionId, companyEmbedSrc } = await dsealSendEnvelope({
       docPath, docName: f.file_name || f.file_path,
-      emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`,
+      emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchor Point`,
       signer1: { email: companyEmail, name: companyName },
       signer2: { email: partnerEmail, name: partnerName }
     });
@@ -11497,7 +11497,7 @@ app.post('/api/admin/employees/:id/send-registration-link', requireAdmin, async 
     const phone = (req.body.phone || emp.phone || '').replace(/\D/g,'').slice(-10);
     if (phone) {
       smsSent = await sendSMS('+1'+phone,
-        `[Prime Anchorpoint] 您好 ${name}，请点击以下链接完成账户注册（7天内有效）:\n${inviteUrl}\nHi ${name}, click to register your account (valid 7 days).`
+        `[Prime Anchor Point] 您好 ${name}，请点击以下链接完成账户注册（7天内有效）:\n${inviteUrl}\nHi ${name}, click to register your account (valid 7 days).`
       );
       if (!smsSent) errs.push('SMS failed');
     }
@@ -13065,14 +13065,14 @@ app.post('/api/worker/contact/request-change', requireWorker, async (req, res) =
     const canVerify = !!(twilioClient && TWILIO_VERIFY_SID);
     if (oldPhone) {
       if (canVerify) { await sendVerifyCode(oldPhone); oldSent = true; }
-      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchorpoint] 验证旧手机号，验证码：${oldCode}，15分钟有效`); }
+      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchor Point] 验证旧手机号，验证码：${oldCode}，15分钟有效`); }
     }
     if (canVerify) { await sendVerifyCode(val); newSent = true; }
-    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] 验证新手机号，验证码：${newCode}，15分钟有效`); }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchor Point] 验证新手机号，验证码：${newCode}，15分钟有效`); }
   } else {
     const oldEmail = w.email;
-    if (oldEmail) oldSent = await sendEmail(oldEmail, 'Prime Anchorpoint 更换邮箱验证', `旧邮箱验证码：${oldCode}，15分钟内有效。`);
-    newSent = await sendEmail(val, 'Prime Anchorpoint 新邮箱验证', `新邮箱验证码：${newCode}，15分钟内有效。`);
+    if (oldEmail) oldSent = await sendEmail(oldEmail, 'Prime Anchor Point 更换邮箱验证', `旧邮箱验证码：${oldCode}，15分钟内有效。`);
+    newSent = await sendEmail(val, 'Prime Anchor Point 新邮箱验证', `新邮箱验证码：${newCode}，15分钟内有效。`);
   }
   console.log(`[ContactChange] Worker ${req.workerId} field=${field} old_code=${oldCode} new_code=${newCode}`);
   res.json({ success: true, old_sent: oldSent, new_sent: newSent });
@@ -13119,9 +13119,9 @@ app.post('/api/worker/contact/send-old-code', requireWorker, async (req, res) =>
   let sent = false;
   if (field === 'phone') {
     if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(oldVal); sent = true; }
-    else if (twilioClient && TWILIO_FROM) { sent = await sendSMS(oldVal, `[Prime Anchorpoint] Your verification code: ${code} (valid 15 min)`); }
+    else if (twilioClient && TWILIO_FROM) { sent = await sendSMS(oldVal, `[Prime Anchor Point] Your verification code: ${code} (valid 15 min)`); }
   } else {
-    sent = await sendEmail(oldVal, 'Prime Anchorpoint Verification Code', `Your verification code: ${code}\nValid for 15 minutes.`);
+    sent = await sendEmail(oldVal, 'Prime Anchor Point Verification Code', `Your verification code: ${code}\nValid for 15 minutes.`);
   }
   console.log(`[CC-S1] Worker ${req.workerId} field=${field} old_code=${code}`);
   res.json({ success: true, old_sent: sent });
@@ -13154,9 +13154,9 @@ app.post('/api/worker/contact/verify-old-send-new', requireWorker, async (req, r
   let newSent = false;
   if (field === 'phone') {
     if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(val); newSent = true; }
-    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] Your new phone verification code: ${newCode} (valid 15 min)`); }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchor Point] Your new phone verification code: ${newCode} (valid 15 min)`); }
   } else {
-    newSent = await sendEmail(val, 'Prime Anchorpoint New Email Verification', `Your verification code: ${newCode}\nValid for 15 minutes.`);
+    newSent = await sendEmail(val, 'Prime Anchor Point New Email Verification', `Your verification code: ${newCode}\nValid for 15 minutes.`);
   }
   console.log(`[CC-S2] Worker ${req.workerId} field=${field} new_code=${newCode}`);
   res.json({ success: true, new_sent: newSent });
@@ -13226,7 +13226,7 @@ app.put('/api/worker/me', requireWorker, async (req, res) => {
     if (w.phone && process.env.TWILIO_ACCOUNT_SID) {
       try {
         const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-        await twilio.messages.create({ body: `Prime Anchorpoint 旧号码验证码: ${oldCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: w.phone });
+        await twilio.messages.create({ body: `Prime Anchor Point 旧号码验证码: ${oldCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: w.phone });
         results.old_sent = true;
       } catch (e) { console.error('[Change phone] SMS to old:', e.message); }
     }
@@ -13234,7 +13234,7 @@ app.put('/api/worker/me', requireWorker, async (req, res) => {
     if (process.env.TWILIO_ACCOUNT_SID) {
       try {
         const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-        await twilio.messages.create({ body: `Prime Anchorpoint 新号码验证码: ${newCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: new_value });
+        await twilio.messages.create({ body: `Prime Anchor Point 新号码验证码: ${newCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: new_value });
         results.new_sent = true;
       } catch (e) { console.error('[Change phone] SMS to new:', e.message); }
     }
@@ -13244,13 +13244,13 @@ app.put('/api/worker/me', requireWorker, async (req, res) => {
     // Send to old email
     if (w.email) {
       try {
-        await t.sendMail({ from: process.env.EMAIL_FROM, to: w.email, subject: 'Prime Anchorpoint - 旧邮箱验证码', html: `<p>您的旧邮箱验证码: <strong>${oldCode}</strong></p><p>15分钟内有效。</p>` });
+        await t.sendMail({ from: process.env.EMAIL_FROM, to: w.email, subject: 'Prime Anchor Point - 旧邮箱验证码', html: `<p>您的旧邮箱验证码: <strong>${oldCode}</strong></p><p>15分钟内有效。</p>` });
         results.old_sent = true;
       } catch (e) { console.error('[Change email] to old:', e.message); }
     }
     // Send to new email
     try {
-      await t.sendMail({ from: process.env.EMAIL_FROM, to: new_value, subject: 'Prime Anchorpoint - 新邮箱验证码', html: `<p>您的新邮箱验证码: <strong>${newCode}</strong></p><p>15分钟内有效。</p>` });
+      await t.sendMail({ from: process.env.EMAIL_FROM, to: new_value, subject: 'Prime Anchor Point - 新邮箱验证码', html: `<p>您的新邮箱验证码: <strong>${newCode}</strong></p><p>15分钟内有效。</p>` });
       results.new_sent = true;
     } catch (e) { console.error('[Change email] to new:', e.message); }
   }
@@ -14204,9 +14204,9 @@ app.post('/api/worker/forgot-password', async (req, res) => {
   resetCodes.set('worker:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
   // Try to send via SMS or email
   if (w.phone && twilioClient && TWILIO_FROM) {
-    await sendSMS(w.phone, `[Prime Anchorpoint] 重置密码验证码: ${code}，10分钟内有效。Reset code: ${code}`);
+    await sendSMS(w.phone, `[Prime Anchor Point] 重置密码验证码: ${code}，10分钟内有效。Reset code: ${code}`);
   } else if (w.email && emailTransporter) {
-    await sendEmail(w.email, 'Prime Anchorpoint 重置密码 / Password Reset',
+    await sendEmail(w.email, 'Prime Anchor Point 重置密码 / Password Reset',
       `您的重置密码验证码: ${code}\nYour password reset code: ${code}\n\n10分钟内有效 / Valid for 10 minutes.`);
   }
   console.log(`[Reset Code] Worker account ${login}: ${code}`);
@@ -15206,7 +15206,7 @@ function checkExpiringDocs() {
     // Email worker
     if (doc.worker_email && (emailTransporter || _sgKey)) {
       sendEmail(doc.worker_email,
-        `[Prime Anchorpoint] 您的${typeLabel}即将到期 / Your ${typeLabel} is expiring`,
+        `[Prime Anchor Point] 您的${typeLabel}即将到期 / Your ${typeLabel} is expiring`,
         `您好 ${doc.worker_name || ''},\n\n您的${typeLabel}将于 ${doc.expires_at} 到期（${urgency}）。\n请尽快更新证件。\n\nHello ${doc.worker_name || ''},\nYour ${typeLabel} expires on ${doc.expires_at} (${urgency}).\nPlease update your document as soon as possible.\n\n— Prime Anchor Point`
       ).catch(e => console.error('[ExpiryNotify] Email failed:', e));
     }
@@ -15214,7 +15214,7 @@ function checkExpiringDocs() {
     // SMS worker
     if (doc.worker_phone && twilioClient && (TWILIO_FROM || TWILIO_VERIFY_SID)) {
       sendSMS(doc.worker_phone,
-        `[Prime Anchorpoint] 您的${typeLabel}将于${doc.expires_at}到期（${urgency}），请尽快更新。Your ${typeLabel} expires ${doc.expires_at}.`
+        `[Prime Anchor Point] 您的${typeLabel}将于${doc.expires_at}到期（${urgency}），请尽快更新。Your ${typeLabel} expires ${doc.expires_at}.`
       ).catch(e => console.error('[ExpiryNotify] SMS failed:', e));
     }
 
@@ -15408,9 +15408,9 @@ app.post('/api/register/worker', async (req, res) => {
       // Try to resend so the user gets fresh codes in their inbox
       let phoneSent = false, emailSent = false;
       if (phoneRow && phoneRow.code !== '__twilio_verify__' && existing.phone)
-        phoneSent = await sendSMS(existing.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneRow.code}，15分钟内有效。Your verification code: ${phoneRow.code}`);
+        phoneSent = await sendSMS(existing.phone, `[Prime Anchor Point] 您的手机验证码是: ${phoneRow.code}，15分钟内有效。Your verification code: ${phoneRow.code}`);
       if (emailRow && existing.email)
-        emailSent = await sendEmail(existing.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+        emailSent = await sendEmail(existing.email, 'Prime Anchor Point 邮箱验证码 / Email Verification Code',
           `您的邮箱验证码是: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
           verificationCodeHtml(emailRow.code));
       const pendingResp = {
@@ -15503,13 +15503,13 @@ app.post('/api/register/worker', async (req, res) => {
   } else if (canSMSFallback) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
-    smsSent = await sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+    smsSent = await sendSMS(phone, `[Prime Anchor Point] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
   }
   // Email: always use our own codes via SMTP
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
-    emailSent = await sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    emailSent = await sendEmail(email, 'Prime Anchor Point 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
       verificationCodeHtml(emailCode));
   }
@@ -15545,13 +15545,13 @@ app.post('/api/register/resend-code', async (req, res) => {
     } else {
       code = String(Math.floor(100000 + Math.random() * 900000));
       db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'phone', code, expires);
-      sent = await sendSMS(acc.phone, `[Prime Anchorpoint] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+      sent = await sendSMS(acc.phone, `[Prime Anchor Point] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
       console.log(`[Verify] Resend phone SMS for Worker #${account_id}: ${code} (sent:${sent})`);
     }
   } else {
     code = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'email', code, expires);
-    sent = await sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    sent = await sendEmail(acc.email, 'Prime Anchor Point 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
       verificationCodeHtml(code));
     console.log(`[Verify] Resend email for Worker #${account_id}: ${code} (sent:${sent})`);
@@ -15669,12 +15669,12 @@ app.post('/api/register/enterprise', async (req, res) => {
   if (!phoneSent) {
     const code = String(Math.floor(100000+Math.random()*900000));
     db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId,'phone',code,expires);
-    sendSMS(phoneDigits, `Your Prime Anchorpoint verification code is: ${code}`).catch(()=>{});
+    sendSMS(phoneDigits, `Your Prime Anchor Point verification code is: ${code}`).catch(()=>{});
   }
   // Send email code
   const emailCode = String(Math.floor(100000+Math.random()*900000));
   db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId,'email',emailCode,expires);
-  sendEmail(email, 'Prime Anchorpoint — Enterprise Registration Verification', `Your verification code is: ${emailCode}\nValid for 15 minutes.`, verificationCodeHtml(emailCode)).catch(()=>{});
+  sendEmail(email, 'Prime Anchor Point — Enterprise Registration Verification', `Your verification code is: ${emailCode}\nValid for 15 minutes.`, verificationCodeHtml(emailCode)).catch(()=>{});
   res.json({ success: true, account_id: accountId, needs_phone: true, needs_email: true });
 });
 
@@ -15721,12 +15721,12 @@ app.post('/api/register/enterprise-resend', async (req, res) => {
     if (!sent) {
       const code = String(Math.floor(100000+Math.random()*900000));
       db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id,'phone',code,expires);
-      sendSMS(phoneDigits, `Your Prime Anchorpoint verification code is: ${code}`).catch(()=>{});
+      sendSMS(phoneDigits, `Your Prime Anchor Point verification code is: ${code}`).catch(()=>{});
     }
   } else {
     const code = String(Math.floor(100000+Math.random()*900000));
     db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id,'email',code,expires);
-    sendEmail(acct.email, 'Prime Anchorpoint — Verification Code', `Your verification code is: ${code}\nValid for 15 minutes.`, verificationCodeHtml(code)).catch(()=>{});
+    sendEmail(acct.email, 'Prime Anchor Point — Verification Code', `Your verification code is: ${code}\nValid for 15 minutes.`, verificationCodeHtml(code)).catch(()=>{});
   }
   res.json({ success: true });
 });
@@ -15771,6 +15771,7 @@ app.get('/manager-register', (req, res) => {
 
 // ─── Legal pages ───
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+app.get('/privacy-policy', (req, res) => res.redirect(301, '/privacy'));
 app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
 app.get('/background-check-disclosure', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-disclosure.html')));
 app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-consent.html')));
@@ -16013,8 +16014,8 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                 if (workerEmail) {
                   const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
                   await sendEmail(workerEmail,
-                    `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
-                    `您好 ${workerName}，\n${companyName} 已完成签署，现在轮到您了。\n${workerSignUrl ? '签署链接: ' + workerSignUrl : ''}\n\nHi ${workerName},\n${companyName} has signed. It's your turn now.\n${workerSignUrl ? 'Sign here: ' + workerSignUrl : ''}\n\nHola ${workerName},\n${companyName} ha firmado. Ahora es su turno.\n${workerSignUrl ? 'Firme aquí: ' + workerSignUrl : ''}\n\nPrime Anchorpoint`,
+                    `Prime Anchor Point — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+                    `您好 ${workerName}，\n${companyName} 已完成签署，现在轮到您了。\n${workerSignUrl ? '签署链接: ' + workerSignUrl : ''}\n\nHi ${workerName},\n${companyName} has signed. It's your turn now.\n${workerSignUrl ? 'Sign here: ' + workerSignUrl : ''}\n\nHola ${workerName},\n${companyName} ha firmado. Ahora es su turno.\n${workerSignUrl ? 'Firme aquí: ' + workerSignUrl : ''}\n\nPrime Anchor Point`,
                     `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
                       <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
                       <p>您好 ${workerName}，</p>
@@ -16029,7 +16030,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                       <h3 style="color:#333;font-size:.95rem">Firme Su ${contractTypeEs}</h3>
                       <p style="color:#555;font-size:.9rem">Hola ${workerName}, ${companyName} ha completado su firma. Ahora es su turno de firmar el ${contractTypeEs}. Haga clic en el botón de abajo para completar su firma electrónica.</p>
                       ${signLink}
-                      <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+                      <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
                     </div>`
                   );
                   console.log(`[DocuSeal webhook] Sent trilingual signing email to worker ${workerEmail}`);
@@ -16037,8 +16038,8 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                 // Send SMS to worker (trilingual)
                 if (workerPhone) {
                   const smsText = workerSignUrl
-                    ? `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
-                    : `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+                    ? `[Prime Anchor Point] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
+                    : `[Prime Anchor Point] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
                   await sendSMS(workerPhone, smsText);
                   console.log(`[DocuSeal webhook] Sent trilingual signing SMS to worker ${workerPhone}`);
                 }
@@ -16355,11 +16356,11 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(result.sessionId, interview.worker_id);
     const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
-    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。点击链接：${result.url || portalUrl}`;
+    const smsText = `[Prime Anchor Point] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。点击链接：${result.url || portalUrl}`;
     const smsSent = await sendSMS(interview.worker_phone, smsText);
     if (interview.worker_email) {
       await sendEmail(interview.worker_email,
-        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        'Prime Anchor Point — 身份验证请求 / Identity Verification',
         `请完成身份验证：${result.url || portalUrl}`,
         `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请点击以下链接，按提示上传驾照/ID、完成自拍核验：</p><p><a href="${result.url || portalUrl}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.url || portalUrl}</p>`
       );
@@ -16483,7 +16484,7 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     let smsSent = false;
     if (interview.worker_phone) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
-      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
+      const smsText = `[Prime Anchor Point] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(interview.worker_phone, smsText);
     }
     // Send email
@@ -16491,7 +16492,7 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     if (interview.worker_email) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(interview.worker_email,
-        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        'Prime Anchor Point — 身份验证请求 / Identity Verification',
         `请完成身份验证。您可以登录合作中心直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${interview.worker_name||''}，</p>
          <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
@@ -17602,7 +17603,7 @@ app.post('/api/admin/docuseal/deduplicate', requireAdmin, async (req, res) => {
 app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
-  console.log(`Prime Anchorpoint running on port ${PORT}`);
+  console.log(`Prime Anchor Point running on port ${PORT}`);
   // Re-sync onboarded status for all workers with employment_type on startup
   // This ensures the onboarded flag is recalculated after any logic changes
   try {
