@@ -19328,7 +19328,7 @@ async function confirmUploadVoucherReceipts() {
   const fd = new FormData();
   _vrPendingFiles.forEach(f => fd.append('receipts', f));
   try {
-    const r = await fetch(`/api/admin/contractor-invoices/${_vrInvId}/voucher-receipts`, { method: 'POST', body: fd, credentials: 'same-origin' });
+    const r = await fetch(`/api/admin/contractor-invoices/${_vrInvId}/voucher-receipts`, { method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${TOKEN}` } });
     const j = await r.json();
     if (j.success) {
       showToast(`✅ 已上传 ${_vrPendingFiles.length} 个凭证`);
