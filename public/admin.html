@@ -3218,6 +3218,39 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- 付款凭证 上传/查看 Modal -->
+<div class="modal-bg" id="voucherReceiptModal" style="display:none" onclick="if(event.target===this)closeVoucherReceiptModal()">
+  <div class="modal" style="max-width:640px;width:95vw;max-height:90vh;overflow-y:auto">
+    <h2 style="margin:0 0 .3rem">📎 付款凭证 — <span id="vrInvNumber" style="font-family:monospace;color:var(--sky)"></span></h2>
+    <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem" id="vrWorkerInfo"></div>
+    <!-- Existing receipts -->
+    <div id="vrExistingReceipts"></div>
+    <!-- Upload area -->
+    <div style="margin:.75rem 0">
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">上传付款截图/凭证：</div>
+      <div id="vrDropZone" style="border:2px dashed var(--gray-200);border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer;background:#fafafa;transition:all .2s" onclick="document.getElementById('vrFileInput').click()" ondragover="event.preventDefault();this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" ondragleave="this.style.borderColor='var(--gray-200)';this.style.background='#fafafa'" ondrop="event.preventDefault();this.style.borderColor='var(--gray-200)';this.style.background='#fafafa';handleVrFiles(event.dataTransfer.files)">
+        <div style="font-size:2rem;margin-bottom:.3rem">🖼️</div>
+        <div style="font-size:.85rem;color:var(--gray-500)">点击选择 或 拖拽图片到此处</div>
+        <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">支持 JPG、PNG、PDF，可多选</div>
+        <input type="file" id="vrFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleVrFiles(this.files)">
+      </div>
+    </div>
+    <!-- Preview of selected files -->
+    <div id="vrPreviewArea" style="display:none;margin:.75rem 0">
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">待上传文件：</div>
+      <div id="vrPreviewGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.5rem"></div>
+    </div>
+    <!-- Actions -->
+    <div id="vrUploadActions" style="display:none;margin-top:.75rem;padding-top:.5rem;border-top:1px solid var(--gray-100)">
+      <button class="btn btn-green" id="vrUploadBtn" onclick="confirmUploadVoucherReceipts()" style="font-size:.85rem">✅ 确认上传</button>
+      <button class="btn" onclick="clearVrPending()" style="font-size:.85rem;margin-left:.5rem">取消选择</button>
+    </div>
+    <div style="margin-top:.75rem;text-align:right">
+      <button class="btn" onclick="closeVoucherReceiptModal()" style="font-size:.85rem">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- 承包商發票 Edit Modal (pre_generated) -->
 <div class="modal-bg" id="invEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal" style="max-width:560px;width:95vw">
@@ -18879,7 +18912,7 @@ async function loadEmpInvoiceTab() {
           <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
         ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}
         ${r.status !== 'approved' ? `<br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : ''}
-        ${r.source === 'voucher' ? `<br>${r.voucher_receipt ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="viewVoucherReceipt(${r.id})">🖼️ 查看凭证</button> ` : ''}<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="uploadVoucherReceipt(${r.id})">📎 ${r.voucher_receipt ? '替换' : '上传'}付款凭证</button>` : ''}
+        ${r.source === 'voucher' ? `<br><button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="window.open('/api/admin/contractor-invoices/${r.id}/voucher-pdf','_blank')">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>` : ''}
       </td>
     </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
     }).join('')}</tbody>
@@ -19198,26 +19231,103 @@ async function deleteContractorInvoice(id, invoiceNumber) {
   }
 }
 
-function uploadVoucherReceipt(invId) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*,.pdf';
-  input.onchange = async () => {
-    if (!input.files[0]) return;
-    const fd = new FormData();
-    fd.append('receipt', input.files[0]);
-    try {
-      const r = await fetch(`/api/admin/contractor-invoices/${invId}/voucher-receipt`, { method: 'POST', body: fd, credentials: 'same-origin' });
-      const j = await r.json();
-      if (j.success) { showToast('✅ 付款凭证已上传'); loadEmpInvoiceTab(); }
-      else showToast(j.error || '上传失败', 'error');
-    } catch (e) { showToast('上传失败: ' + e.message, 'error'); }
-  };
-  input.click();
+let _vrInvId = null, _vrPendingFiles = [];
+
+async function openVoucherReceiptModal(invId, invoiceNumber, workerName) {
+  _vrInvId = invId;
+  _vrPendingFiles = [];
+  document.getElementById('vrInvNumber').textContent = invoiceNumber;
+  document.getElementById('vrWorkerInfo').textContent = workerName;
+  document.getElementById('vrPreviewArea').style.display = 'none';
+  document.getElementById('vrUploadActions').style.display = 'none';
+  document.getElementById('vrPreviewGrid').innerHTML = '';
+  document.getElementById('vrFileInput').value = '';
+  // Load existing receipts
+  const container = document.getElementById('vrExistingReceipts');
+  container.innerHTML = '<div style="font-size:.82rem;color:var(--gray-400)">加载中…</div>';
+  const r = await api(`/admin/contractor-invoices/${invId}/voucher-receipts`);
+  if (r && r.receipts && r.receipts.length) {
+    container.innerHTML = `<div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">已上传凭证 (${r.receipts.length})：</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">${r.receipts.map((f, i) => {
+        const isPdf = f.filename.toLowerCase().endsWith('.pdf');
+        return `<div style="position:relative;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden;background:#fafafa">
+          ${isPdf
+            ? `<div onclick="window.open('/api/admin/contractor-invoices/${invId}/voucher-receipts/${f.filename}','_blank')" style="cursor:pointer;height:100px;display:flex;align-items:center;justify-content:center;font-size:2rem;background:#fff">📄</div>`
+            : `<img src="/api/admin/contractor-invoices/${invId}/voucher-receipts/${f.filename}" onclick="window.open(this.src,'_blank')" style="width:100%;height:100px;object-fit:cover;cursor:pointer;display:block">`}
+          <div style="padding:.3rem .4rem;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:.7rem;color:var(--gray-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(f.original_name || f.filename)}</span>
+            <button onclick="deleteVoucherReceipt(${invId},'${f.filename}')" style="background:none;border:none;cursor:pointer;font-size:.75rem;color:#dc2626;padding:0 2px" title="删除">✕</button>
+          </div>
+        </div>`;
+      }).join('')}</div>`;
+  } else {
+    container.innerHTML = '<div style="font-size:.82rem;color:var(--gray-400);padding:.5rem 0">暂无付款凭证</div>';
+  }
+  document.getElementById('voucherReceiptModal').style.display = 'flex';
 }
 
-function viewVoucherReceipt(invId) {
-  window.open(`/api/admin/contractor-invoices/${invId}/voucher-receipt`, '_blank');
+function closeVoucherReceiptModal() {
+  document.getElementById('voucherReceiptModal').style.display = 'none';
+  _vrPendingFiles = [];
+}
+
+function handleVrFiles(files) {
+  if (!files || !files.length) return;
+  for (const f of files) _vrPendingFiles.push(f);
+  renderVrPreviews();
+}
+
+function renderVrPreviews() {
+  const grid = document.getElementById('vrPreviewGrid');
+  grid.innerHTML = _vrPendingFiles.map((f, i) => {
+    const isPdf = f.name.toLowerCase().endsWith('.pdf');
+    const thumb = isPdf ? `<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:2rem;background:#fff">📄</div>` : `<img src="${URL.createObjectURL(f)}" style="width:100%;height:80px;object-fit:cover;display:block">`;
+    return `<div style="position:relative;border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;background:#f0f9ff">
+      ${thumb}
+      <div style="padding:.25rem .4rem;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:.68rem;color:var(--gray-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(f.name)}</span>
+        <button onclick="_vrPendingFiles.splice(${i},1);renderVrPreviews()" style="background:none;border:none;cursor:pointer;font-size:.75rem;color:#dc2626;padding:0 2px">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('vrPreviewArea').style.display = _vrPendingFiles.length ? '' : 'none';
+  document.getElementById('vrUploadActions').style.display = _vrPendingFiles.length ? '' : 'none';
+}
+
+function clearVrPending() {
+  _vrPendingFiles = [];
+  document.getElementById('vrFileInput').value = '';
+  renderVrPreviews();
+}
+
+async function confirmUploadVoucherReceipts() {
+  if (!_vrPendingFiles.length || !_vrInvId) return;
+  const btn = document.getElementById('vrUploadBtn');
+  btn.disabled = true; btn.textContent = '上传中…';
+  const fd = new FormData();
+  _vrPendingFiles.forEach(f => fd.append('receipts', f));
+  try {
+    const r = await fetch(`/api/admin/contractor-invoices/${_vrInvId}/voucher-receipts`, { method: 'POST', body: fd, credentials: 'same-origin' });
+    const j = await r.json();
+    if (j.success) {
+      showToast(`✅ 已上传 ${_vrPendingFiles.length} 个凭证`);
+      _vrPendingFiles = [];
+      renderVrPreviews();
+      openVoucherReceiptModal(_vrInvId, document.getElementById('vrInvNumber').textContent, document.getElementById('vrWorkerInfo').textContent);
+      loadEmpInvoiceTab();
+    } else showToast(j.error || '上传失败', 'error');
+  } catch (e) { showToast('上传失败: ' + e.message, 'error'); }
+  btn.disabled = false; btn.textContent = '✅ 确认上传';
+}
+
+async function deleteVoucherReceipt(invId, filename) {
+  if (!confirm('确认删除此凭证图片？')) return;
+  const r = await api(`/admin/contractor-invoices/${invId}/voucher-receipts/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+  if (r?.success) {
+    showToast('已删除');
+    openVoucherReceiptModal(invId, document.getElementById('vrInvNumber').textContent, document.getElementById('vrWorkerInfo').textContent);
+    loadEmpInvoiceTab();
+  } else showToast(r?.error || '删除失败', 'error');
 }
 
 function openInvEditModal(row) {

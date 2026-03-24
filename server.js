@@ -9759,32 +9759,133 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
   }
 });
 
-/// Admin: upload voucher receipt photo
-app.post('/api/admin/contractor-invoices/:id/voucher-receipt', requireAdmin, requireRole('admin', 'staff'), upload.single('receipt'), (req, res) => {
+/// Admin: upload voucher receipt photos (multiple)
+app.post('/api/admin/contractor-invoices/:id/voucher-receipts', requireAdmin, requireRole('admin', 'staff'), upload.array('receipts', 20), (req, res) => {
   try {
     const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-    if (!req.file) return res.status(400).json({ error: '请选择文件' });
-    // Delete old receipt if exists
-    if (inv.voucher_receipt) {
-      const oldPath = path.join(uploadsDir, inv.voucher_receipt);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
-    db.prepare('UPDATE contractor_invoices SET voucher_receipt=? WHERE id=?').run(req.file.filename, req.params.id);
-    res.json({ success: true, filename: req.file.filename });
+    if (!req.files || !req.files.length) return res.status(400).json({ error: '请选择文件' });
+    let existing = [];
+    try { existing = JSON.parse(inv.voucher_receipt || '[]'); } catch { if (inv.voucher_receipt) existing = [{ filename: inv.voucher_receipt, original_name: inv.voucher_receipt }]; }
+    const newFiles = req.files.map(f => ({ filename: f.filename, original_name: f.originalname }));
+    const all = [...existing, ...newFiles];
+    db.prepare('UPDATE contractor_invoices SET voucher_receipt=? WHERE id=?').run(JSON.stringify(all), req.params.id);
+    res.json({ success: true, count: newFiles.length });
   } catch (e) {
     console.error('[Voucher Receipt Upload]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// Admin: view voucher receipt
-app.get('/api/admin/contractor-invoices/:id/voucher-receipt', requireAdmin, (req, res) => {
+// Admin: list voucher receipts
+app.get('/api/admin/contractor-invoices/:id/voucher-receipts', requireAdmin, (req, res) => {
   const inv = db.prepare('SELECT voucher_receipt FROM contractor_invoices WHERE id=?').get(req.params.id);
-  if (!inv || !inv.voucher_receipt) return res.status(404).json({ error: 'No receipt' });
-  const filePath = path.join(uploadsDir, inv.voucher_receipt);
+  if (!inv) return res.status(404).json({ error: 'Not found' });
+  let receipts = [];
+  try { receipts = JSON.parse(inv.voucher_receipt || '[]'); } catch { if (inv.voucher_receipt) receipts = [{ filename: inv.voucher_receipt, original_name: inv.voucher_receipt }]; }
+  res.json({ receipts });
+});
+
+// Admin: view single voucher receipt file
+app.get('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', requireAdmin, (req, res) => {
+  const filePath = path.join(uploadsDir, req.params.filename);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
   res.sendFile(filePath);
+});
+
+// Admin: delete a single voucher receipt
+app.delete('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const inv = db.prepare('SELECT voucher_receipt FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Not found' });
+    let receipts = [];
+    try { receipts = JSON.parse(inv.voucher_receipt || '[]'); } catch { receipts = []; }
+    const idx = receipts.findIndex(r => r.filename === req.params.filename);
+    if (idx === -1) return res.status(404).json({ error: 'Receipt not found' });
+    // Delete file
+    const filePath = path.join(uploadsDir, req.params.filename);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    receipts.splice(idx, 1);
+    db.prepare('UPDATE contractor_invoices SET voucher_receipt=? WHERE id=?').run(JSON.stringify(receipts), req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[Delete Voucher Receipt]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: generate PDF for payment voucher
+app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare(`SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username, wa.state AS worker_state
+      FROM contractor_invoices ci LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id WHERE ci.id=?`).get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    const workerName = inv.worker_name || inv.worker_username || 'N/A';
+    const companyName = getCompanySignerName();
+    const doc = new PDFDocument({ size: 'LETTER', margin: 60 });
+    const buffers = [];
+    doc.on('data', b => buffers.push(b));
+    doc.on('end', () => {
+      const pdfBuf = Buffer.concat(buffers);
+      res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="voucher-${inv.invoice_number}.pdf"` });
+      res.send(pdfBuf);
+    });
+    // Header
+    doc.fontSize(18).font('Helvetica-Bold').text('PAYMENT VOUCHER', { align: 'center' });
+    doc.fontSize(10).font('Helvetica').text('付款凭证', { align: 'center' });
+    doc.moveDown(1.5);
+    // Invoice info
+    doc.fontSize(10).font('Helvetica-Bold').text('Invoice #: ', { continued: true }).font('Helvetica').text(inv.invoice_number);
+    doc.font('Helvetica-Bold').text('Date: ', { continued: true }).font('Helvetica').text(inv.invoice_date || 'N/A');
+    doc.font('Helvetica-Bold').text('Company: ', { continued: true }).font('Helvetica').text(companyName);
+    doc.moveDown(0.8);
+    // Contractor info
+    doc.font('Helvetica-Bold').text('Contractor / 承包商: ', { continued: true }).font('Helvetica').text(workerName);
+    doc.font('Helvetica-Bold').text('Service Period / 服务周期: ', { continued: true }).font('Helvetica').text(`${inv.service_period_start || 'N/A'} ~ ${inv.service_period_end || 'N/A'}`);
+    doc.moveDown(0.8);
+    // Service description
+    doc.font('Helvetica-Bold').text('Service Description / 服务内容:');
+    doc.font('Helvetica').text(inv.service_description || 'N/A', { indent: 10 });
+    doc.moveDown(1);
+    // Amount table
+    const tableTop = doc.y;
+    const col1 = 60, col2 = 380;
+    doc.font('Helvetica-Bold');
+    doc.rect(col1, tableTop, 470, 22).fill('#f0f0f0').stroke('#cccccc');
+    doc.fillColor('#333').text('Description', col1 + 8, tableTop + 6, { width: 300 });
+    doc.text('Amount', col2, tableTop + 6, { width: 140, align: 'right' });
+    let rowY = tableTop + 22;
+    const total = parseFloat(inv.total_amount) || 0;
+    const expenses = parseFloat(inv.expenses) || 0;
+    const service = total - expenses;
+    doc.font('Helvetica').fillColor('#000');
+    doc.rect(col1, rowY, 470, 20).stroke('#e0e0e0');
+    doc.text('Service Fee / 服务费', col1 + 8, rowY + 5, { width: 300 });
+    doc.text('$' + service.toFixed(2), col2, rowY + 5, { width: 140, align: 'right' });
+    rowY += 20;
+    if (expenses > 0) {
+      doc.rect(col1, rowY, 470, 20).stroke('#e0e0e0');
+      doc.text('Reimbursable / 报销费用', col1 + 8, rowY + 5, { width: 300 });
+      doc.text('$' + expenses.toFixed(2), col2, rowY + 5, { width: 140, align: 'right' });
+      rowY += 20;
+    }
+    doc.rect(col1, rowY, 470, 24).fill('#f8f8f8').stroke('#cccccc');
+    doc.fillColor('#000').font('Helvetica-Bold');
+    doc.text('TOTAL / 合计', col1 + 8, rowY + 6, { width: 300 });
+    doc.fontSize(12).text('$' + total.toFixed(2), col2, rowY + 5, { width: 140, align: 'right' });
+    doc.fontSize(10);
+    doc.moveDown(3);
+    // Footer
+    doc.font('Helvetica').fillColor('#888').text('This payment voucher is generated by the company as a record of payment made to the contractor.', 60, doc.y, { align: 'center', width: 470 });
+    doc.text('此付款凭证由公司生成，作为已向承包商付款的记录。', { align: 'center', width: 470 });
+    doc.moveDown(1.5);
+    doc.fillColor('#333').text(`Created by: ${inv.sent_by || 'admin'}`, 60);
+    doc.text(`Created at: ${inv.created_at || 'N/A'}`);
+    doc.end();
+  } catch (e) {
+    console.error('[Voucher PDF]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Admin: preview the contractor invoice with pre-filled data (HTML rendering)
