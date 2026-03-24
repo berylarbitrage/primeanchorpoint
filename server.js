@@ -9621,7 +9621,7 @@ app.post('/api/admin/contractor-invoices/pre-generate-number', requireAdmin, req
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id, worker_email, worker_phone, service_period_start, service_period_end, invoice_date, service_description, template_lang, pre_generated_invoice_number } = req.body;
+    const { worker_account_id, worker_email, worker_phone, service_period_start, service_period_end, invoice_date, service_description, template_lang, pre_generated_invoice_number, company_prefill, quoted_amount, reimbursable_amount } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
     if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务周期 / Service period required' });
     if (!service_description) return res.status(400).json({ error: '请填写服务内容描述 / Service description required' });
@@ -9667,6 +9667,17 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     // Contractor submitter: fills quoted_amount, reimbursable_amount, total_amount, additional_notes, and signs
     const invoiceSubmitter = { role: 'Contractor', name: workerName, email: workerEmail };
     if (workerPhone) invoiceSubmitter.phone = formatPhoneE164(workerPhone);
+    // Company-prefill mode: pre-fill amount fields so contractor only needs to sign
+    if (company_prefill && quoted_amount) {
+      const qa = parseFloat(quoted_amount) || 0;
+      const ra = parseFloat(reimbursable_amount) || 0;
+      const total = qa + ra;
+      invoiceSubmitter.fields = [
+        { name: 'quoted_amount', default_value: qa.toFixed(2), readonly: true },
+        { name: 'reimbursable_amount', default_value: ra.toFixed(2), readonly: true },
+        { name: 'total_amount', default_value: total.toFixed(2), readonly: true }
+      ];
+    }
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
@@ -9686,14 +9697,15 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const existingPreGen = pre_generated_invoice_number
       ? db.prepare(`SELECT id FROM contractor_invoices WHERE invoice_number=? AND status='pre_generated' LIMIT 1`).get(pre_generated_invoice_number)
       : null;
+    const prefillTotal = company_prefill && quoted_amount ? ((parseFloat(quoted_amount) || 0) + (parseFloat(reimbursable_amount) || 0)) : 0;
     if (existingPreGen) {
-      db.prepare(`UPDATE contractor_invoices SET invoice_date=?, service_description=?, service_period_start=?, service_period_end=?, total_amount=0, status='ds_pending', ds_envelope_id=?, ds_status='sent', sent_by=? WHERE id=?`)
-        .run(todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', submissionId, sentBy, existingPreGen.id);
+      db.prepare(`UPDATE contractor_invoices SET invoice_date=?, service_description=?, service_period_start=?, service_period_end=?, total_amount=?, status='ds_pending', ds_envelope_id=?, ds_status='sent', sent_by=? WHERE id=?`)
+        .run(todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, submissionId, sentBy, existingPreGen.id);
     } else {
       db.prepare(`INSERT INTO contractor_invoices
         (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', 0, 'ds_pending', submissionId, 'sent', sentBy);
+        .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, 'ds_pending', submissionId, 'sent', sentBy);
     }
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
