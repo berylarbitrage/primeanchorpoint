@@ -1737,7 +1737,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
 )`);
 // Add DocuSeal columns to contractor_invoices
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_signed_at DATETIME','sent_by TEXT DEFAULT \'\'',
- 'expenses REAL DEFAULT 0','job_id INTEGER DEFAULT 0','job_title TEXT DEFAULT \'\'','service_type TEXT DEFAULT \'\'','confirmed INTEGER DEFAULT 0'
+ 'expenses REAL DEFAULT 0','job_id INTEGER DEFAULT 0','job_title TEXT DEFAULT \'\'','service_type TEXT DEFAULT \'\'','confirmed INTEGER DEFAULT 0',
+ 'source TEXT DEFAULT \'\''
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 // ─── App Settings (feature flags, portal config) ───
@@ -9724,6 +9725,35 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     res.json({ success: true, submission_id: submissionId, invoice_number: invoiceNumber, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[Send DocuSeal Invoice]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: create payment voucher (no DocuSeal, direct record)
+app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const { worker_account_id, service_period_start, service_period_end, invoice_date, service_description, quoted_amount, reimbursable_amount } = req.body;
+    if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
+    if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务周期' });
+    if (!service_description) return res.status(400).json({ error: '请填写服务内容描述' });
+    if (!quoted_amount) return res.status(400).json({ error: '请填写金额' });
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
+    if (!w) return res.status(404).json({ error: '承包商不存在' });
+    const workerName = w.name || w.username || `Worker #${w.id}`;
+    const todayDate = invoice_date || new Date().toISOString().slice(0, 10);
+    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
+    const total = (parseFloat(quoted_amount) || 0) + (parseFloat(reimbursable_amount) || 0);
+    const sentBy = req.session?.username || 'admin';
+    db.prepare(`INSERT INTO contractor_invoices
+      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, source, sent_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(worker_account_id, invoiceNumber, todayDate, service_description, service_period_start || '', service_period_end || '', total, 'approved', 'voucher', sentBy);
+    // Log to worker history
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'approved', `付款凭证 ${invoiceNumber} — $${total.toFixed(2)}`);
+    res.json({ success: true, invoice_number: invoiceNumber });
+  } catch (e) {
+    console.error('[Create Voucher]', e.message);
     res.status(500).json({ error: e.message });
   }
 });

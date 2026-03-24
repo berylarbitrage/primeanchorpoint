@@ -3107,15 +3107,19 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票模式 / Invoice Mode：</label>
-    <div style="display:flex;gap:.5rem">
-      <label style="flex:1;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid #0ea5e9;border-radius:8px;cursor:pointer;background:#f0f9ff;font-size:.85rem;font-weight:600;color:#0369a1" id="invModeContractorLabel" onclick="setInvMode('contractor')">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <label style="flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid #0ea5e9;border-radius:8px;cursor:pointer;background:#f0f9ff;font-size:.85rem;font-weight:600;color:#0369a1" id="invModeContractorLabel" onclick="setInvMode('contractor')">
         <input type="radio" name="invMode" value="contractor" checked style="accent-color:#0ea5e9"> 承包商填写金额
       </label>
-      <label style="flex:1;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid var(--gray-200);border-radius:8px;cursor:pointer;background:#fff;font-size:.85rem;font-weight:500;color:var(--gray-500)" id="invModeCompanyLabel" onclick="setInvMode('company')">
+      <label style="flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid var(--gray-200);border-radius:8px;cursor:pointer;background:#fff;font-size:.85rem;font-weight:500;color:var(--gray-500)" id="invModeCompanyLabel" onclick="setInvMode('company')">
         <input type="radio" name="invMode" value="company" style="accent-color:#0ea5e9"> 公司预填金额
+      </label>
+      <label style="flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid var(--gray-200);border-radius:8px;cursor:pointer;background:#fff;font-size:.85rem;font-weight:500;color:var(--gray-500)" id="invModeVoucherLabel" onclick="setInvMode('voucher')">
+        <input type="radio" name="invMode" value="voucher" style="accent-color:#0ea5e9"> 付款凭证
       </label>
     </div>
   </div>
+  <div id="invDocuSealFields">
   <div style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票語言版本 / Invoice Language：<span style="color:#dc2626">*</span></label>
     <select id="invSendLang" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
@@ -3131,6 +3135,7 @@ tr:hover td{background:var(--sky-light)}
   <div style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手機號（可选，发送短信通知）：</label>
     <input id="invSendPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (xxx) xxx-xxxx">
+  </div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin:.5rem 0">
     <div>
@@ -18851,7 +18856,7 @@ async function loadEmpInvoiceTab() {
     </tr></thead>
     <tbody>${rows.map(r => {
       const isDs = r.ds_envelope_id && r.ds_envelope_id !== '';
-      const source = isDs ? '<span style="padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:600">DocuSeal</span>' : '<span style="padding:1px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:.72rem;font-weight:600">手动提交</span>';
+      const source = r.source === 'voucher' ? '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:.72rem;font-weight:600">付款凭证</span>' : isDs ? '<span style="padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:600">DocuSeal</span>' : '<span style="padding:1px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:.72rem;font-weight:600">手动提交</span>';
       return `<tr style="border-bottom:1px solid var(--gray-100)">
       <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
       <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}${r.sent_by ? `<br><span style="font-size:.7rem;color:var(--gray-400);font-weight:400">发送人: ${esc(r.sent_by)}</span>` : ''}</td>
@@ -18880,22 +18885,35 @@ async function loadEmpInvoiceTab() {
   </table>`;
 }
 
-let _invMode = 'contractor'; // 'contractor' or 'company'
+let _invMode = 'contractor'; // 'contractor', 'company', or 'voucher'
 function setInvMode(mode) {
   _invMode = mode;
-  const cLabel = document.getElementById('invModeContractorLabel');
-  const coLabel = document.getElementById('invModeCompanyLabel');
+  const labels = { contractor: 'invModeContractorLabel', company: 'invModeCompanyLabel', voucher: 'invModeVoucherLabel' };
+  const activeStyle = 'flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid #0ea5e9;border-radius:8px;cursor:pointer;background:#f0f9ff;font-size:.85rem;font-weight:600;color:#0369a1';
+  const inactiveStyle = 'flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid var(--gray-200);border-radius:8px;cursor:pointer;background:#fff;font-size:.85rem;font-weight:500;color:var(--gray-500)';
+  Object.entries(labels).forEach(([k, id]) => { document.getElementById(id).style.cssText = k === mode ? activeStyle : inactiveStyle; });
   const amtSec = document.getElementById('invAmountSection');
   const hint = document.getElementById('invFlowHint');
-  if (mode === 'company') {
-    coLabel.style.cssText = 'flex:1;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid #0ea5e9;border-radius:8px;cursor:pointer;background:#f0f9ff;font-size:.85rem;font-weight:600;color:#0369a1';
-    cLabel.style.cssText = 'flex:1;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid var(--gray-200);border-radius:8px;cursor:pointer;background:#fff;font-size:.85rem;font-weight:500;color:var(--gray-500)';
+  const dsFields = document.getElementById('invDocuSealFields');
+  const previewBtn = document.getElementById('invPreviewBtn');
+  const sendBtn = document.getElementById('invSendBtn');
+  if (mode === 'voucher') {
     amtSec.style.display = '';
+    dsFields.style.display = 'none';
+    previewBtn.style.display = 'none';
+    sendBtn.textContent = '💾 创建付款凭证';
+    hint.innerHTML = '<b>付款凭证：</b>公司内部记录已付款项，不发送给承包商签字。直接保存为已完成的发票记录。';
+  } else if (mode === 'company') {
+    amtSec.style.display = '';
+    dsFields.style.display = '';
+    previewBtn.style.display = '';
+    sendBtn.textContent = '📤 發送發票';
     hint.innerHTML = '<b>流程：</b>Admin填写服务周期、日期、服务内容和金额后点击「发送」，承包商收到邮件+短信通知 → 确认金额 → 签字 → 提交回来待审核。';
   } else {
-    cLabel.style.cssText = 'flex:1;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid #0ea5e9;border-radius:8px;cursor:pointer;background:#f0f9ff;font-size:.85rem;font-weight:600;color:#0369a1';
-    coLabel.style.cssText = 'flex:1;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid var(--gray-200);border-radius:8px;cursor:pointer;background:#fff;font-size:.85rem;font-weight:500;color:var(--gray-500)';
     amtSec.style.display = 'none';
+    dsFields.style.display = '';
+    previewBtn.style.display = '';
+    sendBtn.textContent = '📤 發送發票';
     hint.innerHTML = '<b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。';
   }
 }
@@ -18937,19 +18955,46 @@ let _invSendWorkerId = null, _invSendWorkerName = '', _preGeneratedInvoiceNumber
 
 async function doSendInvoice() {
   if (!_invSendWorkerId) return;
-  const email = document.getElementById('invSendEmail').value.trim();
-  const phone = document.getElementById('invSendPhone').value.trim();
   const periodStart = document.getElementById('invSendPeriodStart').value;
   const periodEnd = document.getElementById('invSendPeriodEnd').value;
   const invoiceDate = document.getElementById('invSendDate').value.trim();
   const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
-  if (!email) { showToast('请填写承包商邮箱', 'error'); return; }
   if (!periodStart || !periodEnd) { showToast('请填写服务周期 Period From / Period To', 'error'); return; }
   if (!invoiceDate) { showToast('请选择發票日期', 'error'); return; }
   if (!serviceDesc) { showToast('请填写服务内容描述', 'error'); return; }
   const quotedAmount = document.getElementById('invSendAmount').value.trim();
   const reimbursableAmount = document.getElementById('invSendReimbursable').value.trim();
-  if (_invMode === 'company' && !quotedAmount) { showToast('公司模式下请填写服务金额', 'error'); return; }
+  if ((_invMode === 'company' || _invMode === 'voucher') && !quotedAmount) { showToast('请填写服务金额', 'error'); return; }
+
+  // Voucher mode: direct save without DocuSeal
+  if (_invMode === 'voucher') {
+    const total = (parseFloat(quotedAmount) || 0) + (parseFloat(reimbursableAmount) || 0);
+    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
+    const btn = document.getElementById('invSendBtn');
+    btn.disabled = true; btn.textContent = '创建中…';
+    const r = await api('/admin/contractor-invoices/create-voucher', {
+      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0' })
+    });
+    btn.disabled = false; btn.textContent = '💾 创建付款凭证';
+    if (r && r.success) {
+      const statusEl = document.getElementById('invSendStatus');
+      statusEl.style.display = 'block';
+      statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+      statusEl.innerHTML = `✅ 付款凭证已创建 (${r.invoice_number})`;
+      const tabStatus = document.getElementById('empInvSendStatus');
+      tabStatus.textContent = `✅ 已创建 ${r.invoice_number}`;
+      tabStatus.style.color = '#15803d';
+      loadEmpInvoiceTab();
+    } else {
+      showToast(r?.error || '创建失败', 'error');
+    }
+    return;
+  }
+
+  // DocuSeal modes (contractor / company)
+  const email = document.getElementById('invSendEmail').value.trim();
+  const phone = document.getElementById('invSendPhone').value.trim();
+  if (!email) { showToast('请填写承包商邮箱', 'error'); return; }
   const _langLabels = { contractor_invoice: '中文+英文', contractor_invoice_en: 'English', contractor_invoice_es: 'EN+ES' };
   const _selLang = document.getElementById('invSendLang').value;
   const invNumInfo = _preGeneratedInvoiceNumber ? `\nInvoice #: ${_preGeneratedInvoiceNumber}` : '';
