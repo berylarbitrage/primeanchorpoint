@@ -3251,6 +3251,20 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- 付款凭证 PDF 预览 Modal -->
+<div class="modal-bg" id="voucherPdfModal" style="display:none" onclick="if(event.target===this){document.getElementById('voucherPdfFrame').src='about:blank';this.style.display='none'}">
+  <div class="modal" style="max-width:92vw;width:850px;height:90vh;display:flex;flex-direction:column;padding:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-shrink:0">
+      <h2 style="margin:0;font-size:1rem">📄 付款凭证 PDF</h2>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <a id="voucherPdfNewTab" href="#" target="_blank" rel="noopener" style="font-size:.82rem;color:#0369a1;text-decoration:none;padding:.3rem .7rem;border:1px solid #7dd3fc;border-radius:5px;background:#f0f9ff">↗ 新标签页</a>
+        <button class="btn btn-outline" onclick="document.getElementById('voucherPdfFrame').src='about:blank';document.getElementById('voucherPdfModal').style.display='none'" style="font-size:.82rem">✕ 关闭</button>
+      </div>
+    </div>
+    <iframe id="voucherPdfFrame" src="about:blank" style="flex:1;width:100%;border:1px solid var(--gray-200);border-radius:8px"></iframe>
+  </div>
+</div>
+
 <!-- 承包商發票 Edit Modal (pre_generated) -->
 <div class="modal-bg" id="invEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal" style="max-width:560px;width:95vw">
@@ -18912,7 +18926,7 @@ async function loadEmpInvoiceTab() {
           <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
         ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}
         ${r.status !== 'approved' ? `<br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : ''}
-        ${r.source === 'voucher' ? `<br><button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="window.open('/api/admin/contractor-invoices/${r.id}/voucher-pdf','_blank')">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>` : ''}
+        ${r.source === 'voucher' ? `<br><button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>` : ''}
       </td>
     </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
     }).join('')}</tbody>
@@ -19264,6 +19278,13 @@ async function openVoucherReceiptModal(invId, invoiceNumber, workerName) {
     container.innerHTML = '<div style="font-size:.82rem;color:var(--gray-400);padding:.5rem 0">暂无付款凭证</div>';
   }
   document.getElementById('voucherReceiptModal').style.display = 'flex';
+}
+
+function openVoucherPdf(invId) {
+  const url = `/api/admin/contractor-invoices/${invId}/voucher-pdf`;
+  document.getElementById('voucherPdfFrame').src = url;
+  document.getElementById('voucherPdfNewTab').href = url;
+  document.getElementById('voucherPdfModal').style.display = 'flex';
 }
 
 function closeVoucherReceiptModal() {
