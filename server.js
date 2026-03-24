@@ -1740,7 +1740,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_signed_at DATETIME','sent_by TEXT DEFAULT \'\'',
  'expenses REAL DEFAULT 0','job_id INTEGER DEFAULT 0','job_title TEXT DEFAULT \'\'','service_type TEXT DEFAULT \'\'','confirmed INTEGER DEFAULT 0',
  'source TEXT DEFAULT \'\'',
- 'voucher_receipt TEXT DEFAULT \'\''
+ 'voucher_receipt TEXT DEFAULT \'\'',
+ 'voucher_confirmed INTEGER DEFAULT 0'
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 // ─── App Settings (feature flags, portal config) ───
@@ -9783,6 +9784,7 @@ app.post('/api/admin/contractor-invoices/:id/voucher-receipts', requireAdmin, re
   try {
     const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    if (inv.voucher_confirmed) return res.status(400).json({ error: '凭证已确认，无法修改' });
     if (!req.files || !req.files.length) return res.status(400).json({ error: '请选择文件' });
     let existing = [];
     try { existing = JSON.parse(inv.voucher_receipt || '[]'); } catch { if (inv.voucher_receipt) existing = [{ filename: inv.voucher_receipt, original_name: inv.voucher_receipt }]; }
@@ -9815,8 +9817,9 @@ app.get('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', require
 // Admin: delete a single voucher receipt
 app.delete('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   try {
-    const inv = db.prepare('SELECT voucher_receipt FROM contractor_invoices WHERE id=?').get(req.params.id);
+    const inv = db.prepare('SELECT voucher_receipt, voucher_confirmed FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Not found' });
+    if (inv.voucher_confirmed) return res.status(400).json({ error: '凭证已确认，无法删除' });
     let receipts = [];
     try { receipts = JSON.parse(inv.voucher_receipt || '[]'); } catch { receipts = []; }
     const idx = receipts.findIndex(r => r.filename === req.params.filename);
@@ -9833,6 +9836,22 @@ app.delete('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', requ
   }
 });
 
+// Admin: confirm voucher (lock it as read-only)
+app.post('/api/admin/contractor-invoices/:id/voucher-confirm', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const inv = db.prepare('SELECT voucher_receipt, voucher_confirmed FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    let receipts = [];
+    try { receipts = JSON.parse(inv.voucher_receipt || '[]'); } catch {}
+    if (!receipts.length) return res.status(400).json({ error: '请先上传付款凭证' });
+    db.prepare('UPDATE contractor_invoices SET voucher_confirmed=1 WHERE id=?').run(req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[Voucher Confirm]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Admin: generate PDF for payment voucher
 app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, res) => {
   try {
@@ -9841,12 +9860,11 @@ app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, re
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
     const workerName = inv.worker_name || inv.worker_username || 'N/A';
     const companyName = getCompanySignerName();
-    // Use FreeSans for CJK support (PDFKit cannot subset .ttc files)
-    const cjkFontPath = '/usr/share/fonts/truetype/freefont/FreeSans.ttf';
-    const cjkBoldPath = '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf';
-    const hasCjk = fs.existsSync(cjkFontPath) && fs.existsSync(cjkBoldPath);
+    // Use IPA Gothic font for CJK support (FreeSans doesn't cover Chinese characters)
+    const cjkFontPath = '/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf';
+    const hasCjk = fs.existsSync(cjkFontPath);
     const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
-    if (hasCjk) { doc.registerFont('CJK', cjkFontPath); doc.registerFont('CJKB', cjkBoldPath); }
+    if (hasCjk) { doc.registerFont('CJK', cjkFontPath); doc.registerFont('CJKB', cjkFontPath); }
     const fontR = hasCjk ? 'CJK' : 'Helvetica';
     const fontB = hasCjk ? 'CJKB' : 'Helvetica-Bold';
     const buffers = [];
