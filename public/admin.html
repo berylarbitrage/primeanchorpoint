@@ -19550,7 +19550,7 @@ async function openVoucherReceiptModal(invId, invoiceNumber, workerName) {
 
 function openVoucherPdf(invId) {
   const url = `/api/admin/contractor-invoices/${invId}/voucher-pdf`;
-  document.getElementById('voucherPdfFrame').src = url;
+  document.getElementById('voucherPdfFrame').src = url + '#toolbar=1&navpanes=0&scrollbar=1';
   document.getElementById('voucherPdfNewTab').href = url;
   document.getElementById('voucherPdfModal').style.display = 'flex';
 }
