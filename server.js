@@ -9860,9 +9860,13 @@ app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, re
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
     const workerName = inv.worker_name || inv.worker_username || 'N/A';
     const companyName = getCompanySignerName();
-    // Use IPA Gothic font for CJK support (FreeSans doesn't cover Chinese characters)
-    const cjkFontPath = '/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf';
-    const hasCjk = fs.existsSync(cjkFontPath);
+    // Use bundled IPA Gothic font for CJK support, with system fallbacks
+    const cjkFontPath = [
+      path.join(__dirname, 'fonts', 'ipag.ttf'),
+      '/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf',
+      '/usr/share/fonts/truetype/fonts-japanese-gothic.ttf',
+    ].find(p => fs.existsSync(p));
+    const hasCjk = !!cjkFontPath;
     const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
     if (hasCjk) { doc.registerFont('CJK', cjkFontPath); doc.registerFont('CJKB', cjkFontPath); }
     const fontR = hasCjk ? 'CJK' : 'Helvetica';
