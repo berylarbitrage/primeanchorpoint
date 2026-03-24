@@ -9760,7 +9760,21 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
 });
 
 /// Admin: upload voucher receipt photos (multiple)
-app.post('/api/admin/contractor-invoices/:id/voucher-receipts', requireAdmin, requireRole('admin', 'staff'), upload.array('receipts', 20), (req, res) => {
+const voucherReceiptUpload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `vr-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /jpg|jpeg|png|gif|webp|pdf/.test(path.extname(file.originalname).toLowerCase());
+    cb(null, ok);
+  }
+});
+app.post('/api/admin/contractor-invoices/:id/voucher-receipts', requireAdmin, requireRole('admin', 'staff'), voucherReceiptUpload.array('receipts', 20), (req, res) => {
   try {
     const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
