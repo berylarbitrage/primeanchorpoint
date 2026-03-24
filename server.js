@@ -1738,7 +1738,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
 // Add DocuSeal columns to contractor_invoices
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_signed_at DATETIME','sent_by TEXT DEFAULT \'\'',
  'expenses REAL DEFAULT 0','job_id INTEGER DEFAULT 0','job_title TEXT DEFAULT \'\'','service_type TEXT DEFAULT \'\'','confirmed INTEGER DEFAULT 0',
- 'source TEXT DEFAULT \'\''
+ 'source TEXT DEFAULT \'\'',
+ 'voucher_receipt TEXT DEFAULT \'\''
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 // ─── App Settings (feature flags, portal config) ───
@@ -9756,6 +9757,34 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
     console.error('[Create Voucher]', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+/// Admin: upload voucher receipt photo
+app.post('/api/admin/contractor-invoices/:id/voucher-receipt', requireAdmin, requireRole('admin', 'staff'), upload.single('receipt'), (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    if (!req.file) return res.status(400).json({ error: '请选择文件' });
+    // Delete old receipt if exists
+    if (inv.voucher_receipt) {
+      const oldPath = path.join(uploadsDir, inv.voucher_receipt);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+    db.prepare('UPDATE contractor_invoices SET voucher_receipt=? WHERE id=?').run(req.file.filename, req.params.id);
+    res.json({ success: true, filename: req.file.filename });
+  } catch (e) {
+    console.error('[Voucher Receipt Upload]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: view voucher receipt
+app.get('/api/admin/contractor-invoices/:id/voucher-receipt', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT voucher_receipt FROM contractor_invoices WHERE id=?').get(req.params.id);
+  if (!inv || !inv.voucher_receipt) return res.status(404).json({ error: 'No receipt' });
+  const filePath = path.join(uploadsDir, inv.voucher_receipt);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+  res.sendFile(filePath);
 });
 
 // Admin: preview the contractor invoice with pre-filled data (HTML rendering)
