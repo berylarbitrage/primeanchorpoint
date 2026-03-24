@@ -3168,6 +3168,31 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div style="font-size:.78rem;color:var(--gray-400);margin-top:.3rem">公司预填金额，承包商只需签字确认。</div>
   </div>
+  <div id="invPaymentInfoSection" style="display:none;margin:.5rem 0">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">付款方式 Payment Method：</label>
+        <select id="invSendPaymentMethod" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+          <option value="">-- 选择 --</option>
+          <option value="ACH">ACH</option>
+          <option value="Zelle">Zelle</option>
+          <option value="Check">Check</option>
+          <option value="Cash">Cash</option>
+          <option value="Wire">Wire</option>
+          <option value="Venmo">Venmo</option>
+          <option value="PayPal">PayPal</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">付款日期 Payment Date：</label>
+        <input type="date" id="invSendPaymentDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">参考编号 Reference No.：</label>
+        <input id="invSendPaymentRef" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="转账编号/支票号">
+      </div>
+    </div>
+  </div>
   <div id="invSendStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
   <div id="invFlowHint" style="margin:.75rem 0;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e">
     <b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。
@@ -19229,20 +19254,24 @@ function setInvMode(mode) {
   const dsFields = document.getElementById('invDocuSealFields');
   const previewBtn = document.getElementById('invPreviewBtn');
   const sendBtn = document.getElementById('invSendBtn');
+  const payInfoSec = document.getElementById('invPaymentInfoSection');
   if (mode === 'voucher') {
     amtSec.style.display = '';
+    payInfoSec.style.display = '';
     dsFields.style.display = 'none';
     previewBtn.style.display = 'none';
     sendBtn.textContent = '💾 创建付款凭证';
     hint.innerHTML = '<b>付款凭证：</b>公司内部记录已付款项，不发送给承包商签字。直接保存为已完成的发票记录。';
   } else if (mode === 'company') {
     amtSec.style.display = '';
+    payInfoSec.style.display = 'none';
     dsFields.style.display = '';
     previewBtn.style.display = '';
     sendBtn.textContent = '📤 發送發票';
     hint.innerHTML = '<b>流程：</b>Admin填写服务周期、日期、服务内容和金额后点击「发送」，承包商收到邮件+短信通知 → 确认金额 → 签字 → 提交回来待审核。';
   } else {
     amtSec.style.display = 'none';
+    payInfoSec.style.display = 'none';
     dsFields.style.display = '';
     previewBtn.style.display = '';
     sendBtn.textContent = '📤 發送發票';
@@ -19267,6 +19296,9 @@ function openInvSendModal() {
   document.getElementById('invSendServiceDesc').value = '';
   document.getElementById('invSendAmount').value = '';
   document.getElementById('invSendReimbursable').value = '';
+  document.getElementById('invSendPaymentMethod').value = '';
+  document.getElementById('invSendPaymentDate').value = '';
+  document.getElementById('invSendPaymentRef').value = '';
   setInvMode('contractor');
   document.querySelector('input[name="invMode"][value="contractor"]').checked = true;
   document.getElementById('invPreviewSection').style.display = 'none';
@@ -19301,11 +19333,17 @@ async function doSendInvoice() {
   // Voucher mode: direct save without DocuSeal
   if (_invMode === 'voucher') {
     const total = (parseFloat(quotedAmount) || 0) + (parseFloat(reimbursableAmount) || 0);
-    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
+    const _pm = document.getElementById('invSendPaymentMethod').value;
+    const _pd = document.getElementById('invSendPaymentDate').value;
+    const _pr = document.getElementById('invSendPaymentRef').value.trim();
+    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}${_pm ? '\n付款方式: ' + _pm : ''}${_pd ? '\n付款日期: ' + _pd : ''}${_pr ? '\n参考编号: ' + _pr : ''}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
     const btn = document.getElementById('invSendBtn');
     btn.disabled = true; btn.textContent = '创建中…';
+    const paymentMethod = document.getElementById('invSendPaymentMethod').value;
+    const paymentDate = document.getElementById('invSendPaymentDate').value;
+    const paymentRef = document.getElementById('invSendPaymentRef').value.trim();
     const r = await api('/admin/contractor-invoices/create-voucher', {
-      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0' })
+      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0', payment_method: paymentMethod, payment_date: paymentDate, payment_reference: paymentRef })
     });
     btn.disabled = false; btn.textContent = '💾 创建付款凭证';
     if (r && r.success) {

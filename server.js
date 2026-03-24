@@ -1741,7 +1741,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
  'expenses REAL DEFAULT 0','job_id INTEGER DEFAULT 0','job_title TEXT DEFAULT \'\'','service_type TEXT DEFAULT \'\'','confirmed INTEGER DEFAULT 0',
  'source TEXT DEFAULT \'\'',
  'voucher_receipt TEXT DEFAULT \'\'',
- 'voucher_confirmed INTEGER DEFAULT 0'
+ 'voucher_confirmed INTEGER DEFAULT 0',
+ 'payment_date TEXT DEFAULT \'\'',
+ 'payment_reference TEXT DEFAULT \'\''
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 // ─── App Settings (feature flags, portal config) ───
@@ -9739,7 +9741,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
 // Admin: create payment voucher (no DocuSeal, direct record)
 app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   try {
-    const { worker_account_id, service_period_start, service_period_end, invoice_date, service_description, quoted_amount, reimbursable_amount } = req.body;
+    const { worker_account_id, service_period_start, service_period_end, invoice_date, service_description, quoted_amount, reimbursable_amount, payment_method, payment_date, payment_reference } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
     if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务周期' });
     if (!service_description) return res.status(400).json({ error: '请填写服务内容描述' });
@@ -9752,9 +9754,9 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
     const total = (parseFloat(quoted_amount) || 0) + (parseFloat(reimbursable_amount) || 0);
     const sentBy = req.session?.username || 'admin';
     db.prepare(`INSERT INTO contractor_invoices
-      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, source, sent_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, todayDate, service_description, service_period_start || '', service_period_end || '', total, 'approved', 'voucher', sentBy);
+      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, source, sent_by, payment_method, payment_date, payment_reference)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(worker_account_id, invoiceNumber, todayDate, service_description, service_period_start || '', service_period_end || '', total, 'approved', 'voucher', sentBy, payment_method || '', payment_date || '', payment_reference || '');
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'approved', `付款凭证 ${invoiceNumber} — $${total.toFixed(2)}`);
@@ -9877,17 +9879,28 @@ app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, re
       res.send(pdfBuf);
     });
     // Header
-    doc.fontSize(18).font(fontB).text('PAYMENT VOUCHER', { align: 'center' });
-    doc.fontSize(10).font(fontR).text('\u4ED8\u6B3E\u51ED\u8BC1', { align: 'center' });
+    doc.fontSize(18).font(fontB).text('CONTRACTOR PAYMENT VOUCHER', { align: 'center' });
+    doc.fontSize(10).font(fontR).text('\u627F\u5305\u5546\u4ED8\u6B3E\u51ED\u8BC1', { align: 'center' });
     doc.moveDown(1.5);
-    // Invoice info
-    doc.fontSize(10).font(fontB).text('Invoice #: ', { continued: true }).font(fontR).text(inv.invoice_number);
-    doc.font(fontB).text('Date: ', { continued: true }).font(fontR).text(inv.invoice_date || 'N/A');
-    doc.font(fontB).text('Company: ', { continued: true }).font(fontR).text(companyName);
+    // Voucher info
+    doc.fontSize(10).font(fontB).text('Voucher No. / \u51ED\u8BC1\u7F16\u53F7: ', { continued: true }).font(fontR).text(inv.invoice_number);
+    doc.font(fontB).text('Date / \u65E5\u671F: ', { continued: true }).font(fontR).text(inv.invoice_date || 'N/A');
+    doc.font(fontB).text('Company / \u516C\u53F8: ', { continued: true }).font(fontR).text(companyName);
     doc.moveDown(0.8);
     // Contractor info
     doc.font(fontB).text('Contractor / \u627F\u5305\u5546: ', { continued: true }).font(fontR).text(workerName);
     doc.font(fontB).text('Service Period / \u670D\u52A1\u5468\u671F: ', { continued: true }).font(fontR).text(`${inv.service_period_start || 'N/A'} ~ ${inv.service_period_end || 'N/A'}`);
+    doc.moveDown(0.8);
+    // Payment info
+    if (inv.payment_method) {
+      doc.font(fontB).text('Payment Method / \u4ED8\u6B3E\u65B9\u5F0F: ', { continued: true }).font(fontR).text(inv.payment_method);
+    }
+    if (inv.payment_reference) {
+      doc.font(fontB).text('Reference No. / \u53C2\u8003\u7F16\u53F7: ', { continued: true }).font(fontR).text(inv.payment_reference);
+    }
+    if (inv.payment_date) {
+      doc.font(fontB).text('Payment Date / \u4ED8\u6B3E\u65E5\u671F: ', { continued: true }).font(fontR).text(inv.payment_date);
+    }
     doc.moveDown(0.8);
     // Service description
     doc.font(fontB).text('Service Description / \u670D\u52A1\u5185\u5BB9:');
@@ -9922,11 +9935,11 @@ app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, re
     doc.fontSize(10);
     doc.moveDown(3);
     // Footer
-    doc.font(fontR).fillColor('#888').text('This payment voucher is generated by the company as a record of payment made to the contractor.', 50, doc.y, { align: 'center', width: 500 });
-    doc.text('\u6B64\u4ED8\u6B3E\u51ED\u8BC1\u7531\u516C\u53F8\u751F\u6210\uFF0C\u4F5C\u4E3A\u5DF2\u5411\u627F\u5305\u5546\u4ED8\u6B3E\u7684\u8BB0\u5F55\u3002', { align: 'center', width: 500 });
+    doc.font(fontR).fillColor('#888').text('This payment voucher is generated by the company as an internal record of payment made to the contractor. It is not an invoice issued by the contractor.', 50, doc.y, { align: 'center', width: 500 });
+    doc.text('\u672C\u4ED8\u6B3E\u51ED\u8BC1\u7531\u516C\u53F8\u751F\u6210\uFF0C\u4EC5\u4F5C\u4E3A\u516C\u53F8\u5411\u627F\u5305\u5546\u4ED8\u6B3E\u7684\u5185\u90E8\u8BB0\u5F55\uFF0C\u5E76\u975E\u627F\u5305\u5546\u81EA\u884C\u5F00\u5177\u7684\u53D1\u7968\u3002', { align: 'center', width: 500 });
     doc.moveDown(1.5);
-    doc.fillColor('#333').text(`Created by: ${inv.sent_by || 'admin'}`, 50);
-    doc.text(`Created at: ${inv.created_at || 'N/A'}`);
+    doc.fillColor('#333').text(`Prepared by / \u7F16\u5236\u4EBA: ${inv.sent_by || 'admin'}`, 50);
+    doc.text(`Created at / \u521B\u5EFA\u65F6\u95F4: ${inv.created_at || 'N/A'}`);
     doc.end();
   } catch (e) {
     console.error('[Voucher PDF]', e.message);
