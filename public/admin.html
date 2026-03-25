@@ -11435,7 +11435,8 @@ function renderEmployees(list) {
     <td style="font-size:.85rem;white-space:nowrap">${payLabel}</td>
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
-    <td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" style="background:#fffbeb;color:#b45309;border:1px solid #fcd34d;font-size:.78rem;padding:.22rem .55rem;margin-right:3px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 入职</button>
       <button class="emp-action-btn" onclick='openEmpActionMenu(event,${e.id},"${esc(e.first_name)} ${esc(e.last_name)}",${e.status!=='terminated' && USER_ROLE==='admin'})' title="操作">⋯</button>
     </td>
   </tr>`}).join('') : '<tr><td colspan="7" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
