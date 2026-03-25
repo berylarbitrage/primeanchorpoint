@@ -10329,7 +10329,9 @@ app.patch('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin
 app.get('/api/admin/contractor-invoices/:id/edit-history', requireAdmin, (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM voucher_edit_history WHERE invoice_id=? ORDER BY changed_at DESC').all(req.params.id);
-    res.json(rows);
+    const inv = db.prepare(`SELECT ci.*, wa.name as worker_name, wa.username as worker_username
+      FROM contractor_invoices ci LEFT JOIN worker_accounts wa ON ci.worker_account_id=wa.id WHERE ci.id=?`).get(req.params.id);
+    res.json({ rows, invoice: inv || null });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }

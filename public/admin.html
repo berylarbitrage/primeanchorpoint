@@ -20079,7 +20079,10 @@ async function openVoucherHistoryModal(invId, invoiceNumber) {
   const el = document.getElementById('vouHistoryContent');
   el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:1rem">加载中…</div>';
   document.getElementById('voucherHistoryModal').style.display = 'flex';
-  const rows = await api(`/admin/contractor-invoices/${invId}/edit-history`);
+  const resp = await api(`/admin/contractor-invoices/${invId}/edit-history`);
+  // Support both old (array) and new ({rows, invoice}) response format
+  const rows = Array.isArray(resp) ? resp : (resp.rows || []);
+  const inv = Array.isArray(resp) ? null : (resp.invoice || null);
   if (!rows || !rows.length) {
     el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:2rem">暂无修改记录</div>';
     return;
@@ -20089,6 +20092,24 @@ async function openVoucherHistoryModal(invId, invoiceNumber) {
   // Separate action events and field edits
   const actionRows = rows.filter(h => isAction(h.field_name));
   const editRows = rows.filter(h => !isAction(h.field_name));
+  // Helper: build detail lines for create action from invoice data
+  function buildCreateDetails(inv) {
+    if (!inv) return '';
+    const lines = [];
+    const wn = inv.worker_name || inv.worker_username || '';
+    if (wn) lines.push(['承包商', wn]);
+    if (inv.service_description) lines.push(['服务内容', inv.service_description]);
+    if (inv.total_amount != null) lines.push(['金额', '$' + (+inv.total_amount).toFixed(2)]);
+    if (inv.invoice_date) lines.push(['发票日期', inv.invoice_date]);
+    if (inv.service_period_start || inv.service_period_end) lines.push(['服务周期', (inv.service_period_start||'') + ' ~ ' + (inv.service_period_end||'')]);
+    if (inv.payment_method) lines.push(['付款方式', inv.payment_method]);
+    if (inv.payment_date) lines.push(['付款日期', inv.payment_date]);
+    if (inv.payment_reference) lines.push(['参考编号', inv.payment_reference]);
+    if (!lines.length) return '';
+    return `<div style="margin-top:.35rem;padding:.4rem .6rem;background:#f9fafb;border-radius:6px;border:1px solid var(--gray-100);font-size:.78rem">
+      ${lines.map(([k,v]) => `<div style="display:flex;gap:.5rem;padding:.15rem 0"><span style="color:var(--gray-400);min-width:4.5em">${esc(k)}:</span><span style="color:var(--gray-700);font-weight:500">${esc(v)}</span></div>`).join('')}
+    </div>`;
+  }
   let html = '';
   // Action timeline
   if (actionRows.length) {
@@ -20096,11 +20117,16 @@ async function openVoucherHistoryModal(invId, invoiceNumber) {
       ${actionRows.map((h, i) => {
         const icon = actionIcons[h.field_name] || '📝';
         const dt = (h.changed_at || '').replace('T', ' ').replace(/\.\d+$/, '');
+        const isCreate = h.field_name === '创建付款凭证' || h.field_name === '创建';
+        // Check if detailed field entries already exist for this create action
+        const hasDetailFields = isCreate && editRows.some(e => e.changed_at === h.changed_at && ['承包商','服务内容','金额','发票日期','服务周期'].includes(e.field_name));
+        const detailHtml = (isCreate && !hasDetailFields) ? buildCreateDetails(inv) : '';
         return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.6rem 0;${i < actionRows.length-1 ? 'border-bottom:1px solid var(--gray-100)' : ''}">
           <div style="font-size:1.1rem;line-height:1;margin-top:.1rem">${icon}</div>
           <div style="flex:1">
             <div style="font-weight:600;font-size:.88rem">${esc(h.field_name)}</div>
             ${h.new_value ? `<div style="color:var(--gray-500);font-size:.8rem;margin-top:.1rem">${esc(h.new_value)}</div>` : ''}
+            ${detailHtml}
             <div style="color:var(--gray-400);font-size:.75rem;margin-top:.15rem">${dt}${h.changed_by ? ' · ' + esc(h.changed_by) : ''}</div>
           </div>
         </div>`;
