@@ -9790,9 +9790,17 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'approved', `付款凭证 ${invoiceNumber} — $${total.toFixed(2)}`);
-    // Log to voucher edit history
-    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
-      .run(insertedId, '创建付款凭证', '', `${invoiceNumber} — $${total.toFixed(2)}`, sentBy);
+    // Log to voucher edit history — detailed fields
+    const insH = db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)');
+    insH.run(insertedId, '创建付款凭证', '', `${invoiceNumber}`, sentBy);
+    insH.run(insertedId, '承包商', '', workerName, sentBy);
+    insH.run(insertedId, '服务内容', '', service_description, sentBy);
+    insH.run(insertedId, '金额', '', `$${total.toFixed(2)}` + (reimbursable_amount ? ` (报价: $${parseFloat(quoted_amount).toFixed(2)}, 报销: $${parseFloat(reimbursable_amount).toFixed(2)})` : ''), sentBy);
+    insH.run(insertedId, '发票日期', '', todayDate, sentBy);
+    if (service_period_start) insH.run(insertedId, '服务周期', '', `${service_period_start} ~ ${service_period_end}`, sentBy);
+    if (payment_method) insH.run(insertedId, '付款方式', '', payment_method, sentBy);
+    if (payment_date) insH.run(insertedId, '付款日期', '', payment_date, sentBy);
+    if (payment_reference) insH.run(insertedId, '参考编号', '', payment_reference, sentBy);
     res.json({ success: true, invoice_number: invoiceNumber, id: insertedId });
   } catch (e) {
     console.error('[Create Voucher]', e.message);
