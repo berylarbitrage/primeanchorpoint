@@ -11434,8 +11434,14 @@ function renderEmployees(list) {
     <td style="font-size:.85rem;white-space:nowrap">${payLabel}</td>
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
-    <td>
-      <button class="emp-action-btn" onclick='openEmpActionMenu(event,${e.id},"${esc(e.first_name)} ${esc(e.last_name)}",${e.status!=='terminated' && USER_ROLE==='admin'})' title="操作">⋯</button>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;font-size:.72rem;margin:1px" onclick='openEmpModal(${e.id})'>✏️ 编辑信息</button>
+      <button class="btn btn-sm" style="background:#fff7ed;color:#9A3412;border:1px solid #fed7aa;font-size:.72rem;margin:1px" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 安排职位</button>
+      <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin:1px" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>⭐ 评分</button>
+      <button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.72rem;margin:1px" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📎 发送材料链接</button>
+      <button class="btn btn-sm" style="background:#f5f3ff;color:#7c3aed;border:1px solid #c4b5fd;font-size:.72rem;margin:1px" onclick='openSendRegLinkModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📱 发送注册链接</button>
+      ${e.status!=='terminated' && USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='terminateEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🚪 办理离职</button>` : ''}
+      ${USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='deleteEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🗑️ 删除</button>` : ''}
     </td>
   </tr>`}).join('') : '<tr><td colspan="7" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
 }
