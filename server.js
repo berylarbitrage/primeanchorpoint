@@ -9640,7 +9640,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
     const langType = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'].includes(template_lang) ? template_lang : 'contractor_invoice';
     const templateId = getDsealConfigTemplateId(langType);
-    if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商發票模板，请先到 DocuSeal 模板管理中生成对应模板' });
+    if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商发票模板，请先到 DocuSeal 模板管理中生成对应模板' });
     const workerEmail = worker_email || w.email || `worker-${w.id}@placeholder.local`;
     const workerPhone = worker_phone || w.phone || '';
     const workerName = w.name || w.username || `Worker #${w.id}`;
@@ -9710,22 +9710,22 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const prefillTotal = company_prefill && quoted_amount ? ((parseFloat(quoted_amount) || 0) + (parseFloat(reimbursable_amount) || 0)) : 0;
     if (existingPreGen) {
       db.prepare(`UPDATE contractor_invoices SET invoice_date=?, service_description=?, service_period_start=?, service_period_end=?, total_amount=?, status='ds_pending', ds_envelope_id=?, ds_status='sent', sent_by=? WHERE id=?`)
-        .run(todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, submissionId, sentBy, existingPreGen.id);
+        .run(todayDate, serviceDescValue || '承包商发票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, submissionId, sentBy, existingPreGen.id);
     } else {
       db.prepare(`INSERT INTO contractor_invoices
         (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, 'ds_pending', submissionId, 'sent', sentBy);
+        .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商发票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, 'ds_pending', submissionId, 'sent', sentBy);
     }
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已發送承包商發票给 ${workerName}`);
+      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已发送承包商发票给 ${workerName}`);
     // Send SMS notification if phone number provided
     let smsSent = false, emailSent = true; // DocuSeal sends email automatically
     const warnings = [];
     if (workerPhone) {
       try {
-        smsSent = await sendSMS(workerPhone, `[Prime Anchor Point] ${workerName}，请查收并填写承包商發票 / Please check your email and complete the Contractor Invoice.\nReply STOP to opt out.`);
+        smsSent = await sendSMS(workerPhone, `[Prime Anchor Point] ${workerName}，请查收并填写承包商发票 / Please check your email and complete the Contractor Invoice.\nReply STOP to opt out.`);
       } catch(e) { console.error('[Invoice SMS]', e.message); }
       if (!smsSent) warnings.push('短信发送失败，请检查手机号');
     } else {
@@ -9757,10 +9757,11 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
       (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, source, sent_by, payment_method, payment_date, payment_reference)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(worker_account_id, invoiceNumber, todayDate, service_description, service_period_start || '', service_period_end || '', total, 'approved', 'voucher', sentBy, payment_method || '', payment_date || '', payment_reference || '');
+    const insertedId = db.prepare('SELECT last_insert_rowid() as id').get().id;
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'approved', `付款凭证 ${invoiceNumber} — $${total.toFixed(2)}`);
-    res.json({ success: true, invoice_number: invoiceNumber });
+    res.json({ success: true, invoice_number: invoiceNumber, id: insertedId });
   } catch (e) {
     console.error('[Create Voucher]', e.message);
     res.status(500).json({ error: e.message });
@@ -10066,7 +10067,7 @@ app.get('/api/admin/contractor-invoices/preview-template', requireAdmin, require
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   const langType = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'].includes(req.query.lang) ? req.query.lang : 'contractor_invoice';
   const templateId = getDsealConfigTemplateId(langType);
-  if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商發票模板，请先到 DocuSeal 模板管理中生成对应模板' });
+  if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商发票模板，请先到 DocuSeal 模板管理中生成对应模板' });
   try {
     const r = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
     if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
