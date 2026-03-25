@@ -1088,6 +1088,7 @@ tr:hover td{background:var(--sky-light)}
     <button class="emp-menu-item" id="empMenuDoc" style="color:#166534">📎 发送材料链接</button>
     <button class="emp-menu-item" id="empMenuFiles" style="color:#0369a1">📁 文件管理</button>
     <button class="emp-menu-item" id="empMenuRegLink" style="color:#7c3aed">📱 发送注册链接</button>
+    <button class="emp-menu-item" id="empMenuOnboard" style="color:#b45309">📂 入职</button>
     <div style="height:1px;background:var(--gray-200);margin:4px 0"></div>
     <button class="emp-menu-item" id="empMenuTerminate" style="color:#dc2626;display:none">🚪 办理离职</button>
     <button class="emp-menu-item" id="empMenuDelete" style="color:#dc2626;display:none">🗑️ 删除员工</button>
@@ -11473,8 +11474,19 @@ document.getElementById('empMenuRate').onclick     = () => { _closeEmpMenu(); op
 document.getElementById('empMenuDoc').onclick      = () => { _closeEmpMenu(); sendEmpDocLink(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuFiles').onclick    = () => { _closeEmpMenu(); openEmpFilesModal(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuRegLink').onclick  = () => { _closeEmpMenu(); openSendRegLinkModal(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuOnboard').onclick   = () => { _closeEmpMenu(); openEmpOnboarding(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuTerminate').onclick= () => { _closeEmpMenu(); terminateEmployee(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuDelete').onclick   = () => { _closeEmpMenu(); deleteEmployee(_empMenuCurrentId, _empMenuCurrentName); };
+
+// ── Employee Onboarding shortcut ──
+async function openEmpOnboarding(empId, empName) {
+  const emp = allEmployees.find(e => e.id === empId);
+  if (!emp || !emp.worker_account_id) {
+    showToast('该员工尚未关联工人账户，无法查看入职进度', 'error');
+    return;
+  }
+  openOnboardingModal(emp.worker_account_id, empName);
+}
 
 // ── Employee Files Management ──
 const EMP_FILE_TYPE_LABELS = {
