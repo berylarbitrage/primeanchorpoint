@@ -3213,7 +3213,17 @@ tr:hover td{background:var(--sky-light)}
         <input type="number" step="0.01" min="0" id="invSendReimbursable" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0.00">
       </div>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.3rem">公司预填金额，承包商只需签字确认。</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.5rem">
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工时 Hours：</label>
+        <input type="number" step="0.01" min="0" id="invSendHours" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0">
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">费率 Rate ($/hr)：</label>
+        <input type="number" step="0.01" min="0" id="invSendRate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0.00">
+      </div>
+    </div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.3rem">公司预填金额，承包商只需签字确认。工时和费率仅供内部记录，不显示在PDF中。</div>
   </div>
   <div id="invVoucherLangSection" style="display:none;margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">凭证语言 Voucher Language：</label>
@@ -19563,6 +19573,8 @@ function openInvSendModal() {
   document.getElementById('invSendServiceDesc').value = '';
   document.getElementById('invSendAmount').value = '';
   document.getElementById('invSendReimbursable').value = '';
+  document.getElementById('invSendHours').value = '';
+  document.getElementById('invSendRate').value = '';
   document.getElementById('invSendPaymentMethod').value = '';
   document.getElementById('invSendPaymentDate').value = '';
   document.getElementById('invSendPaymentRef').value = '';
@@ -19633,15 +19645,19 @@ async function doSendInvoice() {
     const _pm = document.getElementById('invSendPaymentMethod').value;
     const _pd = document.getElementById('invSendPaymentDate').value;
     const _pr = document.getElementById('invSendPaymentRef').value.trim();
-    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}${_pm ? '\n付款方式: ' + _pm : ''}${_pd ? '\n付款日期: ' + _pd : ''}${_pr ? '\n参考编号: ' + _pr : ''}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
+    const _hrs = document.getElementById('invSendHours').value;
+    const _rt = document.getElementById('invSendRate').value;
+    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}${_hrs ? '\n工时: ' + _hrs + ' hrs' : ''}${_rt ? '\n费率: $' + _rt + '/hr' : ''}${_pm ? '\n付款方式: ' + _pm : ''}${_pd ? '\n付款日期: ' + _pd : ''}${_pr ? '\n参考编号: ' + _pr : ''}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
     const btn = document.getElementById('invSendBtn');
     btn.disabled = true; btn.textContent = '创建中…';
     const paymentMethod = document.getElementById('invSendPaymentMethod').value;
     const paymentDate = document.getElementById('invSendPaymentDate').value;
     const paymentRef = document.getElementById('invSendPaymentRef').value.trim();
     const voucherLang = document.getElementById('invVoucherLang').value;
+    const invHours = document.getElementById('invSendHours').value;
+    const invRate = document.getElementById('invSendRate').value;
     const r = await api('/admin/contractor-invoices/create-voucher', {
-      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0', payment_method: paymentMethod, payment_date: paymentDate, payment_reference: paymentRef, voucher_lang: voucherLang })
+      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0', payment_method: paymentMethod, payment_date: paymentDate, payment_reference: paymentRef, voucher_lang: voucherLang, hours: invHours, rate: invRate })
     });
     btn.disabled = false; btn.textContent = '💾 创建付款凭证';
     if (r && r.success) {
@@ -20102,6 +20118,8 @@ async function openVoucherHistoryModal(invId, invoiceNumber) {
     if (inv.total_amount != null) lines.push(['金额', '$' + (+inv.total_amount).toFixed(2)]);
     if (inv.invoice_date) lines.push(['发票日期', inv.invoice_date]);
     if (inv.service_period_start || inv.service_period_end) lines.push(['服务周期', (inv.service_period_start||'') + ' ~ ' + (inv.service_period_end||'')]);
+    if (inv.hours_worked) lines.push(['工时', inv.hours_worked + ' hrs']);
+    if (inv.hourly_rate) lines.push(['费率', '$' + (+inv.hourly_rate).toFixed(2) + '/hr']);
     if (inv.payment_method) lines.push(['付款方式', inv.payment_method]);
     if (inv.payment_date) lines.push(['付款日期', inv.payment_date]);
     if (inv.payment_reference) lines.push(['参考编号', inv.payment_reference]);
