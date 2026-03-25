@@ -1086,6 +1086,7 @@ tr:hover td{background:var(--sky-light)}
     <button class="emp-menu-item" id="empMenuJob" style="color:#9A3412">📋 安排职位</button>
     <button class="emp-menu-item" id="empMenuRate" style="color:#0369a1">⭐ 员工评分</button>
     <button class="emp-menu-item" id="empMenuDoc" style="color:#166534">📎 发送材料链接</button>
+    <button class="emp-menu-item" id="empMenuFiles" style="color:#0369a1">📁 文件管理</button>
     <button class="emp-menu-item" id="empMenuRegLink" style="color:#7c3aed">📱 发送注册链接</button>
     <div style="height:1px;background:var(--gray-200);margin:4px 0"></div>
     <button class="emp-menu-item" id="empMenuTerminate" style="color:#dc2626;display:none">🚪 办理离职</button>
@@ -2878,6 +2879,51 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" onclick="closeModal('onboardingModal')">关闭</button>
   </div>
 </div></div>
+
+<!-- ════════════════════ EMPLOYEE FILES MODAL ════════════════════ -->
+<div class="modal-bg" id="empFilesModal" style="display:none" onclick="if(event.target===this)closeModal('empFilesModal')">
+  <div class="modal" style="max-width:680px;width:95vw;max-height:90vh;overflow-y:auto">
+    <h2 style="margin:0 0 .5rem">📁 文件管理 — <span id="empFilesWorkerName" style="color:var(--sky)"></span></h2>
+    <div id="empFilesContent" style="margin:.5rem 0"></div>
+    <!-- Upload new doc -->
+    <div style="border-top:1px solid var(--gray-200);padding-top:.75rem;margin-top:.75rem">
+      <div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem">上传新文件</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+        <div>
+          <label style="font-size:.78rem;color:var(--gray-500)">文件类型</label>
+          <select id="empFilesDocType" style="width:100%;padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <option value="w9">W-9</option>
+            <option value="ssn_card">SSN 卡</option>
+            <option value="visa">签证</option>
+            <option value="passport">护照</option>
+            <option value="green_card">绿卡</option>
+            <option value="ead_card">EAD 工卡</option>
+            <option value="drivers_license">驾照</option>
+            <option value="state_id">州 ID</option>
+            <option value="itin_letter">ITIN</option>
+            <option value="contract">合同</option>
+            <option value="other">其他</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.78rem;color:var(--gray-500)">编号 (可选)</label>
+          <input type="text" id="empFilesDocNumber" placeholder="如签证号、SSN末4位等" style="width:100%;padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="margin-bottom:.5rem">
+        <label style="font-size:.78rem;color:var(--gray-500)">备注 (可选)</label>
+        <input type="text" id="empFilesDocNotes" placeholder="备注信息" style="width:100%;padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;box-sizing:border-box">
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <input type="file" id="empFilesFileInput" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" style="flex:1;font-size:.82rem">
+        <button class="btn btn-green" id="empFilesUploadBtn" onclick="uploadEmpFile()" style="font-size:.85rem;white-space:nowrap">上传</button>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:.75rem">
+      <button class="btn" onclick="closeModal('empFilesModal')">关闭</button>
+    </div>
+  </div>
+</div>
 
 <!-- Onboarding Task Form Preview Modal -->
 <div class="modal-bg" id="onboardingPreviewModal" style="z-index:2000">
@@ -11425,9 +11471,110 @@ document.getElementById('empMenuEdit').onclick     = () => { _closeEmpMenu(); op
 document.getElementById('empMenuJob').onclick      = () => { _closeEmpMenu(); openAssignJobModal(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuRate').onclick     = () => { _closeEmpMenu(); openRatingModal(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuDoc').onclick      = () => { _closeEmpMenu(); sendEmpDocLink(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuFiles').onclick    = () => { _closeEmpMenu(); openEmpFilesModal(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuRegLink').onclick  = () => { _closeEmpMenu(); openSendRegLinkModal(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuTerminate').onclick= () => { _closeEmpMenu(); terminateEmployee(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuDelete').onclick   = () => { _closeEmpMenu(); deleteEmployee(_empMenuCurrentId, _empMenuCurrentName); };
+
+// ── Employee Files Management ──
+const EMP_FILE_TYPE_LABELS = {
+  w9: 'W-9', ssn_card: 'SSN 卡', visa: '签证', passport: '护照',
+  green_card: '绿卡', ead_card: 'EAD 工卡', drivers_license: '驾照',
+  state_id: '州 ID', itin_letter: 'ITIN', contract: '合同', other: '其他'
+};
+let _empFilesWorkerId = null, _empFilesEmpId = null;
+
+async function openEmpFilesModal(empId, empName) {
+  _empFilesEmpId = empId;
+  document.getElementById('empFilesWorkerName').textContent = empName;
+  document.getElementById('empFilesFileInput').value = '';
+  document.getElementById('empFilesDocNumber').value = '';
+  document.getElementById('empFilesDocNotes').value = '';
+  document.getElementById('empFilesDocType').value = 'w9';
+  // Find worker_account_id from employee data
+  const emp = allEmployees.find(e => e.id === empId);
+  _empFilesWorkerId = emp?.worker_account_id || null;
+  if (!_empFilesWorkerId) {
+    document.getElementById('empFilesContent').innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem 0">该员工尚未关联工人账户，无法管理文件。</div>';
+    document.getElementById('empFilesModal').style.display = 'flex';
+    return;
+  }
+  await loadEmpFiles();
+  document.getElementById('empFilesModal').style.display = 'flex';
+}
+
+async function loadEmpFiles() {
+  if (!_empFilesWorkerId) return;
+  const container = document.getElementById('empFilesContent');
+  container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem">加载中…</div>';
+  const docs = await api(`/admin/worker-accounts/${_empFilesWorkerId}/id-docs`);
+  if (!docs || !docs.length) {
+    container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem 0">暂无文件</div>';
+    return;
+  }
+  // Group by doc_type
+  const groups = {};
+  for (const d of docs) {
+    if (!groups[d.doc_type]) groups[d.doc_type] = [];
+    groups[d.doc_type].push(d);
+  }
+  container.innerHTML = Object.entries(groups).map(([type, items]) => {
+    const label = EMP_FILE_TYPE_LABELS[type] || type;
+    return `<div style="margin-bottom:.75rem">
+      <div style="font-weight:700;font-size:.85rem;color:#333;margin-bottom:.3rem;display:flex;align-items:center;gap:.4rem">
+        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--sky)"></span>
+        ${esc(label)}
+        <span style="font-weight:400;font-size:.75rem;color:var(--gray-400)">(${items.length})</span>
+      </div>
+      ${items.map(d => `<div style="display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem;background:#fafafa;border:1px solid var(--gray-100);border-radius:6px;margin-bottom:.25rem">
+        <span style="font-size:.82rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${d.file_name ? `<a href="/api/admin/worker-accounts/${_empFilesWorkerId}/id-docs/${d.id}/file" target="_blank" style="color:var(--sky);text-decoration:none">${esc(d.file_name)}</a>` : '<span style="color:var(--gray-400)">无文件</span>'}
+        </span>
+        ${d.doc_number ? `<span style="font-size:.72rem;color:var(--gray-500);background:#f3f4f6;padding:1px 6px;border-radius:4px">${esc(d.doc_number)}</span>` : ''}
+        ${d.notes ? `<span style="font-size:.72rem;color:var(--gray-400)" title="${esc(d.notes)}">📝</span>` : ''}
+        <span style="font-size:.68rem;color:var(--gray-400)">${(d.created_at||'').slice(0,10)}</span>
+        <button onclick="deleteEmpFile(${d.id})" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:.78rem;padding:2px 4px" title="删除">✕</button>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function uploadEmpFile() {
+  if (!_empFilesWorkerId) return showToast('未关联工人账户', 'error');
+  const fileInput = document.getElementById('empFilesFileInput');
+  const file = fileInput.files[0];
+  if (!file) return showToast('请选择文件', 'error');
+  const btn = document.getElementById('empFilesUploadBtn');
+  btn.disabled = true; btn.textContent = '上传中…';
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('doc_type', document.getElementById('empFilesDocType').value);
+  fd.append('doc_number', document.getElementById('empFilesDocNumber').value);
+  fd.append('notes', document.getElementById('empFilesDocNotes').value);
+  try {
+    const r = await fetch(`/api/admin/worker-accounts/${_empFilesWorkerId}/id-docs`, {
+      method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${TOKEN}` }
+    });
+    const j = await r.json();
+    if (j.success) {
+      showToast('文件已上传');
+      fileInput.value = '';
+      document.getElementById('empFilesDocNumber').value = '';
+      document.getElementById('empFilesDocNotes').value = '';
+      await loadEmpFiles();
+    } else showToast(j.error || '上传失败', 'error');
+  } catch (e) { showToast('上传失败: ' + e.message, 'error'); }
+  btn.disabled = false; btn.textContent = '上传';
+}
+
+async function deleteEmpFile(docId) {
+  if (!confirm('确认删除此文件？')) return;
+  const r = await api(`/admin/worker-accounts/${_empFilesWorkerId}/id-docs/${docId}`, { method: 'DELETE' });
+  if (r?.success) {
+    showToast('已删除');
+    await loadEmpFiles();
+  } else showToast(r?.error || '删除失败', 'error');
+}
 
 // ── Send Registration Link modal ──
 function openSendRegLinkModal(empId, empName) {
