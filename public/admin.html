@@ -565,6 +565,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
       <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
       <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商发票</a>
+      <a onclick="showTab('ts-emp-invoice-history')" data-tab="ts-emp-invoice-history" data-role="admin,staff">📜 承包商历史发票</a>
     </div>
   </div>
 
@@ -1306,6 +1307,22 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="card">
     <div id="empInvoiceListWrap">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ CONTRACTOR INVOICE HISTORY TAB ════════════════════ -->
+<div id="tab-ts-emp-invoice-history" style="display:none">
+  <div class="top">
+    <h1>📜 承包商历史发票</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadEmpInvoiceHistoryTab()">刷新</button>
+    </div>
+  </div>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">已完成分红的承包商发票归档记录。</p>
+  <div class="card">
+    <div id="empInvoiceHistoryListWrap">
       <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
     </div>
   </div>
@@ -6555,7 +6572,7 @@ const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
-  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
   approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
   'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
@@ -6591,6 +6608,7 @@ function showTab(t) {
   if (t === 'ts-history')  loadTsHistory();
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
   if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
+  if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -19493,7 +19511,7 @@ async function loadEmpInvoiceTab() {
       <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">${r.status === 'ds_pending' ? '<span style="color:var(--gray-400);font-weight:400">待填写</span>' : '$'+(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
       <td style="padding:.5rem;text-align:center">${vConfirmed ? '<span style="padding:2px 8px;border-radius:4px;background:#dcfce7;color:#15803d;font-size:.72rem;font-weight:600">已确认</span>' : STATUS_BADGE[r.status]||r.status}</td>
       <td style="padding:.5rem;text-align:center;white-space:nowrap">
-        ${vConfirmed ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}',true)">📎 查看凭证</button> <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button> <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : `
+        ${vConfirmed ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}',true)">📎 查看凭证</button> <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="markDividendDistributed(${r.id},'${esc(r.invoice_number)}')">💰 已分红</button> <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : `
         ${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}
         ${r.status === 'submitted' ? `
           <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
@@ -19508,10 +19526,71 @@ async function loadEmpInvoiceTab() {
         ` : `${r.source !== 'voucher' ? `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>` : ''}`}
         ${r.source === 'voucher' ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>${r.voucher_confirmed !== 1 ? ` <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button>` : ''}` : ''}
         <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>
+        ${r.status === 'approved' || r.source === 'voucher' ? `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="markDividendDistributed(${r.id},'${esc(r.invoice_number)}')">💰 已分红</button>` : ''}
         <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>
         `}
       </td>
     </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+// ── Mark invoice as dividend distributed ──
+async function markDividendDistributed(id, invNum) {
+  if (!confirm(`确定将发票 ${invNum} 标记为已分红？\n标记后将移至历史发票页面。`)) return;
+  try {
+    const r = await api(`/admin/contractor-invoices/${id}/mark-dividend`, { method: 'POST' });
+    if (r.ok) { showToast('已标记为已分红'); loadEmpInvoiceTab(); } else throw new Error(r.error);
+  } catch(e) { alert('操作失败: ' + e.message); }
+}
+
+// ── Undo dividend distributed ──
+async function undoDividendDistributed(id, invNum) {
+  if (!confirm(`确定将发票 ${invNum} 撤回分红标记？\n将移回承包商发票页面。`)) return;
+  try {
+    const r = await api(`/admin/contractor-invoices/${id}/undo-dividend`, { method: 'POST' });
+    if (r.ok) { showToast('已撤回分红标记'); loadEmpInvoiceHistoryTab(); } else throw new Error(r.error);
+  } catch(e) { alert('操作失败: ' + e.message); }
+}
+
+// ── Load historical (dividend distributed) invoices ──
+async function loadEmpInvoiceHistoryTab() {
+  const el = document.getElementById('empInvoiceHistoryListWrap');
+  el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
+  const rows = await api('/admin/contractor-invoices-history');
+  if (!Array.isArray(rows) || !rows.length) {
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无历史发票记录</div>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
+    <thead><tr style="border-bottom:2px solid var(--gray-200)">
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">Invoice #</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">工人</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">日期</th>
+      <th style="padding:.4rem .5rem;text-align:left">服务描述</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">来源</th>
+      <th style="padding:.4rem .5rem;text-align:right;white-space:nowrap">金额</th>
+      <th style="padding:.4rem .5rem;text-align:center">分红时间</th>
+      <th style="padding:.4rem .5rem;text-align:center">操作</th>
+    </tr></thead>
+    <tbody>${rows.map(r => {
+      const isDs = r.ds_envelope_id && r.ds_envelope_id !== '';
+      const source = r.source === 'voucher' ? '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:.72rem;font-weight:600">付款凭证</span>' : isDs ? '<span style="padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:600">DocuSeal</span>' : '<span style="padding:1px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:.72rem;font-weight:600">手动提交</span>';
+      return `<tr style="border-bottom:1px solid var(--gray-100);background:#f0fdf4">
+      <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
+      <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}</td>
+      <td style="padding:.5rem;white-space:nowrap;color:var(--gray-500)">${esc(r.invoice_date)}</td>
+      <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.service_description)}">${esc(r.service_description)}</td>
+      <td style="padding:.5rem;white-space:nowrap">${source}</td>
+      <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">$${(+r.total_amount).toFixed(2)}</td>
+      <td style="padding:.5rem;text-align:center;font-size:.75rem;color:var(--gray-500)">${r.dividend_distributed_at ? r.dividend_distributed_at.slice(0,10) : '—'}${r.dividend_distributed_by ? `<br><span style="font-size:.7rem">by ${esc(r.dividend_distributed_by)}</span>` : ''}</td>
+      <td style="padding:.5rem;text-align:center;white-space:nowrap">
+        ${r.source === 'voucher' ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> ` : ''}
+        ${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button> ` : ''}
+        <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>
+        <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="undoDividendDistributed(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回分红</button>
+      </td>
+    </tr>`;
     }).join('')}</tbody>
   </table>`;
 }
