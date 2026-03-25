@@ -19909,8 +19909,8 @@ function setInvMode(mode) {
 function openInvSendModal() {
   const workerId = document.getElementById('empInvWorkerSelect').value;
   if (!workerId) return showToast('请先搜索并选择承包商', 'error');
-  const w = _empInvWorkersCache.find(w => w.id === parseInt(workerId));
-  const workerName = w ? (w.name || w.username) : '';
+  const wk = _empInvWorkersCache.find(w => w.id === parseInt(workerId));
+  const workerName = wk ? (wk.name || wk.username) : '';
   _invSendWorkerId = parseInt(workerId);
   _invSendWorkerName = workerName;
   _preGeneratedInvoiceNumber = null; // Reset pre-generated number when worker changes
