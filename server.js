@@ -764,6 +764,39 @@ db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
   UNIQUE(sheet_id, user_id, vote_type)
 )`);
 
+// ── Contractor Invoice Batches (for dividend workflow) ──
+db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoice_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_name TEXT NOT NULL,
+  period_label TEXT DEFAULT '',
+  total_amount REAL DEFAULT 0,
+  invoice_count INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'dividend_pending',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoice_batch_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL,
+  invoice_id INTEGER NOT NULL,
+  FOREIGN KEY (batch_id) REFERENCES contractor_invoice_batches(id),
+  FOREIGN KEY (invoice_id) REFERENCES contractor_invoices(id),
+  UNIQUE(batch_id, invoice_id)
+)`);
+
+// Dividend votes for invoice batches (reuse same pattern as timesheet)
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_batch_votes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  vote_type TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (batch_id) REFERENCES contractor_invoice_batches(id),
+  FOREIGN KEY (user_id) REFERENCES admin_users(id),
+  UNIQUE(batch_id, user_id, vote_type)
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS employee_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   employee_id INTEGER NOT NULL,
@@ -1747,7 +1780,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
  'voucher_confirmed INTEGER DEFAULT 0',
  'payment_date TEXT DEFAULT \'\'',
  'payment_reference TEXT DEFAULT \'\'',
- 'voucher_lang TEXT DEFAULT \'bilingual\''
+ 'voucher_lang TEXT DEFAULT \'bilingual\'',
+ 'dividend_distributed INTEGER DEFAULT 0',
+ 'dividend_distributed_at TEXT DEFAULT \'\'',
+ 'dividend_distributed_by TEXT DEFAULT \'\''
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 db.exec(`CREATE TABLE IF NOT EXISTS voucher_edit_history (
@@ -7033,6 +7069,40 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
+// Ensure a worker account exists for an employee (auto-create if needed for onboarding)
+app.post('/api/admin/employees/:id/ensure-worker-account', requireAdmin, (req, res) => {
+  const empId = parseInt(req.params.id);
+  const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(empId);
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+  const existing = db.prepare('SELECT id FROM worker_accounts WHERE employee_id=? AND active=1').get(empId);
+  if (existing) return res.json({ success: true, worker_account_id: existing.id });
+  // Also check inactive accounts linked to this employee and reactivate
+  const inactive = db.prepare('SELECT id FROM worker_accounts WHERE employee_id=?').get(empId);
+  if (inactive) {
+    db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(inactive.id);
+    return res.json({ success: true, worker_account_id: inactive.id });
+  }
+  // Auto-create: use email or generate unique username
+  let username = emp.email || `emp_${emp.employee_id || empId}`;
+  const dup = db.prepare('SELECT id, employee_id FROM worker_accounts WHERE username=?').get(username);
+  if (dup) {
+    // If duplicate username exists but belongs to no employee, link it
+    if (!dup.employee_id) {
+      db.prepare('UPDATE worker_accounts SET employee_id=? WHERE id=?').run(empId, dup.id);
+      return res.json({ success: true, worker_account_id: dup.id });
+    }
+    // Otherwise make username unique
+    username = `emp_${empId}_${Date.now()}`;
+  }
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(crypto.randomBytes(8).toString('hex'), salt);
+  const r = db.prepare('INSERT INTO worker_accounts (username, password_hash, salt, employee_id, name, phone, email) VALUES (?,?,?,?,?,?,?)')
+    .run(username, hash, salt, empId, `${emp.first_name} ${emp.last_name}`.trim(), emp.phone || '', emp.email || '');
+  const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)').run(r.lastInsertRowid, changedBy, 'account_created', '', username, '从员工管理自动创建');
+  res.json({ success: true, worker_account_id: r.lastInsertRowid });
+});
+
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type, enable_timeclock, enable_invoice } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
@@ -9581,6 +9651,8 @@ app.get('/api/admin/contractor-invoices', requireAdmin, (req, res) => {
       ci.ds_envelope_id, ci.ds_status, ci.ds_signed_at, ci.sent_by
     FROM contractor_invoices ci
     LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id
+    WHERE ci.dividend_distributed = 0
+      AND ci.id NOT IN (SELECT bi.invoice_id FROM contractor_invoice_batch_items bi JOIN contractor_invoice_batches b ON bi.batch_id=b.id WHERE b.status='dividend_pending')
     ORDER BY ci.created_at DESC
   `).all();
   res.json(rows);
@@ -10378,6 +10450,157 @@ app.get('/api/admin/contractor-invoices/:id/edit-history', requireAdmin, (req, r
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Admin: get historical (dividend distributed) contractor invoices
+app.get('/api/admin/contractor-invoices-history', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username, wa.phone AS worker_phone, wa.email AS worker_email,
+      ci.ds_envelope_id, ci.ds_status, ci.ds_signed_at, ci.sent_by
+    FROM contractor_invoices ci
+    LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id
+    WHERE ci.dividend_distributed = 1
+    ORDER BY ci.dividend_distributed_at DESC
+  `).all();
+  res.json(rows);
+});
+
+// Admin: mark contractor invoice as dividend distributed
+app.post('/api/admin/contractor-invoices/:id/mark-dividend', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    const now = new Date().toISOString();
+    db.prepare('UPDATE contractor_invoices SET dividend_distributed=1, dividend_distributed_at=?, dividend_distributed_by=? WHERE id=?')
+      .run(now, req.session.user.username, inv.id);
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by, changed_at) VALUES (?,?,?,?,?,?)')
+      .run(inv.id, 'dividend_distributed', '0', '1', req.session.user.username, now);
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: undo dividend distributed status
+app.post('/api/admin/contractor-invoices/:id/undo-dividend', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    const now = new Date().toISOString();
+    db.prepare('UPDATE contractor_invoices SET dividend_distributed=0, dividend_distributed_at=\'\', dividend_distributed_by=\'\' WHERE id=?')
+      .run(inv.id);
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by, changed_at) VALUES (?,?,?,?,?,?)')
+      .run(inv.id, 'dividend_distributed', '1', '0', req.session.user.username, now);
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Contractor Invoice Batch Endpoints ──
+
+// Create a batch from selected invoice IDs
+app.post('/api/admin/contractor-invoice-batches', requireAdmin, (req, res) => {
+  try {
+    const { invoice_ids, batch_name, period_label } = req.body;
+    if (!Array.isArray(invoice_ids) || !invoice_ids.length) return res.status(400).json({ error: '请选择至少一张发票' });
+    // Verify all invoices exist and are not already in a pending batch
+    const placeholders = invoice_ids.map(() => '?').join(',');
+    const invoices = db.prepare(`SELECT * FROM contractor_invoices WHERE id IN (${placeholders}) AND dividend_distributed = 0`).all(...invoice_ids);
+    if (invoices.length !== invoice_ids.length) return res.status(400).json({ error: '部分发票不存在或已分红' });
+    // Check none are in an existing pending batch
+    const existing = db.prepare(`SELECT bi.invoice_id FROM contractor_invoice_batch_items bi JOIN contractor_invoice_batches b ON bi.batch_id=b.id WHERE b.status='dividend_pending' AND bi.invoice_id IN (${placeholders})`).all(...invoice_ids);
+    if (existing.length) return res.status(400).json({ error: `${existing.length} 张发票已在待分红批次中` });
+    const totalAmount = invoices.reduce((s, i) => s + (+i.total_amount || 0), 0);
+    const name = batch_name || `承包商发票批次 ${new Date().toISOString().slice(0,10)}`;
+    const result = db.prepare('INSERT INTO contractor_invoice_batches (batch_name, period_label, total_amount, invoice_count, created_by) VALUES (?,?,?,?,?)')
+      .run(name, period_label || '', totalAmount, invoices.length, req.session.user.username);
+    const batchId = result.lastInsertRowid;
+    const insertItem = db.prepare('INSERT INTO contractor_invoice_batch_items (batch_id, invoice_id) VALUES (?,?)');
+    for (const id of invoice_ids) insertItem.run(batchId, id);
+    res.json({ ok: true, batch_id: batchId });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// List pending invoice batches (for dividend page)
+app.get('/api/admin/contractor-invoice-batches', requireAdmin, (req, res) => {
+  const stage = req.query.stage || 'dividend_pending';
+  const batches = db.prepare('SELECT * FROM contractor_invoice_batches WHERE status=? ORDER BY created_at DESC').all(stage);
+  // Attach invoice details for each batch
+  const getItems = db.prepare(`
+    SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username
+    FROM contractor_invoice_batch_items bi
+    JOIN contractor_invoices ci ON bi.invoice_id = ci.id
+    LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id
+    WHERE bi.batch_id = ?
+  `);
+  for (const b of batches) {
+    b.invoices = getItems.all(b.id);
+  }
+  res.json(batches);
+});
+
+// Get votes for an invoice batch
+app.get('/api/admin/contractor-invoice-batches/:id/votes', requireAdmin, (req, res) => {
+  const votes = db.prepare(`
+    SELECT v.*, au.username, au.display_name
+    FROM invoice_batch_votes v JOIN admin_users au ON v.user_id = au.id
+    WHERE v.batch_id = ? ORDER BY v.created_at
+  `).all(req.params.id);
+  const staffCount = db.prepare("SELECT COUNT(*) as n FROM admin_users WHERE role='staff' AND active=1").get().n;
+  res.json({ votes, staff_count: staffCount });
+});
+
+// Vote approve for invoice batch
+app.post('/api/admin/contractor-invoice-batches/:id/vote-approve', requireAdmin, (req, res) => {
+  const batch = db.prepare('SELECT * FROM contractor_invoice_batches WHERE id=?').get(req.params.id);
+  if (!batch) return res.status(404).json({ error: 'Batch not found' });
+  if (batch.status !== 'dividend_pending') return res.status(400).json({ error: '当前状态不允许投票' });
+  try {
+    db.prepare('INSERT OR REPLACE INTO invoice_batch_votes (batch_id, user_id, vote_type) VALUES (?,?,?)').run(req.params.id, req.userId, 'approve');
+  } catch(e) { /* already voted */ }
+  const staffCount = db.prepare("SELECT COUNT(*) as n FROM admin_users WHERE role='staff' AND active=1").get().n;
+  const approveCount = db.prepare("SELECT COUNT(*) as n FROM invoice_batch_votes WHERE batch_id=? AND vote_type='approve'").get(req.params.id).n;
+  res.json({ success: true, all_approved: approveCount >= staffCount && staffCount > 0, approve_count: approveCount, staff_count: staffCount });
+});
+
+// Vote distributed for invoice batch
+app.post('/api/admin/contractor-invoice-batches/:id/vote-distributed', requireAdmin, (req, res) => {
+  const batch = db.prepare('SELECT * FROM contractor_invoice_batches WHERE id=?').get(req.params.id);
+  if (!batch) return res.status(404).json({ error: 'Batch not found' });
+  if (batch.status !== 'dividend_pending') return res.status(400).json({ error: '当前状态不允许操作' });
+  const staffCount = db.prepare("SELECT COUNT(*) as n FROM admin_users WHERE role='staff' AND active=1").get().n;
+  const approveCount = db.prepare("SELECT COUNT(*) as n FROM invoice_batch_votes WHERE batch_id=? AND vote_type='approve'").get(req.params.id).n;
+  if (approveCount < staffCount) return res.status(400).json({ error: '尚未全部通过无异议投票' });
+  try {
+    db.prepare('INSERT OR REPLACE INTO invoice_batch_votes (batch_id, user_id, vote_type) VALUES (?,?,?)').run(req.params.id, req.userId, 'distributed');
+  } catch(e) { /* already voted */ }
+  const distCount = db.prepare("SELECT COUNT(*) as n FROM invoice_batch_votes WHERE batch_id=? AND vote_type='distributed'").get(req.params.id).n;
+  const allDistributed = distCount >= staffCount && staffCount > 0;
+  if (allDistributed) {
+    // Mark batch completed and all invoices as dividend_distributed
+    db.prepare("UPDATE contractor_invoice_batches SET status='completed' WHERE id=?").run(req.params.id);
+    const now = new Date().toISOString();
+    const items = db.prepare('SELECT invoice_id FROM contractor_invoice_batch_items WHERE batch_id=?').all(req.params.id);
+    for (const item of items) {
+      db.prepare('UPDATE contractor_invoices SET dividend_distributed=1, dividend_distributed_at=?, dividend_distributed_by=? WHERE id=?')
+        .run(now, 'batch-' + req.params.id, item.invoice_id);
+    }
+  }
+  res.json({ success: true, all_distributed: allDistributed, dist_count: distCount, staff_count: staffCount });
+});
+
+// Delete an invoice batch (only if still pending)
+app.delete('/api/admin/contractor-invoice-batches/:id', requireAdmin, (req, res) => {
+  const batch = db.prepare('SELECT * FROM contractor_invoice_batches WHERE id=?').get(req.params.id);
+  if (!batch) return res.status(404).json({ error: 'Batch not found' });
+  if (batch.status !== 'dividend_pending') return res.status(400).json({ error: '已完成的批次无法删除' });
+  db.prepare('DELETE FROM invoice_batch_votes WHERE batch_id=?').run(req.params.id);
+  db.prepare('DELETE FROM contractor_invoice_batch_items WHERE batch_id=?').run(req.params.id);
+  db.prepare('DELETE FROM contractor_invoice_batches WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 // Admin: resend verification codes to unverified worker
