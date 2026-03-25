@@ -3168,6 +3168,14 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div style="font-size:.78rem;color:var(--gray-400);margin-top:.3rem">公司预填金额，承包商只需签字确认。</div>
   </div>
+  <div id="invVoucherLangSection" style="display:none;margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">凭证语言 Voucher Language：</label>
+    <select id="invVoucherLang" style="width:100%;max-width:300px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+      <option value="bilingual">中文 + English</option>
+      <option value="en">English Only</option>
+      <option value="en_es">English + Español</option>
+    </select>
+  </div>
   <div id="invPaymentInfoSection" style="display:none;margin:.5rem 0">
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
       <div>
@@ -3379,11 +3387,6 @@ tr:hover td{background:var(--sky-light)}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-shrink:0">
       <h2 style="margin:0;font-size:1rem">📄 付款凭证 PDF</h2>
       <div style="display:flex;gap:.5rem;align-items:center">
-        <select id="voucherPdfLang" onchange="switchVoucherPdfLang()" style="font-size:.82rem;padding:.3rem .5rem;border:1px solid #d1d5db;border-radius:5px;background:#fff">
-          <option value="bilingual">中英双语</option>
-          <option value="en">English</option>
-          <option value="zh">中文</option>
-        </select>
         <a id="voucherPdfNewTab" href="#" target="_blank" rel="noopener" style="font-size:.82rem;color:#0369a1;text-decoration:none;padding:.3rem .7rem;border:1px solid #7dd3fc;border-radius:5px;background:#f0f9ff">↗ 新标签页</a>
         <button class="btn btn-outline" onclick="document.getElementById('voucherPdfFrame').src='about:blank';document.getElementById('voucherPdfModal').style.display='none'" style="font-size:.82rem">✕ 关闭</button>
       </div>
@@ -19350,10 +19353,12 @@ function setInvMode(mode) {
   const sendBtn = document.getElementById('invSendBtn');
   const payInfoSec = document.getElementById('invPaymentInfoSection');
   const vrSec = document.getElementById('invVoucherReceiptSection');
+  const voucherLangSec = document.getElementById('invVoucherLangSection');
   if (mode === 'voucher') {
     amtSec.style.display = '';
     payInfoSec.style.display = '';
     vrSec.style.display = '';
+    voucherLangSec.style.display = '';
     dsFields.style.display = 'none';
     previewBtn.style.display = 'none';
     sendBtn.textContent = '💾 创建付款凭证';
@@ -19362,6 +19367,7 @@ function setInvMode(mode) {
     amtSec.style.display = '';
     payInfoSec.style.display = 'none';
     vrSec.style.display = 'none';
+    voucherLangSec.style.display = 'none';
     dsFields.style.display = '';
     previewBtn.style.display = '';
     sendBtn.textContent = '📤 发送发票';
@@ -19370,6 +19376,7 @@ function setInvMode(mode) {
     amtSec.style.display = 'none';
     payInfoSec.style.display = 'none';
     vrSec.style.display = 'none';
+    voucherLangSec.style.display = 'none';
     dsFields.style.display = '';
     previewBtn.style.display = '';
     sendBtn.textContent = '📤 发送发票';
@@ -19470,8 +19477,9 @@ async function doSendInvoice() {
     const paymentMethod = document.getElementById('invSendPaymentMethod').value;
     const paymentDate = document.getElementById('invSendPaymentDate').value;
     const paymentRef = document.getElementById('invSendPaymentRef').value.trim();
+    const voucherLang = document.getElementById('invVoucherLang').value;
     const r = await api('/admin/contractor-invoices/create-voucher', {
-      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0', payment_method: paymentMethod, payment_date: paymentDate, payment_reference: paymentRef })
+      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0', payment_method: paymentMethod, payment_date: paymentDate, payment_reference: paymentRef, voucher_lang: voucherLang })
     });
     btn.disabled = false; btn.textContent = '💾 创建付款凭证';
     if (r && r.success) {
@@ -19480,7 +19488,7 @@ async function doSendInvoice() {
         const fd = new FormData();
         _invVrPendingFiles.forEach(f => fd.append('receipts', f));
         try {
-          await fetch(`/api/admin/contractor-invoices/${r.id}/voucher-receipts`, { method: 'POST', body: fd, credentials: 'same-origin' });
+          await fetch(`/api/admin/contractor-invoices/${r.id}/voucher-receipts`, { method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${TOKEN}` } });
         } catch(e) { console.warn('Receipt upload failed:', e); }
         _invVrPendingFiles = [];
       }
@@ -19766,20 +19774,11 @@ async function confirmVoucherLock() {
   btn.disabled = false; btn.textContent = '🔒 确认凭证（锁定）';
 }
 
-let _voucherPdfInvId = null;
 function openVoucherPdf(invId) {
-  _voucherPdfInvId = invId;
-  document.getElementById('voucherPdfLang').value = 'bilingual';
   const url = `/api/admin/contractor-invoices/${invId}/voucher-pdf`;
   document.getElementById('voucherPdfFrame').src = url + '#toolbar=1&navpanes=0&scrollbar=1';
   document.getElementById('voucherPdfNewTab').href = url;
   document.getElementById('voucherPdfModal').style.display = 'flex';
-}
-function switchVoucherPdfLang() {
-  const lang = document.getElementById('voucherPdfLang').value;
-  const url = `/api/admin/contractor-invoices/${_voucherPdfInvId}/voucher-pdf?lang=${lang}`;
-  document.getElementById('voucherPdfFrame').src = url + '#toolbar=1&navpanes=0&scrollbar=1';
-  document.getElementById('voucherPdfNewTab').href = url;
 }
 
 function closeVoucherReceiptModal() {
