@@ -561,11 +561,21 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('time')" data-tab="time">工时打卡</a>
       <a onclick="showTab('ts-verify')" data-tab="ts-verify" data-role="admin,staff">📋 工时核对</a>
       <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
-      <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
       <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
       <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商发票</a>
       <a onclick="showTab('ts-emp-invoice-history')" data-tab="ts-emp-invoice-history" data-role="admin,staff">📜 承包商历史发票</a>
+    </div>
+  </div>
+
+  <!-- 分红管理 -->
+  <div class="nav-group open" id="sec-dividend" data-role="staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-dividend')">
+      💰 分红管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
+      <a onclick="showTab('dividend-history')" data-tab="dividend-history" data-role="staff">✅ 已分红</a>
     </div>
   </div>
 
@@ -1198,6 +1208,34 @@ tr:hover td{background:var(--sky-light)}
   <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">从承包商发票页面勾选提交的发票批次。全部 Staff 投票「无异议」后，再各自确认「已分红」即可归档。</p>
   <div class="card">
     <div id="tsDividendInvBatchWrap">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ 已分红 TAB ════════════════════ -->
+<div id="tab-dividend-history" style="display:none">
+  <div class="top">
+    <h1>✅ 已分红</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadDividendHistory()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">已完成分红确认的工时单与承包商发票归档记录。</p>
+
+  <!-- 工时单已分红 -->
+  <h2 style="font-size:1.1rem;margin:0 0 .75rem">📋 工时单</h2>
+  <div class="card" style="margin-bottom:1.5rem">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>客户付款时间</th><th>劳务付款时间</th><th>Staff 备注</th></tr></thead>
+      <tbody id="dividendHistoryTsTable"></tbody>
+    </table>
+  </div>
+
+  <!-- 承包商发票已分红 -->
+  <h2 style="font-size:1.1rem;margin:0 0 .75rem">📄 承包商发票</h2>
+  <div class="card">
+    <div id="dividendHistoryInvWrap">
       <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
     </div>
   </div>
@@ -6604,8 +6642,9 @@ const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
-  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
-  approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
+  'ts-dividend':'sec-dividend', 'dividend-history':'sec-dividend',
+  approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
   'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
 };
@@ -6641,6 +6680,7 @@ function showTab(t) {
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
   if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
   if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
+  if (t === 'dividend-history') loadDividendHistory();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -14157,6 +14197,71 @@ async function loadTsHistory() {
       <td style="font-size:.78rem;color:var(--gray-400)">${esc(r.staff_note||'—')}</td>
     </tr>`;
   }).join('');
+}
+
+// ─── 已分红（合并页） ───
+async function loadDividendHistory() {
+  // Load timesheet history
+  const tsRows = await api('/admin/timesheet-sheets?stage=history');
+  const tsTbody = document.getElementById('dividendHistoryTsTable');
+  if (!tsRows.length) {
+    tsTbody.innerHTML = '<tr><td colspan="7" class="empty">暂无已分红工时单</td></tr>';
+  } else {
+    tsTbody.innerHTML = tsRows.map(r => {
+      const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+      const srcBadge = r.source === 'voucher' ? ' <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:600">付款凭证</span>' : '';
+      const amtCol = r.source === 'voucher' && r.total_amount ? `$${Number(r.total_amount).toFixed(2)}` : '';
+      return `<tr${r.source==='voucher'?' style="background:#fffbeb"':''}>
+        <td>${name}</td>
+        <td>${esc(r.company_name||'—')}${srcBadge}</td>
+        <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+        <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h${amtCol?' <span style="color:#059669;font-size:.78rem">'+amtCol+'</span>':''}</td>
+        <td style="font-size:.78rem">${fmtDt(r.client_paid_at)}</td>
+        <td style="font-size:.78rem">${fmtDt(r.labor_paid_at)}</td>
+        <td style="font-size:.78rem;color:var(--gray-400)">${esc(r.staff_note||'—')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Load contractor invoice history
+  const invEl = document.getElementById('dividendHistoryInvWrap');
+  invEl.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
+  const invRows = await api('/admin/contractor-invoices-history');
+  if (!Array.isArray(invRows) || !invRows.length) {
+    invEl.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无已分红发票记录</div>';
+  } else {
+    invEl.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
+      <thead><tr style="border-bottom:2px solid var(--gray-200)">
+        <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">Invoice #</th>
+        <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">工人</th>
+        <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">日期</th>
+        <th style="padding:.4rem .5rem;text-align:left">服务描述</th>
+        <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">来源</th>
+        <th style="padding:.4rem .5rem;text-align:right;white-space:nowrap">金额</th>
+        <th style="padding:.4rem .5rem;text-align:center">分红时间</th>
+        <th style="padding:.4rem .5rem;text-align:center">操作</th>
+      </tr></thead>
+      <tbody>${invRows.map(r => {
+        const isDs = r.ds_envelope_id && r.ds_envelope_id !== '';
+        const source = r.source === 'voucher' ? '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:.72rem;font-weight:600">付款凭证</span>' : isDs ? '<span style="padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:600">DocuSeal</span>' : '<span style="padding:1px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:.72rem;font-weight:600">手动提交</span>';
+        return `<tr style="border-bottom:1px solid var(--gray-100);background:#f0fdf4">
+        <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
+        <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}</td>
+        <td style="padding:.5rem;white-space:nowrap;color:var(--gray-500)">${esc(r.invoice_date)}</td>
+        <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.service_description)}">${esc(r.service_description)}</td>
+        <td style="padding:.5rem;white-space:nowrap">${source}</td>
+        <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">$${(+r.total_amount).toFixed(2)}</td>
+        <td style="padding:.5rem;text-align:center;font-size:.75rem;color:var(--gray-500)">${r.dividend_distributed_at ? r.dividend_distributed_at.slice(0,10) : '—'}${r.dividend_distributed_by ? `<br><span style="font-size:.7rem">by ${esc(r.dividend_distributed_by)}</span>` : ''}</td>
+        <td style="padding:.5rem;text-align:center;white-space:nowrap">
+          ${r.source === 'voucher' ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> ` : ''}
+          ${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button> ` : ''}
+          <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>
+          <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="undoDividendDistributed(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回分红</button>
+        </td>
+      </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  }
 }
 
 // ══════════════════════════════════════════════════════
