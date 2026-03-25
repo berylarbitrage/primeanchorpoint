@@ -9573,6 +9573,9 @@ app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin')
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(inv.worker_account_id, reviewedBy, 'contractor_invoice', inv.status, status,
         `Invoice ${inv.invoice_number}: $${inv.total_amount} — ${status === 'approved' ? '已批准' : '已拒绝' + (reject_reason ? ': ' + reject_reason : '')}`);
+    // Log to voucher edit history
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, status === 'approved' ? '批准' : '拒绝', inv.status, status + (status === 'rejected' && reject_reason ? ': ' + reject_reason : ''), reviewedBy);
     // Send email + SMS to worker on rejection
     if (status === 'rejected') {
       const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(inv.worker_account_id);
@@ -9614,6 +9617,12 @@ app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin')
 });
 
 app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+  const deletedBy = req.session?.username || 'admin';
+  if (inv) {
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '删除', `${inv.invoice_number} / ${inv.status}`, '', deletedBy);
+  }
   db.prepare('DELETE FROM contractor_invoices WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -9633,6 +9642,9 @@ app.post('/api/admin/contractor-invoices/pre-generate-number', requireAdmin, req
       (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, sent_by)
       VALUES (?,?,?,?,?,?,?)`)
       .run(worker_account_id, invoiceNumber, new Date().toISOString().slice(0, 10), '(预生成)', 0, 'pre_generated', sentBy);
+    // Log to voucher edit history
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(result.lastInsertRowid, '预生成', '', invoiceNumber, sentBy);
     res.json({ success: true, invoice_number: invoiceNumber, invoice_id: result.lastInsertRowid });
   } catch (e) {
     console.error('[Pre-generate Invoice Number]', e.message);
@@ -9732,6 +9744,10 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已发送承包商发票给 ${workerName}`);
+    // Log to voucher edit history
+    const dsInvId = existingPreGen ? existingPreGen.id : db.prepare('SELECT last_insert_rowid() as id').get().id;
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(dsInvId, '发送DocuSeal', '', `${invoiceNumber} → ${workerName}`, sentBy);
     // Send SMS notification if phone number provided
     let smsSent = false, emailSent = true; // DocuSeal sends email automatically
     const warnings = [];
@@ -9774,6 +9790,9 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'approved', `付款凭证 ${invoiceNumber} — $${total.toFixed(2)}`);
+    // Log to voucher edit history
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(insertedId, '创建付款凭证', '', `${invoiceNumber} — $${total.toFixed(2)}`, sentBy);
     res.json({ success: true, invoice_number: invoiceNumber, id: insertedId });
   } catch (e) {
     console.error('[Create Voucher]', e.message);
@@ -9869,6 +9888,9 @@ app.post('/api/admin/contractor-invoices/:id/voucher-confirm', requireAdmin, req
     try { receipts = JSON.parse(inv.voucher_receipt || '[]'); } catch {}
     if (!receipts.length) return res.status(400).json({ error: '请先上传付款凭证' });
     db.prepare('UPDATE contractor_invoices SET voucher_confirmed=1 WHERE id=?').run(req.params.id);
+    const confirmedBy = req.session?.username || 'admin';
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '确认付款凭证', '未确认', '已确认', confirmedBy);
     res.json({ success: true });
   } catch (e) {
     console.error('[Voucher Confirm]', e.message);
@@ -10214,6 +10236,9 @@ app.post('/api/admin/contractor-invoices/:id/revoke', requireAdmin, requireRole(
       .run('voided', revokedBy, new Date().toISOString(), req.params.id);
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(inv.worker_account_id, revokedBy, 'contractor_invoice', inv.status, 'voided', `Invoice ${inv.invoice_number} 已撤回`);
+    // Log to voucher edit history
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '撤回', inv.status, 'voided', revokedBy);
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ error: e.message });
@@ -14439,6 +14464,11 @@ app.post('/api/worker/contractor-invoices', requireWorker, (req, res) => {
       hrWorked, hrRate, flatAmt, calcTotal,
       payment_due_date || '', notes || '', expAmt,
       parseInt(job_id) || 0, job_title || '', service_type || '', confirmed ? 1 : 0);
+  // Log to voucher edit history
+  const w2 = db.prepare('SELECT name, username FROM worker_accounts WHERE id=?').get(req.workerId);
+  const workerLabel = w2 ? (w2.name || w2.username) : `Worker #${req.workerId}`;
+  db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+    .run(r.lastInsertRowid, '手动提交', '', `${invoiceNumber} — $${calcTotal.toFixed(2)}`, workerLabel);
   res.json({ success: true, id: r.lastInsertRowid, invoice_number: invoiceNumber });
 });
 
