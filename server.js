@@ -9855,11 +9855,11 @@ app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, re
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
     const workerName = inv.worker_name || inv.worker_username || 'N/A';
     const companyName = getCompanySignerName();
-    // Use IPA Gothic font for CJK support (FreeSans doesn't cover Chinese characters)
-    const cjkFontPath = '/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf';
+    // Use WenQuanYi Zen Hei for full simplified Chinese support
+    const cjkFontPath = '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc';
     const hasCjk = fs.existsSync(cjkFontPath);
     const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
-    if (hasCjk) { doc.registerFont('CJK', cjkFontPath); doc.registerFont('CJKB', cjkFontPath); }
+    if (hasCjk) { doc.registerFont('CJK', cjkFontPath, 'WenQuanYiZenHei'); doc.registerFont('CJKB', cjkFontPath, 'WenQuanYiZenHei'); }
     const fontR = hasCjk ? 'CJK' : 'Helvetica';
     const fontB = hasCjk ? 'CJKB' : 'Helvetica-Bold';
     const buffers = [];
