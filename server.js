@@ -7026,6 +7026,27 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
+// Ensure a worker account exists for an employee (auto-create if needed)
+app.post('/api/admin/employees/:id/ensure-worker-account', requireAdmin, requireRole('admin'), (req, res) => {
+  const empId = parseInt(req.params.id);
+  const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(empId);
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+  // Check if already linked
+  const existing = db.prepare('SELECT id FROM worker_accounts WHERE employee_id=? AND active=1').get(empId);
+  if (existing) return res.json({ success: true, worker_account_id: existing.id });
+  // Auto-create worker account using employee email or generated username
+  const username = emp.email || `emp_${emp.employee_id || empId}`;
+  if (db.prepare('SELECT id FROM worker_accounts WHERE username=?').get(username))
+    return res.json({ success: true, worker_account_id: db.prepare('SELECT id FROM worker_accounts WHERE username=?').get(username).id });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(crypto.randomBytes(8).toString('hex'), salt);
+  const r = db.prepare('INSERT INTO worker_accounts (username, password_hash, salt, employee_id, name, phone, email) VALUES (?,?,?,?,?,?,?)')
+    .run(username, hash, salt, empId, `${emp.first_name} ${emp.last_name}`.trim(), emp.phone || '', emp.email || '');
+  const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)').run(r.lastInsertRowid, changedBy, 'account_created', '', username, '从员工管理自动创建');
+  res.json({ success: true, worker_account_id: r.lastInsertRowid });
+});
+
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type, enable_timeclock, enable_invoice } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);

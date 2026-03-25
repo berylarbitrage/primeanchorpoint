@@ -11481,11 +11481,16 @@ document.getElementById('empMenuDelete').onclick   = () => { _closeEmpMenu(); de
 // ── Employee Onboarding shortcut ──
 async function openEmpOnboarding(empId, empName) {
   const emp = allEmployees.find(e => e.id === empId);
-  if (!emp || !emp.worker_account_id) {
-    showToast('该员工尚未关联工人账户，无法查看入职进度', 'error');
-    return;
+  if (!emp) return;
+  let wid = emp.worker_account_id;
+  if (!wid) {
+    // Auto-create worker account for this employee
+    const res = await api(`/admin/employees/${empId}/ensure-worker-account`, { method: 'POST' });
+    if (!res || !res.worker_account_id) { showToast('创建工人账户失败', 'error'); return; }
+    wid = res.worker_account_id;
+    emp.worker_account_id = wid;
   }
-  openOnboardingModal(emp.worker_account_id, empName);
+  openOnboardingModal(wid, empName);
 }
 
 // ── Employee Files Management ──
