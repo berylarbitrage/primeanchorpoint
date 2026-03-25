@@ -1186,11 +1186,20 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">客户与劳务均已付款的工时单。全部 Staff 投票「无异议」后，再各自确认「已分红」即可归档至工时历史。</p>
-  <div class="card">
+  <div class="card" style="margin-bottom:1.5rem">
     <table>
       <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>无异议投票</th><th>已分红确认</th><th>操作</th></tr></thead>
       <tbody id="tsDividendTable"></tbody>
     </table>
+  </div>
+
+  <!-- Contractor Invoice Batches -->
+  <h2 style="font-size:1.1rem;margin:1.5rem 0 .75rem">📄 承包商发票批次</h2>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">从承包商发票页面勾选提交的发票批次。全部 Staff 投票「无异议」后，再各自确认「已分红」即可归档。</p>
+  <div class="card">
+    <div id="tsDividendInvBatchWrap">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+    </div>
   </div>
 </div>
 
@@ -1303,6 +1312,25 @@ tr:hover td{background:var(--sky-light)}
       <span id="empInvSendStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
     </div>
     <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送发票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
+  </div>
+
+  <!-- Batch Filter & Action Bar -->
+  <div class="card" style="margin-bottom:1rem;padding:.75rem 1rem">
+    <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📦 批量操作：</label>
+      <label style="font-size:.82rem;white-space:nowrap">日期从</label>
+      <input type="date" id="empInvFilterFrom" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" onchange="filterEmpInvoices()">
+      <label style="font-size:.82rem;white-space:nowrap">到</label>
+      <input type="date" id="empInvFilterTo" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" onchange="filterEmpInvoices()">
+      <label style="font-size:.82rem;white-space:nowrap">工人</label>
+      <select id="empInvFilterWorker" style="min-width:150px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" onchange="filterEmpInvoices()">
+        <option value="">全部</option>
+      </select>
+      <button class="btn btn-sm btn-outline" onclick="clearEmpInvFilter()" style="font-size:.78rem">清除筛选</button>
+      <span style="flex:1"></span>
+      <span id="empInvSelectedCount" style="font-size:.82rem;color:var(--gray-500)"></span>
+      <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.82rem;padding:.3rem .75rem" onclick="batchSubmitDividend()">💰 批量提交分红</button>
+    </div>
   </div>
 
   <div class="card">
@@ -13926,7 +13954,8 @@ async function markLaborPaid(id) {
 async function loadTsDividend() {
   const rows = await api('/admin/timesheet-sheets?stage=dividend');
   const tbody = document.getElementById('tsDividendTable');
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待分红工时单</td></tr>'; return; }
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待分红工时单</td></tr>'; }
+  else {
   // Fetch votes for each sheet in parallel
   const votesMap = {};
   await Promise.all(rows.map(async r => { votesMap[r.id] = await api(`/admin/timesheet-sheets/${r.id}/votes`); }));
@@ -13964,6 +13993,103 @@ async function loadTsDividend() {
       <td>${actionBtn}</td>
     </tr>`;
   }).join('');
+  } // end else
+  // Also load contractor invoice batches
+  loadDividendInvBatches();
+}
+
+async function loadDividendInvBatches() {
+  const wrap = document.getElementById('tsDividendInvBatchWrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--gray-400)">加载中…</div>';
+  const batches = await api('/admin/contractor-invoice-batches?stage=dividend_pending');
+  if (!Array.isArray(batches) || !batches.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">暂无待分红发票批次</div>';
+    return;
+  }
+  // Fetch votes for each batch in parallel
+  const votesMap = {};
+  await Promise.all(batches.map(async b => { votesMap[b.id] = await api(`/admin/contractor-invoice-batches/${b.id}/votes`); }));
+  wrap.innerHTML = batches.map(b => {
+    const vi = votesMap[b.id] || { votes: [], staff_count: 0 };
+    const approves = vi.votes.filter(v => v.vote_type === 'approve');
+    const dists = vi.votes.filter(v => v.vote_type === 'distributed');
+    const allApproved = approves.length >= vi.staff_count && vi.staff_count > 0;
+    const myApproved = approves.some(v => v.user_id === _currentUserId);
+    const myDistributed = dists.some(v => v.user_id === _currentUserId);
+    const approveCell = `<span class="badge ${allApproved?'badge-green':'badge-yellow'}">${approves.length}/${vi.staff_count}</span>`
+      + (approves.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${approves.map(v=>v.display_name||v.username).join(', ')}</div>` : '');
+    const distCell = allApproved
+      ? `<span class="badge ${dists.length>=vi.staff_count?'badge-green':'badge-yellow'}">${dists.length}/${vi.staff_count}</span>`
+        + (dists.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${dists.map(v=>v.display_name||v.username).join(', ')}</div>` : '')
+      : '<span style="font-size:.78rem;color:var(--gray-500)">等待全部无异议</span>';
+    let actionBtn = '';
+    if (!myApproved) {
+      actionBtn = `<button class="btn btn-sm btn-green" onclick="voteInvBatchApprove(${b.id})">无异议</button>`;
+    } else if (allApproved && !myDistributed) {
+      actionBtn = `<button class="btn btn-sm btn-accent" onclick="voteInvBatchDistributed(${b.id})">已分红</button>`;
+    } else if (myApproved && !allApproved) {
+      actionBtn = '<span class="badge badge-green">已投票</span>';
+    } else {
+      actionBtn = '<span class="badge badge-green">已确认</span>';
+    }
+    // Invoice details list
+    const invList = (b.invoices || []).map(inv =>
+      `<tr style="font-size:.78rem;border-bottom:1px solid var(--gray-100)">
+        <td style="padding:.25rem .5rem;font-family:monospace;color:var(--sky)">${esc(inv.invoice_number)}</td>
+        <td style="padding:.25rem .5rem">${esc(inv.worker_name||inv.worker_username||'—')}</td>
+        <td style="padding:.25rem .5rem">${esc(inv.invoice_date)}</td>
+        <td style="padding:.25rem .5rem;max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(inv.service_description)}</td>
+        <td style="padding:.25rem .5rem;text-align:right;font-weight:600;color:#065f46">$${(+inv.total_amount).toFixed(2)}</td>
+      </tr>`
+    ).join('');
+    return `<div style="border:1px solid var(--gray-200);border-radius:8px;margin-bottom:1rem;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:1rem;padding:.75rem 1rem;background:#fefce8;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-weight:700;font-size:.92rem">${esc(b.batch_name)}</div>
+          <div style="font-size:.78rem;color:var(--gray-500)">${b.period_label ? esc(b.period_label) + ' · ' : ''}${b.invoice_count} 张发票 · 合计 <strong style="color:#065f46">$${(+b.total_amount).toFixed(2)}</strong> · 创建人: ${esc(b.created_by)} · ${b.created_at?.slice(0,10)||''}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <div style="text-align:center"><div style="font-size:.72rem;color:var(--gray-400);margin-bottom:2px">无异议投票</div>${approveCell}</div>
+          <div style="text-align:center"><div style="font-size:.72rem;color:var(--gray-400);margin-bottom:2px">已分红确认</div>${distCell}</div>
+          <div>${actionBtn}</div>
+          <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="deleteInvBatch(${b.id},'${esc(b.batch_name)}')">🗑️ 删除</button>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--gray-50);font-size:.75rem;color:var(--gray-500)">
+          <th style="padding:.3rem .5rem;text-align:left">Invoice #</th>
+          <th style="padding:.3rem .5rem;text-align:left">工人</th>
+          <th style="padding:.3rem .5rem;text-align:left">日期</th>
+          <th style="padding:.3rem .5rem;text-align:left">服务描述</th>
+          <th style="padding:.3rem .5rem;text-align:right">金额</th>
+        </tr></thead>
+        <tbody>${invList}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+
+async function voteInvBatchApprove(id) {
+  const r = await api(`/admin/contractor-invoice-batches/${id}/vote-approve`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
+  loadDividendInvBatches();
+}
+
+async function voteInvBatchDistributed(id) {
+  const r = await api(`/admin/contractor-invoice-batches/${id}/vote-distributed`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_distributed ? '✅ 全部确认分红，发票已归档至历史' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
+  loadDividendInvBatches();
+}
+
+async function deleteInvBatch(id, name) {
+  if (!confirm(`确定删除批次「${name}」？发票将回到承包商发票页面。`)) return;
+  try {
+    const r = await api(`/admin/contractor-invoice-batches/${id}`, { method: 'DELETE' });
+    if (r.ok) { showToast('批次已删除'); loadDividendInvBatches(); } else throw new Error(r.error);
+  } catch(e) { alert('操作失败: ' + e.message); }
 }
 
 async function voteDividendApprove(id) {
@@ -19454,17 +19580,23 @@ async function reviewContractorInvoice(id, status) {
 // ─── 承包商发票 Tab ───
 let _empInvWorkersLoaded = false;
 let _empInvWorkersCache = [];
+let _empInvAllRows = []; // cache all rows for filtering
 async function loadEmpInvoiceTab() {
   // Load worker dropdown (once)
   if (!_empInvWorkersLoaded) {
     try {
       const workers = await api('/admin/worker-accounts');
       const sel = document.getElementById('empInvWorkerSelect');
+      const fsel = document.getElementById('empInvFilterWorker');
       if (sel && Array.isArray(workers)) {
         _empInvWorkersCache = workers;
         sel.innerHTML = '<option value="">— 选择承包商 —</option>' +
           workers.filter(w => w.active).map(w =>
             `<option value="${w.id}">${esc(w.name || w.username)} ${w.emp_type === '1099' ? '(1099)' : w.emp_type === 'w2' ? '(W2)' : ''}</option>`
+          ).join('');
+        if (fsel) fsel.innerHTML = '<option value="">全部</option>' +
+          workers.filter(w => w.active).map(w =>
+            `<option value="${w.id}">${esc(w.name || w.username)}</option>`
           ).join('');
         _empInvWorkersLoaded = true;
       }
@@ -19474,8 +19606,47 @@ async function loadEmpInvoiceTab() {
   const el = document.getElementById('empInvoiceListWrap');
   el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
   const rows = await api('/admin/contractor-invoices');
-  if (!Array.isArray(rows) || !rows.length) {
+  _empInvAllRows = Array.isArray(rows) ? rows : [];
+  renderEmpInvoiceTable(_empInvAllRows);
+}
+
+function filterEmpInvoices() {
+  const from = document.getElementById('empInvFilterFrom')?.value || '';
+  const to = document.getElementById('empInvFilterTo')?.value || '';
+  const wid = document.getElementById('empInvFilterWorker')?.value || '';
+  let filtered = _empInvAllRows;
+  if (from) filtered = filtered.filter(r => r.invoice_date >= from);
+  if (to) filtered = filtered.filter(r => r.invoice_date <= to);
+  if (wid) filtered = filtered.filter(r => String(r.worker_account_id) === wid);
+  renderEmpInvoiceTable(filtered);
+}
+
+function clearEmpInvFilter() {
+  const f = document.getElementById('empInvFilterFrom'); if (f) f.value = '';
+  const t = document.getElementById('empInvFilterTo'); if (t) t.value = '';
+  const w = document.getElementById('empInvFilterWorker'); if (w) w.value = '';
+  renderEmpInvoiceTable(_empInvAllRows);
+}
+
+function updateEmpInvSelectedCount() {
+  const checks = document.querySelectorAll('.empInv-chk:checked');
+  const el = document.getElementById('empInvSelectedCount');
+  if (el) {
+    const total = Array.from(checks).reduce((s, c) => s + parseFloat(c.dataset.amount || 0), 0);
+    el.textContent = checks.length ? `已选 ${checks.length} 张，合计 $${total.toFixed(2)}` : '';
+  }
+}
+
+function empInvToggleAll(chk) {
+  document.querySelectorAll('.empInv-chk').forEach(c => c.checked = chk.checked);
+  updateEmpInvSelectedCount();
+}
+
+function renderEmpInvoiceTable(rows) {
+  const el = document.getElementById('empInvoiceListWrap');
+  if (!rows.length) {
     el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无承包商发票记录</div>';
+    updateEmpInvSelectedCount();
     return;
   }
   const STATUS_BADGE = {
@@ -19488,6 +19659,7 @@ async function loadEmpInvoiceTab() {
   };
   el.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
     <thead><tr style="border-bottom:2px solid var(--gray-200)">
+      <th style="padding:.4rem .3rem;text-align:center;width:32px"><input type="checkbox" onchange="empInvToggleAll(this)" title="全选"></th>
       <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">Invoice #</th>
       <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">工人</th>
       <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">日期</th>
@@ -19503,6 +19675,7 @@ async function loadEmpInvoiceTab() {
       const source = r.source === 'voucher' ? '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:.72rem;font-weight:600">付款凭证</span>' : isDs ? '<span style="padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:600">DocuSeal</span>' : '<span style="padding:1px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:.72rem;font-weight:600">手动提交</span>';
       const rowBg = vConfirmed ? 'background:#f0fdf4;' : '';
       return `<tr style="border-bottom:1px solid var(--gray-100);${rowBg}">
+      <td style="padding:.5rem .3rem;text-align:center"><input type="checkbox" class="empInv-chk" value="${r.id}" data-amount="${r.total_amount||0}" onchange="updateEmpInvSelectedCount()"></td>
       <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
       <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}${r.sent_by ? `<br><span style="font-size:.7rem;color:var(--gray-400);font-weight:400">发送人: ${esc(r.sent_by)}</span>` : ''}</td>
       <td style="padding:.5rem;white-space:nowrap;color:var(--gray-500)">${esc(r.invoice_date)}</td>
@@ -19530,9 +19703,10 @@ async function loadEmpInvoiceTab() {
         <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>
         `}
       </td>
-    </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
+    </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="9" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
     }).join('')}</tbody>
   </table>`;
+  updateEmpInvSelectedCount();
 }
 
 // ── Mark invoice as dividend distributed ──
@@ -19593,6 +19767,30 @@ async function loadEmpInvoiceHistoryTab() {
     </tr>`;
     }).join('')}</tbody>
   </table>`;
+}
+
+// ── Batch submit selected invoices to dividend page ──
+async function batchSubmitDividend() {
+  const checks = document.querySelectorAll('.empInv-chk:checked');
+  if (!checks.length) { alert('请先勾选要提交分红的发票'); return; }
+  const ids = Array.from(checks).map(c => +c.value);
+  const total = Array.from(checks).reduce((s, c) => s + parseFloat(c.dataset.amount || 0), 0);
+  // Get date range from filter for label
+  const from = document.getElementById('empInvFilterFrom')?.value || '';
+  const to = document.getElementById('empInvFilterTo')?.value || '';
+  const periodLabel = from || to ? `${from || '?'} ~ ${to || '?'}` : '';
+  const batchName = prompt(`批次名称（${ids.length} 张发票，合计 $${total.toFixed(2)}）：`, `承包商发票批次 ${periodLabel || new Date().toISOString().slice(0,10)}`);
+  if (!batchName) return;
+  try {
+    const r = await api('/admin/contractor-invoice-batches', {
+      method: 'POST',
+      body: JSON.stringify({ invoice_ids: ids, batch_name: batchName, period_label: periodLabel })
+    });
+    if (r.ok) {
+      showToast(`已创建分红批次（${ids.length} 张发票）`);
+      loadEmpInvoiceTab();
+    } else throw new Error(r.error);
+  } catch(e) { alert('操作失败: ' + e.message); }
 }
 
 let _invMode = 'contractor'; // 'contractor', 'company', or 'voucher'
