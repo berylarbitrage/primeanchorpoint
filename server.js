@@ -12076,7 +12076,8 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
       (SELECT COUNT(*) FROM employee_documents d WHERE d.employee_id = e.id) as doc_count,
       (SELECT COUNT(*) FROM background_checks b WHERE b.employee_id = e.id) as bg_count,
       (SELECT worker_code FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as worker_code,
-      (SELECT id FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as worker_account_id
+      (SELECT id FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as worker_account_id,
+      (SELECT onboarded FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as onboarded
     FROM employees e`;
   const params = [];
   if (req.userRole === 'manager' && pids.length) {
