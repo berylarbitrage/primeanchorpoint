@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prime Anchorpoint — 管理后台</title>
+<title>Prime Anchor Point — 管理后台</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -376,8 +376,8 @@ tr:hover td{background:var(--sky-light)}
 <!-- LOGIN -->
 <div class="login-wrap" id="loginWrap">
 <div class="login-box">
-  <img src="/logo.svg" alt="Prime Anchorpoint" class="logo">
-  <h1>Prime Anchorpoint</h1>
+  <img src="/logo.svg" alt="Prime Anchor Point" class="logo">
+  <h1>Prime Anchor Point</h1>
   <p id="loginSubtitle">管理后台</p>
   <input type="text" id="userInput" placeholder="用户名" autocomplete="username">
   <div class="pass-wrap">
@@ -564,7 +564,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
       <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
-      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商發票</a>
+      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商发票</a>
     </div>
   </div>
 
@@ -1280,27 +1280,27 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════════ 承包商發票 Tab ════════ -->
+<!-- ════════ 承包商发票 Tab ════════ -->
 <div id="tab-ts-emp-invoice" style="display:none">
   <div class="top">
-    <h1>📄 承包商發票</h1>
+    <h1>📄 承包商发票</h1>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="loadEmpInvoiceTab()">刷新</button>
     </div>
   </div>
-  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商發票，用于 FWPA 合规（合同—服务完成—付款）链条记录。支持承包商自行填写金额或公司预填金额后发送签字。</p>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商发票，用于 FWPA 合规（合同—服务完成—付款）链条记录。支持承包商自行填写金额或公司预填金额后发送签字。</p>
 
   <!-- Send Invoice -->
   <div class="card" style="margin-bottom:1rem;padding:1rem">
     <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 發送承包商發票：</label>
+      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 发送承包商发票：</label>
       <select id="empInvWorkerSelect" style="min-width:220px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
         <option value="">— 选择承包商 —</option>
       </select>
-      <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 發送發票</button>
+      <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 发送发票</button>
       <span id="empInvSendStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送發票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送发票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
   </div>
 
   <div class="card">
@@ -2496,7 +2496,7 @@ tr:hover td{background:var(--sky-light)}
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商發票</div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商发票</div>
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">Contractor Invoice — 三種語言版本</div>
           <div style="margin-bottom:.6rem">
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
@@ -3145,14 +3145,14 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
-<!-- 承包商發票 Send Modal -->
+<!-- 承包商发票 Send Modal -->
 <div class="modal-bg" id="invSendModal"><div class="modal" style="max-width:720px">
-  <h2>📄 發送承包商發票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
+  <h2>📄 发送承包商发票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
   <div style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)" id="invSendDesc">
-    选择發票模式：承包商自行填写金额，或公司预填金额后发送给承包商签字确认。
+    选择发票模式：承包商自行填写金额，或公司预填金额后发送给承包商签字确认。
   </div>
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票模式 / Invoice Mode：</label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">发票模式 / Invoice Mode：</label>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
       <label style="flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid #0ea5e9;border-radius:8px;cursor:pointer;background:#f0f9ff;font-size:.85rem;font-weight:600;color:#0369a1" id="invModeContractorLabel" onclick="setInvMode('contractor')">
         <input type="radio" name="invMode" value="contractor" checked style="accent-color:#0ea5e9"> 承包商填写金额
@@ -3167,7 +3167,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="invDocuSealFields">
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票語言版本 / Invoice Language：<span style="color:#dc2626">*</span></label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">发票語言版本 / Invoice Language：<span style="color:#dc2626">*</span></label>
     <select id="invSendLang" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
       <option value="contractor_invoice">中文+英文 (ZH+EN)</option>
       <option value="contractor_invoice_en">English Only (EN)</option>
@@ -3179,7 +3179,7 @@ tr:hover td{background:var(--sky-light)}
     <input id="invSendEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="contractor@email.com">
   </div>
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手機號（可选，发送短信通知）：</label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手机号（可选，发送短信通知）：</label>
     <input id="invSendPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (xxx) xxx-xxxx">
   </div>
   </div>
@@ -3194,7 +3194,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票日期：<span style="color:#dc2626">*</span></label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">发票日期：<span style="color:#dc2626">*</span></label>
     <input type="date" id="invSendDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
   </div>
   <div style="margin:.5rem 0">
@@ -3214,23 +3214,65 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div style="font-size:.78rem;color:var(--gray-400);margin-top:.3rem">公司预填金额，承包商只需签字确认。</div>
   </div>
+  <div id="invVoucherLangSection" style="display:none;margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">凭证语言 Voucher Language：</label>
+    <select id="invVoucherLang" style="width:100%;max-width:300px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+      <option value="bilingual">中文 + English</option>
+      <option value="en">English Only</option>
+      <option value="en_es">English + Español</option>
+    </select>
+  </div>
+  <div id="invPaymentInfoSection" style="display:none;margin:.5rem 0">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">付款方式 Payment Method：</label>
+        <select id="invSendPaymentMethod" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+          <option value="">-- 选择 --</option>
+          <option value="ACH">ACH</option>
+          <option value="Zelle">Zelle</option>
+          <option value="Check">Check</option>
+          <option value="Cash">Cash</option>
+          <option value="Wire">Wire</option>
+          <option value="Venmo">Venmo</option>
+          <option value="PayPal">PayPal</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">付款日期 Payment Date：</label>
+        <input type="date" id="invSendPaymentDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">参考编号 Reference No.：</label>
+        <input id="invSendPaymentRef" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="转账编号/支票号">
+      </div>
+    </div>
+  </div>
+  <div id="invVoucherReceiptSection" style="display:none;margin:.5rem 0">
+    <div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">上传付款截图/凭证（可选，也可以创建后再上传）：</div>
+    <div id="invVrDropZone" style="border:2px dashed var(--gray-200);border-radius:10px;padding:1rem;text-align:center;cursor:pointer;background:#fafafa;transition:all .2s" onclick="document.getElementById('invVrFileInput').click()" ondragover="event.preventDefault();this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" ondragleave="this.style.borderColor='var(--gray-200)';this.style.background='#fafafa'" ondrop="event.preventDefault();this.style.borderColor='var(--gray-200)';this.style.background='#fafafa';handleInvVrFiles(event.dataTransfer.files)">
+      <div style="font-size:.85rem;color:var(--gray-500)">点击选择 或 拖拽图片到此处</div>
+      <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">支持 JPG、PNG、PDF，可多选</div>
+      <input type="file" id="invVrFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleInvVrFiles(this.files)">
+    </div>
+    <div id="invVrPreviewGrid" style="display:none;margin-top:.4rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:.4rem"></div>
+  </div>
   <div id="invSendStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
   <div id="invFlowHint" style="margin:.75rem 0;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e">
     <b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。
   </div>
   <div id="invPreviewSection" style="display:none;margin:.5rem 0">
     <div id="invPreviewInfoBox" style="display:none;margin-bottom:.5rem;padding:.5rem .75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.82rem;color:#1e40af;line-height:1.7"></div>
-    <div style="font-weight:700;font-size:.85rem;margin-bottom:.3rem">發票模板预览：</div>
+    <div style="font-weight:700;font-size:.85rem;margin-bottom:.3rem">发票模板预览：</div>
     <iframe id="invPreviewFrame" src="" style="width:100%;height:500px;border:1px solid var(--gray-200);border-radius:6px"></iframe>
   </div>
   <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
-    <button class="btn btn-green" id="invSendBtn" onclick="doSendInvoice()">📤 發送發票</button>
+    <button class="btn btn-green" id="invSendBtn" onclick="doSendInvoice()">📤 发送发票</button>
     <button class="btn" id="invPreviewBtn" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc" onclick="previewInvoiceTemplate()">🔍 预览模板</button>
     <button class="btn" onclick="closeModal('invSendModal')">关闭</button>
   </div>
 </div></div>
 
-<!-- 承包商發票 预览链接 Modal -->
+<!-- 承包商发票 预览链接 Modal -->
 <div class="modal-bg" id="dsInvPreviewModal" style="display:none" onclick="if(event.target===this)closeDsInvPreview()">
   <div class="modal" style="max-width:92vw;width:92vw;height:90vh;display:flex;flex-direction:column;padding:1rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-shrink:0">
@@ -3306,6 +3348,85 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- 付款凭证 编辑 Modal -->
+<div class="modal-bg" id="voucherEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:640px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">✏️ 编辑付款凭证</h2>
+      <button class="btn btn-outline" onclick="document.getElementById('voucherEditModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <input type="hidden" id="vouEditId">
+    <div style="display:grid;gap:.6rem">
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">发票日期</label>
+        <input type="date" id="vouEditDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 开始</label>
+          <input type="date" id="vouEditPeriodStart" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 结束</label>
+          <input type="date" id="vouEditPeriodEnd" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务内容描述</label>
+        <textarea id="vouEditServiceDesc" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务金额 ($)</label>
+          <input type="number" id="vouEditAmount" step="0.01" min="0" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">报销费用 ($)</label>
+          <input type="number" id="vouEditExpenses" step="0.01" min="0" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">付款方式</label>
+          <select id="vouEditPayMethod" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+            <option value="">-- 选择 --</option>
+            <option value="ACH">ACH</option>
+            <option value="Zelle">Zelle</option>
+            <option value="Check">Check</option>
+            <option value="Cash">Cash</option>
+            <option value="Wire">Wire</option>
+            <option value="Venmo">Venmo</option>
+            <option value="PayPal">PayPal</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">付款日期</label>
+          <input type="date" id="vouEditPayDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">参考编号</label>
+          <input id="vouEditPayRef" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button class="btn btn-green" onclick="saveVoucherEdit()">💾 保存</button>
+      <button class="btn" onclick="document.getElementById('voucherEditModal').style.display='none'">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 付款凭证 修改历史 Modal -->
+<div class="modal-bg" id="voucherHistoryModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:640px;width:95vw;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">📜 修改历史 — <span id="vouHistoryNumber" style="font-family:monospace;color:var(--sky)"></span></h2>
+      <button class="btn btn-outline" onclick="document.getElementById('voucherHistoryModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <div id="vouHistoryContent" style="font-size:.85rem"></div>
+  </div>
+</div>
+
 <!-- 付款凭证 PDF 预览 Modal -->
 <div class="modal-bg" id="voucherPdfModal" style="display:none" onclick="if(event.target===this){document.getElementById('voucherPdfFrame').src='about:blank';this.style.display='none'}">
   <div class="modal" style="max-width:92vw;width:850px;height:90vh;display:flex;flex-direction:column;padding:1rem">
@@ -3320,7 +3441,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- 承包商發票 Edit Modal (pre_generated) -->
+<!-- 承包商发票 Edit Modal (pre_generated) -->
 <div class="modal-bg" id="invEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal" style="max-width:560px;width:95vw">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
@@ -3330,7 +3451,7 @@ tr:hover td{background:var(--sky-light)}
     <input type="hidden" id="invEditId">
     <div style="display:grid;gap:.6rem">
       <div>
-        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">發票日期</label>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">发票日期</label>
         <input type="date" id="invEditDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
@@ -3757,38 +3878,15 @@ tr:hover td{background:var(--sky-light)}
 
   <div id="wpRequiredDocs" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.8rem;color:#78350f"></div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
-    <div class="field">
-      <label style="font-size:.78rem;font-weight:600">证件类型 DOCUMENT TYPE</label>
-      <select id="wpDocType" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        <option value="">— 请选择 —</option>
-      </select>
-    </div>
-    <div class="field">
-      <label style="font-size:.78rem;font-weight:600">证件编号 DOCUMENT NUMBER</label>
-      <input id="wpDocNumber" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. SRC2190012345">
-    </div>
-  </div>
-
-  <div id="wpDateRow" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
-    <div class="field">
-      <label style="font-size:.78rem;font-weight:600">签发日期 ISSUE DATE</label>
-      <input type="date" id="wpIssueDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-    </div>
-    <div class="field">
-      <label style="font-size:.78rem;font-weight:600">到期日期 EXPIRY DATE</label>
-      <input type="date" id="wpExpiryDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-    </div>
-  </div>
-
-  <div id="wpCategoryRow" class="field" style="margin-bottom:.75rem">
-    <label style="font-size:.78rem;font-weight:600">签证类别 / USCIS CATEGORY</label>
-    <input id="wpCategory" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. C09, H-1B, F-1 OPT">
-  </div>
-
-  <div class="field" style="margin-bottom:.75rem">
-    <label style="font-size:.78rem;font-weight:600">备注 NOTES</label>
-    <textarea id="wpNotes" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="审核备注、附加信息..."></textarea>
+  <div style="display:none">
+    <select id="wpDocType"></select>
+    <input id="wpDocNumber">
+    <input type="date" id="wpIssueDate">
+    <input type="date" id="wpExpiryDate">
+    <input id="wpCategory">
+    <div id="wpDateRow"></div>
+    <div id="wpCategoryRow"></div>
+    <textarea id="wpNotes"></textarea>
   </div>
 
   <div id="wpDocUploads" style="margin-bottom:.75rem">
@@ -3876,6 +3974,9 @@ tr:hover td{background:var(--sky-light)}
             <span id="trEntAddrStatus" style="font-size:.78rem;font-weight:600"></span>
           </div>
         </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:.5rem">
+          <button class="btn btn-green" style="font-size:.82rem" onclick="trEntNext()">下一步 Next →</button>
+        </div>
       </div>
       <div id="trEntForeignFields" style="display:none">
         <div class="field" style="margin-bottom:.5rem">
@@ -3911,6 +4012,9 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div id="trEntTreatyInfo" style="display:none;border-radius:6px;padding:.5rem .8rem;margin-bottom:.5rem;font-size:.8rem"></div>
         <input type="hidden" id="trEntTreaty" value="">
+        <div style="display:flex;justify-content:flex-end;margin-top:.5rem">
+          <button class="btn btn-green" style="font-size:.82rem" onclick="trEntNext()">下一步 Next →</button>
+        </div>
       </div>
     </div>
 
@@ -3956,6 +4060,9 @@ tr:hover td{background:var(--sky-light)}
             <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyTrIndAddr()">🔍 验证地址 Verify</button>
             <span id="trIndAddrStatus" style="font-size:.78rem;font-weight:600"></span>
           </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:.5rem">
+          <button class="btn btn-green" style="font-size:.82rem" onclick="trIndNext()">下一步 Next →</button>
         </div>
       </div>
     </div>
@@ -5578,7 +5685,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <!-- Print header (hidden on screen) -->
   <div id="tsPrintHeader" style="display:none;margin-bottom:1.5rem">
-    <h2 style="text-align:center;color:#92400e;margin-bottom:.5rem">Prime Anchorpoint — Employee Timesheet</h2>
+    <h2 style="text-align:center;color:#92400e;margin-bottom:.5rem">Prime Anchor Point — Employee Timesheet</h2>
     <div style="display:flex;justify-content:space-between;font-size:.9rem;border-bottom:2px solid #92400e;padding-bottom:.5rem;margin-bottom:.5rem">
       <div><strong>Employee:</strong> <span id="tsPrintName"></span></div>
       <div><strong>ID:</strong> <span id="tsPrintId"></span></div>
@@ -5741,9 +5848,35 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <textarea id="ipmInput" rows="3" placeholder="" style="width:100%;box-sizing:border-box;border:1.5px solid var(--gray-200);border-radius:8px;padding:.5rem .7rem;font-size:.88rem;resize:vertical;outline:none;transition:border .15s;font-family:inherit" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'"></textarea>
+  <input type="date" id="ipmDateInput" style="display:none;width:100%;box-sizing:border-box;border:1.5px solid var(--gray-200);border-radius:8px;padding:.5rem .7rem;font-size:.88rem;outline:none;transition:border .15s" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'">
   <div style="display:flex;gap:.65rem;justify-content:flex-end;margin-top:.8rem">
     <button class="btn btn-outline" onclick="closeInputPrompt()">取消</button>
     <button class="btn" id="ipmBtn" onclick="execInputPrompt()">确认</button>
+  </div>
+</div></div>
+
+<div class="modal-bg" id="reverifyScheduleModal" style="z-index:9999"><div class="modal" style="max-width:440px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+    <div style="display:flex;align-items:center;gap:.7rem">
+      <div style="width:38px;height:38px;border-radius:50%;background:#DBEAFE;display:flex;align-items:center;justify-content:center;font-size:1.1rem">🔄</div>
+      <div>
+        <h2 style="margin:0;font-size:1rem;color:#1E40AF" id="rvsWorkerName"></h2>
+        <p style="margin:.1rem 0 0;font-size:.8rem;color:var(--gray-500)">身份验证 Reverify 计划</p>
+      </div>
+    </div>
+    <button onclick="closeModal('reverifyScheduleModal')" style="background:none;border:none;font-size:1.2rem;color:var(--gray-400);cursor:pointer;line-height:1">✕</button>
+  </div>
+  <div id="rvsDateList" style="margin-bottom:1rem;min-height:48px"></div>
+  <div style="border-top:1px solid var(--gray-100);padding-top:.85rem">
+    <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.5px">添加日期</div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <input type="date" id="rvsNewDate" style="flex:1;padding:.38rem .55rem;border:1.5px solid var(--gray-200);border-radius:7px;font-size:.86rem;outline:none" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'">
+      <input type="text" id="rvsNewNote" placeholder="备注（可选）" style="flex:1.2;padding:.38rem .55rem;border:1.5px solid var(--gray-200);border-radius:7px;font-size:.86rem;outline:none" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'">
+      <button class="btn btn-green" style="white-space:nowrap;font-size:.82rem;padding:.38rem .75rem" onclick="rvsAddDate()">+ 添加</button>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:.85rem">
+    <button class="btn btn-outline" onclick="closeModal('reverifyScheduleModal')">关闭</button>
   </div>
 </div></div>
 
@@ -5771,9 +5904,11 @@ tr:hover td{background:var(--sky-light)}
 
 <script>
 let _ipmResolve = null;
-function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor) {
+let _ipmDateMode = false;
+function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor, inputType) {
   const colors = {
     blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
+    green: { bg:'#D1FAE5', stroke:'#059669', title:'#065F46' },
     red:   { bg:'#FEE2E2', stroke:'#DC2626', title:'#B91C1C' },
     amber: { bg:'#FEF3C7', stroke:'#D97706', title:'#92400E' }
   };
@@ -5783,17 +5918,30 @@ function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor)
   document.getElementById('ipmTitle').textContent = title;
   document.getElementById('ipmTitle').style.color = c.title;
   document.getElementById('ipmDesc').textContent = desc;
-  document.getElementById('ipmInput').value = '';
-  document.getElementById('ipmInput').placeholder = placeholder || '';
+  _ipmDateMode = inputType === 'date';
+  const ta = document.getElementById('ipmInput');
+  const di = document.getElementById('ipmDateInput');
+  if (_ipmDateMode) {
+    ta.style.display = 'none'; di.style.display = '';
+    di.value = placeholder || ''; // use placeholder as initial value for date
+    setTimeout(() => di.focus(), 100);
+  } else {
+    di.style.display = 'none'; ta.style.display = '';
+    ta.value = ''; ta.placeholder = placeholder || '';
+    setTimeout(() => ta.focus(), 100);
+  }
   const btn = document.getElementById('ipmBtn');
   btn.textContent = btnText || '确认';
   btn.className = 'btn ' + (btnClass || 'btn-red');
   document.getElementById('inputPromptModal').classList.add('show');
-  setTimeout(() => document.getElementById('ipmInput').focus(), 100);
   return new Promise(resolve => { _ipmResolve = resolve; });
 }
 function closeInputPrompt() { document.getElementById('inputPromptModal').classList.remove('show'); if (_ipmResolve) { _ipmResolve(null); _ipmResolve = null; } }
-function execInputPrompt() { const v = document.getElementById('ipmInput').value.trim(); document.getElementById('inputPromptModal').classList.remove('show'); if (_ipmResolve) { _ipmResolve(v || null); _ipmResolve = null; } }
+function execInputPrompt() {
+  const v = _ipmDateMode ? document.getElementById('ipmDateInput').value.trim() : document.getElementById('ipmInput').value.trim();
+  document.getElementById('inputPromptModal').classList.remove('show');
+  if (_ipmResolve) { _ipmResolve(v || null); _ipmResolve = null; }
+}
 
 let _gcmCallback = null;
 let _pendingDupSave = null; // { data, empId, field, fieldLabel, existingEmpName }
@@ -7873,7 +8021,7 @@ function shareJobPlatform(platform) {
   const link = document.getElementById('jobShareLink').value;
   const title = document.getElementById('jobShareTitle').textContent;
   const url = encodeURIComponent(link);
-  const text = encodeURIComponent('正在招聘：' + title + ' — Prime Anchorpoint');
+  const text = encodeURIComponent('正在招聘：' + title + ' — Prime Anchor Point');
   const platforms = {
     wa:     'https://wa.me/?text=' + text + '%20' + url,
     fb:     'https://www.facebook.com/sharer/sharer.php?u=' + url,
@@ -10615,7 +10763,7 @@ let _contractEditorPid = null;
 
 const DEFAULT_AGREEMENT_TEMPLATE = (partnerName, today) => `PARTNERSHIP AGREEMENT
 
-This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between Prime Anchorpoint LLC, a staffing and workforce solutions company ("Service Provider"), and ${partnerName} ("Partner").
+This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between Prime Anchor Point LLC, a staffing and workforce solutions company ("Service Provider"), and ${partnerName} ("Partner").
 
 1. SERVICES
 Service Provider agrees to provide staffing, recruitment, and workforce management services as mutually agreed upon by the parties in writing. Specific scope, timelines, and deliverables for each engagement shall be documented in separate statements of work.
@@ -10640,7 +10788,7 @@ This Agreement constitutes the entire understanding between the parties.
 
 SIGNATURES
 
-Prime Anchorpoint LLC (Service Provider)
+Prime Anchor Point LLC (Service Provider)
 Authorized Signature: /sig1/
 Date: /date1/
 
@@ -13542,14 +13690,14 @@ function openTsEmail() {
   const emp = _tsLinkEmp;
   const subject = encodeURIComponent('请确认您的工时记录 / Please confirm your timesheet');
   const body = encodeURIComponent(
-    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchorpoint`
+    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchor Point`
   );
   window.open(`mailto:${emp ? emp.email : ''}?subject=${subject}&body=${body}`);
 }
 function openTsSms() {
   const url = document.getElementById('tsLinkUrl').textContent;
   const emp = _tsLinkEmp;
-  const msg = encodeURIComponent(`[Prime Anchorpoint] 请确认您的工时记录: ${url}`);
+  const msg = encodeURIComponent(`[Prime Anchor Point] 请确认您的工时记录: ${url}`);
   window.open(`sms:${emp ? emp.phone : ''}?body=${msg}`);
 }
 
@@ -14460,7 +14608,35 @@ async function loadWorkerAccounts() {
         : emp==='w2'&&(rf==='W-8BEN'||rf==='W-8BEN-E') ? 'W-2'
         : emp==='w2' ? 'W-2'
         : rf || '报税文件';
-      return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;white-space:nowrap;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${esc(filingLabel)}</button>`;
+      const filingBtn = `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;white-space:nowrap;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${esc(filingLabel)}</button>`;
+      let docBadge = '';
+      if (emp === '1099') {
+        const isW8 = rf==='W-8BEN'||rf==='W-8BEN-E'||rf==='Form 8233';
+        if (isW8) {
+          const w8Label = rf==='Form 8233' ? 'W-8BEN/8233' : rf==='W-8BEN-E' ? 'W-8BEN-E' : 'W-8BEN';
+          const w8Signed = w.w8ben_task_status==='completed';
+          const w8Style = w8Signed ? 'background:#dcfce7;color:#15803d;border:1px solid #86efac' : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a';
+          docBadge = `<span style="cursor:pointer;display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;white-space:nowrap;${w8Style}" onclick="event.stopPropagation();openOnboardingModal(${w.id},'${esc(w.name||w.username)}')" title="${w8Signed?'已签署 '+w8Label:'待签署 '+w8Label}">${w8Signed?'✅ ':'📋 '}${esc(w8Label)}</span>`;
+        } else {
+          const w9Signed = w.w9_ds_status==='completed' || (w.compliance&&w.compliance.w9==='completed');
+          if (w9Signed) {
+            docBadge = `<a href="/api/admin/worker-accounts/${w.id}/w9-signed-pdf" target="_blank" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#dcfce7;color:#15803d;border:1px solid #86efac;text-decoration:none;white-space:nowrap" onclick="event.stopPropagation()" title="查看已签署 W-9">✅ W-9</a>`;
+          } else {
+            docBadge = `<span style="cursor:pointer;display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap" onclick="event.stopPropagation();openOnboardingModal(${w.id},'${esc(w.name||w.username)}')" title="W-9 待签署">📋 W-9</span>`;
+          }
+        }
+      } else if (emp === 'w2') {
+        const i9Signed = w.i9_compliance_doc_status==='approved'||w.i9_compliance_doc_status==='completed';
+        const i9Submitted = w.i9_compliance_doc_status==='pending';
+        if (i9Signed && w.i9_compliance_doc_id) {
+          docBadge = `<a href="/api/admin/compliance-docs/${w.i9_compliance_doc_id}/download" target="_blank" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#dcfce7;color:#15803d;border:1px solid #86efac;text-decoration:none;white-space:nowrap" onclick="event.stopPropagation()" title="查看 I-9">✅ I-9</a>`;
+        } else if (i9Submitted && w.i9_compliance_doc_id) {
+          docBadge = `<a href="/api/admin/compliance-docs/${w.i9_compliance_doc_id}/download" target="_blank" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fde68a;text-decoration:none;white-space:nowrap" onclick="event.stopPropagation()" title="查看 I-9（待审核）">📋 I-9</a>`;
+        } else {
+          docBadge = `<span style="cursor:pointer;display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap" onclick="event.stopPropagation();openOnboardingModal(${w.id},'${esc(w.name||w.username)}')" title="I-9 待签署">📋 I-9</span>`;
+        }
+      }
+      return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">${filingBtn}${docBadge}</div>`;
     })()}</td>
     <td style="font-size:.78rem;white-space:nowrap;text-align:center">${(() => {
       const isCitizen = w.tax_status === 'citizen' || w.tax_status === 'us_citizen' || w.work_status === 'citizen';
@@ -14469,8 +14645,9 @@ async function loadWorkerAccounts() {
       const today = new Date().toISOString().slice(0,10);
       const overdue = d && d < today;
       const soon = d && !overdue && d <= new Date(Date.now()+30*86400000).toISOString().slice(0,10);
-      if (!d) return `<span style="color:var(--gray-300);cursor:pointer" onclick="setReverifyDate(${w.id},this)" title="点击设置">— 未设置 —</span>`;
-      return `<span style="cursor:pointer;padding:2px 6px;border-radius:6px;font-weight:600;${overdue?'background:#fee2e2;color:#dc2626':soon?'background:#fef3c7;color:#92400e':'background:#f0fdf4;color:#15803d'}" onclick="setReverifyDate(${w.id},this)" title="点击修改">${d}</span>`;
+      const wName = esc(w.name || w.username || '');
+      if (!d) return `<span style="color:var(--gray-300);cursor:pointer" onclick="event.stopPropagation();setReverifyDate(${w.id},'${wName}')" title="点击设置">— 未设置 —</span>`;
+      return `<span style="cursor:pointer;padding:2px 6px;border-radius:6px;font-weight:600;${overdue?'background:#fee2e2;color:#dc2626':soon?'background:#fef3c7;color:#92400e':'background:#f0fdf4;color:#15803d'}" onclick="event.stopPropagation();setReverifyDate(${w.id},'${wName}')" title="点击查看计划">${d}</span>`;
     })()}</td>
     <td style="font-size:.8rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer" onchange="updateWorkerPayMethod(${w.id},this.value)">
       <option value="cash" ${(w.payment_method||'cash')==='cash'?'selected':''}>💵 现金</option>
@@ -14670,12 +14847,25 @@ function renderOnboardingTasks(tasks) {
   // Get assigned tasks for this worker (set after W2/1099 selection)
   const preInterviewKeys = ['phone_verify', 'email_verify', 'interview'];
   let assignedTasks = [];
-  try { assignedTasks = JSON.parse((_onboardingWorkerData && _onboardingWorkerData.assigned_tasks) || '[]'); } catch {}
-  // Use current type definition as the authoritative task list
+  let dbAssignedTasks = [];
+  try { dbAssignedTasks = JSON.parse((_onboardingWorkerData && _onboardingWorkerData.assigned_tasks) || '[]'); } catch {}
+  assignedTasks = [...dbAssignedTasks];
+  // Use employment-type task list as base, but preserve tax_doc_* keys the server set for this worker
   if (_onboardingWorkerData && _onboardingWorkerData.employment_type) {
     const empType = _onboardingWorkerData.employment_type;
     const typeTasks = empType === 'w2' ? W2_TASKS : empType === '1099' ? C1099_TASKS : [];
-    if (typeTasks.length) assignedTasks = [...typeTasks];
+    if (typeTasks.length) {
+      const dbTaxDocKeys = dbAssignedTasks.filter(k => k.startsWith('tax_doc_'));
+      // Insert tax_doc tasks just before tin_verify so they appear in the right order
+      const tinIdx = typeTasks.indexOf('tin_verify');
+      if (dbTaxDocKeys.length && tinIdx >= 0) {
+        const merged = [...typeTasks];
+        merged.splice(tinIdx, 0, ...dbTaxDocKeys);
+        assignedTasks = merged;
+      } else {
+        assignedTasks = [...typeTasks, ...dbTaxDocKeys];
+      }
+    }
   }
   // Check if tax residency questionnaire is done
   const taxResTask = tasks.find(t => t.key === 'tax_residency');
@@ -14739,13 +14929,13 @@ function renderOnboardingTasks(tasks) {
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${_TASK_TEMPLATE_MAP[t.key]?`<button class="btn btn-sm" style="background:#fdf4ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="openOnboardingTaskPreview('${t.key}',${tt})">🔍 预览表格</button>`:''}
           ${t.key==='contract'
-            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>${t.ds_status==='completed'?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('contract')">🔗 绑定已签文件</button>`:''}`
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>${(t.ds_status==='completed'&&s==='completed')?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('contract')">🔗 绑定已签文件</button>`:''}`
             : t.key==='persona_verify'
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : t.key==='w9'
-            ? `<button class="btn btn-sm" style="background:${s==='submitted'&&t.ds_status==='completed'?'#fef2f2':'#fefce8'};color:${s==='submitted'&&t.ds_status==='completed'?'#dc2626':'#854d0e'};border:1px solid ${s==='submitted'&&t.ds_status==='completed'?'#fecaca':'#fde68a'};font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'&&s==='completed'?'✅ W-9 已签署':t.ds_status==='completed'&&s==='submitted'?'⚠️ 地址待核对':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>${t.ds_status==='completed'?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/w9-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('w9')">🔗 绑定已签文件</button>`:''}`
+            ? `<button class="btn btn-sm" style="background:${s==='submitted'&&t.ds_status==='completed'?'#fef2f2':'#fefce8'};color:${s==='submitted'&&t.ds_status==='completed'?'#dc2626':'#854d0e'};border:1px solid ${s==='submitted'&&t.ds_status==='completed'?'#fecaca':'#fde68a'};font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'&&s==='completed'?'✅ W-9 已签署':t.ds_status==='completed'&&s==='submitted'?'⚠️ 地址待核对':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>${(t.ds_status==='completed'&&(s==='completed'||s==='submitted'))?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/w9-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('w9')">🔗 绑定已签文件</button>`:''}`
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : t.key==='work_auth'
@@ -14757,7 +14947,7 @@ function renderOnboardingTasks(tasks) {
             : t.key==='tin_verify'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button>`
             : t.key==='payment_method'
-            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;font-weight:700" onclick="openPaymentAuthModal()">💳 ${t.ds_status==='completed'?'✅ 已签署':t.ds_status==='sent'?'⏳ 等待签署':'发送付款授权'}</button>${t.ds_status==='completed'?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/payment-auth-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('payment_method')">🔗 绑定已签文件</button>`:''}`
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;font-weight:700" onclick="openPaymentAuthModal()">💳 ${t.ds_status==='completed'?'✅ 已签署':t.ds_status==='sent'?'⏳ 等待签署':'发送付款授权'}</button>${(t.ds_status==='completed'&&s==='completed')?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/payment-auth-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('payment_method')">🔗 绑定已签文件</button>`:''}`
             : (t.key==='i9'||t.key==='ead_upload')
             ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openIdVerifyModal(${_onboardingWorkerId},'${esc((_onboardingWorkerData&&(_onboardingWorkerData.name||_onboardingWorkerData.username))||'').replace(/'/g,"\\'")}','${esc((_onboardingWorkerData&&_onboardingWorkerData.work_status)||'other')}')">🪪 ${s==='completed'?'✅ 已验证':s==='submitted'?'📋 查看/审核文件':'📋 查看身份文件'}</button>${isVisible?'':` <button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="toggleOnboardingVisibility('${t.key}',1)">📤 发送给工人</button>`}`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
@@ -15317,17 +15507,13 @@ function trSelectIndStatus(s) {
   ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trFinalResult').style.display = 'none';
-  // Auto-show/hide steps based on status
-  if (s === 'citizen' || s === 'green_card') {
-    _trPath = 'individual_us';
-    document.getElementById('trStep3').style.display = 'none';
-    document.getElementById('trStep4').style.display = 'none';
-  } else if (s === 'neither') {
-    _trPath = 'individual_nr';
-    document.getElementById('trStep3').style.display = '';
-    document.getElementById('trStep4').style.display = 'none';
-  }
-  trCalcFinalResult();
+  // Show/hide steps — citizen/GC: wait for user to click 下一步 in trIndUsFields
+  // Neither: show Step 3 immediately (no extra fields in Step 2B)
+  document.getElementById('trStep3').style.display = s === 'neither' ? '' : 'none';
+  document.getElementById('trStep4').style.display = 'none';
+  document.getElementById('trFinalResult').style.display = 'none';
+  if (s === 'citizen' || s === 'green_card') _trPath = 'individual_us';
+  else if (s === 'neither') _trPath = 'individual_nr';
 }
 
 function trShowStep(n) {
@@ -15351,6 +15537,7 @@ function trEntNext() {
   if (eu === 'yes') {
     // Validate US entity fields
     if (!document.getElementById('trEntLegalName').value.trim()) return showToast('请填写 Legal Business Name', 'error');
+    if (!document.getElementById('trEntTaxClass').value) return showToast('请选择 Tax Classification', 'error');
     if (!document.getElementById('trEntEin').value.trim()) return showToast('请填写 EIN / TIN', 'error');
     if (!/^\d{2}-\d{7}$/.test(document.getElementById('trEntEin').value.trim())) return showToast('EIN 格式应为 XX-XXXXXXX（9位数字）', 'error');
     if (!document.getElementById('trEntAddrStreet').value.trim()) return showToast('请填写 Street Address', 'error');
@@ -15366,7 +15553,10 @@ function trEntNext() {
     if (!document.getElementById('trEntForeignAddrStreet').value.trim()) return showToast('请填写 Street Address', 'error');
     if (!document.getElementById('trEntForeignAddrCity').value.trim()) return showToast('请填写 City', 'error');
     _trPath = 'entity';
-    trShowStep(4);
+    trAutoDetectTreatyCountry();
+    document.getElementById('trStep4').style.display = '';
+    trStep4Toggle();
+    trCalcFinalResult();
   }
 }
 
@@ -15374,6 +15564,13 @@ function trIndNext() {
   const status = document.querySelector('input[name="trIndStatus"]:checked');
   if (!status) return showToast('请选择身份类型', 'error');
   if (status.value === 'citizen' || status.value === 'green_card') {
+    // Validate US person fields
+    if (!document.getElementById('trIndLegalName').value.trim()) return showToast('请填写 Legal Name', 'error');
+    if (!document.getElementById('trIndSsn').value.trim()) return showToast('请填写 SSN / ITIN', 'error');
+    if (!document.getElementById('trIndAddrStreet').value.trim()) return showToast('请填写 Street Address', 'error');
+    if (!document.getElementById('trIndAddrCity').value.trim()) return showToast('请填写 City', 'error');
+    if (!document.getElementById('trIndAddrState').value.trim()) return showToast('请填写 State', 'error');
+    if (!document.getElementById('trIndAddrZip').value.trim()) return showToast('请填写 ZIP Code', 'error');
     _trPath = 'individual_us';
     trCalcFinalResult();
   } else {
@@ -15425,14 +15622,7 @@ function trEntityToggle() {
   ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trFinalResult').style.display = 'none';
-  if (v === 'yes') {
-    document.getElementById('trStep4').style.display = 'none';
-  } else if (v === 'no') {
-    document.getElementById('trStep4').style.display = '';
-    trAutoDetectTreatyCountry();
-    trStep4Toggle();
-  }
-  trCalcFinalResult();
+  document.getElementById('trStep4').style.display = 'none';
 }
 
 function trResidentToggle() {
@@ -16463,9 +16653,6 @@ async function openTaxResidencyModal() {
     if (trData.treaty_country) { const el = document.getElementById('trTreatyCountry'); if (el) { el.value = trData.treaty_country; trOnTreatyCountryChange(); } }
     if (trData.claim_treaty_benefit && (trData.claim_treaty_benefit === 'yes' || trData.claim_treaty_benefit === 'no')) { trSetTreatyClaim(trData.claim_treaty_benefit); }
     if (trData.treaty_income_type) { const el = document.getElementById('trTreatyIncomeType'); if (el) el.value = trData.treaty_income_type; }
-    if (trData.work_permit_category) {
-      const el = document.getElementById('trWorkPermitCategory'); if (el) { el.value = trData.work_permit_category; trWorkPermitCategoryChange(); }
-    }
     if (trData.immigration_status) {
       const el = document.getElementById('trDocImmStatus'); if (el) el.value = trData.immigration_status;
     }
@@ -16550,6 +16737,14 @@ async function saveTaxResidency() {
       if (!document.getElementById('trIndAddrState').value.trim()) return showToast('❌ 请填写 State', 'error');
       if (!document.getElementById('trIndAddrZip').value.trim()) return showToast('❌ 请填写 ZIP Code', 'error');
     }
+  }
+
+  // Validate Step 4 fields (Services & Treaty) — required for all paths that reach Step 4
+  const _step4El = document.getElementById('trStep4');
+  if (_step4El && _step4El.style.display !== 'none') {
+    if (!document.getElementById('trServicesLoc').value) return showToast('❌ 请选择服务是否在美国境内履行', 'error');
+    if (!document.getElementById('trWorkLoc').value.trim()) return showToast('❌ 请填写 Primary Work Location(s)', 'error');
+    if (!document.getElementById('trServiceDates').value.trim()) return showToast('❌ 请填写 Expected Service Dates（起止月份）', 'error');
   }
 
   const trData = trWizardCollectData();
@@ -16915,6 +17110,10 @@ const WP_DOC_OPTIONS = {
     { value: 'signing_auth', label: '授权签署人证明 Signing Authority / Board Resolution' },
     { value: 'other', label: '其他 Other' }
   ],
+  nra_visa: [
+    { value: 'nra_passport_visa', label: '护照 + 签证复印件 Passport + Visa Copy' },
+    { value: 'other', label: '其他 Other' }
+  ],
   generic: [
     { value: 'ead', label: 'EAD 工卡 (Employment Authorization Document)' },
     { value: 'work_visa', label: '工作签证 Work Visa (H-1B, L-1, etc.)' },
@@ -16985,7 +17184,8 @@ const WP_REQUIRED_DOCS = {
   cpt: { title: 'F-1 CPT', docs: ['最少需要的材料:', '• I-20（含 CPT 授权页 CPT authorization）', '• 护照 Passport'] },
   j1: { title: 'J-1', docs: ['最少需要的材料:', '• DS-2019', '• 护照 Passport'] },
   us_entity: { title: '美国实体 U.S. Entity → W-9', docs: ['需要的材料:', '• 公司注册文件 Articles / Certificate of Formation', '• EIN 确认函 IRS EIN Confirmation Letter (CP 575 / 147C)'] },
-  foreign_entity: { title: '外国实体 Foreign Entity → W-8BEN-E', docs: ['需要的材料:', '• 实体注册证明 Certificate of Incorporation / Formation', '• 授权签署人证明 Signing Authority / Board Resolution', '• ITIN/EIN 申请 Form W-7 / Form SS-4（如无美国税号）'] }
+  foreign_entity: { title: '外国实体 Foreign Entity → W-8BEN-E', docs: ['需要的材料:', '• 实体注册证明 Certificate of Incorporation / Formation', '• 授权签署人证明 Signing Authority / Board Resolution', '• ITIN/EIN 申请 Form W-7 / Form SS-4（如无美国税号）'] },
+  nra_visa: { title: '非居民外国人 Nonresident Alien (F-1/M-1/B 等)', docs: ['最少需要的材料:', '• 护照 Passport', '• 签证复印件 Visa Copy (F-1, M-1, B-1/B-2 等)', '• I-94 入境记录 Arrival/Departure Record'] }
 };
 
 function wpPopulateDocType(category, existingValue) {
@@ -17021,28 +17221,103 @@ const WP_UPLOAD_DOCS = {
   j1: ['DS-2019', '护照 Passport'],
   us_entity: ['公司注册文件 Articles of Formation', 'EIN 确认函 IRS EIN Letter'],
   foreign_entity: ['实体注册证明 Certificate of Incorporation', '授权签署人证明 Signing Authority'],
+  nra_visa: ['护照 Passport', '签证复印件 Visa Copy', 'I-94 入境记录 Arrival/Departure Record'],
   generic: ['证件文件 Document']
 };
 
 let _wpUploadedDocs = []; // track uploaded docs for current session
 
-function wpRenderUploadZones(category) {
+// Per-visa-type required upload documents (for timeline-based rendering)
+const WP_VISA_DOCS = {
+  'F-1':    ['F-1 签证印件 Visa Copy', 'I-20 (Certificate of Eligibility)'],
+  'F-2':    ['F-2 签证印件 Visa Copy'],
+  'M-1':    ['M-1 签证印件 Visa Copy', 'I-20 (Form I-20 M)'],
+  'J-1':    ['J-1 签证印件 Visa Copy', 'DS-2019 (Certificate of Eligibility)'],
+  'J-2':    ['J-2 签证印件 Visa Copy', 'DS-2019 (Certificate of Eligibility)'],
+  'H-1B':   ['H-1B 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'H-1B1':  ['H-1B1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'L-1':    ['L-1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'O-1':    ['O-1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'TN':     ['TN 签证印件 / CBP 入境记录 TN Visa Copy or CBP Admission Record'],
+  'E-2':    ['E-2 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'E-3':    ['E-3 签证印件 Visa Copy'],
+  'R-1':    ['R-1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'P-1':    ['P-1 签证印件 Visa Copy', 'I-797 批准通知 Approval Notice'],
+  'B-1':    ['B-1/B-2 签证印件 Visa Copy'],
+  'B-2':    ['B-1/B-2 签证印件 Visa Copy'],
+  'B-1/B-2':['B-1/B-2 签证印件 Visa Copy'],
+};
+function _wpEadLabel(visa) {
+  return `EAD 工卡 I-766 正反面 (${visa.replace('EAD-','')})`;
+}
+
+function wpRenderUploadZones(category, trData) {
   const container = document.getElementById('wpUploadZones');
-  const docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
   container.innerHTML = '';
+  let docs = [];
+
+  // For NRA / complex cases: build per-period upload list from timeline
+  if (trData && trData.entry_exit_records && (category === 'nra_visa' || category === 'work_visa' || category === 'opt' || category === 'cpt' || category === 'j1' || category === 'ead')) {
+    try {
+      const rec = JSON.parse(trData.entry_exit_records);
+      const periods = rec.status_periods || rec.periods || [];
+      const seen = new Set();
+      const add = (label) => { if (!seen.has(label)) { seen.add(label); docs.push(label); } };
+
+      // Always: passport + I-94 for anyone with US presence
+      add('护照 Passport（所有有效护照页）');
+      add('I-94 入境记录 Arrival/Departure Record（最近入境）');
+
+      // Per-period documents
+      periods.forEach(p => {
+        const v = (p.visa || '').trim();
+        const dateRange = [p.start, p.end].filter(Boolean).join(' ~ ');
+        const periodLabel = dateRange ? ` (${dateRange})` : '';
+        if (WP_VISA_DOCS[v]) {
+          WP_VISA_DOCS[v].forEach(d => add(`${d}${periodLabel}`));
+        } else if (v.startsWith('EAD-')) {
+          add(_wpEadLabel(v) + periodLabel);
+        } else if (v) {
+          add(`${v} 签证印件 Visa Copy${periodLabel}`);
+        }
+      });
+    } catch(e) {
+      docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
+    }
+  } else {
+    docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
+  }
+
   docs.forEach((label, idx) => {
     const zoneId = `wpUploadZone_${idx}`;
     container.insertAdjacentHTML('beforeend', `
-      <div id="${zoneId}" style="border:2px dashed var(--gray-200);border-radius:8px;padding:.8rem;margin-bottom:.75rem;background:#fafafa;transition:border-color .2s,background .2s">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem">
-          <span style="font-size:.82rem;font-weight:700;color:#374151;flex:1">📄 ${label}</span>
-          <div id="${zoneId}_status" style="font-size:.78rem;color:#999;flex-shrink:0">未上传</div>
+      <div id="${zoneId}" style="border:1px solid #e5e7eb;border-radius:10px;padding:.9rem 1rem;margin-bottom:.65rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.6rem">
+          <span style="font-size:.83rem;font-weight:700;color:#1f2937">📄 ${label}</span>
+          <span id="${zoneId}_status" style="font-size:.75rem;color:#9ca3af;background:#f3f4f6;padding:.15rem .55rem;border-radius:20px;white-space:nowrap">未上传</span>
         </div>
-        <div id="${zoneId}_file" style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
-          <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="font-size:.78rem;flex:1"
+        <div id="${zoneId}_file" style="margin-bottom:.55rem">
+          <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="font-size:.8rem;width:100%;color:#374151"
             onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
         </div>
         <div id="${zoneId}_existing" style="margin-bottom:.4rem"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;align-items:center">
+          <div>
+            <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">证件号码</div>
+            <input type="text" id="${zoneId}_number" placeholder="号码" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
+              onchange="wpSaveDocMeta('${zoneId}')">
+          </div>
+          <div>
+            <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">开始日期</div>
+            <input type="date" id="${zoneId}_start" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
+              onchange="wpSaveDocMeta('${zoneId}')">
+          </div>
+          <div>
+            <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">到期日期</div>
+            <input type="date" id="${zoneId}_expiry" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
+              onchange="wpSaveDocMeta('${zoneId}')">
+          </div>
+        </div>
       </div>
     `);
   });
@@ -17080,7 +17355,11 @@ async function wpHandleFileSelect(idx, label, input) {
       _wpUploadedDocs.push(data.id);
       // Store doc id on zone for per-doc metadata save
       const zoneEl = document.getElementById(zoneId);
-      if (zoneEl) zoneEl.dataset.docId = data.id;
+      if (zoneEl) {
+        zoneEl.dataset.docId = data.id;
+        // Save any dates already entered before upload
+        wpSaveDocDates(zoneId);
+      }
     } else {
       statusEl.textContent = '上传失败';
       statusEl.style.color = '#dc2626';
@@ -17092,6 +17371,24 @@ async function wpHandleFileSelect(idx, label, input) {
     showToast('上传失败: ' + e.message, 'error');
   }
 }
+
+async function wpSaveDocMeta(zoneId) {
+  const zoneEl = document.getElementById(zoneId);
+  if (!zoneEl || !zoneEl.dataset.docId) return; // no doc uploaded yet, nothing to save
+  const docId = zoneEl.dataset.docId;
+  const docType = (document.getElementById(`${zoneId}_type`) || {}).value || '';
+  const docNumber = (document.getElementById(`${zoneId}_number`) || {}).value || '';
+  const startVal = (document.getElementById(`${zoneId}_start`) || {}).value || '';
+  const expiryVal = (document.getElementById(`${zoneId}_expiry`) || {}).value || '';
+  try {
+    await api(`/admin/work-permit-docs/${docId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: startVal, expiry_date: expiryVal })
+    });
+  } catch(e) { /* silent */ }
+}
+// alias for backwards compatibility
+const wpSaveDocDates = wpSaveDocMeta;
 
 function wpDocFileHtml(docId, fileName) {
   const isImage = /\.(jpg|jpeg|png|gif|heic|heif)$/i.test(fileName);
@@ -17139,6 +17436,17 @@ async function wpLoadExistingDocs(category) {
           const statusEl = document.getElementById(`${zoneId}_status`);
           if (statusEl) statusEl.innerHTML = `<span style="color:#059669">✅ 已上传</span>`;
         }
+        // Pre-populate all meta fields and link docId to zone
+        const zoneEl = document.getElementById(zoneId);
+        if (zoneEl) zoneEl.dataset.docId = doc.id;
+        const numEl = document.getElementById(`${zoneId}_number`);
+        if (numEl && doc.doc_number) numEl.value = doc.doc_number;
+        const typeEl = document.getElementById(`${zoneId}_type`);
+        if (typeEl && doc.doc_type) typeEl.value = doc.doc_type;
+        const startEl = document.getElementById(`${zoneId}_start`);
+        if (startEl && doc.issue_date) startEl.value = doc.issue_date;
+        const expiryEl = document.getElementById(`${zoneId}_expiry`);
+        if (expiryEl && doc.expiry_date) expiryEl.value = doc.expiry_date;
       }
     });
   } catch(e) { /* no existing docs */ }
@@ -17166,6 +17474,26 @@ function wpDetectCategory(trData) {
   if (EAD_TYPES.includes(wa)) return 'ead';
   if (wa === 'F-1-CPT') return 'cpt';
   if (wa === 'J-1') return 'j1';
+  // F-1 student (treaty / 8233 path) — needs passport + visa copy + I-94
+  if (wa === 'F-1' || wa === 'F-2' || wa === 'M-1' || wa === 'M-2') return 'nra_visa';
+  // B-1/B-2 visitors performing services
+  if (wa.startsWith('B-')) return 'nra_visa';
+  // Parse entry_exit_records timeline to detect visa type when immigration_status is not set
+  try {
+    const rec = trData.entry_exit_records ? JSON.parse(trData.entry_exit_records) : null;
+    const periods = (rec && (rec.status_periods || rec.periods)) || [];
+    if (periods.length) {
+      // Use the most recent period's visa
+      const lastVisa = (periods[periods.length - 1].visa || '').trim();
+      if (lastVisa === 'F-1' || lastVisa === 'F-2' || lastVisa === 'M-1' || lastVisa === 'M-2') return 'nra_visa';
+      if (lastVisa.startsWith('B-')) return 'nra_visa';
+      if (VISA_TYPES.includes(lastVisa)) return 'work_visa';
+      if (lastVisa === 'J-1') return 'j1';
+      if (lastVisa === 'F-1-CPT') return 'cpt';
+      if (lastVisa === 'EAD-C03A' || lastVisa === 'EAD-C03B') return 'opt';
+      if (EAD_TYPES.includes(lastVisa)) return 'ead';
+    }
+  } catch(e) {}
   return 'generic';
 }
 
@@ -17185,8 +17513,10 @@ async function openWorkPermitModal() {
 
   // Load questionnaire data to determine category
   let wpCategory = 'generic';
+  let _wpTrData = null;
   try {
     const trData = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`);
+    _wpTrData = trData;
     if (trData) {
       wpCategory = wpDetectCategory(trData);
       // Show questionnaire-based hint
@@ -17210,7 +17540,7 @@ async function openWorkPermitModal() {
   // Populate dropdown and show required docs
   wpPopulateDocType(wpCategory);
   wpShowRequiredDocs(wpCategory);
-  wpRenderUploadZones(wpCategory);
+  wpRenderUploadZones(wpCategory, _wpTrData);
   wpLoadExistingDocs(wpCategory);
 
   // Load existing work permit data — pre-fill form fields from saved record
@@ -17272,17 +17602,9 @@ async function openWorkPermitModal() {
 }
 
 function confirmWorkPermitVerify() {
-  const docType = document.getElementById('wpDocType').value;
-  if (!docType) return showToast('请选择证件类型', 'error');
-  const sel = document.getElementById('wpDocType');
-  const selOpt = sel.options[sel.selectedIndex];
-  const typeLabel = selOpt ? selOpt.text : docType;
-  const docNumber = document.getElementById('wpDocNumber').value.trim();
-  const expiryDate = document.getElementById('wpExpiryDate').value;
-  const summary = `${typeLabel}${docNumber ? ' #' + docNumber : ''}${expiryDate ? ' · 到期: ' + expiryDate : ''}`;
   showConfirmModal(
     '确认工作许可验证通过',
-    `请确认以下工作许可信息核验无误并标记为验证通过：\n\n${summary}`,
+    '请确认工作许可文件核验无误并标记为验证通过。',
     '🛂 确认验证通过',
     'btn-green',
     () => saveWorkPermit(true),
@@ -17291,39 +17613,49 @@ function confirmWorkPermitVerify() {
 }
 
 async function saveWorkPermit(doVerify) {
-  const docType = document.getElementById('wpDocType').value;
-  const docNumber = document.getElementById('wpDocNumber').value.trim();
-  const issueDate = document.getElementById('wpIssueDate').value;
-  const expiryDate = document.getElementById('wpExpiryDate').value;
-  const category = document.getElementById('wpCategory').value.trim();
   const notes = document.getElementById('wpNotes').value.trim();
 
-  if (!docType) return showToast('请选择证件类型', 'error');
+  // Collect first uploaded doc's type/number/dates as the main record summary
+  const firstZone = document.querySelector('[id^="wpUploadZone_"][data-doc-id]');
+  const docType = firstZone ? (document.getElementById(firstZone.id + '_type') || {}).value || '' : '';
+  const docNumber = firstZone ? (document.getElementById(firstZone.id + '_number') || {}).value || '' : '';
+  const issueDate = firstZone ? (document.getElementById(firstZone.id + '_start') || {}).value || '' : '';
+  // Find the earliest non-empty expiry date across all zones
+  const allZones = document.querySelectorAll('[id^="wpUploadZone_"]');
+  let earliestExpiry = '';
+  allZones.forEach(z => {
+    const exp = (document.getElementById(z.id + '_expiry') || {}).value || '';
+    if (exp && (!earliestExpiry || exp < earliestExpiry)) earliestExpiry = exp;
+  });
+  const expiryDate = earliestExpiry;
 
   // Save main work permit record
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`, {
     method: 'POST',
-    body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: issueDate, expiry_date: expiryDate, category, notes, verified: doVerify })
+    body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: issueDate, expiry_date: expiryDate, category: '', notes, verified: doVerify })
   });
 
   if (doVerify) {
-    // Mark onboarding task as completed
-    const sel = document.getElementById('wpDocType');
-    const selOpt = sel.options[sel.selectedIndex];
-    const typeLabel = selOpt ? selOpt.text : docType;
-    const noteText = `${typeLabel}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}${notes?' · '+notes:''}`;
-    await updateOnboardingTask('work_permit', 'completed', noteText);
+    await updateOnboardingTask('work_permit', 'completed', `${docType}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}`);
+    // Auto-add expiry dates from all zones to reverify schedule
+    const allExpiries = [];
+    document.querySelectorAll('[id^="wpUploadZone_"]').forEach(z => {
+      const exp = (document.getElementById(z.id + '_expiry') || {}).value || '';
+      const lbl = (document.querySelector(`#${z.id} span`) || {}).textContent || '';
+      if (exp) allExpiries.push({ date: exp, note: lbl.replace('📄 ', '').slice(0, 40) });
+    });
+    for (const e of allExpiries) {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/reverify-schedule`, {
+        method: 'POST', body: JSON.stringify({ date: e.date, note: e.note })
+      });
+    }
     closeModal('workPermitModal');
     showToast('✅ 工作许可验证已通过', 'success');
   } else {
     showToast('💾 工作许可信息已保存', 'success');
-    // Refresh current info display
     const info = document.getElementById('wpCurrentInfo');
-    const sel = document.getElementById('wpDocType');
-    const selOpt = sel.options[sel.selectedIndex];
-    const typeLabel = selOpt && selOpt.value ? selOpt.text : docType;
     info.innerHTML = `<div style="font-weight:700;color:#065f46;margin-bottom:.3rem">📋 已有记录:</div>
-      <div>类型: <b>${typeLabel}</b>${docNumber?' · 编号: <b>'+docNumber+'</b>':''}${expiryDate?' · 到期: <b>'+expiryDate+'</b>':''}</div>`;
+      <div>${docType?'类型: <b>'+docType+'</b>':''}${docNumber?' · 编号: <b>'+docNumber+'</b>':''}${expiryDate?' · 到期: <b>'+expiryDate+'</b>':''}</div>`;
     info.style.display = 'block';
   }
 }
@@ -18893,12 +19225,69 @@ async function toggleWorkerFeature(id, field, enabled) {
   }
 }
 
-async function setReverifyDate(id, el) {
-  const current = el.dataset.date || el.textContent.trim().replace('— 未设置 —','');
-  const val = prompt('身份 Reverify 日期（YYYY-MM-DD）：', current || '');
-  if (val === null) return;
-  await api(`/admin/worker-accounts/${id}/identity-reverify-date`, { method:'PATCH', body:JSON.stringify({ date: val.trim() }) });
-  showToast('✅ Reverify 日期已更新');
+async function setReverifyDate(id, workerName) {
+  await openReverifySchedule(id, workerName || '');
+}
+
+let _rvsWorkerId = null;
+
+async function openReverifySchedule(id, workerName) {
+  _rvsWorkerId = id;
+  document.getElementById('rvsWorkerName').textContent = workerName || '';
+  document.getElementById('rvsNewDate').value = '';
+  document.getElementById('rvsNewNote').value = '';
+  document.getElementById('reverifyScheduleModal').classList.add('show');
+  await rvsLoadDates();
+}
+
+async function rvsLoadDates() {
+  const list = document.getElementById('rvsDateList');
+  list.innerHTML = '<div style="color:var(--gray-400);font-size:.83rem;padding:.3rem 0">加载中…</div>';
+  try {
+    const data = await api(`/admin/worker-accounts/${_rvsWorkerId}/reverify-schedule`);
+    const dates = (data && data.dates) || [];
+    const today = new Date().toISOString().slice(0, 10);
+    if (!dates.length) {
+      list.innerHTML = '<div style="color:var(--gray-400);font-size:.83rem;padding:.5rem 0;text-align:center">暂无计划日期</div>';
+      return;
+    }
+    list.innerHTML = dates.map((d, i) => {
+      const past = d.date < today;
+      const soon = !past && d.date <= new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+      const bg = past ? '#fef2f2' : soon ? '#fef3c7' : '#f0fdf4';
+      const color = past ? '#dc2626' : soon ? '#92400e' : '#065f46';
+      const border = past ? '#fecaca' : soon ? '#fde68a' : '#bbf7d0';
+      const badge = past ? '已过期' : soon ? '即将到期' : '计划中';
+      return `<div style="display:flex;align-items:center;gap:.6rem;padding:.45rem .6rem;border-radius:8px;background:${bg};border:1px solid ${border};margin-bottom:.4rem">
+        <div style="flex:1">
+          <span style="font-weight:700;font-size:.88rem;color:${color}">${d.date}</span>
+          ${d.note ? `<span style="font-size:.78rem;color:#6b7280;margin-left:.5rem">· ${esc(d.note)}</span>` : ''}
+        </div>
+        <span style="font-size:.7rem;font-weight:600;color:${color};background:${border};padding:.1rem .45rem;border-radius:20px;white-space:nowrap">${badge}</span>
+        <button onclick="rvsDeleteDate('${d.date}')" style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:.9rem;padding:0 .2rem;line-height:1" title="删除">✕</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div style="color:#dc2626;font-size:.83rem">加载失败</div>';
+  }
+}
+
+async function rvsAddDate() {
+  const date = document.getElementById('rvsNewDate').value;
+  const note = document.getElementById('rvsNewNote').value.trim();
+  if (!date) { showToast('请选择日期', 'error'); return; }
+  await api(`/admin/worker-accounts/${_rvsWorkerId}/reverify-schedule`, {
+    method: 'POST', body: JSON.stringify({ date, note })
+  });
+  document.getElementById('rvsNewDate').value = '';
+  document.getElementById('rvsNewNote').value = '';
+  await rvsLoadDates();
+  loadWorkerAccounts();
+}
+
+async function rvsDeleteDate(date) {
+  await api(`/admin/worker-accounts/${_rvsWorkerId}/reverify-schedule/${date}`, { method: 'DELETE' });
+  await rvsLoadDates();
   loadWorkerAccounts();
 }
 
@@ -19011,7 +19400,7 @@ async function reviewContractorInvoice(id, status) {
   }
 }
 
-// ─── 承包商發票 Tab ───
+// ─── 承包商发票 Tab ───
 let _empInvWorkersLoaded = false;
 let _empInvWorkersCache = [];
 async function loadEmpInvoiceTab() {
@@ -19035,7 +19424,7 @@ async function loadEmpInvoiceTab() {
   el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
   const rows = await api('/admin/contractor-invoices');
   if (!Array.isArray(rows) || !rows.length) {
-    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无承包商發票记录</div>';
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无承包商发票记录</div>';
     return;
   }
   const STATUS_BADGE = {
@@ -19071,10 +19460,7 @@ async function loadEmpInvoiceTab() {
       <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">${r.status === 'ds_pending' ? '<span style="color:var(--gray-400);font-weight:400">待填写</span>' : '$'+(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
       <td style="padding:.5rem;text-align:center">${vConfirmed ? '<span style="padding:2px 8px;border-radius:4px;background:#dcfce7;color:#15803d;font-size:.72rem;font-weight:600">已确认</span>' : STATUS_BADGE[r.status]||r.status}</td>
       <td style="padding:.5rem;text-align:center;white-space:nowrap">
-        ${vConfirmed ? `
-          <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button>
-          <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}',true)">📎 查看凭证</button>
-        ` : `
+        ${vConfirmed ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}',true)">📎 查看凭证</button> <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button><br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : `
         ${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}
         ${r.status === 'submitted' ? `
           <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
@@ -19086,9 +19472,9 @@ async function loadEmpInvoiceTab() {
         ` : r.status === 'pre_generated' ? `
           <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-bottom:2px" onclick="openInvEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button><br>
           <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
-        ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}
-        ${r.status !== 'approved' ? `<br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : ''}
-        ${r.source === 'voucher' ? `<br><button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>` : ''}
+        ` : `${r.source !== 'voucher' ? `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>` : ''}`}
+        <br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>
+        ${r.source === 'voucher' ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>${r.voucher_confirmed !== 1 ? ` <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button>` : ''} <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>` : ''}
         `}
       </td>
     </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
@@ -19108,23 +19494,35 @@ function setInvMode(mode) {
   const dsFields = document.getElementById('invDocuSealFields');
   const previewBtn = document.getElementById('invPreviewBtn');
   const sendBtn = document.getElementById('invSendBtn');
+  const payInfoSec = document.getElementById('invPaymentInfoSection');
+  const vrSec = document.getElementById('invVoucherReceiptSection');
+  const voucherLangSec = document.getElementById('invVoucherLangSection');
   if (mode === 'voucher') {
     amtSec.style.display = '';
+    payInfoSec.style.display = '';
+    vrSec.style.display = '';
+    voucherLangSec.style.display = '';
     dsFields.style.display = 'none';
     previewBtn.style.display = 'none';
     sendBtn.textContent = '💾 创建付款凭证';
     hint.innerHTML = '<b>付款凭证：</b>公司内部记录已付款项，不发送给承包商签字。直接保存为已完成的发票记录。';
   } else if (mode === 'company') {
     amtSec.style.display = '';
+    payInfoSec.style.display = 'none';
+    vrSec.style.display = 'none';
+    voucherLangSec.style.display = 'none';
     dsFields.style.display = '';
     previewBtn.style.display = '';
-    sendBtn.textContent = '📤 發送發票';
+    sendBtn.textContent = '📤 发送发票';
     hint.innerHTML = '<b>流程：</b>Admin填写服务周期、日期、服务内容和金额后点击「发送」，承包商收到邮件+短信通知 → 确认金额 → 签字 → 提交回来待审核。';
   } else {
     amtSec.style.display = 'none';
+    payInfoSec.style.display = 'none';
+    vrSec.style.display = 'none';
+    voucherLangSec.style.display = 'none';
     dsFields.style.display = '';
     previewBtn.style.display = '';
-    sendBtn.textContent = '📤 發送發票';
+    sendBtn.textContent = '📤 发送发票';
     hint.innerHTML = '<b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。';
   }
 }
@@ -19139,13 +19537,20 @@ function openInvSendModal() {
   _preGeneratedInvoiceNumber = null; // Reset pre-generated number when worker changes
   document.getElementById('invSendWorkerName').textContent = workerName;
   document.getElementById('invSendStatus').style.display = 'none';
-  document.getElementById('invSendBtn').textContent = '📤 發送發票';
+  document.getElementById('invSendBtn').textContent = '📤 发送发票';
   document.getElementById('invSendBtn').disabled = false;
   document.getElementById('invSendLang').value = 'contractor_invoice';
   document.getElementById('invSendDate').value = new Date().toISOString().slice(0, 10);
   document.getElementById('invSendServiceDesc').value = '';
   document.getElementById('invSendAmount').value = '';
   document.getElementById('invSendReimbursable').value = '';
+  document.getElementById('invSendPaymentMethod').value = '';
+  document.getElementById('invSendPaymentDate').value = '';
+  document.getElementById('invSendPaymentRef').value = '';
+  _invVrPendingFiles = [];
+  document.getElementById('invVrPreviewGrid').innerHTML = '';
+  document.getElementById('invVrPreviewGrid').style.display = 'none';
+  document.getElementById('invVrFileInput').value = '';
   setInvMode('contractor');
   document.querySelector('input[name="invMode"][value="contractor"]').checked = true;
   document.getElementById('invPreviewSection').style.display = 'none';
@@ -19163,6 +19568,32 @@ function openInvSendModal() {
   document.getElementById('invSendModal').classList.add('show');
 }
 let _invSendWorkerId = null, _invSendWorkerName = '', _preGeneratedInvoiceNumber = null;
+let _invVrPendingFiles = [];
+function handleInvVrFiles(files) {
+  for (const f of files) _invVrPendingFiles.push(f);
+  const grid = document.getElementById('invVrPreviewGrid');
+  grid.style.display = 'grid';
+  grid.innerHTML = '';
+  _invVrPendingFiles.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.style.cssText = 'position:relative;border:1px solid var(--gray-200);border-radius:6px;overflow:hidden;aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#f9fafb';
+    if (f.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(f);
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+      div.appendChild(img);
+    } else {
+      div.innerHTML = '<div style="text-align:center;font-size:.75rem;color:var(--gray-500)">📄 PDF</div>';
+    }
+    const btn = document.createElement('button');
+    btn.innerHTML = '✕';
+    btn.style.cssText = 'position:absolute;top:2px;right:2px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;line-height:18px;padding:0';
+    btn.onclick = () => { _invVrPendingFiles.splice(i, 1); handleInvVrFiles([]); };
+    div.appendChild(btn);
+    grid.appendChild(div);
+  });
+  if (!_invVrPendingFiles.length) grid.style.display = 'none';
+}
 
 async function doSendInvoice() {
   if (!_invSendWorkerId) return;
@@ -19171,7 +19602,7 @@ async function doSendInvoice() {
   const invoiceDate = document.getElementById('invSendDate').value.trim();
   const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
   if (!periodStart || !periodEnd) { showToast('请填写服务周期 Period From / Period To', 'error'); return; }
-  if (!invoiceDate) { showToast('请选择發票日期', 'error'); return; }
+  if (!invoiceDate) { showToast('请选择发票日期', 'error'); return; }
   if (!serviceDesc) { showToast('请填写服务内容描述', 'error'); return; }
   const quotedAmount = document.getElementById('invSendAmount').value.trim();
   const reimbursableAmount = document.getElementById('invSendReimbursable').value.trim();
@@ -19180,14 +19611,30 @@ async function doSendInvoice() {
   // Voucher mode: direct save without DocuSeal
   if (_invMode === 'voucher') {
     const total = (parseFloat(quotedAmount) || 0) + (parseFloat(reimbursableAmount) || 0);
-    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
+    const _pm = document.getElementById('invSendPaymentMethod').value;
+    const _pd = document.getElementById('invSendPaymentDate').value;
+    const _pr = document.getElementById('invSendPaymentRef').value.trim();
+    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}${_pm ? '\n付款方式: ' + _pm : ''}${_pd ? '\n付款日期: ' + _pd : ''}${_pr ? '\n参考编号: ' + _pr : ''}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
     const btn = document.getElementById('invSendBtn');
     btn.disabled = true; btn.textContent = '创建中…';
+    const paymentMethod = document.getElementById('invSendPaymentMethod').value;
+    const paymentDate = document.getElementById('invSendPaymentDate').value;
+    const paymentRef = document.getElementById('invSendPaymentRef').value.trim();
+    const voucherLang = document.getElementById('invVoucherLang').value;
     const r = await api('/admin/contractor-invoices/create-voucher', {
-      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0' })
+      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0', payment_method: paymentMethod, payment_date: paymentDate, payment_reference: paymentRef, voucher_lang: voucherLang })
     });
     btn.disabled = false; btn.textContent = '💾 创建付款凭证';
     if (r && r.success) {
+      // Upload pending receipt files if any
+      if (_invVrPendingFiles.length > 0 && r.id) {
+        const fd = new FormData();
+        _invVrPendingFiles.forEach(f => fd.append('receipts', f));
+        try {
+          await fetch(`/api/admin/contractor-invoices/${r.id}/voucher-receipts`, { method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${TOKEN}` } });
+        } catch(e) { console.warn('Receipt upload failed:', e); }
+        _invVrPendingFiles = [];
+      }
       const statusEl = document.getElementById('invSendStatus');
       statusEl.style.display = 'block';
       statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
@@ -19212,7 +19659,7 @@ async function doSendInvoice() {
   const modeLabel = _invMode === 'company' ? '公司预填金额' : '承包商填写金额';
   const amtInfo = _invMode === 'company' ? `\n金额: $${quotedAmount}${reimbursableAmount ? ' + 报销 $' + reimbursableAmount : ''}` : '';
   const actionDesc = _invMode === 'company' ? '确认金额并签字' : '填写金额并签字后提交';
-  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n模式: ${modeLabel}\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}${invNumInfo}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}${amtInfo}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，${actionDesc}。`)) return;
+  if (!await showConfirm(`确认向 ${_invSendWorkerName} 发送承包商发票？\n\n模式: ${modeLabel}\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}${invNumInfo}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}${amtInfo}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，${actionDesc}。`)) return;
   const btn = document.getElementById('invSendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const templateLang = document.getElementById('invSendLang').value;
@@ -19226,13 +19673,13 @@ async function doSendInvoice() {
   const r = await api('/admin/contractor-invoices/send-docuseal', {
     method: 'POST', body: JSON.stringify(sendBody)
   });
-  btn.disabled = false; btn.textContent = '📤 重新發送';
+  btn.disabled = false; btn.textContent = '📤 重新发送';
   if (r && r.success) {
     _preGeneratedInvoiceNumber = null; // Reset after successful send
     const statusEl = document.getElementById('invSendStatus');
     statusEl.style.display = 'block';
     statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
-    let msg = `✅ 發票已發送 (${r.invoice_number})`;
+    let msg = `✅ 发票已发送 (${r.invoice_number})`;
     if (r.emailSent) msg += '　📧 邮件已送达';
     if (r.smsSent) msg += '　📱 短信已送达';
     if (r.warnings && r.warnings.length) msg += `<br><span style="font-size:.78rem;color:#92400e">${r.warnings.join('；')}</span>`;
@@ -19286,7 +19733,7 @@ async function previewInvoiceTemplate() {
     infoBox.innerHTML = `<b>将预填入的数据 (Pre-filled Data):</b><br>` +
       `<b>语言版本:</b> ${langLabels[lang] || lang}　` +
       `<b>承包商:</b> ${esc(contractorName) || '—'}　` +
-      `<b>發票日期:</b> ${invoiceDate || '—'}　` +
+      `<b>发票日期:</b> ${invoiceDate || '—'}　` +
       `<b>服务周期:</b> ${periodStart || '—'} ~ ${periodEnd || '—'}<br>` +
       `<b>服务内容:</b> ${esc(serviceDesc) || '—'}<br>` +
       `<b>Invoice #:</b> <span style="font-weight:700;color:#065f46">${esc(_preGeneratedInvoiceNumber)}</span><br>` +
@@ -19568,6 +20015,72 @@ async function saveInvEdit() {
   } else {
     showToast(r?.error || '保存失败', 'error');
   }
+}
+
+// ─── Voucher Edit & History ───
+function openVoucherEditModal(row) {
+  document.getElementById('vouEditId').value = row.id;
+  document.getElementById('vouEditDate').value = row.invoice_date || '';
+  document.getElementById('vouEditPeriodStart').value = row.service_period_start || '';
+  document.getElementById('vouEditPeriodEnd').value = row.service_period_end || '';
+  document.getElementById('vouEditServiceDesc').value = row.service_description || '';
+  document.getElementById('vouEditAmount').value = row.total_amount || '';
+  document.getElementById('vouEditExpenses').value = row.expenses || '';
+  document.getElementById('vouEditPayMethod').value = row.payment_method || '';
+  document.getElementById('vouEditPayDate').value = row.payment_date || '';
+  document.getElementById('vouEditPayRef').value = row.payment_reference || '';
+  document.getElementById('voucherEditModal').style.display = 'flex';
+}
+
+async function saveVoucherEdit() {
+  const id = document.getElementById('vouEditId').value;
+  const body = {
+    invoice_date: document.getElementById('vouEditDate').value || null,
+    service_period_start: document.getElementById('vouEditPeriodStart').value || null,
+    service_period_end: document.getElementById('vouEditPeriodEnd').value || null,
+    service_description: document.getElementById('vouEditServiceDesc').value || null,
+    total_amount: document.getElementById('vouEditAmount').value !== '' ? parseFloat(document.getElementById('vouEditAmount').value) : null,
+    expenses: document.getElementById('vouEditExpenses').value !== '' ? parseFloat(document.getElementById('vouEditExpenses').value) : null,
+    payment_method: document.getElementById('vouEditPayMethod').value || null,
+    payment_date: document.getElementById('vouEditPayDate').value || null,
+    payment_reference: document.getElementById('vouEditPayRef').value || null,
+  };
+  const r = await api(`/admin/contractor-invoices/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  if (r?.success) {
+    document.getElementById('voucherEditModal').style.display = 'none';
+    showToast('✅ 凭证已更新');
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '保存失败', 'error');
+  }
+}
+
+async function openVoucherHistoryModal(invId, invoiceNumber) {
+  document.getElementById('vouHistoryNumber').textContent = invoiceNumber;
+  const el = document.getElementById('vouHistoryContent');
+  el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:1rem">加载中…</div>';
+  document.getElementById('voucherHistoryModal').style.display = 'flex';
+  const rows = await api(`/admin/contractor-invoices/${invId}/edit-history`);
+  if (!rows || !rows.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:2rem">暂无修改记录</div>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
+    <thead><tr style="border-bottom:2px solid var(--gray-200);background:#f9fafb">
+      <th style="padding:.4rem .5rem;text-align:left">时间</th>
+      <th style="padding:.4rem .5rem;text-align:left">字段</th>
+      <th style="padding:.4rem .5rem;text-align:left">原值</th>
+      <th style="padding:.4rem .5rem;text-align:left">新值</th>
+      <th style="padding:.4rem .5rem;text-align:left">操作人</th>
+    </tr></thead>
+    <tbody>${rows.map(h => `<tr style="border-bottom:1px solid var(--gray-100)">
+      <td style="padding:.4rem .5rem;white-space:nowrap;color:var(--gray-500);font-size:.75rem">${h.changed_at}</td>
+      <td style="padding:.4rem .5rem;font-weight:600">${esc(h.field_name)}</td>
+      <td style="padding:.4rem .5rem;color:#dc2626;text-decoration:line-through;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${esc(h.old_value)}">${esc(h.old_value) || '<span style="color:var(--gray-300)">空</span>'}</td>
+      <td style="padding:.4rem .5rem;color:#15803d;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${esc(h.new_value)}">${esc(h.new_value)}</td>
+      <td style="padding:.4rem .5rem;color:var(--gray-500)">${esc(h.changed_by)}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
 }
 
 // ─── Tax Document Modal (报税文件) ───

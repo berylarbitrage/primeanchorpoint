@@ -182,7 +182,7 @@ function verificationCodeHtml(code, isAdminTest = false) {
 <tr><td align="center">
 <table width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
 <tr><td style="background:#1a1a2e;padding:24px 32px">
-  <p style="margin:0;color:#fff;font-size:18px;font-weight:600">Prime Anchorpoint</p>
+  <p style="margin:0;color:#fff;font-size:18px;font-weight:600">Prime Anchor Point</p>
   <p style="margin:4px 0 0;color:#a0aec0;font-size:12px">${label}</p>
 </td></tr>
 <tr><td style="padding:32px">
@@ -1447,6 +1447,7 @@ try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN doc_number TEXT DEFAULT '
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN issue_date TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN expiry_date TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN notes TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN doc_type TEXT DEFAULT ''"); } catch {}
 
 // ─── Tax Filing Documents (year-end 1099-NEC / W-2 / 1042-S etc.) ───
 db.exec(`CREATE TABLE IF NOT EXISTS tax_filing_docs (
@@ -1740,8 +1741,21 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
  'expenses REAL DEFAULT 0','job_id INTEGER DEFAULT 0','job_title TEXT DEFAULT \'\'','service_type TEXT DEFAULT \'\'','confirmed INTEGER DEFAULT 0',
  'source TEXT DEFAULT \'\'',
  'voucher_receipt TEXT DEFAULT \'\'',
- 'voucher_confirmed INTEGER DEFAULT 0'
+ 'voucher_confirmed INTEGER DEFAULT 0',
+ 'payment_date TEXT DEFAULT \'\'',
+ 'payment_reference TEXT DEFAULT \'\'',
+ 'voucher_lang TEXT DEFAULT \'bilingual\''
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
+
+db.exec(`CREATE TABLE IF NOT EXISTS voucher_edit_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL,
+  field_name TEXT NOT NULL,
+  old_value TEXT DEFAULT '',
+  new_value TEXT DEFAULT '',
+  changed_by TEXT DEFAULT '',
+  changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 
 // ─── App Settings (feature flags, portal config) ───
 db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
@@ -1961,7 +1975,7 @@ async function generateWeeklyShiftConfirmations() {
     if (!info.phone) continue;
     const greeting = info.name ? ` ${info.name}` : '';
     await sendSMS(info.phone,
-      `[Prime Anchorpoint] 您好${greeting}，本周有 ${info.count} 个班次待确认，请登录 Portal 查看并确认出勤。`
+      `[Prime Anchor Point] 您好${greeting}，本周有 ${info.count} 个班次待确认，请登录 Portal 查看并确认出勤。`
     ).catch(() => {});
     smsCount++;
   }
@@ -2043,7 +2057,7 @@ async function send24hShiftReminders() {
       ? `（${row.shift_start}–${row.shift_end}）`
       : '';
     await sendSMS(row.phone,
-      `[Prime Anchorpoint] 提醒：您明天${time}有 ${job} 的班次，请登录 Portal 确认是否出勤。`
+      `[Prime Anchor Point] 提醒：您明天${time}有 ${job} 的班次，请登录 Portal 确认是否出勤。`
     ).catch(() => {});
     db.prepare(`UPDATE shift_confirmations SET reminded_at=CURRENT_TIMESTAMP WHERE id=?`).run(row.id);
     sent++;
@@ -2202,7 +2216,7 @@ function nextEmployeeId(state, hireDate) {
 }
 
 // ─── Auto-generate worker code: PORT-ST-MMDDYY-0001 ───
-function generateContractorInvoiceNumber(workerName, workerState) {
+function generateContractorInvoiceNumber(workerName, workerState, type = 'INV') {
   const stateStr = (workerState || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
   // Build initials from worker name words (e.g. "Xuan Zhang" → "XZ")
   const initials = (workerName || '').trim().split(/\s+/).map(w => w[0] || '').join('').toUpperCase().replace(/[^A-Z]/g, '') || 'XX';
@@ -2211,7 +2225,8 @@ function generateContractorInvoiceNumber(workerName, workerState) {
   const dd = String(today.getDate()).padStart(2, '0');
   const yy = String(today.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
-  const prefix = `INVWRK-${stateStr}-${initials}-${dateStr}`;
+  const typePrefix = type === 'VOU' ? 'VOUWRK' : 'INVWRK';
+  const prefix = `${typePrefix}-${stateStr}-${initials}-${dateStr}`;
   // Find the highest sequential number for this same prefix today
   const last = db.prepare(`SELECT invoice_number FROM contractor_invoices WHERE invoice_number LIKE ? ORDER BY invoice_number DESC LIMIT 1`).get(prefix + '-%');
   let num = 1;
@@ -6404,7 +6419,7 @@ app.post('/api/admin-invite/send-email-code', async (req, res) => {
   if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchorpoint',
+  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchor Point',
     `您的邮箱验证码是 ${code}，15分钟内有效。\nYour email verification code is ${code}, valid for 15 minutes.`,
     verificationCodeHtml(code));
   if (sent) {
@@ -6454,7 +6469,7 @@ function serveAdminInvitePage(req, res) {
   res.send(`<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>账户注册 — Prime Anchorpoint</title>
+<title>账户注册 — Prime Anchor Point</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
@@ -6487,7 +6502,7 @@ input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
 </head>
 <body>
 <div class="card">
-  <div class="logo-wrap"><img src="/logo.svg" alt="Prime Anchorpoint" onerror="this.style.display='none'"></div>
+  <div class="logo-wrap"><img src="/logo.svg" alt="Prime Anchor Point" onerror="this.style.display='none'"></div>
   <h1>账户注册</h1>
   <div class="sub" id="sub">加载中…</div>
   <div id="form" style="display:none">
@@ -6832,9 +6847,9 @@ app.post('/api/public/manager-register/send-code', async (req, res) => {
 
   let delivered = false;
   if (contact_type === 'phone') {
-    delivered = await sendSMS(contact, `您的 Prime Anchorpoint 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
+    delivered = await sendSMS(contact, `您的 Prime Anchor Point 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
   } else {
-    delivered = await sendEmail(contact, '验证码 / Verification Code — Prime Anchorpoint',
+    delivered = await sendEmail(contact, '验证码 / Verification Code — Prime Anchor Point',
       `您的验证码是 ${code}，10分钟内有效。\nYour verification code is ${code}.`,
       verificationCodeHtml(code));
   }
@@ -6923,6 +6938,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   const getTaxFilingDocCount = db.prepare("SELECT COUNT(*) as cnt FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? AND file_path!=''");
   const getPaymentTotal = db.prepare("SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt FROM worker_payments WHERE employee_id=?");
   const getContractorInvCounts = db.prepare("SELECT COUNT(*) as total, SUM(CASE WHEN status='submitted' THEN 1 ELSE 0 END) as pending FROM contractor_invoices WHERE worker_account_id=?");
+  const getW9Task = db.prepare("SELECT status, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'");
+  const getI9CompDoc = db.prepare("SELECT id, status FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='i9' ORDER BY created_at DESC LIMIT 1");
+  const getW8BenTask = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='tax_doc_w8ben' ORDER BY id DESC LIMIT 1");
   const currentTaxYear = new Date().getFullYear() - 1; // filing for prior year
 
   const enriched = workers.map(w => {
@@ -6937,6 +6955,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const taxFilingDocCount = getTaxFilingDocCount.get(w.id, currentTaxYear);
     const payTotals = w.employee_id ? getPaymentTotal.get(w.employee_id) : null;
     const cinvCounts = getContractorInvCounts.get(w.id);
+    const w9Task = getW9Task.get(w.id);
+    const i9CompDoc = getI9CompDoc.get(w.id);
+    const w8BenTask = getW8BenTask.get(w.id);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -6961,7 +6982,12 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       tax_filing_doc_count: taxFilingDocCount?.cnt || 0,
       current_tax_year: currentTaxYear,
       total_paid: payTotals?.total || 0,
-      payment_count: payTotals?.cnt || 0
+      payment_count: payTotals?.cnt || 0,
+      w9_ds_status: w9Task?.ds_status || '',
+      w9_task_status: w9Task?.status || '',
+      i9_compliance_doc_id: i9CompDoc?.id || null,
+      i9_compliance_doc_status: i9CompDoc?.status || '',
+      w8ben_task_status: w8BenTask?.status || ''
     };
   });
 
@@ -7059,12 +7085,57 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
 
 app.patch('/api/admin/worker-accounts/:id/identity-reverify-date', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   const { date } = req.body;
-  const w = db.prepare('SELECT identity_reverify_date FROM worker_accounts WHERE id=?').get(req.params.id);
+  const w = db.prepare('SELECT identity_reverify_date, identity_reverify_dates FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = (req.session && req.session.username) || 'admin';
   db.prepare('UPDATE worker_accounts SET identity_reverify_date=? WHERE id=?').run(date || '', req.params.id);
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value) VALUES (?,?,?,?,?)').run(req.params.id, changedBy, 'identity_reverify_date', w.identity_reverify_date || '', date || '');
   res.json({ success: true });
+});
+
+// ─── Reverify Schedule (list of future dates) ───
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN identity_reverify_dates TEXT DEFAULT '[]'"); } catch {}
+
+app.get('/api/admin/worker-accounts/:id/reverify-schedule', requireAdmin, (req, res) => {
+  const w = db.prepare('SELECT identity_reverify_dates FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  let dates = [];
+  try { dates = JSON.parse(w.identity_reverify_dates || '[]'); } catch {}
+  res.json({ dates });
+});
+
+app.post('/api/admin/worker-accounts/:id/reverify-schedule', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { date, note } = req.body;
+  if (!date) return res.status(400).json({ error: 'date required' });
+  const w = db.prepare('SELECT identity_reverify_dates, identity_reverify_date FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  let dates = [];
+  try { dates = JSON.parse(w.identity_reverify_dates || '[]'); } catch {}
+  // Remove duplicate, add new entry, sort ascending
+  dates = dates.filter(d => d.date !== date);
+  dates.push({ date, note: note || '' });
+  dates.sort((a, b) => a.date.localeCompare(b.date));
+  const json = JSON.stringify(dates);
+  // Next upcoming date becomes the primary identity_reverify_date
+  const today = new Date().toISOString().slice(0, 10);
+  const nextDate = dates.find(d => d.date >= today);
+  db.prepare('UPDATE worker_accounts SET identity_reverify_dates=?, identity_reverify_date=? WHERE id=?')
+    .run(json, nextDate ? nextDate.date : (w.identity_reverify_date || ''), req.params.id);
+  res.json({ success: true, dates });
+});
+
+app.delete('/api/admin/worker-accounts/:id/reverify-schedule/:date', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const w = db.prepare('SELECT identity_reverify_dates, identity_reverify_date FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  let dates = [];
+  try { dates = JSON.parse(w.identity_reverify_dates || '[]'); } catch {}
+  dates = dates.filter(d => d.date !== req.params.date);
+  const json = JSON.stringify(dates);
+  const today = new Date().toISOString().slice(0, 10);
+  const nextDate = dates.find(d => d.date >= today);
+  db.prepare('UPDATE worker_accounts SET identity_reverify_dates=?, identity_reverify_date=? WHERE id=?')
+    .run(json, nextDate ? nextDate.date : '', req.params.id);
+  res.json({ success: true, dates });
 });
 
 app.get('/api/admin/worker-accounts/:id/assignments', requireAdmin, (req, res) => {
@@ -7548,7 +7619,7 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
     let smsSent = false;
     if (w.phone) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
-      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照/ID+自拍）以继续入职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
+      const smsText = `[Prime Anchor Point] 您好 ${w.name||w.username||''}，请完成身份验证（驾照/ID+自拍）以继续入职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(w.phone, smsText);
     }
     // Send email
@@ -7556,7 +7627,7 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
     if (w.email) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(w.email,
-        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        'Prime Anchor Point — 身份验证请求 / Identity Verification',
         `请完成身份验证。您可以登录合作中心直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${w.name||w.username||''}，</p>
          <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
@@ -7639,7 +7710,7 @@ app.post('/api/admin/worker-accounts/:id/send-checkr', requireAdmin, async (req,
     // Notify worker via SMS
     let smsSent = false;
     if (w.phone) {
-      smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，我们已通过 Checkr 向您的邮箱 (${w.email}) 发送了背景调查邀请，请查收邮件并完成。`);
+      smsSent = await sendSMS(w.phone, `[Prime Anchor Point] 您好 ${w.name||w.username||''}，我们已通过 Checkr 向您的邮箱 (${w.email}) 发送了背景调查邀请，请查收邮件并完成。`);
     }
 
     res.json({ success: true, smsSent, candidateId, invitationId: invitation.id, invitationUrl: invitation.invitation_url || '' });
@@ -7879,7 +7950,7 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
           const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
           if (workerEmail) {
             sendEmail(workerEmail,
-              `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+              `Prime Anchor Point — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
               `${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署。\n${workerSignUrl || ''}\n\n${workerName}, ${companyName} has signed. Please sign here:\n${workerSignUrl || ''}\n\n${workerName}, ${companyName} ha firmado. Firme aquí:\n${workerSignUrl || ''}`,
               `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
                 <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
@@ -7894,15 +7965,15 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
                 <h3 style="font-size:.95rem">Firme Su ${contractTypeEs}</h3>
                 <p style="color:#555;font-size:.9rem">Hola ${workerName}, ${companyName} ha firmado. Ahora es su turno.</p>
                 ${signLink}
-                <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+                <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
               </div>`
             ).catch(e => console.error('[contract-status] fallback email error:', e.message));
             console.log(`[contract-status] Sent fallback signing email to ${workerEmail} (webhook may have missed)`);
           }
           if (workerPhone) {
             const smsText = workerSignUrl
-              ? `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
-              : `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+              ? `[Prime Anchor Point] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
+              : `[Prime Anchor Point] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
             sendSMS(workerPhone, smsText).catch(e => console.error('[contract-status] fallback SMS error:', e.message));
             console.log(`[contract-status] Sent fallback signing SMS to ${workerPhone} (webhook may have missed)`);
           }
@@ -8024,7 +8095,7 @@ app.post('/api/admin/worker-accounts/:id/resend-sign-notification', requireAdmin
     let emailSent = false, smsSent = false;
     if (workerEmail) {
       emailSent = await sendEmail(workerEmail,
-        `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+        `Prime Anchor Point — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
         `${workerName}，请点击链接完成签署。\n${workerSignUrl || ''}\n\n${workerName}, please sign here:\n${workerSignUrl || ''}\n\n${workerName}, firme aquí:\n${workerSignUrl || ''}`,
         `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
           <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
@@ -8039,14 +8110,14 @@ app.post('/api/admin/worker-accounts/:id/resend-sign-notification', requireAdmin
           <h3 style="font-size:.95rem">Firme Su ${contractTypeEs}</h3>
           <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic abajo para firmar su contrato.</p>
           ${signLink}
-          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
         </div>`
       );
     }
     if (workerPhone) {
       const smsText = workerSignUrl
-        ? `[Prime Anchorpoint] ${workerName}，请签署${contractTypeCn} / Please sign your contract / Firme su contrato:\n${workerSignUrl}\nReply STOP to opt out.`
-        : `[Prime Anchorpoint] ${workerName}，请查收邮件签署${contractTypeCn}。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+        ? `[Prime Anchor Point] ${workerName}，请签署${contractTypeCn} / Please sign your contract / Firme su contrato:\n${workerSignUrl}\nReply STOP to opt out.`
+        : `[Prime Anchor Point] ${workerName}，请查收邮件签署${contractTypeCn}。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
       smsSent = await sendSMS(workerPhone, smsText);
     }
     const warnings = [];
@@ -8183,90 +8254,24 @@ function calculateTaxResidency(data) {
   return result;
 }
 
-// Determine onboarding tasks needed based on tax form recommendation
+// Determine onboarding tasks needed based on tax form recommendation.
+// Only includes actual forms to sign — supporting documents (passport, visa, I-94 etc.)
+// are handled by the Work Permit Verification step, not as separate onboarding tasks.
 function getTaxDocTasks(form, data) {
   const tasks = [];
   const isEntity = data.applicant_type === 'entity';
-  const servInUs = data.services_location === 'all_in_us' || data.services_location === 'partly_in_us';
   const treatyClaim = data.claim_treaty_benefit === 'yes';
-  const immStatus = data.immigration_status || '';
-  const VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
-  const EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-C03A','EAD-C03B','EAD-OTHER'];
 
   if (form === 'W-9') {
-    // W-9 handled by existing w9 task
-    if (isEntity) {
-      tasks.push({ key: 'tax_doc_corp_cert', note: '公司注册文件 Articles / Certificate of Formation' });
-      tasks.push({ key: 'tax_doc_ein_letter', note: 'EIN 确认函 IRS EIN Confirmation Letter (CP 575 / 147C)' });
-    }
-    if (data.is_us_citizen === 'yes') {
-      tasks.push({ key: 'tax_doc_id_proof', note: '身份证明（任一）: 美国护照 / 出生证明 / 入籍证书 N-550 / 公民证书 N-560 / FS-240' });
-    } else if (data.has_green_card === 'yes') {
-      tasks.push({ key: 'tax_doc_id_proof', note: '身份证明（任一）: 绿卡 I-551 正反面 / 护照+I-551章 / 过期绿卡+I-797延期' });
-    }
+    // W-9 is handled by the existing w9 task; entity docs via work permit
   } else if (form === 'W-8BEN') {
     tasks.push({ key: 'tax_doc_w8ben', note: 'W-8BEN 非居民外国个人预扣税声明' });
-    tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
-    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
-    if (servInUs) {
-      // Work authorization docs based on immigration status type
-      if (VISA_TYPES.includes(immStatus)) {
-        tasks.push({ key: 'tax_doc_i797', note: 'I-797 批准通知 Approval Notice (或有效签证页) — ' + immStatus });
-        tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-      } else if (EAD_TYPES.includes(immStatus)) {
-        tasks.push({ key: 'tax_doc_ead', note: 'EAD 工卡 (I-766) 正反面 — ' + immStatus });
-        if (immStatus === 'EAD-C03A' || immStatus === 'EAD-C03B') {
-          tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 OPT endorsement)' });
-        }
-      } else if (immStatus === 'F-1-CPT') {
-        tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 CPT 授权页)' });
-      } else if (immStatus === 'J-1') {
-        tasks.push({ key: 'tax_doc_ds2019', note: 'DS-2019' });
-        tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-      } else {
-        tasks.push({ key: 'tax_doc_visa', note: '签证复印件 Visa Copy' });
-        tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-        tasks.push({ key: 'tax_doc_work_auth', note: '工作授权文件 Work Authorization' });
-      }
-    }
-    if (treatyClaim) {
-      tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
-    }
   } else if (form === 'W-8BEN-E') {
     tasks.push({ key: 'tax_doc_w8bene', note: 'W-8BEN-E 外国实体预扣税声明' });
-    tasks.push({ key: 'tax_doc_corp_cert', note: '实体注册证明 Certificate of Incorporation' });
-    tasks.push({ key: 'tax_doc_sign_auth', note: '授权签署人证明 Signing Authority / Board Resolution' });
-    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7/SS-4 ITIN 或 EIN 申请（如无美国税号）' });
-    if (treatyClaim) {
-      tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
-      tasks.push({ key: 'tax_doc_treaty_docs', note: '条约优惠申请文件 Treaty Benefit Documentation' });
-    }
   } else if (form === 'Form 8233') {
     tasks.push({ key: 'tax_doc_8233', note: 'Form 8233 个人服务条约豁免申请' });
-    // Also require W-8BEN as fallback in case treaty conditions are not met (e.g. >183 days)
+    // W-8BEN as fallback in case treaty conditions are not met (e.g. >183 days)
     tasks.push({ key: 'tax_doc_w8ben', note: 'W-8BEN 备选表格（如条约条件不满足则使用此表）Fallback if treaty conditions not met' });
-    tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
-    tasks.push({ key: 'tax_doc_treaty_stmt', note: '条约条款声明 Treaty Statement' });
-    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
-    tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
-    // Work authorization docs based on immigration status type
-    if (VISA_TYPES.includes(immStatus)) {
-      tasks.push({ key: 'tax_doc_i797', note: 'I-797 批准通知 Approval Notice (或有效签证页) — ' + immStatus });
-      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-    } else if (EAD_TYPES.includes(immStatus)) {
-      tasks.push({ key: 'tax_doc_ead', note: 'EAD 工卡 (I-766) 正反面 — ' + immStatus });
-      if (immStatus === 'EAD-C03A' || immStatus === 'EAD-C03B') {
-        tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 OPT endorsement)' });
-      }
-    } else if (immStatus === 'F-1-CPT') {
-      tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 CPT 授权页)' });
-    } else if (immStatus === 'J-1') {
-      tasks.push({ key: 'tax_doc_ds2019', note: 'DS-2019' });
-      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-    } else {
-      tasks.push({ key: 'tax_doc_visa', note: '签证复印件 Visa Copy' });
-      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
-    }
   }
   return tasks;
 }
@@ -8295,6 +8300,20 @@ function _wpCategoryKey(tr) {
   if (EAD_TYPES.includes(wa)) return 'ead';
   if (wa === 'F-1-CPT') return 'cpt';
   if (wa === 'J-1') return 'j1';
+  if (wa === 'F-1' || wa === 'F-2' || wa === 'M-1' || wa === 'M-2' || wa.startsWith('B-')) return 'nra_visa';
+  try {
+    const rec = tr.entry_exit_records ? JSON.parse(tr.entry_exit_records) : null;
+    const periods = (rec && (rec.status_periods || rec.periods)) || [];
+    if (periods.length) {
+      const lastVisa = (periods[periods.length - 1].visa || '').trim();
+      if (lastVisa === 'F-1' || lastVisa === 'F-2' || lastVisa === 'M-1' || lastVisa === 'M-2' || lastVisa.startsWith('B-')) return 'nra_visa';
+      if (VISA_TYPES.includes(lastVisa)) return 'work_visa';
+      if (lastVisa === 'J-1') return 'j1';
+      if (lastVisa === 'F-1-CPT') return 'cpt';
+      if (lastVisa === 'EAD-C03A' || lastVisa === 'EAD-C03B') return 'opt';
+      if (EAD_TYPES.includes(lastVisa)) return 'ead';
+    }
+  } catch(e) {}
   return 'generic';
 }
 
@@ -8540,7 +8559,7 @@ app.post('/api/admin/worker-accounts/:id/work-permit', requireAdmin, (req, res) 
 
 // ─── Work Permit Document Uploads ───
 app.get('/api/admin/worker-accounts/:id/work-permit-docs', requireAdmin, (req, res) => {
-  const docs = db.prepare('SELECT id, doc_label, file_name, doc_number, issue_date, expiry_date, notes, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
+  const docs = db.prepare('SELECT id, doc_label, file_name, doc_type, doc_number, issue_date, expiry_date, notes, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
   res.json(docs);
 });
 
@@ -8576,13 +8595,13 @@ app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Update per-doc metadata (doc_number, issue_date, expiry_date, notes)
+// Update per-doc metadata (doc_type, doc_number, issue_date, expiry_date, notes)
 app.patch('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
   const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
   if (!doc) return res.status(404).json({ error: 'Not found' });
   const d = req.body;
-  db.prepare('UPDATE work_permit_docs SET doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=?')
-    .run(d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', req.params.docId);
+  db.prepare('UPDATE work_permit_docs SET doc_type=?, doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=?')
+    .run(d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', req.params.docId);
   res.json({ success: true });
 });
 
@@ -8746,7 +8765,7 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
       if (workerEmail) {
         const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${w9Link}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署 W-9 / Sign W-9 / Firmar W-9</a></p>`;
         emailSent = await sendEmail(workerEmail,
-          `Prime Anchorpoint — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
+          `Prime Anchor Point — 请签署 W-9 税表 / Please Sign W-9 / Firme el W-9`,
           `${workerName}，请点击链接签署 W-9 税表。\n${w9Link}\n\n${workerName}, please click the link to sign your W-9 form.\n${w9Link}\n\n${workerName}, haga clic en el enlace para firmar su formulario W-9.\n${w9Link}`,
           `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
             <h2 style="color:#1a1a1a;text-align:center">请签署 W-9 税表</h2>
@@ -8760,12 +8779,12 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
             <h3 style="font-size:.95rem">Firme el Formulario W-9</h3>
             <p style="color:#555;font-size:.9rem">Hola ${workerName}, haga clic en el botón para firmar su formulario W-9 directamente.</p>
             ${signLink}
-            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
           </div>`
         );
       }
       if (workerPhone) {
-        smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
+        smsSent = await sendSMS(workerPhone, `[Prime Anchor Point] ${workerName}，请签署 W-9 税表 / Please sign your W-9 / Firme su W-9\n${w9Link}\nReply STOP to opt out.`);
       }
     }
     const warnings = [];
@@ -8857,10 +8876,10 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
     // Send SMS with sign link using selected language (DocuSeal handles email)
     if (signUrl && workerPhone) {
       const smsText = lang === 'es'
-        ? `[Prime Anchorpoint] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
+        ? `[Prime Anchor Point] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
         : lang === 'en'
-        ? `[Prime Anchorpoint] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
-        : `[Prime Anchorpoint] ${workerName}，请签署 ${pmLabel} 付款授权表单 / Please sign your ${pmLabel} authorization: ${signUrl}\nReply STOP to opt out.`;
+        ? `[Prime Anchor Point] ${workerName}, please sign your ${pmLabel} authorization form: ${signUrl}\nReply STOP to opt out.`
+        : `[Prime Anchor Point] ${workerName}，请签署 ${pmLabel} 付款授权表单 / Please sign your ${pmLabel} authorization: ${signUrl}\nReply STOP to opt out.`;
       try { await sendSMS(workerPhone, smsText); } catch (e) { console.warn('[payment-auth SMS]', e.message); }
     }
     const warnings = dsealError ? [dsealError] : [];
@@ -9134,12 +9153,12 @@ app.post('/api/admin/worker-accounts/:id/send-work-auth', requireAdmin, async (r
     const workerPhone = w.phone || '';
     const workerEmail = w.email || '';
     if (workerPhone) {
-      await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录合作中心完成 Work Authorization 认证，上传所需身份证明文件。Reply STOP to opt out.`).catch(() => {});
+      await sendSMS(workerPhone, `[Prime Anchor Point] ${workerName}，请登录合作中心完成 Work Authorization 认证，上传所需身份证明文件。Reply STOP to opt out.`).catch(() => {});
     }
     if (workerEmail) {
       await sendEmail(workerEmail, 'Work Authorization 认证 — 请上传身份证明文件',
-        `${workerName}，\n请登录合作中心完成 Work Authorization 认证调查。\n\nPrime Anchorpoint`,
-        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem"><h2>Work Authorization 认证</h2><p>您好 ${workerName}，</p><p>请登录合作中心，在入职进度中完成 <strong>Work Authorization 认证</strong>，按要求上传身份证明文件。</p><p style="color:#64748b;font-size:.9rem">Prime Anchorpoint</p></div>`
+        `${workerName}，\n请登录合作中心完成 Work Authorization 认证调查。\n\nPrime Anchor Point`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem"><h2>Work Authorization 认证</h2><p>您好 ${workerName}，</p><p>请登录合作中心，在入职进度中完成 <strong>Work Authorization 认证</strong>，按要求上传身份证明文件。</p><p style="color:#64748b;font-size:.9rem">Prime Anchor Point</p></div>`
       ).catch(() => {});
     }
     res.json({ success: true });
@@ -9372,7 +9391,7 @@ app.post('/api/admin/worker-accounts/:id/send-reset-link', requireAdmin, require
     try {
       const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
       await twilio.messages.create({
-        body: `Prime Anchorpoint 密码重置链接 / Password Reset:\n${resetUrl}\n24小时内有效。`,
+        body: `Prime Anchor Point 密码重置链接 / Password Reset:\n${resetUrl}\n24小时内有效。`,
         from: process.env.TWILIO_PHONE_NUMBER,
         to: w.phone
       });
@@ -9388,7 +9407,7 @@ app.post('/api/admin/worker-accounts/:id/send-reset-link', requireAdmin, require
       await t.sendMail({
         from: process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com',
         to: w.email,
-        subject: 'Prime Anchorpoint - 密码重置 / Password Reset',
+        subject: 'Prime Anchor Point - 密码重置 / Password Reset',
         html: `<p>请点击以下链接重置密码 / Click to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>链接24小时内有效 / Valid for 24 hours.</p>`
       });
       results.email_sent = true;
@@ -9455,7 +9474,7 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
   }
 
   // Fallback to regular SMS
-  const result = await sendSMSWithDetail(to, '[Prime Anchorpoint] 测试短信 / SMS Test: Twilio is working!');
+  const result = await sendSMSWithDetail(to, '[Prime Anchor Point] 测试短信 / SMS Test: Twilio is working!');
   res.json({ configured, result, accountInfo, method: 'sms' });
 });
 
@@ -9473,7 +9492,7 @@ app.post('/api/admin/test-email', requireAdmin, requireRole('admin'), async (req
     transport: _sgKey ? 'sendgrid-api' : emailTransporter ? 'smtp' : 'none',
   };
   if (!_sgKey && !emailTransporter) return res.json({ configured, sent: false, error: 'No email transport configured' });
-  const sent = await sendEmail(to, 'Prime Anchorpoint Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
+  const sent = await sendEmail(to, 'Prime Anchor Point Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
   res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
 });
 
@@ -9494,7 +9513,7 @@ app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const sent = await sendEmail(
     to,
-    'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    'Prime Anchor Point 邮箱验证码 / Email Verification Code',
     `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
     verificationCodeHtml(code, true)
   );
@@ -9554,6 +9573,9 @@ app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin')
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(inv.worker_account_id, reviewedBy, 'contractor_invoice', inv.status, status,
         `Invoice ${inv.invoice_number}: $${inv.total_amount} — ${status === 'approved' ? '已批准' : '已拒绝' + (reject_reason ? ': ' + reject_reason : '')}`);
+    // Log to voucher edit history
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, status === 'approved' ? '批准' : '拒绝', inv.status, status + (status === 'rejected' && reject_reason ? ': ' + reject_reason : ''), reviewedBy);
     // Send email + SMS to worker on rejection
     if (status === 'rejected') {
       const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(inv.worker_account_id);
@@ -9578,12 +9600,12 @@ app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin')
             <p style="color:#555;font-size:.9rem">Hi ${workerName}, your invoice <strong>${invNum}</strong> has been rejected.</p>
             <p style="color:#555;font-size:.9rem"><strong>Reason:</strong> ${reasonText}</p>
             <p style="color:#555;font-size:.9rem">Please contact HR if you have questions.</p>
-            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+            <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
           </div>`;
-          await sendEmail(w.email, `[Prime Anchorpoint] Invoice ${invNum} 已被拒绝 / Rejected`, `您好 ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}`, html);
+          await sendEmail(w.email, `[Prime Anchor Point] Invoice ${invNum} 已被拒绝 / Rejected`, `您好 ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}`, html);
         }
         if (w.phone) {
-          await sendSMS(w.phone, `[Prime Anchorpoint] ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}\nReply STOP to opt out.`);
+          await sendSMS(w.phone, `[Prime Anchor Point] ${workerName}，您的 Invoice ${invNum} 已被拒绝。原因：${reasonText}\nReply STOP to opt out.`);
         }
       }
     }
@@ -9595,6 +9617,12 @@ app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin')
 });
 
 app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+  const deletedBy = req.session?.username || 'admin';
+  if (inv) {
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '删除', `${inv.invoice_number} / ${inv.status}`, '', deletedBy);
+  }
   db.prepare('DELETE FROM contractor_invoices WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -9614,6 +9642,9 @@ app.post('/api/admin/contractor-invoices/pre-generate-number', requireAdmin, req
       (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, sent_by)
       VALUES (?,?,?,?,?,?,?)`)
       .run(worker_account_id, invoiceNumber, new Date().toISOString().slice(0, 10), '(预生成)', 0, 'pre_generated', sentBy);
+    // Log to voucher edit history
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(result.lastInsertRowid, '预生成', '', invoiceNumber, sentBy);
     res.json({ success: true, invoice_number: invoiceNumber, invoice_id: result.lastInsertRowid });
   } catch (e) {
     console.error('[Pre-generate Invoice Number]', e.message);
@@ -9633,7 +9664,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
     const langType = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'].includes(template_lang) ? template_lang : 'contractor_invoice';
     const templateId = getDsealConfigTemplateId(langType);
-    if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商發票模板，请先到 DocuSeal 模板管理中生成对应模板' });
+    if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商发票模板，请先到 DocuSeal 模板管理中生成对应模板' });
     const workerEmail = worker_email || w.email || `worker-${w.id}@placeholder.local`;
     const workerPhone = worker_phone || w.phone || '';
     const workerName = w.name || w.username || `Worker #${w.id}`;
@@ -9703,22 +9734,26 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const prefillTotal = company_prefill && quoted_amount ? ((parseFloat(quoted_amount) || 0) + (parseFloat(reimbursable_amount) || 0)) : 0;
     if (existingPreGen) {
       db.prepare(`UPDATE contractor_invoices SET invoice_date=?, service_description=?, service_period_start=?, service_period_end=?, total_amount=?, status='ds_pending', ds_envelope_id=?, ds_status='sent', sent_by=? WHERE id=?`)
-        .run(todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, submissionId, sentBy, existingPreGen.id);
+        .run(todayDate, serviceDescValue || '承包商发票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, submissionId, sentBy, existingPreGen.id);
     } else {
       db.prepare(`INSERT INTO contractor_invoices
         (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, ds_envelope_id, ds_status, sent_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商發票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, 'ds_pending', submissionId, 'sent', sentBy);
+        .run(worker_account_id, invoiceNumber, todayDate, serviceDescValue || '承包商发票 (待填写)', service_period_start || '', service_period_end || '', prefillTotal, 'ds_pending', submissionId, 'sent', sentBy);
     }
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已發送承包商發票给 ${workerName}`);
+      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已发送承包商发票给 ${workerName}`);
+    // Log to voucher edit history
+    const dsInvId = existingPreGen ? existingPreGen.id : db.prepare('SELECT last_insert_rowid() as id').get().id;
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(dsInvId, '发送DocuSeal', '', `${invoiceNumber} → ${workerName}`, sentBy);
     // Send SMS notification if phone number provided
     let smsSent = false, emailSent = true; // DocuSeal sends email automatically
     const warnings = [];
     if (workerPhone) {
       try {
-        smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请查收并填写承包商發票 / Please check your email and complete the Contractor Invoice.\nReply STOP to opt out.`);
+        smsSent = await sendSMS(workerPhone, `[Prime Anchor Point] ${workerName}，请查收并填写承包商发票 / Please check your email and complete the Contractor Invoice.\nReply STOP to opt out.`);
       } catch(e) { console.error('[Invoice SMS]', e.message); }
       if (!smsSent) warnings.push('短信发送失败，请检查手机号');
     } else {
@@ -9734,7 +9769,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
 // Admin: create payment voucher (no DocuSeal, direct record)
 app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   try {
-    const { worker_account_id, service_period_start, service_period_end, invoice_date, service_description, quoted_amount, reimbursable_amount } = req.body;
+    const { worker_account_id, service_period_start, service_period_end, invoice_date, service_description, quoted_amount, reimbursable_amount, payment_method, payment_date, payment_reference, voucher_lang } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
     if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务周期' });
     if (!service_description) return res.status(400).json({ error: '请填写服务内容描述' });
@@ -9743,17 +9778,22 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
     if (!w) return res.status(404).json({ error: '承包商不存在' });
     const workerName = w.name || w.username || `Worker #${w.id}`;
     const todayDate = invoice_date || new Date().toISOString().slice(0, 10);
-    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
+    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '', 'VOU');
     const total = (parseFloat(quoted_amount) || 0) + (parseFloat(reimbursable_amount) || 0);
-    const sentBy = req.session?.username || 'admin';
+    const sentBy = req.userName || 'admin';
+    const lang = voucher_lang || 'bilingual';
     db.prepare(`INSERT INTO contractor_invoices
-      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, source, sent_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, todayDate, service_description, service_period_start || '', service_period_end || '', total, 'approved', 'voucher', sentBy);
+      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, source, sent_by, payment_method, payment_date, payment_reference, voucher_lang)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(worker_account_id, invoiceNumber, todayDate, service_description, service_period_start || '', service_period_end || '', total, 'approved', 'voucher', sentBy, payment_method || '', payment_date || '', payment_reference || '', lang);
+    const insertedId = db.prepare('SELECT last_insert_rowid() as id').get().id;
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'approved', `付款凭证 ${invoiceNumber} — $${total.toFixed(2)}`);
-    res.json({ success: true, invoice_number: invoiceNumber });
+    // Log to voucher edit history
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(insertedId, '创建付款凭证', '', `${invoiceNumber} — $${total.toFixed(2)}`, sentBy);
+    res.json({ success: true, invoice_number: invoiceNumber, id: insertedId });
   } catch (e) {
     console.error('[Create Voucher]', e.message);
     res.status(500).json({ error: e.message });
@@ -9779,13 +9819,17 @@ app.post('/api/admin/contractor-invoices/:id/voucher-receipts', requireAdmin, re
   try {
     const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-    if (inv.voucher_confirmed) return res.status(400).json({ error: '凭证已确认，无法修改' });
     if (!req.files || !req.files.length) return res.status(400).json({ error: '请选择文件' });
     let existing = [];
     try { existing = JSON.parse(inv.voucher_receipt || '[]'); } catch { if (inv.voucher_receipt) existing = [{ filename: inv.voucher_receipt, original_name: inv.voucher_receipt }]; }
     const newFiles = req.files.map(f => ({ filename: f.filename, original_name: f.originalname }));
     const all = [...existing, ...newFiles];
     db.prepare('UPDATE contractor_invoices SET voucher_receipt=? WHERE id=?').run(JSON.stringify(all), req.params.id);
+    // Log to history
+    const changedBy = req.userName || 'admin';
+    const fileNames = newFiles.map(f => f.original_name).join(', ');
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '上传凭证', '', fileNames, changedBy);
     res.json({ success: true, count: newFiles.length });
   } catch (e) {
     console.error('[Voucher Receipt Upload]', e.message);
@@ -9812,18 +9856,22 @@ app.get('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', require
 // Admin: delete a single voucher receipt
 app.delete('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   try {
-    const inv = db.prepare('SELECT voucher_receipt, voucher_confirmed FROM contractor_invoices WHERE id=?').get(req.params.id);
+    const inv = db.prepare('SELECT voucher_receipt FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Not found' });
-    if (inv.voucher_confirmed) return res.status(400).json({ error: '凭证已确认，无法删除' });
     let receipts = [];
     try { receipts = JSON.parse(inv.voucher_receipt || '[]'); } catch { receipts = []; }
     const idx = receipts.findIndex(r => r.filename === req.params.filename);
     if (idx === -1) return res.status(404).json({ error: 'Receipt not found' });
+    const deletedName = receipts[idx].original_name || receipts[idx].filename;
     // Delete file
     const filePath = path.join(uploadsDir, req.params.filename);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     receipts.splice(idx, 1);
     db.prepare('UPDATE contractor_invoices SET voucher_receipt=? WHERE id=?').run(JSON.stringify(receipts), req.params.id);
+    // Log to history
+    const changedBy = req.userName || 'admin';
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '删除凭证', deletedName, '', changedBy);
     res.json({ success: true });
   } catch (e) {
     console.error('[Delete Voucher Receipt]', e.message);
@@ -9840,6 +9888,9 @@ app.post('/api/admin/contractor-invoices/:id/voucher-confirm', requireAdmin, req
     try { receipts = JSON.parse(inv.voucher_receipt || '[]'); } catch {}
     if (!receipts.length) return res.status(400).json({ error: '请先上传付款凭证' });
     db.prepare('UPDATE contractor_invoices SET voucher_confirmed=1 WHERE id=?').run(req.params.id);
+    const confirmedBy = req.session?.username || 'admin';
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '确认付款凭证', '未确认', '已确认', confirmedBy);
     res.json({ success: true });
   } catch (e) {
     console.error('[Voucher Confirm]', e.message);
@@ -9855,11 +9906,25 @@ app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, re
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
     const workerName = inv.worker_name || inv.worker_username || 'N/A';
     const companyName = getCompanySignerName();
-    // Use WenQuanYi Zen Hei for full simplified Chinese support
-    const cjkFontPath = '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc';
-    const hasCjk = fs.existsSync(cjkFontPath);
+    const lang = inv.voucher_lang || 'bilingual'; // 'en', 'bilingual', 'en_es'
+    const L = {
+      en: { title: 'CONTRACTOR PAYMENT VOUCHER', voucherNo: 'Voucher No.', date: 'Date', company: 'Company', contractor: 'Contractor', servicePeriod: 'Service Period', payMethod: 'Payment Method', refNo: 'Reference No.', payDate: 'Payment Date', serviceDesc: 'Service Description', serviceFee: 'Service Fee', reimbursable: 'Reimbursable', total: 'TOTAL', footer: 'This payment voucher is generated by the company as an internal record of payment made to the contractor. It is not an invoice issued by the contractor.', preparedBy: 'Prepared by', createdAt: 'Created at' },
+      bilingual: { title: 'CONTRACTOR PAYMENT VOUCHER', subtitle: '\u627F\u5305\u5546\u4ED8\u6B3E\u51ED\u8BC1', voucherNo: 'Voucher No. / \u51ED\u8BC1\u7F16\u53F7', date: 'Date / \u65E5\u671F', company: 'Company / \u516C\u53F8', contractor: 'Contractor / \u627F\u5305\u5546', servicePeriod: 'Service Period / \u670D\u52A1\u5468\u671F', payMethod: 'Payment Method / \u4ED8\u6B3E\u65B9\u5F0F', refNo: 'Reference No. / \u53C2\u8003\u7F16\u53F7', payDate: 'Payment Date / \u4ED8\u6B3E\u65E5\u671F', serviceDesc: 'Service Description / \u670D\u52A1\u5185\u5BB9', serviceFee: 'Service Fee / \u670D\u52A1\u8D39', reimbursable: 'Reimbursable / \u62A5\u9500\u8D39\u7528', total: 'TOTAL / \u5408\u8BA1', footer: 'This payment voucher is generated by the company as an internal record of payment made to the contractor. It is not an invoice issued by the contractor.', footerZh: '\u672C\u4ED8\u6B3E\u51ED\u8BC1\u7531\u516C\u53F8\u751F\u6210\uFF0C\u4EC5\u4F5C\u4E3A\u516C\u53F8\u5411\u627F\u5305\u5546\u4ED8\u6B3E\u7684\u5185\u90E8\u8BB0\u5F55\uFF0C\u5E76\u975E\u627F\u5305\u5546\u81EA\u884C\u5F00\u5177\u7684\u53D1\u7968\u3002', preparedBy: 'Prepared by / \u7F16\u5236\u4EBA', createdAt: 'Created at / \u521B\u5EFA\u65F6\u95F4' },
+      en_es: { title: 'CONTRACTOR PAYMENT VOUCHER', subtitle: 'COMPROBANTE DE PAGO AL CONTRATISTA', voucherNo: 'Voucher No. / N\u00FAm. Comprobante', date: 'Date / Fecha', company: 'Company / Empresa', contractor: 'Contractor / Contratista', servicePeriod: 'Service Period / Per\u00EDodo de Servicio', payMethod: 'Payment Method / M\u00E9todo de Pago', refNo: 'Reference No. / N\u00FAm. Referencia', payDate: 'Payment Date / Fecha de Pago', serviceDesc: 'Service Description / Descripci\u00F3n del Servicio', serviceFee: 'Service Fee / Tarifa de Servicio', reimbursable: 'Reimbursable / Reembolsable', total: 'TOTAL / TOTAL', footer: 'This payment voucher is generated by the company as an internal record of payment made to the contractor. It is not an invoice issued by the contractor.', footerEs: 'Este comprobante de pago es generado por la empresa como registro interno del pago realizado al contratista. No es una factura emitida por el contratista.', preparedBy: 'Prepared by / Preparado por', createdAt: 'Created at / Creado el' }
+    };
+    const t = L[lang] || L.bilingual;
+    // Use bundled Noto Sans SC font for CJK support, fallback to WenQuanYi Zen Hei
+    const cjkFontPath = [
+      path.join(__dirname, 'fonts', 'NotoSansSC-Regular.ttf'),
+      '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+    ].find(p => fs.existsSync(p));
+    const hasCjk = !!cjkFontPath;
+    const isTtc = cjkFontPath && cjkFontPath.endsWith('.ttc');
     const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
-    if (hasCjk) { doc.registerFont('CJK', cjkFontPath, 'WenQuanYiZenHei'); doc.registerFont('CJKB', cjkFontPath, 'WenQuanYiZenHei'); }
+    if (hasCjk) {
+      if (isTtc) { doc.registerFont('CJK', cjkFontPath, 'WenQuanYiZenHei'); doc.registerFont('CJKB', cjkFontPath, 'WenQuanYiZenHei'); }
+      else { doc.registerFont('CJK', cjkFontPath); doc.registerFont('CJKB', cjkFontPath); }
+    }
     const fontR = hasCjk ? 'CJK' : 'Helvetica';
     const fontB = hasCjk ? 'CJKB' : 'Helvetica-Bold';
     const buffers = [];
@@ -9870,20 +9935,31 @@ app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, re
       res.send(pdfBuf);
     });
     // Header
-    doc.fontSize(18).font(fontB).text('PAYMENT VOUCHER', { align: 'center' });
-    doc.fontSize(10).font(fontR).text('\u4ED8\u6B3E\u51ED\u8BC1', { align: 'center' });
+    doc.fontSize(18).font(fontB).text(t.title, { align: 'center' });
+    if (t.subtitle) doc.fontSize(10).font(fontR).text(t.subtitle, { align: 'center' });
     doc.moveDown(1.5);
-    // Invoice info
-    doc.fontSize(10).font(fontB).text('Invoice #: ', { continued: true }).font(fontR).text(inv.invoice_number);
-    doc.font(fontB).text('Date: ', { continued: true }).font(fontR).text(inv.invoice_date || 'N/A');
-    doc.font(fontB).text('Company: ', { continued: true }).font(fontR).text(companyName);
+    // Voucher info
+    doc.fontSize(10).font(fontB).text(`${t.voucherNo}: `, { continued: true }).font(fontR).text(inv.invoice_number);
+    doc.font(fontB).text(`${t.date}: `, { continued: true }).font(fontR).text(inv.invoice_date || 'N/A');
+    doc.font(fontB).text(`${t.company}: `, { continued: true }).font(fontR).text(companyName);
     doc.moveDown(0.8);
     // Contractor info
-    doc.font(fontB).text('Contractor / \u627F\u5305\u5546: ', { continued: true }).font(fontR).text(workerName);
-    doc.font(fontB).text('Service Period / \u670D\u52A1\u5468\u671F: ', { continued: true }).font(fontR).text(`${inv.service_period_start || 'N/A'} ~ ${inv.service_period_end || 'N/A'}`);
+    doc.font(fontB).text(`${t.contractor}: `, { continued: true }).font(fontR).text(workerName);
+    doc.font(fontB).text(`${t.servicePeriod}: `, { continued: true }).font(fontR).text(`${inv.service_period_start || 'N/A'} ~ ${inv.service_period_end || 'N/A'}`);
+    doc.moveDown(0.8);
+    // Payment info
+    if (inv.payment_method) {
+      doc.font(fontB).text(`${t.payMethod}: `, { continued: true }).font(fontR).text(inv.payment_method);
+    }
+    if (inv.payment_reference) {
+      doc.font(fontB).text(`${t.refNo}: `, { continued: true }).font(fontR).text(inv.payment_reference);
+    }
+    if (inv.payment_date) {
+      doc.font(fontB).text(`${t.payDate}: `, { continued: true }).font(fontR).text(inv.payment_date);
+    }
     doc.moveDown(0.8);
     // Service description
-    doc.font(fontB).text('Service Description / \u670D\u52A1\u5185\u5BB9:');
+    doc.font(fontB).text(`${t.serviceDesc}:`);
     doc.font(fontR).text(inv.service_description || 'N/A', { indent: 10 });
     doc.moveDown(1);
     // Amount table
@@ -9899,27 +9975,28 @@ app.get('/api/admin/contractor-invoices/:id/voucher-pdf', requireAdmin, (req, re
     const service = total - expenses;
     doc.font(fontR).fillColor('#000');
     doc.rect(col1, rowY, tableW, 20).stroke('#e0e0e0');
-    doc.text('Service Fee / \u670D\u52A1\u8D39', col1 + 8, rowY + 5, { width: 320 });
+    doc.text(t.serviceFee, col1 + 8, rowY + 5, { width: 320 });
     doc.text('$' + service.toFixed(2), col2, rowY + 5, { width: 150, align: 'right' });
     rowY += 20;
     if (expenses > 0) {
       doc.rect(col1, rowY, tableW, 20).stroke('#e0e0e0');
-      doc.text('Reimbursable / \u62A5\u9500\u8D39\u7528', col1 + 8, rowY + 5, { width: 320 });
+      doc.text(t.reimbursable, col1 + 8, rowY + 5, { width: 320 });
       doc.text('$' + expenses.toFixed(2), col2, rowY + 5, { width: 150, align: 'right' });
       rowY += 20;
     }
     doc.rect(col1, rowY, tableW, 24).fill('#f8f8f8').stroke('#cccccc');
     doc.fillColor('#000').font(fontB);
-    doc.text('TOTAL / \u5408\u8BA1', col1 + 8, rowY + 6, { width: 320 });
+    doc.text(t.total, col1 + 8, rowY + 6, { width: 320 });
     doc.fontSize(12).text('$' + total.toFixed(2), col2, rowY + 5, { width: 150, align: 'right' });
     doc.fontSize(10);
     doc.moveDown(3);
     // Footer
-    doc.font(fontR).fillColor('#888').text('This payment voucher is generated by the company as a record of payment made to the contractor.', 50, doc.y, { align: 'center', width: 500 });
-    doc.text('\u6B64\u4ED8\u6B3E\u51ED\u8BC1\u7531\u516C\u53F8\u751F\u6210\uFF0C\u4F5C\u4E3A\u5DF2\u5411\u627F\u5305\u5546\u4ED8\u6B3E\u7684\u8BB0\u5F55\u3002', { align: 'center', width: 500 });
+    doc.font(fontR).fillColor('#888').text(t.footer, 50, doc.y, { align: 'center', width: 500 });
+    if (t.footerZh) doc.text(t.footerZh, { align: 'center', width: 500 });
+    if (t.footerEs) doc.text(t.footerEs, { align: 'center', width: 500 });
     doc.moveDown(1.5);
-    doc.fillColor('#333').text(`Created by: ${inv.sent_by || 'admin'}`, 50);
-    doc.text(`Created at: ${inv.created_at || 'N/A'}`);
+    doc.fillColor('#333').text(`${t.preparedBy}: ${inv.sent_by || 'admin'}`, 50);
+    doc.text(`${t.createdAt}: ${inv.created_at || 'N/A'}`);
     doc.end();
   } catch (e) {
     console.error('[Voucher PDF]', e.message);
@@ -10046,7 +10123,7 @@ app.get('/api/admin/contractor-invoices/preview-template', requireAdmin, require
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   const langType = ['contractor_invoice', 'contractor_invoice_en', 'contractor_invoice_es'].includes(req.query.lang) ? req.query.lang : 'contractor_invoice';
   const templateId = getDsealConfigTemplateId(langType);
-  if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商發票模板，请先到 DocuSeal 模板管理中生成对应模板' });
+  if (!templateId) return res.status(400).json({ error: '未配置该语言版本的承包商发票模板，请先到 DocuSeal 模板管理中生成对应模板' });
   try {
     const r = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
     if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
@@ -10164,29 +10241,71 @@ app.post('/api/admin/contractor-invoices/:id/revoke', requireAdmin, requireRole(
       .run('voided', revokedBy, new Date().toISOString(), req.params.id);
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(inv.worker_account_id, revokedBy, 'contractor_invoice', inv.status, 'voided', `Invoice ${inv.invoice_number} 已撤回`);
+    // Log to voucher edit history
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '撤回', inv.status, 'voided', revokedBy);
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Admin: edit a pre_generated contractor invoice
+// Admin: edit a contractor invoice (pre_generated, ds_pending, or voucher)
 app.patch('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: '发票不存在' });
-    if (!['pre_generated', 'ds_pending'].includes(inv.status)) return res.status(400).json({ error: '只有预生成或待签署发票可以编辑' });
-    const { service_description, total_amount, invoice_date, service_period_start, service_period_end } = req.body;
+    const isVoucher = inv.source === 'voucher';
+    if (!isVoucher && !['pre_generated', 'ds_pending'].includes(inv.status)) return res.status(400).json({ error: '只有预生成或待签署发票可以编辑' });
+    if (isVoucher && inv.voucher_confirmed === 1) return res.status(400).json({ error: '凭证已锁定，无法编辑' });
+    const { service_description, total_amount, invoice_date, service_period_start, service_period_end, payment_method, payment_date, payment_reference, expenses } = req.body;
+    const changedBy = req.userName || 'admin';
+    // Log changes to history for vouchers
+    if (isVoucher) {
+      const fieldMap = {
+        service_description: { label: '服务内容', old: inv.service_description, new: service_description },
+        total_amount: { label: '金额', old: String(inv.total_amount), new: total_amount != null ? String(total_amount) : null },
+        invoice_date: { label: '发票日期', old: inv.invoice_date, new: invoice_date },
+        service_period_start: { label: '服务周期开始', old: inv.service_period_start, new: service_period_start },
+        service_period_end: { label: '服务周期结束', old: inv.service_period_end, new: service_period_end },
+        payment_method: { label: '付款方式', old: inv.payment_method, new: payment_method },
+        payment_date: { label: '付款日期', old: inv.payment_date, new: payment_date },
+        payment_reference: { label: '参考编号', old: inv.payment_reference, new: payment_reference },
+        expenses: { label: '报销费用', old: String(inv.expenses || 0), new: expenses != null ? String(expenses) : null },
+      };
+      const insertHistory = db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)');
+      for (const [key, val] of Object.entries(fieldMap)) {
+        if (val.new != null && val.new !== '' && String(val.new) !== String(val.old || '')) {
+          insertHistory.run(req.params.id, val.label, val.old || '', String(val.new), changedBy);
+        }
+      }
+    }
     db.prepare(`UPDATE contractor_invoices SET
       service_description=COALESCE(?,service_description),
       total_amount=COALESCE(?,total_amount),
       invoice_date=COALESCE(?,invoice_date),
       service_period_start=COALESCE(?,service_period_start),
-      service_period_end=COALESCE(?,service_period_end)
+      service_period_end=COALESCE(?,service_period_end),
+      payment_method=COALESCE(?,payment_method),
+      payment_date=COALESCE(?,payment_date),
+      payment_reference=COALESCE(?,payment_reference),
+      expenses=COALESCE(?,expenses)
       WHERE id=?`)
       .run(service_description ?? null, total_amount ?? null, invoice_date ?? null,
-           service_period_start ?? null, service_period_end ?? null, req.params.id);
+           service_period_start ?? null, service_period_end ?? null,
+           payment_method ?? null, payment_date ?? null, payment_reference ?? null,
+           expenses ?? null, req.params.id);
     res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: get voucher edit history
+app.get('/api/admin/contractor-invoices/:id/edit-history', requireAdmin, (req, res) => {
+  try {
+    const rows = db.prepare('SELECT * FROM voucher_edit_history WHERE invoice_id=? ORDER BY changed_at DESC').all(req.params.id);
+    res.json(rows);
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
@@ -10213,13 +10332,13 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
   } else if (canSMSFallback) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
-    smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+    smsSent = await sendSMS(w.phone, `[Prime Anchor Point] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
   }
   // Email
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
-    emailSent = await sendEmail(w.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    emailSent = await sendEmail(w.email, 'Prime Anchor Point 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
       verificationCodeHtml(emailCode));
   }
@@ -10327,7 +10446,7 @@ app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (re
         const dtHtmlRows = times.map((t, i) => `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📅 ${times.length > 1 ? `时间${i+1}` : '时间'}</td><td style="padding:.4rem 0">${fmtDt(t)}</td></tr>`).join('');
         const locStr = interview_location_text || '';
         const noteStr = admin_note || '';
-        const subject = 'Prime Anchorpoint — 面试通知 / Interview Scheduled';
+        const subject = 'Prime Anchor Point — 面试通知 / Interview Scheduled';
         const textMsg = `您好 ${workerName}，\n\n您申请的职位「${app2.job_title}」已安排面试：\n${dtLines ? dtLines + '\n' : ''}${locStr ? '地点：' + locStr + '\n' : ''}${noteStr ? '备注：' + noteStr + '\n' : ''}\n请登录合作中心查看详情。`;
         const htmlMsg = `<p>您好 ${workerName}，</p><p>您申请的职位 <strong>${app2.job_title}</strong> 已安排面试：</p>
           <table style="border-collapse:collapse;margin:1rem 0;font-size:15px">
@@ -11079,7 +11198,7 @@ app.post('/api/admin/partners/:id/generate-agreement', requireAdmin, blockManage
 
       // ── Parties ──────────────────────────────────────────────
       doc.fontSize(11).font('Helvetica-Bold').fillColor('black').text('Service Provider:');
-      doc.font('Helvetica').fillColor('#333').text('Prime Anchorpoint LLC, a staffing and workforce solutions company ("Service Provider").');
+      doc.font('Helvetica').fillColor('#333').text('Prime Anchor Point LLC, a staffing and workforce solutions company ("Service Provider").');
       doc.moveDown(0.8);
       doc.font('Helvetica-Bold').fillColor('black').text('Partner:');
       doc.font('Helvetica').fillColor('#333').text(`${partnerName} ("Partner").`);
@@ -11331,7 +11450,7 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
     const { submissionId, companyEmbedSrc } = await dsealSendEnvelope({
       docPath, docName: f.file_name || f.file_path,
-      emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`,
+      emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchor Point`,
       signer1: { email: companyEmail, name: companyName },
       signer2: { email: partnerEmail, name: partnerName }
     });
@@ -11703,7 +11822,7 @@ app.post('/api/admin/employees/:id/send-registration-link', requireAdmin, async 
     const phone = (req.body.phone || emp.phone || '').replace(/\D/g,'').slice(-10);
     if (phone) {
       smsSent = await sendSMS('+1'+phone,
-        `[Prime Anchorpoint] 您好 ${name}，请点击以下链接完成账户注册（7天内有效）:\n${inviteUrl}\nHi ${name}, click to register your account (valid 7 days).`
+        `[Prime Anchor Point] 您好 ${name}，请点击以下链接完成账户注册（7天内有效）:\n${inviteUrl}\nHi ${name}, click to register your account (valid 7 days).`
       );
       if (!smsSent) errs.push('SMS failed');
     }
@@ -13272,14 +13391,14 @@ app.post('/api/worker/contact/request-change', requireWorker, async (req, res) =
     const canVerify = !!(twilioClient && TWILIO_VERIFY_SID);
     if (oldPhone) {
       if (canVerify) { await sendVerifyCode(oldPhone); oldSent = true; }
-      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchorpoint] 验证旧手机号，验证码：${oldCode}，15分钟有效`); }
+      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchor Point] 验证旧手机号，验证码：${oldCode}，15分钟有效`); }
     }
     if (canVerify) { await sendVerifyCode(val); newSent = true; }
-    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] 验证新手机号，验证码：${newCode}，15分钟有效`); }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchor Point] 验证新手机号，验证码：${newCode}，15分钟有效`); }
   } else {
     const oldEmail = w.email;
-    if (oldEmail) oldSent = await sendEmail(oldEmail, 'Prime Anchorpoint 更换邮箱验证', `旧邮箱验证码：${oldCode}，15分钟内有效。`);
-    newSent = await sendEmail(val, 'Prime Anchorpoint 新邮箱验证', `新邮箱验证码：${newCode}，15分钟内有效。`);
+    if (oldEmail) oldSent = await sendEmail(oldEmail, 'Prime Anchor Point 更换邮箱验证', `旧邮箱验证码：${oldCode}，15分钟内有效。`);
+    newSent = await sendEmail(val, 'Prime Anchor Point 新邮箱验证', `新邮箱验证码：${newCode}，15分钟内有效。`);
   }
   console.log(`[ContactChange] Worker ${req.workerId} field=${field} old_code=${oldCode} new_code=${newCode}`);
   res.json({ success: true, old_sent: oldSent, new_sent: newSent });
@@ -13326,9 +13445,9 @@ app.post('/api/worker/contact/send-old-code', requireWorker, async (req, res) =>
   let sent = false;
   if (field === 'phone') {
     if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(oldVal); sent = true; }
-    else if (twilioClient && TWILIO_FROM) { sent = await sendSMS(oldVal, `[Prime Anchorpoint] Your verification code: ${code} (valid 15 min)`); }
+    else if (twilioClient && TWILIO_FROM) { sent = await sendSMS(oldVal, `[Prime Anchor Point] Your verification code: ${code} (valid 15 min)`); }
   } else {
-    sent = await sendEmail(oldVal, 'Prime Anchorpoint Verification Code', `Your verification code: ${code}\nValid for 15 minutes.`);
+    sent = await sendEmail(oldVal, 'Prime Anchor Point Verification Code', `Your verification code: ${code}\nValid for 15 minutes.`);
   }
   console.log(`[CC-S1] Worker ${req.workerId} field=${field} old_code=${code}`);
   res.json({ success: true, old_sent: sent });
@@ -13361,9 +13480,9 @@ app.post('/api/worker/contact/verify-old-send-new', requireWorker, async (req, r
   let newSent = false;
   if (field === 'phone') {
     if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(val); newSent = true; }
-    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] Your new phone verification code: ${newCode} (valid 15 min)`); }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchor Point] Your new phone verification code: ${newCode} (valid 15 min)`); }
   } else {
-    newSent = await sendEmail(val, 'Prime Anchorpoint New Email Verification', `Your verification code: ${newCode}\nValid for 15 minutes.`);
+    newSent = await sendEmail(val, 'Prime Anchor Point New Email Verification', `Your verification code: ${newCode}\nValid for 15 minutes.`);
   }
   console.log(`[CC-S2] Worker ${req.workerId} field=${field} new_code=${newCode}`);
   res.json({ success: true, new_sent: newSent });
@@ -13433,7 +13552,7 @@ app.put('/api/worker/me', requireWorker, async (req, res) => {
     if (w.phone && process.env.TWILIO_ACCOUNT_SID) {
       try {
         const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-        await twilio.messages.create({ body: `Prime Anchorpoint 旧号码验证码: ${oldCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: w.phone });
+        await twilio.messages.create({ body: `Prime Anchor Point 旧号码验证码: ${oldCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: w.phone });
         results.old_sent = true;
       } catch (e) { console.error('[Change phone] SMS to old:', e.message); }
     }
@@ -13441,7 +13560,7 @@ app.put('/api/worker/me', requireWorker, async (req, res) => {
     if (process.env.TWILIO_ACCOUNT_SID) {
       try {
         const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-        await twilio.messages.create({ body: `Prime Anchorpoint 新号码验证码: ${newCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: new_value });
+        await twilio.messages.create({ body: `Prime Anchor Point 新号码验证码: ${newCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: new_value });
         results.new_sent = true;
       } catch (e) { console.error('[Change phone] SMS to new:', e.message); }
     }
@@ -13451,13 +13570,13 @@ app.put('/api/worker/me', requireWorker, async (req, res) => {
     // Send to old email
     if (w.email) {
       try {
-        await t.sendMail({ from: process.env.EMAIL_FROM, to: w.email, subject: 'Prime Anchorpoint - 旧邮箱验证码', html: `<p>您的旧邮箱验证码: <strong>${oldCode}</strong></p><p>15分钟内有效。</p>` });
+        await t.sendMail({ from: process.env.EMAIL_FROM, to: w.email, subject: 'Prime Anchor Point - 旧邮箱验证码', html: `<p>您的旧邮箱验证码: <strong>${oldCode}</strong></p><p>15分钟内有效。</p>` });
         results.old_sent = true;
       } catch (e) { console.error('[Change email] to old:', e.message); }
     }
     // Send to new email
     try {
-      await t.sendMail({ from: process.env.EMAIL_FROM, to: new_value, subject: 'Prime Anchorpoint - 新邮箱验证码', html: `<p>您的新邮箱验证码: <strong>${newCode}</strong></p><p>15分钟内有效。</p>` });
+      await t.sendMail({ from: process.env.EMAIL_FROM, to: new_value, subject: 'Prime Anchor Point - 新邮箱验证码', html: `<p>您的新邮箱验证码: <strong>${newCode}</strong></p><p>15分钟内有效。</p>` });
       results.new_sent = true;
     } catch (e) { console.error('[Change email] to new:', e.message); }
   }
@@ -14351,6 +14470,11 @@ app.post('/api/worker/contractor-invoices', requireWorker, (req, res) => {
       hrWorked, hrRate, flatAmt, calcTotal,
       payment_due_date || '', notes || '', expAmt,
       parseInt(job_id) || 0, job_title || '', service_type || '', confirmed ? 1 : 0);
+  // Log to voucher edit history
+  const w2 = db.prepare('SELECT name, username FROM worker_accounts WHERE id=?').get(req.workerId);
+  const workerLabel = w2 ? (w2.name || w2.username) : `Worker #${req.workerId}`;
+  db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+    .run(r.lastInsertRowid, '手动提交', '', `${invoiceNumber} — $${calcTotal.toFixed(2)}`, workerLabel);
   res.json({ success: true, id: r.lastInsertRowid, invoice_number: invoiceNumber });
 });
 
@@ -14411,9 +14535,9 @@ app.post('/api/worker/forgot-password', async (req, res) => {
   resetCodes.set('worker:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
   // Try to send via SMS or email
   if (w.phone && twilioClient && TWILIO_FROM) {
-    await sendSMS(w.phone, `[Prime Anchorpoint] 重置密码验证码: ${code}，10分钟内有效。Reset code: ${code}`);
+    await sendSMS(w.phone, `[Prime Anchor Point] 重置密码验证码: ${code}，10分钟内有效。Reset code: ${code}`);
   } else if (w.email && emailTransporter) {
-    await sendEmail(w.email, 'Prime Anchorpoint 重置密码 / Password Reset',
+    await sendEmail(w.email, 'Prime Anchor Point 重置密码 / Password Reset',
       `您的重置密码验证码: ${code}\nYour password reset code: ${code}\n\n10分钟内有效 / Valid for 10 minutes.`);
   }
   console.log(`[Reset Code] Worker account ${login}: ${code}`);
@@ -15413,7 +15537,7 @@ function checkExpiringDocs() {
     // Email worker
     if (doc.worker_email && (emailTransporter || _sgKey)) {
       sendEmail(doc.worker_email,
-        `[Prime Anchorpoint] 您的${typeLabel}即将到期 / Your ${typeLabel} is expiring`,
+        `[Prime Anchor Point] 您的${typeLabel}即将到期 / Your ${typeLabel} is expiring`,
         `您好 ${doc.worker_name || ''},\n\n您的${typeLabel}将于 ${doc.expires_at} 到期（${urgency}）。\n请尽快更新证件。\n\nHello ${doc.worker_name || ''},\nYour ${typeLabel} expires on ${doc.expires_at} (${urgency}).\nPlease update your document as soon as possible.\n\n— Prime Anchor Point`
       ).catch(e => console.error('[ExpiryNotify] Email failed:', e));
     }
@@ -15421,7 +15545,7 @@ function checkExpiringDocs() {
     // SMS worker
     if (doc.worker_phone && twilioClient && (TWILIO_FROM || TWILIO_VERIFY_SID)) {
       sendSMS(doc.worker_phone,
-        `[Prime Anchorpoint] 您的${typeLabel}将于${doc.expires_at}到期（${urgency}），请尽快更新。Your ${typeLabel} expires ${doc.expires_at}.`
+        `[Prime Anchor Point] 您的${typeLabel}将于${doc.expires_at}到期（${urgency}），请尽快更新。Your ${typeLabel} expires ${doc.expires_at}.`
       ).catch(e => console.error('[ExpiryNotify] SMS failed:', e));
     }
 
@@ -15615,9 +15739,9 @@ app.post('/api/register/worker', async (req, res) => {
       // Try to resend so the user gets fresh codes in their inbox
       let phoneSent = false, emailSent = false;
       if (phoneRow && phoneRow.code !== '__twilio_verify__' && existing.phone)
-        phoneSent = await sendSMS(existing.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneRow.code}，15分钟内有效。Your verification code: ${phoneRow.code}`);
+        phoneSent = await sendSMS(existing.phone, `[Prime Anchor Point] 您的手机验证码是: ${phoneRow.code}，15分钟内有效。Your verification code: ${phoneRow.code}`);
       if (emailRow && existing.email)
-        emailSent = await sendEmail(existing.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+        emailSent = await sendEmail(existing.email, 'Prime Anchor Point 邮箱验证码 / Email Verification Code',
           `您的邮箱验证码是: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
           verificationCodeHtml(emailRow.code));
       const pendingResp = {
@@ -15710,13 +15834,13 @@ app.post('/api/register/worker', async (req, res) => {
   } else if (canSMSFallback) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
-    smsSent = await sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+    smsSent = await sendSMS(phone, `[Prime Anchor Point] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
   }
   // Email: always use our own codes via SMTP
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
-    emailSent = await sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    emailSent = await sendEmail(email, 'Prime Anchor Point 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
       verificationCodeHtml(emailCode));
   }
@@ -15752,13 +15876,13 @@ app.post('/api/register/resend-code', async (req, res) => {
     } else {
       code = String(Math.floor(100000 + Math.random() * 900000));
       db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'phone', code, expires);
-      sent = await sendSMS(acc.phone, `[Prime Anchorpoint] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+      sent = await sendSMS(acc.phone, `[Prime Anchor Point] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
       console.log(`[Verify] Resend phone SMS for Worker #${account_id}: ${code} (sent:${sent})`);
     }
   } else {
     code = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'email', code, expires);
-    sent = await sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    sent = await sendEmail(acc.email, 'Prime Anchor Point 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
       verificationCodeHtml(code));
     console.log(`[Verify] Resend email for Worker #${account_id}: ${code} (sent:${sent})`);
@@ -15876,12 +16000,12 @@ app.post('/api/register/enterprise', async (req, res) => {
   if (!phoneSent) {
     const code = String(Math.floor(100000+Math.random()*900000));
     db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId,'phone',code,expires);
-    sendSMS(phoneDigits, `Your Prime Anchorpoint verification code is: ${code}`).catch(()=>{});
+    sendSMS(phoneDigits, `Your Prime Anchor Point verification code is: ${code}`).catch(()=>{});
   }
   // Send email code
   const emailCode = String(Math.floor(100000+Math.random()*900000));
   db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId,'email',emailCode,expires);
-  sendEmail(email, 'Prime Anchorpoint — Enterprise Registration Verification', `Your verification code is: ${emailCode}\nValid for 15 minutes.`, verificationCodeHtml(emailCode)).catch(()=>{});
+  sendEmail(email, 'Prime Anchor Point — Enterprise Registration Verification', `Your verification code is: ${emailCode}\nValid for 15 minutes.`, verificationCodeHtml(emailCode)).catch(()=>{});
   res.json({ success: true, account_id: accountId, needs_phone: true, needs_email: true });
 });
 
@@ -15928,12 +16052,12 @@ app.post('/api/register/enterprise-resend', async (req, res) => {
     if (!sent) {
       const code = String(Math.floor(100000+Math.random()*900000));
       db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id,'phone',code,expires);
-      sendSMS(phoneDigits, `Your Prime Anchorpoint verification code is: ${code}`).catch(()=>{});
+      sendSMS(phoneDigits, `Your Prime Anchor Point verification code is: ${code}`).catch(()=>{});
     }
   } else {
     const code = String(Math.floor(100000+Math.random()*900000));
     db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id,'email',code,expires);
-    sendEmail(acct.email, 'Prime Anchorpoint — Verification Code', `Your verification code is: ${code}\nValid for 15 minutes.`, verificationCodeHtml(code)).catch(()=>{});
+    sendEmail(acct.email, 'Prime Anchor Point — Verification Code', `Your verification code is: ${code}\nValid for 15 minutes.`, verificationCodeHtml(code)).catch(()=>{});
   }
   res.json({ success: true });
 });
@@ -15978,6 +16102,7 @@ app.get('/manager-register', (req, res) => {
 
 // ─── Legal pages ───
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+app.get('/privacy-policy', (req, res) => res.redirect(301, '/privacy'));
 app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
 app.get('/background-check-disclosure', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-disclosure.html')));
 app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-consent.html')));
@@ -16220,8 +16345,8 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                 if (workerEmail) {
                   const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
                   await sendEmail(workerEmail,
-                    `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
-                    `您好 ${workerName}，\n${companyName} 已完成签署，现在轮到您了。\n${workerSignUrl ? '签署链接: ' + workerSignUrl : ''}\n\nHi ${workerName},\n${companyName} has signed. It's your turn now.\n${workerSignUrl ? 'Sign here: ' + workerSignUrl : ''}\n\nHola ${workerName},\n${companyName} ha firmado. Ahora es su turno.\n${workerSignUrl ? 'Firme aquí: ' + workerSignUrl : ''}\n\nPrime Anchorpoint`,
+                    `Prime Anchor Point — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+                    `您好 ${workerName}，\n${companyName} 已完成签署，现在轮到您了。\n${workerSignUrl ? '签署链接: ' + workerSignUrl : ''}\n\nHi ${workerName},\n${companyName} has signed. It's your turn now.\n${workerSignUrl ? 'Sign here: ' + workerSignUrl : ''}\n\nHola ${workerName},\n${companyName} ha firmado. Ahora es su turno.\n${workerSignUrl ? 'Firme aquí: ' + workerSignUrl : ''}\n\nPrime Anchor Point`,
                     `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
                       <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
                       <p>您好 ${workerName}，</p>
@@ -16236,7 +16361,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                       <h3 style="color:#333;font-size:.95rem">Firme Su ${contractTypeEs}</h3>
                       <p style="color:#555;font-size:.9rem">Hola ${workerName}, ${companyName} ha completado su firma. Ahora es su turno de firmar el ${contractTypeEs}. Haga clic en el botón de abajo para completar su firma electrónica.</p>
                       ${signLink}
-                      <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+                      <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchor Point LLC</p>
                     </div>`
                   );
                   console.log(`[DocuSeal webhook] Sent trilingual signing email to worker ${workerEmail}`);
@@ -16244,8 +16369,8 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                 // Send SMS to worker (trilingual)
                 if (workerPhone) {
                   const smsText = workerSignUrl
-                    ? `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
-                    : `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+                    ? `[Prime Anchor Point] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
+                    : `[Prime Anchor Point] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
                   await sendSMS(workerPhone, smsText);
                   console.log(`[DocuSeal webhook] Sent trilingual signing SMS to worker ${workerPhone}`);
                 }
@@ -16562,11 +16687,11 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(result.sessionId, interview.worker_id);
     const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
-    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。点击链接：${result.url || portalUrl}`;
+    const smsText = `[Prime Anchor Point] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。点击链接：${result.url || portalUrl}`;
     const smsSent = await sendSMS(interview.worker_phone, smsText);
     if (interview.worker_email) {
       await sendEmail(interview.worker_email,
-        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        'Prime Anchor Point — 身份验证请求 / Identity Verification',
         `请完成身份验证：${result.url || portalUrl}`,
         `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请点击以下链接，按提示上传驾照/ID、完成自拍核验：</p><p><a href="${result.url || portalUrl}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.url || portalUrl}</p>`
       );
@@ -16690,7 +16815,7 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     let smsSent = false;
     if (interview.worker_phone) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
-      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
+      const smsText = `[Prime Anchor Point] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。\n您可以：\n1. 登录合作中心直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(interview.worker_phone, smsText);
     }
     // Send email
@@ -16698,7 +16823,7 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     if (interview.worker_email) {
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(interview.worker_email,
-        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        'Prime Anchor Point — 身份验证请求 / Identity Verification',
         `请完成身份验证。您可以登录合作中心直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${interview.worker_name||''}，</p>
          <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
@@ -16984,6 +17109,32 @@ app.use((err, req, res, next) => {
   console.error('[Unhandled Error]', err.message);
   res.status(500).json({ error: '服务器内部错误：' + err.message });
 });
+
+// ─── One-time migration: re-sync tax_doc tasks to only include form tasks ───
+try {
+  const completedTax = db.prepare(`
+    SELECT trq.worker_account_id, trq.recommended_form, trq.applicant_type,
+           trq.claim_treaty_benefit, trq.services_location, trq.immigration_status
+    FROM tax_residency_questionnaire trq
+    WHERE trq.recommended_form != '' AND trq.recommended_form IS NOT NULL
+  `).all();
+  const deleteOld = db.prepare(`DELETE FROM worker_onboarding WHERE worker_account_id=? AND task_key LIKE 'tax_doc_%'`);
+  const insertTask = db.prepare(`INSERT OR IGNORE INTO worker_onboarding (worker_account_id, task_key, status, admin_note, visible_to_worker, updated_at) VALUES (?,?,?,?,0,CURRENT_TIMESTAMP)`);
+  for (const tr of completedTax) {
+    const tasks = getTaxDocTasks(tr.recommended_form, tr);
+    deleteOld.run(tr.worker_account_id);
+    for (const t of tasks) insertTask.run(tr.worker_account_id, t.key, 'pending', t.note || '');
+    // Update assigned_tasks
+    const wa = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(tr.worker_account_id);
+    if (wa) {
+      let assigned = [];
+      try { assigned = JSON.parse(wa.assigned_tasks || '[]'); } catch {}
+      assigned = assigned.filter(k => !k.startsWith('tax_doc_'));
+      for (const t of tasks) assigned.push(t.key);
+      db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(assigned), tr.worker_account_id);
+    }
+  }
+} catch(e) { console.error('[migration] tax_doc task resync failed:', e.message); }
 
 // ─── Start ───
 // Periodic WAL checkpoint every 5 minutes
@@ -17783,7 +17934,7 @@ app.post('/api/admin/docuseal/deduplicate', requireAdmin, async (req, res) => {
 app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
-  console.log(`Prime Anchorpoint running on port ${PORT}`);
+  console.log(`Prime Anchor Point running on port ${PORT}`);
   // Re-sync onboarded status for all workers with employment_type on startup
   // This ensures the onboarded flag is recalculated after any logic changes
   try {
