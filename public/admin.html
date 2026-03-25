@@ -3379,6 +3379,11 @@ tr:hover td{background:var(--sky-light)}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-shrink:0">
       <h2 style="margin:0;font-size:1rem">📄 付款凭证 PDF</h2>
       <div style="display:flex;gap:.5rem;align-items:center">
+        <select id="voucherPdfLang" onchange="switchVoucherPdfLang()" style="font-size:.82rem;padding:.3rem .5rem;border:1px solid #d1d5db;border-radius:5px;background:#fff">
+          <option value="bilingual">中英双语</option>
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+        </select>
         <a id="voucherPdfNewTab" href="#" target="_blank" rel="noopener" style="font-size:.82rem;color:#0369a1;text-decoration:none;padding:.3rem .7rem;border:1px solid #7dd3fc;border-radius:5px;background:#f0f9ff">↗ 新标签页</a>
         <button class="btn btn-outline" onclick="document.getElementById('voucherPdfFrame').src='about:blank';document.getElementById('voucherPdfModal').style.display='none'" style="font-size:.82rem">✕ 关闭</button>
       </div>
@@ -19323,7 +19328,7 @@ async function loadEmpInvoiceTab() {
           <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
         ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}
         ${r.status !== 'approved' ? `<br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : ''}
-        ${r.source === 'voucher' ? `<br><button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>${r.voucher_confirmed !== 1 ? ` <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherEditModal(${r.id})">✏️ 编辑</button>` : ''} <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>` : ''}
+        ${r.source === 'voucher' ? `<br><button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>${r.voucher_confirmed !== 1 ? ` <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button>` : ''} <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>` : ''}
         `}
       </td>
     </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
@@ -19761,11 +19766,20 @@ async function confirmVoucherLock() {
   btn.disabled = false; btn.textContent = '🔒 确认凭证（锁定）';
 }
 
+let _voucherPdfInvId = null;
 function openVoucherPdf(invId) {
+  _voucherPdfInvId = invId;
+  document.getElementById('voucherPdfLang').value = 'bilingual';
   const url = `/api/admin/contractor-invoices/${invId}/voucher-pdf`;
   document.getElementById('voucherPdfFrame').src = url + '#toolbar=1&navpanes=0&scrollbar=1';
   document.getElementById('voucherPdfNewTab').href = url;
   document.getElementById('voucherPdfModal').style.display = 'flex';
+}
+function switchVoucherPdfLang() {
+  const lang = document.getElementById('voucherPdfLang').value;
+  const url = `/api/admin/contractor-invoices/${_voucherPdfInvId}/voucher-pdf?lang=${lang}`;
+  document.getElementById('voucherPdfFrame').src = url + '#toolbar=1&navpanes=0&scrollbar=1';
+  document.getElementById('voucherPdfNewTab').href = url;
 }
 
 function closeVoucherReceiptModal() {
@@ -19862,21 +19876,17 @@ async function saveInvEdit() {
 }
 
 // ─── Voucher Edit & History ───
-async function openVoucherEditModal(invId) {
-  const r = await api(`/admin/contractor-invoices`);
-  if (!r) return;
-  const inv = r.find(x => x.id === invId);
-  if (!inv) return showToast('找不到该凭证', 'error');
-  document.getElementById('vouEditId').value = inv.id;
-  document.getElementById('vouEditDate').value = inv.invoice_date || '';
-  document.getElementById('vouEditPeriodStart').value = inv.service_period_start || '';
-  document.getElementById('vouEditPeriodEnd').value = inv.service_period_end || '';
-  document.getElementById('vouEditServiceDesc').value = inv.service_description || '';
-  document.getElementById('vouEditAmount').value = inv.total_amount || '';
-  document.getElementById('vouEditExpenses').value = inv.expenses || '';
-  document.getElementById('vouEditPayMethod').value = inv.payment_method || '';
-  document.getElementById('vouEditPayDate').value = inv.payment_date || '';
-  document.getElementById('vouEditPayRef').value = inv.payment_reference || '';
+function openVoucherEditModal(row) {
+  document.getElementById('vouEditId').value = row.id;
+  document.getElementById('vouEditDate').value = row.invoice_date || '';
+  document.getElementById('vouEditPeriodStart').value = row.service_period_start || '';
+  document.getElementById('vouEditPeriodEnd').value = row.service_period_end || '';
+  document.getElementById('vouEditServiceDesc').value = row.service_description || '';
+  document.getElementById('vouEditAmount').value = row.total_amount || '';
+  document.getElementById('vouEditExpenses').value = row.expenses || '';
+  document.getElementById('vouEditPayMethod').value = row.payment_method || '';
+  document.getElementById('vouEditPayDate').value = row.payment_date || '';
+  document.getElementById('vouEditPayRef').value = row.payment_reference || '';
   document.getElementById('voucherEditModal').style.display = 'flex';
 }
 
