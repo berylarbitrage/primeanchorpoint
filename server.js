@@ -1746,6 +1746,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
  'payment_reference TEXT DEFAULT \'\''
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
+db.exec(`CREATE TABLE IF NOT EXISTS voucher_edit_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL,
+  field_name TEXT NOT NULL,
+  old_value TEXT DEFAULT '',
+  new_value TEXT DEFAULT '',
+  changed_by TEXT DEFAULT '',
+  changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // ─── App Settings (feature flags, portal config) ───
 db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
@@ -2205,7 +2215,7 @@ function nextEmployeeId(state, hireDate) {
 }
 
 // ─── Auto-generate worker code: PORT-ST-MMDDYY-0001 ───
-function generateContractorInvoiceNumber(workerName, workerState) {
+function generateContractorInvoiceNumber(workerName, workerState, type = 'INV') {
   const stateStr = (workerState || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
   // Build initials from worker name words (e.g. "Xuan Zhang" → "XZ")
   const initials = (workerName || '').trim().split(/\s+/).map(w => w[0] || '').join('').toUpperCase().replace(/[^A-Z]/g, '') || 'XX';
@@ -2214,7 +2224,8 @@ function generateContractorInvoiceNumber(workerName, workerState) {
   const dd = String(today.getDate()).padStart(2, '0');
   const yy = String(today.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
-  const prefix = `INVWRK-${stateStr}-${initials}-${dateStr}`;
+  const typePrefix = type === 'VOU' ? 'VOUWRK' : 'INVWRK';
+  const prefix = `${typePrefix}-${stateStr}-${initials}-${dateStr}`;
   // Find the highest sequential number for this same prefix today
   const last = db.prepare(`SELECT invoice_number FROM contractor_invoices WHERE invoice_number LIKE ? ORDER BY invoice_number DESC LIMIT 1`).get(prefix + '-%');
   let num = 1;
@@ -9750,7 +9761,7 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
     if (!w) return res.status(404).json({ error: '承包商不存在' });
     const workerName = w.name || w.username || `Worker #${w.id}`;
     const todayDate = invoice_date || new Date().toISOString().slice(0, 10);
-    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '');
+    const invoiceNumber = generateContractorInvoiceNumber(workerName, w.state || '', 'VOU');
     const total = (parseFloat(quoted_amount) || 0) + (parseFloat(reimbursable_amount) || 0);
     const sentBy = req.session?.username || 'admin';
     db.prepare(`INSERT INTO contractor_invoices
@@ -10191,23 +10202,62 @@ app.post('/api/admin/contractor-invoices/:id/revoke', requireAdmin, requireRole(
   }
 });
 
-// Admin: edit a pre_generated contractor invoice
+// Admin: edit a contractor invoice (pre_generated, ds_pending, or voucher)
 app.patch('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: '发票不存在' });
-    if (!['pre_generated', 'ds_pending'].includes(inv.status)) return res.status(400).json({ error: '只有预生成或待签署发票可以编辑' });
-    const { service_description, total_amount, invoice_date, service_period_start, service_period_end } = req.body;
+    const isVoucher = inv.source === 'voucher';
+    if (!isVoucher && !['pre_generated', 'ds_pending'].includes(inv.status)) return res.status(400).json({ error: '只有预生成或待签署发票可以编辑' });
+    if (isVoucher && inv.voucher_confirmed === 1) return res.status(400).json({ error: '凭证已锁定，无法编辑' });
+    const { service_description, total_amount, invoice_date, service_period_start, service_period_end, payment_method, payment_date, payment_reference, expenses } = req.body;
+    const changedBy = req.session?.username || 'admin';
+    // Log changes to history for vouchers
+    if (isVoucher) {
+      const fieldMap = {
+        service_description: { label: '服务内容', old: inv.service_description, new: service_description },
+        total_amount: { label: '金额', old: String(inv.total_amount), new: total_amount != null ? String(total_amount) : null },
+        invoice_date: { label: '发票日期', old: inv.invoice_date, new: invoice_date },
+        service_period_start: { label: '服务周期开始', old: inv.service_period_start, new: service_period_start },
+        service_period_end: { label: '服务周期结束', old: inv.service_period_end, new: service_period_end },
+        payment_method: { label: '付款方式', old: inv.payment_method, new: payment_method },
+        payment_date: { label: '付款日期', old: inv.payment_date, new: payment_date },
+        payment_reference: { label: '参考编号', old: inv.payment_reference, new: payment_reference },
+        expenses: { label: '报销费用', old: String(inv.expenses || 0), new: expenses != null ? String(expenses) : null },
+      };
+      const insertHistory = db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)');
+      for (const [key, val] of Object.entries(fieldMap)) {
+        if (val.new != null && val.new !== '' && String(val.new) !== String(val.old || '')) {
+          insertHistory.run(req.params.id, val.label, val.old || '', String(val.new), changedBy);
+        }
+      }
+    }
     db.prepare(`UPDATE contractor_invoices SET
       service_description=COALESCE(?,service_description),
       total_amount=COALESCE(?,total_amount),
       invoice_date=COALESCE(?,invoice_date),
       service_period_start=COALESCE(?,service_period_start),
-      service_period_end=COALESCE(?,service_period_end)
+      service_period_end=COALESCE(?,service_period_end),
+      payment_method=COALESCE(?,payment_method),
+      payment_date=COALESCE(?,payment_date),
+      payment_reference=COALESCE(?,payment_reference),
+      expenses=COALESCE(?,expenses)
       WHERE id=?`)
       .run(service_description ?? null, total_amount ?? null, invoice_date ?? null,
-           service_period_start ?? null, service_period_end ?? null, req.params.id);
+           service_period_start ?? null, service_period_end ?? null,
+           payment_method ?? null, payment_date ?? null, payment_reference ?? null,
+           expenses ?? null, req.params.id);
     res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: get voucher edit history
+app.get('/api/admin/contractor-invoices/:id/edit-history', requireAdmin, (req, res) => {
+  try {
+    const rows = db.prepare('SELECT * FROM voucher_edit_history WHERE invoice_id=? ORDER BY changed_at DESC').all(req.params.id);
+    res.json(rows);
   } catch(e) {
     res.status(500).json({ error: e.message });
   }

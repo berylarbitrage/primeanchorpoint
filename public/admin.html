@@ -3294,6 +3294,85 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- 付款凭证 编辑 Modal -->
+<div class="modal-bg" id="voucherEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:640px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">✏️ 编辑付款凭证</h2>
+      <button class="btn btn-outline" onclick="document.getElementById('voucherEditModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <input type="hidden" id="vouEditId">
+    <div style="display:grid;gap:.6rem">
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">发票日期</label>
+        <input type="date" id="vouEditDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 开始</label>
+          <input type="date" id="vouEditPeriodStart" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 结束</label>
+          <input type="date" id="vouEditPeriodEnd" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务内容描述</label>
+        <textarea id="vouEditServiceDesc" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务金额 ($)</label>
+          <input type="number" id="vouEditAmount" step="0.01" min="0" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">报销费用 ($)</label>
+          <input type="number" id="vouEditExpenses" step="0.01" min="0" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">付款方式</label>
+          <select id="vouEditPayMethod" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+            <option value="">-- 选择 --</option>
+            <option value="ACH">ACH</option>
+            <option value="Zelle">Zelle</option>
+            <option value="Check">Check</option>
+            <option value="Cash">Cash</option>
+            <option value="Wire">Wire</option>
+            <option value="Venmo">Venmo</option>
+            <option value="PayPal">PayPal</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">付款日期</label>
+          <input type="date" id="vouEditPayDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">参考编号</label>
+          <input id="vouEditPayRef" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button class="btn btn-green" onclick="saveVoucherEdit()">💾 保存</button>
+      <button class="btn" onclick="document.getElementById('voucherEditModal').style.display='none'">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 付款凭证 修改历史 Modal -->
+<div class="modal-bg" id="voucherHistoryModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:640px;width:95vw;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">📜 修改历史 — <span id="vouHistoryNumber" style="font-family:monospace;color:var(--sky)"></span></h2>
+      <button class="btn btn-outline" onclick="document.getElementById('voucherHistoryModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <div id="vouHistoryContent" style="font-size:.85rem"></div>
+  </div>
+</div>
+
 <!-- 付款凭证 PDF 预览 Modal -->
 <div class="modal-bg" id="voucherPdfModal" style="display:none" onclick="if(event.target===this){document.getElementById('voucherPdfFrame').src='about:blank';this.style.display='none'}">
   <div class="modal" style="max-width:92vw;width:850px;height:90vh;display:flex;flex-direction:column;padding:1rem">
@@ -19229,6 +19308,7 @@ async function loadEmpInvoiceTab() {
         ${vConfirmed ? `
           <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button>
           <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}',true)">📎 查看凭证</button>
+          <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>
         ` : `
         ${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}
         ${r.status === 'submitted' ? `
@@ -19243,7 +19323,7 @@ async function loadEmpInvoiceTab() {
           <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
         ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}
         ${r.status !== 'approved' ? `<br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : ''}
-        ${r.source === 'voucher' ? `<br><button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>` : ''}
+        ${r.source === 'voucher' ? `<br><button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>${r.voucher_confirmed !== 1 ? ` <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherEditModal(${r.id})">✏️ 编辑</button>` : ''} <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>` : ''}
         `}
       </td>
     </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
@@ -19779,6 +19859,76 @@ async function saveInvEdit() {
   } else {
     showToast(r?.error || '保存失败', 'error');
   }
+}
+
+// ─── Voucher Edit & History ───
+async function openVoucherEditModal(invId) {
+  const r = await api(`/admin/contractor-invoices`);
+  if (!r) return;
+  const inv = r.find(x => x.id === invId);
+  if (!inv) return showToast('找不到该凭证', 'error');
+  document.getElementById('vouEditId').value = inv.id;
+  document.getElementById('vouEditDate').value = inv.invoice_date || '';
+  document.getElementById('vouEditPeriodStart').value = inv.service_period_start || '';
+  document.getElementById('vouEditPeriodEnd').value = inv.service_period_end || '';
+  document.getElementById('vouEditServiceDesc').value = inv.service_description || '';
+  document.getElementById('vouEditAmount').value = inv.total_amount || '';
+  document.getElementById('vouEditExpenses').value = inv.expenses || '';
+  document.getElementById('vouEditPayMethod').value = inv.payment_method || '';
+  document.getElementById('vouEditPayDate').value = inv.payment_date || '';
+  document.getElementById('vouEditPayRef').value = inv.payment_reference || '';
+  document.getElementById('voucherEditModal').style.display = 'flex';
+}
+
+async function saveVoucherEdit() {
+  const id = document.getElementById('vouEditId').value;
+  const body = {
+    invoice_date: document.getElementById('vouEditDate').value || null,
+    service_period_start: document.getElementById('vouEditPeriodStart').value || null,
+    service_period_end: document.getElementById('vouEditPeriodEnd').value || null,
+    service_description: document.getElementById('vouEditServiceDesc').value || null,
+    total_amount: document.getElementById('vouEditAmount').value !== '' ? parseFloat(document.getElementById('vouEditAmount').value) : null,
+    expenses: document.getElementById('vouEditExpenses').value !== '' ? parseFloat(document.getElementById('vouEditExpenses').value) : null,
+    payment_method: document.getElementById('vouEditPayMethod').value || null,
+    payment_date: document.getElementById('vouEditPayDate').value || null,
+    payment_reference: document.getElementById('vouEditPayRef').value || null,
+  };
+  const r = await api(`/admin/contractor-invoices/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  if (r?.success) {
+    document.getElementById('voucherEditModal').style.display = 'none';
+    showToast('✅ 凭证已更新');
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '保存失败', 'error');
+  }
+}
+
+async function openVoucherHistoryModal(invId, invoiceNumber) {
+  document.getElementById('vouHistoryNumber').textContent = invoiceNumber;
+  const el = document.getElementById('vouHistoryContent');
+  el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:1rem">加载中…</div>';
+  document.getElementById('voucherHistoryModal').style.display = 'flex';
+  const rows = await api(`/admin/contractor-invoices/${invId}/edit-history`);
+  if (!rows || !rows.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:2rem">暂无修改记录</div>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
+    <thead><tr style="border-bottom:2px solid var(--gray-200);background:#f9fafb">
+      <th style="padding:.4rem .5rem;text-align:left">时间</th>
+      <th style="padding:.4rem .5rem;text-align:left">字段</th>
+      <th style="padding:.4rem .5rem;text-align:left">原值</th>
+      <th style="padding:.4rem .5rem;text-align:left">新值</th>
+      <th style="padding:.4rem .5rem;text-align:left">操作人</th>
+    </tr></thead>
+    <tbody>${rows.map(h => `<tr style="border-bottom:1px solid var(--gray-100)">
+      <td style="padding:.4rem .5rem;white-space:nowrap;color:var(--gray-500);font-size:.75rem">${h.changed_at}</td>
+      <td style="padding:.4rem .5rem;font-weight:600">${esc(h.field_name)}</td>
+      <td style="padding:.4rem .5rem;color:#dc2626;text-decoration:line-through;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${esc(h.old_value)}">${esc(h.old_value) || '<span style="color:var(--gray-300)">空</span>'}</td>
+      <td style="padding:.4rem .5rem;color:#15803d;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${esc(h.new_value)}">${esc(h.new_value)}</td>
+      <td style="padding:.4rem .5rem;color:var(--gray-500)">${esc(h.changed_by)}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
 }
 
 // ─── Tax Document Modal (报税文件) ───
