@@ -3213,7 +3213,17 @@ tr:hover td{background:var(--sky-light)}
         <input type="number" step="0.01" min="0" id="invSendReimbursable" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0.00">
       </div>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.3rem">公司预填金额，承包商只需签字确认。</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.5rem">
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工时 Hours：</label>
+        <input type="number" step="0.01" min="0" id="invSendHours" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0">
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">费率 Rate ($/hr)：</label>
+        <input type="number" step="0.01" min="0" id="invSendRate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0.00">
+      </div>
+    </div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.3rem">公司预填金额，承包商只需签字确认。工时和费率仅供内部记录，不显示在PDF中。</div>
   </div>
   <div id="invVoucherLangSection" style="display:none;margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">凭证语言 Voucher Language：</label>
@@ -11436,8 +11446,14 @@ function renderEmployees(list) {
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
     <td style="white-space:nowrap">
-      <button class="btn btn-sm" style="background:#fffbeb;color:#b45309;border:1px solid #fcd34d;font-size:.78rem;padding:.22rem .55rem;margin-right:3px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 入职</button>
-      <button class="emp-action-btn" onclick='openEmpActionMenu(event,${e.id},"${esc(e.first_name)} ${esc(e.last_name)}",${e.status!=='terminated' && USER_ROLE==='admin'})' title="操作">⋯</button>
+      <button class="btn btn-sm" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;font-size:.72rem;margin:1px" onclick='openEmpModal(${e.id})'>✏️ 编辑信息</button>
+      <button class="btn btn-sm" style="background:#fff7ed;color:#9A3412;border:1px solid #fed7aa;font-size:.72rem;margin:1px" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 安排职位</button>
+      <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin:1px" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>⭐ 评分</button>
+      <button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.72rem;margin:1px" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📎 发送材料链接</button>
+      <button class="btn btn-sm" style="background:#f5f3ff;color:#7c3aed;border:1px solid #c4b5fd;font-size:.72rem;margin:1px" onclick='openSendRegLinkModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📱 发送注册链接</button>
+      <button class="btn btn-sm" style="background:#fffbeb;color:#b45309;border:1px solid #fcd34d;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📂 入职</button>
+      ${e.status!=='terminated' && USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='terminateEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🚪 办理离职</button>` : ''}
+      ${USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='deleteEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🗑️ 删除</button>` : ''}
     </td>
   </tr>`}).join('') : '<tr><td colspan="7" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
 }
@@ -19490,9 +19506,9 @@ async function loadEmpInvoiceTab() {
           <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-bottom:2px" onclick="openInvEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button><br>
           <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
         ` : `${r.source !== 'voucher' ? `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>` : ''}`}
-        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>
         ${r.source === 'voucher' ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>${r.voucher_confirmed !== 1 ? ` <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button>` : ''}` : ''}
         <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>
+        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>
         `}
       </td>
     </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
@@ -19562,6 +19578,8 @@ function openInvSendModal() {
   document.getElementById('invSendServiceDesc').value = '';
   document.getElementById('invSendAmount').value = '';
   document.getElementById('invSendReimbursable').value = '';
+  document.getElementById('invSendHours').value = '';
+  document.getElementById('invSendRate').value = '';
   document.getElementById('invSendPaymentMethod').value = '';
   document.getElementById('invSendPaymentDate').value = '';
   document.getElementById('invSendPaymentRef').value = '';
@@ -19632,15 +19650,19 @@ async function doSendInvoice() {
     const _pm = document.getElementById('invSendPaymentMethod').value;
     const _pd = document.getElementById('invSendPaymentDate').value;
     const _pr = document.getElementById('invSendPaymentRef').value.trim();
-    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}${_pm ? '\n付款方式: ' + _pm : ''}${_pd ? '\n付款日期: ' + _pd : ''}${_pr ? '\n参考编号: ' + _pr : ''}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
+    const _hrs = document.getElementById('invSendHours').value;
+    const _rt = document.getElementById('invSendRate').value;
+    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}${_hrs ? '\n工时: ' + _hrs + ' hrs' : ''}${_rt ? '\n费率: $' + _rt + '/hr' : ''}${_pm ? '\n付款方式: ' + _pm : ''}${_pd ? '\n付款日期: ' + _pd : ''}${_pr ? '\n参考编号: ' + _pr : ''}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
     const btn = document.getElementById('invSendBtn');
     btn.disabled = true; btn.textContent = '创建中…';
     const paymentMethod = document.getElementById('invSendPaymentMethod').value;
     const paymentDate = document.getElementById('invSendPaymentDate').value;
     const paymentRef = document.getElementById('invSendPaymentRef').value.trim();
     const voucherLang = document.getElementById('invVoucherLang').value;
+    const invHours = document.getElementById('invSendHours').value;
+    const invRate = document.getElementById('invSendRate').value;
     const r = await api('/admin/contractor-invoices/create-voucher', {
-      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0', payment_method: paymentMethod, payment_date: paymentDate, payment_reference: paymentRef, voucher_lang: voucherLang })
+      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0', payment_method: paymentMethod, payment_date: paymentDate, payment_reference: paymentRef, voucher_lang: voucherLang, hours: invHours, rate: invRate })
     });
     btn.disabled = false; btn.textContent = '💾 创建付款凭证';
     if (r && r.success) {
@@ -20078,7 +20100,10 @@ async function openVoucherHistoryModal(invId, invoiceNumber) {
   const el = document.getElementById('vouHistoryContent');
   el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:1rem">加载中…</div>';
   document.getElementById('voucherHistoryModal').style.display = 'flex';
-  const rows = await api(`/admin/contractor-invoices/${invId}/edit-history`);
+  const resp = await api(`/admin/contractor-invoices/${invId}/edit-history`);
+  // Support both old (array) and new ({rows, invoice}) response format
+  const rows = Array.isArray(resp) ? resp : (resp.rows || []);
+  const inv = Array.isArray(resp) ? null : (resp.invoice || null);
   if (!rows || !rows.length) {
     el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:2rem">暂无修改记录</div>';
     return;
@@ -20088,6 +20113,26 @@ async function openVoucherHistoryModal(invId, invoiceNumber) {
   // Separate action events and field edits
   const actionRows = rows.filter(h => isAction(h.field_name));
   const editRows = rows.filter(h => !isAction(h.field_name));
+  // Helper: build detail lines for create action from invoice data
+  function buildCreateDetails(inv) {
+    if (!inv) return '';
+    const lines = [];
+    const wn = inv.worker_name || inv.worker_username || '';
+    if (wn) lines.push(['承包商', wn]);
+    if (inv.service_description) lines.push(['服务内容', inv.service_description]);
+    if (inv.total_amount != null) lines.push(['金额', '$' + (+inv.total_amount).toFixed(2)]);
+    if (inv.invoice_date) lines.push(['发票日期', inv.invoice_date]);
+    if (inv.service_period_start || inv.service_period_end) lines.push(['服务周期', (inv.service_period_start||'') + ' ~ ' + (inv.service_period_end||'')]);
+    if (inv.hours_worked) lines.push(['工时', inv.hours_worked + ' hrs']);
+    if (inv.hourly_rate) lines.push(['费率', '$' + (+inv.hourly_rate).toFixed(2) + '/hr']);
+    if (inv.payment_method) lines.push(['付款方式', inv.payment_method]);
+    if (inv.payment_date) lines.push(['付款日期', inv.payment_date]);
+    if (inv.payment_reference) lines.push(['参考编号', inv.payment_reference]);
+    if (!lines.length) return '';
+    return `<div style="margin-top:.35rem;padding:.4rem .6rem;background:#f9fafb;border-radius:6px;border:1px solid var(--gray-100);font-size:.78rem">
+      ${lines.map(([k,v]) => `<div style="display:flex;gap:.5rem;padding:.15rem 0"><span style="color:var(--gray-400);min-width:4.5em">${esc(k)}:</span><span style="color:var(--gray-700);font-weight:500">${esc(v)}</span></div>`).join('')}
+    </div>`;
+  }
   let html = '';
   // Action timeline
   if (actionRows.length) {
@@ -20095,11 +20140,16 @@ async function openVoucherHistoryModal(invId, invoiceNumber) {
       ${actionRows.map((h, i) => {
         const icon = actionIcons[h.field_name] || '📝';
         const dt = (h.changed_at || '').replace('T', ' ').replace(/\.\d+$/, '');
+        const isCreate = h.field_name === '创建付款凭证' || h.field_name === '创建';
+        // Check if detailed field entries already exist for this create action
+        const hasDetailFields = isCreate && editRows.some(e => e.changed_at === h.changed_at && ['承包商','服务内容','金额','发票日期','服务周期'].includes(e.field_name));
+        const detailHtml = (isCreate && !hasDetailFields) ? buildCreateDetails(inv) : '';
         return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.6rem 0;${i < actionRows.length-1 ? 'border-bottom:1px solid var(--gray-100)' : ''}">
           <div style="font-size:1.1rem;line-height:1;margin-top:.1rem">${icon}</div>
           <div style="flex:1">
             <div style="font-weight:600;font-size:.88rem">${esc(h.field_name)}</div>
             ${h.new_value ? `<div style="color:var(--gray-500);font-size:.8rem;margin-top:.1rem">${esc(h.new_value)}</div>` : ''}
+            ${detailHtml}
             <div style="color:var(--gray-400);font-size:.75rem;margin-top:.15rem">${dt}${h.changed_by ? ' · ' + esc(h.changed_by) : ''}</div>
           </div>
         </div>`;

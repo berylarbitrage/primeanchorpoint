@@ -9821,7 +9821,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
 // Admin: create payment voucher (no DocuSeal, direct record)
 app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   try {
-    const { worker_account_id, service_period_start, service_period_end, invoice_date, service_description, quoted_amount, reimbursable_amount, payment_method, payment_date, payment_reference, voucher_lang } = req.body;
+    const { worker_account_id, service_period_start, service_period_end, invoice_date, service_description, quoted_amount, reimbursable_amount, payment_method, payment_date, payment_reference, voucher_lang, hours, rate } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
     if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务周期' });
     if (!service_description) return res.status(400).json({ error: '请填写服务内容描述' });
@@ -9834,17 +9834,29 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
     const total = (parseFloat(quoted_amount) || 0) + (parseFloat(reimbursable_amount) || 0);
     const sentBy = req.userName || 'admin';
     const lang = voucher_lang || 'bilingual';
+    const hrsVal = parseFloat(hours) || 0;
+    const rateVal = parseFloat(rate) || 0;
     db.prepare(`INSERT INTO contractor_invoices
-      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, total_amount, status, source, sent_by, payment_method, payment_date, payment_reference, voucher_lang)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, todayDate, service_description, service_period_start || '', service_period_end || '', total, 'approved', 'voucher', sentBy, payment_method || '', payment_date || '', payment_reference || '', lang);
+      (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end, hours_worked, hourly_rate, total_amount, status, source, sent_by, payment_method, payment_date, payment_reference, voucher_lang)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(worker_account_id, invoiceNumber, todayDate, service_description, service_period_start || '', service_period_end || '', hrsVal, rateVal, total, 'approved', 'voucher', sentBy, payment_method || '', payment_date || '', payment_reference || '', lang);
     const insertedId = db.prepare('SELECT last_insert_rowid() as id').get().id;
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(worker_account_id, sentBy, 'contractor_invoice', '', 'approved', `付款凭证 ${invoiceNumber} — $${total.toFixed(2)}`);
-    // Log to voucher edit history
-    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
-      .run(insertedId, '创建付款凭证', '', `${invoiceNumber} — $${total.toFixed(2)}`, sentBy);
+    // Log to voucher edit history — detailed fields
+    const insH = db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)');
+    insH.run(insertedId, '创建付款凭证', '', `${invoiceNumber}`, sentBy);
+    insH.run(insertedId, '承包商', '', workerName, sentBy);
+    insH.run(insertedId, '服务内容', '', service_description, sentBy);
+    insH.run(insertedId, '金额', '', `$${total.toFixed(2)}` + (reimbursable_amount ? ` (报价: $${parseFloat(quoted_amount).toFixed(2)}, 报销: $${parseFloat(reimbursable_amount).toFixed(2)})` : ''), sentBy);
+    insH.run(insertedId, '发票日期', '', todayDate, sentBy);
+    if (service_period_start) insH.run(insertedId, '服务周期', '', `${service_period_start} ~ ${service_period_end}`, sentBy);
+    if (hrsVal) insH.run(insertedId, '工时', '', `${hrsVal}`, sentBy);
+    if (rateVal) insH.run(insertedId, '费率', '', `$${rateVal.toFixed(2)}/hr`, sentBy);
+    if (payment_method) insH.run(insertedId, '付款方式', '', payment_method, sentBy);
+    if (payment_date) insH.run(insertedId, '付款日期', '', payment_date, sentBy);
+    if (payment_reference) insH.run(insertedId, '参考编号', '', payment_reference, sentBy);
     res.json({ success: true, invoice_number: invoiceNumber, id: insertedId });
   } catch (e) {
     console.error('[Create Voucher]', e.message);
@@ -10355,7 +10367,9 @@ app.patch('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin
 app.get('/api/admin/contractor-invoices/:id/edit-history', requireAdmin, (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM voucher_edit_history WHERE invoice_id=? ORDER BY changed_at DESC').all(req.params.id);
-    res.json(rows);
+    const inv = db.prepare(`SELECT ci.*, wa.name as worker_name, wa.username as worker_username
+      FROM contractor_invoices ci LEFT JOIN worker_accounts wa ON ci.worker_account_id=wa.id WHERE ci.id=?`).get(req.params.id);
+    res.json({ rows, invoice: inv || null });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
