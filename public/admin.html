@@ -1362,10 +1362,10 @@ tr:hover td{background:var(--sky-light)}
       <input type="date" id="empInvFilterFrom" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" onchange="filterEmpInvoices()">
       <label style="font-size:.82rem;white-space:nowrap">到</label>
       <input type="date" id="empInvFilterTo" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" onchange="filterEmpInvoices()">
-      <label style="font-size:.82rem;white-space:nowrap">工人</label>
-      <select id="empInvFilterWorker" style="min-width:150px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" onchange="filterEmpInvoices()">
-        <option value="">全部</option>
-      </select>
+      <label style="font-size:.82rem;white-space:nowrap">搜索</label>
+      <input type="text" id="empInvFilterSearch" placeholder="工人姓名 / 公司 / Invoice#…" autocomplete="off"
+        style="min-width:200px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem"
+        oninput="filterEmpInvoices()">
       <button class="btn btn-sm btn-outline" onclick="clearEmpInvFilter()" style="font-size:.78rem">清除筛选</button>
       <span style="flex:1"></span>
       <span id="empInvSelectedCount" style="font-size:.82rem;color:var(--gray-500)"></span>
@@ -19777,13 +19777,8 @@ async function loadEmpInvoiceTab() {
   if (!_empInvWorkersLoaded) {
     try {
       const workers = await api('/admin/worker-accounts');
-      const fsel = document.getElementById('empInvFilterWorker');
       if (Array.isArray(workers)) {
         _empInvWorkersCache = workers.filter(w => w.active);
-        if (fsel) fsel.innerHTML = '<option value="">全部</option>' +
-          _empInvWorkersCache.map(w =>
-            `<option value="${w.id}">${esc(w.name || w.username)}</option>`
-          ).join('');
         _empInvWorkersLoaded = true;
       }
     } catch(e) { console.error('Failed to load workers for invoice:', e); }
@@ -19799,18 +19794,24 @@ async function loadEmpInvoiceTab() {
 function filterEmpInvoices() {
   const from = document.getElementById('empInvFilterFrom')?.value || '';
   const to = document.getElementById('empInvFilterTo')?.value || '';
-  const wid = document.getElementById('empInvFilterWorker')?.value || '';
+  const q = (document.getElementById('empInvFilterSearch')?.value || '').trim().toLowerCase();
   let filtered = _empInvAllRows;
   if (from) filtered = filtered.filter(r => r.invoice_date >= from);
   if (to) filtered = filtered.filter(r => r.invoice_date <= to);
-  if (wid) filtered = filtered.filter(r => String(r.worker_account_id) === wid);
+  if (q) filtered = filtered.filter(r =>
+    (r.worker_name||'').toLowerCase().includes(q) ||
+    (r.worker_username||'').toLowerCase().includes(q) ||
+    (r.invoice_number||'').toLowerCase().includes(q) ||
+    (r.service_description||'').toLowerCase().includes(q) ||
+    (r.job_title||'').toLowerCase().includes(q)
+  );
   renderEmpInvoiceTable(filtered);
 }
 
 function clearEmpInvFilter() {
   const f = document.getElementById('empInvFilterFrom'); if (f) f.value = '';
   const t = document.getElementById('empInvFilterTo'); if (t) t.value = '';
-  const w = document.getElementById('empInvFilterWorker'); if (w) w.value = '';
+  const s = document.getElementById('empInvFilterSearch'); if (s) s.value = '';
   renderEmpInvoiceTable(_empInvAllRows);
 }
 
