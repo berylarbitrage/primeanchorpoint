@@ -1305,13 +1305,17 @@ tr:hover td{background:var(--sky-light)}
   <div class="card" style="margin-bottom:1rem;padding:1rem">
     <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
       <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 发送承包商发票：</label>
-      <select id="empInvWorkerSelect" style="min-width:220px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        <option value="">— 选择承包商 —</option>
-      </select>
+      <div style="position:relative;min-width:260px">
+        <input id="empInvWorkerSearch" type="text" placeholder="搜索承包商姓名…" autocomplete="off"
+          style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem"
+          oninput="filterInvWorkerList()" onfocus="filterInvWorkerList()">
+        <input type="hidden" id="empInvWorkerSelect" value="">
+        <div id="empInvWorkerDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:240px;overflow-y:auto;background:#fff;border:1px solid var(--gray-200);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:999;margin-top:2px"></div>
+      </div>
       <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 发送发票</button>
       <span id="empInvSendStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送发票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">搜索并选择承包商后发送发票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
   </div>
 
   <!-- Batch Filter & Action Bar -->
@@ -11492,6 +11496,10 @@ function renderEmployees(list) {
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
     <td style="white-space:nowrap">
+      ${e.worker_account_id ? (e.onboarded
+        ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>✅ 已入职</button>`
+        : `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 入职进度</button>`
+      ) : ''}
       <button class="btn btn-sm" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;font-size:.72rem;margin:1px" onclick='openEmpModal(${e.id})'>✏️ 编辑信息</button>
       <button class="btn btn-sm" style="background:#fff7ed;color:#9A3412;border:1px solid #fed7aa;font-size:.72rem;margin:1px" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 安排职位</button>
       <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin:1px" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>⭐ 评分</button>
@@ -12703,6 +12711,30 @@ async function viewEmployee(id) {
     </tr>`).join('')}
     </tbody></table>` : '<p class="empty" style="padding:1rem">暂无工时记录</p>'}
   </div>`;
+
+  // Voucher payment history
+  const voucherHist = emp.voucher_history || [];
+  if (voucherHist.length) {
+    const vTotal = voucherHist.reduce((s,v) => s + (v.total_amount||0), 0);
+    const vHours = voucherHist.reduce((s,v) => s + (v.total_hours||0), 0);
+    html += `<div class="form-section">
+      <h4>付款凭证记录 (${voucherHist.length} 笔)</h4>
+      <div style="display:flex;gap:1rem;margin-bottom:.75rem">
+        <div style="background:#fef3c7;border-radius:var(--radius);padding:.5rem 1rem;font-size:.85rem">累计金额 <strong style="color:#92400e">$${vTotal.toFixed(2)}</strong></div>
+        ${vHours > 0 ? `<div style="background:var(--sky-light);border-radius:var(--radius);padding:.5rem 1rem;font-size:.85rem">累计工时 <strong>${vHours.toFixed(1)}h</strong></div>` : ''}
+      </div>
+      <table><thead><tr><th>凭证号</th><th>服务描述</th><th>服务周期</th><th>工时</th><th>金额</th><th>创建时间</th></tr></thead><tbody>
+      ${voucherHist.map(v => `<tr style="background:#fffbeb">
+        <td style="font-family:monospace;font-size:.78rem;color:#92400e">${esc(v.invoice_number||'—')}</td>
+        <td>${esc(v.service_description||'—')}</td>
+        <td style="white-space:nowrap">${v.period_start||'—'} ~ ${v.period_end||'—'}</td>
+        <td>${v.total_hours > 0 ? v.total_hours.toFixed(1)+'h' : '—'}</td>
+        <td style="font-weight:600;color:#059669">$${(v.total_amount||0).toFixed(2)}</td>
+        <td style="font-size:.78rem;color:var(--gray-400)">${v.created_at ? new Date(v.created_at).toLocaleDateString() : '—'}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  }
 
   // Ratings section
   const ratings = await api(`/admin/employee-ratings?employee_id=${id}`);
@@ -14113,11 +14145,13 @@ async function loadTsHistory() {
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无历史记录</td></tr>'; return; }
   tbody.innerHTML = rows.map(r => {
     const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
-    return `<tr>
+    const srcBadge = r.source === 'voucher' ? ' <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:600">付款凭证</span>' : '';
+    const amtCol = r.source === 'voucher' && r.total_amount ? `$${Number(r.total_amount).toFixed(2)}` : '';
+    return `<tr${r.source==='voucher'?' style="background:#fffbeb"':''}>
       <td>${name}</td>
-      <td>${esc(r.company_name||'—')}</td>
+      <td>${esc(r.company_name||'—')}${srcBadge}</td>
       <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
-      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h${amtCol?' <span style="color:#059669;font-size:.78rem">'+amtCol+'</span>':''}</td>
       <td style="font-size:.78rem">${fmtDt(r.client_paid_at)}</td>
       <td style="font-size:.78rem">${fmtDt(r.labor_paid_at)}</td>
       <td style="font-size:.78rem;color:var(--gray-400)">${esc(r.staff_note||'—')}</td>
@@ -19581,21 +19615,55 @@ async function reviewContractorInvoice(id, status) {
 let _empInvWorkersLoaded = false;
 let _empInvWorkersCache = [];
 let _empInvAllRows = []; // cache all rows for filtering
+
+function filterInvWorkerList() {
+  const input = document.getElementById('empInvWorkerSearch');
+  const dd = document.getElementById('empInvWorkerDropdown');
+  const kw = input.value.trim().toLowerCase();
+  // Clear selection if user changes the text
+  document.getElementById('empInvWorkerSelect').value = '';
+  const filtered = _empInvWorkersCache.filter(w => {
+    const name = (w.name || w.username || '').toLowerCase();
+    const code = (w.worker_code || '').toLowerCase();
+    return name.includes(kw) || code.includes(kw);
+  }).slice(0, 20);
+  if (!filtered.length) {
+    dd.innerHTML = '<div style="padding:.6rem .8rem;color:var(--gray-400);font-size:.82rem">未找到匹配的承包商</div>';
+    dd.style.display = 'block';
+    return;
+  }
+  dd.innerHTML = filtered.map(w => {
+    const label = esc(w.name || w.username) + (w.emp_type === '1099' ? ' <span style="color:#92400e;font-size:.72rem">(1099)</span>' : w.emp_type === 'w2' ? ' <span style="color:#0369a1;font-size:.72rem">(W2)</span>' : '');
+    const code = w.worker_code ? `<span style="font-family:monospace;font-size:.72rem;color:var(--sky);margin-left:.4rem">${esc(w.worker_code)}</span>` : '';
+    return `<div style="padding:.45rem .8rem;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--gray-100)" onmousedown="selectInvWorker(${w.id})" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">${label}${code}</div>`;
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function selectInvWorker(id) {
+  const w = _empInvWorkersCache.find(w => w.id === id);
+  if (!w) return;
+  document.getElementById('empInvWorkerSelect').value = id;
+  document.getElementById('empInvWorkerSearch').value = w.name || w.username;
+  document.getElementById('empInvWorkerDropdown').style.display = 'none';
+}
+
+document.addEventListener('click', e => {
+  const dd = document.getElementById('empInvWorkerDropdown');
+  if (dd && !e.target.closest('#empInvWorkerSearch') && !e.target.closest('#empInvWorkerDropdown')) {
+    dd.style.display = 'none';
+  }
+});
 async function loadEmpInvoiceTab() {
-  // Load worker dropdown (once)
+  // Load worker list (once)
   if (!_empInvWorkersLoaded) {
     try {
       const workers = await api('/admin/worker-accounts');
-      const sel = document.getElementById('empInvWorkerSelect');
       const fsel = document.getElementById('empInvFilterWorker');
-      if (sel && Array.isArray(workers)) {
-        _empInvWorkersCache = workers;
-        sel.innerHTML = '<option value="">— 选择承包商 —</option>' +
-          workers.filter(w => w.active).map(w =>
-            `<option value="${w.id}">${esc(w.name || w.username)} ${w.emp_type === '1099' ? '(1099)' : w.emp_type === 'w2' ? '(W2)' : ''}</option>`
-          ).join('');
+      if (Array.isArray(workers)) {
+        _empInvWorkersCache = workers.filter(w => w.active);
         if (fsel) fsel.innerHTML = '<option value="">全部</option>' +
-          workers.filter(w => w.active).map(w =>
+          _empInvWorkersCache.map(w =>
             `<option value="${w.id}">${esc(w.name || w.username)}</option>`
           ).join('');
         _empInvWorkersLoaded = true;
@@ -19839,10 +19907,10 @@ function setInvMode(mode) {
 }
 
 function openInvSendModal() {
-  const sel = document.getElementById('empInvWorkerSelect');
-  const workerId = sel.value;
-  if (!workerId) return showToast('请先选择承包商', 'error');
-  const workerName = sel.options[sel.selectedIndex].text;
+  const workerId = document.getElementById('empInvWorkerSelect').value;
+  if (!workerId) return showToast('请先搜索并选择承包商', 'error');
+  const w = _empInvWorkersCache.find(w => w.id === parseInt(workerId));
+  const workerName = w ? (w.name || w.username) : '';
   _invSendWorkerId = parseInt(workerId);
   _invSendWorkerName = workerName;
   _preGeneratedInvoiceNumber = null; // Reset pre-generated number when worker changes

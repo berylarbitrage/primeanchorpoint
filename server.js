@@ -664,6 +664,9 @@ try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN verified_at TEXT DEFAULT 
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN source TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN voucher_invoice_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN total_amount REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
@@ -9714,6 +9717,8 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
       .run(req.params.id, '删除', `${inv.invoice_number} / ${inv.status}`, '', deletedBy);
   }
   db.prepare('DELETE FROM contractor_invoices WHERE id=?').run(req.params.id);
+  // Also delete linked timesheet_sheet if it was a voucher
+  db.prepare('DELETE FROM timesheet_sheets WHERE voucher_invoice_id=?').run(req.params.id);
   res.json({ success: true });
 });
 
@@ -9895,6 +9900,23 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
     if (payment_method) insH.run(insertedId, '付款方式', '', payment_method, sentBy);
     if (payment_date) insH.run(insertedId, '付款日期', '', payment_date, sentBy);
     if (payment_reference) insH.run(insertedId, '参考编号', '', payment_reference, sentBy);
+    // Create timesheet_sheet record for the linked employee
+    if (w.employee_id) {
+      const tsToken = crypto.randomBytes(20).toString('hex');
+      // Try to find current job assignment for company name
+      const empJob = db.prepare(`SELECT ej.company_name, ej.job_title, ej.job_id FROM employee_jobs ej WHERE ej.employee_id=? AND ej.status='active' LIMIT 1`).get(w.employee_id);
+      const companyName = (empJob && empJob.company_name) || '';
+      db.prepare(`INSERT INTO timesheet_sheets
+        (employee_id, company_name, period_start, period_end, job_id,
+         total_hours, regular_hours, overtime_hours, status, confirm_token,
+         source, voucher_invoice_id, total_amount, client_paid, labor_paid,
+         client_paid_at, labor_paid_at, staff_note)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,?)`)
+        .run(w.employee_id, companyName, service_period_start || '', service_period_end || '',
+          (empJob && empJob.job_id) || null, hrsVal, hrsVal, 0, 'completed', tsToken,
+          'voucher', insertedId, total,
+          `付款凭证 ${invoiceNumber}`);
+    }
     res.json({ success: true, invoice_number: invoiceNumber, id: insertedId });
   } catch (e) {
     console.error('[Create Voucher]', e.message);
@@ -10395,6 +10417,19 @@ app.patch('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin
            service_period_start ?? null, service_period_end ?? null,
            payment_method ?? null, payment_date ?? null, payment_reference ?? null,
            expenses ?? null, req.params.id);
+    // Sync linked timesheet_sheet if voucher
+    if (isVoucher) {
+      const updatedInv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+      if (updatedInv) {
+        db.prepare(`UPDATE timesheet_sheets SET
+          period_start=?, period_end=?, total_hours=?, regular_hours=?, total_amount=?,
+          staff_note=?
+          WHERE voucher_invoice_id=?`)
+          .run(updatedInv.service_period_start || '', updatedInv.service_period_end || '',
+            updatedInv.hours_worked || 0, updatedInv.hours_worked || 0, updatedInv.total_amount || 0,
+            `付款凭证 ${updatedInv.invoice_number}`, req.params.id);
+      }
+    }
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ error: e.message });
@@ -12299,7 +12334,8 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
       (SELECT COUNT(*) FROM employee_documents d WHERE d.employee_id = e.id) as doc_count,
       (SELECT COUNT(*) FROM background_checks b WHERE b.employee_id = e.id) as bg_count,
       (SELECT worker_code FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as worker_code,
-      (SELECT id FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as worker_account_id
+      (SELECT id FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as worker_account_id,
+      (SELECT onboarded FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as onboarded
     FROM employees e`;
   const params = [];
   if (req.userRole === 'manager' && pids.length) {
@@ -12387,13 +12423,24 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
       SUM(s.total_hours) AS total_hours,
       SUM(s.regular_hours) AS regular_hours,
       SUM(s.overtime_hours) AS overtime_hours,
+      SUM(s.total_amount) AS total_amount,
       MIN(s.period_start) AS first_period,
       MAX(s.period_end) AS last_period
     FROM timesheet_sheets s
     LEFT JOIN jobs j ON s.job_id = j.id
-    WHERE s.employee_id=?
+    WHERE s.employee_id=? AND (s.source IS NULL OR s.source='')
     GROUP BY COALESCE(s.job_id, s.company_name)
     ORDER BY MAX(s.period_end) DESC
+  `).all(req.params.id);
+  // Voucher payment history
+  const voucherHistory = db.prepare(`
+    SELECT s.id, s.period_start, s.period_end, s.total_hours, s.total_amount,
+      s.staff_note, s.source, s.voucher_invoice_id, s.created_at,
+      ci.invoice_number, ci.service_description
+    FROM timesheet_sheets s
+    LEFT JOIN contractor_invoices ci ON s.voucher_invoice_id = ci.id
+    WHERE s.employee_id=? AND s.source='voucher'
+    ORDER BY s.created_at DESC
   `).all(req.params.id);
   const currentJobs = db.prepare(`
     SELECT ej.id, ej.job_id, ej.job_title, ej.company_name, ej.status, ej.start_date, ej.end_date,
@@ -12405,7 +12452,7 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
     LIMIT 10
   `).all(req.params.id);
   const ssn_full = emp.ssn_encrypted && emp.ssn_iv ? decryptSSN(emp.ssn_encrypted, emp.ssn_iv) : null;
-  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory, current_jobs: currentJobs });
+  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory, voucher_history: voucherHistory, current_jobs: currentJobs });
 });
 
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
