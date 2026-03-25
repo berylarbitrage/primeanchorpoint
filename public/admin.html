@@ -3379,6 +3379,11 @@ tr:hover td{background:var(--sky-light)}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-shrink:0">
       <h2 style="margin:0;font-size:1rem">📄 付款凭证 PDF</h2>
       <div style="display:flex;gap:.5rem;align-items:center">
+        <select id="voucherPdfLang" onchange="switchVoucherPdfLang()" style="font-size:.82rem;padding:.3rem .5rem;border:1px solid #d1d5db;border-radius:5px;background:#fff">
+          <option value="bilingual">中英双语</option>
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+        </select>
         <a id="voucherPdfNewTab" href="#" target="_blank" rel="noopener" style="font-size:.82rem;color:#0369a1;text-decoration:none;padding:.3rem .7rem;border:1px solid #7dd3fc;border-radius:5px;background:#f0f9ff">↗ 新标签页</a>
         <button class="btn btn-outline" onclick="document.getElementById('voucherPdfFrame').src='about:blank';document.getElementById('voucherPdfModal').style.display='none'" style="font-size:.82rem">✕ 关闭</button>
       </div>
@@ -19761,11 +19766,20 @@ async function confirmVoucherLock() {
   btn.disabled = false; btn.textContent = '🔒 确认凭证（锁定）';
 }
 
+let _voucherPdfInvId = null;
 function openVoucherPdf(invId) {
+  _voucherPdfInvId = invId;
+  document.getElementById('voucherPdfLang').value = 'bilingual';
   const url = `/api/admin/contractor-invoices/${invId}/voucher-pdf`;
   document.getElementById('voucherPdfFrame').src = url + '#toolbar=1&navpanes=0&scrollbar=1';
   document.getElementById('voucherPdfNewTab').href = url;
   document.getElementById('voucherPdfModal').style.display = 'flex';
+}
+function switchVoucherPdfLang() {
+  const lang = document.getElementById('voucherPdfLang').value;
+  const url = `/api/admin/contractor-invoices/${_voucherPdfInvId}/voucher-pdf?lang=${lang}`;
+  document.getElementById('voucherPdfFrame').src = url + '#toolbar=1&navpanes=0&scrollbar=1';
+  document.getElementById('voucherPdfNewTab').href = url;
 }
 
 function closeVoucherReceiptModal() {
