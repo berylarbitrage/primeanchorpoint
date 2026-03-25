@@ -575,6 +575,8 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="nav-group-items">
       <a onclick="showTab('approvals')" data-tab="approvals" data-role="admin">📋 待审批</a>
+      <a onclick="showTab('sys-dividend')" data-tab="sys-dividend" data-role="admin">🎯 待分红</a>
+      <a onclick="showTab('sys-dividend-history')" data-tab="sys-dividend-history" data-role="admin">✅ 已分红</a>
       <a onclick="showTab('internal-staff')" data-tab="internal-staff" data-role="admin">👤 内部人员</a>
       <a onclick="showTab('accounts')" data-tab="accounts" data-role="admin">🔐 账户管理</a>
       <a onclick="showTab('integrations')" data-tab="integrations" data-role="admin">🔗 集成设置</a>
@@ -1172,6 +1174,40 @@ tr:hover td{background:var(--sky-light)}
     <table>
       <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>上报时间</th><th>客户付款</th><th>劳务付款</th></tr></thead>
       <tbody id="tsPaymentTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════ 系统管理-待分红 TAB ════════════════════ -->
+<div id="tab-sys-dividend" style="display:none">
+  <div class="top">
+    <h1>🎯 待分红</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadSysDividend()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">客户与劳务均已付款的工时单。全部 Staff 投票「无异议」后，再各自确认「已分红」即可归档至已分红历史。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>无异议投票</th><th>已分红确认</th><th>操作</th></tr></thead>
+      <tbody id="sysDividendTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════ 系统管理-已分红 TAB ════════════════════ -->
+<div id="tab-sys-dividend-history" style="display:none">
+  <div class="top">
+    <h1>✅ 已分红</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadSysDividendHistory()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">全部 Staff 确认「已分红」后归档的工时单历史记录。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>客户付款时间</th><th>劳务付款时间</th><th>Staff 备注</th></tr></thead>
+      <tbody id="sysDividendHistoryTable"></tbody>
     </table>
   </div>
 </div>
@@ -6560,7 +6596,7 @@ const _TAB_TO_SEC = {
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time',
-  approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
+  approvals:'sec-system', 'sys-dividend':'sec-system', 'sys-dividend-history':'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
   'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
 };
@@ -6592,6 +6628,8 @@ function showTab(t) {
   if (t === 'ts-verify')  loadTsVerify();
   if (t === 'ts-payment')  loadTsPayment();
   if (t === 'ts-dividend') loadTsDividend();
+  if (t === 'sys-dividend') loadSysDividend();
+  if (t === 'sys-dividend-history') loadSysDividendHistory();
   if (t === 'ts-history')  loadTsHistory();
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
   if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
@@ -13987,6 +14025,86 @@ async function voteDividendDistributed(id) {
   if (r.error) { alert(r.error); return; }
   showToast(r.all_distributed ? '✅ 全部确认分红，已归档至工时历史' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
   loadTsDividend();
+}
+
+// ─── 系统管理-待分红 ───
+async function loadSysDividend() {
+  const tbody = document.getElementById('sysDividendTable');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty">加载中…</td></tr>';
+  const rows = await api('/admin/timesheet-sheets?stage=dividend');
+  if (!Array.isArray(rows) || !rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待分红工时单</td></tr>'; return; }
+  const votesMap = {};
+  await Promise.all(rows.map(async r => { votesMap[r.id] = await api(`/admin/timesheet-sheets/${r.id}/votes`); }));
+  tbody.innerHTML = rows.map(r => {
+    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const vi = votesMap[r.id] || { votes: [], staff_count: 0 };
+    const approves = vi.votes.filter(v => v.vote_type === 'approve');
+    const dists = vi.votes.filter(v => v.vote_type === 'distributed');
+    const allApproved = approves.length >= vi.staff_count && vi.staff_count > 0;
+    const myApproved = approves.some(v => v.user_id === _currentUserId);
+    const myDistributed = dists.some(v => v.user_id === _currentUserId);
+    const approveCell = `<span class="badge ${allApproved?'badge-green':'badge-yellow'}">${approves.length}/${vi.staff_count}</span>`
+      + (approves.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${approves.map(v=>v.display_name||v.username).join(', ')}</div>` : '');
+    const distCell = allApproved
+      ? `<span class="badge ${dists.length>=vi.staff_count?'badge-green':'badge-yellow'}">${dists.length}/${vi.staff_count}</span>`
+        + (dists.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${dists.map(v=>v.display_name||v.username).join(', ')}</div>` : '')
+      : '<span style="font-size:.78rem;color:var(--gray-500)">等待全部无异议</span>';
+    let actionBtn = '';
+    if (!myApproved) {
+      actionBtn = `<button class="btn btn-sm btn-green" onclick="sysVoteDividendApprove(${r.id})">无异议</button>`;
+    } else if (allApproved && !myDistributed) {
+      actionBtn = `<button class="btn btn-sm btn-accent" onclick="sysVoteDividendDistributed(${r.id})">已分红</button>`;
+    } else if (myApproved && !allApproved) {
+      actionBtn = '<span class="badge badge-green">已投票</span>';
+    } else {
+      actionBtn = '<span class="badge badge-green">已确认</span>';
+    }
+    return `<tr>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td>${approveCell}</td>
+      <td>${distCell}</td>
+      <td>${actionBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function sysVoteDividendApprove(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/vote-approve`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
+  loadSysDividend();
+}
+
+async function sysVoteDividendDistributed(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/vote-distributed`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_distributed ? '✅ 全部确认分红，已归档至已分红' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
+  loadSysDividend();
+}
+
+// ─── 系统管理-已分红 ───
+async function loadSysDividendHistory() {
+  const tbody = document.getElementById('sysDividendHistoryTable');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty">加载中…</td></tr>';
+  const rows = await api('/admin/timesheet-sheets?stage=history');
+  if (!Array.isArray(rows) || !rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无已分红记录</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => {
+    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const srcBadge = r.source === 'voucher' ? ' <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:600">付款凭证</span>' : '';
+    const amtCol = r.source === 'voucher' && r.total_amount ? `$${Number(r.total_amount).toFixed(2)}` : '';
+    return `<tr${r.source==='voucher'?' style="background:#fffbeb"':''}>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}${srcBadge}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h${amtCol?' <span style="color:#059669;font-size:.78rem">'+amtCol+'</span>':''}</td>
+      <td style="font-size:.78rem">${fmtDt(r.client_paid_at)}</td>
+      <td style="font-size:.78rem">${fmtDt(r.labor_paid_at)}</td>
+      <td style="font-size:.78rem;color:var(--gray-400)">${esc(r.staff_note||'—')}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ─── 工时历史 ───
