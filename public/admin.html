@@ -1296,13 +1296,17 @@ tr:hover td{background:var(--sky-light)}
   <div class="card" style="margin-bottom:1rem;padding:1rem">
     <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
       <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 发送承包商发票：</label>
-      <select id="empInvWorkerSelect" style="min-width:220px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        <option value="">— 选择承包商 —</option>
-      </select>
+      <div style="position:relative;min-width:260px">
+        <input id="empInvWorkerSearch" type="text" placeholder="搜索承包商姓名…" autocomplete="off"
+          style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem"
+          oninput="filterInvWorkerList()" onfocus="filterInvWorkerList()">
+        <input type="hidden" id="empInvWorkerSelect" value="">
+        <div id="empInvWorkerDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:240px;overflow-y:auto;background:#fff;border:1px solid var(--gray-200);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:999;margin-top:2px"></div>
+      </div>
       <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 发送发票</button>
       <span id="empInvSendStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送发票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">搜索并选择承包商后发送发票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
   </div>
 
   <div class="card">
@@ -19484,18 +19488,52 @@ async function reviewContractorInvoice(id, status) {
 // ─── 承包商发票 Tab ───
 let _empInvWorkersLoaded = false;
 let _empInvWorkersCache = [];
+
+function filterInvWorkerList() {
+  const input = document.getElementById('empInvWorkerSearch');
+  const dd = document.getElementById('empInvWorkerDropdown');
+  const kw = input.value.trim().toLowerCase();
+  // Clear selection if user changes the text
+  document.getElementById('empInvWorkerSelect').value = '';
+  const filtered = _empInvWorkersCache.filter(w => {
+    const name = (w.name || w.username || '').toLowerCase();
+    const code = (w.worker_code || '').toLowerCase();
+    return name.includes(kw) || code.includes(kw);
+  }).slice(0, 20);
+  if (!filtered.length) {
+    dd.innerHTML = '<div style="padding:.6rem .8rem;color:var(--gray-400);font-size:.82rem">未找到匹配的承包商</div>';
+    dd.style.display = 'block';
+    return;
+  }
+  dd.innerHTML = filtered.map(w => {
+    const label = esc(w.name || w.username) + (w.emp_type === '1099' ? ' <span style="color:#92400e;font-size:.72rem">(1099)</span>' : w.emp_type === 'w2' ? ' <span style="color:#0369a1;font-size:.72rem">(W2)</span>' : '');
+    const code = w.worker_code ? `<span style="font-family:monospace;font-size:.72rem;color:var(--sky);margin-left:.4rem">${esc(w.worker_code)}</span>` : '';
+    return `<div style="padding:.45rem .8rem;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--gray-100)" onmousedown="selectInvWorker(${w.id})" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">${label}${code}</div>`;
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function selectInvWorker(id) {
+  const w = _empInvWorkersCache.find(w => w.id === id);
+  if (!w) return;
+  document.getElementById('empInvWorkerSelect').value = id;
+  document.getElementById('empInvWorkerSearch').value = w.name || w.username;
+  document.getElementById('empInvWorkerDropdown').style.display = 'none';
+}
+
+document.addEventListener('click', e => {
+  const dd = document.getElementById('empInvWorkerDropdown');
+  if (dd && !e.target.closest('#empInvWorkerSearch') && !e.target.closest('#empInvWorkerDropdown')) {
+    dd.style.display = 'none';
+  }
+});
 async function loadEmpInvoiceTab() {
-  // Load worker dropdown (once)
+  // Load worker list (once)
   if (!_empInvWorkersLoaded) {
     try {
       const workers = await api('/admin/worker-accounts');
-      const sel = document.getElementById('empInvWorkerSelect');
-      if (sel && Array.isArray(workers)) {
-        _empInvWorkersCache = workers;
-        sel.innerHTML = '<option value="">— 选择承包商 —</option>' +
-          workers.filter(w => w.active).map(w =>
-            `<option value="${w.id}">${esc(w.name || w.username)} ${w.emp_type === '1099' ? '(1099)' : w.emp_type === 'w2' ? '(W2)' : ''}</option>`
-          ).join('');
+      if (Array.isArray(workers)) {
+        _empInvWorkersCache = workers.filter(w => w.active);
         _empInvWorkersLoaded = true;
       }
     } catch(e) { console.error('Failed to load workers for invoice:', e); }
@@ -19671,10 +19709,10 @@ function setInvMode(mode) {
 }
 
 function openInvSendModal() {
-  const sel = document.getElementById('empInvWorkerSelect');
-  const workerId = sel.value;
-  if (!workerId) return showToast('请先选择承包商', 'error');
-  const workerName = sel.options[sel.selectedIndex].text;
+  const workerId = document.getElementById('empInvWorkerSelect').value;
+  if (!workerId) return showToast('请先搜索并选择承包商', 'error');
+  const w = _empInvWorkersCache.find(w => w.id === parseInt(workerId));
+  const workerName = w ? (w.name || w.username) : '';
   _invSendWorkerId = parseInt(workerId);
   _invSendWorkerName = workerName;
   _preGeneratedInvoiceNumber = null; // Reset pre-generated number when worker changes
