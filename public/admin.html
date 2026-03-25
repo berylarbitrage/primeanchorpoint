@@ -564,7 +564,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
       <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
-      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商發票</a>
+      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商发票</a>
     </div>
   </div>
 
@@ -1279,27 +1279,27 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════════ 承包商發票 Tab ════════ -->
+<!-- ════════ 承包商发票 Tab ════════ -->
 <div id="tab-ts-emp-invoice" style="display:none">
   <div class="top">
-    <h1>📄 承包商發票</h1>
+    <h1>📄 承包商发票</h1>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="loadEmpInvoiceTab()">刷新</button>
     </div>
   </div>
-  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商發票，用于 FWPA 合规（合同—服务完成—付款）链条记录。支持承包商自行填写金额或公司预填金额后发送签字。</p>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商发票，用于 FWPA 合规（合同—服务完成—付款）链条记录。支持承包商自行填写金额或公司预填金额后发送签字。</p>
 
   <!-- Send Invoice -->
   <div class="card" style="margin-bottom:1rem;padding:1rem">
     <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 發送承包商發票：</label>
+      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 发送承包商发票：</label>
       <select id="empInvWorkerSelect" style="min-width:220px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
         <option value="">— 选择承包商 —</option>
       </select>
-      <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 發送發票</button>
+      <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 发送发票</button>
       <span id="empInvSendStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送發票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送发票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
   </div>
 
   <div class="card">
@@ -2495,7 +2495,7 @@ tr:hover td{background:var(--sky-light)}
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商發票</div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商发票</div>
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">Contractor Invoice — 三種語言版本</div>
           <div style="margin-bottom:.6rem">
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
@@ -3099,14 +3099,14 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
-<!-- 承包商發票 Send Modal -->
+<!-- 承包商发票 Send Modal -->
 <div class="modal-bg" id="invSendModal"><div class="modal" style="max-width:720px">
-  <h2>📄 發送承包商發票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
+  <h2>📄 发送承包商发票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
   <div style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)" id="invSendDesc">
-    选择發票模式：承包商自行填写金额，或公司预填金额后发送给承包商签字确认。
+    选择发票模式：承包商自行填写金额，或公司预填金额后发送给承包商签字确认。
   </div>
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票模式 / Invoice Mode：</label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">发票模式 / Invoice Mode：</label>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
       <label style="flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid #0ea5e9;border-radius:8px;cursor:pointer;background:#f0f9ff;font-size:.85rem;font-weight:600;color:#0369a1" id="invModeContractorLabel" onclick="setInvMode('contractor')">
         <input type="radio" name="invMode" value="contractor" checked style="accent-color:#0ea5e9"> 承包商填写金额
@@ -3121,7 +3121,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="invDocuSealFields">
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票語言版本 / Invoice Language：<span style="color:#dc2626">*</span></label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">发票語言版本 / Invoice Language：<span style="color:#dc2626">*</span></label>
     <select id="invSendLang" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
       <option value="contractor_invoice">中文+英文 (ZH+EN)</option>
       <option value="contractor_invoice_en">English Only (EN)</option>
@@ -3133,7 +3133,7 @@ tr:hover td{background:var(--sky-light)}
     <input id="invSendEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="contractor@email.com">
   </div>
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手機號（可选，发送短信通知）：</label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手机号（可选，发送短信通知）：</label>
     <input id="invSendPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (xxx) xxx-xxxx">
   </div>
   </div>
@@ -3148,7 +3148,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票日期：<span style="color:#dc2626">*</span></label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">发票日期：<span style="color:#dc2626">*</span></label>
     <input type="date" id="invSendDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
   </div>
   <div style="margin:.5rem 0">
@@ -3193,23 +3193,32 @@ tr:hover td{background:var(--sky-light)}
       </div>
     </div>
   </div>
+  <div id="invVoucherReceiptSection" style="display:none;margin:.5rem 0">
+    <div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">上传付款截图/凭证（可选，也可以创建后再上传）：</div>
+    <div id="invVrDropZone" style="border:2px dashed var(--gray-200);border-radius:10px;padding:1rem;text-align:center;cursor:pointer;background:#fafafa;transition:all .2s" onclick="document.getElementById('invVrFileInput').click()" ondragover="event.preventDefault();this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" ondragleave="this.style.borderColor='var(--gray-200)';this.style.background='#fafafa'" ondrop="event.preventDefault();this.style.borderColor='var(--gray-200)';this.style.background='#fafafa';handleInvVrFiles(event.dataTransfer.files)">
+      <div style="font-size:.85rem;color:var(--gray-500)">点击选择 或 拖拽图片到此处</div>
+      <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">支持 JPG、PNG、PDF，可多选</div>
+      <input type="file" id="invVrFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleInvVrFiles(this.files)">
+    </div>
+    <div id="invVrPreviewGrid" style="display:none;margin-top:.4rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:.4rem"></div>
+  </div>
   <div id="invSendStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
   <div id="invFlowHint" style="margin:.75rem 0;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e">
     <b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。
   </div>
   <div id="invPreviewSection" style="display:none;margin:.5rem 0">
     <div id="invPreviewInfoBox" style="display:none;margin-bottom:.5rem;padding:.5rem .75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.82rem;color:#1e40af;line-height:1.7"></div>
-    <div style="font-weight:700;font-size:.85rem;margin-bottom:.3rem">發票模板预览：</div>
+    <div style="font-weight:700;font-size:.85rem;margin-bottom:.3rem">发票模板预览：</div>
     <iframe id="invPreviewFrame" src="" style="width:100%;height:500px;border:1px solid var(--gray-200);border-radius:6px"></iframe>
   </div>
   <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
-    <button class="btn btn-green" id="invSendBtn" onclick="doSendInvoice()">📤 發送發票</button>
+    <button class="btn btn-green" id="invSendBtn" onclick="doSendInvoice()">📤 发送发票</button>
     <button class="btn" id="invPreviewBtn" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc" onclick="previewInvoiceTemplate()">🔍 预览模板</button>
     <button class="btn" onclick="closeModal('invSendModal')">关闭</button>
   </div>
 </div></div>
 
-<!-- 承包商發票 预览链接 Modal -->
+<!-- 承包商发票 预览链接 Modal -->
 <div class="modal-bg" id="dsInvPreviewModal" style="display:none" onclick="if(event.target===this)closeDsInvPreview()">
   <div class="modal" style="max-width:92vw;width:92vw;height:90vh;display:flex;flex-direction:column;padding:1rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-shrink:0">
@@ -3299,7 +3308,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- 承包商發票 Edit Modal (pre_generated) -->
+<!-- 承包商发票 Edit Modal (pre_generated) -->
 <div class="modal-bg" id="invEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal" style="max-width:560px;width:95vw">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
@@ -3309,7 +3318,7 @@ tr:hover td{background:var(--sky-light)}
     <input type="hidden" id="invEditId">
     <div style="display:grid;gap:.6rem">
       <div>
-        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">發票日期</label>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">发票日期</label>
         <input type="date" id="invEditDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
@@ -19157,7 +19166,7 @@ async function reviewContractorInvoice(id, status) {
   }
 }
 
-// ─── 承包商發票 Tab ───
+// ─── 承包商发票 Tab ───
 let _empInvWorkersLoaded = false;
 let _empInvWorkersCache = [];
 async function loadEmpInvoiceTab() {
@@ -19181,7 +19190,7 @@ async function loadEmpInvoiceTab() {
   el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
   const rows = await api('/admin/contractor-invoices');
   if (!Array.isArray(rows) || !rows.length) {
-    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无承包商發票记录</div>';
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无承包商发票记录</div>';
     return;
   }
   const STATUS_BADGE = {
@@ -19255,9 +19264,11 @@ function setInvMode(mode) {
   const previewBtn = document.getElementById('invPreviewBtn');
   const sendBtn = document.getElementById('invSendBtn');
   const payInfoSec = document.getElementById('invPaymentInfoSection');
+  const vrSec = document.getElementById('invVoucherReceiptSection');
   if (mode === 'voucher') {
     amtSec.style.display = '';
     payInfoSec.style.display = '';
+    vrSec.style.display = '';
     dsFields.style.display = 'none';
     previewBtn.style.display = 'none';
     sendBtn.textContent = '💾 创建付款凭证';
@@ -19265,16 +19276,18 @@ function setInvMode(mode) {
   } else if (mode === 'company') {
     amtSec.style.display = '';
     payInfoSec.style.display = 'none';
+    vrSec.style.display = 'none';
     dsFields.style.display = '';
     previewBtn.style.display = '';
-    sendBtn.textContent = '📤 發送發票';
+    sendBtn.textContent = '📤 发送发票';
     hint.innerHTML = '<b>流程：</b>Admin填写服务周期、日期、服务内容和金额后点击「发送」，承包商收到邮件+短信通知 → 确认金额 → 签字 → 提交回来待审核。';
   } else {
     amtSec.style.display = 'none';
     payInfoSec.style.display = 'none';
+    vrSec.style.display = 'none';
     dsFields.style.display = '';
     previewBtn.style.display = '';
-    sendBtn.textContent = '📤 發送發票';
+    sendBtn.textContent = '📤 发送发票';
     hint.innerHTML = '<b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。';
   }
 }
@@ -19289,7 +19302,7 @@ function openInvSendModal() {
   _preGeneratedInvoiceNumber = null; // Reset pre-generated number when worker changes
   document.getElementById('invSendWorkerName').textContent = workerName;
   document.getElementById('invSendStatus').style.display = 'none';
-  document.getElementById('invSendBtn').textContent = '📤 發送發票';
+  document.getElementById('invSendBtn').textContent = '📤 发送发票';
   document.getElementById('invSendBtn').disabled = false;
   document.getElementById('invSendLang').value = 'contractor_invoice';
   document.getElementById('invSendDate').value = new Date().toISOString().slice(0, 10);
@@ -19299,6 +19312,10 @@ function openInvSendModal() {
   document.getElementById('invSendPaymentMethod').value = '';
   document.getElementById('invSendPaymentDate').value = '';
   document.getElementById('invSendPaymentRef').value = '';
+  _invVrPendingFiles = [];
+  document.getElementById('invVrPreviewGrid').innerHTML = '';
+  document.getElementById('invVrPreviewGrid').style.display = 'none';
+  document.getElementById('invVrFileInput').value = '';
   setInvMode('contractor');
   document.querySelector('input[name="invMode"][value="contractor"]').checked = true;
   document.getElementById('invPreviewSection').style.display = 'none';
@@ -19316,6 +19333,32 @@ function openInvSendModal() {
   document.getElementById('invSendModal').classList.add('show');
 }
 let _invSendWorkerId = null, _invSendWorkerName = '', _preGeneratedInvoiceNumber = null;
+let _invVrPendingFiles = [];
+function handleInvVrFiles(files) {
+  for (const f of files) _invVrPendingFiles.push(f);
+  const grid = document.getElementById('invVrPreviewGrid');
+  grid.style.display = 'grid';
+  grid.innerHTML = '';
+  _invVrPendingFiles.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.style.cssText = 'position:relative;border:1px solid var(--gray-200);border-radius:6px;overflow:hidden;aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#f9fafb';
+    if (f.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(f);
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+      div.appendChild(img);
+    } else {
+      div.innerHTML = '<div style="text-align:center;font-size:.75rem;color:var(--gray-500)">📄 PDF</div>';
+    }
+    const btn = document.createElement('button');
+    btn.innerHTML = '✕';
+    btn.style.cssText = 'position:absolute;top:2px;right:2px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;line-height:18px;padding:0';
+    btn.onclick = () => { _invVrPendingFiles.splice(i, 1); handleInvVrFiles([]); };
+    div.appendChild(btn);
+    grid.appendChild(div);
+  });
+  if (!_invVrPendingFiles.length) grid.style.display = 'none';
+}
 
 async function doSendInvoice() {
   if (!_invSendWorkerId) return;
@@ -19324,7 +19367,7 @@ async function doSendInvoice() {
   const invoiceDate = document.getElementById('invSendDate').value.trim();
   const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
   if (!periodStart || !periodEnd) { showToast('请填写服务周期 Period From / Period To', 'error'); return; }
-  if (!invoiceDate) { showToast('请选择發票日期', 'error'); return; }
+  if (!invoiceDate) { showToast('请选择发票日期', 'error'); return; }
   if (!serviceDesc) { showToast('请填写服务内容描述', 'error'); return; }
   const quotedAmount = document.getElementById('invSendAmount').value.trim();
   const reimbursableAmount = document.getElementById('invSendReimbursable').value.trim();
@@ -19347,6 +19390,15 @@ async function doSendInvoice() {
     });
     btn.disabled = false; btn.textContent = '💾 创建付款凭证';
     if (r && r.success) {
+      // Upload pending receipt files if any
+      if (_invVrPendingFiles.length > 0 && r.id) {
+        const fd = new FormData();
+        _invVrPendingFiles.forEach(f => fd.append('receipts', f));
+        try {
+          await fetch(`/api/admin/contractor-invoices/${r.id}/voucher-receipts`, { method: 'POST', body: fd, credentials: 'same-origin' });
+        } catch(e) { console.warn('Receipt upload failed:', e); }
+        _invVrPendingFiles = [];
+      }
       const statusEl = document.getElementById('invSendStatus');
       statusEl.style.display = 'block';
       statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
@@ -19371,7 +19423,7 @@ async function doSendInvoice() {
   const modeLabel = _invMode === 'company' ? '公司预填金额' : '承包商填写金额';
   const amtInfo = _invMode === 'company' ? `\n金额: $${quotedAmount}${reimbursableAmount ? ' + 报销 $' + reimbursableAmount : ''}` : '';
   const actionDesc = _invMode === 'company' ? '确认金额并签字' : '填写金额并签字后提交';
-  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n模式: ${modeLabel}\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}${invNumInfo}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}${amtInfo}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，${actionDesc}。`)) return;
+  if (!await showConfirm(`确认向 ${_invSendWorkerName} 发送承包商发票？\n\n模式: ${modeLabel}\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}${invNumInfo}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}${amtInfo}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，${actionDesc}。`)) return;
   const btn = document.getElementById('invSendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const templateLang = document.getElementById('invSendLang').value;
@@ -19385,13 +19437,13 @@ async function doSendInvoice() {
   const r = await api('/admin/contractor-invoices/send-docuseal', {
     method: 'POST', body: JSON.stringify(sendBody)
   });
-  btn.disabled = false; btn.textContent = '📤 重新發送';
+  btn.disabled = false; btn.textContent = '📤 重新发送';
   if (r && r.success) {
     _preGeneratedInvoiceNumber = null; // Reset after successful send
     const statusEl = document.getElementById('invSendStatus');
     statusEl.style.display = 'block';
     statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
-    let msg = `✅ 發票已發送 (${r.invoice_number})`;
+    let msg = `✅ 发票已发送 (${r.invoice_number})`;
     if (r.emailSent) msg += '　📧 邮件已送达';
     if (r.smsSent) msg += '　📱 短信已送达';
     if (r.warnings && r.warnings.length) msg += `<br><span style="font-size:.78rem;color:#92400e">${r.warnings.join('；')}</span>`;
@@ -19445,7 +19497,7 @@ async function previewInvoiceTemplate() {
     infoBox.innerHTML = `<b>将预填入的数据 (Pre-filled Data):</b><br>` +
       `<b>语言版本:</b> ${langLabels[lang] || lang}　` +
       `<b>承包商:</b> ${esc(contractorName) || '—'}　` +
-      `<b>發票日期:</b> ${invoiceDate || '—'}　` +
+      `<b>发票日期:</b> ${invoiceDate || '—'}　` +
       `<b>服务周期:</b> ${periodStart || '—'} ~ ${periodEnd || '—'}<br>` +
       `<b>服务内容:</b> ${esc(serviceDesc) || '—'}<br>` +
       `<b>Invoice #:</b> <span style="font-weight:700;color:#065f46">${esc(_preGeneratedInvoiceNumber)}</span><br>` +
