@@ -1747,7 +1747,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
  'voucher_confirmed INTEGER DEFAULT 0',
  'payment_date TEXT DEFAULT \'\'',
  'payment_reference TEXT DEFAULT \'\'',
- 'voucher_lang TEXT DEFAULT \'bilingual\''
+ 'voucher_lang TEXT DEFAULT \'bilingual\'',
+ 'dividend_distributed INTEGER DEFAULT 0',
+ 'dividend_distributed_at TEXT DEFAULT \'\'',
+ 'dividend_distributed_by TEXT DEFAULT \'\''
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 db.exec(`CREATE TABLE IF NOT EXISTS voucher_edit_history (
@@ -9611,6 +9614,7 @@ app.get('/api/admin/contractor-invoices', requireAdmin, (req, res) => {
       ci.ds_envelope_id, ci.ds_status, ci.ds_signed_at, ci.sent_by
     FROM contractor_invoices ci
     LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id
+    WHERE ci.dividend_distributed = 0
     ORDER BY ci.created_at DESC
   `).all();
   res.json(rows);
@@ -10405,6 +10409,51 @@ app.get('/api/admin/contractor-invoices/:id/edit-history', requireAdmin, (req, r
     const inv = db.prepare(`SELECT ci.*, wa.name as worker_name, wa.username as worker_username
       FROM contractor_invoices ci LEFT JOIN worker_accounts wa ON ci.worker_account_id=wa.id WHERE ci.id=?`).get(req.params.id);
     res.json({ rows, invoice: inv || null });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: get historical (dividend distributed) contractor invoices
+app.get('/api/admin/contractor-invoices-history', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username, wa.phone AS worker_phone, wa.email AS worker_email,
+      ci.ds_envelope_id, ci.ds_status, ci.ds_signed_at, ci.sent_by
+    FROM contractor_invoices ci
+    LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id
+    WHERE ci.dividend_distributed = 1
+    ORDER BY ci.dividend_distributed_at DESC
+  `).all();
+  res.json(rows);
+});
+
+// Admin: mark contractor invoice as dividend distributed
+app.post('/api/admin/contractor-invoices/:id/mark-dividend', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    const now = new Date().toISOString();
+    db.prepare('UPDATE contractor_invoices SET dividend_distributed=1, dividend_distributed_at=?, dividend_distributed_by=? WHERE id=?')
+      .run(now, req.session.user.username, inv.id);
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by, changed_at) VALUES (?,?,?,?,?,?)')
+      .run(inv.id, 'dividend_distributed', '0', '1', req.session.user.username, now);
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: undo dividend distributed status
+app.post('/api/admin/contractor-invoices/:id/undo-dividend', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    const now = new Date().toISOString();
+    db.prepare('UPDATE contractor_invoices SET dividend_distributed=0, dividend_distributed_at=\'\', dividend_distributed_by=\'\' WHERE id=?')
+      .run(inv.id);
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by, changed_at) VALUES (?,?,?,?,?,?)')
+      .run(inv.id, 'dividend_distributed', '1', '0', req.session.user.username, now);
+    res.json({ ok: true });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
