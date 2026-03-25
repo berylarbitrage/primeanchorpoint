@@ -9798,13 +9798,17 @@ app.post('/api/admin/contractor-invoices/:id/voucher-receipts', requireAdmin, re
   try {
     const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-    if (inv.voucher_confirmed) return res.status(400).json({ error: '凭证已确认，无法修改' });
     if (!req.files || !req.files.length) return res.status(400).json({ error: '请选择文件' });
     let existing = [];
     try { existing = JSON.parse(inv.voucher_receipt || '[]'); } catch { if (inv.voucher_receipt) existing = [{ filename: inv.voucher_receipt, original_name: inv.voucher_receipt }]; }
     const newFiles = req.files.map(f => ({ filename: f.filename, original_name: f.originalname }));
     const all = [...existing, ...newFiles];
     db.prepare('UPDATE contractor_invoices SET voucher_receipt=? WHERE id=?').run(JSON.stringify(all), req.params.id);
+    // Log to history
+    const changedBy = req.session?.username || 'admin';
+    const fileNames = newFiles.map(f => f.original_name).join(', ');
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '上传凭证', '', fileNames, changedBy);
     res.json({ success: true, count: newFiles.length });
   } catch (e) {
     console.error('[Voucher Receipt Upload]', e.message);
@@ -9831,18 +9835,22 @@ app.get('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', require
 // Admin: delete a single voucher receipt
 app.delete('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   try {
-    const inv = db.prepare('SELECT voucher_receipt, voucher_confirmed FROM contractor_invoices WHERE id=?').get(req.params.id);
+    const inv = db.prepare('SELECT voucher_receipt FROM contractor_invoices WHERE id=?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Not found' });
-    if (inv.voucher_confirmed) return res.status(400).json({ error: '凭证已确认，无法删除' });
     let receipts = [];
     try { receipts = JSON.parse(inv.voucher_receipt || '[]'); } catch { receipts = []; }
     const idx = receipts.findIndex(r => r.filename === req.params.filename);
     if (idx === -1) return res.status(404).json({ error: 'Receipt not found' });
+    const deletedName = receipts[idx].original_name || receipts[idx].filename;
     // Delete file
     const filePath = path.join(uploadsDir, req.params.filename);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     receipts.splice(idx, 1);
     db.prepare('UPDATE contractor_invoices SET voucher_receipt=? WHERE id=?').run(JSON.stringify(receipts), req.params.id);
+    // Log to history
+    const changedBy = req.session?.username || 'admin';
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by) VALUES (?,?,?,?,?)')
+      .run(req.params.id, '删除凭证', deletedName, '', changedBy);
     res.json({ success: true });
   } catch (e) {
     console.error('[Delete Voucher Receipt]', e.message);
