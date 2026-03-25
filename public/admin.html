@@ -1403,7 +1403,7 @@ tr:hover td{background:var(--sky-light)}
       <h2 style="margin:0" id="invpReceiptModalTitle">标记已付款</h2>
       <button class="btn btn-outline" onclick="closeInvpReceiptModal()">✕ 关闭</button>
     </div>
-    <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">上传付款回执（Payment Receipt），支持 PDF / 图片格式，最大 20MB。</p>
+    <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">上传收到这笔款项的凭证（如银行到账截图、转账记录等），支持 PDF / 图片格式，最大 20MB。</p>
     <div id="invpReceiptCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
       当前回执：<a id="invpReceiptCurrentLink" href="#" target="_blank" style="color:var(--green)">查看文件</a>
     </div>
@@ -24858,7 +24858,7 @@ async function loadInvpList() {
             : '';
           const paidBtn = isPaid
             ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, true)">更新回执</button>`
-            : `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, false)">Paid</button>`;
+            : `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, false)">上传回执</button>`;
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
@@ -24941,8 +24941,8 @@ let _invpReceiptInvoiceId = null;
 
 function openInvpReceiptModal(invoiceId, isUpdate) {
   _invpReceiptInvoiceId = invoiceId;
-  document.getElementById('invpReceiptModalTitle').textContent = isUpdate ? '更新付款回执' : '标记已付款';
-  document.getElementById('invpReceiptSubmitBtn').textContent = isUpdate ? '更新回执' : '确认付款';
+  document.getElementById('invpReceiptModalTitle').textContent = isUpdate ? '更新付款回执' : '上传收款凭证';
+  document.getElementById('invpReceiptSubmitBtn').textContent = isUpdate ? '更新回执' : '上传并确认收款';
   document.getElementById('invpReceiptFile').value = '';
   // Show current receipt link if updating
   const currentWrap = document.getElementById('invpReceiptCurrentWrap');
