@@ -1783,7 +1783,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
  'voucher_lang TEXT DEFAULT \'bilingual\'',
  'dividend_distributed INTEGER DEFAULT 0',
  'dividend_distributed_at TEXT DEFAULT \'\'',
- 'dividend_distributed_by TEXT DEFAULT \'\''
+ 'dividend_distributed_by TEXT DEFAULT \'\'',
+ 'dividend_pending INTEGER DEFAULT 0',
+ 'dividend_pending_at TEXT DEFAULT \'\'',
+ 'dividend_pending_by TEXT DEFAULT \'\''
 ].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 db.exec(`CREATE TABLE IF NOT EXISTS voucher_edit_history (
@@ -6745,6 +6748,10 @@ app.get('/staff', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(require('path').join(__dirname, 'public', 'staff.html'));
 });
+app.get('/dividend', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(require('path').join(__dirname, 'public', 'dividend.html'));
+});
 app.get('/manager', (req, res) => {
   if (req.query.token) return serveAdminInvitePage(req, res);
   res.setHeader('Cache-Control', 'no-store');
@@ -10462,6 +10469,22 @@ app.get('/api/admin/contractor-invoices-history', requireAdmin, (req, res) => {
 });
 
 // Admin: mark contractor invoice as dividend distributed
+// Mark invoice as pending dividend (确认无误 → 待分红)
+app.post('/api/admin/contractor-invoices/:id/mark-pending-dividend', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    const now = new Date().toISOString();
+    db.prepare('UPDATE contractor_invoices SET dividend_pending=1, dividend_pending_at=?, dividend_pending_by=? WHERE id=?')
+      .run(now, req.session.user.username, inv.id);
+    db.prepare('INSERT INTO voucher_edit_history (invoice_id, field_name, old_value, new_value, changed_by, changed_at) VALUES (?,?,?,?,?,?)')
+      .run(inv.id, 'dividend_pending', '0', '1', req.session.user.username, now);
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/admin/contractor-invoices/:id/mark-dividend', requireAdmin, (req, res) => {
   try {
     const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
