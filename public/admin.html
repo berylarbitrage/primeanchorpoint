@@ -561,11 +561,21 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('time')" data-tab="time">工时打卡</a>
       <a onclick="showTab('ts-verify')" data-tab="ts-verify" data-role="admin,staff">📋 工时核对</a>
       <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
-      <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
       <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
       <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商发票</a>
       <a onclick="showTab('ts-emp-invoice-history')" data-tab="ts-emp-invoice-history" data-role="admin,staff">📜 承包商历史发票</a>
+    </div>
+  </div>
+
+  <!-- 分红管理 -->
+  <div class="nav-group open" id="sec-dividend" data-role="staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-dividend')">
+      💰 分红管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('sys-dividend')" data-tab="sys-dividend" data-role="admin,staff">🎯 待分红</a>
+      <a onclick="showTab('sys-dividend-history')" data-tab="sys-dividend-history" data-role="admin,staff">✅ 已分红</a>
     </div>
   </div>
 
@@ -576,8 +586,6 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="nav-group-items">
       <a onclick="showTab('approvals')" data-tab="approvals" data-role="admin">📋 待审批</a>
-      <a onclick="showTab('sys-dividend')" data-tab="sys-dividend" data-role="admin">🎯 待分红</a>
-      <a onclick="showTab('sys-dividend-history')" data-tab="sys-dividend-history" data-role="admin">✅ 已分红</a>
       <a onclick="showTab('internal-staff')" data-tab="internal-staff" data-role="admin">👤 内部人员</a>
       <a onclick="showTab('accounts')" data-tab="accounts" data-role="admin">🔐 账户管理</a>
       <a onclick="showTab('integrations')" data-tab="integrations" data-role="admin">🔗 集成设置</a>
@@ -6640,8 +6648,9 @@ const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
-  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
-  approvals:'sec-system', 'sys-dividend':'sec-system', 'sys-dividend-history':'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
+  'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
+  approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
   'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
 };
