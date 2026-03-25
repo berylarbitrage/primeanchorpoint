@@ -6709,6 +6709,10 @@ app.get('/staff', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(require('path').join(__dirname, 'public', 'staff.html'));
 });
+app.get('/dividend', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(require('path').join(__dirname, 'public', 'dividend.html'));
+});
 app.get('/manager', (req, res) => {
   if (req.query.token) return serveAdminInvitePage(req, res);
   res.setHeader('Cache-Control', 'no-store');
