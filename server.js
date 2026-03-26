@@ -2338,7 +2338,7 @@ function resequenceWorkerCodes(prefix) {
   // Get all records with this prefix along with employee state for fixing XX
   const rows = db.prepare(`
     SELECT wa.id, wa.worker_code,
-           COALESCE(wa.state, e.state) AS resolved_state
+           CASE WHEN wa.state != '' THEN wa.state ELSE e.state END AS resolved_state
     FROM worker_accounts wa
     LEFT JOIN employees e ON e.id = wa.employee_id
     WHERE wa.worker_code LIKE ?
@@ -2381,9 +2381,9 @@ function activateWorkerAccount(accountId, prefix) {
     const codePrefix = prefix || 'PORT';
     // Use state from worker_accounts; fall back to linked employee's state
     let stateForCode = acc.state;
-    if (!stateForCode && acc.employee_id) {
+    if ((!stateForCode || stateForCode.trim() === '') && acc.employee_id) {
       const emp = db.prepare('SELECT state FROM employees WHERE id=?').get(acc.employee_id);
-      if (emp && emp.state) stateForCode = emp.state;
+      if (emp && emp.state && emp.state.trim() !== '') stateForCode = emp.state;
     }
     const code = generateWorkerCode(stateForCode, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
