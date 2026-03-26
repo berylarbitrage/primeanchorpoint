@@ -2286,7 +2286,8 @@ function nextEmployeeId(state, hireDate) {
     dateStr = localDateStr(state, hireDate ? new Date(hireDate) : null);
   }
   const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'WRK-%' ORDER BY id DESC LIMIT 1").get();
+  const pattern = `WRK-%-${dateStr}-%`;
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE ? ORDER BY employee_id DESC LIMIT 1").get(pattern);
   let num = 1;
   if (last) {
     const parts = last.employee_id.split('-');
@@ -2365,6 +2366,37 @@ function resequenceWorkerCodes(prefix) {
         const newCode = `${key}-${String(idx + 1).padStart(4, '0')}`;
         if (newCode !== row.worker_code) {
           update.run(newCode, row.id);
+        }
+      });
+    }
+  });
+  doAll();
+}
+
+// ─── One-time fix: re-sequence employees.employee_id per date ───
+function resequenceEmployeeIds() {
+  const rows = db.prepare(
+    `SELECT id, employee_id FROM employees WHERE employee_id LIKE 'WRK-%' ORDER BY id ASC`
+  ).all();
+
+  const groups = {};
+  for (const row of rows) {
+    const parts = row.employee_id.split('-');
+    if (parts.length < 4) continue;
+    const dateStr = parts[parts.length - 2];
+    const stateStr = parts[1] || 'XX';
+    const key = `WRK-${stateStr}-${dateStr}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(row);
+  }
+
+  const update = db.prepare(`UPDATE employees SET employee_id=? WHERE id=?`);
+  const doAll = db.transaction(() => {
+    for (const [key, records] of Object.entries(groups)) {
+      records.forEach((row, idx) => {
+        const newId = `${key}-${String(idx + 1).padStart(4, '0')}`;
+        if (newId !== row.employee_id) {
+          update.run(newId, row.id);
         }
       });
     }
@@ -18336,7 +18368,7 @@ app.listen(PORT, () => {
   console.log(`Prime Anchor Point running on port ${PORT}`);
   // Re-sequence PORT/WRK codes so numbering resets per day
   try { resequenceWorkerCodes('PORT'); console.log('[startup] PORT codes re-sequenced by date'); } catch(e) { console.error('[startup] PORT resequence error:', e.message); }
-  try { resequenceWorkerCodes('WRK'); console.log('[startup] WRK codes re-sequenced by date'); } catch(e) { console.error('[startup] WRK resequence error:', e.message); }
+  try { resequenceEmployeeIds(); console.log('[startup] Employee IDs re-sequenced by date'); } catch(e) { console.error('[startup] Employee ID resequence error:', e.message); }
   // Re-sync onboarded status for all workers with employment_type on startup
   // This ensures the onboarded flag is recalculated after any logic changes
   try {
