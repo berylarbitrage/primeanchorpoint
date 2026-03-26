@@ -2263,7 +2263,14 @@ function localDateStr(state, dateObj) {
 
 // ─── Auto-generate employee ID: WRK-ST-MMDDYY-0001 ───
 function nextEmployeeId(state, hireDate) {
-  const dateStr = localDateStr(state, hireDate ? new Date(hireDate) : null);
+  // If hireDate is a YYYY-MM-DD string, parse directly to avoid UTC timezone shift
+  let dateStr;
+  const m = hireDate && String(hireDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    dateStr = m[2] + m[3] + m[1].slice(-2);
+  } else {
+    dateStr = localDateStr(state, hireDate ? new Date(hireDate) : null);
+  }
   const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
   const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'WRK-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
@@ -12557,13 +12564,23 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     pin_salt = crypto.randomBytes(16).toString('hex');
     pin_hash = hashPin(d.pin, pin_salt);
   }
+  // Auto-update employee_id date part when hire_date changes
+  let finalEmpId = d.employee_id || emp.employee_id;
+  if (d.hire_date && d.hire_date !== emp.hire_date && !d.employee_id) {
+    const parts = emp.employee_id.match(/^(WRK-\w{2}-)(\d{6})(-\d{4})$/);
+    if (parts) {
+      const dm = String(d.hire_date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const newDateStr = dm ? dm[2] + dm[3] + dm[1].slice(-2) : localDateStr(d.state || emp.state, new Date(d.hire_date));
+      finalEmpId = parts[1] + newDateStr + parts[3];
+    }
+  }
   db.prepare(`UPDATE employees SET
     employee_id=?,first_name=?,middle_name=?,last_name=?,email=?,phone=?,address=?,street2=?,city=?,state=?,zip=?,dob=?,
     emergency_name=?,emergency_phone=?,emergency_relation=?,hire_date=?,position=?,department=?,
     pay_rate=?,pay_type=?,status=?,pin_hash=?,pin_salt=?,ssn_encrypted=?,ssn_iv=?,ssn_last4=?,notes=?,
     extra_phones=?,extra_emails=?,social_media=?
     WHERE id=?`).run(
-    d.employee_id||emp.employee_id,d.first_name,d.middle_name||emp.middle_name||'',d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
+    finalEmpId,d.first_name,d.middle_name||emp.middle_name||'',d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
     d.city||'',d.state||'',d.zip||'',d.dob||'',
     d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
     d.hire_date||'',d.position||'',d.department||'',
