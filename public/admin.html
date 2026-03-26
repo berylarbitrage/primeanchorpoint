@@ -11543,10 +11543,10 @@ function renderEmployees(list) {
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
     <td style="white-space:nowrap">
-      ${e.onboarded
+      ${e.worker_account_id ? (e.onboarded
         ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>✅ 已入职</button>`
         : `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 入职进度</button>`
-      }
+      ) : ''}
       <button class="btn btn-sm" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;font-size:.72rem;margin:1px" onclick='openEmpModal(${e.id})'>✏️ 编辑信息</button>
       <button class="btn btn-sm" style="background:#fff7ed;color:#9A3412;border:1px solid #fed7aa;font-size:.72rem;margin:1px" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 安排职位</button>
       <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin:1px" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>⭐ 评分</button>
@@ -11599,14 +11599,11 @@ document.getElementById('empMenuDelete').onclick   = () => { _closeEmpMenu(); de
 async function openEmpOnboarding(empId, empName) {
   const emp = allEmployees.find(e => e.id === empId);
   if (!emp) return;
-  let wid = emp.worker_account_id;
-  if (!wid) {
-    const res = await api(`/admin/employees/${empId}/ensure-worker-account`, { method: 'POST' });
-    if (!res || !res.worker_account_id) { showToast('初始化入职流程失败，请重试', 'error'); return; }
-    wid = res.worker_account_id;
-    emp.worker_account_id = wid;
+  if (!emp.worker_account_id) {
+    showToast('该员工尚未注册工人账户，请先发送注册链接邀请其注册', 'error');
+    return;
   }
-  openOnboardingModal(wid, empName);
+  openOnboardingModal(emp.worker_account_id, empName);
 }
 
 // ── Employee Files Management ──
