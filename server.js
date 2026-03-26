@@ -679,6 +679,20 @@ try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } ca
 try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`UPDATE employees SET employee_id = REPLACE(employee_id, 'STAFF-', 'WRK-') WHERE employee_id LIKE 'STAFF-%'`); } catch(e) {}
+// Fix employee_id date part to match hire_date (was off by 1 day due to UTC timezone bug)
+try {
+  const _fixRows = db.prepare("SELECT id, employee_id, hire_date FROM employees WHERE employee_id LIKE 'WRK-%' AND hire_date != '' AND hire_date IS NOT NULL").all();
+  for (const e of _fixRows) {
+    const m = e.hire_date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const p = e.employee_id.match(/^(WRK-\w{2}-)(\d{6})(-\d{4})$/);
+    if (m && p) {
+      const correctDate = m[2] + m[3] + m[1].slice(-2);
+      if (p[2] !== correctDate) {
+        db.prepare('UPDATE employees SET employee_id=? WHERE id=?').run(p[1] + correctDate + p[3], e.id);
+      }
+    }
+  }
+} catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
