@@ -2235,6 +2235,39 @@ function generateWorkerCode(state, prefix = 'PORT') {
   return `${prefix}-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
+// ─── One-time fix: re-sequence existing PORT/WRK codes per date ───
+function resequenceWorkerCodes(prefix) {
+  // Get all records with this prefix, ordered by id (creation order)
+  const rows = db.prepare(
+    `SELECT id, worker_code FROM worker_accounts WHERE worker_code LIKE ? ORDER BY id ASC`
+  ).all(prefix + '-%');
+
+  // Group by "prefix-STATE-DATE" key
+  const groups = {};
+  for (const row of rows) {
+    const parts = row.worker_code.split('-');
+    if (parts.length < 4) continue;
+    // key = everything except last segment (the sequence number)
+    const key = parts.slice(0, parts.length - 1).join('-');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(row);
+  }
+
+  // Re-number each group starting from 0001
+  const update = db.prepare(`UPDATE worker_accounts SET worker_code=? WHERE id=?`);
+  const doAll = db.transaction(() => {
+    for (const [key, records] of Object.entries(groups)) {
+      records.forEach((row, idx) => {
+        const newCode = `${key}-${String(idx + 1).padStart(4, '0')}`;
+        if (newCode !== row.worker_code) {
+          update.run(newCode, row.id);
+        }
+      });
+    }
+  });
+  doAll();
+}
+
 // ─── On verification: assign worker_code + ensure linked inquiry exists ───
 function activateWorkerAccount(accountId, prefix) {
   const acc = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(accountId);
@@ -17584,6 +17617,9 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
+  // Re-sequence PORT/WRK codes so numbering resets per day
+  try { resequenceWorkerCodes('PORT'); console.log('[startup] PORT codes re-sequenced by date'); } catch(e) { console.error('[startup] PORT resequence error:', e.message); }
+  try { resequenceWorkerCodes('WRK'); console.log('[startup] WRK codes re-sequenced by date'); } catch(e) { console.error('[startup] WRK resequence error:', e.message); }
   // Re-sync onboarded status for all workers with employment_type on startup
   // This ensures the onboarded flag is recalculated after any logic changes
   try {
