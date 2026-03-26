@@ -2322,7 +2322,8 @@ function generateContractorInvoiceNumber(workerName, workerState, type = 'INV') 
 function generateWorkerCode(state, prefix = 'PORT') {
   const dateStr = localDateStr(state);
   const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
-  const last = db.prepare(`SELECT worker_code FROM worker_accounts WHERE worker_code LIKE ? ORDER BY id DESC LIMIT 1`).get(prefix + '-%');
+  const pattern = `${prefix}-%-${dateStr}-%`;
+  const last = db.prepare(`SELECT worker_code FROM worker_accounts WHERE worker_code LIKE ? ORDER BY worker_code DESC LIMIT 1`).get(pattern);
   let num = 1;
   if (last) {
     const parts = last.worker_code.split('-');
