@@ -2333,20 +2333,26 @@ function generateWorkerCode(state, prefix = 'PORT') {
   return `${prefix}-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
-// ─── One-time fix: re-sequence existing PORT/WRK codes per date ───
+// ─── One-time fix: re-sequence existing PORT/WRK codes per date, fix XX state ───
 function resequenceWorkerCodes(prefix) {
-  // Get all records with this prefix, ordered by id (creation order)
-  const rows = db.prepare(
-    `SELECT id, worker_code FROM worker_accounts WHERE worker_code LIKE ? ORDER BY id ASC`
-  ).all(prefix + '-%');
+  // Get all records with this prefix along with employee state for fixing XX
+  const rows = db.prepare(`
+    SELECT wa.id, wa.worker_code,
+           COALESCE(wa.state, e.state) AS resolved_state
+    FROM worker_accounts wa
+    LEFT JOIN employees e ON e.id = wa.employee_id
+    WHERE wa.worker_code LIKE ?
+    ORDER BY wa.id ASC
+  `).all(prefix + '-%');
 
-  // Group by "prefix-STATE-DATE" key
+  // Group by "prefix-STATE-DATE" key (using resolved state)
   const groups = {};
   for (const row of rows) {
     const parts = row.worker_code.split('-');
     if (parts.length < 4) continue;
-    // key = everything except last segment (the sequence number)
-    const key = parts.slice(0, parts.length - 1).join('-');
+    const dateStr = parts[parts.length - 2];
+    const stateStr = (row.resolved_state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
+    const key = `${prefix}-${stateStr}-${dateStr}`;
     if (!groups[key]) groups[key] = [];
     groups[key].push(row);
   }
@@ -2373,7 +2379,13 @@ function activateWorkerAccount(accountId, prefix) {
   // Generate worker_code if not already set
   if (!acc.worker_code) {
     const codePrefix = prefix || 'PORT';
-    const code = generateWorkerCode(acc.state, codePrefix);
+    // Use state from worker_accounts; fall back to linked employee's state
+    let stateForCode = acc.state;
+    if (!stateForCode && acc.employee_id) {
+      const emp = db.prepare('SELECT state FROM employees WHERE id=?').get(acc.employee_id);
+      if (emp && emp.state) stateForCode = emp.state;
+    }
+    const code = generateWorkerCode(stateForCode, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
   // Ensure a linked inquiry exists — prefer employee record's stored inquiry_id (survives account deletion/re-creation)
