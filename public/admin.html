@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prime Anchorpoint — 管理后台</title>
+<title>Prime Anchor Point — 管理后台</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -376,8 +376,8 @@ tr:hover td{background:var(--sky-light)}
 <!-- LOGIN -->
 <div class="login-wrap" id="loginWrap">
 <div class="login-box">
-  <img src="/logo.svg" alt="Prime Anchorpoint" class="logo">
-  <h1>Prime Anchorpoint</h1>
+  <img src="/logo.svg" alt="Prime Anchor Point" class="logo">
+  <h1>Prime Anchor Point</h1>
   <p id="loginSubtitle">管理后台</p>
   <input type="text" id="userInput" placeholder="用户名" autocomplete="username">
   <div class="pass-wrap">
@@ -561,10 +561,21 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('time')" data-tab="time">工时打卡</a>
       <a onclick="showTab('ts-verify')" data-tab="ts-verify" data-role="admin,staff">📋 工时核对</a>
       <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
-      <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
       <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
-      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商發票</a>
+      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商发票</a>
+      <a onclick="showTab('ts-emp-invoice-history')" data-tab="ts-emp-invoice-history" data-role="admin,staff">📜 承包商历史发票</a>
+    </div>
+  </div>
+
+  <!-- 分红管理 -->
+  <div class="nav-group open" id="sec-dividend" data-role="staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-dividend')">
+      💰 分红管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('sys-dividend')" data-tab="sys-dividend" data-role="admin,staff">🎯 待分红</a>
+      <a onclick="showTab('sys-dividend-history')" data-tab="sys-dividend-history" data-role="admin,staff">✅ 已分红</a>
     </div>
   </div>
 
@@ -1086,7 +1097,9 @@ tr:hover td{background:var(--sky-light)}
     <button class="emp-menu-item" id="empMenuJob" style="color:#9A3412">📋 安排职位</button>
     <button class="emp-menu-item" id="empMenuRate" style="color:#0369a1">⭐ 员工评分</button>
     <button class="emp-menu-item" id="empMenuDoc" style="color:#166534">📎 发送材料链接</button>
+    <button class="emp-menu-item" id="empMenuFiles" style="color:#0369a1">📁 文件管理</button>
     <button class="emp-menu-item" id="empMenuRegLink" style="color:#7c3aed">📱 发送注册链接</button>
+    <button class="emp-menu-item" id="empMenuOnboard" style="color:#b45309">📂 入职</button>
     <div style="height:1px;background:var(--gray-200);margin:4px 0"></div>
     <button class="emp-menu-item" id="empMenuTerminate" style="color:#dc2626;display:none">🚪 办理离职</button>
     <button class="emp-menu-item" id="empMenuDelete" style="color:#dc2626;display:none">🗑️ 删除员工</button>
@@ -1174,6 +1187,40 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- ════════════════════ 系统管理-待分红 TAB ════════════════════ -->
+<div id="tab-sys-dividend" style="display:none">
+  <div class="top">
+    <h1>🎯 待分红</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadSysDividend()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">客户与劳务均已付款的工时单。全部 Staff 投票「无异议」后，再各自确认「已分红」即可归档至已分红历史。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>无异议投票</th><th>已分红确认</th><th>操作</th></tr></thead>
+      <tbody id="sysDividendTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════ 系统管理-已分红 TAB ════════════════════ -->
+<div id="tab-sys-dividend-history" style="display:none">
+  <div class="top">
+    <h1>✅ 已分红</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadSysDividendHistory()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">全部 Staff 确认「已分红」后归档的工时单历史记录。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>客户付款时间</th><th>劳务付款时间</th><th>Staff 备注</th></tr></thead>
+      <tbody id="sysDividendHistoryTable"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- ════════════════════ 待分红 TAB ════════════════════ -->
 <div id="tab-ts-dividend" style="display:none">
   <div class="top">
@@ -1183,11 +1230,20 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">客户与劳务均已付款的工时单。全部 Staff 投票「无异议」后，再各自确认「已分红」即可归档至工时历史。</p>
-  <div class="card">
+  <div class="card" style="margin-bottom:1.5rem">
     <table>
       <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>无异议投票</th><th>已分红确认</th><th>操作</th></tr></thead>
       <tbody id="tsDividendTable"></tbody>
     </table>
+  </div>
+
+  <!-- Contractor Invoice Batches -->
+  <h2 style="font-size:1.1rem;margin:1.5rem 0 .75rem">📄 承包商发票批次</h2>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">从承包商发票页面勾选提交的发票批次。全部 Staff 投票「无异议」后，再各自确认「已分红」即可归档。</p>
+  <div class="card">
+    <div id="tsDividendInvBatchWrap">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+    </div>
   </div>
 </div>
 
@@ -1279,31 +1335,70 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════════ 承包商發票 Tab ════════ -->
+<!-- ════════ 承包商发票 Tab ════════ -->
 <div id="tab-ts-emp-invoice" style="display:none">
   <div class="top">
-    <h1>📄 承包商發票</h1>
+    <h1>📄 承包商发票</h1>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="loadEmpInvoiceTab()">刷新</button>
     </div>
   </div>
-  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商提交的發票，用于 FWPA 合规（合同—服务完成—付款）链条记录</p>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商发票，用于 FWPA 合规（合同—服务完成—付款）链条记录。支持承包商自行填写金额或公司预填金额后发送签字。</p>
 
   <!-- Send Invoice -->
   <div class="card" style="margin-bottom:1rem;padding:1rem">
     <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 發送承包商發票：</label>
-      <select id="empInvWorkerSelect" style="min-width:220px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        <option value="">— 选择承包商 —</option>
-      </select>
-      <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 發送發票</button>
+      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 发送承包商发票：</label>
+      <div style="position:relative;min-width:260px">
+        <input id="empInvWorkerSearch" type="text" placeholder="搜索承包商姓名…" autocomplete="off"
+          style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem"
+          oninput="filterInvWorkerList()" onfocus="filterInvWorkerList()">
+        <input type="hidden" id="empInvWorkerSelect" value="">
+        <div id="empInvWorkerDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:240px;overflow-y:auto;background:#fff;border:1px solid var(--gray-200);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:999;margin-top:2px"></div>
+      </div>
+      <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 发送发票</button>
       <span id="empInvSendStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送發票模板，承包商需填写金额、签字后提交回来。</div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">搜索并选择承包商后发送发票：可由承包商自行填写金额，也可由公司预填金额后发送给承包商签字。</div>
+  </div>
+
+  <!-- Batch Filter & Action Bar -->
+  <div class="card" style="margin-bottom:1rem;padding:.75rem 1rem">
+    <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📦 批量操作：</label>
+      <label style="font-size:.82rem;white-space:nowrap">日期从</label>
+      <input type="date" id="empInvFilterFrom" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" onchange="filterEmpInvoices()">
+      <label style="font-size:.82rem;white-space:nowrap">到</label>
+      <input type="date" id="empInvFilterTo" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" onchange="filterEmpInvoices()">
+      <label style="font-size:.82rem;white-space:nowrap">搜索</label>
+      <input type="text" id="empInvFilterSearch" placeholder="工人姓名 / 公司 / Invoice#…" autocomplete="off"
+        style="min-width:200px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem"
+        oninput="filterEmpInvoices()">
+      <button class="btn btn-sm btn-outline" onclick="clearEmpInvFilter()" style="font-size:.78rem">清除筛选</button>
+      <span style="flex:1"></span>
+      <span id="empInvSelectedCount" style="font-size:.82rem;color:var(--gray-500)"></span>
+      <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.82rem;padding:.3rem .75rem" onclick="batchSubmitDividend()">💰 批量提交分红</button>
+    </div>
   </div>
 
   <div class="card">
     <div id="empInvoiceListWrap">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ CONTRACTOR INVOICE HISTORY TAB ════════════════════ -->
+<div id="tab-ts-emp-invoice-history" style="display:none">
+  <div class="top">
+    <h1>📜 承包商历史发票</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadEmpInvoiceHistoryTab()">刷新</button>
+    </div>
+  </div>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">已完成分红的承包商发票归档记录。</p>
+  <div class="card">
+    <div id="empInvoiceHistoryListWrap">
       <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
     </div>
   </div>
@@ -1316,7 +1411,7 @@ tr:hover td{background:var(--sky-light)}
       <h2 style="margin:0" id="invpReceiptModalTitle">标记已付款</h2>
       <button class="btn btn-outline" onclick="closeInvpReceiptModal()">✕ 关闭</button>
     </div>
-    <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">上传付款回执（Payment Receipt），支持 PDF / 图片格式，最大 20MB。</p>
+    <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">上传收到这笔款项的凭证（如银行到账截图、转账记录等），支持 PDF / 图片格式，最大 20MB。</p>
     <div id="invpReceiptCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
       当前回执：<a id="invpReceiptCurrentLink" href="#" target="_blank" style="color:var(--green)">查看文件</a>
     </div>
@@ -2495,7 +2590,7 @@ tr:hover td{background:var(--sky-light)}
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商發票</div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商发票</div>
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">Contractor Invoice — 三種語言版本</div>
           <div style="margin-bottom:.6rem">
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
@@ -2879,6 +2974,51 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════════════════════ EMPLOYEE FILES MODAL ════════════════════ -->
+<div class="modal-bg" id="empFilesModal" style="display:none" onclick="if(event.target===this)closeModal('empFilesModal')">
+  <div class="modal" style="max-width:680px;width:95vw;max-height:90vh;overflow-y:auto">
+    <h2 style="margin:0 0 .5rem">📁 文件管理 — <span id="empFilesWorkerName" style="color:var(--sky)"></span></h2>
+    <div id="empFilesContent" style="margin:.5rem 0"></div>
+    <!-- Upload new doc -->
+    <div style="border-top:1px solid var(--gray-200);padding-top:.75rem;margin-top:.75rem">
+      <div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem">上传新文件</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+        <div>
+          <label style="font-size:.78rem;color:var(--gray-500)">文件类型</label>
+          <select id="empFilesDocType" style="width:100%;padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <option value="w9">W-9</option>
+            <option value="ssn_card">SSN 卡</option>
+            <option value="visa">签证</option>
+            <option value="passport">护照</option>
+            <option value="green_card">绿卡</option>
+            <option value="ead_card">EAD 工卡</option>
+            <option value="drivers_license">驾照</option>
+            <option value="state_id">州 ID</option>
+            <option value="itin_letter">ITIN</option>
+            <option value="contract">合同</option>
+            <option value="other">其他</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.78rem;color:var(--gray-500)">编号 (可选)</label>
+          <input type="text" id="empFilesDocNumber" placeholder="如签证号、SSN末4位等" style="width:100%;padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="margin-bottom:.5rem">
+        <label style="font-size:.78rem;color:var(--gray-500)">备注 (可选)</label>
+        <input type="text" id="empFilesDocNotes" placeholder="备注信息" style="width:100%;padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;box-sizing:border-box">
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <input type="file" id="empFilesFileInput" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" style="flex:1;font-size:.82rem">
+        <button class="btn btn-green" id="empFilesUploadBtn" onclick="uploadEmpFile()" style="font-size:.85rem;white-space:nowrap">上传</button>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:.75rem">
+      <button class="btn" onclick="closeModal('empFilesModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- Onboarding Task Form Preview Modal -->
 <div class="modal-bg" id="onboardingPreviewModal" style="z-index:2000">
   <div class="modal" style="max-width:860px;width:95vw;height:90vh;display:flex;flex-direction:column;padding:1rem">
@@ -3099,14 +3239,29 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
-<!-- 承包商發票 Send Modal -->
+<!-- 承包商发票 Send Modal -->
 <div class="modal-bg" id="invSendModal"><div class="modal" style="max-width:720px">
-  <h2>📄 發送承包商發票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
-  <div style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)">
-    系统将向承包商发送發票模板（邮件+短信），承包商填写金额并签字后提交回来。
+  <h2>📄 发送承包商发票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
+  <div style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)" id="invSendDesc">
+    选择发票模式：承包商自行填写金额，或公司预填金额后发送给承包商签字确认。
   </div>
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票語言版本 / Invoice Language：<span style="color:#dc2626">*</span></label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">发票模式 / Invoice Mode：</label>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <label style="flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid #0ea5e9;border-radius:8px;cursor:pointer;background:#f0f9ff;font-size:.85rem;font-weight:600;color:#0369a1" id="invModeContractorLabel" onclick="setInvMode('contractor')">
+        <input type="radio" name="invMode" value="contractor" checked style="accent-color:#0ea5e9"> 承包商填写金额
+      </label>
+      <label style="flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid var(--gray-200);border-radius:8px;cursor:pointer;background:#fff;font-size:.85rem;font-weight:500;color:var(--gray-500)" id="invModeCompanyLabel" onclick="setInvMode('company')">
+        <input type="radio" name="invMode" value="company" style="accent-color:#0ea5e9"> 公司预填金额
+      </label>
+      <label style="flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid var(--gray-200);border-radius:8px;cursor:pointer;background:#fff;font-size:.85rem;font-weight:500;color:var(--gray-500)" id="invModeVoucherLabel" onclick="setInvMode('voucher')">
+        <input type="radio" name="invMode" value="voucher" style="accent-color:#0ea5e9"> 付款凭证
+      </label>
+    </div>
+  </div>
+  <div id="invDocuSealFields">
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">发票語言版本 / Invoice Language：<span style="color:#dc2626">*</span></label>
     <select id="invSendLang" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
       <option value="contractor_invoice">中文+英文 (ZH+EN)</option>
       <option value="contractor_invoice_en">English Only (EN)</option>
@@ -3118,8 +3273,9 @@ tr:hover td{background:var(--sky-light)}
     <input id="invSendEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="contractor@email.com">
   </div>
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手機號（可选，发送短信通知）：</label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手机号（可选，发送短信通知）：</label>
     <input id="invSendPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (xxx) xxx-xxxx">
+  </div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin:.5rem 0">
     <div>
@@ -3132,30 +3288,95 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div style="margin:.5rem 0">
-    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">發票日期：<span style="color:#dc2626">*</span></label>
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">发票日期：<span style="color:#dc2626">*</span></label>
     <input type="date" id="invSendDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
   </div>
   <div style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">服务内容描述：<span style="color:#dc2626">*</span></label>
     <textarea id="invSendServiceDesc" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="例如：Home cleaning services for Jan 2025, 123 Main St…"></textarea>
   </div>
+  <div id="invAmountSection" style="display:none;margin:.5rem 0">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">服务金额 Quoted Amount ($)：<span style="color:#dc2626">*</span></label>
+        <input type="number" step="0.01" min="0" id="invSendAmount" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0.00">
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">可报销费用 Reimbursable ($)：</label>
+        <input type="number" step="0.01" min="0" id="invSendReimbursable" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0.00">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.5rem">
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工时 Hours：</label>
+        <input type="number" step="0.01" min="0" id="invSendHours" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0">
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">费率 Rate ($/hr)：</label>
+        <input type="number" step="0.01" min="0" id="invSendRate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0.00">
+      </div>
+    </div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.3rem">公司预填金额，承包商只需签字确认。工时和费率仅供内部记录，不显示在PDF中。</div>
+  </div>
+  <div id="invVoucherLangSection" style="display:none;margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">凭证语言 Voucher Language：</label>
+    <select id="invVoucherLang" style="width:100%;max-width:300px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+      <option value="bilingual">中文 + English</option>
+      <option value="en">English Only</option>
+      <option value="en_es">English + Español</option>
+    </select>
+  </div>
+  <div id="invPaymentInfoSection" style="display:none;margin:.5rem 0">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">付款方式 Payment Method：</label>
+        <select id="invSendPaymentMethod" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+          <option value="">-- 选择 --</option>
+          <option value="ACH">ACH</option>
+          <option value="Zelle">Zelle</option>
+          <option value="Check">Check</option>
+          <option value="Cash">Cash</option>
+          <option value="Wire">Wire</option>
+          <option value="Venmo">Venmo</option>
+          <option value="PayPal">PayPal</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">付款日期 Payment Date：</label>
+        <input type="date" id="invSendPaymentDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">参考编号 Reference No.：</label>
+        <input id="invSendPaymentRef" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="转账编号/支票号">
+      </div>
+    </div>
+  </div>
+  <div id="invVoucherReceiptSection" style="display:none;margin:.5rem 0">
+    <div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">上传付款截图/凭证（可选，也可以创建后再上传）：</div>
+    <div id="invVrDropZone" style="border:2px dashed var(--gray-200);border-radius:10px;padding:1rem;text-align:center;cursor:pointer;background:#fafafa;transition:all .2s" onclick="document.getElementById('invVrFileInput').click()" ondragover="event.preventDefault();this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" ondragleave="this.style.borderColor='var(--gray-200)';this.style.background='#fafafa'" ondrop="event.preventDefault();this.style.borderColor='var(--gray-200)';this.style.background='#fafafa';handleInvVrFiles(event.dataTransfer.files)">
+      <div style="font-size:.85rem;color:var(--gray-500)">点击选择 或 拖拽图片到此处</div>
+      <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">支持 JPG、PNG、PDF，可多选</div>
+      <input type="file" id="invVrFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleInvVrFiles(this.files)">
+    </div>
+    <div id="invVrPreviewGrid" style="display:none;margin-top:.4rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:.4rem"></div>
+  </div>
   <div id="invSendStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
-  <div style="margin:.75rem 0;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e">
+  <div id="invFlowHint" style="margin:.75rem 0;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e">
     <b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。
   </div>
   <div id="invPreviewSection" style="display:none;margin:.5rem 0">
     <div id="invPreviewInfoBox" style="display:none;margin-bottom:.5rem;padding:.5rem .75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.82rem;color:#1e40af;line-height:1.7"></div>
-    <div style="font-weight:700;font-size:.85rem;margin-bottom:.3rem">發票模板预览：</div>
+    <div style="font-weight:700;font-size:.85rem;margin-bottom:.3rem">发票模板预览：</div>
     <iframe id="invPreviewFrame" src="" style="width:100%;height:500px;border:1px solid var(--gray-200);border-radius:6px"></iframe>
   </div>
   <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
-    <button class="btn btn-green" id="invSendBtn" onclick="doSendInvoice()">📤 發送發票</button>
+    <button class="btn btn-green" id="invSendBtn" onclick="doSendInvoice()">📤 发送发票</button>
     <button class="btn" id="invPreviewBtn" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc" onclick="previewInvoiceTemplate()">🔍 预览模板</button>
     <button class="btn" onclick="closeModal('invSendModal')">关闭</button>
   </div>
 </div></div>
 
-<!-- 承包商發票 预览链接 Modal -->
+<!-- 承包商发票 预览链接 Modal -->
 <div class="modal-bg" id="dsInvPreviewModal" style="display:none" onclick="if(event.target===this)closeDsInvPreview()">
   <div class="modal" style="max-width:92vw;width:92vw;height:90vh;display:flex;flex-direction:column;padding:1rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-shrink:0">
@@ -3189,7 +3410,142 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- 承包商發票 Edit Modal (pre_generated) -->
+<!-- 付款凭证 上传/查看 Modal -->
+<div class="modal-bg" id="voucherReceiptModal" style="display:none" onclick="if(event.target===this)closeVoucherReceiptModal()">
+  <div class="modal" style="max-width:640px;width:95vw;max-height:90vh;overflow-y:auto">
+    <h2 style="margin:0 0 .3rem">📎 付款凭证 — <span id="vrInvNumber" style="font-family:monospace;color:var(--sky)"></span></h2>
+    <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem" id="vrWorkerInfo"></div>
+    <!-- Existing receipts -->
+    <div id="vrExistingReceipts"></div>
+    <!-- Upload area -->
+    <div style="margin:.75rem 0">
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">上传付款截图/凭证：</div>
+      <div id="vrDropZone" style="border:2px dashed var(--gray-200);border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer;background:#fafafa;transition:all .2s" onclick="document.getElementById('vrFileInput').click()" ondragover="event.preventDefault();this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" ondragleave="this.style.borderColor='var(--gray-200)';this.style.background='#fafafa'" ondrop="event.preventDefault();this.style.borderColor='var(--gray-200)';this.style.background='#fafafa';handleVrFiles(event.dataTransfer.files)">
+        <div style="font-size:2rem;margin-bottom:.3rem">🖼️</div>
+        <div style="font-size:.85rem;color:var(--gray-500)">点击选择 或 拖拽图片到此处</div>
+        <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">支持 JPG、PNG、PDF，可多选</div>
+        <input type="file" id="vrFileInput" accept="image/*,.pdf" multiple style="display:none" onchange="handleVrFiles(this.files)">
+      </div>
+    </div>
+    <!-- Preview of selected files -->
+    <div id="vrPreviewArea" style="display:none;margin:.75rem 0">
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">待上传文件：</div>
+      <div id="vrPreviewGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.5rem"></div>
+    </div>
+    <!-- Actions -->
+    <div id="vrUploadActions" style="display:none;margin-top:.75rem;padding-top:.5rem;border-top:1px solid var(--gray-100)">
+      <button class="btn btn-green" id="vrUploadBtn" onclick="confirmUploadVoucherReceipts()" style="font-size:.85rem">✅ 确认上传</button>
+      <button class="btn" onclick="clearVrPending()" style="font-size:.85rem;margin-left:.5rem">取消选择</button>
+    </div>
+    <!-- Confirm voucher button (shown after upload, before final confirmation) -->
+    <div id="vrConfirmArea" style="display:none;margin-top:.75rem;padding-top:.5rem;border-top:1px solid var(--gray-100)">
+      <button class="btn btn-green" id="vrConfirmBtn" onclick="confirmVoucherLock()" style="font-size:.85rem;padding:.5rem 1.2rem">🔒 确认凭证（锁定）</button>
+      <span style="font-size:.75rem;color:var(--gray-400);margin-left:.5rem">确认后将无法修改</span>
+    </div>
+    <!-- Confirmed badge -->
+    <div id="vrConfirmedBadge" style="display:none;margin-top:.75rem;padding:.6rem 1rem;background:#dcfce7;border-radius:8px;text-align:center">
+      <span style="font-size:.85rem;color:#15803d;font-weight:600">✅ 凭证已确认锁定</span>
+    </div>
+    <div style="margin-top:.75rem;text-align:right">
+      <button class="btn" onclick="closeVoucherReceiptModal()" style="font-size:.85rem">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 付款凭证 编辑 Modal -->
+<div class="modal-bg" id="voucherEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:640px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">✏️ 编辑付款凭证</h2>
+      <button class="btn btn-outline" onclick="document.getElementById('voucherEditModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <input type="hidden" id="vouEditId">
+    <div style="display:grid;gap:.6rem">
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">发票日期</label>
+        <input type="date" id="vouEditDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 开始</label>
+          <input type="date" id="vouEditPeriodStart" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务周期 结束</label>
+          <input type="date" id="vouEditPeriodEnd" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+      <div>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务内容描述</label>
+        <textarea id="vouEditServiceDesc" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">服务金额 ($)</label>
+          <input type="number" id="vouEditAmount" step="0.01" min="0" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">报销费用 ($)</label>
+          <input type="number" id="vouEditExpenses" step="0.01" min="0" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">付款方式</label>
+          <select id="vouEditPayMethod" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#fff">
+            <option value="">-- 选择 --</option>
+            <option value="ACH">ACH</option>
+            <option value="Zelle">Zelle</option>
+            <option value="Check">Check</option>
+            <option value="Cash">Cash</option>
+            <option value="Wire">Wire</option>
+            <option value="Venmo">Venmo</option>
+            <option value="PayPal">PayPal</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">付款日期</label>
+          <input type="date" id="vouEditPayDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">参考编号</label>
+          <input id="vouEditPayRef" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button class="btn btn-green" onclick="saveVoucherEdit()">💾 保存</button>
+      <button class="btn" onclick="document.getElementById('voucherEditModal').style.display='none'">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 付款凭证 修改历史 Modal -->
+<div class="modal-bg" id="voucherHistoryModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-width:640px;width:95vw;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1rem">📜 修改历史 — <span id="vouHistoryNumber" style="font-family:monospace;color:var(--sky)"></span></h2>
+      <button class="btn btn-outline" onclick="document.getElementById('voucherHistoryModal').style.display='none'">✕ 关闭</button>
+    </div>
+    <div id="vouHistoryContent" style="font-size:.85rem"></div>
+  </div>
+</div>
+
+<!-- 付款凭证 PDF 预览 Modal -->
+<div class="modal-bg" id="voucherPdfModal" style="display:none" onclick="if(event.target===this){document.getElementById('voucherPdfFrame').src='about:blank';this.style.display='none'}">
+  <div class="modal" style="max-width:92vw;width:850px;height:90vh;display:flex;flex-direction:column;padding:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-shrink:0">
+      <h2 style="margin:0;font-size:1rem">📄 付款凭证 PDF</h2>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <a id="voucherPdfNewTab" href="#" target="_blank" rel="noopener" style="font-size:.82rem;color:#0369a1;text-decoration:none;padding:.3rem .7rem;border:1px solid #7dd3fc;border-radius:5px;background:#f0f9ff">↗ 新标签页</a>
+        <button class="btn btn-outline" onclick="document.getElementById('voucherPdfFrame').src='about:blank';document.getElementById('voucherPdfModal').style.display='none'" style="font-size:.82rem">✕ 关闭</button>
+      </div>
+    </div>
+    <iframe id="voucherPdfFrame" src="about:blank" style="flex:1;width:100%;border:1px solid var(--gray-200);border-radius:8px"></iframe>
+  </div>
+</div>
+
+<!-- 承包商发票 Edit Modal (pre_generated) -->
 <div class="modal-bg" id="invEditModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal" style="max-width:560px;width:95vw">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
@@ -3199,7 +3555,7 @@ tr:hover td{background:var(--sky-light)}
     <input type="hidden" id="invEditId">
     <div style="display:grid;gap:.6rem">
       <div>
-        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">發票日期</label>
+        <label style="font-size:.83rem;font-weight:600;display:block;margin-bottom:.25rem">发票日期</label>
         <input type="date" id="invEditDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
@@ -3705,7 +4061,7 @@ tr:hover td{background:var(--sky-light)}
           </div>
           <div class="field" style="margin-bottom:0">
             <label style="font-size:.78rem;font-weight:600">EIN / TIN</label>
-            <input id="trEntEin" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="XX-XXXXXXX">
+            <input id="trEntEin" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="XX-XXXXXXX" maxlength="10" oninput="let d=this.value.replace(/\D/g,'').slice(0,9);this.value=d.length>2?d.slice(0,2)+'-'+d.slice(2):d;">
           </div>
         </div>
         <div class="field" style="margin-bottom:.5rem">
@@ -3793,7 +4149,7 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div class="field" style="margin-bottom:.5rem">
           <label style="font-size:.78rem;font-weight:600">SSN / ITIN <span style="color:#dc2626">*</span></label>
-          <input id="trIndSsn" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="XXX-XX-XXXX">
+          <input id="trIndSsn" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="XXX-XX-XXXX" maxlength="11" oninput="let d=this.value.replace(/\D/g,'').slice(0,9);this.value=d.length>5?d.slice(0,3)+'-'+d.slice(3,5)+'-'+d.slice(5):d.length>3?d.slice(0,3)+'-'+d.slice(3):d;">
         </div>
         <div class="field" style="margin-bottom:.5rem">
           <label style="font-size:.78rem;font-weight:600">U.S. Address <span style="color:#dc2626">*</span></label>
@@ -5433,7 +5789,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <!-- Print header (hidden on screen) -->
   <div id="tsPrintHeader" style="display:none;margin-bottom:1.5rem">
-    <h2 style="text-align:center;color:#92400e;margin-bottom:.5rem">Prime Anchorpoint — Employee Timesheet</h2>
+    <h2 style="text-align:center;color:#92400e;margin-bottom:.5rem">Prime Anchor Point — Employee Timesheet</h2>
     <div style="display:flex;justify-content:space-between;font-size:.9rem;border-bottom:2px solid #92400e;padding-bottom:.5rem;margin-bottom:.5rem">
       <div><strong>Employee:</strong> <span id="tsPrintName"></span></div>
       <div><strong>ID:</strong> <span id="tsPrintId"></span></div>
@@ -6292,8 +6648,9 @@ const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
-  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time',
-  approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
+  'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
+  approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
   'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
 };
@@ -6325,9 +6682,12 @@ function showTab(t) {
   if (t === 'ts-verify')  loadTsVerify();
   if (t === 'ts-payment')  loadTsPayment();
   if (t === 'ts-dividend') loadTsDividend();
+  if (t === 'sys-dividend') loadSysDividend();
+  if (t === 'sys-dividend-history') loadSysDividendHistory();
   if (t === 'ts-history')  loadTsHistory();
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
   if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
+  if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -7769,7 +8129,7 @@ function shareJobPlatform(platform) {
   const link = document.getElementById('jobShareLink').value;
   const title = document.getElementById('jobShareTitle').textContent;
   const url = encodeURIComponent(link);
-  const text = encodeURIComponent('正在招聘：' + title + ' — Prime Anchorpoint');
+  const text = encodeURIComponent('正在招聘：' + title + ' — Prime Anchor Point');
   const platforms = {
     wa:     'https://wa.me/?text=' + text + '%20' + url,
     fb:     'https://www.facebook.com/sharer/sharer.php?u=' + url,
@@ -10511,7 +10871,7 @@ let _contractEditorPid = null;
 
 const DEFAULT_AGREEMENT_TEMPLATE = (partnerName, today) => `PARTNERSHIP AGREEMENT
 
-This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between Prime Anchorpoint LLC, a staffing and workforce solutions company ("Service Provider"), and ${partnerName} ("Partner").
+This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between Prime Anchor Point LLC, a staffing and workforce solutions company ("Service Provider"), and ${partnerName} ("Partner").
 
 1. SERVICES
 Service Provider agrees to provide staffing, recruitment, and workforce management services as mutually agreed upon by the parties in writing. Specific scope, timelines, and deliverables for each engagement shall be documented in separate statements of work.
@@ -10536,7 +10896,7 @@ This Agreement constitutes the entire understanding between the parties.
 
 SIGNATURES
 
-Prime Anchorpoint LLC (Service Provider)
+Prime Anchor Point LLC (Service Provider)
 Authorized Signature: /sig1/
 Date: /date1/
 
@@ -11182,8 +11542,19 @@ function renderEmployees(list) {
     <td style="font-size:.85rem;white-space:nowrap">${payLabel}</td>
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
-    <td>
-      <button class="emp-action-btn" onclick='openEmpActionMenu(event,${e.id},"${esc(e.first_name)} ${esc(e.last_name)}",${e.status!=='terminated' && USER_ROLE==='admin'})' title="操作">⋯</button>
+    <td style="white-space:nowrap">
+      ${e.worker_account_id ? (e.onboarded
+        ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>✅ 已入职</button>`
+        : `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 入职进度</button>`
+      ) : ''}
+      <button class="btn btn-sm" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;font-size:.72rem;margin:1px" onclick='openEmpModal(${e.id})'>✏️ 编辑信息</button>
+      <button class="btn btn-sm" style="background:#fff7ed;color:#9A3412;border:1px solid #fed7aa;font-size:.72rem;margin:1px" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 安排职位</button>
+      <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin:1px" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>⭐ 评分</button>
+      <button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.72rem;margin:1px" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📎 发送材料链接</button>
+      <button class="btn btn-sm" style="background:#f5f3ff;color:#7c3aed;border:1px solid #c4b5fd;font-size:.72rem;margin:1px" onclick='openSendRegLinkModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📱 发送注册链接</button>
+      <button class="btn btn-sm" style="background:#fffbeb;color:#b45309;border:1px solid #fcd34d;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📂 入职</button>
+      ${e.status!=='terminated' && USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='terminateEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🚪 办理离职</button>` : ''}
+      ${USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='deleteEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🗑️ 删除</button>` : ''}
     </td>
   </tr>`}).join('') : '<tr><td colspan="7" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
 }
@@ -11219,9 +11590,125 @@ document.getElementById('empMenuEdit').onclick     = () => { _closeEmpMenu(); op
 document.getElementById('empMenuJob').onclick      = () => { _closeEmpMenu(); openAssignJobModal(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuRate').onclick     = () => { _closeEmpMenu(); openRatingModal(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuDoc').onclick      = () => { _closeEmpMenu(); sendEmpDocLink(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuFiles').onclick    = () => { _closeEmpMenu(); openEmpFilesModal(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuRegLink').onclick  = () => { _closeEmpMenu(); openSendRegLinkModal(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuOnboard').onclick   = () => { _closeEmpMenu(); openEmpOnboarding(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuTerminate').onclick= () => { _closeEmpMenu(); terminateEmployee(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuDelete').onclick   = () => { _closeEmpMenu(); deleteEmployee(_empMenuCurrentId, _empMenuCurrentName); };
+
+// ── Employee Onboarding shortcut ──
+async function openEmpOnboarding(empId, empName) {
+  const emp = allEmployees.find(e => e.id === empId);
+  if (!emp) return;
+  let wid = emp.worker_account_id;
+  if (!wid) {
+    const res = await api(`/admin/employees/${empId}/ensure-worker-account`, { method: 'POST' });
+    if (!res || !res.worker_account_id) { showToast('初始化入职流程失败，请重试', 'error'); return; }
+    wid = res.worker_account_id;
+    emp.worker_account_id = wid;
+  }
+  openOnboardingModal(wid, empName);
+}
+
+// ── Employee Files Management ──
+const EMP_FILE_TYPE_LABELS = {
+  w9: 'W-9', ssn_card: 'SSN 卡', visa: '签证', passport: '护照',
+  green_card: '绿卡', ead_card: 'EAD 工卡', drivers_license: '驾照',
+  state_id: '州 ID', itin_letter: 'ITIN', contract: '合同', other: '其他'
+};
+let _empFilesWorkerId = null, _empFilesEmpId = null;
+
+async function openEmpFilesModal(empId, empName) {
+  _empFilesEmpId = empId;
+  document.getElementById('empFilesWorkerName').textContent = empName;
+  document.getElementById('empFilesFileInput').value = '';
+  document.getElementById('empFilesDocNumber').value = '';
+  document.getElementById('empFilesDocNotes').value = '';
+  document.getElementById('empFilesDocType').value = 'w9';
+  // Find worker_account_id from employee data
+  const emp = allEmployees.find(e => e.id === empId);
+  _empFilesWorkerId = emp?.worker_account_id || null;
+  if (!_empFilesWorkerId) {
+    document.getElementById('empFilesContent').innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem 0">该员工尚未关联工人账户，无法管理文件。</div>';
+    document.getElementById('empFilesModal').style.display = 'flex';
+    return;
+  }
+  await loadEmpFiles();
+  document.getElementById('empFilesModal').style.display = 'flex';
+}
+
+async function loadEmpFiles() {
+  if (!_empFilesWorkerId) return;
+  const container = document.getElementById('empFilesContent');
+  container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem">加载中…</div>';
+  const docs = await api(`/admin/worker-accounts/${_empFilesWorkerId}/id-docs`);
+  if (!docs || !docs.length) {
+    container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem 0">暂无文件</div>';
+    return;
+  }
+  // Group by doc_type
+  const groups = {};
+  for (const d of docs) {
+    if (!groups[d.doc_type]) groups[d.doc_type] = [];
+    groups[d.doc_type].push(d);
+  }
+  container.innerHTML = Object.entries(groups).map(([type, items]) => {
+    const label = EMP_FILE_TYPE_LABELS[type] || type;
+    return `<div style="margin-bottom:.75rem">
+      <div style="font-weight:700;font-size:.85rem;color:#333;margin-bottom:.3rem;display:flex;align-items:center;gap:.4rem">
+        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--sky)"></span>
+        ${esc(label)}
+        <span style="font-weight:400;font-size:.75rem;color:var(--gray-400)">(${items.length})</span>
+      </div>
+      ${items.map(d => `<div style="display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem;background:#fafafa;border:1px solid var(--gray-100);border-radius:6px;margin-bottom:.25rem">
+        <span style="font-size:.82rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${d.file_name ? `<a href="/api/admin/worker-accounts/${_empFilesWorkerId}/id-docs/${d.id}/file" target="_blank" style="color:var(--sky);text-decoration:none">${esc(d.file_name)}</a>` : '<span style="color:var(--gray-400)">无文件</span>'}
+        </span>
+        ${d.doc_number ? `<span style="font-size:.72rem;color:var(--gray-500);background:#f3f4f6;padding:1px 6px;border-radius:4px">${esc(d.doc_number)}</span>` : ''}
+        ${d.notes ? `<span style="font-size:.72rem;color:var(--gray-400)" title="${esc(d.notes)}">📝</span>` : ''}
+        <span style="font-size:.68rem;color:var(--gray-400)">${(d.created_at||'').slice(0,10)}</span>
+        <button onclick="deleteEmpFile(${d.id})" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:.78rem;padding:2px 4px" title="删除">✕</button>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function uploadEmpFile() {
+  if (!_empFilesWorkerId) return showToast('未关联工人账户', 'error');
+  const fileInput = document.getElementById('empFilesFileInput');
+  const file = fileInput.files[0];
+  if (!file) return showToast('请选择文件', 'error');
+  const btn = document.getElementById('empFilesUploadBtn');
+  btn.disabled = true; btn.textContent = '上传中…';
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('doc_type', document.getElementById('empFilesDocType').value);
+  fd.append('doc_number', document.getElementById('empFilesDocNumber').value);
+  fd.append('notes', document.getElementById('empFilesDocNotes').value);
+  try {
+    const r = await fetch(`/api/admin/worker-accounts/${_empFilesWorkerId}/id-docs`, {
+      method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${TOKEN}` }
+    });
+    const j = await r.json();
+    if (j.success) {
+      showToast('文件已上传');
+      fileInput.value = '';
+      document.getElementById('empFilesDocNumber').value = '';
+      document.getElementById('empFilesDocNotes').value = '';
+      await loadEmpFiles();
+    } else showToast(j.error || '上传失败', 'error');
+  } catch (e) { showToast('上传失败: ' + e.message, 'error'); }
+  btn.disabled = false; btn.textContent = '上传';
+}
+
+async function deleteEmpFile(docId) {
+  if (!confirm('确认删除此文件？')) return;
+  const r = await api(`/admin/worker-accounts/${_empFilesWorkerId}/id-docs/${docId}`, { method: 'DELETE' });
+  if (r?.success) {
+    showToast('已删除');
+    await loadEmpFiles();
+  } else showToast(r?.error || '删除失败', 'error');
+}
 
 // ── Send Registration Link modal ──
 function openSendRegLinkModal(empId, empName) {
@@ -12271,6 +12758,30 @@ async function viewEmployee(id) {
     </tr>`).join('')}
     </tbody></table>` : '<p class="empty" style="padding:1rem">暂无工时记录</p>'}
   </div>`;
+
+  // Voucher payment history
+  const voucherHist = emp.voucher_history || [];
+  if (voucherHist.length) {
+    const vTotal = voucherHist.reduce((s,v) => s + (v.total_amount||0), 0);
+    const vHours = voucherHist.reduce((s,v) => s + (v.total_hours||0), 0);
+    html += `<div class="form-section">
+      <h4>付款凭证记录 (${voucherHist.length} 笔)</h4>
+      <div style="display:flex;gap:1rem;margin-bottom:.75rem">
+        <div style="background:#fef3c7;border-radius:var(--radius);padding:.5rem 1rem;font-size:.85rem">累计金额 <strong style="color:#92400e">$${vTotal.toFixed(2)}</strong></div>
+        ${vHours > 0 ? `<div style="background:var(--sky-light);border-radius:var(--radius);padding:.5rem 1rem;font-size:.85rem">累计工时 <strong>${vHours.toFixed(1)}h</strong></div>` : ''}
+      </div>
+      <table><thead><tr><th>凭证号</th><th>服务描述</th><th>服务周期</th><th>工时</th><th>金额</th><th>创建时间</th></tr></thead><tbody>
+      ${voucherHist.map(v => `<tr style="background:#fffbeb">
+        <td style="font-family:monospace;font-size:.78rem;color:#92400e">${esc(v.invoice_number||'—')}</td>
+        <td>${esc(v.service_description||'—')}</td>
+        <td style="white-space:nowrap">${v.period_start||'—'} ~ ${v.period_end||'—'}</td>
+        <td>${v.total_hours > 0 ? v.total_hours.toFixed(1)+'h' : '—'}</td>
+        <td style="font-weight:600;color:#059669">$${(v.total_amount||0).toFixed(2)}</td>
+        <td style="font-size:.78rem;color:var(--gray-400)">${v.created_at ? new Date(v.created_at).toLocaleDateString() : '—'}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  }
 
   // Ratings section
   const ratings = await api(`/admin/employee-ratings?employee_id=${id}`);
@@ -13337,14 +13848,14 @@ function openTsEmail() {
   const emp = _tsLinkEmp;
   const subject = encodeURIComponent('请确认您的工时记录 / Please confirm your timesheet');
   const body = encodeURIComponent(
-    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchorpoint`
+    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchor Point`
   );
   window.open(`mailto:${emp ? emp.email : ''}?subject=${subject}&body=${body}`);
 }
 function openTsSms() {
   const url = document.getElementById('tsLinkUrl').textContent;
   const emp = _tsLinkEmp;
-  const msg = encodeURIComponent(`[Prime Anchorpoint] 请确认您的工时记录: ${url}`);
+  const msg = encodeURIComponent(`[Prime Anchor Point] 请确认您的工时记录: ${url}`);
   window.open(`sms:${emp ? emp.phone : ''}?body=${msg}`);
 }
 
@@ -13522,7 +14033,8 @@ async function markLaborPaid(id) {
 async function loadTsDividend() {
   const rows = await api('/admin/timesheet-sheets?stage=dividend');
   const tbody = document.getElementById('tsDividendTable');
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待分红工时单</td></tr>'; return; }
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待分红工时单</td></tr>'; }
+  else {
   // Fetch votes for each sheet in parallel
   const votesMap = {};
   await Promise.all(rows.map(async r => { votesMap[r.id] = await api(`/admin/timesheet-sheets/${r.id}/votes`); }));
@@ -13560,6 +14072,103 @@ async function loadTsDividend() {
       <td>${actionBtn}</td>
     </tr>`;
   }).join('');
+  } // end else
+  // Also load contractor invoice batches
+  loadDividendInvBatches();
+}
+
+async function loadDividendInvBatches() {
+  const wrap = document.getElementById('tsDividendInvBatchWrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--gray-400)">加载中…</div>';
+  const batches = await api('/admin/contractor-invoice-batches?stage=dividend_pending');
+  if (!Array.isArray(batches) || !batches.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">暂无待分红发票批次</div>';
+    return;
+  }
+  // Fetch votes for each batch in parallel
+  const votesMap = {};
+  await Promise.all(batches.map(async b => { votesMap[b.id] = await api(`/admin/contractor-invoice-batches/${b.id}/votes`); }));
+  wrap.innerHTML = batches.map(b => {
+    const vi = votesMap[b.id] || { votes: [], staff_count: 0 };
+    const approves = vi.votes.filter(v => v.vote_type === 'approve');
+    const dists = vi.votes.filter(v => v.vote_type === 'distributed');
+    const allApproved = approves.length >= vi.staff_count && vi.staff_count > 0;
+    const myApproved = approves.some(v => v.user_id === _currentUserId);
+    const myDistributed = dists.some(v => v.user_id === _currentUserId);
+    const approveCell = `<span class="badge ${allApproved?'badge-green':'badge-yellow'}">${approves.length}/${vi.staff_count}</span>`
+      + (approves.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${approves.map(v=>v.display_name||v.username).join(', ')}</div>` : '');
+    const distCell = allApproved
+      ? `<span class="badge ${dists.length>=vi.staff_count?'badge-green':'badge-yellow'}">${dists.length}/${vi.staff_count}</span>`
+        + (dists.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${dists.map(v=>v.display_name||v.username).join(', ')}</div>` : '')
+      : '<span style="font-size:.78rem;color:var(--gray-500)">等待全部无异议</span>';
+    let actionBtn = '';
+    if (!myApproved) {
+      actionBtn = `<button class="btn btn-sm btn-green" onclick="voteInvBatchApprove(${b.id})">无异议</button>`;
+    } else if (allApproved && !myDistributed) {
+      actionBtn = `<button class="btn btn-sm btn-accent" onclick="voteInvBatchDistributed(${b.id})">已分红</button>`;
+    } else if (myApproved && !allApproved) {
+      actionBtn = '<span class="badge badge-green">已投票</span>';
+    } else {
+      actionBtn = '<span class="badge badge-green">已确认</span>';
+    }
+    // Invoice details list
+    const invList = (b.invoices || []).map(inv =>
+      `<tr style="font-size:.78rem;border-bottom:1px solid var(--gray-100)">
+        <td style="padding:.25rem .5rem;font-family:monospace;color:var(--sky)">${esc(inv.invoice_number)}</td>
+        <td style="padding:.25rem .5rem">${esc(inv.worker_name||inv.worker_username||'—')}</td>
+        <td style="padding:.25rem .5rem">${esc(inv.invoice_date)}</td>
+        <td style="padding:.25rem .5rem;max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(inv.service_description)}</td>
+        <td style="padding:.25rem .5rem;text-align:right;font-weight:600;color:#065f46">$${(+inv.total_amount).toFixed(2)}</td>
+      </tr>`
+    ).join('');
+    return `<div style="border:1px solid var(--gray-200);border-radius:8px;margin-bottom:1rem;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:1rem;padding:.75rem 1rem;background:#fefce8;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-weight:700;font-size:.92rem">${esc(b.batch_name)}</div>
+          <div style="font-size:.78rem;color:var(--gray-500)">${b.period_label ? esc(b.period_label) + ' · ' : ''}${b.invoice_count} 张发票 · 合计 <strong style="color:#065f46">$${(+b.total_amount).toFixed(2)}</strong> · 创建人: ${esc(b.created_by)} · ${b.created_at?.slice(0,10)||''}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <div style="text-align:center"><div style="font-size:.72rem;color:var(--gray-400);margin-bottom:2px">无异议投票</div>${approveCell}</div>
+          <div style="text-align:center"><div style="font-size:.72rem;color:var(--gray-400);margin-bottom:2px">已分红确认</div>${distCell}</div>
+          <div>${actionBtn}</div>
+          <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="deleteInvBatch(${b.id},'${esc(b.batch_name)}')">🗑️ 删除</button>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--gray-50);font-size:.75rem;color:var(--gray-500)">
+          <th style="padding:.3rem .5rem;text-align:left">Invoice #</th>
+          <th style="padding:.3rem .5rem;text-align:left">工人</th>
+          <th style="padding:.3rem .5rem;text-align:left">日期</th>
+          <th style="padding:.3rem .5rem;text-align:left">服务描述</th>
+          <th style="padding:.3rem .5rem;text-align:right">金额</th>
+        </tr></thead>
+        <tbody>${invList}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+
+async function voteInvBatchApprove(id) {
+  const r = await api(`/admin/contractor-invoice-batches/${id}/vote-approve`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
+  loadDividendInvBatches();
+}
+
+async function voteInvBatchDistributed(id) {
+  const r = await api(`/admin/contractor-invoice-batches/${id}/vote-distributed`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_distributed ? '✅ 全部确认分红，发票已归档至历史' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
+  loadDividendInvBatches();
+}
+
+async function deleteInvBatch(id, name) {
+  if (!confirm(`确定删除批次「${name}」？发票将回到承包商发票页面。`)) return;
+  try {
+    const r = await api(`/admin/contractor-invoice-batches/${id}`, { method: 'DELETE' });
+    if (r.ok) { showToast('批次已删除'); loadDividendInvBatches(); } else throw new Error(r.error);
+  } catch(e) { alert('操作失败: ' + e.message); }
 }
 
 async function voteDividendApprove(id) {
@@ -13576,6 +14185,86 @@ async function voteDividendDistributed(id) {
   loadTsDividend();
 }
 
+// ─── 系统管理-待分红 ───
+async function loadSysDividend() {
+  const tbody = document.getElementById('sysDividendTable');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty">加载中…</td></tr>';
+  const rows = await api('/admin/timesheet-sheets?stage=dividend');
+  if (!Array.isArray(rows) || !rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待分红工时单</td></tr>'; return; }
+  const votesMap = {};
+  await Promise.all(rows.map(async r => { votesMap[r.id] = await api(`/admin/timesheet-sheets/${r.id}/votes`); }));
+  tbody.innerHTML = rows.map(r => {
+    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const vi = votesMap[r.id] || { votes: [], staff_count: 0 };
+    const approves = vi.votes.filter(v => v.vote_type === 'approve');
+    const dists = vi.votes.filter(v => v.vote_type === 'distributed');
+    const allApproved = approves.length >= vi.staff_count && vi.staff_count > 0;
+    const myApproved = approves.some(v => v.user_id === _currentUserId);
+    const myDistributed = dists.some(v => v.user_id === _currentUserId);
+    const approveCell = `<span class="badge ${allApproved?'badge-green':'badge-yellow'}">${approves.length}/${vi.staff_count}</span>`
+      + (approves.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${approves.map(v=>v.display_name||v.username).join(', ')}</div>` : '');
+    const distCell = allApproved
+      ? `<span class="badge ${dists.length>=vi.staff_count?'badge-green':'badge-yellow'}">${dists.length}/${vi.staff_count}</span>`
+        + (dists.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${dists.map(v=>v.display_name||v.username).join(', ')}</div>` : '')
+      : '<span style="font-size:.78rem;color:var(--gray-500)">等待全部无异议</span>';
+    let actionBtn = '';
+    if (!myApproved) {
+      actionBtn = `<button class="btn btn-sm btn-green" onclick="sysVoteDividendApprove(${r.id})">无异议</button>`;
+    } else if (allApproved && !myDistributed) {
+      actionBtn = `<button class="btn btn-sm btn-accent" onclick="sysVoteDividendDistributed(${r.id})">已分红</button>`;
+    } else if (myApproved && !allApproved) {
+      actionBtn = '<span class="badge badge-green">已投票</span>';
+    } else {
+      actionBtn = '<span class="badge badge-green">已确认</span>';
+    }
+    return `<tr>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td>${approveCell}</td>
+      <td>${distCell}</td>
+      <td>${actionBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function sysVoteDividendApprove(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/vote-approve`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
+  loadSysDividend();
+}
+
+async function sysVoteDividendDistributed(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/vote-distributed`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_distributed ? '✅ 全部确认分红，已归档至已分红' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
+  loadSysDividend();
+}
+
+// ─── 系统管理-已分红 ───
+async function loadSysDividendHistory() {
+  const tbody = document.getElementById('sysDividendHistoryTable');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty">加载中…</td></tr>';
+  const rows = await api('/admin/timesheet-sheets?stage=history');
+  if (!Array.isArray(rows) || !rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无已分红记录</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => {
+    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const srcBadge = r.source === 'voucher' ? ' <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:600">付款凭证</span>' : '';
+    const amtCol = r.source === 'voucher' && r.total_amount ? `$${Number(r.total_amount).toFixed(2)}` : '';
+    return `<tr${r.source==='voucher'?' style="background:#fffbeb"':''}>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}${srcBadge}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h${amtCol?' <span style="color:#059669;font-size:.78rem">'+amtCol+'</span>':''}</td>
+      <td style="font-size:.78rem">${fmtDt(r.client_paid_at)}</td>
+      <td style="font-size:.78rem">${fmtDt(r.labor_paid_at)}</td>
+      <td style="font-size:.78rem;color:var(--gray-400)">${esc(r.staff_note||'—')}</td>
+    </tr>`;
+  }).join('');
+}
+
 // ─── 工时历史 ───
 async function loadTsHistory() {
   const rows = await api('/admin/timesheet-sheets?stage=history');
@@ -13583,11 +14272,13 @@ async function loadTsHistory() {
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无历史记录</td></tr>'; return; }
   tbody.innerHTML = rows.map(r => {
     const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
-    return `<tr>
+    const srcBadge = r.source === 'voucher' ? ' <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:600">付款凭证</span>' : '';
+    const amtCol = r.source === 'voucher' && r.total_amount ? `$${Number(r.total_amount).toFixed(2)}` : '';
+    return `<tr${r.source==='voucher'?' style="background:#fffbeb"':''}>
       <td>${name}</td>
-      <td>${esc(r.company_name||'—')}</td>
+      <td>${esc(r.company_name||'—')}${srcBadge}</td>
       <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
-      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h${amtCol?' <span style="color:#059669;font-size:.78rem">'+amtCol+'</span>':''}</td>
       <td style="font-size:.78rem">${fmtDt(r.client_paid_at)}</td>
       <td style="font-size:.78rem">${fmtDt(r.labor_paid_at)}</td>
       <td style="font-size:.78rem;color:var(--gray-400)">${esc(r.staff_note||'—')}</td>
@@ -14255,7 +14946,35 @@ async function loadWorkerAccounts() {
         : emp==='w2'&&(rf==='W-8BEN'||rf==='W-8BEN-E') ? 'W-2'
         : emp==='w2' ? 'W-2'
         : rf || '报税文件';
-      return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;white-space:nowrap;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${esc(filingLabel)}</button>`;
+      const filingBtn = `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;white-space:nowrap;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${esc(filingLabel)}</button>`;
+      let docBadge = '';
+      if (emp === '1099') {
+        const isW8 = rf==='W-8BEN'||rf==='W-8BEN-E'||rf==='Form 8233';
+        if (isW8) {
+          const w8Label = rf==='Form 8233' ? 'W-8BEN/8233' : rf==='W-8BEN-E' ? 'W-8BEN-E' : 'W-8BEN';
+          const w8Signed = w.w8ben_task_status==='completed';
+          const w8Style = w8Signed ? 'background:#dcfce7;color:#15803d;border:1px solid #86efac' : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a';
+          docBadge = `<span style="cursor:pointer;display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;white-space:nowrap;${w8Style}" onclick="event.stopPropagation();openOnboardingModal(${w.id},'${esc(w.name||w.username)}')" title="${w8Signed?'已签署 '+w8Label:'待签署 '+w8Label}">${w8Signed?'✅ ':'📋 '}${esc(w8Label)}</span>`;
+        } else {
+          const w9Signed = w.w9_ds_status==='completed' || (w.compliance&&w.compliance.w9==='completed');
+          if (w9Signed) {
+            docBadge = `<a href="/api/admin/worker-accounts/${w.id}/w9-signed-pdf" target="_blank" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#dcfce7;color:#15803d;border:1px solid #86efac;text-decoration:none;white-space:nowrap" onclick="event.stopPropagation()" title="查看已签署 W-9">✅ W-9</a>`;
+          } else {
+            docBadge = `<span style="cursor:pointer;display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap" onclick="event.stopPropagation();openOnboardingModal(${w.id},'${esc(w.name||w.username)}')" title="W-9 待签署">📋 W-9</span>`;
+          }
+        }
+      } else if (emp === 'w2') {
+        const i9Signed = w.i9_compliance_doc_status==='approved'||w.i9_compliance_doc_status==='completed';
+        const i9Submitted = w.i9_compliance_doc_status==='pending';
+        if (i9Signed && w.i9_compliance_doc_id) {
+          docBadge = `<a href="/api/admin/compliance-docs/${w.i9_compliance_doc_id}/download" target="_blank" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#dcfce7;color:#15803d;border:1px solid #86efac;text-decoration:none;white-space:nowrap" onclick="event.stopPropagation()" title="查看 I-9">✅ I-9</a>`;
+        } else if (i9Submitted && w.i9_compliance_doc_id) {
+          docBadge = `<a href="/api/admin/compliance-docs/${w.i9_compliance_doc_id}/download" target="_blank" style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fde68a;text-decoration:none;white-space:nowrap" onclick="event.stopPropagation()" title="查看 I-9（待审核）">📋 I-9</a>`;
+        } else {
+          docBadge = `<span style="cursor:pointer;display:inline-block;padding:1px 6px;border-radius:4px;font-size:.7rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap" onclick="event.stopPropagation();openOnboardingModal(${w.id},'${esc(w.name||w.username)}')" title="I-9 待签署">📋 I-9</span>`;
+        }
+      }
+      return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">${filingBtn}${docBadge}</div>`;
     })()}</td>
     <td style="font-size:.78rem;white-space:nowrap;text-align:center">${(() => {
       const isCitizen = w.tax_status === 'citizen' || w.tax_status === 'us_citizen' || w.work_status === 'citizen';
@@ -14373,6 +15092,7 @@ function openOnboardingTaskPreview(taskKey, title) {
   document.getElementById('onboardingPreviewModal').classList.add('show');
 }
 let _onboardingRecommendedForm = null;
+let _onboardingApplicantType = null;
 
 async function refreshOnboardingModal() {
   let tasks, rows, intvInfo, taxResData;
@@ -14397,6 +15117,7 @@ async function refreshOnboardingModal() {
   _onboardingWorkerData = w || null;
   _onboardingInterviewInfo = intvInfo || null;
   _onboardingRecommendedForm = (taxResData && taxResData.recommended_form) || null;
+  _onboardingApplicantType = (taxResData && taxResData.applicant_type) || null;
 
   const hasTasks = Array.isArray(tasks) && tasks.length > 0;
   // Use server-side onboarded flag (checks only assigned tasks) for accurate allDone state
@@ -15156,6 +15877,7 @@ function trEntNext() {
     if (!document.getElementById('trEntLegalName').value.trim()) return showToast('请填写 Legal Business Name', 'error');
     if (!document.getElementById('trEntTaxClass').value) return showToast('请选择 Tax Classification', 'error');
     if (!document.getElementById('trEntEin').value.trim()) return showToast('请填写 EIN / TIN', 'error');
+    if (!/^\d{2}-\d{7}$/.test(document.getElementById('trEntEin').value.trim())) return showToast('EIN 格式应为 XX-XXXXXXX（9位数字）', 'error');
     if (!document.getElementById('trEntAddrStreet').value.trim()) return showToast('请填写 Street Address', 'error');
     if (!document.getElementById('trEntAddrCity').value.trim()) return showToast('请填写 City', 'error');
     if (!document.getElementById('trEntAddrState').value.trim()) return showToast('请填写 State', 'error');
@@ -17163,14 +17885,19 @@ async function openWorkPermitModal() {
   try {
     const data = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`);
     if (data && data.doc_type) {
-      // Pre-fill form fields so user can directly verify or edit
-      const dtEl = document.getElementById('wpDocType');
-      if (dtEl) { dtEl.value = data.doc_type; }
-      if (data.doc_number) document.getElementById('wpDocNumber').value = data.doc_number;
-      if (data.issue_date) document.getElementById('wpIssueDate').value = data.issue_date;
-      if (data.expiry_date) document.getElementById('wpExpiryDate').value = data.expiry_date;
-      if (data.category) document.getElementById('wpCategory').value = data.category;
-      if (data.notes) document.getElementById('wpNotes').value = data.notes;
+      // If verification was reset (no verified_at), show info but do NOT pre-fill form fields
+      const wasReset = !data.verified_at;
+
+      if (!wasReset) {
+        // Pre-fill form fields so user can directly verify or edit
+        const dtEl = document.getElementById('wpDocType');
+        if (dtEl) { dtEl.value = data.doc_type; }
+        if (data.doc_number) document.getElementById('wpDocNumber').value = data.doc_number;
+        if (data.issue_date) document.getElementById('wpIssueDate').value = data.issue_date;
+        if (data.expiry_date) document.getElementById('wpExpiryDate').value = data.expiry_date;
+        if (data.category) document.getElementById('wpCategory').value = data.category;
+        if (data.notes) document.getElementById('wpNotes').value = data.notes;
+      }
 
       // Show current info summary
       const info = document.getElementById('wpCurrentInfo');
@@ -17682,7 +18409,15 @@ async function openW9SendModal() {
       api('/admin/docuseal/my-templates')
     ]);
     const dsUrl = (cfg && cfg.url) || '';
-    const defaultId = cfg && cfg.w9_template_id ? String(Array.isArray(cfg.w9_template_id) ? cfg.w9_template_id[0] : cfg.w9_template_id) : '';
+    // Auto-select template based on applicant type: entity → w9 (company), individual → w9_individual
+    let defaultId = '';
+    if (_onboardingApplicantType === 'entity' && cfg && cfg.w9_template_id) {
+      defaultId = String(Array.isArray(cfg.w9_template_id) ? cfg.w9_template_id[0] : cfg.w9_template_id);
+    } else if (cfg && cfg.w9_individual_template_id) {
+      defaultId = String(Array.isArray(cfg.w9_individual_template_id) ? cfg.w9_individual_template_id[0] : cfg.w9_individual_template_id);
+    } else if (cfg && cfg.w9_template_id) {
+      defaultId = String(Array.isArray(cfg.w9_template_id) ? cfg.w9_template_id[0] : cfg.w9_template_id);
+    }
     const w9Templates = (myTemplates || []).filter(t => t.category === 'w9' || t.category === 'w9_individual');
     _renderW9TemplateList(w9Templates, dsUrl, defaultId);
   } catch(e) {
@@ -19003,21 +19738,56 @@ async function reviewContractorInvoice(id, status) {
   }
 }
 
-// ─── 承包商發票 Tab ───
+// ─── 承包商发票 Tab ───
 let _empInvWorkersLoaded = false;
 let _empInvWorkersCache = [];
+let _empInvAllRows = []; // cache all rows for filtering
+
+function filterInvWorkerList() {
+  const input = document.getElementById('empInvWorkerSearch');
+  const dd = document.getElementById('empInvWorkerDropdown');
+  const kw = input.value.trim().toLowerCase();
+  // Clear selection if user changes the text
+  document.getElementById('empInvWorkerSelect').value = '';
+  const filtered = _empInvWorkersCache.filter(w => {
+    const name = (w.name || w.username || '').toLowerCase();
+    const code = (w.worker_code || '').toLowerCase();
+    return name.includes(kw) || code.includes(kw);
+  }).slice(0, 20);
+  if (!filtered.length) {
+    dd.innerHTML = '<div style="padding:.6rem .8rem;color:var(--gray-400);font-size:.82rem">未找到匹配的承包商</div>';
+    dd.style.display = 'block';
+    return;
+  }
+  dd.innerHTML = filtered.map(w => {
+    const label = esc(w.name || w.username) + (w.emp_type === '1099' ? ' <span style="color:#92400e;font-size:.72rem">(1099)</span>' : w.emp_type === 'w2' ? ' <span style="color:#0369a1;font-size:.72rem">(W2)</span>' : '');
+    const code = w.worker_code ? `<span style="font-family:monospace;font-size:.72rem;color:var(--sky);margin-left:.4rem">${esc(w.worker_code)}</span>` : '';
+    return `<div style="padding:.45rem .8rem;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--gray-100)" onmousedown="selectInvWorker(${w.id})" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">${label}${code}</div>`;
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function selectInvWorker(id) {
+  const w = _empInvWorkersCache.find(w => w.id === id);
+  if (!w) return;
+  document.getElementById('empInvWorkerSelect').value = id;
+  document.getElementById('empInvWorkerSearch').value = w.name || w.username;
+  document.getElementById('empInvWorkerDropdown').style.display = 'none';
+}
+
+document.addEventListener('click', e => {
+  const dd = document.getElementById('empInvWorkerDropdown');
+  if (dd && !e.target.closest('#empInvWorkerSearch') && !e.target.closest('#empInvWorkerDropdown')) {
+    dd.style.display = 'none';
+  }
+});
 async function loadEmpInvoiceTab() {
-  // Load worker dropdown (once)
+  // Load worker list (once)
   if (!_empInvWorkersLoaded) {
     try {
       const workers = await api('/admin/worker-accounts');
-      const sel = document.getElementById('empInvWorkerSelect');
-      if (sel && Array.isArray(workers)) {
-        _empInvWorkersCache = workers;
-        sel.innerHTML = '<option value="">— 选择承包商 —</option>' +
-          workers.filter(w => w.active).map(w =>
-            `<option value="${w.id}">${esc(w.name || w.username)} ${w.emp_type === '1099' ? '(1099)' : w.emp_type === 'w2' ? '(W2)' : ''}</option>`
-          ).join('');
+      if (Array.isArray(workers)) {
+        _empInvWorkersCache = workers.filter(w => w.active);
         _empInvWorkersLoaded = true;
       }
     } catch(e) { console.error('Failed to load workers for invoice:', e); }
@@ -19026,8 +19796,53 @@ async function loadEmpInvoiceTab() {
   const el = document.getElementById('empInvoiceListWrap');
   el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
   const rows = await api('/admin/contractor-invoices');
-  if (!Array.isArray(rows) || !rows.length) {
-    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无承包商發票记录</div>';
+  _empInvAllRows = Array.isArray(rows) ? rows : [];
+  renderEmpInvoiceTable(_empInvAllRows);
+}
+
+function filterEmpInvoices() {
+  const from = document.getElementById('empInvFilterFrom')?.value || '';
+  const to = document.getElementById('empInvFilterTo')?.value || '';
+  const q = (document.getElementById('empInvFilterSearch')?.value || '').trim().toLowerCase();
+  let filtered = _empInvAllRows;
+  if (from) filtered = filtered.filter(r => r.invoice_date >= from);
+  if (to) filtered = filtered.filter(r => r.invoice_date <= to);
+  if (q) filtered = filtered.filter(r =>
+    (r.worker_name||'').toLowerCase().includes(q) ||
+    (r.worker_username||'').toLowerCase().includes(q) ||
+    (r.invoice_number||'').toLowerCase().includes(q) ||
+    (r.service_description||'').toLowerCase().includes(q) ||
+    (r.job_title||'').toLowerCase().includes(q)
+  );
+  renderEmpInvoiceTable(filtered);
+}
+
+function clearEmpInvFilter() {
+  const f = document.getElementById('empInvFilterFrom'); if (f) f.value = '';
+  const t = document.getElementById('empInvFilterTo'); if (t) t.value = '';
+  const s = document.getElementById('empInvFilterSearch'); if (s) s.value = '';
+  renderEmpInvoiceTable(_empInvAllRows);
+}
+
+function updateEmpInvSelectedCount() {
+  const checks = document.querySelectorAll('.empInv-chk:checked');
+  const el = document.getElementById('empInvSelectedCount');
+  if (el) {
+    const total = Array.from(checks).reduce((s, c) => s + parseFloat(c.dataset.amount || 0), 0);
+    el.textContent = checks.length ? `已选 ${checks.length} 张，合计 $${total.toFixed(2)}` : '';
+  }
+}
+
+function empInvToggleAll(chk) {
+  document.querySelectorAll('.empInv-chk').forEach(c => c.checked = chk.checked);
+  updateEmpInvSelectedCount();
+}
+
+function renderEmpInvoiceTable(rows) {
+  const el = document.getElementById('empInvoiceListWrap');
+  if (!rows.length) {
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无承包商发票记录</div>';
+    updateEmpInvSelectedCount();
     return;
   }
   const STATUS_BADGE = {
@@ -19040,6 +19855,7 @@ async function loadEmpInvoiceTab() {
   };
   el.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
     <thead><tr style="border-bottom:2px solid var(--gray-200)">
+      <th style="padding:.4rem .3rem;text-align:center;width:32px"><input type="checkbox" onchange="empInvToggleAll(this)" title="全选"></th>
       <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">Invoice #</th>
       <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">工人</th>
       <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">日期</th>
@@ -19051,16 +19867,20 @@ async function loadEmpInvoiceTab() {
     </tr></thead>
     <tbody>${rows.map(r => {
       const isDs = r.ds_envelope_id && r.ds_envelope_id !== '';
-      const source = isDs ? '<span style="padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:600">DocuSeal</span>' : '<span style="padding:1px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:.72rem;font-weight:600">手动提交</span>';
-      return `<tr style="border-bottom:1px solid var(--gray-100)">
+      const vConfirmed = r.voucher_confirmed === 1;
+      const source = r.source === 'voucher' ? '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:.72rem;font-weight:600">付款凭证</span>' : isDs ? '<span style="padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:600">DocuSeal</span>' : '<span style="padding:1px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:.72rem;font-weight:600">手动提交</span>';
+      const rowBg = vConfirmed ? 'background:#f0fdf4;' : '';
+      return `<tr style="border-bottom:1px solid var(--gray-100);${rowBg}">
+      <td style="padding:.5rem .3rem;text-align:center"><input type="checkbox" class="empInv-chk" value="${r.id}" data-amount="${r.total_amount||0}" onchange="updateEmpInvSelectedCount()"></td>
       <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
       <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}${r.sent_by ? `<br><span style="font-size:.7rem;color:var(--gray-400);font-weight:400">发送人: ${esc(r.sent_by)}</span>` : ''}</td>
       <td style="padding:.5rem;white-space:nowrap;color:var(--gray-500)">${esc(r.invoice_date)}</td>
       <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.service_description)}">${esc(r.service_description)}</td>
       <td style="padding:.5rem;white-space:nowrap">${source}</td>
       <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">${r.status === 'ds_pending' ? '<span style="color:var(--gray-400);font-weight:400">待填写</span>' : '$'+(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
-      <td style="padding:.5rem;text-align:center">${STATUS_BADGE[r.status]||r.status}</td>
+      <td style="padding:.5rem;text-align:center">${vConfirmed ? '<span style="padding:2px 8px;border-radius:4px;background:#dcfce7;color:#15803d;font-size:.72rem;font-weight:600">已确认</span>' : STATUS_BADGE[r.status]||r.status}</td>
       <td style="padding:.5rem;text-align:center;white-space:nowrap">
+        ${vConfirmed ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}',true)">📎 查看凭证</button> <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="markDividendDistributed(${r.id},'${esc(r.invoice_number)}')">💰 已分红</button> <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : `
         ${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-bottom:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button><br>` : ''}
         ${r.status === 'submitted' ? `
           <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
@@ -19072,29 +19892,186 @@ async function loadEmpInvoiceTab() {
         ` : r.status === 'pre_generated' ? `
           <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-bottom:2px" onclick="openInvEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button><br>
           <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem" onclick="revokeContractorInvoice(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回</button>
-        ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}
-        ${r.status !== 'approved' ? `<br><button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>` : ''}
+        ` : `${r.source !== 'voucher' ? `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>` : ''}`}
+        ${r.source === 'voucher' ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="openVoucherReceiptModal(${r.id},'${esc(r.invoice_number)}','${esc(r.worker_name||r.worker_username||'')}')">📎 付款凭证${r.voucher_receipt ? ' ✓' : ''}</button>${r.voucher_confirmed !== 1 ? ` <button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.72rem;margin-top:2px" onclick="openVoucherEditModal(${JSON.stringify(r).replace(/"/g,'&quot;')})">✏️ 编辑</button>` : ''}` : ''}
+        <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>
+        ${(r.status === 'approved' || r.source === 'voucher') && !r.dividend_pending && !r.dividend_distributed ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="markPendingDividend(${r.id},'${esc(r.invoice_number)}')">✅ 确认无误</button>` : ''}
+        ${r.dividend_pending && !r.dividend_distributed ? `<span style="display:inline-block;background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:2px 8px;border-radius:4px;font-size:.72rem;font-weight:600;margin-top:2px">⏳ 待分红</span>` : ''}
+        ${r.dividend_distributed ? `<span style="display:inline-block;background:#d1fae5;color:#065f46;border:1px solid #86efac;padding:2px 8px;border-radius:4px;font-size:.72rem;font-weight:600;margin-top:2px">💰 已分红</span>` : ''}
+        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin-top:2px" onclick="deleteContractorInvoice(${r.id},'${esc(r.invoice_number)}')">🗑️ 删除</button>
+        `}
       </td>
-    </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
+    </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="9" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
+    }).join('')}</tbody>
+  </table>`;
+  updateEmpInvSelectedCount();
+}
+
+// ── Mark invoice as dividend distributed ──
+async function markPendingDividend(id, invNum) {
+  if (!confirm(`确定将发票 ${invNum} 标记为待分红？\n确认无误后此发票将进入待分红流程。`)) return;
+  try {
+    const r = await api(`/admin/contractor-invoices/${id}/mark-pending-dividend`, { method: 'POST' });
+    if (r.ok) { showToast('✅ 已确认无误，进入待分红'); loadEmpInvoiceTab(); } else throw new Error(r.error);
+  } catch(e) { alert('操作失败: ' + e.message); }
+}
+
+async function markDividendDistributed(id, invNum) {
+  if (!confirm(`确定将发票 ${invNum} 标记为已分红？\n标记后将移至历史发票页面。`)) return;
+  try {
+    const r = await api(`/admin/contractor-invoices/${id}/mark-dividend`, { method: 'POST' });
+    if (r.ok) { showToast('已标记为已分红'); loadEmpInvoiceTab(); } else throw new Error(r.error);
+  } catch(e) { alert('操作失败: ' + e.message); }
+}
+
+// ── Undo dividend distributed ──
+async function undoDividendDistributed(id, invNum) {
+  if (!confirm(`确定将发票 ${invNum} 撤回分红标记？\n将移回承包商发票页面。`)) return;
+  try {
+    const r = await api(`/admin/contractor-invoices/${id}/undo-dividend`, { method: 'POST' });
+    if (r.ok) { showToast('已撤回分红标记'); loadEmpInvoiceHistoryTab(); } else throw new Error(r.error);
+  } catch(e) { alert('操作失败: ' + e.message); }
+}
+
+// ── Load historical (dividend distributed) invoices ──
+async function loadEmpInvoiceHistoryTab() {
+  const el = document.getElementById('empInvoiceHistoryListWrap');
+  el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
+  const rows = await api('/admin/contractor-invoices-history');
+  if (!Array.isArray(rows) || !rows.length) {
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无历史发票记录</div>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
+    <thead><tr style="border-bottom:2px solid var(--gray-200)">
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">Invoice #</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">工人</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">日期</th>
+      <th style="padding:.4rem .5rem;text-align:left">服务描述</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">来源</th>
+      <th style="padding:.4rem .5rem;text-align:right;white-space:nowrap">金额</th>
+      <th style="padding:.4rem .5rem;text-align:center">分红时间</th>
+      <th style="padding:.4rem .5rem;text-align:center">操作</th>
+    </tr></thead>
+    <tbody>${rows.map(r => {
+      const isDs = r.ds_envelope_id && r.ds_envelope_id !== '';
+      const source = r.source === 'voucher' ? '<span style="padding:1px 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:.72rem;font-weight:600">付款凭证</span>' : isDs ? '<span style="padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:600">DocuSeal</span>' : '<span style="padding:1px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:.72rem;font-weight:600">手动提交</span>';
+      return `<tr style="border-bottom:1px solid var(--gray-100);background:#f0fdf4">
+      <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
+      <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}</td>
+      <td style="padding:.5rem;white-space:nowrap;color:var(--gray-500)">${esc(r.invoice_date)}</td>
+      <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.service_description)}">${esc(r.service_description)}</td>
+      <td style="padding:.5rem;white-space:nowrap">${source}</td>
+      <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">$${(+r.total_amount).toFixed(2)}</td>
+      <td style="padding:.5rem;text-align:center;font-size:.75rem;color:var(--gray-500)">${r.dividend_distributed_at ? r.dividend_distributed_at.slice(0,10) : '—'}${r.dividend_distributed_by ? `<br><span style="font-size:.7rem">by ${esc(r.dividend_distributed_by)}</span>` : ''}</td>
+      <td style="padding:.5rem;text-align:center;white-space:nowrap">
+        ${r.source === 'voucher' ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="openVoucherPdf(${r.id})">📄 查看PDF</button> ` : ''}
+        ${isDs ? `<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin-top:2px" onclick="previewDsInvoice(${r.id})">🔍 预览文件</button> ` : ''}
+        <button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:.72rem;margin-top:2px" onclick="openVoucherHistoryModal(${r.id},'${esc(r.invoice_number)}')">📜 历史</button>
+        <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin-top:2px" onclick="undoDividendDistributed(${r.id},'${esc(r.invoice_number)}')">↩️ 撤回分红</button>
+      </td>
+    </tr>`;
     }).join('')}</tbody>
   </table>`;
 }
 
+// ── Batch submit selected invoices to dividend page ──
+async function batchSubmitDividend() {
+  const checks = document.querySelectorAll('.empInv-chk:checked');
+  if (!checks.length) { alert('请先勾选要提交分红的发票'); return; }
+  const ids = Array.from(checks).map(c => +c.value);
+  const total = Array.from(checks).reduce((s, c) => s + parseFloat(c.dataset.amount || 0), 0);
+  // Get date range from filter for label
+  const from = document.getElementById('empInvFilterFrom')?.value || '';
+  const to = document.getElementById('empInvFilterTo')?.value || '';
+  const periodLabel = from || to ? `${from || '?'} ~ ${to || '?'}` : '';
+  const batchName = prompt(`批次名称（${ids.length} 张发票，合计 $${total.toFixed(2)}）：`, `承包商发票批次 ${periodLabel || new Date().toISOString().slice(0,10)}`);
+  if (!batchName) return;
+  try {
+    const r = await api('/admin/contractor-invoice-batches', {
+      method: 'POST',
+      body: JSON.stringify({ invoice_ids: ids, batch_name: batchName, period_label: periodLabel })
+    });
+    if (r.ok) {
+      showToast(`已创建分红批次（${ids.length} 张发票）`);
+      loadEmpInvoiceTab();
+    } else throw new Error(r.error);
+  } catch(e) { alert('操作失败: ' + e.message); }
+}
+
+let _invMode = 'contractor'; // 'contractor', 'company', or 'voucher'
+function setInvMode(mode) {
+  _invMode = mode;
+  const labels = { contractor: 'invModeContractorLabel', company: 'invModeCompanyLabel', voucher: 'invModeVoucherLabel' };
+  const activeStyle = 'flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid #0ea5e9;border-radius:8px;cursor:pointer;background:#f0f9ff;font-size:.85rem;font-weight:600;color:#0369a1';
+  const inactiveStyle = 'flex:1;min-width:140px;display:flex;align-items:center;gap:.4rem;padding:.5rem .75rem;border:2px solid var(--gray-200);border-radius:8px;cursor:pointer;background:#fff;font-size:.85rem;font-weight:500;color:var(--gray-500)';
+  Object.entries(labels).forEach(([k, id]) => { document.getElementById(id).style.cssText = k === mode ? activeStyle : inactiveStyle; });
+  const amtSec = document.getElementById('invAmountSection');
+  const hint = document.getElementById('invFlowHint');
+  const dsFields = document.getElementById('invDocuSealFields');
+  const previewBtn = document.getElementById('invPreviewBtn');
+  const sendBtn = document.getElementById('invSendBtn');
+  const payInfoSec = document.getElementById('invPaymentInfoSection');
+  const vrSec = document.getElementById('invVoucherReceiptSection');
+  const voucherLangSec = document.getElementById('invVoucherLangSection');
+  if (mode === 'voucher') {
+    amtSec.style.display = '';
+    payInfoSec.style.display = '';
+    vrSec.style.display = '';
+    voucherLangSec.style.display = '';
+    dsFields.style.display = 'none';
+    previewBtn.style.display = 'none';
+    sendBtn.textContent = '💾 创建付款凭证';
+    hint.innerHTML = '<b>付款凭证：</b>公司内部记录已付款项，不发送给承包商签字。直接保存为已完成的发票记录。';
+  } else if (mode === 'company') {
+    amtSec.style.display = '';
+    payInfoSec.style.display = 'none';
+    vrSec.style.display = 'none';
+    voucherLangSec.style.display = 'none';
+    dsFields.style.display = '';
+    previewBtn.style.display = '';
+    sendBtn.textContent = '📤 发送发票';
+    hint.innerHTML = '<b>流程：</b>Admin填写服务周期、日期、服务内容和金额后点击「发送」，承包商收到邮件+短信通知 → 确认金额 → 签字 → 提交回来待审核。';
+  } else {
+    amtSec.style.display = 'none';
+    payInfoSec.style.display = 'none';
+    vrSec.style.display = 'none';
+    voucherLangSec.style.display = 'none';
+    dsFields.style.display = '';
+    previewBtn.style.display = '';
+    sendBtn.textContent = '📤 发送发票';
+    hint.innerHTML = '<b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。';
+  }
+}
+
 function openInvSendModal() {
-  const sel = document.getElementById('empInvWorkerSelect');
-  const workerId = sel.value;
-  if (!workerId) return showToast('请先选择承包商', 'error');
-  const workerName = sel.options[sel.selectedIndex].text;
+  const workerId = document.getElementById('empInvWorkerSelect').value;
+  if (!workerId) return showToast('请先搜索并选择承包商', 'error');
+  const wk = _empInvWorkersCache.find(w => w.id === parseInt(workerId));
+  const workerName = wk ? (wk.name || wk.username) : '';
   _invSendWorkerId = parseInt(workerId);
   _invSendWorkerName = workerName;
   _preGeneratedInvoiceNumber = null; // Reset pre-generated number when worker changes
   document.getElementById('invSendWorkerName').textContent = workerName;
   document.getElementById('invSendStatus').style.display = 'none';
-  document.getElementById('invSendBtn').textContent = '📤 發送發票';
+  document.getElementById('invSendBtn').textContent = '📤 发送发票';
   document.getElementById('invSendBtn').disabled = false;
   document.getElementById('invSendLang').value = 'contractor_invoice';
   document.getElementById('invSendDate').value = new Date().toISOString().slice(0, 10);
   document.getElementById('invSendServiceDesc').value = '';
+  document.getElementById('invSendAmount').value = '';
+  document.getElementById('invSendReimbursable').value = '';
+  document.getElementById('invSendHours').value = '';
+  document.getElementById('invSendRate').value = '';
+  document.getElementById('invSendPaymentMethod').value = '';
+  document.getElementById('invSendPaymentDate').value = '';
+  document.getElementById('invSendPaymentRef').value = '';
+  _invVrPendingFiles = [];
+  document.getElementById('invVrPreviewGrid').innerHTML = '';
+  document.getElementById('invVrPreviewGrid').style.display = 'none';
+  document.getElementById('invVrFileInput').value = '';
+  setInvMode('contractor');
+  document.querySelector('input[name="invMode"][value="contractor"]').checked = true;
   document.getElementById('invPreviewSection').style.display = 'none';
   document.getElementById('invPreviewFrame').src = '';
   document.getElementById('invPreviewBtn').textContent = '🔍 预览模板';
@@ -19110,38 +20087,122 @@ function openInvSendModal() {
   document.getElementById('invSendModal').classList.add('show');
 }
 let _invSendWorkerId = null, _invSendWorkerName = '', _preGeneratedInvoiceNumber = null;
+let _invVrPendingFiles = [];
+function handleInvVrFiles(files) {
+  for (const f of files) _invVrPendingFiles.push(f);
+  const grid = document.getElementById('invVrPreviewGrid');
+  grid.style.display = 'grid';
+  grid.innerHTML = '';
+  _invVrPendingFiles.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.style.cssText = 'position:relative;border:1px solid var(--gray-200);border-radius:6px;overflow:hidden;aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#f9fafb';
+    if (f.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(f);
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+      div.appendChild(img);
+    } else {
+      div.innerHTML = '<div style="text-align:center;font-size:.75rem;color:var(--gray-500)">📄 PDF</div>';
+    }
+    const btn = document.createElement('button');
+    btn.innerHTML = '✕';
+    btn.style.cssText = 'position:absolute;top:2px;right:2px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;line-height:18px;padding:0';
+    btn.onclick = () => { _invVrPendingFiles.splice(i, 1); handleInvVrFiles([]); };
+    div.appendChild(btn);
+    grid.appendChild(div);
+  });
+  if (!_invVrPendingFiles.length) grid.style.display = 'none';
+}
 
 async function doSendInvoice() {
   if (!_invSendWorkerId) return;
-  const email = document.getElementById('invSendEmail').value.trim();
-  const phone = document.getElementById('invSendPhone').value.trim();
   const periodStart = document.getElementById('invSendPeriodStart').value;
   const periodEnd = document.getElementById('invSendPeriodEnd').value;
   const invoiceDate = document.getElementById('invSendDate').value.trim();
   const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
-  if (!email) { showToast('请填写承包商邮箱', 'error'); return; }
   if (!periodStart || !periodEnd) { showToast('请填写服务周期 Period From / Period To', 'error'); return; }
-  if (!invoiceDate) { showToast('请选择發票日期', 'error'); return; }
+  if (!invoiceDate) { showToast('请选择发票日期', 'error'); return; }
   if (!serviceDesc) { showToast('请填写服务内容描述', 'error'); return; }
+  const quotedAmount = document.getElementById('invSendAmount').value.trim();
+  const reimbursableAmount = document.getElementById('invSendReimbursable').value.trim();
+  if ((_invMode === 'company' || _invMode === 'voucher') && !quotedAmount) { showToast('请填写服务金额', 'error'); return; }
+
+  // Voucher mode: direct save without DocuSeal
+  if (_invMode === 'voucher') {
+    const total = (parseFloat(quotedAmount) || 0) + (parseFloat(reimbursableAmount) || 0);
+    const _pm = document.getElementById('invSendPaymentMethod').value;
+    const _pd = document.getElementById('invSendPaymentDate').value;
+    const _pr = document.getElementById('invSendPaymentRef').value.trim();
+    const _hrs = document.getElementById('invSendHours').value;
+    const _rt = document.getElementById('invSendRate').value;
+    if (!await showConfirm(`确认为 ${_invSendWorkerName} 创建付款凭证？\n\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n金额: $${total.toFixed(2)}${_hrs ? '\n工时: ' + _hrs + ' hrs' : ''}${_rt ? '\n费率: $' + _rt + '/hr' : ''}${_pm ? '\n付款方式: ' + _pm : ''}${_pd ? '\n付款日期: ' + _pd : ''}${_pr ? '\n参考编号: ' + _pr : ''}\n\n此记录将直接保存为已完成状态，不发送给承包商。`)) return;
+    const btn = document.getElementById('invSendBtn');
+    btn.disabled = true; btn.textContent = '创建中…';
+    const paymentMethod = document.getElementById('invSendPaymentMethod').value;
+    const paymentDate = document.getElementById('invSendPaymentDate').value;
+    const paymentRef = document.getElementById('invSendPaymentRef').value.trim();
+    const voucherLang = document.getElementById('invVoucherLang').value;
+    const invHours = document.getElementById('invSendHours').value;
+    const invRate = document.getElementById('invSendRate').value;
+    const r = await api('/admin/contractor-invoices/create-voucher', {
+      method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, quoted_amount: quotedAmount, reimbursable_amount: reimbursableAmount || '0', payment_method: paymentMethod, payment_date: paymentDate, payment_reference: paymentRef, voucher_lang: voucherLang, hours: invHours, rate: invRate })
+    });
+    btn.disabled = false; btn.textContent = '💾 创建付款凭证';
+    if (r && r.success) {
+      // Upload pending receipt files if any
+      if (_invVrPendingFiles.length > 0 && r.id) {
+        const fd = new FormData();
+        _invVrPendingFiles.forEach(f => fd.append('receipts', f));
+        try {
+          await fetch(`/api/admin/contractor-invoices/${r.id}/voucher-receipts`, { method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${TOKEN}` } });
+        } catch(e) { console.warn('Receipt upload failed:', e); }
+        _invVrPendingFiles = [];
+      }
+      const statusEl = document.getElementById('invSendStatus');
+      statusEl.style.display = 'block';
+      statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+      statusEl.innerHTML = `✅ 付款凭证已创建 (${r.invoice_number})`;
+      const tabStatus = document.getElementById('empInvSendStatus');
+      tabStatus.textContent = `✅ 已创建 ${r.invoice_number}`;
+      tabStatus.style.color = '#15803d';
+      loadEmpInvoiceTab();
+    } else {
+      showToast(r?.error || '创建失败', 'error');
+    }
+    return;
+  }
+
+  // DocuSeal modes (contractor / company)
+  const email = document.getElementById('invSendEmail').value.trim();
+  const phone = document.getElementById('invSendPhone').value.trim();
+  if (!email) { showToast('请填写承包商邮箱', 'error'); return; }
   const _langLabels = { contractor_invoice: '中文+英文', contractor_invoice_en: 'English', contractor_invoice_es: 'EN+ES' };
   const _selLang = document.getElementById('invSendLang').value;
   const invNumInfo = _preGeneratedInvoiceNumber ? `\nInvoice #: ${_preGeneratedInvoiceNumber}` : '';
-  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}${invNumInfo}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，填写金额并签字后提交。`)) return;
+  const modeLabel = _invMode === 'company' ? '公司预填金额' : '承包商填写金额';
+  const amtInfo = _invMode === 'company' ? `\n金额: $${quotedAmount}${reimbursableAmount ? ' + 报销 $' + reimbursableAmount : ''}` : '';
+  const actionDesc = _invMode === 'company' ? '确认金额并签字' : '填写金额并签字后提交';
+  if (!await showConfirm(`确认向 ${_invSendWorkerName} 发送承包商发票？\n\n模式: ${modeLabel}\n语言版本: ${_langLabels[_selLang] || _selLang}\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}${invNumInfo}\n服务周期: ${periodStart} ~ ${periodEnd}\n日期: ${invoiceDate}\n服务内容: ${serviceDesc}${amtInfo}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，${actionDesc}。`)) return;
   const btn = document.getElementById('invSendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const templateLang = document.getElementById('invSendLang').value;
   const sendBody = { worker_account_id: _invSendWorkerId, worker_email: email, worker_phone: phone || undefined, service_period_start: periodStart, service_period_end: periodEnd, invoice_date: invoiceDate, service_description: serviceDesc, template_lang: templateLang };
+  if (_invMode === 'company') {
+    sendBody.company_prefill = true;
+    sendBody.quoted_amount = quotedAmount;
+    if (reimbursableAmount) sendBody.reimbursable_amount = reimbursableAmount;
+  }
   if (_preGeneratedInvoiceNumber) sendBody.pre_generated_invoice_number = _preGeneratedInvoiceNumber;
   const r = await api('/admin/contractor-invoices/send-docuseal', {
     method: 'POST', body: JSON.stringify(sendBody)
   });
-  btn.disabled = false; btn.textContent = '📤 重新發送';
+  btn.disabled = false; btn.textContent = '📤 重新发送';
   if (r && r.success) {
     _preGeneratedInvoiceNumber = null; // Reset after successful send
     const statusEl = document.getElementById('invSendStatus');
     statusEl.style.display = 'block';
     statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
-    let msg = `✅ 發票已發送 (${r.invoice_number})`;
+    let msg = `✅ 发票已发送 (${r.invoice_number})`;
     if (r.emailSent) msg += '　📧 邮件已送达';
     if (r.smsSent) msg += '　📱 短信已送达';
     if (r.warnings && r.warnings.length) msg += `<br><span style="font-size:.78rem;color:#92400e">${r.warnings.join('；')}</span>`;
@@ -19195,7 +20256,7 @@ async function previewInvoiceTemplate() {
     infoBox.innerHTML = `<b>将预填入的数据 (Pre-filled Data):</b><br>` +
       `<b>语言版本:</b> ${langLabels[lang] || lang}　` +
       `<b>承包商:</b> ${esc(contractorName) || '—'}　` +
-      `<b>發票日期:</b> ${invoiceDate || '—'}　` +
+      `<b>发票日期:</b> ${invoiceDate || '—'}　` +
       `<b>服务周期:</b> ${periodStart || '—'} ~ ${periodEnd || '—'}<br>` +
       `<b>服务内容:</b> ${esc(serviceDesc) || '—'}<br>` +
       `<b>Invoice #:</b> <span style="font-weight:700;color:#065f46">${esc(_preGeneratedInvoiceNumber)}</span><br>` +
@@ -19317,6 +20378,139 @@ async function deleteContractorInvoice(id, invoiceNumber) {
   }
 }
 
+let _vrInvId = null, _vrPendingFiles = [], _vrReadOnly = false;
+
+async function openVoucherReceiptModal(invId, invoiceNumber, workerName, readOnly) {
+  _vrInvId = invId;
+  _vrPendingFiles = [];
+  _vrReadOnly = !!readOnly;
+  document.getElementById('vrInvNumber').textContent = invoiceNumber;
+  document.getElementById('vrWorkerInfo').textContent = workerName;
+  document.getElementById('vrPreviewArea').style.display = 'none';
+  document.getElementById('vrUploadActions').style.display = 'none';
+  document.getElementById('vrPreviewGrid').innerHTML = '';
+  document.getElementById('vrFileInput').value = '';
+  // Hide/show upload area based on read-only
+  document.getElementById('vrDropZone').parentElement.style.display = _vrReadOnly ? 'none' : '';
+  document.getElementById('vrConfirmArea').style.display = 'none';
+  document.getElementById('vrConfirmedBadge').style.display = _vrReadOnly ? '' : 'none';
+  // Load existing receipts
+  const container = document.getElementById('vrExistingReceipts');
+  container.innerHTML = '<div style="font-size:.82rem;color:var(--gray-400)">加载中…</div>';
+  const r = await api(`/admin/contractor-invoices/${invId}/voucher-receipts`);
+  if (r && r.receipts && r.receipts.length) {
+    container.innerHTML = `<div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">已上传凭证 (${r.receipts.length})：</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">${r.receipts.map((f, i) => {
+        const isPdf = f.filename.toLowerCase().endsWith('.pdf');
+        return `<div style="position:relative;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden;background:#fafafa">
+          ${isPdf
+            ? `<div onclick="window.open('/api/admin/contractor-invoices/${invId}/voucher-receipts/${f.filename}','_blank')" style="cursor:pointer;height:100px;display:flex;align-items:center;justify-content:center;font-size:2rem;background:#fff">📄</div>`
+            : `<img src="/api/admin/contractor-invoices/${invId}/voucher-receipts/${f.filename}" onclick="window.open(this.src,'_blank')" style="width:100%;height:100px;object-fit:cover;cursor:pointer;display:block">`}
+          <div style="padding:.3rem .4rem;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:.7rem;color:var(--gray-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(f.original_name || f.filename)}</span>
+            ${_vrReadOnly ? '' : `<button onclick="deleteVoucherReceipt(${invId},'${f.filename}')" style="background:none;border:none;cursor:pointer;font-size:.75rem;color:#dc2626;padding:0 2px" title="删除">✕</button>`}
+          </div>
+        </div>`;
+      }).join('')}</div>`;
+    // Show confirm button if not yet confirmed and has receipts
+    if (!_vrReadOnly) {
+      document.getElementById('vrConfirmArea').style.display = '';
+    }
+  } else {
+    container.innerHTML = '<div style="font-size:.82rem;color:var(--gray-400);padding:.5rem 0">暂无付款凭证</div>';
+  }
+  document.getElementById('voucherReceiptModal').style.display = 'flex';
+}
+
+async function confirmVoucherLock() {
+  if (!_vrInvId) return;
+  if (!confirm('确认锁定凭证？锁定后将无法上传或删除凭证文件。')) return;
+  const btn = document.getElementById('vrConfirmBtn');
+  btn.disabled = true; btn.textContent = '确认中…';
+  const r = await api(`/admin/contractor-invoices/${_vrInvId}/voucher-confirm`, { method: 'POST' });
+  if (r && r.success) {
+    showToast('凭证已确认锁定');
+    document.getElementById('vrConfirmArea').style.display = 'none';
+    document.getElementById('vrConfirmedBadge').style.display = '';
+    document.getElementById('vrDropZone').parentElement.style.display = 'none';
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '确认失败', 'error');
+  }
+  btn.disabled = false; btn.textContent = '🔒 确认凭证（锁定）';
+}
+
+function openVoucherPdf(invId) {
+  const url = `/api/admin/contractor-invoices/${invId}/voucher-pdf`;
+  document.getElementById('voucherPdfFrame').src = url + '#toolbar=1&navpanes=0&scrollbar=1';
+  document.getElementById('voucherPdfNewTab').href = url;
+  document.getElementById('voucherPdfModal').style.display = 'flex';
+}
+
+function closeVoucherReceiptModal() {
+  document.getElementById('voucherReceiptModal').style.display = 'none';
+  _vrPendingFiles = [];
+}
+
+function handleVrFiles(files) {
+  if (!files || !files.length) return;
+  for (const f of files) _vrPendingFiles.push(f);
+  renderVrPreviews();
+}
+
+function renderVrPreviews() {
+  const grid = document.getElementById('vrPreviewGrid');
+  grid.innerHTML = _vrPendingFiles.map((f, i) => {
+    const isPdf = f.name.toLowerCase().endsWith('.pdf');
+    const thumb = isPdf ? `<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:2rem;background:#fff">📄</div>` : `<img src="${URL.createObjectURL(f)}" style="width:100%;height:80px;object-fit:cover;display:block">`;
+    return `<div style="position:relative;border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;background:#f0f9ff">
+      ${thumb}
+      <div style="padding:.25rem .4rem;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:.68rem;color:var(--gray-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(f.name)}</span>
+        <button onclick="_vrPendingFiles.splice(${i},1);renderVrPreviews()" style="background:none;border:none;cursor:pointer;font-size:.75rem;color:#dc2626;padding:0 2px">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('vrPreviewArea').style.display = _vrPendingFiles.length ? '' : 'none';
+  document.getElementById('vrUploadActions').style.display = _vrPendingFiles.length ? '' : 'none';
+}
+
+function clearVrPending() {
+  _vrPendingFiles = [];
+  document.getElementById('vrFileInput').value = '';
+  renderVrPreviews();
+}
+
+async function confirmUploadVoucherReceipts() {
+  if (!_vrPendingFiles.length || !_vrInvId) return;
+  const btn = document.getElementById('vrUploadBtn');
+  btn.disabled = true; btn.textContent = '上传中…';
+  const fd = new FormData();
+  _vrPendingFiles.forEach(f => fd.append('receipts', f));
+  try {
+    const r = await fetch(`/api/admin/contractor-invoices/${_vrInvId}/voucher-receipts`, { method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    const j = await r.json();
+    if (j.success) {
+      showToast(`✅ 已上传 ${_vrPendingFiles.length} 个凭证`);
+      _vrPendingFiles = [];
+      renderVrPreviews();
+      openVoucherReceiptModal(_vrInvId, document.getElementById('vrInvNumber').textContent, document.getElementById('vrWorkerInfo').textContent);
+      loadEmpInvoiceTab();
+    } else showToast(j.error || '上传失败', 'error');
+  } catch (e) { showToast('上传失败: ' + e.message, 'error'); }
+  btn.disabled = false; btn.textContent = '✅ 确认上传';
+}
+
+async function deleteVoucherReceipt(invId, filename) {
+  if (!confirm('确认删除此凭证图片？')) return;
+  const r = await api(`/admin/contractor-invoices/${invId}/voucher-receipts/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+  if (r?.success) {
+    showToast('已删除');
+    openVoucherReceiptModal(invId, document.getElementById('vrInvNumber').textContent, document.getElementById('vrWorkerInfo').textContent);
+    loadEmpInvoiceTab();
+  } else showToast(r?.error || '删除失败', 'error');
+}
+
 function openInvEditModal(row) {
   document.getElementById('invEditId').value = row.id;
   document.getElementById('invEditDate').value = row.invoice_date || '';
@@ -19344,6 +20538,128 @@ async function saveInvEdit() {
   } else {
     showToast(r?.error || '保存失败', 'error');
   }
+}
+
+// ─── Voucher Edit & History ───
+function openVoucherEditModal(row) {
+  document.getElementById('vouEditId').value = row.id;
+  document.getElementById('vouEditDate').value = row.invoice_date || '';
+  document.getElementById('vouEditPeriodStart').value = row.service_period_start || '';
+  document.getElementById('vouEditPeriodEnd').value = row.service_period_end || '';
+  document.getElementById('vouEditServiceDesc').value = row.service_description || '';
+  document.getElementById('vouEditAmount').value = row.total_amount || '';
+  document.getElementById('vouEditExpenses').value = row.expenses || '';
+  document.getElementById('vouEditPayMethod').value = row.payment_method || '';
+  document.getElementById('vouEditPayDate').value = row.payment_date || '';
+  document.getElementById('vouEditPayRef').value = row.payment_reference || '';
+  document.getElementById('voucherEditModal').style.display = 'flex';
+}
+
+async function saveVoucherEdit() {
+  const id = document.getElementById('vouEditId').value;
+  const body = {
+    invoice_date: document.getElementById('vouEditDate').value || null,
+    service_period_start: document.getElementById('vouEditPeriodStart').value || null,
+    service_period_end: document.getElementById('vouEditPeriodEnd').value || null,
+    service_description: document.getElementById('vouEditServiceDesc').value || null,
+    total_amount: document.getElementById('vouEditAmount').value !== '' ? parseFloat(document.getElementById('vouEditAmount').value) : null,
+    expenses: document.getElementById('vouEditExpenses').value !== '' ? parseFloat(document.getElementById('vouEditExpenses').value) : null,
+    payment_method: document.getElementById('vouEditPayMethod').value || null,
+    payment_date: document.getElementById('vouEditPayDate').value || null,
+    payment_reference: document.getElementById('vouEditPayRef').value || null,
+  };
+  const r = await api(`/admin/contractor-invoices/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  if (r?.success) {
+    document.getElementById('voucherEditModal').style.display = 'none';
+    showToast('✅ 凭证已更新');
+    loadEmpInvoiceTab();
+  } else {
+    showToast(r?.error || '保存失败', 'error');
+  }
+}
+
+async function openVoucherHistoryModal(invId, invoiceNumber) {
+  document.getElementById('vouHistoryNumber').textContent = invoiceNumber;
+  const el = document.getElementById('vouHistoryContent');
+  el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:1rem">加载中…</div>';
+  document.getElementById('voucherHistoryModal').style.display = 'flex';
+  const resp = await api(`/admin/contractor-invoices/${invId}/edit-history`);
+  // Support both old (array) and new ({rows, invoice}) response format
+  const rows = Array.isArray(resp) ? resp : (resp.rows || []);
+  const inv = Array.isArray(resp) ? null : (resp.invoice || null);
+  if (!rows || !rows.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:2rem">暂无修改记录</div>';
+    return;
+  }
+  const actionIcons = { '创建付款凭证':'📄', '创建':'📄', '预生成':'📋', '发送DocuSeal':'📤', '上传凭证':'📎', '删除凭证':'🗑️', '确认付款凭证':'✅', '批准':'✅', '拒绝':'❌', '撤回':'↩️', '删除':'🗑️', '承包商签字完成':'✍️', '承包商拒签':'❌' };
+  const isAction = (fn) => !!actionIcons[fn];
+  // Separate action events and field edits
+  const actionRows = rows.filter(h => isAction(h.field_name));
+  const editRows = rows.filter(h => !isAction(h.field_name));
+  // Helper: build detail lines for create action from invoice data
+  function buildCreateDetails(inv) {
+    if (!inv) return '';
+    const lines = [];
+    const wn = inv.worker_name || inv.worker_username || '';
+    if (wn) lines.push(['承包商', wn]);
+    if (inv.service_description) lines.push(['服务内容', inv.service_description]);
+    if (inv.total_amount != null) lines.push(['金额', '$' + (+inv.total_amount).toFixed(2)]);
+    if (inv.invoice_date) lines.push(['发票日期', inv.invoice_date]);
+    if (inv.service_period_start || inv.service_period_end) lines.push(['服务周期', (inv.service_period_start||'') + ' ~ ' + (inv.service_period_end||'')]);
+    if (inv.hours_worked) lines.push(['工时', inv.hours_worked + ' hrs']);
+    if (inv.hourly_rate) lines.push(['费率', '$' + (+inv.hourly_rate).toFixed(2) + '/hr']);
+    if (inv.payment_method) lines.push(['付款方式', inv.payment_method]);
+    if (inv.payment_date) lines.push(['付款日期', inv.payment_date]);
+    if (inv.payment_reference) lines.push(['参考编号', inv.payment_reference]);
+    if (!lines.length) return '';
+    return `<div style="margin-top:.35rem;padding:.4rem .6rem;background:#f9fafb;border-radius:6px;border:1px solid var(--gray-100);font-size:.78rem">
+      ${lines.map(([k,v]) => `<div style="display:flex;gap:.5rem;padding:.15rem 0"><span style="color:var(--gray-400);min-width:4.5em">${esc(k)}:</span><span style="color:var(--gray-700);font-weight:500">${esc(v)}</span></div>`).join('')}
+    </div>`;
+  }
+  let html = '';
+  // Action timeline
+  if (actionRows.length) {
+    html += `<div style="margin-bottom:${editRows.length ? '1rem' : '0'}">
+      ${actionRows.map((h, i) => {
+        const icon = actionIcons[h.field_name] || '📝';
+        const dt = (h.changed_at || '').replace('T', ' ').replace(/\.\d+$/, '');
+        const isCreate = h.field_name === '创建付款凭证' || h.field_name === '创建';
+        // Check if detailed field entries already exist for this create action
+        const hasDetailFields = isCreate && editRows.some(e => e.changed_at === h.changed_at && ['承包商','服务内容','金额','发票日期','服务周期'].includes(e.field_name));
+        const detailHtml = (isCreate && !hasDetailFields) ? buildCreateDetails(inv) : '';
+        return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.6rem 0;${i < actionRows.length-1 ? 'border-bottom:1px solid var(--gray-100)' : ''}">
+          <div style="font-size:1.1rem;line-height:1;margin-top:.1rem">${icon}</div>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:.88rem">${esc(h.field_name)}</div>
+            ${h.new_value ? `<div style="color:var(--gray-500);font-size:.8rem;margin-top:.1rem">${esc(h.new_value)}</div>` : ''}
+            ${detailHtml}
+            <div style="color:var(--gray-400);font-size:.75rem;margin-top:.15rem">${dt}${h.changed_by ? ' · ' + esc(h.changed_by) : ''}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+  // Field-level edits table
+  if (editRows.length) {
+    html += `<div style="font-size:.82rem;font-weight:600;color:var(--gray-500);margin-bottom:.4rem">字段修改记录</div>
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead><tr style="border-bottom:2px solid var(--gray-200);background:#f9fafb">
+        <th style="padding:.4rem .5rem;text-align:left">时间</th>
+        <th style="padding:.4rem .5rem;text-align:left">字段</th>
+        <th style="padding:.4rem .5rem;text-align:left">原值</th>
+        <th style="padding:.4rem .5rem;text-align:left">新值</th>
+        <th style="padding:.4rem .5rem;text-align:left">操作人</th>
+      </tr></thead>
+      <tbody>${editRows.map(h => `<tr style="border-bottom:1px solid var(--gray-100)">
+        <td style="padding:.4rem .5rem;white-space:nowrap;color:var(--gray-500);font-size:.75rem">${h.changed_at}</td>
+        <td style="padding:.4rem .5rem;font-weight:600">${esc(h.field_name)}</td>
+        <td style="padding:.4rem .5rem;color:#dc2626;text-decoration:line-through;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${esc(h.old_value)}">${esc(h.old_value) || '<span style="color:var(--gray-300)">空</span>'}</td>
+        <td style="padding:.4rem .5rem;color:#15803d;max-width:150px;overflow:hidden;text-overflow:ellipsis" title="${esc(h.new_value)}">${esc(h.new_value)}</td>
+        <td style="padding:.4rem .5rem;color:var(--gray-500)">${esc(h.changed_by)}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
+  el.innerHTML = html;
 }
 
 // ─── Tax Document Modal (报税文件) ───
@@ -23562,7 +24878,7 @@ async function loadInvpList() {
             : '';
           const paidBtn = isPaid
             ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, true)">更新回执</button>`
-            : `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, false)">Paid</button>`;
+            : `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, false)">上传回执</button>`;
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
@@ -23645,8 +24961,8 @@ let _invpReceiptInvoiceId = null;
 
 function openInvpReceiptModal(invoiceId, isUpdate) {
   _invpReceiptInvoiceId = invoiceId;
-  document.getElementById('invpReceiptModalTitle').textContent = isUpdate ? '更新付款回执' : '标记已付款';
-  document.getElementById('invpReceiptSubmitBtn').textContent = isUpdate ? '更新回执' : '确认付款';
+  document.getElementById('invpReceiptModalTitle').textContent = isUpdate ? '更新付款回执' : '上传收款凭证';
+  document.getElementById('invpReceiptSubmitBtn').textContent = isUpdate ? '更新回执' : '上传并确认收款';
   document.getElementById('invpReceiptFile').value = '';
   // Show current receipt link if updating
   const currentWrap = document.getElementById('invpReceiptCurrentWrap');
