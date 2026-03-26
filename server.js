@@ -679,7 +679,7 @@ try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } ca
 try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`UPDATE employees SET employee_id = REPLACE(employee_id, 'STAFF-', 'WRK-') WHERE employee_id LIKE 'STAFF-%'`); } catch(e) {}
-// Fix employee_id date part to match hire_date (was off by 1 day due to UTC timezone bug)
+// Migration: fix employee_id date part to match hire_date (UTC timezone offset bug)
 try {
   const _fixRows = db.prepare("SELECT id, employee_id, hire_date FROM employees WHERE employee_id LIKE 'WRK-%' AND hire_date != '' AND hire_date IS NOT NULL").all();
   for (const e of _fixRows) {
