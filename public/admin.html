@@ -5701,7 +5701,10 @@ tr:hover td{background:var(--sky-light)}
     <div class="field-row">
       <div class="field">
         <label>SSN (9位数字)</label>
-        <input id="eSSN" placeholder="XXX-XX-XXXX 或 XXXXXXXXX" maxlength="11">
+        <div style="position:relative;display:flex;align-items:center">
+          <input id="eSSN" placeholder="XXX-XX-XXXX 或 XXXXXXXXX" maxlength="11" style="padding-right:2.2rem;width:100%" oninput="if(this.dataset.ssnMasked==='1'){delete this.dataset.ssnMasked;clearTimeout(_ssnHideTimer);document.getElementById('eSSNEye').textContent='👁';}">
+          <button type="button" id="eSSNEye" onclick="toggleSSNVisibility()" title="查看完整SSN" style="position:absolute;right:6px;background:none;border:none;cursor:pointer;color:#6b7280;font-size:1rem;line-height:1;padding:2px;display:none">👁</button>
+        </div>
       </div>
       <div class="field"><label>打卡 PIN (4-6位数字)</label><input id="ePin" type="password" placeholder="员工打卡时使用" maxlength="6"></div>
     </div>
@@ -11599,6 +11602,37 @@ document.getElementById('empMenuOnboard').onclick   = () => { _closeEmpMenu(); o
 document.getElementById('empMenuTerminate').onclick= () => { _closeEmpMenu(); terminateEmployee(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuDelete').onclick   = () => { _closeEmpMenu(); deleteEmployee(_empMenuCurrentId, _empMenuCurrentName); };
 
+// ── SSN reveal toggle (15-second auto-hide) ──
+let _ssnHideTimer = null;
+function toggleSSNVisibility() {
+  const inp = document.getElementById('eSSN');
+  const eye = document.getElementById('eSSNEye');
+  if (inp.dataset.ssnMasked === '1') {
+    // Reveal
+    const full = inp.dataset.ssnFull;
+    if (!full) { showToast('SSN 数据加载中，请稍候...', 'error'); return; }
+    inp.value = full;
+    delete inp.dataset.ssnMasked;
+    eye.textContent = '🙈';
+    clearTimeout(_ssnHideTimer);
+    _ssnHideTimer = setTimeout(() => {
+      const last4 = full.replace(/\D/g,'').slice(-4);
+      inp.value = `•••-••-${last4}`;
+      inp.dataset.ssnMasked = '1';
+      eye.textContent = '👁';
+    }, 15000);
+  } else {
+    // Hide immediately
+    clearTimeout(_ssnHideTimer);
+    const full = inp.dataset.ssnFull || inp.value;
+    const last4 = full.replace(/\D/g,'').slice(-4);
+    inp.value = `•••-••-${last4}`;
+    inp.dataset.ssnMasked = '1';
+    inp.dataset.ssnFull = inp.dataset.ssnFull || full;
+    eye.textContent = '👁';
+  }
+}
+
 // ── Employee Onboarding shortcut ──
 async function openEmpOnboarding(empId, empName) {
   const emp = allEmployees.find(e => e.id === empId);
@@ -11818,15 +11852,21 @@ function openEmpModal(id) {
     document.getElementById('eEmgRel').value   = e.emergency_relation||'';
     document.getElementById('eNotes').value    = e.notes||'';
     document.getElementById('eSSN').value      = '';
+    document.getElementById('eSSN').removeAttribute('data-ssn-full');
+    document.getElementById('eSSNEye').style.display = 'none';
     document.getElementById('ePin').value      = '';
-    // Fetch and pre-fill full SSN if stored
+    // Show masked SSN and reveal button if SSN is stored
     if (e.ssn_last4) {
+      document.getElementById('eSSN').value = `•••-••-${e.ssn_last4}`;
+      document.getElementById('eSSN').dataset.ssnMasked = '1';
+      document.getElementById('eSSNEye').style.display = '';
       api(`/admin/employees/${id}`).then(full => {
         if (full && full.ssn_full) {
-          const fmt = full.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3');
-          document.getElementById('eSSN').value = fmt;
+          document.getElementById('eSSN').dataset.ssnFull = full.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3');
         }
       });
+    } else {
+      delete document.getElementById('eSSN').dataset.ssnMasked;
     }
     // Extra phones/emails
     let ep=[]; try{ep=JSON.parse(e.extra_phones||'[]');}catch{}
@@ -11843,7 +11883,8 @@ function openEmpModal(id) {
     setDobValue('');
     ['eFirst','eMiddle','eLast','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
      'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin',
-     'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+     'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';delete el.dataset.ssnMasked;delete el.dataset.ssnFull;}});
+    document.getElementById('eSSNEye').style.display = 'none';
     document.getElementById('eHire').value = new Date().toLocaleDateString('en-CA');
     fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
@@ -12393,7 +12434,7 @@ async function saveEmployee() {
     emergency_phone: document.getElementById('eEmgPhone').value.trim(),
     emergency_relation: document.getElementById('eEmgRel').value.trim(),
     notes: document.getElementById('eNotes').value.trim(),
-    ssn: document.getElementById('eSSN').value.trim() || (id ? '__KEEP__' : ''),
+    ssn: (() => { const f = document.getElementById('eSSN'); return f.dataset.ssnMasked === '1' ? '__KEEP__' : (f.value.trim() || (id ? '__KEEP__' : '')); })(),
     pin: document.getElementById('ePin').value || (id ? '__KEEP__' : ''),
     social_media: {
       whatsapp:  document.getElementById('eSocialWhatsapp').value.trim(),
