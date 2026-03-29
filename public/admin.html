@@ -11506,7 +11506,7 @@ function filterEmployees() {
   let f = allEmployees;
   if (kw)   f = f.filter(e=> {
     const jobStr = (e.current_jobs||[]).map(j=>(j.job_title||'')+' '+(j.company_name||'')).join(' ');
-    return `${e.first_name} ${e.last_name} ${e.employee_id||''} ${jobStr}`.toLowerCase().includes(kw);
+    return `${e.first_name} ${e.middle_name||''} ${e.last_name} ${e.employee_id||''} ${jobStr}`.toLowerCase().includes(kw);
   });
   if (st)   f = f.filter(e=> e.status===st);
   if (company) f = f.filter(e=> (e.current_jobs||[]).some(j=>j.company_name===company));
@@ -11526,13 +11526,14 @@ function renderEmployees(list) {
     const workerCodeHtml = e.worker_code
       ? `<span style="font-family:monospace;font-size:.72rem;color:var(--sky);font-weight:600">${esc(e.worker_code)}</span>`
       : '';
+    const empFullName = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ');
     return `<tr>
     <td>
       <div style="font-weight:700;font-size:.88rem">${esc(e.employee_id||'—')}</div>
       ${workerCodeHtml}
     </td>
     <td class="emp-td-name" style="cursor:pointer" onclick='viewEmployee(${e.id})'>
-      <div class="emp-name">${esc(e.first_name)} ${esc(e.last_name)}</div>
+      <div class="emp-name">${esc(empFullName)}</div>
       <div class="emp-contact">${contactHtml||'<span style="color:var(--gray-300)">无联系方式</span>'}</div>
     </td>
     <td class="emp-td-job">
@@ -11544,14 +11545,14 @@ function renderEmployees(list) {
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
     <td style="white-space:nowrap">
       ${e.onboarded
-        ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>✅ 已入职</button>`
-        : `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 入职进度</button>`
+        ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(empFullName)}")'>✅ 已入职</button>`
+        : `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(empFullName)}")'>📋 入职进度</button>`
       }
       <button class="btn btn-sm" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;font-size:.72rem;margin:1px" onclick='openEmpModal(${e.id})'>✏️ 编辑信息</button>
-      <button class="btn btn-sm" style="background:#fff7ed;color:#9A3412;border:1px solid #fed7aa;font-size:.72rem;margin:1px" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📋 安排职位</button>
-      <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin:1px" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>⭐ 评分</button>
-      <button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.72rem;margin:1px" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📎 发送材料链接</button>
-      <button class="btn btn-sm" style="background:#f5f3ff;color:#7c3aed;border:1px solid #c4b5fd;font-size:.72rem;margin:1px" onclick='openSendRegLinkModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>📱 发送注册链接</button>
+      <button class="btn btn-sm" style="background:#fff7ed;color:#9A3412;border:1px solid #fed7aa;font-size:.72rem;margin:1px" onclick='openAssignJobModal(${e.id},"${esc(empFullName)}")'>📋 安排职位</button>
+      <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin:1px" onclick='openRatingModal(${e.id},"${esc(empFullName)}")'>⭐ 评分</button>
+      <button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.72rem;margin:1px" onclick='sendEmpDocLink(${e.id},"${esc(empFullName)}")'>📎 发送材料链接</button>
+      <button class="btn btn-sm" style="background:#f5f3ff;color:#7c3aed;border:1px solid #c4b5fd;font-size:.72rem;margin:1px" onclick='openSendRegLinkModal(${e.id},"${esc(empFullName)}")'>📱 发送注册链接</button>
       ${e.status!=='terminated' && USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='terminateEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🚪 办理离职</button>` : ''}
       ${USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='deleteEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🗑️ 删除</button>` : ''}
     </td>
@@ -12575,7 +12576,7 @@ async function viewEmployee(id) {
       <div style="display:flex;align-items:center;gap:1rem">
         <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;flex-shrink:0">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
         <div>
-          <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
+          <h3 style="color:var(--blue);font-size:1.2rem">${esc([emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' '))}</h3>
           <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
         </div>
       </div>
@@ -12824,7 +12825,7 @@ async function viewEmployee(id) {
     </div>`).join('') : '<p class="empty" style="padding:1rem">暂无评分记录，点击「+ 新增评分」开始评分</p>'}
   </div>`;
 
-  document.getElementById('empDetailTitle').textContent = `${emp.first_name} ${emp.last_name} (${emp.employee_id})`;
+  document.getElementById('empDetailTitle').textContent = `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')} (${emp.employee_id})`;
   document.getElementById('empDetailContent').innerHTML = html;
   document.getElementById('empDetailModal').classList.add('show');
   // Generate Manager Punch QR code
