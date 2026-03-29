@@ -5702,7 +5702,11 @@ tr:hover td{background:var(--sky-light)}
       <div class="field">
         <label>SSN (9位数字)</label>
         <input id="eSSN" placeholder="XXX-XX-XXXX 或 XXXXXXXXX" maxlength="11">
-        <div id="eSSNHint" style="font-size:.78rem;color:#059669;margin-top:3px;display:none">✅ 已存储，末四位：<strong id="eSSNLast4"></strong>（留空不修改）</div>
+        <div id="eSSNHint" style="font-size:.78rem;color:#059669;margin-top:3px;display:none">
+          ✅ 已存储，末四位：<strong id="eSSNLast4"></strong>
+          <button type="button" onclick="revealEmpSSN()" style="margin-left:.5rem;padding:1px 8px;font-size:.75rem;background:#f0fdf4;color:#166534;border:1px solid #86efac;border-radius:4px;cursor:pointer">👁 查看完整</button>
+          <span id="eSSNFull" style="margin-left:.5rem;font-family:monospace;font-weight:700;color:#dc2626;display:none"></span>
+        </div>
       </div>
       <div class="field"><label>打卡 PIN (4-6位数字)</label><input id="ePin" type="password" placeholder="员工打卡时使用" maxlength="6"></div>
     </div>
@@ -11599,6 +11603,21 @@ document.getElementById('empMenuRegLink').onclick  = () => { _closeEmpMenu(); op
 document.getElementById('empMenuOnboard').onclick   = () => { _closeEmpMenu(); openEmpOnboarding(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuTerminate').onclick= () => { _closeEmpMenu(); terminateEmployee(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuDelete').onclick   = () => { _closeEmpMenu(); deleteEmployee(_empMenuCurrentId, _empMenuCurrentName); };
+
+// ── Reveal full SSN in edit modal ──
+async function revealEmpSSN() {
+  const id = document.getElementById('empId').value;
+  if (!id) return;
+  const fullEl = document.getElementById('eSSNFull');
+  if (fullEl.style.display !== 'none') { fullEl.style.display = 'none'; return; }
+  const emp = await api(`/admin/employees/${id}`);
+  if (!emp || !emp.ssn_full) { showToast('未找到 SSN 数据', 'error'); return; }
+  const formatted = emp.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3');
+  fullEl.textContent = formatted;
+  fullEl.style.display = '';
+  // Auto-hide after 30 seconds
+  setTimeout(() => { fullEl.style.display = 'none'; }, 30000);
+}
 
 // ── Employee Onboarding shortcut ──
 async function openEmpOnboarding(empId, empName) {
