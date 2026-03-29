@@ -5702,11 +5702,6 @@ tr:hover td{background:var(--sky-light)}
       <div class="field">
         <label>SSN (9位数字)</label>
         <input id="eSSN" placeholder="XXX-XX-XXXX 或 XXXXXXXXX" maxlength="11">
-        <div id="eSSNHint" style="font-size:.78rem;color:#059669;margin-top:3px;display:none">
-          ✅ 已存储，末四位：<strong id="eSSNLast4"></strong>
-          <button type="button" onclick="revealEmpSSN()" style="margin-left:.5rem;padding:1px 8px;font-size:.75rem;background:#f0fdf4;color:#166534;border:1px solid #86efac;border-radius:4px;cursor:pointer">👁 查看完整</button>
-          <span id="eSSNFull" style="margin-left:.5rem;font-family:monospace;font-weight:700;color:#dc2626;display:none"></span>
-        </div>
       </div>
       <div class="field"><label>打卡 PIN (4-6位数字)</label><input id="ePin" type="password" placeholder="员工打卡时使用" maxlength="6"></div>
     </div>
@@ -11604,21 +11599,6 @@ document.getElementById('empMenuOnboard').onclick   = () => { _closeEmpMenu(); o
 document.getElementById('empMenuTerminate').onclick= () => { _closeEmpMenu(); terminateEmployee(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuDelete').onclick   = () => { _closeEmpMenu(); deleteEmployee(_empMenuCurrentId, _empMenuCurrentName); };
 
-// ── Reveal full SSN in edit modal ──
-async function revealEmpSSN() {
-  const id = document.getElementById('empId').value;
-  if (!id) return;
-  const fullEl = document.getElementById('eSSNFull');
-  if (fullEl.style.display !== 'none') { fullEl.style.display = 'none'; return; }
-  const emp = await api(`/admin/employees/${id}`);
-  if (!emp || !emp.ssn_full) { showToast('未找到 SSN 数据', 'error'); return; }
-  const formatted = emp.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3');
-  fullEl.textContent = formatted;
-  fullEl.style.display = '';
-  // Auto-hide after 30 seconds
-  setTimeout(() => { fullEl.style.display = 'none'; }, 30000);
-}
-
 // ── Employee Onboarding shortcut ──
 async function openEmpOnboarding(empId, empName) {
   const emp = allEmployees.find(e => e.id === empId);
@@ -11838,13 +11818,16 @@ function openEmpModal(id) {
     document.getElementById('eEmgRel').value   = e.emergency_relation||'';
     document.getElementById('eNotes').value    = e.notes||'';
     document.getElementById('eSSN').value      = '';
-    if (e.ssn_last4) {
-      document.getElementById('eSSNLast4').textContent = e.ssn_last4;
-      document.getElementById('eSSNHint').style.display = '';
-    } else {
-      document.getElementById('eSSNHint').style.display = 'none';
-    }
     document.getElementById('ePin').value      = '';
+    // Fetch and pre-fill full SSN if stored
+    if (e.ssn_last4) {
+      api(`/admin/employees/${id}`).then(full => {
+        if (full && full.ssn_full) {
+          const fmt = full.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3');
+          document.getElementById('eSSN').value = fmt;
+        }
+      });
+    }
     // Extra phones/emails
     let ep=[]; try{ep=JSON.parse(e.extra_phones||'[]');}catch{}
     let ee=[]; try{ee=JSON.parse(e.extra_emails||'[]');}catch{}
@@ -11861,7 +11844,6 @@ function openEmpModal(id) {
     ['eFirst','eMiddle','eLast','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
      'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin',
      'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    document.getElementById('eSSNHint').style.display = 'none';
     document.getElementById('eHire').value = new Date().toLocaleDateString('en-CA');
     fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
