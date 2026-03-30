@@ -20459,7 +20459,7 @@ async function openVoucherReceiptModal(invId, invoiceNumber, workerName, readOnl
         return `<div style="position:relative;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden;background:#fafafa">
           ${isPdf
             ? `<div onclick="window.open('/api/admin/contractor-invoices/${invId}/voucher-receipts/${f.filename}','_blank')" style="cursor:pointer;height:100px;display:flex;align-items:center;justify-content:center;font-size:2rem;background:#fff">📄</div>`
-            : `<img src="/api/admin/contractor-invoices/${invId}/voucher-receipts/${f.filename}" onclick="window.open(this.src,'_blank')" style="width:100%;height:100px;object-fit:cover;cursor:pointer;display:block">`}
+            : `<img src="/api/admin/contractor-invoices/${invId}/voucher-receipts/${f.filename}?token=${encodeURIComponent(TOKEN)}" onclick="window.open(this.src,'_blank')" style="width:100%;height:100px;object-fit:cover;cursor:pointer;display:block">`}
           <div style="padding:.3rem .4rem;display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:.7rem;color:var(--gray-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(f.original_name || f.filename)}</span>
             ${_vrReadOnly ? '' : `<button onclick="deleteVoucherReceipt(${invId},'${f.filename}')" style="background:none;border:none;cursor:pointer;font-size:.75rem;color:#dc2626;padding:0 2px" title="删除">✕</button>`}
