@@ -15890,14 +15890,16 @@ function trClearDownstream() {
 }
 
 function trSelectType(type) {
+  const alreadySelected = (type === 'individual' && document.getElementById('trTypeInd').checked)
+                       || (type === 'entity'     && document.getElementById('trTypeEnt').checked);
   document.getElementById('trTypeInd').checked = type === 'individual';
   document.getElementById('trTypeEnt').checked = type === 'entity';
   document.getElementById('trTypeIndLabel').style.borderColor = type === 'individual' ? '#854d0e' : 'var(--gray-200)';
   document.getElementById('trTypeIndLabel').style.background = type === 'individual' ? '#fffbeb' : '#fff';
   document.getElementById('trTypeEntLabel').style.borderColor = type === 'entity' ? '#854d0e' : 'var(--gray-200)';
   document.getElementById('trTypeEntLabel').style.background = type === 'entity' ? '#fffbeb' : '#fff';
-  // Clear all downstream fields when changing type
-  trClearDownstream();
+  // Only clear downstream fields when actually switching types (not on re-click of current type)
+  if (!alreadySelected) trClearDownstream();
   // Auto-show relevant sections
   document.getElementById('trStep2A').style.display = type === 'entity' ? '' : 'none';
   document.getElementById('trStep2B').style.display = type === 'individual' ? '' : 'none';
@@ -17138,6 +17140,14 @@ function trShowImportBanner(trData) {
 function trImportEmployeeData() {
   const e = _trEmpData;
   if (!e) return;
+
+  // If no applicant type selected yet, select 'individual' first so trClearDownstream
+  // runs before we fill fields (prevents a subsequent type-click from wiping the data).
+  // If individual is already selected this is a no-op (alreadySelected guard prevents clearing).
+  if (!document.getElementById('trTypeInd').checked && !document.getElementById('trTypeEnt').checked) {
+    trSelectType('individual');
+  }
+
   const empName = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ');
   if (empName) {
     const el = document.getElementById('trIndLegalName'); if (el) el.value = empName;
