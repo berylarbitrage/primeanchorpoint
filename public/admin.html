@@ -4017,15 +4017,7 @@ tr:hover td{background:var(--sky-light)}
   <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
     <div style="font-size:.78rem;font-weight:700;color:#854d0e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem;padding-bottom:.5rem;border-bottom:1px solid #fde68a">🏛️ 税务身份判定 Tax Status Wizard (1099 必填)</div>
 
-    <!-- Employee profile import banner -->
-    <div id="trImportBanner" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.7rem .9rem;margin-bottom:.8rem">
-      <div style="font-weight:700;color:#1e40af;font-size:.82rem;margin-bottom:.35rem">📋 检测到员工档案信息 / Employee Profile Data Available</div>
-      <div id="trImportBannerBody" style="font-size:.8rem;color:#374151;line-height:1.6"></div>
-      <div style="margin-top:.55rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-        <button type="button" style="background:#1d4ed8;color:#fff;border:none;border-radius:5px;font-size:.78rem;padding:3px 14px;cursor:pointer;font-weight:600" onclick="trImportEmployeeData()">📥 导入员工信息</button>
-        <button type="button" style="background:none;border:none;font-size:.78rem;color:#6b7280;cursor:pointer;padding:3px 4px;text-decoration:underline" onclick="document.getElementById('trImportBanner').style.display='none'">忽略</button>
-      </div>
-    </div>
+    <!-- Step 1: Applicant Type -->
 
     <!-- Step 1: Applicant Type -->
     <div id="trStep1">
@@ -4153,6 +4145,15 @@ tr:hover td{background:var(--sky-light)}
         </div>
       </div>
       <div id="trIndUsFields" style="display:none">
+        <!-- Import banner: shows when employee profile data is available -->
+        <div id="trImportBanner" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.6rem .8rem;margin-bottom:.7rem">
+          <div style="font-weight:700;color:#1e40af;font-size:.8rem;margin-bottom:.3rem">📋 检测到员工档案信息 / Profile Data Available</div>
+          <div id="trImportBannerBody" style="font-size:.79rem;color:#374151;line-height:1.55"></div>
+          <div style="margin-top:.45rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+            <button type="button" style="background:#1d4ed8;color:#fff;border:none;border-radius:5px;font-size:.78rem;padding:3px 14px;cursor:pointer;font-weight:600" onclick="trImportEmployeeData()">📥 导入员工信息</button>
+            <button type="button" style="background:none;border:none;font-size:.78rem;color:#6b7280;cursor:pointer;padding:2px 4px;text-decoration:underline" onclick="document.getElementById('trImportBanner').style.display='none'">忽略</button>
+          </div>
+        </div>
         <div class="field" style="margin-bottom:.5rem">
           <label style="font-size:.78rem;font-weight:600">Legal Name <span style="color:#dc2626">*</span></label>
           <input id="trIndLegalName" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
@@ -15913,6 +15914,7 @@ function trSelectIndStatus(s) {
     if (l) { l.style.borderColor = (v === s) ? '#854d0e' : 'var(--gray-200)'; l.style.background = (v === s) ? '#fffbeb' : '#fff'; }
   });
   document.getElementById('trIndUsFields').style.display = (s === 'citizen' || s === 'green_card') ? '' : 'none';
+  if (s === 'citizen' || s === 'green_card') trShowImportBanner();
   // Clear Steps 3 & 4 fields when changing identity status
   document.getElementById('trPresentInUs').value = '';
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptLastEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -17100,77 +17102,96 @@ async function openTaxResidencyModal() {
 
     trCalcFinalResult();
 
+    // If individual fields are visible (citizen/green_card path), show import banner
+    const indUsFields = document.getElementById('trIndUsFields');
+    if (indUsFields && indUsFields.style.display !== 'none') trShowImportBanner();
+  } else {
+    // No prior wizard data — banner will be triggered by trSelectIndStatus when user picks a status
   }
 
-  trShowImportBanner(trData);
   document.getElementById('taxResidencyModal').classList.add('show');
   captureModalState('taxResidencyModal');
 }
 
-// Show import banner with employee profile data
-function trShowImportBanner(trData) {
+// Get the best available source data for import (employee record first, worker account fallback)
+function _trGetSourceData() {
+  if (_trEmpData && (_trEmpData.first_name || _trEmpData.last_name || _trEmpData.address)) {
+    return _trEmpData;
+  }
+  const w = _onboardingWorkerData;
+  if (!w) return null;
+  // Build pseudo-employee data from worker account + its employee JOIN fields
+  const firstName = w.first_name || '';
+  const lastName  = w.last_name  || '';
+  // If JOIN returned no structured name, parse the display name as a fallback
+  let parsedFirst = firstName, parsedLast = lastName;
+  if (!parsedFirst && !parsedLast && w.name) {
+    const parts = (w.name || '').trim().split(/\s+/);
+    parsedFirst = parts[0] || '';
+    parsedLast  = parts.slice(1).join(' ') || '';
+  }
+  const hasAnyData = parsedFirst || parsedLast || w.city || w.state;
+  if (!hasAnyData) return null;
+  return {
+    first_name: parsedFirst, middle_name: '', last_name: parsedLast,
+    address: '', street2: '', city: w.city || '', state: w.state || '', zip: '',
+    ssn_last4: null, ssn_full: null
+  };
+}
+
+// Show import banner with best available profile data
+function trShowImportBanner() {
   const banner = document.getElementById('trImportBanner');
   const body = document.getElementById('trImportBannerBody');
   if (!banner || !body) return;
-  const e = _trEmpData;
-  if (!e) { banner.style.display = 'none'; return; }
+  const d = _trGetSourceData();
+  if (!d) { banner.style.display = 'none'; return; }
 
-  const empName = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ');
-  const empAddr = [e.address, e.city, e.state ? (e.zip ? e.state + ' ' + e.zip : e.state) : e.zip].filter(Boolean).join(', ');
-  const hasMeaningfulData = empName || empAddr;
-  if (!hasMeaningfulData) { banner.style.display = 'none'; return; }
-
-  // Check if wizard already has individual data entered (to show "overwrite" warning)
-  const wizName = (document.getElementById('trIndLegalName') || {}).value || '';
-  const hasExistingWizData = !!(trData && trData.applicant_type);
+  const empName = [d.first_name, d.middle_name, d.last_name].filter(Boolean).join(' ');
+  const addrParts = [d.address, d.city, d.state ? (d.zip ? d.state + ' ' + d.zip : d.state) : d.zip].filter(Boolean);
+  const empAddr = addrParts.join(', ');
+  if (!empName && !empAddr) { banner.style.display = 'none'; return; }
 
   const lines = [];
   if (empName) lines.push(`<strong>姓名 Name:</strong> ${esc(empName)}`);
   if (empAddr) lines.push(`<strong>地址 Address:</strong> ${esc(empAddr)}`);
-  if (e.ssn_last4) lines.push(`<strong>SSN:</strong> •••-••-${esc(e.ssn_last4)}`);
+  if (d.ssn_last4) lines.push(`<strong>SSN:</strong> •••-••-${esc(d.ssn_last4)}`);
   body.innerHTML = lines.join('<br>');
 
-  if (hasExistingWizData) {
-    body.innerHTML += `<div style="margin-top:.3rem;color:#1e40af;font-size:.78rem">↑ 点击导入将覆盖当前填写的姓名/地址信息</div>`;
-  }
+  const wizName = (document.getElementById('trIndLegalName') || {}).value || '';
+  if (wizName) body.innerHTML += `<div style="margin-top:.3rem;color:#1e40af;font-size:.77rem">↑ 导入将覆盖当前已填写的姓名/地址</div>`;
   banner.style.display = '';
 }
 
-// Import employee profile data into wizard fields
+// Import best available profile data into wizard fields
 function trImportEmployeeData() {
-  const e = _trEmpData;
-  if (!e) return;
+  const d = _trGetSourceData();
+  if (!d) { showToast('⚠️ 未找到可导入的员工信息', 'error'); return; }
 
-  // If no applicant type selected yet, select 'individual' first so trClearDownstream
-  // runs before we fill fields (prevents a subsequent type-click from wiping the data).
-  // If individual is already selected this is a no-op (alreadySelected guard prevents clearing).
+  // Ensure individual type selected (no-op if already selected; runs trClearDownstream if switching)
   if (!document.getElementById('trTypeInd').checked && !document.getElementById('trTypeEnt').checked) {
     trSelectType('individual');
   }
 
-  const empName = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ');
+  const empName = [d.first_name, d.middle_name, d.last_name].filter(Boolean).join(' ');
   if (empName) {
     const el = document.getElementById('trIndLegalName'); if (el) el.value = empName;
     const elEnt = document.getElementById('trEntLegalName'); if (elEnt) elEnt.value = empName;
   }
-  // Import SSN (use full if available, otherwise skip — user must enter manually)
-  if (e.ssn_full) {
-    const digits = (e.ssn_full || '').replace(/\D/g, '');
+  // Import full SSN if available (from employee record)
+  if (d.ssn_full) {
+    const digits = (d.ssn_full || '').replace(/\D/g, '');
     if (digits.length === 9) {
       const fmt = digits.slice(0,3) + '-' + digits.slice(3,5) + '-' + digits.slice(5);
       const ssnEl = document.getElementById('trIndSsn'); if (ssnEl) ssnEl.value = fmt;
     }
   }
-  const addrPairs = [['address','trIndAddrStreet','trEntAddrStreet'],['street2','trIndAddrSuite','trEntAddrSuite'],
-                     ['city','trIndAddrCity','trEntAddrCity'],['state','trIndAddrState','trEntAddrState'],['zip','trIndAddrZip','trEntAddrZip']];
-  addrPairs.forEach(([empField, indId, entId]) => {
-    const val = e[empField] || '';
-    if (val) {
-      const i = document.getElementById(indId); if (i) i.value = val;
-      const j = document.getElementById(entId); if (j) j.value = val;
-    }
+  [['address','trIndAddrStreet','trEntAddrStreet'],['street2','trIndAddrSuite','trEntAddrSuite'],
+   ['city','trIndAddrCity','trEntAddrCity'],['state','trIndAddrState','trEntAddrState'],['zip','trIndAddrZip','trEntAddrZip']
+  ].forEach(([f, iId, eId]) => {
+    const val = d[f] || '';
+    if (val) { const i = document.getElementById(iId); if (i) i.value = val; const j = document.getElementById(eId); if (j) j.value = val; }
   });
-  // Clear address validation status since fields changed
   ['trIndAddrStatus','trEntAddrStatus'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
   document.getElementById('trImportBanner').style.display = 'none';
   showToast('✅ 员工档案信息已导入', 'success');
@@ -17178,7 +17199,7 @@ function trImportEmployeeData() {
 
 // Check if wizard data conflicts with employee profile
 function trCheckConflicts() {
-  const e = _trEmpData;
+  const e = _trGetSourceData();
   if (!e) return null;
   if (!document.getElementById('trTypeInd').checked) return null;
   const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
@@ -17248,9 +17269,8 @@ function trConflictUseEmployee() {
 function trConflictEditEmployee() {
   closeModal('trConflictModal');
   closeModal('taxResidencyModal');
-  if (_trEmpData && _trEmpData.id) {
-    setTimeout(() => openEmpModal(_trEmpData.id), 150);
-  }
+  const empId = _trEmpData && _trEmpData.id;
+  if (empId) setTimeout(() => openEmpModal(empId), 150);
 }
 
 // Save tax residency from standalone modal
