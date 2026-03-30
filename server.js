@@ -10070,9 +10070,23 @@ app.get('/api/admin/contractor-invoices/:id/voucher-receipts', requireAdmin, (re
 });
 
 // Admin: view single voucher receipt file
-app.get('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', requireAdmin, (req, res) => {
-  const filePath = path.join(uploadsDir, req.params.filename);
+app.get('/api/admin/contractor-invoices/:id/voucher-receipts/:filename', (req, res) => {
+  // Support token in query param so <img> tags work without relying solely on cookies
+  const auth = req.headers.authorization;
+  let session = null;
+  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  if (!session) {
+    const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+    if (cookieMatch) session = getSession(cookieMatch[1]);
+  }
+  if (!session && req.query.token) session = getSession(req.query.token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  const filePath = path.join(uploadsDir, path.basename(req.params.filename));
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+  // Explicitly set Content-Type for common image formats
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+  if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
   res.sendFile(filePath);
 });
 
@@ -14335,6 +14349,10 @@ app.get('/api/admin/punch-photo/:filename', (req, res) => {
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
   const fp = path.join(punchPhotosDir, path.basename(req.params.filename));
   if (!fs.existsSync(fp)) return res.status(404).send('Not found');
+  // Explicitly set Content-Type for formats that mime may not know
+  const ext = path.extname(fp).toLowerCase();
+  const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' };
+  if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
   res.sendFile(fp);
 });
 
