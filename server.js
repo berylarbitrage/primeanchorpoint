@@ -16553,6 +16553,12 @@ app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'publi
 app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
 app.get('/sms-consent-proof', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-consent-proof.html')));
 
+// ─── A2P / 10DLC compliance pages (English-only, for Twilio/TCR campaign review) ───
+app.get('/a2p/register', (req, res) => res.sendFile(path.join(__dirname, 'public', 'a2p', 'register.html')));
+app.get('/a2p/sms-consent-proof', (req, res) => res.sendFile(path.join(__dirname, 'public', 'a2p', 'sms-consent-proof.html')));
+app.get('/a2p/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'a2p', 'sms-terms.html')));
+app.get('/a2p/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'a2p', 'privacy.html')));
+
 // POST /api/docuseal/webhook — DocuSeal event notifications (partner + worker contracts)
 // Supports both self-hosted events (submission.*, submitter.*) and cloud events (form.*)
 app.post('/api/docuseal/webhook', express.json(), async (req, res) => {

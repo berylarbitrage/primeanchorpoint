@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMS Consent Verification — Prime Anchor Point (A2P Compliance)</title>
+<meta name="description" content="Public proof of SMS opt-in flow for 10DLC A2P campaign compliance review. English-only compliance documentation for Prime Anchor Point Workforce Notifications.">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#0F2B5B;--blue-dark:#091D40;--blue-mid:#1A3F7A;--sky:#4A90D9;--accent:#F5A623;--green:#16a34a;--white:#fff;--gray-100:#f0f2f5;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:'DM Sans',sans-serif;color:var(--gray-800);background:var(--white);line-height:1.7}a{text-decoration:none;color:var(--sky)}a:hover{text-decoration:underline}
+.page-header{background:var(--blue-dark);padding:1.25rem 2rem;display:flex;align-items:center;gap:1rem}
+.header-logo{display:flex;align-items:center;gap:10px}
+.header-logo img{width:32px;height:32px;object-fit:contain}
+.header-logo span{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:.95rem;color:#fff}
+.header-logo span em{color:var(--sky);font-style:normal}
+.page-hero{background:var(--blue);padding:3.5rem 2rem 3rem;text-align:center}
+.page-hero h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:2rem;color:#fff;margin-bottom:.5rem}
+.page-hero p{color:rgba(255,255,255,.6);font-size:.9rem}
+.content-wrap{max-width:860px;margin:0 auto;padding:3rem 2rem 5rem}
+.content-wrap h2{font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:1.15rem;color:var(--blue);margin:2.5rem 0 .75rem;padding-bottom:.4rem;border-bottom:2px solid var(--gray-100)}
+.content-wrap h2:first-child{margin-top:0}
+.content-wrap p{font-size:.93rem;color:var(--gray-600);margin-bottom:.9rem}
+.content-wrap ul{margin:.5rem 0 1rem 1.5rem}
+.content-wrap ul li{font-size:.93rem;color:var(--gray-600);margin-bottom:.4rem}
+.info-box{background:#f0f6ff;border:2px solid var(--sky);border-radius:10px;padding:1.5rem 1.75rem;margin:0 0 2rem}
+.info-box h3{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;color:var(--blue);margin-bottom:.5rem;font-size:1rem}
+.info-box p{font-size:.9rem;color:var(--gray-600);margin-bottom:.4rem}
+.checklist-box{background:#f0fdf4;border:2px solid #86efac;border-radius:10px;padding:1.5rem 1.75rem;margin:0 0 2.5rem}
+.checklist-box h3{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;color:#065f46;margin-bottom:.75rem;font-size:1rem}
+.checklist-box ul{list-style:none;margin:0;padding:0}
+.checklist-box ul li{font-size:.9rem;color:#065f46;margin-bottom:.5rem;padding-left:1.6rem;position:relative;line-height:1.5}
+.checklist-box ul li::before{content:"\2713";position:absolute;left:0;font-weight:700;color:#16a34a}
+.proof-section{background:var(--gray-100);border:1px solid var(--gray-200);border-radius:10px;padding:1.5rem 1.75rem;margin:1.5rem 0}
+.proof-section h3{font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;color:var(--blue);margin-bottom:.75rem;font-size:1rem}
+.consent-demo{background:#f8faff;border:1px solid #e0eaff;border-radius:8px;padding:.75rem 1rem;margin:.75rem 0}
+.consent-demo label{display:flex;gap:.6rem;align-items:flex-start;cursor:default;font-size:.85rem;color:var(--gray-600);line-height:1.5}
+.consent-demo input[type="checkbox"]{margin-top:.25rem;flex-shrink:0}
+.flow-steps{display:flex;flex-direction:column;gap:.6rem;margin:.75rem 0}
+.flow-step{display:flex;align-items:flex-start;gap:.75rem;padding:.65rem .9rem;background:#fff;border:1px solid var(--gray-200);border-radius:8px}
+.flow-step .step-num{background:var(--sky);color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0}
+.flow-step .step-text{font-size:.88rem;color:var(--gray-600);line-height:1.5}
+.flow-step .step-text strong{color:var(--gray-800)}
+.link-box{display:inline-flex;align-items:center;gap:.5rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:.5rem .9rem;font-size:.88rem;color:#065f46;font-weight:600;margin:.3rem 0}
+.url-block{background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:1rem 1.25rem;margin-top:1.5rem}
+.url-block h4{font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:.9rem;color:var(--blue);margin-bottom:.5rem}
+.url-block ul{list-style:none;margin:0;padding:0}
+.url-block ul li{font-size:.88rem;margin-bottom:.35rem}
+.url-block ul li:last-child{margin-bottom:0}
+.sms-sample{background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:.85rem 1.1rem;margin:.6rem 0;font-size:.88rem;color:var(--gray-600);line-height:1.55}
+.sms-sample .sms-label{font-size:.78rem;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.3px;margin-bottom:.3rem}
+.lang-note{background:#fff8e1;border:1px solid #ffd54f;border-radius:8px;padding:.85rem 1.1rem;margin:1.25rem 0;font-size:.87rem;color:#5d4037;line-height:1.55}
+.page-footer{background:var(--blue-dark);padding:1.75rem 2rem;text-align:center;font-size:.8rem;color:rgba(255,255,255,.3)}
+.page-footer a{color:rgba(255,255,255,.5)}.page-footer a:hover{color:#fff}
+.legal-nav{display:flex;flex-wrap:wrap;gap:.5rem .75rem;justify-content:center;margin-top:.75rem}
+.legal-nav a{font-size:.78rem;color:rgba(255,255,255,.35)}.legal-nav a:hover{color:rgba(255,255,255,.8)}
+.legal-nav span{color:rgba(255,255,255,.15)}
+</style>
+</head>
+<body>
+<header class="page-header">
+  <a href="/a2p/sms-consent-proof" class="header-logo" style="text-decoration:none">
+    <img src="/logo.svg" alt="Prime Anchor Point">
+    <span>PRIME <em>ANCHOR POINT</em></span>
+  </a>
+</header>
+
+<div class="page-hero">
+  <h1>SMS Consent Verification</h1>
+  <p>Public proof of opt-in flow for 10DLC A2P campaign compliance review</p>
+</div>
+
+<div class="content-wrap">
+
+  <!-- Campaign Info Box -->
+  <div class="info-box">
+    <h3>Campaign Information</h3>
+    <p><strong>Brand:</strong> Prime Anchor Point</p>
+    <p><strong>Program:</strong> Prime Anchor Point Workforce Notifications</p>
+    <p><strong>Message Type:</strong> Transactional / operational SMS only &mdash; verification codes, job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to user inquiries.</p>
+    <p><strong>Public Opt-In Page:</strong> <a href="https://www.primeanchorpoint.com/a2p/register" target="_blank">https://www.primeanchorpoint.com/a2p/register</a></p>
+    <p>This page provides publicly verifiable documentation of how Prime Anchor Point collects SMS consent from end users. It is intended for carrier and campaign registry reviewers to verify our Call to Action (CTA) and opt-in compliance.</p>
+  </div>
+
+  <!-- Language Note -->
+  <div class="lang-note">
+    <strong>Language Notice for Reviewers:</strong> The compliance review pages referenced in this campaign are presented in English only. While Prime Anchor Point may support additional user-facing languages elsewhere on the website, the CTA and consent materials used for A2P review are English-only.
+  </div>
+
+  <!-- Reviewer Checklist -->
+  <div class="checklist-box">
+    <h3>Reviewer Checklist</h3>
+    <ul>
+      <li><strong><a href="https://www.primeanchorpoint.com/a2p/register" target="_blank">https://www.primeanchorpoint.com/a2p/register</a></strong> is the dedicated English-only opt-in page for this A2P campaign.</li>
+      <li>The SMS consent checkbox is <strong>optional</strong> and <strong>unchecked by default</strong>.</li>
+      <li>Consent is <strong>not required</strong> for employment or account creation.</li>
+      <li>The full disclosure text is displayed directly next to the checkbox and includes the program name, message types, frequency, rates, STOP/HELP instructions, and links to SMS Terms and Privacy Policy.</li>
+      <li>The live form can be verified directly at <a href="/a2p/register">/a2p/register</a>.</li>
+      <li><a href="/a2p/sms-terms">SMS Terms</a> and <a href="/a2p/privacy">Privacy Policy</a> are separate, publicly accessible English-only pages.</li>
+      <li>No non-English text appears on any of the A2P compliance review pages.</li>
+    </ul>
+  </div>
+
+  <!-- Public URLs -->
+  <div class="url-block" style="margin-top:0;margin-bottom:2rem">
+    <h4>Public URLs for Reviewer Verification</h4>
+    <ul>
+      <li><strong>Registration / Opt-In Form:</strong> <a href="/a2p/register" target="_blank">https://www.primeanchorpoint.com/a2p/register</a></li>
+      <li><strong>SMS Terms:</strong> <a href="/a2p/sms-terms" target="_blank">https://www.primeanchorpoint.com/a2p/sms-terms</a></li>
+      <li><strong>Privacy Policy:</strong> <a href="/a2p/privacy" target="_blank">https://www.primeanchorpoint.com/a2p/privacy</a></li>
+      <li><strong>This Proof Page:</strong> <a href="/a2p/sms-consent-proof" target="_blank">https://www.primeanchorpoint.com/a2p/sms-consent-proof</a></li>
+    </ul>
+  </div>
+
+  <!-- Section 1: Opt-In Flow -->
+  <h2>1. Opt-In Flow and Consent Language</h2>
+
+  <div class="proof-section">
+    <h3>Public Opt-In Page</h3>
+    <p>Workers opt in at the following publicly accessible, English-only URL:</p>
+    <div class="link-box"><a href="/a2p/register" target="_blank">https://www.primeanchorpoint.com/a2p/register</a></div>
+
+    <p style="margin-top:1rem">On this page, the user provides a phone number and may check the SMS consent checkbox. The checkbox is <strong>unchecked by default</strong> and is <strong>optional</strong> &mdash; it is not a condition of employment or account creation. The exact consent language displayed on the live form is:</p>
+
+    <div class="consent-demo">
+      <label>
+        <input type="checkbox" disabled>
+        <span>By checking this box, you agree to receive transactional SMS from Prime Anchor Point Workforce Notifications, including verification codes, job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to your direct inquiries. Message frequency varies. Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. View <a href="/a2p/sms-terms">SMS Terms</a> and <a href="/a2p/privacy">Privacy Policy</a>. Consent is not a condition of employment or account creation.</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="proof-section">
+    <h3>Step-by-Step Opt-In Flow</h3>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <div class="step-text"><strong>User visits</strong> <a href="/a2p/register">https://www.primeanchorpoint.com/a2p/register</a>.</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <div class="step-text"><strong>User fills in</strong> name, email, and mobile phone number.</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <div class="step-text"><strong>User optionally checks</strong> the SMS consent checkbox (unchecked by default). The full disclosure text &mdash; including program name, message types, frequency, rates, STOP/HELP instructions, and links to SMS Terms and Privacy Policy &mdash; is displayed directly next to the checkbox. Checking is optional and not required to register.</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">4</div>
+        <div class="step-text"><strong>User submits</strong> the registration form. The consent status (<code>sms_consent: true/false</code>) and a timestamp are recorded in our database.</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">5</div>
+        <div class="step-text"><strong>Recurring transactional SMS</strong> (job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts) are sent <strong>only</strong> to users who checked the consent checkbox.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 2: OTP Distinction -->
+  <h2>2. Verification Codes (OTP) vs. Recurring SMS</h2>
+
+  <div class="proof-section">
+    <p>Prime Anchor Point sends two categories of text messages. It is important to distinguish between them:</p>
+    <ul>
+      <li><strong>Recurring transactional SMS</strong> &mdash; Job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to user inquiries. These are sent <strong>only after the user explicitly opts in</strong> by checking the SMS consent checkbox.</li>
+      <li><strong>One-time verification codes (OTP)</strong> &mdash; Account registration verification, login verification, and identity verification codes. These are sent <strong>only when the user initiates an account action</strong> (such as registering, logging in, or verifying identity). OTPs do not require the SMS consent checkbox and are standard security messages triggered by user action.</li>
+    </ul>
+    <p>Opting out of recurring SMS via STOP does not prevent one-time verification codes that the user initiates.</p>
+  </div>
+
+  <!-- Section 3: Message Types -->
+  <h2>3. Message Types and Frequency</h2>
+
+  <div class="proof-section">
+    <h3>Transactional / Operational Messages Only</h3>
+    <ul>
+      <li><strong>Verification Codes:</strong> Account registration, login, and identity verification</li>
+      <li><strong>Job Assignment Alerts:</strong> New assignment details including location, time, and supervisor</li>
+      <li><strong>Shift Reminders:</strong> Upcoming shift start reminders and schedule changes</li>
+      <li><strong>Onboarding Updates:</strong> Document submission reminders, background check status, and onboarding step completions</li>
+      <li><strong>Interview Notifications:</strong> Interview scheduling confirmations and reminders</li>
+      <li><strong>Payroll Alerts:</strong> Pay period reminders and direct deposit notifications</li>
+      <li><strong>Direct Responses to User Inquiries:</strong> Replies to messages or inquiries submitted by the user</li>
+    </ul>
+    <p><strong>We do not send marketing or promotional messages.</strong> All SMS is transactional and directly related to the user's employment, application, or direct inquiry.</p>
+    <p>Message frequency varies based on user activity, assignments, onboarding status, and direct inquiries.</p>
+  </div>
+
+  <!-- Section 4: Sample Auto-Replies -->
+  <h2>4. Sample Auto-Reply Messages</h2>
+
+  <div class="proof-section">
+    <p>Below are the intended auto-reply messages sent in response to user keywords:</p>
+
+    <div class="sms-sample">
+      <div class="sms-label">Opt-In Confirmation (sent after user checks consent checkbox and registers)</div>
+      Prime Anchor Point Workforce Notifications: You have opted in to receive transactional SMS including job alerts, shift reminders, and payroll updates. Msg frequency varies. Msg&amp;data rates may apply. Reply STOP to opt out. Reply HELP for help.
+    </div>
+
+    <div class="sms-sample">
+      <div class="sms-label">STOP &mdash; Opt-Out Confirmation</div>
+      Prime Anchor Point Workforce Notifications: You have been unsubscribed and will no longer receive recurring messages. Reply HELP for help. You may still receive one-time verification codes for account actions you initiate.
+    </div>
+
+    <div class="sms-sample">
+      <div class="sms-label">HELP &mdash; Help Response</div>
+      Prime Anchor Point Workforce Notifications: For help, contact us at (708) 850-2703 or info@primeanchorpoint.com. Msg frequency varies. Msg&amp;data rates may apply. Reply STOP to opt out.
+    </div>
+  </div>
+
+  <!-- Section 5: Opt-Out and Help -->
+  <h2>5. Opt-Out and Help</h2>
+
+  <div class="proof-section">
+    <ul>
+      <li>Users can reply <strong>STOP</strong> at any time to opt out of all recurring messages.</li>
+      <li>Users can reply <strong>HELP</strong> to receive program information and support contact details.</li>
+      <li>Opt-out and help keywords are processed automatically.</li>
+      <li>All recurring messages include opt-out instructions.</li>
+    </ul>
+    <p>Full details: <a href="/a2p/sms-terms">SMS Terms &amp; Messaging Policy</a></p>
+  </div>
+
+  <!-- Section 6: Related Policies -->
+  <h2>6. Related Compliance Pages</h2>
+
+  <div class="proof-section">
+    <ul>
+      <li><a href="/a2p/sms-terms">SMS Terms &amp; Messaging Policy</a> &mdash; Full program terms, opt-in/out methods, carrier disclaimer, and privacy provisions</li>
+      <li><a href="/a2p/privacy">Privacy Policy</a> &mdash; Covers SMS/mobile information privacy, including third-party sharing restrictions</li>
+      <li><a href="/a2p/register">Opt-In Registration Page</a> &mdash; Live English-only opt-in form with SMS consent checkbox</li>
+    </ul>
+  </div>
+
+</div>
+
+<footer class="page-footer">
+  <div>&copy; 2026 Prime Anchor Point. All rights reserved.</div>
+  <div class="legal-nav">
+    <a href="/a2p/sms-terms">SMS Terms</a><span>&middot;</span>
+    <a href="/a2p/privacy">Privacy Policy</a><span>&middot;</span>
+    <a href="/a2p/register">Register / Opt-In</a>
+  </div>
+</footer>
+</body>
+</html>
