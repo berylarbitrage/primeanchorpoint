@@ -78,7 +78,8 @@
     <h3>Campaign Information</h3>
     <p><strong>Brand:</strong> Prime Anchor Point</p>
     <p><strong>Program:</strong> Prime Anchor Point Workforce Notifications</p>
-    <p><strong>Message Type:</strong> Transactional / operational SMS only &mdash; verification codes, job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to user inquiries.</p>
+    <p><strong>Recurring Transactional SMS (checkbox consent required):</strong> Job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to user inquiries.</p>
+    <p><strong>One-Time Verification Codes (OTP, no checkbox required):</strong> Account registration, login, and identity verification codes. These are user-initiated security messages and do not depend on the recurring SMS consent checkbox.</p>
     <p><strong>Public Opt-In Page:</strong> <a href="https://www.primeanchorpoint.com/a2p/register" target="_blank">https://www.primeanchorpoint.com/a2p/register</a></p>
     <p>This page provides publicly verifiable documentation of how Prime Anchor Point collects SMS consent from end users. It is intended for carrier and campaign registry reviewers to verify our Call to Action (CTA) and opt-in compliance.</p>
   </div>
@@ -126,7 +127,7 @@
     <div class="consent-demo">
       <label>
         <input type="checkbox" disabled>
-        <span>By checking this box, you agree to receive transactional SMS from Prime Anchor Point Workforce Notifications, including verification codes, job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to your direct inquiries. Message frequency varies. Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. View <a href="/a2p/sms-terms">SMS Terms</a> and <a href="/a2p/privacy">Privacy Policy</a>. Consent is not a condition of employment or account creation.</span>
+        <span>By checking this box, you agree to receive transactional SMS from Prime Anchor Point Workforce Notifications, including job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to your direct inquiries. Message frequency varies. Message and data rates may apply. Reply STOP to opt out. Reply HELP for help. View <a href="/a2p/sms-terms">SMS Terms</a> and <a href="/a2p/privacy">Privacy Policy</a>. Consent is not a condition of employment or account creation.</span>
       </label>
     </div>
   </div>
@@ -144,15 +145,15 @@
       </div>
       <div class="flow-step">
         <div class="step-num">3</div>
-        <div class="step-text"><strong>User optionally checks</strong> the SMS consent checkbox (unchecked by default). The full disclosure text &mdash; including program name, message types, frequency, rates, STOP/HELP instructions, and links to SMS Terms and Privacy Policy &mdash; is displayed directly next to the checkbox. Checking is optional and not required to register.</div>
+        <div class="step-text"><strong>User optionally checks</strong> the SMS consent checkbox (unchecked by default). The full disclosure text is displayed directly next to the checkbox. The checkbox applies only to <strong>recurring transactional SMS</strong>: job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to direct inquiries. Checking is optional and not required to register.</div>
       </div>
       <div class="flow-step">
         <div class="step-num">4</div>
-        <div class="step-text"><strong>User submits</strong> the registration form. The consent status (<code>sms_consent: true/false</code>) and a timestamp are recorded in our database.</div>
+        <div class="step-text"><strong>User submits</strong> the form. The consent status (<code>sms_consent: true/false</code>) and a timestamp are recorded in our database.</div>
       </div>
       <div class="flow-step">
         <div class="step-num">5</div>
-        <div class="step-text"><strong>Recurring transactional SMS</strong> (job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts) are sent <strong>only</strong> to users who checked the consent checkbox.</div>
+        <div class="step-text"><strong>Recurring transactional SMS</strong> (job assignment alerts, shift reminders, onboarding updates, interview notifications, payroll alerts, and responses to direct inquiries) are sent <strong>only</strong> to users who checked the consent checkbox. One-time verification codes (OTP) are separate — they are user-initiated security messages sent only when the user triggers an account action (registration, login, identity verification) and do not require the consent checkbox.</div>
       </div>
     </div>
   </div>
@@ -173,9 +174,8 @@
   <h2>3. Message Types and Frequency</h2>
 
   <div class="proof-section">
-    <h3>Transactional / Operational Messages Only</h3>
+    <h3>Recurring Transactional SMS (require SMS consent checkbox)</h3>
     <ul>
-      <li><strong>Verification Codes:</strong> Account registration, login, and identity verification</li>
       <li><strong>Job Assignment Alerts:</strong> New assignment details including location, time, and supervisor</li>
       <li><strong>Shift Reminders:</strong> Upcoming shift start reminders and schedule changes</li>
       <li><strong>Onboarding Updates:</strong> Document submission reminders, background check status, and onboarding step completions</li>
@@ -183,6 +183,13 @@
       <li><strong>Payroll Alerts:</strong> Pay period reminders and direct deposit notifications</li>
       <li><strong>Direct Responses to User Inquiries:</strong> Replies to messages or inquiries submitted by the user</li>
     </ul>
+    <h3 style="margin-top:1.25rem">One-Time Verification Codes (OTP — do NOT require the consent checkbox)</h3>
+    <ul>
+      <li><strong>Account Registration Verification:</strong> One-time code sent when a user registers</li>
+      <li><strong>Login Verification:</strong> One-time code sent when a user signs in</li>
+      <li><strong>Identity Verification:</strong> One-time code sent during identity confirmation steps</li>
+    </ul>
+    <p>OTPs are standard security messages triggered solely by user-initiated account actions. They are independent of the recurring SMS consent checkbox.</p>
     <p><strong>We do not send marketing or promotional messages.</strong> All SMS is transactional and directly related to the user's employment, application, or direct inquiry.</p>
     <p>Message frequency varies based on user activity, assignments, onboarding status, and direct inquiries.</p>
   </div>
