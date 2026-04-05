@@ -579,6 +579,10 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
+  <!-- SMS Inbox -->
+  <div class="nav-divider" data-role="admin,staff"></div>
+  <a href="/sms-inbox" target="_blank" data-role="admin,staff" style="position:relative">📱 SMS Inbox <span id="sms-unread-badge" style="display:none;position:absolute;right:12px;top:50%;transform:translateY(-50%);background:#E63946;color:#fff;font-size:.65rem;font-weight:700;padding:1px 6px;border-radius:10px;min-width:18px;text-align:center"></span></a>
+
   <!-- 系统管理 -->
   <div class="nav-group open" id="sec-system" data-role="admin">
     <div class="nav-group-header" onclick="toggleNav('sec-system')">
@@ -6408,6 +6412,20 @@ function finishLogin(r) {
   applyRoleUI();
   if (USER_ROLE === 'manager') { showTab('mgr-workers'); }
   else { loadDashboard(); }
+  // SMS Inbox unread badge
+  if (USER_ROLE === 'admin' || USER_ROLE === 'staff') {
+    refreshSmsUnread();
+    setInterval(refreshSmsUnread, 30000);
+  }
+}
+
+async function refreshSmsUnread() {
+  try {
+    const r = await api('/sms/unread-count');
+    const badge = document.getElementById('sms-unread-badge');
+    if (badge && r && r.total > 0) { badge.textContent = r.total > 99 ? '99+' : r.total; badge.style.display = ''; }
+    else if (badge) { badge.style.display = 'none'; }
+  } catch(e) {}
 }
 
 async function doLogin() {
