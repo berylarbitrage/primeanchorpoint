@@ -1844,6 +1844,119 @@ db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('worker_port
 db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('company_legal_name',  'Prime Anchor Point LLC')`).run();
 db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('company_signer_name', 'Prime Anchor Point LLC')`).run();
 
+// ─── SMS Inbox Module — Database Schema ───
+db.exec(`CREATE TABLE IF NOT EXISTS sms_contacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone_e164 TEXT NOT NULL UNIQUE,
+  name TEXT DEFAULT '',
+  company TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  employee_id INTEGER DEFAULT NULL,
+  tags TEXT DEFAULT '[]',
+  notes TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS sms_threads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact_id INTEGER NOT NULL,
+  twilio_number TEXT NOT NULL,
+  status TEXT DEFAULT 'open',
+  priority TEXT DEFAULT 'normal',
+  assigned_agent_id INTEGER DEFAULT NULL,
+  claimed_at TEXT DEFAULT NULL,
+  closed_at TEXT DEFAULT NULL,
+  last_message_at TEXT DEFAULT NULL,
+  last_message_preview TEXT DEFAULT '',
+  last_inbound_at TEXT DEFAULT NULL,
+  last_outbound_at TEXT DEFAULT NULL,
+  unread_count INTEGER DEFAULT 0,
+  subject TEXT DEFAULT '',
+  tags TEXT DEFAULT '[]',
+  source_type TEXT DEFAULT 'sms',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_threads_contact ON sms_threads(contact_id)`); } catch(e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_threads_status ON sms_threads(status)`); } catch(e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_threads_agent ON sms_threads(assigned_agent_id)`); } catch(e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_threads_last_msg ON sms_threads(last_message_at)`); } catch(e) {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS sms_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL,
+  twilio_message_sid TEXT DEFAULT '',
+  direction TEXT NOT NULL,
+  source TEXT NOT NULL,
+  author_agent_id INTEGER DEFAULT NULL,
+  from_number TEXT NOT NULL,
+  to_number TEXT NOT NULL,
+  body TEXT DEFAULT '',
+  media_urls TEXT DEFAULT '[]',
+  num_media INTEGER DEFAULT 0,
+  delivery_status TEXT DEFAULT 'queued',
+  error_code TEXT DEFAULT NULL,
+  error_message TEXT DEFAULT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_thread ON sms_messages(thread_id)`); } catch(e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_sid ON sms_messages(twilio_message_sid)`); } catch(e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messages(thread_id, created_at)`); } catch(e) {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS sms_thread_assignments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL,
+  from_agent_id INTEGER DEFAULT NULL,
+  to_agent_id INTEGER NOT NULL,
+  action TEXT DEFAULT 'claim',
+  reason TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_assignments_thread ON sms_thread_assignments(thread_id)`); } catch(e) {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS sms_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL,
+  author_agent_id INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_notes_thread ON sms_notes(thread_id)`); } catch(e) {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS sms_notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL,
+  message_id INTEGER DEFAULT NULL,
+  agent_id INTEGER NOT NULL,
+  channel TEXT DEFAULT 'sms',
+  agent_phone TEXT DEFAULT '',
+  notification_body TEXT DEFAULT '',
+  link_token TEXT DEFAULT '',
+  link_expires_at TEXT DEFAULT NULL,
+  status TEXT DEFAULT 'sent',
+  clicked_at TEXT DEFAULT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_notifications_token ON sms_notifications(link_token)`); } catch(e) {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS sms_audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL,
+  entity_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  actor_type TEXT DEFAULT 'agent',
+  actor_id INTEGER DEFAULT NULL,
+  metadata TEXT DEFAULT '{}',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_audit_entity ON sms_audit_logs(entity_type, entity_id)`); } catch(e) {}
+
+// SMS Inbox: add agent notification fields to admin_users
+try { db.exec(`ALTER TABLE admin_users ADD COLUMN sms_notify_phone TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE admin_users ADD COLUMN sms_notify_enabled INTEGER DEFAULT 1`); } catch(e) {}
+
 // Helper: read company name from DB (admin-editable), fall back to env var, then default.
 function getCompanyLegalName() {
   try {
@@ -18386,6 +18499,748 @@ app.post('/api/admin/docuseal/deduplicate', requireAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── SMS Inbox Module — Routes ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SMS_NOTIFICATION_TOKEN_TTL = 4 * 60 * 60 * 1000; // 4 hours
+const SMS_REOPEN_THRESHOLD_DAYS = 30; // reopen vs new thread threshold
+const BASE_URL = process.env.BASE_URL || '';
+
+// ─── Twilio Webhook Signature Validation ───
+function validateTwilioWebhook(req, res, next) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!authToken) return next(); // skip validation in dev if no token
+  const signature = req.headers['x-twilio-signature'];
+  if (!signature) return res.status(403).send('Forbidden');
+  const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+  const isValid = require('twilio').validateRequest(authToken, signature, url, req.body);
+  if (!isValid) {
+    console.error('[SMS Webhook] Invalid Twilio signature');
+    return res.status(403).send('Forbidden');
+  }
+  next();
+}
+
+// ─── SMS Audit Helper ───
+function smsAudit(entityType, entityId, action, actorType, actorId, metadata = {}) {
+  try {
+    db.prepare(`INSERT INTO sms_audit_logs (entity_type, entity_id, action, actor_type, actor_id, metadata) VALUES (?,?,?,?,?,?)`)
+      .run(entityType, entityId, action, actorType, actorId || null, JSON.stringify(metadata));
+  } catch(e) { console.error('[SMS Audit] Error:', e.message); }
+}
+
+// ─── SMS Notification Helper ───
+async function sendSmsNotification(threadId, messageId, agentId, agentPhone, contactName, contactPhone, messagePreview) {
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + SMS_NOTIFICATION_TOKEN_TTL).toISOString();
+  const baseUrl = BASE_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'primeanchorpoint.com'}`;
+  const link = `${baseUrl}/sms/t/${token}`;
+  const displayName = contactName || contactPhone;
+  const preview = (messagePreview || '').substring(0, 80);
+  const body = `New SMS from ${displayName}:\n"${preview}"\nReply here: ${link}`;
+
+  db.prepare(`INSERT INTO sms_notifications (thread_id, message_id, agent_id, channel, agent_phone, notification_body, link_token, link_expires_at, status)
+    VALUES (?,?,?,?,?,?,?,?,?)`).run(threadId, messageId || null, agentId, 'sms', agentPhone, body, token, expiresAt, 'pending');
+
+  const sent = await sendSMS(agentPhone, body);
+  db.prepare(`UPDATE sms_notifications SET status=? WHERE link_token=?`).run(sent ? 'sent' : 'failed', token);
+  return sent;
+}
+
+// ─── Find or create contact ───
+function smsGetOrCreateContact(phoneE164) {
+  let contact = db.prepare('SELECT * FROM sms_contacts WHERE phone_e164=?').get(phoneE164);
+  if (!contact) {
+    const info = db.prepare('INSERT INTO sms_contacts (phone_e164) VALUES (?)').run(phoneE164);
+    contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(info.lastInsertRowid);
+  }
+  return contact;
+}
+
+// ─── Find active thread or create new one ───
+function smsFindOrCreateThread(contactId, twilioNumber) {
+  // Find an active (open or claimed) thread for this contact
+  let thread = db.prepare(`SELECT * FROM sms_threads WHERE contact_id=? AND status IN ('open','claimed') ORDER BY created_at DESC LIMIT 1`).get(contactId);
+  if (thread) return thread;
+
+  // Check if there's a recently closed thread to reopen
+  const closed = db.prepare(`SELECT * FROM sms_threads WHERE contact_id=? AND status='closed' ORDER BY closed_at DESC LIMIT 1`).get(contactId);
+  if (closed) {
+    const closedDate = new Date(closed.closed_at);
+    const daysSinceClosed = (Date.now() - closedDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceClosed < SMS_REOPEN_THRESHOLD_DAYS) {
+      // Reopen
+      db.prepare(`UPDATE sms_threads SET status='open', closed_at=NULL, updated_at=datetime('now') WHERE id=?`).run(closed.id);
+      smsAudit('thread', closed.id, 'reopened', 'system', null, { reason: 'new_inbound_message' });
+      return db.prepare('SELECT * FROM sms_threads WHERE id=?').get(closed.id);
+    }
+  }
+
+  // Create new thread
+  const info = db.prepare(`INSERT INTO sms_threads (contact_id, twilio_number) VALUES (?,?)`).run(contactId, twilioNumber);
+  const newThread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(info.lastInsertRowid);
+  smsAudit('thread', newThread.id, 'created', 'system', null, { contact_id: contactId });
+  return newThread;
+}
+
+// ─── Determine who to notify ───
+function smsGetNotifyAgents(thread) {
+  if (thread.assigned_agent_id) {
+    const agent = db.prepare('SELECT id, username, sms_notify_phone, sms_notify_enabled FROM admin_users WHERE id=?').get(thread.assigned_agent_id);
+    if (agent && agent.sms_notify_enabled && agent.sms_notify_phone) return [agent];
+  }
+  // Notify all admin/staff with sms_notify_enabled
+  return db.prepare(`SELECT id, username, sms_notify_phone, sms_notify_enabled FROM admin_users WHERE sms_notify_enabled=1 AND sms_notify_phone != '' AND role IN ('admin','staff')`).all();
+}
+
+// ═══ Twilio Inbound Webhook ═══
+app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), validateTwilioWebhook, async (req, res) => {
+  try {
+    const { From, To, Body, MessageSid, NumMedia } = req.body;
+    if (!From || !To) return res.type('text/xml').send('<Response></Response>');
+
+    const customerPhone = formatPhoneE164(From);
+    const twilioNumber = formatPhoneE164(To);
+
+    // Collect media URLs if MMS
+    const mediaUrls = [];
+    const numMedia = parseInt(NumMedia) || 0;
+    for (let i = 0; i < numMedia; i++) {
+      if (req.body[`MediaUrl${i}`]) mediaUrls.push(req.body[`MediaUrl${i}`]);
+    }
+
+    // 1. Find or create contact
+    const contact = smsGetOrCreateContact(customerPhone);
+
+    // 2. Find or create thread
+    const thread = smsFindOrCreateThread(contact.id, twilioNumber);
+
+    // 3. Insert message
+    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, twilio_message_sid, direction, source, from_number, to_number, body, media_urls, num_media, delivery_status)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(thread.id, MessageSid || '', 'inbound', 'customer', customerPhone, twilioNumber, Body || '', JSON.stringify(mediaUrls), numMedia, 'received');
+
+    const messageId = msgInfo.lastInsertRowid;
+
+    // 4. Update thread
+    const preview = (Body || '').substring(0, 120);
+    db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_inbound_at=datetime('now'),
+      last_message_preview=?, unread_count=unread_count+1, updated_at=datetime('now') WHERE id=?`).run(preview, thread.id);
+
+    smsAudit('message', messageId, 'received', 'webhook', null, { thread_id: thread.id, from: customerPhone });
+
+    // 5. Notify agents
+    const agents = smsGetNotifyAgents(thread);
+    for (const agent of agents) {
+      try {
+        await sendSmsNotification(thread.id, messageId, agent.id, agent.sms_notify_phone, contact.name, contact.phone_e164, Body);
+      } catch(e) { console.error(`[SMS Notify] Failed to notify agent ${agent.id}:`, e.message); }
+    }
+
+    console.log(`[SMS Inbound] From ${customerPhone} → Thread #${thread.id}, Message #${messageId}`);
+    res.type('text/xml').send('<Response></Response>');
+  } catch(e) {
+    console.error('[SMS Inbound] Error:', e.message);
+    res.type('text/xml').send('<Response></Response>');
+  }
+});
+
+// ═══ Twilio Status Callback ═══
+app.post('/api/sms/webhook/status', express.urlencoded({ extended: false }), validateTwilioWebhook, (req, res) => {
+  try {
+    const { MessageSid, MessageStatus, ErrorCode, ErrorMessage } = req.body;
+    if (MessageSid && MessageStatus) {
+      db.prepare(`UPDATE sms_messages SET delivery_status=?, error_code=?, error_message=?, updated_at=datetime('now') WHERE twilio_message_sid=?`)
+        .run(MessageStatus, ErrorCode || null, ErrorMessage || null, MessageSid);
+    }
+  } catch(e) { console.error('[SMS Status] Error:', e.message); }
+  res.sendStatus(200);
+});
+
+// ─── SMS Access Middleware ───
+function requireSmsAccess(req, res, next) {
+  if (req.userRole === 'manager') return res.status(403).json({ error: 'SMS Inbox access denied' });
+  next();
+}
+
+// ═══ Agent Secure Link ═══
+app.get('/sms/t/:token', (req, res) => {
+  const notification = db.prepare('SELECT * FROM sms_notifications WHERE link_token=?').get(req.params.token);
+  if (!notification) return res.status(404).send('Link not found');
+  if (notification.link_expires_at && new Date(notification.link_expires_at) < new Date()) {
+    return res.status(410).send('<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>Link expired</h2><p>Please log in to <a href="/sms-inbox">SMS Inbox</a> directly.</p></body></html>');
+  }
+  // Mark as clicked
+  db.prepare(`UPDATE sms_notifications SET status='clicked', clicked_at=datetime('now') WHERE id=?`).run(notification.id);
+  smsAudit('thread', notification.thread_id, 'link_clicked', 'agent', notification.agent_id, {});
+  // Redirect to SMS inbox with thread context
+  res.redirect(`/sms-inbox#thread/${notification.thread_id}`);
+});
+
+// ═══ Page Route ═══
+app.get('/sms-inbox', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'sms-inbox.html'));
+});
+
+// ═══ SMS Inbox API ═══
+
+// GET /api/sms/threads — list threads with filtering
+app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { status, agent_id, search, unread, tag, page, limit: lim } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(lim) || 20));
+    const offset = (pageNum - 1) * pageSize;
+
+    let where = '1=1';
+    const params = [];
+
+    if (status && status !== 'all') {
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      where += ` AND t.status IN (${statuses.map(() => '?').join(',')})`;
+      params.push(...statuses);
+    } else if (!status) {
+      where += ` AND t.status IN ('open','claimed')`;
+    }
+
+    if (agent_id === 'me') {
+      where += ' AND t.assigned_agent_id=?';
+      params.push(req.userId);
+    } else if (agent_id === 'unassigned') {
+      where += ' AND t.assigned_agent_id IS NULL';
+    } else if (agent_id) {
+      where += ' AND t.assigned_agent_id=?';
+      params.push(parseInt(agent_id));
+    }
+
+    if (search) {
+      where += ` AND (c.phone_e164 LIKE ? OR c.name LIKE ? OR t.last_message_preview LIKE ?)`;
+      const s = `%${search}%`;
+      params.push(s, s, s);
+    }
+
+    if (unread === '1') {
+      where += ' AND t.unread_count > 0';
+    }
+
+    if (tag) {
+      where += ` AND t.tags LIKE ?`;
+      params.push(`%${tag}%`);
+    }
+
+    const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
+    const total = db.prepare(countSql).get(...params).total;
+
+    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company,
+      a.username as agent_username
+      FROM sms_threads t
+      JOIN sms_contacts c ON c.id=t.contact_id
+      LEFT JOIN admin_users a ON a.id=t.assigned_agent_id
+      WHERE ${where}
+      ORDER BY t.last_message_at DESC NULLS LAST, t.created_at DESC
+      LIMIT ? OFFSET ?`;
+    const threads = db.prepare(dataSql).all(...params, pageSize, offset);
+
+    res.json({
+      threads: threads.map(t => ({
+        id: t.id,
+        contact: { id: t.contact_id, phone_e164: t.phone_e164, name: t.contact_name, company: t.contact_company },
+        status: t.status,
+        priority: t.priority,
+        assigned_agent: t.assigned_agent_id ? { id: t.assigned_agent_id, username: t.agent_username } : null,
+        last_message_preview: t.last_message_preview,
+        last_message_at: t.last_message_at,
+        unread_count: t.unread_count,
+        tags: t.tags,
+        subject: t.subject,
+        created_at: t.created_at
+      })),
+      total,
+      page: pageNum,
+      limit: pageSize
+    });
+  } catch(e) {
+    console.error('[SMS] threads list error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/sms/threads/:id — thread detail
+app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes,
+      a.username as agent_username
+      FROM sms_threads t
+      JOIN sms_contacts c ON c.id=t.contact_id
+      LEFT JOIN admin_users a ON a.id=t.assigned_agent_id
+      WHERE t.id=?`).get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+
+    smsAudit('thread', thread.id, 'viewed', 'agent', req.userId, {});
+
+    res.json({
+      thread: {
+        id: thread.id,
+        status: thread.status,
+        priority: thread.priority,
+        assigned_agent: thread.assigned_agent_id ? { id: thread.assigned_agent_id, username: thread.agent_username } : null,
+        unread_count: thread.unread_count,
+        tags: thread.tags,
+        subject: thread.subject,
+        last_message_at: thread.last_message_at,
+        created_at: thread.created_at
+      },
+      contact: {
+        id: thread.contact_id,
+        phone_e164: thread.phone_e164,
+        name: thread.contact_name,
+        company: thread.contact_company,
+        email: thread.contact_email,
+        employee_id: thread.employee_id,
+        tags: thread.contact_tags,
+        notes: thread.contact_notes
+      }
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/threads/:id/messages — messages for a thread
+app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT id FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+
+    const messages = db.prepare(`SELECT m.*, a.username as author_name FROM sms_messages m
+      LEFT JOIN admin_users a ON a.id=m.author_agent_id
+      WHERE m.thread_id=? ORDER BY m.created_at ASC`).all(req.params.id);
+
+    const notes = db.prepare(`SELECT n.*, a.username as author_name FROM sms_notes n
+      LEFT JOIN admin_users a ON a.id=n.author_agent_id
+      WHERE n.thread_id=? ORDER BY n.created_at ASC`).all(req.params.id);
+
+    res.json({ messages, notes });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/threads/:id/messages — send a reply
+app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async (req, res) => {
+  try {
+    const thread = db.prepare(`SELECT t.*, c.phone_e164 FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+
+    const { body } = req.body;
+    if (!body || !body.trim()) return res.status(400).json({ error: 'Message body required' });
+
+    // Auto-claim if not yet claimed
+    if (!thread.assigned_agent_id) {
+      db.prepare(`UPDATE sms_threads SET status='claimed', assigned_agent_id=?, claimed_at=datetime('now'), updated_at=datetime('now') WHERE id=?`).run(req.userId, thread.id);
+      db.prepare(`INSERT INTO sms_thread_assignments (thread_id, from_agent_id, to_agent_id, action) VALUES (?,NULL,?,'auto_claim')`).run(thread.id, req.userId);
+      smsAudit('thread', thread.id, 'auto_claimed', 'agent', req.userId, {});
+    }
+
+    // Check permission: only assigned agent or admin can reply
+    if (thread.assigned_agent_id && thread.assigned_agent_id !== req.userId && req.userRole !== 'admin') {
+      return res.status(403).json({ error: 'Only the assigned agent or admin can reply' });
+    }
+
+    // Insert message first
+    const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
+    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, author_agent_id, from_number, to_number, body, delivery_status)
+      VALUES (?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', req.userId, thread.twilio_number, thread.phone_e164, body.trim(), 'queued');
+
+    const messageId = msgInfo.lastInsertRowid;
+    const preview = body.trim().substring(0, 120);
+
+    // Update thread
+    db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_outbound_at=datetime('now'), last_message_preview=?, updated_at=datetime('now') WHERE id=?`).run(preview, thread.id);
+
+    // Send via Twilio
+    let twilioSid = '';
+    let deliveryStatus = 'queued';
+    try {
+      if (twilioClient && TWILIO_FROM) {
+        const createParams = { body: body.trim(), from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
+        if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
+        const msg = await twilioClient.messages.create(createParams);
+        twilioSid = msg.sid;
+        deliveryStatus = 'sent';
+      } else {
+        console.log(`[SMS-SKIP] Twilio not configured. Would send to ${thread.phone_e164}: ${body.trim()}`);
+        deliveryStatus = 'sent';
+      }
+    } catch(e) {
+      console.error('[SMS Send] Error:', e.message);
+      deliveryStatus = 'failed';
+      db.prepare(`UPDATE sms_messages SET delivery_status='failed', error_message=?, updated_at=datetime('now') WHERE id=?`).run(e.message, messageId);
+      smsAudit('message', messageId, 'send_failed', 'agent', req.userId, { error: e.message });
+      return res.status(500).json({ error: 'Failed to send SMS: ' + e.message, message_id: messageId });
+    }
+
+    // Update message with Twilio SID
+    db.prepare(`UPDATE sms_messages SET twilio_message_sid=?, delivery_status=?, updated_at=datetime('now') WHERE id=?`).run(twilioSid, deliveryStatus, messageId);
+    smsAudit('message', messageId, 'sent', 'agent', req.userId, { thread_id: thread.id, to: thread.phone_e164 });
+
+    const message = db.prepare('SELECT * FROM sms_messages WHERE id=?').get(messageId);
+    res.json({ success: true, message });
+  } catch(e) {
+    console.error('[SMS Send] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/sms/threads/:id/claim
+app.post('/api/sms/threads/:id/claim', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    if (thread.assigned_agent_id && thread.assigned_agent_id !== req.userId && req.userRole !== 'admin') {
+      const agent = db.prepare('SELECT username FROM admin_users WHERE id=?').get(thread.assigned_agent_id);
+      return res.status(409).json({ error: `Already claimed by ${agent ? agent.username : 'another agent'}` });
+    }
+    const result = db.prepare(`UPDATE sms_threads SET status='claimed', assigned_agent_id=?, claimed_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND (assigned_agent_id IS NULL OR assigned_agent_id=? OR ?='admin')`)
+      .run(req.userId, thread.id, req.userId, req.userRole);
+    if (result.changes === 0) return res.status(409).json({ error: 'Could not claim thread' });
+    db.prepare(`INSERT INTO sms_thread_assignments (thread_id, from_agent_id, to_agent_id, action) VALUES (?,NULL,?,'claim')`).run(thread.id, req.userId);
+    smsAudit('thread', thread.id, 'claimed', 'agent', req.userId, {});
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/threads/:id/assign
+app.post('/api/sms/threads/:id/assign', requireAdmin, requireRole('admin', 'staff'), requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    const { agent_id, reason } = req.body;
+    if (!agent_id) return res.status(400).json({ error: 'agent_id required' });
+    const targetAgent = db.prepare('SELECT id, username FROM admin_users WHERE id=?').get(agent_id);
+    if (!targetAgent) return res.status(404).json({ error: 'Agent not found' });
+
+    const prevAgentId = thread.assigned_agent_id;
+    db.prepare(`UPDATE sms_threads SET status='claimed', assigned_agent_id=?, claimed_at=datetime('now'), updated_at=datetime('now') WHERE id=?`).run(agent_id, thread.id);
+    db.prepare(`INSERT INTO sms_thread_assignments (thread_id, from_agent_id, to_agent_id, action, reason) VALUES (?,?,?,?,?)`).run(thread.id, req.userId, agent_id, prevAgentId ? 'reassign' : 'assign', reason || '');
+    smsAudit('thread', thread.id, 'assigned', 'agent', req.userId, { to_agent: agent_id, from_agent: prevAgentId });
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/threads/:id/close
+app.post('/api/sms/threads/:id/close', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    db.prepare(`UPDATE sms_threads SET status='closed', closed_at=datetime('now'), updated_at=datetime('now') WHERE id=?`).run(thread.id);
+    smsAudit('thread', thread.id, 'closed', 'agent', req.userId, {});
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/threads/:id/reopen
+app.post('/api/sms/threads/:id/reopen', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    db.prepare(`UPDATE sms_threads SET status='open', closed_at=NULL, updated_at=datetime('now') WHERE id=?`).run(thread.id);
+    smsAudit('thread', thread.id, 'reopened', 'agent', req.userId, {});
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/threads/:id/read — mark thread as read
+app.post('/api/sms/threads/:id/read', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    db.prepare(`UPDATE sms_threads SET unread_count=0, updated_at=datetime('now') WHERE id=?`).run(req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/unread-count
+app.get('/api/sms/unread-count', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    // For admin: all unread; for staff: all unread (they can see all)
+    const result = db.prepare(`SELECT COALESCE(SUM(unread_count),0) as total FROM sms_threads WHERE status IN ('open','claimed')`).get();
+    // Also get count assigned to me
+    const mine = db.prepare(`SELECT COALESCE(SUM(unread_count),0) as total FROM sms_threads WHERE assigned_agent_id=? AND status IN ('open','claimed')`).get(req.userId);
+    res.json({ total: result.total, mine: mine.total });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET/POST /api/sms/threads/:id/notes
+app.get('/api/sms/threads/:id/notes', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const notes = db.prepare(`SELECT n.*, a.username as author_name FROM sms_notes n LEFT JOIN admin_users a ON a.id=n.author_agent_id WHERE n.thread_id=? ORDER BY n.created_at ASC`).all(req.params.id);
+    res.json({ notes });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/sms/threads/:id/notes', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { body } = req.body;
+    if (!body || !body.trim()) return res.status(400).json({ error: 'Note body required' });
+    const info = db.prepare(`INSERT INTO sms_notes (thread_id, author_agent_id, body) VALUES (?,?,?)`).run(req.params.id, req.userId, body.trim());
+    smsAudit('thread', parseInt(req.params.id), 'note_added', 'agent', req.userId, {});
+    const note = db.prepare('SELECT n.*, a.username as author_name FROM sms_notes n LEFT JOIN admin_users a ON a.id=n.author_agent_id WHERE n.id=?').get(info.lastInsertRowid);
+    res.json({ success: true, note });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/sms/contacts/:id
+app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { name, company, email, tags, notes } = req.body;
+    const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, updated_at=datetime('now') WHERE id=?`)
+      .run(name ?? contact.name, company ?? contact.company, email ?? contact.email, tags ?? contact.tags, notes ?? contact.notes, contact.id);
+    smsAudit('contact', contact.id, 'updated', 'agent', req.userId, {});
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/agents — list available agents for assign dropdown
+app.get('/api/sms/agents', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const agents = db.prepare(`SELECT id, username, role FROM admin_users WHERE role IN ('admin','staff') ORDER BY username`).all();
+    res.json({ agents });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/threads/:id/retry/:messageId — retry a failed message
+app.post('/api/sms/threads/:id/retry/:messageId', requireAdmin, requireSmsAccess, async (req, res) => {
+  try {
+    const msg = db.prepare('SELECT * FROM sms_messages WHERE id=? AND thread_id=?').get(req.params.messageId, req.params.id);
+    if (!msg) return res.status(404).json({ error: 'Message not found' });
+    if (msg.delivery_status !== 'failed' && msg.delivery_status !== 'undelivered') {
+      return res.status(400).json({ error: 'Message is not in failed state' });
+    }
+    const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
+    try {
+      const createParams = { body: msg.body, from: msg.from_number, to: msg.to_number };
+      if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
+      const result = await twilioClient.messages.create(createParams);
+      db.prepare(`UPDATE sms_messages SET twilio_message_sid=?, delivery_status='sent', error_code=NULL, error_message=NULL, updated_at=datetime('now') WHERE id=?`)
+        .run(result.sid, msg.id);
+      smsAudit('message', msg.id, 'retried', 'agent', req.userId, { new_sid: result.sid });
+      res.json({ success: true });
+    } catch(e) {
+      db.prepare(`UPDATE sms_messages SET error_message=?, updated_at=datetime('now') WHERE id=?`).run(e.message, msg.id);
+      res.status(500).json({ error: e.message });
+    }
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══ Phase 2: SMS Inbox Enhancements ═══
+
+// ─── Thread tags ───
+app.post('/api/sms/threads/:id/tags', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    const { tag } = req.body;
+    if (!tag || !tag.trim()) return res.status(400).json({ error: 'Tag required' });
+    let tags = [];
+    try { tags = JSON.parse(thread.tags || '[]'); } catch(e) { tags = []; }
+    const t = tag.trim().toLowerCase();
+    if (!tags.includes(t)) tags.push(t);
+    db.prepare('UPDATE sms_threads SET tags=?, updated_at=datetime(\'now\') WHERE id=?').run(JSON.stringify(tags), thread.id);
+    smsAudit('thread', thread.id, 'tag_added', 'agent', req.userId, { tag: t });
+    res.json({ success: true, tags });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/sms/threads/:id/tags/:tag', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    let tags = [];
+    try { tags = JSON.parse(thread.tags || '[]'); } catch(e) { tags = []; }
+    const t = decodeURIComponent(req.params.tag).toLowerCase();
+    tags = tags.filter(x => x !== t);
+    db.prepare('UPDATE sms_threads SET tags=?, updated_at=datetime(\'now\') WHERE id=?').run(JSON.stringify(tags), thread.id);
+    smsAudit('thread', thread.id, 'tag_removed', 'agent', req.userId, { tag: t });
+    res.json({ success: true, tags });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Thread priority ───
+app.put('/api/sms/threads/:id/priority', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { priority } = req.body;
+    const valid = ['low', 'normal', 'high', 'urgent'];
+    if (!valid.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
+    db.prepare('UPDATE sms_threads SET priority=?, updated_at=datetime(\'now\') WHERE id=?').run(priority, req.params.id);
+    smsAudit('thread', parseInt(req.params.id), 'priority_changed', 'agent', req.userId, { priority });
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Dashboard stats ───
+app.get('/api/sms/stats', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const openCount = db.prepare("SELECT COUNT(*) as n FROM sms_threads WHERE status='open'").get().n;
+    const claimedCount = db.prepare("SELECT COUNT(*) as n FROM sms_threads WHERE status='claimed'").get().n;
+    const closedTodayCount = db.prepare("SELECT COUNT(*) as n FROM sms_threads WHERE status='closed' AND date(closed_at)=?").get(today).n;
+    const newTodayCount = db.prepare("SELECT COUNT(*) as n FROM sms_threads WHERE date(created_at)=?").get(today).n;
+    const totalMessages = db.prepare("SELECT COUNT(*) as n FROM sms_messages").get().n;
+    const totalInbound = db.prepare("SELECT COUNT(*) as n FROM sms_messages WHERE direction='inbound'").get().n;
+    const totalOutbound = db.prepare("SELECT COUNT(*) as n FROM sms_messages WHERE direction='outbound'").get().n;
+
+    // Average response time: time between first inbound and first outbound per thread (for threads closed today)
+    const avgResp = db.prepare(`SELECT AVG(resp_seconds) as avg_resp FROM (
+      SELECT t.id,
+        (julianday(MIN(CASE WHEN m.direction='outbound' THEN m.created_at END)) -
+         julianday(MIN(CASE WHEN m.direction='inbound' THEN m.created_at END))) * 86400 as resp_seconds
+      FROM sms_threads t JOIN sms_messages m ON m.thread_id=t.id
+      WHERE t.status IN ('claimed','closed') AND t.last_outbound_at IS NOT NULL
+      GROUP BY t.id HAVING resp_seconds > 0
+    )`).get();
+
+    // Agent workload: threads per agent
+    const agentStats = db.prepare(`SELECT a.username, COUNT(t.id) as thread_count,
+      SUM(CASE WHEN t.status IN ('open','claimed') THEN 1 ELSE 0 END) as active_count
+      FROM sms_threads t JOIN admin_users a ON a.id=t.assigned_agent_id
+      GROUP BY t.assigned_agent_id ORDER BY active_count DESC`).all();
+
+    res.json({
+      open: openCount,
+      claimed: claimedCount,
+      closed_today: closedTodayCount,
+      new_today: newTodayCount,
+      total_messages: totalMessages,
+      total_inbound: totalInbound,
+      total_outbound: totalOutbound,
+      avg_response_minutes: avgResp.avg_resp ? Math.round(avgResp.avg_resp / 60) : null,
+      agent_stats: agentStats
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Full-text search across message bodies ───
+app.get('/api/sms/search', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { q, page: pg, limit: lim } = req.query;
+    if (!q || !q.trim()) return res.json({ results: [], total: 0 });
+    const pageNum = Math.max(1, parseInt(pg) || 1);
+    const pageSize = Math.min(50, Math.max(1, parseInt(lim) || 20));
+    const offset = (pageNum - 1) * pageSize;
+    const like = '%' + q.trim() + '%';
+
+    const total = db.prepare(`SELECT COUNT(DISTINCT t.id) as n FROM sms_threads t
+      JOIN sms_contacts c ON c.id=t.contact_id
+      LEFT JOIN sms_messages m ON m.thread_id=t.id
+      WHERE c.phone_e164 LIKE ? OR c.name LIKE ? OR c.company LIKE ? OR m.body LIKE ?`).get(like, like, like, like).n;
+
+    const results = db.prepare(`SELECT DISTINCT t.id, t.status, t.last_message_at, t.assigned_agent_id,
+      c.phone_e164, c.name as contact_name,
+      a.username as agent_username
+      FROM sms_threads t
+      JOIN sms_contacts c ON c.id=t.contact_id
+      LEFT JOIN sms_messages m ON m.thread_id=t.id
+      LEFT JOIN admin_users a ON a.id=t.assigned_agent_id
+      WHERE c.phone_e164 LIKE ? OR c.name LIKE ? OR c.company LIKE ? OR m.body LIKE ?
+      ORDER BY t.last_message_at DESC
+      LIMIT ? OFFSET ?`).all(like, like, like, like, pageSize, offset);
+
+    res.json({ results, total, page: pageNum });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Link contact to employee ───
+app.put('/api/sms/contacts/:id/link-employee', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { employee_id } = req.body;
+    const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    if (employee_id) {
+      const emp = db.prepare('SELECT id, first_name, last_name FROM employees WHERE id=?').get(employee_id);
+      if (!emp) return res.status(404).json({ error: 'Employee not found' });
+      db.prepare('UPDATE sms_contacts SET employee_id=?, updated_at=datetime(\'now\') WHERE id=?').run(employee_id, contact.id);
+      // Auto-fill name if empty
+      if (!contact.name && (emp.first_name || emp.last_name)) {
+        db.prepare('UPDATE sms_contacts SET name=?, updated_at=datetime(\'now\') WHERE id=?')
+          .run(((emp.first_name || '') + ' ' + (emp.last_name || '')).trim(), contact.id);
+      }
+    } else {
+      db.prepare('UPDATE sms_contacts SET employee_id=NULL, updated_at=datetime(\'now\') WHERE id=?').run(contact.id);
+    }
+    smsAudit('contact', contact.id, 'employee_linked', 'agent', req.userId, { employee_id });
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Quick reply templates ───
+// Store in app_settings as JSON
+app.get('/api/sms/templates', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='sms_reply_templates'").get();
+    const templates = row ? JSON.parse(row.value) : [];
+    res.json({ templates });
+  } catch(e) { res.json({ templates: [] }); }
+});
+
+app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAccess, (req, res) => {
+  try {
+    const { templates } = req.body;
+    if (!Array.isArray(templates)) return res.status(400).json({ error: 'templates must be an array' });
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('sms_reply_templates', ?, datetime('now'))").run(JSON.stringify(templates));
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Thread history / assignment log ───
+app.get('/api/sms/threads/:id/history', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const assignments = db.prepare(`SELECT sa.*, af.username as from_name, at2.username as to_name
+      FROM sms_thread_assignments sa
+      LEFT JOIN admin_users af ON af.id=sa.from_agent_id
+      LEFT JOIN admin_users at2 ON at2.id=sa.to_agent_id
+      WHERE sa.thread_id=? ORDER BY sa.created_at ASC`).all(req.params.id);
+
+    const audits = db.prepare(`SELECT * FROM sms_audit_logs
+      WHERE entity_type='thread' AND entity_id=?
+      ORDER BY created_at ASC`).all(req.params.id);
+
+    res.json({ assignments, audits });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Auto re-reminder for unhandled threads ───
+const SMS_REREMIND_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const SMS_REREMIND_THRESHOLD = 10 * 60 * 1000; // re-remind if no response for 10 min
+
+function smsAutoReremind() {
+  try {
+    const threshold = new Date(Date.now() - SMS_REREMIND_THRESHOLD).toISOString();
+    // Find open threads with inbound messages newer than threshold but no outbound reply after that
+    const staleThreads = db.prepare(`
+      SELECT t.*, c.phone_e164, c.name as contact_name FROM sms_threads t
+      JOIN sms_contacts c ON c.id=t.contact_id
+      WHERE t.status='open' AND t.last_inbound_at IS NOT NULL AND t.last_inbound_at < ?
+      AND (t.last_outbound_at IS NULL OR t.last_outbound_at < t.last_inbound_at)
+    `).all(threshold);
+
+    for (const thread of staleThreads) {
+      // Check if we already reminded recently (within last 10 min)
+      const recentNotif = db.prepare(`SELECT id FROM sms_notifications WHERE thread_id=? AND created_at > ? LIMIT 1`)
+        .get(thread.id, threshold);
+      if (recentNotif) continue;
+
+      const agents = smsGetNotifyAgents(thread);
+      for (const agent of agents) {
+        if (agent.sms_notify_phone) {
+          sendSmsNotification(thread.id, null, agent.id, agent.sms_notify_phone,
+            thread.contact_name, thread.phone_e164, '[Reminder] Awaiting response')
+            .catch(e => console.error('[SMS Re-remind] Error:', e.message));
+        }
+      }
+      smsAudit('thread', thread.id, 'rereminded', 'system', null, { agents: agents.map(a => a.id) });
+    }
+  } catch(e) { console.error('[SMS Re-remind] Error:', e.message); }
+}
+
+// ═══ End of SMS Inbox Module ═══
+
 app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
@@ -18407,4 +19262,7 @@ app.listen(PORT, () => {
   setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 8000);
   // Deduplicate DocuSeal templates (keep latest per category+language)
   setTimeout(() => deduplicateDocusealTemplates().catch(e => console.error('[startup] Dedup error:', e.message)), 12000);
+  // SMS Inbox: start auto re-reminder check every 5 minutes
+  setInterval(smsAutoReremind, SMS_REREMIND_INTERVAL);
+  console.log('[startup] SMS auto-rereminder started (every 5 min)');
 });

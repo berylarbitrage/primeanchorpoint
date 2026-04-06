@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SMS Inbox — Prime Anchor Point</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/img/icon-192.png">
+<meta name="theme-color" content="#b45309">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PA SMS">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--white:#fff;--off-white:#fffbeb;--gray-100:#f3f4f6;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:8px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gray-800);height:100vh;overflow:hidden}
+
+/* Login */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-box{background:var(--white);padding:3rem;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.08);width:100%;max-width:360px;text-align:center}
+.login-box h1{font-size:1.3rem;color:var(--blue);margin-bottom:.5rem}
+.login-box p{font-size:.85rem;color:var(--gray-400);margin-bottom:2rem}
+.login-box input{width:100%;padding:12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.95rem;margin-bottom:1rem;outline:none}
+.login-box input:focus{border-color:var(--sky)}
+.login-box button{width:100%;padding:12px;background:var(--sky);color:#fff;border:none;border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.95rem}
+.login-box button:hover{background:var(--blue)}
+.login-box .err{color:var(--red);font-size:.82rem;margin-top:.5rem;min-height:1.2em}
+
+/* App layout */
+#app{display:none;height:100vh;flex-direction:column}
+#app.show{display:flex}
+
+/* Header */
+.header{background:var(--white);border-bottom:1.5px solid #fde68a;padding:10px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:52px}
+.header h1{font-size:1.05rem;color:var(--blue);white-space:nowrap}
+.header .badge-unread{background:var(--red);color:#fff;font-size:.7rem;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:4px}
+.header .spacer{flex:1}
+.header .btn-icon{background:none;border:none;font-size:1.1rem;cursor:pointer;padding:6px;color:var(--gray-600);border-radius:var(--radius)}
+.header .btn-icon:hover{background:var(--gray-100)}
+.back-btn{font-size:1.2rem;cursor:pointer;padding:6px 8px;color:var(--sky);font-weight:700;background:none;border:none;border-radius:var(--radius)}
+.back-btn:hover{background:var(--sky-light)}
+
+/* Filters */
+.filters{background:var(--white);padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--gray-200);flex-shrink:0}
+.filters input[type=text]{flex:1;min-width:120px;padding:8px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem;outline:none}
+.filters input[type=text]:focus{border-color:var(--sky)}
+.filters select{padding:7px 8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.8rem;background:var(--white);outline:none;cursor:pointer}
+.filter-btn{padding:6px 12px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;font-weight:600;cursor:pointer;background:var(--white);color:var(--gray-600);transition:all .15s}
+.filter-btn:hover{border-color:var(--sky);color:var(--sky)}
+.filter-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
+
+/* Thread list */
+.thread-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.thread-item{display:flex;align-items:flex-start;padding:12px 16px;border-bottom:1px solid var(--gray-200);cursor:pointer;transition:background .15s;gap:10px}
+.thread-item:hover{background:var(--sky-light)}
+.thread-item.unread{background:#fffdf5}
+.thread-item.unread .ti-name{font-weight:700}
+.thread-item.unread .ti-preview{color:var(--gray-800);font-weight:500}
+.ti-avatar{width:38px;height:38px;border-radius:50%;background:var(--sky-light);color:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0}
+.ti-body{flex:1;min-width:0}
+.ti-top{display:flex;align-items:center;gap:6px;margin-bottom:2px}
+.ti-name{font-size:.88rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.ti-phone{font-size:.75rem;color:var(--gray-400);white-space:nowrap}
+.ti-time{font-size:.72rem;color:var(--gray-400);margin-left:auto;white-space:nowrap;flex-shrink:0}
+.ti-preview{font-size:.82rem;color:var(--gray-600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.ti-meta{display:flex;align-items:center;gap:6px;margin-top:4px}
+.ti-status{font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:10px;text-transform:uppercase}
+.ti-status.open{background:#d1fae5;color:#065f46}
+.ti-status.claimed{background:#dbeafe;color:#1d4ed8}
+.ti-status.closed{background:var(--gray-100);color:var(--gray-600)}
+.ti-agent{font-size:.72rem;color:var(--gray-400)}
+.ti-unread{background:var(--red);color:#fff;font-size:.65rem;font-weight:700;padding:1px 6px;border-radius:10px;min-width:18px;text-align:center;margin-left:auto}
+.load-more{text-align:center;padding:16px}
+.load-more button{padding:8px 24px;background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem;cursor:pointer;color:var(--gray-600)}
+.load-more button:hover{border-color:var(--sky);color:var(--sky)}
+.empty-state{text-align:center;padding:60px 20px;color:var(--gray-400)}
+.empty-state .icon{font-size:2.5rem;margin-bottom:12px}
+
+/* Detail view */
+#detail-view{display:none;flex-direction:column;height:100vh}
+#detail-view.show{display:flex}
+#list-view{display:flex;flex-direction:column;height:100vh}
+#list-view.hide{display:none}
+
+/* Contact bar */
+.contact-bar{background:var(--white);padding:8px 12px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0}
+.contact-bar .contact-info{flex:1;min-width:0}
+.contact-bar .contact-name{font-size:.9rem;font-weight:600;color:var(--gray-800)}
+.contact-bar .contact-phone{font-size:.78rem;color:var(--gray-400)}
+
+/* Action bar */
+.action-bar{background:var(--white);padding:6px 12px;border-bottom:1px solid var(--gray-200);display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0}
+.action-btn{padding:5px 14px;border-radius:var(--radius);font-size:.78rem;font-weight:600;cursor:pointer;border:1px solid var(--gray-200);background:var(--white);color:var(--gray-600);transition:all .15s}
+.action-btn:hover{border-color:var(--sky);color:var(--sky)}
+.action-btn.primary{background:var(--sky);color:#fff;border-color:var(--sky)}
+.action-btn.primary:hover{background:var(--blue)}
+.action-btn.danger{color:var(--red);border-color:var(--red)}
+.action-btn.danger:hover{background:var(--red);color:#fff}
+.action-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* Messages */
+.messages-area{flex:1;overflow-y:auto;padding:12px 12px 8px;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:4px}
+.msg-bubble{max-width:82%;padding:10px 14px;border-radius:16px;font-size:.88rem;line-height:1.45;word-wrap:break-word;position:relative}
+.msg-row{display:flex;flex-direction:column}
+.msg-row.inbound{align-items:flex-start}
+.msg-row.outbound{align-items:flex-end}
+.msg-row.inbound .msg-bubble{background:var(--gray-100);color:var(--gray-800);border-bottom-left-radius:4px}
+.msg-row.outbound .msg-bubble{background:#2563eb;color:#fff;border-bottom-right-radius:4px}
+.msg-meta{font-size:.68rem;color:var(--gray-400);margin-top:3px;padding:0 4px;display:flex;align-items:center;gap:4px}
+.msg-row.outbound .msg-meta{justify-content:flex-end}
+.msg-status{font-size:.72rem}
+.msg-status.delivered{color:var(--green)}
+.msg-status.failed{color:var(--red);cursor:pointer;text-decoration:underline}
+.msg-note{background:#fef9c3;border:1px solid #fde68a;border-radius:var(--radius);padding:10px 14px;margin:6px auto;max-width:90%;font-size:.82rem;color:#92400e;text-align:center}
+.msg-note .note-label{font-size:.7rem;font-weight:700;text-transform:uppercase;color:#b45309;margin-bottom:4px}
+.msg-note .note-author{font-size:.7rem;color:var(--gray-400);margin-top:4px}
+.msg-date-divider{text-align:center;padding:12px 0 6px;font-size:.72rem;color:var(--gray-400);font-weight:600}
+
+/* Reply bar */
+.reply-bar{background:var(--white);border-top:1.5px solid var(--gray-200);padding:8px 10px;display:flex;align-items:flex-end;gap:8px;flex-shrink:0}
+.reply-bar.note-mode{border-top-color:#f59e0b;background:#fffef5}
+.reply-bar textarea{flex:1;resize:none;border:1px solid var(--gray-200);border-radius:20px;padding:10px 16px;font-size:16px;font-family:inherit;outline:none;max-height:120px;min-height:42px;line-height:1.4}
+.reply-bar textarea:focus{border-color:var(--sky)}
+.reply-bar.note-mode textarea{border-color:#f59e0b;background:#fffef5}
+.reply-bar .send-btn{width:42px;height:42px;border-radius:50%;background:var(--sky);color:#fff;border:none;font-size:1.1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.reply-bar .send-btn:hover{background:var(--blue)}
+.reply-bar .send-btn:disabled{opacity:.4;cursor:not-allowed}
+.reply-bar.note-mode .send-btn{background:#f59e0b}
+.reply-bar .note-toggle{width:42px;height:42px;border-radius:50%;background:var(--white);border:1px solid var(--gray-200);font-size:1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--gray-400)}
+.reply-bar .note-toggle:hover{background:var(--sky-light);color:var(--sky)}
+.reply-bar .note-toggle.active{background:#fef9c3;border-color:#f59e0b;color:#b45309}
+
+/* Assign modal */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center}
+.modal-bg.show{display:flex}
+.modal{background:var(--white);border-radius:12px;padding:24px;width:90%;max-width:360px;max-height:80vh;overflow-y:auto}
+.modal h3{font-size:1rem;color:var(--blue);margin-bottom:16px}
+.modal .agent-item{padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:6px;cursor:pointer;font-size:.88rem;transition:all .15s}
+.modal .agent-item:hover{border-color:var(--sky);background:var(--sky-light)}
+.modal .close-modal{margin-top:12px;width:100%;padding:10px;background:var(--gray-100);border:none;border-radius:var(--radius);cursor:pointer;font-size:.85rem;color:var(--gray-600)}
+
+/* Edit contact modal */
+.modal input{width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none}
+.modal input:focus{border-color:var(--sky)}
+.modal .btn{width:100%;padding:10px;background:var(--sky);color:#fff;border:none;border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:.88rem;margin-top:4px}
+.modal label{font-size:.78rem;color:var(--gray-600);margin-bottom:2px;display:block}
+
+/* Toast */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--gray-800);color:#fff;padding:10px 20px;border-radius:20px;font-size:.85rem;z-index:200;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+
+/* Loading */
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--gray-200);border-top-color:var(--sky);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Tags */
+.tag-list{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.tag{display:inline-flex;align-items:center;gap:3px;background:#ede9fe;color:#5b21b6;font-size:.68rem;font-weight:600;padding:2px 8px;border-radius:10px}
+.tag .tag-x{cursor:pointer;opacity:.6;font-size:.8rem;line-height:1}
+.tag .tag-x:hover{opacity:1}
+.tag-add{display:inline-flex;align-items:center;gap:2px;background:var(--gray-100);color:var(--gray-400);font-size:.68rem;padding:2px 8px;border-radius:10px;cursor:pointer;border:1px dashed var(--gray-200)}
+.tag-add:hover{border-color:var(--sky);color:var(--sky)}
+.tag-input{border:1px solid var(--sky);border-radius:10px;padding:2px 8px;font-size:.68rem;outline:none;width:80px}
+
+/* Priority badge */
+.priority-badge{font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;text-transform:uppercase}
+.priority-badge.low{background:var(--gray-100);color:var(--gray-400)}
+.priority-badge.normal{display:none}
+.priority-badge.high{background:#fef3c7;color:#92400e}
+.priority-badge.urgent{background:#fee2e2;color:#991b1b}
+
+/* Dashboard panel */
+.dash-panel{background:var(--white);border-bottom:1px solid var(--gray-200);padding:10px 12px;flex-shrink:0;display:none}
+.dash-panel.show{display:block}
+.dash-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.dash-stat{text-align:center;padding:6px 4px;background:var(--off-white);border-radius:var(--radius)}
+.dash-stat .num{font-size:1.1rem;font-weight:700;color:var(--blue)}
+.dash-stat .lbl{font-size:.65rem;color:var(--gray-400);margin-top:2px}
+
+/* Template picker */
+.template-picker{position:absolute;bottom:100%;left:0;right:0;background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);max-height:180px;overflow-y:auto;box-shadow:0 -4px 16px rgba(0,0,0,.1);display:none;z-index:50}
+.template-picker.show{display:block}
+.template-item{padding:10px 14px;font-size:.82rem;cursor:pointer;border-bottom:1px solid var(--gray-100);transition:background .1s}
+.template-item:hover{background:var(--sky-light)}
+.template-item:last-child{border-bottom:none}
+
+/* History panel */
+.history-panel{background:var(--white);padding:12px;border-top:1px solid var(--gray-200);max-height:200px;overflow-y:auto;display:none;flex-shrink:0}
+.history-panel.show{display:block}
+.history-item{font-size:.75rem;color:var(--gray-600);padding:4px 0;border-bottom:1px solid var(--gray-100)}
+.history-item .hi-time{color:var(--gray-400);font-size:.68rem}
+
+/* Pull-to-refresh indicator */
+.pull-indicator{text-align:center;padding:8px;color:var(--sky);font-size:.8rem;font-weight:600;display:none}
+
+/* Swipe hint animation */
+@keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes slideInLeft{from{transform:translateX(-100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.slide-in-right{animation:slideInRight .25s ease}
+.slide-in-left{animation:slideInLeft .25s ease}
+
+/* Install banner */
+.install-banner{background:linear-gradient(135deg,#92400e,#b45309);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;display:none}
+.install-banner.show{display:flex}
+.install-banner .ib-text{flex:1;font-size:.82rem;line-height:1.35}
+.install-banner .ib-text strong{display:block;font-size:.88rem}
+.install-banner .ib-btn{padding:7px 16px;background:#fff;color:#92400e;border:none;border-radius:20px;font-weight:700;font-size:.78rem;cursor:pointer;white-space:nowrap}
+.install-banner .ib-close{background:none;border:none;color:rgba(255,255,255,.7);font-size:1.2rem;cursor:pointer;padding:4px}
+
+/* Offline indicator */
+.offline-bar{background:#fee2e2;color:#991b1b;text-align:center;padding:6px;font-size:.78rem;font-weight:600;display:none;flex-shrink:0}
+.offline-bar.show{display:block}
+
+/* Better mobile keyboard handling */
+@supports(height: 100dvh){
+  body,#app,#list-view,#detail-view{height:100dvh}
+}
+
+@media(min-width:769px){
+  body{overflow:auto}
+  #app.show{flex-direction:row;height:100vh}
+  #list-view{width:380px;border-right:1.5px solid #fde68a;flex-shrink:0;height:100vh}
+  #list-view.hide{display:flex}
+  #detail-view{flex:1;height:100vh}
+  .dash-stats{grid-template-columns:repeat(6,1fr)}
+}
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="loginWrap" class="login-wrap">
+  <div class="login-box">
+    <img src="logo.svg" alt="Logo" class="logo" style="width:80px;margin-bottom:1rem">
+    <h1>SMS Inbox</h1>
+    <p>Prime Anchor Point</p>
+    <input type="text" id="userInput" placeholder="Username">
+    <input type="password" id="passInput" placeholder="Password">
+    <button id="loginBtn" onclick="doLogin()">Login</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app">
+  <!-- Offline indicator -->
+  <div class="offline-bar" id="offlineBar">You are offline. Messages will sync when connection returns.</div>
+  <!-- Install Banner -->
+  <div class="install-banner" id="installBanner">
+    <div class="ib-text"><strong>Install PA SMS</strong>Add to home screen for a better experience</div>
+    <button class="ib-btn" onclick="installPwa()">Install</button>
+    <button class="ib-close" onclick="dismissInstall()">&times;</button>
+  </div>
+  <!-- List View -->
+  <div id="list-view">
+    <div class="header">
+      <h1>SMS Inbox</h1>
+      <span id="headerUnread" class="badge-unread" style="display:none"></span>
+      <div class="spacer"></div>
+      <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
+      <button class="btn-icon" onclick="loadThreads()" title="Refresh">&#x21bb;</button>
+      <button class="btn-icon" onclick="doLogout()" title="Logout">&#x2715;</button>
+    </div>
+    <!-- Dashboard Panel -->
+    <div class="dash-panel" id="dashPanel">
+      <div class="dash-stats" id="dashStats"></div>
+    </div>
+    <div class="filters">
+      <input type="text" id="searchInput" placeholder="Search name, phone, message..." oninput="debounceSearch()">
+      <select id="statusFilter" onchange="loadThreads()">
+        <option value="">Open + Claimed</option>
+        <option value="all">All</option>
+        <option value="open">Open</option>
+        <option value="claimed">Claimed</option>
+        <option value="closed">Closed</option>
+      </select>
+      <select id="agentFilter" onchange="loadThreads()">
+        <option value="">All Agents</option>
+        <option value="me">My Threads</option>
+        <option value="unassigned">Unassigned</option>
+      </select>
+      <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">Unread</button>
+    </div>
+    <div class="pull-indicator" id="pullIndicator">Pull to refresh...</div>
+    <div class="thread-list" id="threadList"></div>
+    <div class="load-more" id="loadMore" style="display:none">
+      <button onclick="loadMoreThreads()">Load more...</button>
+    </div>
+  </div>
+
+  <!-- Detail View -->
+  <div id="detail-view">
+    <div class="header">
+      <button class="back-btn" onclick="goBack()">&larr;</button>
+      <div style="flex:1;min-width:0">
+        <div id="detailName" style="font-size:.92rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+        <div id="detailPhone" style="font-size:.75rem;color:var(--gray-400)"></div>
+      </div>
+      <span id="detailPriority" class="priority-badge" onclick="cyclePriority()"></span>
+      <span id="detailStatus" class="ti-status" style="font-size:.72rem"></span>
+      <button class="btn-icon" onclick="showEditContactModal()" title="Edit contact">&#9998;</button>
+      <button class="btn-icon" onclick="toggleHistory()" title="History">&#128337;</button>
+    </div>
+    <div class="action-bar" id="actionBar"></div>
+    <div id="detailTags" style="padding:4px 12px;background:var(--white);border-bottom:1px solid var(--gray-200);display:none"></div>
+    <div class="messages-area" id="messagesArea"></div>
+    <div class="history-panel" id="historyPanel"></div>
+    <div style="position:relative;flex-shrink:0">
+      <div class="template-picker" id="templatePicker"></div>
+    </div>
+    <div class="reply-bar" id="replyBar">
+      <button class="note-toggle" id="noteToggle" onclick="toggleNoteMode()" title="Internal note">&#128221;</button>
+      <button class="note-toggle" id="templateToggle" onclick="toggleTemplates()" title="Quick replies">&#9889;</button>
+      <textarea id="replyInput" rows="1" placeholder="Type a reply..." oninput="autoGrow(this)"></textarea>
+      <button class="send-btn" id="sendBtn" onclick="sendReply()" title="Send">&#9654;</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Modal -->
+<div class="modal-bg" id="assignModal">
+  <div class="modal">
+    <h3>Assign to Agent</h3>
+    <div id="agentList"></div>
+    <button class="close-modal" onclick="closeAssignModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- Edit Contact Modal -->
+<div class="modal-bg" id="editContactModal">
+  <div class="modal">
+    <h3>Edit Contact</h3>
+    <label>Name</label><input id="editName" placeholder="Contact name">
+    <label>Company</label><input id="editCompany" placeholder="Company">
+    <label>Email</label><input id="editEmail" placeholder="Email">
+    <button class="btn" onclick="saveContact()">Save</button>
+    <button class="close-modal" onclick="closeEditContactModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── State ───
+let TOKEN = '';
+let USER = null;
+let currentThreads = [];
+let currentThread = null;
+let currentContact = null;
+let currentMessages = [];
+let currentNotes = [];
+let noteMode = false;
+let searchTimeout = null;
+let listPage = 1;
+let listTotal = 0;
+let refreshInterval = null;
+let msgRefreshInterval = null;
+let unreadFilter = false;
+let dashboardVisible = false;
+let templates = [];
+
+// ─── Auth ───
+function getToken() {
+  if (TOKEN) return TOKEN;
+  const m = (document.cookie || '').match(/pa_token=([^;]+)/);
+  if (m) return m[1];
+  return localStorage.getItem('adminToken') || '';
+}
+
+async function api(path, opts = {}) {
+  const t = getToken();
+  const headers = { 'Authorization': 'Bearer ' + t, ...(opts.headers || {}) };
+  if (opts.body && typeof opts.body === 'string') headers['Content-Type'] = 'application/json';
+  const res = await fetch('/api' + path, { ...opts, headers });
+  if (res.status === 401) { showLogin(); throw new Error('Unauthorized'); }
+  return res.json();
+}
+
+async function checkAuth() {
+  try {
+    const r = await api('/admin/me');
+    if (r && r.username) { USER = r; showApp(); return; }
+  } catch(e) {}
+  showLogin();
+}
+
+function showLogin() {
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('app').classList.remove('show');
+}
+
+function showApp() {
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('app').classList.add('show');
+  loadThreads();
+  refreshInterval = setInterval(loadThreadsSilent, 15000);
+  handleHash();
+}
+
+async function doLogin() {
+  const u = document.getElementById('userInput').value.trim();
+  const p = document.getElementById('passInput').value;
+  const err = document.getElementById('loginErr');
+  err.textContent = '';
+  if (!u || !p) { err.textContent = 'Please enter username and password'; return; }
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = 'Logging in...';
+  try {
+    const r = await fetch('/api/admin/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    }).then(r => r.json());
+    if (r.success) {
+      TOKEN = r.token;
+      document.cookie = 'pa_token=' + TOKEN + ';path=/;max-age=2592000;SameSite=Strict';
+      localStorage.setItem('adminToken', TOKEN);
+      USER = { username: r.username, role: r.role, id: r.user_id };
+      showApp();
+    } else {
+      err.textContent = r.error || 'Login failed';
+    }
+  } catch(e) { err.textContent = 'Network error'; }
+  btn.disabled = false; btn.textContent = 'Login';
+}
+
+function doLogout() {
+  TOKEN = '';
+  document.cookie = 'pa_token=;path=/;max-age=0';
+  localStorage.removeItem('adminToken');
+  clearInterval(refreshInterval);
+  clearInterval(msgRefreshInterval);
+  showLogin();
+}
+
+// ─── Phone formatting ───
+function fmtPhone(e164) {
+  if (!e164) return '';
+  const d = e164.replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '1') return '(' + d.substr(1,3) + ') ' + d.substr(4,3) + '-' + d.substr(7);
+  if (d.length === 10) return '(' + d.substr(0,3) + ') ' + d.substr(3,3) + '-' + d.substr(6);
+  return e164;
+}
+
+// ─── Time formatting ───
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + (dateStr.includes('Z') || dateStr.includes('+') ? '' : 'Z'));
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  if (diff < 172800) return 'yesterday';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function fmtTime(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + (dateStr.includes('Z') || dateStr.includes('+') ? '' : 'Z'));
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + (dateStr.includes('Z') || dateStr.includes('+') ? '' : 'Z'));
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ─── Thread List ───
+async function loadThreads() {
+  listPage = 1;
+  await fetchThreads(false);
+  updateUnreadBadge();
+}
+
+async function loadThreadsSilent() {
+  await fetchThreads(true);
+  updateUnreadBadge();
+}
+
+async function fetchThreads(silent) {
+  try {
+    const status = document.getElementById('statusFilter').value;
+    const search = document.getElementById('searchInput').value.trim();
+    const agentF = document.getElementById('agentFilter').value;
+    let url = '/sms/threads?page=' + listPage + '&limit=30';
+    if (status) url += '&status=' + status;
+    if (search) url += '&search=' + encodeURIComponent(search);
+    if (agentF) url += '&agent_id=' + agentF;
+    if (unreadFilter) url += '&unread=1';
+    const r = await api(url);
+    listTotal = r.total || 0;
+    if (listPage === 1) {
+      currentThreads = r.threads || [];
+    } else {
+      currentThreads = currentThreads.concat(r.threads || []);
+    }
+    renderThreadList();
+    const hasMore = currentThreads.length < listTotal;
+    document.getElementById('loadMore').style.display = hasMore ? '' : 'none';
+  } catch(e) { if (!silent) console.error('Load threads error:', e); }
+}
+
+function loadMoreThreads() { listPage++; fetchThreads(false); }
+
+function renderThreadList() {
+  const el = document.getElementById('threadList');
+  if (currentThreads.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">&#128172;</div><div>No conversations yet</div></div>';
+    return;
+  }
+  el.innerHTML = currentThreads.map(t => {
+    const name = t.contact.name || fmtPhone(t.contact.phone_e164) || 'Unknown';
+    const initials = (t.contact.name || t.contact.phone_e164 || '?').substring(0,2).toUpperCase();
+    const preview = esc(t.last_message_preview || 'No messages');
+    const time = timeAgo(t.last_message_at);
+    const agent = t.assigned_agent ? t.assigned_agent.username : '';
+    const isUnread = t.unread_count > 0;
+    return '<div class="thread-item' + (isUnread ? ' unread' : '') + '" onclick="openThread(' + t.id + ')">'
+      + '<div class="ti-avatar">' + esc(initials) + '</div>'
+      + '<div class="ti-body">'
+      + '<div class="ti-top"><span class="ti-name">' + esc(name) + '</span>'
+      + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
+      + '<span class="ti-time">' + time + '</span></div>'
+      + '<div class="ti-preview">' + preview + '</div>'
+      + '<div class="ti-meta"><span class="ti-status ' + t.status + '">' + t.status + '</span>'
+      + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
+      + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
+      + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
+      + '</div>'
+      + renderTagsInline(t.tags)
+      + '</div></div>';
+  }).join('');
+}
+
+async function updateUnreadBadge() {
+  try {
+    const r = await api('/sms/unread-count');
+    const el = document.getElementById('headerUnread');
+    if (r.total > 0) { el.textContent = r.total > 99 ? '99+' : r.total; el.style.display = ''; }
+    else { el.style.display = 'none'; }
+  } catch(e) {}
+}
+
+function debounceSearch() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => loadThreads(), 400);
+}
+
+// ─── Thread Detail ───
+async function openThread(id) {
+  window.location.hash = 'thread/' + id;
+}
+
+async function loadThreadDetail(id) {
+  try {
+    const [threadRes, msgRes] = await Promise.all([
+      api('/sms/threads/' + id),
+      api('/sms/threads/' + id + '/messages')
+    ]);
+    currentThread = threadRes.thread;
+    currentContact = threadRes.contact;
+    currentMessages = msgRes.messages || [];
+    currentNotes = msgRes.notes || [];
+    renderDetail();
+    // Mark as read
+    if (currentThread.unread_count > 0) {
+      api('/sms/threads/' + id + '/read', { method: 'POST' }).catch(() => {});
+    }
+    // Start message refresh
+    clearInterval(msgRefreshInterval);
+    msgRefreshInterval = setInterval(() => refreshMessages(id), 10000);
+  } catch(e) {
+    console.error('Load thread error:', e);
+    toast('Failed to load thread');
+  }
+}
+
+async function refreshMessages(id) {
+  try {
+    const r = await api('/sms/threads/' + id + '/messages');
+    const newCount = (r.messages || []).length + (r.notes || []).length;
+    const oldCount = currentMessages.length + currentNotes.length;
+    if (newCount !== oldCount) {
+      currentMessages = r.messages || [];
+      currentNotes = r.notes || [];
+      renderMessages();
+      // Also mark as read
+      api('/sms/threads/' + id + '/read', { method: 'POST' }).catch(() => {});
+    }
+  } catch(e) {}
+}
+
+function renderDetail() {
+  if (!currentThread || !currentContact) return;
+  document.getElementById('list-view').classList.add('hide');
+  const dv = document.getElementById('detail-view');
+  dv.classList.add('show');
+  dv.classList.add('slide-in-right');
+  setTimeout(() => dv.classList.remove('slide-in-right'), 300);
+
+  const name = currentContact.name || fmtPhone(currentContact.phone_e164);
+  document.getElementById('detailName').textContent = name;
+  document.getElementById('detailPhone').textContent = fmtPhone(currentContact.phone_e164);
+
+  const statusEl = document.getElementById('detailStatus');
+  statusEl.textContent = currentThread.status;
+  statusEl.className = 'ti-status ' + currentThread.status;
+
+  renderPriorityBadge();
+  renderActionBar();
+  renderDetailTags();
+  renderMessages();
+  // Hide panels from previous thread
+  document.getElementById('historyPanel').classList.remove('show');
+  document.getElementById('templatePicker').classList.remove('show');
+  // Reset reply bar
+  noteMode = false;
+  document.getElementById('replyBar').classList.remove('note-mode');
+  document.getElementById('noteToggle').classList.remove('active');
+  document.getElementById('replyInput').placeholder = 'Type a reply...';
+  document.getElementById('replyInput').value = '';
+}
+
+function renderActionBar() {
+  const bar = document.getElementById('actionBar');
+  const s = currentThread.status;
+  const isAssigned = !!currentThread.assigned_agent;
+  const isMe = currentThread.assigned_agent && currentThread.assigned_agent.id === (USER && USER.id);
+  let html = '';
+
+  if (s === 'open') {
+    html += '<button class="action-btn primary" onclick="claimThread()">Claim</button>';
+    html += '<button class="action-btn" onclick="showAssignModal()">Assign</button>';
+    html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
+  } else if (s === 'claimed') {
+    if (!isMe) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
+    html += '<button class="action-btn" onclick="showAssignModal()">Reassign</button>';
+    html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
+    if (isAssigned) html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">Assigned: ' + esc(currentThread.assigned_agent.username) + '</span>';
+  } else if (s === 'closed') {
+    html += '<button class="action-btn primary" onclick="reopenThread()">Reopen</button>';
+  }
+  bar.innerHTML = html;
+}
+
+function renderMessages() {
+  const area = document.getElementById('messagesArea');
+  // Merge messages and notes, sort by time
+  const items = [];
+  currentMessages.forEach(m => items.push({ ...m, _type: 'message', _time: m.created_at }));
+  currentNotes.forEach(n => items.push({ ...n, _type: 'note', _time: n.created_at }));
+  items.sort((a, b) => (a._time || '').localeCompare(b._time || ''));
+
+  if (items.length === 0) {
+    area.innerHTML = '<div class="empty-state"><div class="icon">&#128172;</div><div>No messages yet</div></div>';
+    return;
+  }
+
+  let lastDate = '';
+  let html = '';
+  items.forEach(item => {
+    const d = fmtDate(item._time);
+    if (d !== lastDate) {
+      html += '<div class="msg-date-divider">' + d + '</div>';
+      lastDate = d;
+    }
+    if (item._type === 'note') {
+      html += '<div class="msg-note">'
+        + '<div class="note-label">Internal Note</div>'
+        + '<div>' + esc(item.body) + '</div>'
+        + '<div class="note-author">' + esc(item.author_name || 'Unknown') + ' &middot; ' + fmtTime(item._time) + '</div>'
+        + '</div>';
+    } else {
+      const dir = item.direction;
+      const statusIcon = getStatusIcon(item.delivery_status, item.id);
+      html += '<div class="msg-row ' + dir + '">'
+        + '<div class="msg-bubble">' + esc(item.body) + '</div>'
+        + '<div class="msg-meta">' + fmtTime(item._time)
+        + (dir === 'outbound' ? ' &middot; ' + statusIcon : '')
+        + (dir === 'outbound' && item.author_name ? ' &middot; ' + esc(item.author_name) : '')
+        + '</div></div>';
+    }
+  });
+  area.innerHTML = html;
+  area.scrollTop = area.scrollHeight;
+}
+
+function getStatusIcon(status, msgId) {
+  switch(status) {
+    case 'queued': case 'sending': return '<span class="msg-status" title="Sending">&#9201;</span>';
+    case 'sent': return '<span class="msg-status" title="Sent">&#10003;</span>';
+    case 'delivered': return '<span class="msg-status delivered" title="Delivered">&#10003;&#10003;</span>';
+    case 'failed': case 'undelivered': return '<span class="msg-status failed" title="Failed - click to retry" onclick="retryMessage(' + msgId + ')">&#10007; Failed</span>';
+    default: return '<span class="msg-status" title="' + esc(status || '') + '">&#10003;</span>';
+  }
+}
+
+// ─── Actions ───
+async function sendReply() {
+  const input = document.getElementById('replyInput');
+  const body = input.value.trim();
+  if (!body || !currentThread) return;
+
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+
+  try {
+    if (noteMode) {
+      const r = await api('/sms/threads/' + currentThread.id + '/notes', {
+        method: 'POST', body: JSON.stringify({ body })
+      });
+      if (r.success && r.note) {
+        currentNotes.push(r.note);
+        renderMessages();
+        input.value = '';
+        toast('Note added');
+      }
+    } else {
+      // Optimistic: add message to UI immediately
+      const tempMsg = {
+        id: Date.now(), thread_id: currentThread.id, direction: 'outbound',
+        source: 'agent', body, delivery_status: 'sending',
+        author_name: USER ? USER.username : '', created_at: new Date().toISOString(),
+        _type: 'message', _time: new Date().toISOString()
+      };
+      currentMessages.push(tempMsg);
+      renderMessages();
+      input.value = '';
+
+      const r = await api('/sms/threads/' + currentThread.id + '/messages', {
+        method: 'POST', body: JSON.stringify({ body })
+      });
+      if (r.success && r.message) {
+        // Replace temp message with real one
+        const idx = currentMessages.findIndex(m => m.id === tempMsg.id);
+        if (idx >= 0) currentMessages[idx] = r.message;
+        renderMessages();
+      }
+    }
+  } catch(e) {
+    toast('Send failed: ' + (e.message || 'Unknown error'));
+    // Remove optimistic message on failure
+    if (!noteMode) {
+      currentMessages = currentMessages.filter(m => m.id !== Date.now());
+      renderMessages();
+    }
+  }
+  btn.disabled = false;
+}
+
+async function claimThread() {
+  if (!currentThread) return;
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/claim', { method: 'POST' });
+    if (r.success) { toast('Thread claimed'); loadThreadDetail(currentThread.id); loadThreadsSilent(); }
+    else toast(r.error || 'Claim failed');
+  } catch(e) { toast(e.message || 'Claim failed'); }
+}
+
+async function closeThread() {
+  if (!currentThread || !confirm('Close this thread?')) return;
+  try {
+    await api('/sms/threads/' + currentThread.id + '/close', { method: 'POST' });
+    toast('Thread closed');
+    loadThreadDetail(currentThread.id);
+    loadThreadsSilent();
+  } catch(e) { toast('Close failed'); }
+}
+
+async function reopenThread() {
+  if (!currentThread) return;
+  try {
+    await api('/sms/threads/' + currentThread.id + '/reopen', { method: 'POST' });
+    toast('Thread reopened');
+    loadThreadDetail(currentThread.id);
+    loadThreadsSilent();
+  } catch(e) { toast('Reopen failed'); }
+}
+
+async function retryMessage(msgId) {
+  if (!currentThread) return;
+  try {
+    await api('/sms/threads/' + currentThread.id + '/retry/' + msgId, { method: 'POST' });
+    toast('Message resent');
+    refreshMessages(currentThread.id);
+  } catch(e) { toast('Retry failed: ' + (e.message || '')); }
+}
+
+// ─── Assign Modal ───
+async function showAssignModal() {
+  try {
+    const r = await api('/sms/agents');
+    const list = document.getElementById('agentList');
+    list.innerHTML = (r.agents || []).map(a =>
+      '<div class="agent-item" onclick="doAssign(' + a.id + ')">' + esc(a.username) + ' <span style="color:var(--gray-400);font-size:.75rem">(' + a.role + ')</span></div>'
+    ).join('');
+    document.getElementById('assignModal').classList.add('show');
+  } catch(e) { toast('Failed to load agents'); }
+}
+
+function closeAssignModal() { document.getElementById('assignModal').classList.remove('show'); }
+
+async function doAssign(agentId) {
+  if (!currentThread) return;
+  try {
+    await api('/sms/threads/' + currentThread.id + '/assign', {
+      method: 'POST', body: JSON.stringify({ agent_id: agentId })
+    });
+    closeAssignModal();
+    toast('Thread assigned');
+    loadThreadDetail(currentThread.id);
+    loadThreadsSilent();
+  } catch(e) { toast('Assign failed'); }
+}
+
+// ─── Edit Contact ───
+function showEditContactModal() {
+  if (!currentContact) return;
+  document.getElementById('editName').value = currentContact.name || '';
+  document.getElementById('editCompany').value = currentContact.company || '';
+  document.getElementById('editEmail').value = currentContact.email || '';
+  document.getElementById('editContactModal').classList.add('show');
+}
+function closeEditContactModal() { document.getElementById('editContactModal').classList.remove('show'); }
+
+async function saveContact() {
+  if (!currentContact) return;
+  try {
+    await api('/sms/contacts/' + currentContact.id, {
+      method: 'PUT', body: JSON.stringify({
+        name: document.getElementById('editName').value.trim(),
+        company: document.getElementById('editCompany').value.trim(),
+        email: document.getElementById('editEmail').value.trim()
+      })
+    });
+    closeEditContactModal();
+    toast('Contact updated');
+    loadThreadDetail(currentThread.id);
+    loadThreadsSilent();
+  } catch(e) { toast('Save failed'); }
+}
+
+// ─── Note Mode ───
+function toggleNoteMode() {
+  noteMode = !noteMode;
+  const bar = document.getElementById('replyBar');
+  const btn = document.getElementById('noteToggle');
+  const input = document.getElementById('replyInput');
+  if (noteMode) {
+    bar.classList.add('note-mode');
+    btn.classList.add('active');
+    input.placeholder = 'Add internal note (not sent to customer)...';
+  } else {
+    bar.classList.remove('note-mode');
+    btn.classList.remove('active');
+    input.placeholder = 'Type a reply...';
+  }
+  input.focus();
+}
+
+// ─── UI Helpers ───
+function autoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function goBack() {
+  clearInterval(msgRefreshInterval);
+  window.location.hash = 'threads';
+}
+
+// ─── Hash routing ───
+function handleHash() {
+  const hash = window.location.hash.replace('#', '');
+  if (hash.startsWith('thread/')) {
+    const id = parseInt(hash.split('/')[1]);
+    if (id) loadThreadDetail(id);
+  } else {
+    // Show list
+    document.getElementById('list-view').classList.remove('hide');
+    document.getElementById('detail-view').classList.remove('show');
+    currentThread = null;
+    clearInterval(msgRefreshInterval);
+  }
+}
+
+window.addEventListener('hashchange', handleHash);
+
+// ─── Keyboard shortcut: Enter to send ───
+document.addEventListener('keydown', function(e) {
+  if (e.target.id === 'replyInput' && e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendReply();
+  }
+  if (e.target.id === 'passInput' && e.key === 'Enter') {
+    e.preventDefault();
+    doLogin();
+  }
+});
+
+// ─── Phase 2: Tags ───
+function renderTagsInline(tagsJson) {
+  let tags = [];
+  try { tags = typeof tagsJson === 'string' ? JSON.parse(tagsJson) : (tagsJson || []); } catch(e) {}
+  if (!tags.length) return '';
+  return '<div class="tag-list" style="margin-top:3px">' + tags.map(t => '<span class="tag">' + esc(t) + '</span>').join('') + '</div>';
+}
+
+function renderDetailTags() {
+  const el = document.getElementById('detailTags');
+  if (!currentThread) { el.style.display = 'none'; return; }
+  let tags = [];
+  try { tags = typeof currentThread.tags === 'string' ? JSON.parse(currentThread.tags) : (currentThread.tags || []); } catch(e) {}
+  el.style.display = '';
+  el.innerHTML = '<div class="tag-list">'
+    + tags.map(t => '<span class="tag">' + esc(t) + '<span class="tag-x" onclick="removeTag(\'' + esc(t) + '\')">&times;</span></span>').join('')
+    + '<span class="tag-add" id="addTagBtn" onclick="showTagInput()">+ Tag</span>'
+    + '</div>';
+}
+
+function showTagInput() {
+  const btn = document.getElementById('addTagBtn');
+  btn.outerHTML = '<input class="tag-input" id="tagInput" placeholder="tag..." onkeydown="if(event.key===\'Enter\'){addTag();}" onblur="setTimeout(addTag,200)">';
+  document.getElementById('tagInput').focus();
+}
+
+async function addTag() {
+  const input = document.getElementById('tagInput');
+  if (!input || !currentThread) return;
+  const tag = input.value.trim();
+  if (!tag) { renderDetailTags(); return; }
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/tags', { method: 'POST', body: JSON.stringify({ tag }) });
+    if (r.success) { currentThread.tags = JSON.stringify(r.tags); renderDetailTags(); loadThreadsSilent(); }
+  } catch(e) { toast('Failed to add tag'); renderDetailTags(); }
+}
+
+async function removeTag(tag) {
+  if (!currentThread) return;
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/tags/' + encodeURIComponent(tag), { method: 'DELETE' });
+    if (r.success) { currentThread.tags = JSON.stringify(r.tags); renderDetailTags(); loadThreadsSilent(); }
+  } catch(e) { toast('Failed to remove tag'); }
+}
+
+// ─── Phase 2: Priority ───
+async function cyclePriority() {
+  if (!currentThread) return;
+  const order = ['normal', 'high', 'urgent', 'low', 'normal'];
+  const idx = order.indexOf(currentThread.priority || 'normal');
+  const next = order[(idx + 1) % order.length];
+  try {
+    await api('/sms/threads/' + currentThread.id + '/priority', { method: 'PUT', body: JSON.stringify({ priority: next }) });
+    currentThread.priority = next;
+    renderPriorityBadge();
+    loadThreadsSilent();
+    toast('Priority: ' + next);
+  } catch(e) { toast('Failed to update priority'); }
+}
+
+function renderPriorityBadge() {
+  const el = document.getElementById('detailPriority');
+  const p = currentThread ? (currentThread.priority || 'normal') : 'normal';
+  el.textContent = p;
+  el.className = 'priority-badge ' + p;
+  el.title = 'Click to change priority';
+  el.style.cursor = 'pointer';
+}
+
+// ─── Phase 2: Dashboard ───
+function toggleDashboard() {
+  dashboardVisible = !dashboardVisible;
+  const panel = document.getElementById('dashPanel');
+  if (dashboardVisible) { panel.classList.add('show'); loadDashStats(); }
+  else { panel.classList.remove('show'); }
+}
+
+async function loadDashStats() {
+  try {
+    const r = await api('/sms/stats');
+    document.getElementById('dashStats').innerHTML =
+      '<div class="dash-stat"><div class="num">' + (r.open || 0) + '</div><div class="lbl">Open</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.claimed || 0) + '</div><div class="lbl">Claimed</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.new_today || 0) + '</div><div class="lbl">New Today</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.closed_today || 0) + '</div><div class="lbl">Closed Today</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.avg_response_minutes != null ? r.avg_response_minutes + 'm' : '--') + '</div><div class="lbl">Avg Response</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.total_messages || 0) + '</div><div class="lbl">Total Msgs</div></div>';
+  } catch(e) { console.error('Dashboard error:', e); }
+}
+
+// ─── Phase 2: Unread filter ───
+function toggleUnreadFilter() {
+  unreadFilter = !unreadFilter;
+  document.getElementById('unreadFilterBtn').classList.toggle('active', unreadFilter);
+  loadThreads();
+}
+
+// ─── Phase 2: Quick Reply Templates ───
+async function loadTemplates() {
+  try {
+    const r = await api('/sms/templates');
+    templates = r.templates || [];
+  } catch(e) { templates = []; }
+}
+
+function toggleTemplates() {
+  const picker = document.getElementById('templatePicker');
+  if (picker.classList.contains('show')) { picker.classList.remove('show'); return; }
+  if (templates.length === 0) { toast('No templates configured yet'); return; }
+  picker.innerHTML = templates.map((t, i) =>
+    '<div class="template-item" onclick="useTemplate(' + i + ')">' + esc(typeof t === 'string' ? t : t.text || t.body || '') + '</div>'
+  ).join('');
+  picker.classList.add('show');
+}
+
+function useTemplate(idx) {
+  const t = templates[idx];
+  const text = typeof t === 'string' ? t : (t.text || t.body || '');
+  document.getElementById('replyInput').value = text;
+  document.getElementById('templatePicker').classList.remove('show');
+  autoGrow(document.getElementById('replyInput'));
+  document.getElementById('replyInput').focus();
+}
+
+// ─── Phase 2: Thread History ───
+async function toggleHistory() {
+  const panel = document.getElementById('historyPanel');
+  if (panel.classList.contains('show')) { panel.classList.remove('show'); return; }
+  if (!currentThread) return;
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/history');
+    let html = '<div style="font-size:.78rem;font-weight:700;color:var(--blue);margin-bottom:6px">Thread History</div>';
+    const events = [];
+    (r.assignments || []).forEach(a => {
+      events.push({ time: a.created_at, text: (a.action || 'assigned') + ': ' + (a.from_name || 'system') + ' → ' + (a.to_name || '?') + (a.reason ? ' (' + a.reason + ')' : '') });
+    });
+    (r.audits || []).forEach(a => {
+      if (a.action === 'viewed') return; // skip view events
+      events.push({ time: a.created_at, text: a.action + (a.actor_id ? '' : ' (system)') });
+    });
+    events.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    if (events.length === 0) html += '<div style="color:var(--gray-400);font-size:.75rem">No history</div>';
+    else events.forEach(e => { html += '<div class="history-item"><span class="hi-time">' + fmtTime(e.time) + ' ' + fmtDate(e.time) + '</span> — ' + esc(e.text) + '</div>'; });
+    panel.innerHTML = html;
+    panel.classList.add('show');
+  } catch(e) { toast('Failed to load history'); }
+}
+
+// ─── Phase 3: PWA ───
+let deferredInstallPrompt = null;
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    console.log('[PWA] SW registered, scope:', reg.scope);
+    // Check for updates every 30 min
+    setInterval(() => reg.update(), 30 * 60 * 1000);
+  }).catch(err => console.warn('[PWA] SW registration failed:', err));
+}
+
+// Listen for install prompt
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  // Show banner if not dismissed before
+  if (!localStorage.getItem('pwa_dismissed')) {
+    document.getElementById('installBanner').classList.add('show');
+  }
+});
+
+async function installPwa() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const result = await deferredInstallPrompt.userChoice;
+  if (result.outcome === 'accepted') {
+    toast('App installed!');
+    document.getElementById('installBanner').classList.remove('show');
+  }
+  deferredInstallPrompt = null;
+}
+
+function dismissInstall() {
+  document.getElementById('installBanner').classList.remove('show');
+  localStorage.setItem('pwa_dismissed', '1');
+}
+
+// Detect when app is running as installed PWA
+window.addEventListener('appinstalled', () => {
+  document.getElementById('installBanner').classList.remove('show');
+  deferredInstallPrompt = null;
+});
+
+// Offline detection
+window.addEventListener('online', () => {
+  document.getElementById('offlineBar').classList.remove('show');
+  loadThreadsSilent();
+});
+window.addEventListener('offline', () => {
+  document.getElementById('offlineBar').classList.add('show');
+});
+
+// ─── Init ───
+loadTemplates();
+checkAuth();
+</script>
+</body>
+</html>
