@@ -1957,6 +1957,20 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_audit_entity ON sms_audit_logs
 try { db.exec(`ALTER TABLE admin_users ADD COLUMN sms_notify_phone TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE admin_users ADD COLUMN sms_notify_enabled INTEGER DEFAULT 1`); } catch(e) {}
 
+// SMS Inbox: auto-configure agent notification phone numbers
+try {
+  const agentPhones = [
+    { username: 'berylzhang', phone: '+13128437890' },
+    { username: 'jimmycai', phone: '+16822463589' },
+    { username: 'tiexiongzhou', phone: '+13143270319' },
+    { username: 'nikizhao', phone: '+18726642397' }
+  ];
+  const stmt = db.prepare(`UPDATE admin_users SET sms_notify_phone=?, sms_notify_enabled=1 WHERE username=? AND (sms_notify_phone IS NULL OR sms_notify_phone='')`);
+  for (const a of agentPhones) {
+    stmt.run(a.phone, a.username);
+  }
+} catch(e) { console.warn('SMS agent phone auto-config:', e.message); }
+
 // Helper: read company name from DB (admin-editable), fall back to env var, then default.
 function getCompanyLegalName() {
   try {
