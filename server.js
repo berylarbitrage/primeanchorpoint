@@ -1957,19 +1957,28 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_audit_entity ON sms_audit_logs
 try { db.exec(`ALTER TABLE admin_users ADD COLUMN sms_notify_phone TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE admin_users ADD COLUMN sms_notify_enabled INTEGER DEFAULT 1`); } catch(e) {}
 
-// SMS Inbox: auto-configure agent notification phone numbers
+// SMS Inbox: auto-create agent accounts if they don't exist, then set phone numbers
 try {
-  const agentPhones = [
-    { username: 'berylzhang', phone: '+13128437890' },
-    { username: 'jimmycai', phone: '+16822463589' },
-    { username: 'tiexiongzhou', phone: '+13143270319' },
-    { username: 'nikizhao', phone: '+18726642397' }
+  const agents = [
+    { username: 'berylzhang', password: 'GoodluckBeryl2026$', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
+    { username: 'jimmycai', password: 'GoodluckJimmy2026$', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
+    { username: 'tiexiongzhou', password: 'GoodluckJimmy2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
+    { username: 'nikizhao', password: 'GoodluckNiki2026$', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
   ];
-  const stmt = db.prepare(`UPDATE admin_users SET sms_notify_phone=?, sms_notify_enabled=1 WHERE username=? AND (sms_notify_phone IS NULL OR sms_notify_phone='')`);
-  for (const a of agentPhones) {
-    stmt.run(a.phone, a.username);
+  for (const a of agents) {
+    const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(a.username);
+    if (!existing) {
+      const salt = require('crypto').randomBytes(16).toString('hex');
+      const hash = hashPassword(a.password, salt);
+      db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, active, sms_notify_phone, sms_notify_enabled) VALUES (?,?,?,?,?,1,?,1)`)
+        .run(a.username, hash, salt, a.role, a.display_name, a.phone);
+      console.log('SMS agent account created:', a.username);
+    } else {
+      db.prepare(`UPDATE admin_users SET sms_notify_phone=?, sms_notify_enabled=1 WHERE id=? AND (sms_notify_phone IS NULL OR sms_notify_phone='')`)
+        .run(a.phone, existing.id);
+    }
   }
-} catch(e) { console.warn('SMS agent phone auto-config:', e.message); }
+} catch(e) { console.warn('SMS agent auto-config:', e.message); }
 
 // Helper: read company name from DB (admin-editable), fall back to env var, then default.
 function getCompanyLegalName() {
