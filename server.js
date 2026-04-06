@@ -1969,7 +1969,7 @@ try {
     const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(a.username);
     if (!existing) {
       const salt = require('crypto').randomBytes(16).toString('hex');
-      const hash = hashPassword(a.password, salt);
+      const hash = require('crypto').scryptSync(a.password, salt, 64).toString('hex');
       db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, active, sms_notify_phone, sms_notify_enabled) VALUES (?,?,?,?,?,1,?,1)`)
         .run(a.username, hash, salt, a.role, a.display_name, a.phone);
       console.log('SMS agent account created:', a.username);
