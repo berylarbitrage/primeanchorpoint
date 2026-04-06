@@ -18673,7 +18673,7 @@ app.post('/api/sms/webhook/status', express.urlencoded({ extended: false }), val
 
 // ─── SMS Access Middleware ───
 function requireSmsAccess(req, res, next) {
-  if (req.userRole === 'manager') return res.status(403).json({ error: 'SMS Inbox access denied' });
+  // Allow admin, staff, and manager roles to access SMS Inbox
   next();
 }
 
@@ -19014,7 +19014,7 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/agents — list available agents for assign dropdown
 app.get('/api/sms/agents', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const agents = db.prepare(`SELECT id, username, role FROM admin_users WHERE role IN ('admin','staff') ORDER BY username`).all();
+    const agents = db.prepare(`SELECT id, username, role FROM admin_users WHERE role IN ('admin','staff','manager') ORDER BY username`).all();
     res.json({ agents });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
