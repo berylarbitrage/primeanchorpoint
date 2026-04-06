@@ -19029,6 +19029,216 @@ app.post('/api/sms/threads/:id/retry/:messageId', requireAdmin, requireSmsAccess
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ═══ Phase 2: SMS Inbox Enhancements ═══
+
+// ─── Thread tags ───
+app.post('/api/sms/threads/:id/tags', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    const { tag } = req.body;
+    if (!tag || !tag.trim()) return res.status(400).json({ error: 'Tag required' });
+    let tags = [];
+    try { tags = JSON.parse(thread.tags || '[]'); } catch(e) { tags = []; }
+    const t = tag.trim().toLowerCase();
+    if (!tags.includes(t)) tags.push(t);
+    db.prepare('UPDATE sms_threads SET tags=?, updated_at=datetime(\'now\') WHERE id=?').run(JSON.stringify(tags), thread.id);
+    smsAudit('thread', thread.id, 'tag_added', 'agent', req.userId, { tag: t });
+    res.json({ success: true, tags });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/sms/threads/:id/tags/:tag', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    let tags = [];
+    try { tags = JSON.parse(thread.tags || '[]'); } catch(e) { tags = []; }
+    const t = decodeURIComponent(req.params.tag).toLowerCase();
+    tags = tags.filter(x => x !== t);
+    db.prepare('UPDATE sms_threads SET tags=?, updated_at=datetime(\'now\') WHERE id=?').run(JSON.stringify(tags), thread.id);
+    smsAudit('thread', thread.id, 'tag_removed', 'agent', req.userId, { tag: t });
+    res.json({ success: true, tags });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Thread priority ───
+app.put('/api/sms/threads/:id/priority', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { priority } = req.body;
+    const valid = ['low', 'normal', 'high', 'urgent'];
+    if (!valid.includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
+    db.prepare('UPDATE sms_threads SET priority=?, updated_at=datetime(\'now\') WHERE id=?').run(priority, req.params.id);
+    smsAudit('thread', parseInt(req.params.id), 'priority_changed', 'agent', req.userId, { priority });
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Dashboard stats ───
+app.get('/api/sms/stats', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const openCount = db.prepare("SELECT COUNT(*) as n FROM sms_threads WHERE status='open'").get().n;
+    const claimedCount = db.prepare("SELECT COUNT(*) as n FROM sms_threads WHERE status='claimed'").get().n;
+    const closedTodayCount = db.prepare("SELECT COUNT(*) as n FROM sms_threads WHERE status='closed' AND date(closed_at)=?").get(today).n;
+    const newTodayCount = db.prepare("SELECT COUNT(*) as n FROM sms_threads WHERE date(created_at)=?").get(today).n;
+    const totalMessages = db.prepare("SELECT COUNT(*) as n FROM sms_messages").get().n;
+    const totalInbound = db.prepare("SELECT COUNT(*) as n FROM sms_messages WHERE direction='inbound'").get().n;
+    const totalOutbound = db.prepare("SELECT COUNT(*) as n FROM sms_messages WHERE direction='outbound'").get().n;
+
+    // Average response time: time between first inbound and first outbound per thread (for threads closed today)
+    const avgResp = db.prepare(`SELECT AVG(resp_seconds) as avg_resp FROM (
+      SELECT t.id,
+        (julianday(MIN(CASE WHEN m.direction='outbound' THEN m.created_at END)) -
+         julianday(MIN(CASE WHEN m.direction='inbound' THEN m.created_at END))) * 86400 as resp_seconds
+      FROM sms_threads t JOIN sms_messages m ON m.thread_id=t.id
+      WHERE t.status IN ('claimed','closed') AND t.last_outbound_at IS NOT NULL
+      GROUP BY t.id HAVING resp_seconds > 0
+    )`).get();
+
+    // Agent workload: threads per agent
+    const agentStats = db.prepare(`SELECT a.username, COUNT(t.id) as thread_count,
+      SUM(CASE WHEN t.status IN ('open','claimed') THEN 1 ELSE 0 END) as active_count
+      FROM sms_threads t JOIN admin_users a ON a.id=t.assigned_agent_id
+      GROUP BY t.assigned_agent_id ORDER BY active_count DESC`).all();
+
+    res.json({
+      open: openCount,
+      claimed: claimedCount,
+      closed_today: closedTodayCount,
+      new_today: newTodayCount,
+      total_messages: totalMessages,
+      total_inbound: totalInbound,
+      total_outbound: totalOutbound,
+      avg_response_minutes: avgResp.avg_resp ? Math.round(avgResp.avg_resp / 60) : null,
+      agent_stats: agentStats
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Full-text search across message bodies ───
+app.get('/api/sms/search', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { q, page: pg, limit: lim } = req.query;
+    if (!q || !q.trim()) return res.json({ results: [], total: 0 });
+    const pageNum = Math.max(1, parseInt(pg) || 1);
+    const pageSize = Math.min(50, Math.max(1, parseInt(lim) || 20));
+    const offset = (pageNum - 1) * pageSize;
+    const like = '%' + q.trim() + '%';
+
+    const total = db.prepare(`SELECT COUNT(DISTINCT t.id) as n FROM sms_threads t
+      JOIN sms_contacts c ON c.id=t.contact_id
+      LEFT JOIN sms_messages m ON m.thread_id=t.id
+      WHERE c.phone_e164 LIKE ? OR c.name LIKE ? OR c.company LIKE ? OR m.body LIKE ?`).get(like, like, like, like).n;
+
+    const results = db.prepare(`SELECT DISTINCT t.id, t.status, t.last_message_at, t.assigned_agent_id,
+      c.phone_e164, c.name as contact_name,
+      a.username as agent_username
+      FROM sms_threads t
+      JOIN sms_contacts c ON c.id=t.contact_id
+      LEFT JOIN sms_messages m ON m.thread_id=t.id
+      LEFT JOIN admin_users a ON a.id=t.assigned_agent_id
+      WHERE c.phone_e164 LIKE ? OR c.name LIKE ? OR c.company LIKE ? OR m.body LIKE ?
+      ORDER BY t.last_message_at DESC
+      LIMIT ? OFFSET ?`).all(like, like, like, like, pageSize, offset);
+
+    res.json({ results, total, page: pageNum });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Link contact to employee ───
+app.put('/api/sms/contacts/:id/link-employee', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { employee_id } = req.body;
+    const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
+    if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    if (employee_id) {
+      const emp = db.prepare('SELECT id, first_name, last_name FROM employees WHERE id=?').get(employee_id);
+      if (!emp) return res.status(404).json({ error: 'Employee not found' });
+      db.prepare('UPDATE sms_contacts SET employee_id=?, updated_at=datetime(\'now\') WHERE id=?').run(employee_id, contact.id);
+      // Auto-fill name if empty
+      if (!contact.name && (emp.first_name || emp.last_name)) {
+        db.prepare('UPDATE sms_contacts SET name=?, updated_at=datetime(\'now\') WHERE id=?')
+          .run(((emp.first_name || '') + ' ' + (emp.last_name || '')).trim(), contact.id);
+      }
+    } else {
+      db.prepare('UPDATE sms_contacts SET employee_id=NULL, updated_at=datetime(\'now\') WHERE id=?').run(contact.id);
+    }
+    smsAudit('contact', contact.id, 'employee_linked', 'agent', req.userId, { employee_id });
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Quick reply templates ───
+// Store in app_settings as JSON
+app.get('/api/sms/templates', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='sms_reply_templates'").get();
+    const templates = row ? JSON.parse(row.value) : [];
+    res.json({ templates });
+  } catch(e) { res.json({ templates: [] }); }
+});
+
+app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAccess, (req, res) => {
+  try {
+    const { templates } = req.body;
+    if (!Array.isArray(templates)) return res.status(400).json({ error: 'templates must be an array' });
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('sms_reply_templates', ?, datetime('now'))").run(JSON.stringify(templates));
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Thread history / assignment log ───
+app.get('/api/sms/threads/:id/history', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const assignments = db.prepare(`SELECT sa.*, af.username as from_name, at2.username as to_name
+      FROM sms_thread_assignments sa
+      LEFT JOIN admin_users af ON af.id=sa.from_agent_id
+      LEFT JOIN admin_users at2 ON at2.id=sa.to_agent_id
+      WHERE sa.thread_id=? ORDER BY sa.created_at ASC`).all(req.params.id);
+
+    const audits = db.prepare(`SELECT * FROM sms_audit_logs
+      WHERE entity_type='thread' AND entity_id=?
+      ORDER BY created_at ASC`).all(req.params.id);
+
+    res.json({ assignments, audits });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Auto re-reminder for unhandled threads ───
+const SMS_REREMIND_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const SMS_REREMIND_THRESHOLD = 10 * 60 * 1000; // re-remind if no response for 10 min
+
+function smsAutoReremind() {
+  try {
+    const threshold = new Date(Date.now() - SMS_REREMIND_THRESHOLD).toISOString();
+    // Find open threads with inbound messages newer than threshold but no outbound reply after that
+    const staleThreads = db.prepare(`
+      SELECT t.*, c.phone_e164, c.name as contact_name FROM sms_threads t
+      JOIN sms_contacts c ON c.id=t.contact_id
+      WHERE t.status='open' AND t.last_inbound_at IS NOT NULL AND t.last_inbound_at < ?
+      AND (t.last_outbound_at IS NULL OR t.last_outbound_at < t.last_inbound_at)
+    `).all(threshold);
+
+    for (const thread of staleThreads) {
+      // Check if we already reminded recently (within last 10 min)
+      const recentNotif = db.prepare(`SELECT id FROM sms_notifications WHERE thread_id=? AND created_at > ? LIMIT 1`)
+        .get(thread.id, threshold);
+      if (recentNotif) continue;
+
+      const agents = smsGetNotifyAgents(thread);
+      for (const agent of agents) {
+        if (agent.sms_notify_phone) {
+          sendSmsNotification(thread.id, null, agent.id, agent.sms_notify_phone,
+            thread.contact_name, thread.phone_e164, '[Reminder] Awaiting response')
+            .catch(e => console.error('[SMS Re-remind] Error:', e.message));
+        }
+      }
+      smsAudit('thread', thread.id, 'rereminded', 'system', null, { agents: agents.map(a => a.id) });
+    }
+  } catch(e) { console.error('[SMS Re-remind] Error:', e.message); }
+}
+
 // ═══ End of SMS Inbox Module ═══
 
 app.listen(PORT, () => {
@@ -19052,4 +19262,7 @@ app.listen(PORT, () => {
   setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 8000);
   // Deduplicate DocuSeal templates (keep latest per category+language)
   setTimeout(() => deduplicateDocusealTemplates().catch(e => console.error('[startup] Dedup error:', e.message)), 12000);
+  // SMS Inbox: start auto re-reminder check every 5 minutes
+  setInterval(smsAutoReremind, SMS_REREMIND_INTERVAL);
+  console.log('[startup] SMS auto-rereminder started (every 5 min)');
 });

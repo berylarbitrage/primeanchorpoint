@@ -149,12 +149,64 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--gray-200);border-top-color:var(--sky);border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* Tags */
+.tag-list{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.tag{display:inline-flex;align-items:center;gap:3px;background:#ede9fe;color:#5b21b6;font-size:.68rem;font-weight:600;padding:2px 8px;border-radius:10px}
+.tag .tag-x{cursor:pointer;opacity:.6;font-size:.8rem;line-height:1}
+.tag .tag-x:hover{opacity:1}
+.tag-add{display:inline-flex;align-items:center;gap:2px;background:var(--gray-100);color:var(--gray-400);font-size:.68rem;padding:2px 8px;border-radius:10px;cursor:pointer;border:1px dashed var(--gray-200)}
+.tag-add:hover{border-color:var(--sky);color:var(--sky)}
+.tag-input{border:1px solid var(--sky);border-radius:10px;padding:2px 8px;font-size:.68rem;outline:none;width:80px}
+
+/* Priority badge */
+.priority-badge{font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;text-transform:uppercase}
+.priority-badge.low{background:var(--gray-100);color:var(--gray-400)}
+.priority-badge.normal{display:none}
+.priority-badge.high{background:#fef3c7;color:#92400e}
+.priority-badge.urgent{background:#fee2e2;color:#991b1b}
+
+/* Dashboard panel */
+.dash-panel{background:var(--white);border-bottom:1px solid var(--gray-200);padding:10px 12px;flex-shrink:0;display:none}
+.dash-panel.show{display:block}
+.dash-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.dash-stat{text-align:center;padding:6px 4px;background:var(--off-white);border-radius:var(--radius)}
+.dash-stat .num{font-size:1.1rem;font-weight:700;color:var(--blue)}
+.dash-stat .lbl{font-size:.65rem;color:var(--gray-400);margin-top:2px}
+
+/* Template picker */
+.template-picker{position:absolute;bottom:100%;left:0;right:0;background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);max-height:180px;overflow-y:auto;box-shadow:0 -4px 16px rgba(0,0,0,.1);display:none;z-index:50}
+.template-picker.show{display:block}
+.template-item{padding:10px 14px;font-size:.82rem;cursor:pointer;border-bottom:1px solid var(--gray-100);transition:background .1s}
+.template-item:hover{background:var(--sky-light)}
+.template-item:last-child{border-bottom:none}
+
+/* History panel */
+.history-panel{background:var(--white);padding:12px;border-top:1px solid var(--gray-200);max-height:200px;overflow-y:auto;display:none;flex-shrink:0}
+.history-panel.show{display:block}
+.history-item{font-size:.75rem;color:var(--gray-600);padding:4px 0;border-bottom:1px solid var(--gray-100)}
+.history-item .hi-time{color:var(--gray-400);font-size:.68rem}
+
+/* Pull-to-refresh indicator */
+.pull-indicator{text-align:center;padding:8px;color:var(--sky);font-size:.8rem;font-weight:600;display:none}
+
+/* Swipe hint animation */
+@keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes slideInLeft{from{transform:translateX(-100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.slide-in-right{animation:slideInRight .25s ease}
+.slide-in-left{animation:slideInLeft .25s ease}
+
+/* Better mobile keyboard handling */
+@supports(height: 100dvh){
+  body,#app,#list-view,#detail-view{height:100dvh}
+}
+
 @media(min-width:769px){
   body{overflow:auto}
   #app.show{flex-direction:row;height:100vh}
   #list-view{width:380px;border-right:1.5px solid #fde68a;flex-shrink:0;height:100vh}
   #list-view.hide{display:flex}
   #detail-view{flex:1;height:100vh}
+  .dash-stats{grid-template-columns:repeat(6,1fr)}
 }
 </style>
 </head>
@@ -181,11 +233,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <h1>SMS Inbox</h1>
       <span id="headerUnread" class="badge-unread" style="display:none"></span>
       <div class="spacer"></div>
+      <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
       <button class="btn-icon" onclick="loadThreads()" title="Refresh">&#x21bb;</button>
       <button class="btn-icon" onclick="doLogout()" title="Logout">&#x2715;</button>
     </div>
+    <!-- Dashboard Panel -->
+    <div class="dash-panel" id="dashPanel">
+      <div class="dash-stats" id="dashStats"></div>
+    </div>
     <div class="filters">
-      <input type="text" id="searchInput" placeholder="Search name or phone..." oninput="debounceSearch()">
+      <input type="text" id="searchInput" placeholder="Search name, phone, message..." oninput="debounceSearch()">
       <select id="statusFilter" onchange="loadThreads()">
         <option value="">Open + Claimed</option>
         <option value="all">All</option>
@@ -193,7 +250,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         <option value="claimed">Claimed</option>
         <option value="closed">Closed</option>
       </select>
+      <select id="agentFilter" onchange="loadThreads()">
+        <option value="">All Agents</option>
+        <option value="me">My Threads</option>
+        <option value="unassigned">Unassigned</option>
+      </select>
+      <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">Unread</button>
     </div>
+    <div class="pull-indicator" id="pullIndicator">Pull to refresh...</div>
     <div class="thread-list" id="threadList"></div>
     <div class="load-more" id="loadMore" style="display:none">
       <button onclick="loadMoreThreads()">Load more...</button>
@@ -208,13 +272,21 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         <div id="detailName" style="font-size:.92rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
         <div id="detailPhone" style="font-size:.75rem;color:var(--gray-400)"></div>
       </div>
+      <span id="detailPriority" class="priority-badge" onclick="cyclePriority()"></span>
       <span id="detailStatus" class="ti-status" style="font-size:.72rem"></span>
       <button class="btn-icon" onclick="showEditContactModal()" title="Edit contact">&#9998;</button>
+      <button class="btn-icon" onclick="toggleHistory()" title="History">&#128337;</button>
     </div>
     <div class="action-bar" id="actionBar"></div>
+    <div id="detailTags" style="padding:4px 12px;background:var(--white);border-bottom:1px solid var(--gray-200);display:none"></div>
     <div class="messages-area" id="messagesArea"></div>
+    <div class="history-panel" id="historyPanel"></div>
+    <div style="position:relative;flex-shrink:0">
+      <div class="template-picker" id="templatePicker"></div>
+    </div>
     <div class="reply-bar" id="replyBar">
       <button class="note-toggle" id="noteToggle" onclick="toggleNoteMode()" title="Internal note">&#128221;</button>
+      <button class="note-toggle" id="templateToggle" onclick="toggleTemplates()" title="Quick replies">&#9889;</button>
       <textarea id="replyInput" rows="1" placeholder="Type a reply..." oninput="autoGrow(this)"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendReply()" title="Send">&#9654;</button>
     </div>
@@ -260,6 +332,9 @@ let listPage = 1;
 let listTotal = 0;
 let refreshInterval = null;
 let msgRefreshInterval = null;
+let unreadFilter = false;
+let dashboardVisible = false;
+let templates = [];
 
 // ─── Auth ───
 function getToken() {
@@ -386,9 +461,12 @@ async function fetchThreads(silent) {
   try {
     const status = document.getElementById('statusFilter').value;
     const search = document.getElementById('searchInput').value.trim();
+    const agentF = document.getElementById('agentFilter').value;
     let url = '/sms/threads?page=' + listPage + '&limit=30';
     if (status) url += '&status=' + status;
     if (search) url += '&search=' + encodeURIComponent(search);
+    if (agentF) url += '&agent_id=' + agentF;
+    if (unreadFilter) url += '&unread=1';
     const r = await api(url);
     listTotal = r.total || 0;
     if (listPage === 1) {
@@ -425,9 +503,12 @@ function renderThreadList() {
       + '<span class="ti-time">' + time + '</span></div>'
       + '<div class="ti-preview">' + preview + '</div>'
       + '<div class="ti-meta"><span class="ti-status ' + t.status + '">' + t.status + '</span>'
+      + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
       + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
-      + '</div></div></div>';
+      + '</div>'
+      + renderTagsInline(t.tags)
+      + '</div></div>';
   }).join('');
 }
 
@@ -492,7 +573,10 @@ async function refreshMessages(id) {
 function renderDetail() {
   if (!currentThread || !currentContact) return;
   document.getElementById('list-view').classList.add('hide');
-  document.getElementById('detail-view').classList.add('show');
+  const dv = document.getElementById('detail-view');
+  dv.classList.add('show');
+  dv.classList.add('slide-in-right');
+  setTimeout(() => dv.classList.remove('slide-in-right'), 300);
 
   const name = currentContact.name || fmtPhone(currentContact.phone_e164);
   document.getElementById('detailName').textContent = name;
@@ -502,8 +586,13 @@ function renderDetail() {
   statusEl.textContent = currentThread.status;
   statusEl.className = 'ti-status ' + currentThread.status;
 
+  renderPriorityBadge();
   renderActionBar();
+  renderDetailTags();
   renderMessages();
+  // Hide panels from previous thread
+  document.getElementById('historyPanel').classList.remove('show');
+  document.getElementById('templatePicker').classList.remove('show');
   // Reset reply bar
   noteMode = false;
   document.getElementById('replyBar').classList.remove('note-mode');
@@ -796,7 +885,156 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+// ─── Phase 2: Tags ───
+function renderTagsInline(tagsJson) {
+  let tags = [];
+  try { tags = typeof tagsJson === 'string' ? JSON.parse(tagsJson) : (tagsJson || []); } catch(e) {}
+  if (!tags.length) return '';
+  return '<div class="tag-list" style="margin-top:3px">' + tags.map(t => '<span class="tag">' + esc(t) + '</span>').join('') + '</div>';
+}
+
+function renderDetailTags() {
+  const el = document.getElementById('detailTags');
+  if (!currentThread) { el.style.display = 'none'; return; }
+  let tags = [];
+  try { tags = typeof currentThread.tags === 'string' ? JSON.parse(currentThread.tags) : (currentThread.tags || []); } catch(e) {}
+  el.style.display = '';
+  el.innerHTML = '<div class="tag-list">'
+    + tags.map(t => '<span class="tag">' + esc(t) + '<span class="tag-x" onclick="removeTag(\'' + esc(t) + '\')">&times;</span></span>').join('')
+    + '<span class="tag-add" id="addTagBtn" onclick="showTagInput()">+ Tag</span>'
+    + '</div>';
+}
+
+function showTagInput() {
+  const btn = document.getElementById('addTagBtn');
+  btn.outerHTML = '<input class="tag-input" id="tagInput" placeholder="tag..." onkeydown="if(event.key===\'Enter\'){addTag();}" onblur="setTimeout(addTag,200)">';
+  document.getElementById('tagInput').focus();
+}
+
+async function addTag() {
+  const input = document.getElementById('tagInput');
+  if (!input || !currentThread) return;
+  const tag = input.value.trim();
+  if (!tag) { renderDetailTags(); return; }
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/tags', { method: 'POST', body: JSON.stringify({ tag }) });
+    if (r.success) { currentThread.tags = JSON.stringify(r.tags); renderDetailTags(); loadThreadsSilent(); }
+  } catch(e) { toast('Failed to add tag'); renderDetailTags(); }
+}
+
+async function removeTag(tag) {
+  if (!currentThread) return;
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/tags/' + encodeURIComponent(tag), { method: 'DELETE' });
+    if (r.success) { currentThread.tags = JSON.stringify(r.tags); renderDetailTags(); loadThreadsSilent(); }
+  } catch(e) { toast('Failed to remove tag'); }
+}
+
+// ─── Phase 2: Priority ───
+async function cyclePriority() {
+  if (!currentThread) return;
+  const order = ['normal', 'high', 'urgent', 'low', 'normal'];
+  const idx = order.indexOf(currentThread.priority || 'normal');
+  const next = order[(idx + 1) % order.length];
+  try {
+    await api('/sms/threads/' + currentThread.id + '/priority', { method: 'PUT', body: JSON.stringify({ priority: next }) });
+    currentThread.priority = next;
+    renderPriorityBadge();
+    loadThreadsSilent();
+    toast('Priority: ' + next);
+  } catch(e) { toast('Failed to update priority'); }
+}
+
+function renderPriorityBadge() {
+  const el = document.getElementById('detailPriority');
+  const p = currentThread ? (currentThread.priority || 'normal') : 'normal';
+  el.textContent = p;
+  el.className = 'priority-badge ' + p;
+  el.title = 'Click to change priority';
+  el.style.cursor = 'pointer';
+}
+
+// ─── Phase 2: Dashboard ───
+function toggleDashboard() {
+  dashboardVisible = !dashboardVisible;
+  const panel = document.getElementById('dashPanel');
+  if (dashboardVisible) { panel.classList.add('show'); loadDashStats(); }
+  else { panel.classList.remove('show'); }
+}
+
+async function loadDashStats() {
+  try {
+    const r = await api('/sms/stats');
+    document.getElementById('dashStats').innerHTML =
+      '<div class="dash-stat"><div class="num">' + (r.open || 0) + '</div><div class="lbl">Open</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.claimed || 0) + '</div><div class="lbl">Claimed</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.new_today || 0) + '</div><div class="lbl">New Today</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.closed_today || 0) + '</div><div class="lbl">Closed Today</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.avg_response_minutes != null ? r.avg_response_minutes + 'm' : '--') + '</div><div class="lbl">Avg Response</div></div>'
+      + '<div class="dash-stat"><div class="num">' + (r.total_messages || 0) + '</div><div class="lbl">Total Msgs</div></div>';
+  } catch(e) { console.error('Dashboard error:', e); }
+}
+
+// ─── Phase 2: Unread filter ───
+function toggleUnreadFilter() {
+  unreadFilter = !unreadFilter;
+  document.getElementById('unreadFilterBtn').classList.toggle('active', unreadFilter);
+  loadThreads();
+}
+
+// ─── Phase 2: Quick Reply Templates ───
+async function loadTemplates() {
+  try {
+    const r = await api('/sms/templates');
+    templates = r.templates || [];
+  } catch(e) { templates = []; }
+}
+
+function toggleTemplates() {
+  const picker = document.getElementById('templatePicker');
+  if (picker.classList.contains('show')) { picker.classList.remove('show'); return; }
+  if (templates.length === 0) { toast('No templates configured yet'); return; }
+  picker.innerHTML = templates.map((t, i) =>
+    '<div class="template-item" onclick="useTemplate(' + i + ')">' + esc(typeof t === 'string' ? t : t.text || t.body || '') + '</div>'
+  ).join('');
+  picker.classList.add('show');
+}
+
+function useTemplate(idx) {
+  const t = templates[idx];
+  const text = typeof t === 'string' ? t : (t.text || t.body || '');
+  document.getElementById('replyInput').value = text;
+  document.getElementById('templatePicker').classList.remove('show');
+  autoGrow(document.getElementById('replyInput'));
+  document.getElementById('replyInput').focus();
+}
+
+// ─── Phase 2: Thread History ───
+async function toggleHistory() {
+  const panel = document.getElementById('historyPanel');
+  if (panel.classList.contains('show')) { panel.classList.remove('show'); return; }
+  if (!currentThread) return;
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/history');
+    let html = '<div style="font-size:.78rem;font-weight:700;color:var(--blue);margin-bottom:6px">Thread History</div>';
+    const events = [];
+    (r.assignments || []).forEach(a => {
+      events.push({ time: a.created_at, text: (a.action || 'assigned') + ': ' + (a.from_name || 'system') + ' → ' + (a.to_name || '?') + (a.reason ? ' (' + a.reason + ')' : '') });
+    });
+    (r.audits || []).forEach(a => {
+      if (a.action === 'viewed') return; // skip view events
+      events.push({ time: a.created_at, text: a.action + (a.actor_id ? '' : ' (system)') });
+    });
+    events.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    if (events.length === 0) html += '<div style="color:var(--gray-400);font-size:.75rem">No history</div>';
+    else events.forEach(e => { html += '<div class="history-item"><span class="hi-time">' + fmtTime(e.time) + ' ' + fmtDate(e.time) + '</span> — ' + esc(e.text) + '</div>'; });
+    panel.innerHTML = html;
+    panel.classList.add('show');
+  } catch(e) { toast('Failed to load history'); }
+}
+
 // ─── Init ───
+loadTemplates();
 checkAuth();
 </script>
 </body>
