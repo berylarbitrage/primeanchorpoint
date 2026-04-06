@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>SMS Inbox — Prime Anchor Point</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/img/icon-192.png">
+<meta name="theme-color" content="#b45309">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PA SMS">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--white:#fff;--off-white:#fffbeb;--gray-100:#f3f4f6;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:8px}
@@ -195,6 +201,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .slide-in-right{animation:slideInRight .25s ease}
 .slide-in-left{animation:slideInLeft .25s ease}
 
+/* Install banner */
+.install-banner{background:linear-gradient(135deg,#92400e,#b45309);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;display:none}
+.install-banner.show{display:flex}
+.install-banner .ib-text{flex:1;font-size:.82rem;line-height:1.35}
+.install-banner .ib-text strong{display:block;font-size:.88rem}
+.install-banner .ib-btn{padding:7px 16px;background:#fff;color:#92400e;border:none;border-radius:20px;font-weight:700;font-size:.78rem;cursor:pointer;white-space:nowrap}
+.install-banner .ib-close{background:none;border:none;color:rgba(255,255,255,.7);font-size:1.2rem;cursor:pointer;padding:4px}
+
+/* Offline indicator */
+.offline-bar{background:#fee2e2;color:#991b1b;text-align:center;padding:6px;font-size:.78rem;font-weight:600;display:none;flex-shrink:0}
+.offline-bar.show{display:block}
+
 /* Better mobile keyboard handling */
 @supports(height: 100dvh){
   body,#app,#list-view,#detail-view{height:100dvh}
@@ -227,6 +245,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 
 <!-- Main App -->
 <div id="app">
+  <!-- Offline indicator -->
+  <div class="offline-bar" id="offlineBar">You are offline. Messages will sync when connection returns.</div>
+  <!-- Install Banner -->
+  <div class="install-banner" id="installBanner">
+    <div class="ib-text"><strong>Install PA SMS</strong>Add to home screen for a better experience</div>
+    <button class="ib-btn" onclick="installPwa()">Install</button>
+    <button class="ib-close" onclick="dismissInstall()">&times;</button>
+  </div>
   <!-- List View -->
   <div id="list-view">
     <div class="header">
@@ -1032,6 +1058,59 @@ async function toggleHistory() {
     panel.classList.add('show');
   } catch(e) { toast('Failed to load history'); }
 }
+
+// ─── Phase 3: PWA ───
+let deferredInstallPrompt = null;
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    console.log('[PWA] SW registered, scope:', reg.scope);
+    // Check for updates every 30 min
+    setInterval(() => reg.update(), 30 * 60 * 1000);
+  }).catch(err => console.warn('[PWA] SW registration failed:', err));
+}
+
+// Listen for install prompt
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  // Show banner if not dismissed before
+  if (!localStorage.getItem('pwa_dismissed')) {
+    document.getElementById('installBanner').classList.add('show');
+  }
+});
+
+async function installPwa() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const result = await deferredInstallPrompt.userChoice;
+  if (result.outcome === 'accepted') {
+    toast('App installed!');
+    document.getElementById('installBanner').classList.remove('show');
+  }
+  deferredInstallPrompt = null;
+}
+
+function dismissInstall() {
+  document.getElementById('installBanner').classList.remove('show');
+  localStorage.setItem('pwa_dismissed', '1');
+}
+
+// Detect when app is running as installed PWA
+window.addEventListener('appinstalled', () => {
+  document.getElementById('installBanner').classList.remove('show');
+  deferredInstallPrompt = null;
+});
+
+// Offline detection
+window.addEventListener('online', () => {
+  document.getElementById('offlineBar').classList.remove('show');
+  loadThreadsSilent();
+});
+window.addEventListener('offline', () => {
+  document.getElementById('offlineBar').classList.add('show');
+});
 
 // ─── Init ───
 loadTemplates();
