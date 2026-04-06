@@ -6588,7 +6588,7 @@ app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin
 
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, created_at FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, created_at FROM admin_users ORDER BY id').all());
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
@@ -6607,7 +6607,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled } = req.body;
   if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -6617,8 +6617,8 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
     db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
   // active field is intentionally excluded — only the user themselves can activate via self-verification
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), req.params.id);
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=?, sms_notify_phone=?, sms_notify_enabled=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), sms_notify_phone !== undefined ? sms_notify_phone : (user.sms_notify_phone || ''), sms_notify_enabled !== undefined ? (sms_notify_enabled ? 1 : 0) : (user.sms_notify_enabled ?? 1), req.params.id);
   res.json({ success: true });
 });
 

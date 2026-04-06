@@ -2130,7 +2130,7 @@ tr:hover td{background:var(--sky-light)}
 
   <!-- Admin/Staff/Manager -->
   <div id="accPanelAdmin" class="card">
-    <table><thead><tr><th>用户名</th><th>显示名称</th><th>角色</th><th>指定公司 (Manager)</th><th>状态</th><th>创建</th><th>操作</th></tr></thead>
+    <table><thead><tr><th>用户名</th><th>显示名称</th><th>角色</th><th>指定公司 (Manager)</th><th>状态</th><th>SMS</th><th>创建</th><th>操作</th></tr></thead>
     <tbody id="accountsTable"></tbody></table>
   </div>
 
@@ -2927,6 +2927,16 @@ tr:hover td{background:var(--sky-light)}
   <div class="field" id="accJobField" style="display:none">
     <label>指定管理的工作岗位（多选，Manager 专用）</label>
     <div id="accJobCheckboxes" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem;max-height:140px;overflow:auto;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+  </div>
+  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem;margin-top:.5rem" id="accSmsNotifySection">
+    <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.5rem">📱 SMS Inbox 短信提醒</div>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:.5rem;align-items:center">
+      <div class="field" style="margin:0"><label style="font-size:.78rem">提醒手机号 (E.164)</label><input id="accSmsNotifyPhone" placeholder="+14155551234" style="font-size:.88rem"></div>
+      <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.82rem;color:var(--gray-600);margin-top:18px">
+        <input type="checkbox" id="accSmsNotifyEnabled" checked> 启用提醒
+      </label>
+    </div>
+    <div style="font-size:.72rem;color:var(--gray-400);margin-top:.4rem">填写后，当有客户发短信到公司号码时，该 agent 会收到 SMS 提醒通知</div>
   </div>
   <div id="accHint" class="field" style="background:var(--gray-100);border-radius:6px;padding:.6rem .75rem;font-size:.83rem;color:var(--gray-500)">
     新建账户默认未激活，用户首次登录时需自行设置密码完成激活
@@ -14782,6 +14792,7 @@ async function loadAccounts() {
     <td><span class="badge ${roleBadge(a.role)}">${roleLabel[a.role]||a.role}</span></td>
     <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>
     <td>${a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}</td>
+    <td style="font-size:.78rem">${a.sms_notify_phone&&a.sms_notify_enabled?'<span style="color:var(--green)" title="'+esc(a.sms_notify_phone)+'">📱 ON</span>':a.sms_notify_phone?'<span style="color:var(--gray-400)" title="'+esc(a.sms_notify_phone)+'">📱 OFF</span>':'<span style="color:var(--gray-300)">—</span>'}</td>
     <td>${(a.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editAccount(${a.id})">编辑</button>
@@ -14804,6 +14815,8 @@ async function openAccountModal(data) {
   document.getElementById('accEmail').value = data ? (data.email||'') : '';
   document.getElementById('accPhone').value = data ? (data.phone||'') : '';
   document.getElementById('accRole').value = data ? (data.role||'staff') : 'staff';
+  document.getElementById('accSmsNotifyPhone').value = data ? (data.sms_notify_phone||'') : '';
+  document.getElementById('accSmsNotifyEnabled').checked = data ? (data.sms_notify_enabled !== 0) : true;
   document.getElementById('accountModalTitle').textContent = data ? '编辑内部账户' : '新建内部账户';
   document.getElementById('accPassHint').textContent = data ? '(留空则不修改；修改密码将重置激活状态)' : '*';
   document.getElementById('accHint').textContent = data
@@ -14850,7 +14863,9 @@ async function saveAccount() {
     phone: document.getElementById('accPhone').value,
     role: document.getElementById('accRole').value,
     assigned_partner_ids: selectedPartners,
-    assigned_job_ids: selectedJobs
+    assigned_job_ids: selectedJobs,
+    sms_notify_phone: document.getElementById('accSmsNotifyPhone').value.trim(),
+    sms_notify_enabled: document.getElementById('accSmsNotifyEnabled').checked ? 1 : 0
   };
   if (!d.username) return alert('请输入用户名');
   if (!id && !d.password) return alert('请输入密码');
