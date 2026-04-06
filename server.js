@@ -19262,6 +19262,40 @@ function smsAutoReremind() {
   } catch(e) { console.error('[SMS Re-remind] Error:', e.message); }
 }
 
+// ═══ SMS Agent Diagnostics ═══
+app.get('/api/sms/agent-status', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const all = db.prepare(`SELECT id, username, role, active, sms_notify_phone, sms_notify_enabled FROM admin_users ORDER BY username`).all();
+    res.json({ agents: all });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/sms/create-agents', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const agents = [
+      { username: 'berylzhang', password: 'GoodluckBeryl2026$', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
+      { username: 'jimmycai', password: 'GoodluckJimmy2026$', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
+      { username: 'tiexiongzhou', password: 'GoodluckJimmy2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
+      { username: 'nikizhao', password: 'GoodluckNiki2026$', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
+    ];
+    const results = [];
+    for (const a of agents) {
+      const existing = db.prepare('SELECT id, username, role, sms_notify_phone FROM admin_users WHERE username=?').get(a.username);
+      if (existing) {
+        db.prepare(`UPDATE admin_users SET sms_notify_phone=?, sms_notify_enabled=1 WHERE id=?`).run(a.phone, existing.id);
+        results.push({ username: a.username, action: 'updated_phone', id: existing.id });
+      } else {
+        const salt = require('crypto').randomBytes(16).toString('hex');
+        const hash = require('crypto').scryptSync(a.password, salt, 64).toString('hex');
+        const info = db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, active, sms_notify_phone, sms_notify_enabled) VALUES (?,?,?,?,?,1,?,1)`)
+          .run(a.username, hash, salt, a.role, a.display_name, a.phone);
+        results.push({ username: a.username, action: 'created', id: info.lastInsertRowid });
+      }
+    }
+    res.json({ success: true, results });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ═══ End of SMS Inbox Module ═══
 
 app.listen(PORT, () => {
