@@ -1973,16 +1973,18 @@ try { db.exec(`ALTER TABLE admin_users ADD COLUMN sms_notify_enabled INTEGER DEF
 // SMS Inbox: auto-create agent accounts if they don't exist, then set phone numbers
 try {
   const agents = [
-    { username: 'berylzhang', password: 'GoodluckBeryl2026$', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
-    { username: 'jimmycai', password: 'GoodluckJimmy2026$', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
-    { username: 'tiexiongzhou', password: 'GoodluckTiexiong2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
-    { username: 'nikizhao', password: 'GoodluckNiki2026$', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
+    { username: 'berylzhang', envKey: 'SMS_AGENT_BERYL_PW', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
+    { username: 'jimmycai', envKey: 'SMS_AGENT_JIMMY_PW', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
+    { username: 'tiexiongzhou', envKey: 'SMS_AGENT_TIEXIONG_PW', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
+    { username: 'nikizhao', envKey: 'SMS_AGENT_NIKI_PW', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
   ];
   for (const a of agents) {
     const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(a.username);
     if (!existing) {
+      const password = process.env[a.envKey] || require('crypto').randomBytes(16).toString('base64url');
+      if (!process.env[a.envKey]) console.warn(`[SECURITY] No ${a.envKey} env var set. Generated random password for ${a.username}: ${password}`);
       const salt = require('crypto').randomBytes(16).toString('hex');
-      const hash = require('crypto').scryptSync(a.password, salt, 64).toString('hex');
+      const hash = require('crypto').scryptSync(password, salt, 64).toString('hex');
       db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, active, sms_notify_phone, sms_notify_enabled) VALUES (?,?,?,?,?,1,?,1)`)
         .run(a.username, hash, salt, a.role, a.display_name, a.phone);
       console.log('SMS agent account created:', a.username);
@@ -1992,17 +1994,6 @@ try {
     }
   }
 } catch(e) { console.warn('SMS agent auto-config:', e.message); }
-
-// One-time password fix for tiexiongzhou
-try {
-  const tx = db.prepare('SELECT id FROM admin_users WHERE username=?').get('tiexiongzhou');
-  if (tx) {
-    const salt = require('crypto').randomBytes(16).toString('hex');
-    const hash = require('crypto').scryptSync('GoodluckTiexiong2026$', salt, 64).toString('hex');
-    db.prepare('UPDATE admin_users SET password_hash=?, salt=? WHERE id=?').run(hash, salt, tx.id);
-    console.log('Password updated for tiexiongzhou');
-  }
-} catch(e) {}
 
 // Helper: read company name from DB (admin-editable), fall back to env var, then default.
 function getCompanyLegalName() {
@@ -2331,7 +2322,31 @@ app.use(express.static('public', {
     }
   }
 }));
-app.use('/uploads', express.static(uploadsDir));
+// Serve uploaded files only to authenticated admin/staff users
+app.get('/uploads/:filename', (req, res) => {
+  // Authenticate via Bearer token, cookie, or query param (backwards compat)
+  const auth = req.headers.authorization;
+  let session = null;
+  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  if (!session) {
+    const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+    if (cookieMatch) session = getSession(cookieMatch[1]);
+  }
+  if (!session && req.query.token) session = getSession(req.query.token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
+
+  // Prevent path traversal
+  const safeName = path.basename(req.params.filename);
+  const filePath = path.join(uploadsDir, safeName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+
+  // No caching for sensitive files
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  res.sendFile(filePath);
+});
 
 // Resume upload
 const upload = multer({
@@ -2378,6 +2393,7 @@ const punchPhotoUpload = multer({
 const crypto = require('crypto');
 
 // ─── SSN Encryption (AES-256-GCM) ───
+if (!process.env.SSN_SECRET) console.warn('[SECURITY WARNING] SSN_SECRET environment variable not set! Using default key is insecure. Set SSN_SECRET in production.');
 const SSN_KEY = crypto.scryptSync(process.env.SSN_SECRET || 'prime-anchorpoint-ssn-key-default!', 'pa-ssn-salt-v1', 32);
 function encryptSSN(ssn) {
   const normalized = ssn.replace(/\D/g, '');
@@ -6196,6 +6212,21 @@ function managerEmployeeIds(req) {
 // Helper: parse manager's assigned job IDs into array of ints
 function managerJobIds(req) {
   return (req.assignedJobIds || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+}
+
+// Helper: check if a manager is authorized to access a specific time entry
+// Returns { authorized: true, entry } or { authorized: false, reason }
+function managerCanAccessTimeEntry(req, timeEntryId) {
+  if (req.userRole !== 'manager') return { authorized: true, entry: null }; // admin/staff unrestricted
+  const entry = db.prepare('SELECT t.employee_id, t.job_id, j.partner_id FROM time_entries t LEFT JOIN jobs j ON t.job_id=j.id WHERE t.id=?').get(timeEntryId);
+  if (!entry) return { authorized: false, reason: 'not_found' };
+  const pids = managerPartnerIds(req);
+  const eids = managerEmployeeIds(req);
+  const jids = managerJobIds(req);
+  if (eids.length && entry.employee_id && eids.includes(entry.employee_id)) return { authorized: true, entry };
+  if (pids.length && entry.partner_id && pids.includes(entry.partner_id)) return { authorized: true, entry };
+  if (jids.length && entry.job_id && jids.includes(entry.job_id)) return { authorized: true, entry };
+  return { authorized: false, reason: 'forbidden' };
 }
 
 // ─── Worker / Customer portal auth ───
@@ -13203,6 +13234,8 @@ app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard
 
 // ── Manager time-entry management (no blockManager restriction) ──
 app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
+  const access = managerCanAccessTimeEntry(req, req.params.id);
+  if (!access.authorized) return res.status(access.reason === 'not_found' ? 404 : 403).json({ error: access.reason === 'not_found' ? 'Time entry not found' : 'Not authorized to access this time entry' });
   const d = req.body;
   let breakMins = 0, breakRecords = '[]';
   if (d.break_records) {
@@ -13229,6 +13262,8 @@ app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
 
 // PATCH /api/manager/time-entries/:id/correct-time — correct clock_in or clock_out for a punch
 app.patch('/api/manager/time-entries/:id/correct-time', requireAdmin, (req, res) => {
+  const access = managerCanAccessTimeEntry(req, req.params.id);
+  if (!access.authorized) return res.status(access.reason === 'not_found' ? 404 : 403).json({ error: access.reason === 'not_found' ? 'Time entry not found' : 'Not authorized to access this time entry' });
   const { field, new_time } = req.body;
   if (!['clock_in', 'clock_out'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
   const t = new Date(new_time);
@@ -13244,6 +13279,8 @@ app.patch('/api/manager/time-entries/:id/correct-time', requireAdmin, (req, res)
 });
 
 app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
+  const access = managerCanAccessTimeEntry(req, req.params.id);
+  if (!access.authorized) return res.status(access.reason === 'not_found' ? 404 : 403).json({ error: access.reason === 'not_found' ? 'Time entry not found' : 'Not authorized to access this time entry' });
   db.prepare("UPDATE time_entries SET manager_confirmed=1,needs_review=1 WHERE id=?").run(req.params.id);
   res.json({ success: true });
 });
@@ -13251,6 +13288,13 @@ app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
 app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
   const { ids, action, regular_hours, overtime_hours, clock_in_delta_minutes, clock_out_delta_minutes } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: '未选择记录' });
+  // For managers, verify access to ALL time entries in the batch
+  if (req.userRole === 'manager') {
+    for (const id of ids) {
+      const access = managerCanAccessTimeEntry(req, id);
+      if (!access.authorized) return res.status(access.reason === 'not_found' ? 404 : 403).json({ error: access.reason === 'not_found' ? `Time entry ${id} not found` : `Not authorized to access time entry ${id}` });
+    }
+  }
   if (action === 'confirm') {
     const stmt = db.prepare("UPDATE time_entries SET manager_confirmed=1,needs_review=1 WHERE id=?");
     db.transaction(() => { for (const id of ids) stmt.run(id); })();
@@ -19302,10 +19346,10 @@ app.get('/api/sms/agent-status', requireAdmin, requireRole('admin'), (req, res) 
 app.post('/api/sms/create-agents', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const agents = [
-      { username: 'berylzhang', password: 'GoodluckBeryl2026$', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
-      { username: 'jimmycai', password: 'GoodluckJimmy2026$', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
-      { username: 'tiexiongzhou', password: 'GoodluckTiexiong2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
-      { username: 'nikizhao', password: 'GoodluckNiki2026$', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
+      { username: 'berylzhang', envKey: 'SMS_AGENT_BERYL_PW', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
+      { username: 'jimmycai', envKey: 'SMS_AGENT_JIMMY_PW', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
+      { username: 'tiexiongzhou', envKey: 'SMS_AGENT_TIEXIONG_PW', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
+      { username: 'nikizhao', envKey: 'SMS_AGENT_NIKI_PW', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
     ];
     const results = [];
     for (const a of agents) {
@@ -19314,8 +19358,10 @@ app.post('/api/sms/create-agents', requireAdmin, requireRole('admin'), (req, res
         db.prepare(`UPDATE admin_users SET sms_notify_phone=?, sms_notify_enabled=1 WHERE id=?`).run(a.phone, existing.id);
         results.push({ username: a.username, action: 'updated_phone', id: existing.id });
       } else {
+        const password = process.env[a.envKey] || require('crypto').randomBytes(16).toString('base64url');
+        if (!process.env[a.envKey]) console.warn(`[SECURITY] No ${a.envKey} env var set. Generated random password for ${a.username}: ${password}`);
         const salt = require('crypto').randomBytes(16).toString('hex');
-        const hash = require('crypto').scryptSync(a.password, salt, 64).toString('hex');
+        const hash = require('crypto').scryptSync(password, salt, 64).toString('hex');
         const info = db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, active, sms_notify_phone, sms_notify_enabled) VALUES (?,?,?,?,?,1,?,1)`)
           .run(a.username, hash, salt, a.role, a.display_name, a.phone);
         results.push({ username: a.username, action: 'created', id: info.lastInsertRowid });
