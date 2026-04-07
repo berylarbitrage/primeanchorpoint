@@ -260,6 +260,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <h1>SMS Inbox</h1>
       <span id="headerUnread" class="badge-unread" style="display:none"></span>
       <div class="spacer"></div>
+      <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
       <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
       <button class="btn-icon" onclick="loadThreads()" title="Refresh">&#x21bb;</button>
       <button class="btn-icon" onclick="doLogout()" title="Logout">&#x2715;</button>
@@ -1112,6 +1113,21 @@ window.addEventListener('online', () => {
 window.addEventListener('offline', () => {
   document.getElementById('offlineBar').classList.add('show');
 });
+
+// ─── Test Notify ───
+async function testNotify() {
+  if (!confirm('Send test SMS to berylzhang (+13128437890)?')) return;
+  try {
+    const r = await api('/sms/test-notify', {
+      method: 'POST',
+      body: JSON.stringify({ phone: '+13128437890' })
+    });
+    const msg = JSON.stringify(r, null, 2);
+    alert('Result:\n' + msg);
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
 
 // ─── Init ───
 loadTemplates();
