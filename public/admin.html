@@ -17922,47 +17922,71 @@ function wpRenderUploadZones(category, trData) {
     docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
   }
 
-  // For green card: show hint that only one document is needed
+  // For green card: show dropdown to pick one option, then render only that upload zone
   if (category === 'green_card') {
     container.insertAdjacentHTML('beforeend', `
-      <div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:8px;padding:.6rem .85rem;font-size:.82rem;color:#065f46;margin-bottom:.65rem;font-weight:600">
-        ✅ 以下三种证明任选其一上传即可 (Upload any ONE of the following)
+      <div style="margin-bottom:.65rem">
+        <label style="font-size:.82rem;font-weight:600;color:#065f46;display:block;margin-bottom:.4rem">✅ 选择验证方式 (Choose ONE):</label>
+        <select id="wpGcSelect" onchange="wpSwitchGcDoc()" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:.85rem;outline:none;background:#fff">
+          ${docs.map((d, i) => '<option value="' + i + '">' + d + '</option>').join('')}
+        </select>
       </div>
     `);
+    // Render all zones but only show the first one
+    docs.forEach((label, idx) => {
+      const zoneId = `wpUploadZone_${idx}`;
+      container.insertAdjacentHTML('beforeend', _wpZoneHtml(zoneId, label, idx));
+      if (idx > 0) document.getElementById(zoneId).style.display = 'none';
+    });
+    return;
   }
 
   docs.forEach((label, idx) => {
     const zoneId = `wpUploadZone_${idx}`;
-    container.insertAdjacentHTML('beforeend', `
-      <div id="${zoneId}" style="border:1px solid #e5e7eb;border-radius:10px;padding:.9rem 1rem;margin-bottom:.65rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.6rem">
-          <span style="font-size:.83rem;font-weight:700;color:#1f2937">📄 ${label}</span>
-          <span id="${zoneId}_status" style="font-size:.75rem;color:#9ca3af;background:#f3f4f6;padding:.15rem .55rem;border-radius:20px;white-space:nowrap">未上传</span>
+    container.insertAdjacentHTML('beforeend', _wpZoneHtml(zoneId, label, idx));
+  });
+}
+
+function _wpZoneHtml(zoneId, label, idx) {
+  return `
+    <div id="${zoneId}" style="border:1px solid #e5e7eb;border-radius:10px;padding:.9rem 1rem;margin-bottom:.65rem;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.6rem">
+        <span style="font-size:.83rem;font-weight:700;color:#1f2937">📄 ${label}</span>
+        <span id="${zoneId}_status" style="font-size:.75rem;color:#9ca3af;background:#f3f4f6;padding:.15rem .55rem;border-radius:20px;white-space:nowrap">未上传</span>
+      </div>
+      <div id="${zoneId}_file" style="margin-bottom:.55rem">
+        <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="font-size:.8rem;width:100%;color:#374151"
+          onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
+      </div>
+      <div id="${zoneId}_existing" style="margin-bottom:.4rem"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;align-items:center">
+        <div>
+          <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">证件号码</div>
+          <input type="text" id="${zoneId}_number" placeholder="号码" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
+            onchange="wpSaveDocMeta('${zoneId}')">
         </div>
-        <div id="${zoneId}_file" style="margin-bottom:.55rem">
-          <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="font-size:.8rem;width:100%;color:#374151"
-            onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
+        <div>
+          <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">开始日期</div>
+          <input type="date" id="${zoneId}_start" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
+            onchange="wpSaveDocMeta('${zoneId}')">
         </div>
-        <div id="${zoneId}_existing" style="margin-bottom:.4rem"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;align-items:center">
-          <div>
-            <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">证件号码</div>
-            <input type="text" id="${zoneId}_number" placeholder="号码" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
-              onchange="wpSaveDocMeta('${zoneId}')">
-          </div>
-          <div>
-            <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">开始日期</div>
-            <input type="date" id="${zoneId}_start" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
-              onchange="wpSaveDocMeta('${zoneId}')">
-          </div>
-          <div>
-            <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">到期日期</div>
-            <input type="date" id="${zoneId}_expiry" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
-              onchange="wpSaveDocMeta('${zoneId}')">
-          </div>
+        <div>
+          <div style="font-size:.72rem;color:#6b7280;margin-bottom:.2rem;font-weight:600">到期日期</div>
+          <input type="date" id="${zoneId}_expiry" style="width:100%;font-size:.8rem;padding:.3rem .45rem;border:1px solid #d1d5db;border-radius:6px;color:#374151;box-sizing:border-box"
+            onchange="wpSaveDocMeta('${zoneId}')">
         </div>
       </div>
-    `);
+    </div>
+  `;
+}
+
+function wpSwitchGcDoc() {
+  const sel = document.getElementById('wpGcSelect');
+  const val = parseInt(sel.value);
+  const docs = WP_UPLOAD_DOCS.green_card;
+  docs.forEach((_, i) => {
+    const zone = document.getElementById('wpUploadZone_' + i);
+    if (zone) zone.style.display = i === val ? '' : 'none';
   });
 }
 
