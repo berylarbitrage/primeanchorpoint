@@ -454,9 +454,23 @@ function showLogin() {
 function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').classList.add('show');
+  loadAgentFilter();
   loadThreads();
   refreshInterval = setInterval(loadThreadsSilent, 15000);
   handleHash();
+}
+
+async function loadAgentFilter() {
+  try {
+    const r = await api('/sms/agents');
+    const sel = document.getElementById('agentFilter');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All Agents</option><option value="me">My Threads</option><option value="unassigned">Unassigned</option>';
+    (r.agents || []).forEach(a => {
+      sel.innerHTML += '<option value="' + a.id + '">' + esc(a.username) + '</option>';
+    });
+    sel.value = current;
+  } catch(e) {}
 }
 
 async function doLogin() {
