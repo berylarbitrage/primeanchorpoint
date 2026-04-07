@@ -2331,7 +2331,31 @@ app.use(express.static('public', {
     }
   }
 }));
-app.use('/uploads', express.static(uploadsDir));
+// Serve uploaded files only to authenticated admin/staff users
+app.get('/uploads/:filename', (req, res) => {
+  // Authenticate via Bearer token, cookie, or query param (backwards compat)
+  const auth = req.headers.authorization;
+  let session = null;
+  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  if (!session) {
+    const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+    if (cookieMatch) session = getSession(cookieMatch[1]);
+  }
+  if (!session && req.query.token) session = getSession(req.query.token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
+
+  // Prevent path traversal
+  const safeName = path.basename(req.params.filename);
+  const filePath = path.join(uploadsDir, safeName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+
+  // No caching for sensitive files
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  res.sendFile(filePath);
+});
 
 // Resume upload
 const upload = multer({
