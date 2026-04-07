@@ -6416,7 +6416,8 @@ function finishLogin(r) {
   USER_ROLE = role;
   USER_NAME = r.username || '';
   _currentUserId = r.user_id || 0;
-  document.cookie = `pa_token=${TOKEN};path=/;max-age=2592000;SameSite=Strict`;
+  const securePart = location.protocol === 'https:' ? ';Secure' : '';
+  document.cookie = `pa_token=${TOKEN};path=/;max-age=2592000;SameSite=Strict${securePart}`;
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').classList.add('show');
   applyRoleUI();
