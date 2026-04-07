@@ -7347,6 +7347,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   const workers = db.prepare(`
     SELECT w.*, e.first_name, e.last_name, e.employee_id as emp_code,
       e.pay_rate, e.pay_type, e.position, e.department,
+      e.email as emp_email, e.phone as emp_phone,
       COALESCE(w.linked_inquiry_id,
         (SELECT id FROM inquiries WHERE phone=w.phone OR (w.email!='' AND email=w.email) ORDER BY id DESC LIMIT 1)
       ) as linked_inquiry_id
