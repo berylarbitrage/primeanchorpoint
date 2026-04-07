@@ -847,7 +847,7 @@ async function claimThread() {
 }
 
 async function closeThread() {
-  if (!currentThread || !confirm('Close this thread?')) return;
+  if (!currentThread || !await smsConfirm('关闭此线程？', { confirmLabel: 'Close', danger: true })) return;
   try {
     await api('/sms/threads/' + currentThread.id + '/close', { method: 'POST' });
     toast('Thread closed');
@@ -858,7 +858,7 @@ async function closeThread() {
 
 async function unassignThread() {
   if (!currentThread) return;
-  if (!confirm('Unassign this thread? All agents will be able to see it.')) return;
+  if (!await smsConfirm('取消分配此线程？\n取消后将不再有 agent 收到此线程的短信通知。', { confirmLabel: 'Unassign', danger: true })) return;
   try {
     const r = await api('/sms/threads/' + currentThread.id + '/unassign', { method: 'POST' });
     if (r.success) { toast('Thread unassigned'); loadThreadDetail(currentThread.id); loadThreadsSilent(); }
@@ -968,6 +968,28 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function smsConfirm(message, { confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false } = {}) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem';
+    const btnBg = danger ? '#dc2626' : '#b45309';
+    box.innerHTML =
+      '<div style="font-size:.9rem;color:#1f2937;line-height:1.6;margin-bottom:1.5rem;white-space:pre-line">' + message + '</div>' +
+      '<div style="display:flex;gap:.6rem;justify-content:flex-end">' +
+        '<button class="_sc-cancel" style="padding:8px 18px;border:1px solid #e2e5ea;border-radius:8px;background:transparent;color:#6b7280;font-weight:600;font-size:.82rem;cursor:pointer">' + cancelLabel + '</button>' +
+        '<button class="_sc-confirm" style="padding:8px 18px;border:none;border-radius:8px;background:' + btnBg + ';color:#fff;font-weight:600;font-size:.82rem;cursor:pointer">' + confirmLabel + '</button>' +
+      '</div>';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const cleanup = r => { document.body.removeChild(overlay); resolve(r); };
+    box.querySelector('._sc-confirm').onclick = () => cleanup(true);
+    box.querySelector('._sc-cancel').onclick  = () => cleanup(false);
+    overlay.onclick = e => { if (e.target === overlay) cleanup(false); };
+  });
 }
 
 function goBack() {
@@ -1346,7 +1368,7 @@ async function sendBroadcast() {
   const message = document.getElementById('bcMessage').value.trim();
   if (phones.length === 0) { toast('Please select at least one recipient'); return; }
   if (!message) { toast('Please enter a message'); return; }
-  if (!confirm('Send this message to ' + phones.length + ' recipient(s)?')) return;
+  if (!await smsConfirm('发送短信给 ' + phones.length + ' 个收件人？', { confirmLabel: 'Send' })) return;
 
   const btn = document.getElementById('bcSendBtn');
   const status = document.getElementById('bcStatus');
@@ -1375,7 +1397,7 @@ async function sendBroadcast() {
 
 // ─── Test Notify ───
 async function testNotify() {
-  if (!confirm('Send test SMS to berylzhang (+13128437890)?')) return;
+  if (!await smsConfirm('Send test SMS to berylzhang (+13128437890)?', { confirmLabel: 'Send' })) return;
   try {
     const r = await api('/sms/test-notify', {
       method: 'POST',
