@@ -6214,6 +6214,21 @@ function managerJobIds(req) {
   return (req.assignedJobIds || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
 }
 
+// Helper: check if a manager is authorized to access a specific time entry
+// Returns { authorized: true, entry } or { authorized: false, reason }
+function managerCanAccessTimeEntry(req, timeEntryId) {
+  if (req.userRole !== 'manager') return { authorized: true, entry: null }; // admin/staff unrestricted
+  const entry = db.prepare('SELECT t.employee_id, t.job_id, j.partner_id FROM time_entries t LEFT JOIN jobs j ON t.job_id=j.id WHERE t.id=?').get(timeEntryId);
+  if (!entry) return { authorized: false, reason: 'not_found' };
+  const pids = managerPartnerIds(req);
+  const eids = managerEmployeeIds(req);
+  const jids = managerJobIds(req);
+  if (eids.length && entry.employee_id && eids.includes(entry.employee_id)) return { authorized: true, entry };
+  if (pids.length && entry.partner_id && pids.includes(entry.partner_id)) return { authorized: true, entry };
+  if (jids.length && entry.job_id && jids.includes(entry.job_id)) return { authorized: true, entry };
+  return { authorized: false, reason: 'forbidden' };
+}
+
 // ─── Worker / Customer portal auth ───
 const resetCodes = new Map(); // key: "worker:login" or "customer:login", value: { code, expires }
 
@@ -13219,6 +13234,8 @@ app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard
 
 // ── Manager time-entry management (no blockManager restriction) ──
 app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
+  const access = managerCanAccessTimeEntry(req, req.params.id);
+  if (!access.authorized) return res.status(access.reason === 'not_found' ? 404 : 403).json({ error: access.reason === 'not_found' ? 'Time entry not found' : 'Not authorized to access this time entry' });
   const d = req.body;
   let breakMins = 0, breakRecords = '[]';
   if (d.break_records) {
@@ -13245,6 +13262,8 @@ app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
 
 // PATCH /api/manager/time-entries/:id/correct-time — correct clock_in or clock_out for a punch
 app.patch('/api/manager/time-entries/:id/correct-time', requireAdmin, (req, res) => {
+  const access = managerCanAccessTimeEntry(req, req.params.id);
+  if (!access.authorized) return res.status(access.reason === 'not_found' ? 404 : 403).json({ error: access.reason === 'not_found' ? 'Time entry not found' : 'Not authorized to access this time entry' });
   const { field, new_time } = req.body;
   if (!['clock_in', 'clock_out'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
   const t = new Date(new_time);
@@ -13260,6 +13279,8 @@ app.patch('/api/manager/time-entries/:id/correct-time', requireAdmin, (req, res)
 });
 
 app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
+  const access = managerCanAccessTimeEntry(req, req.params.id);
+  if (!access.authorized) return res.status(access.reason === 'not_found' ? 404 : 403).json({ error: access.reason === 'not_found' ? 'Time entry not found' : 'Not authorized to access this time entry' });
   db.prepare("UPDATE time_entries SET manager_confirmed=1,needs_review=1 WHERE id=?").run(req.params.id);
   res.json({ success: true });
 });
@@ -13267,6 +13288,13 @@ app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
 app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
   const { ids, action, regular_hours, overtime_hours, clock_in_delta_minutes, clock_out_delta_minutes } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: '未选择记录' });
+  // For managers, verify access to ALL time entries in the batch
+  if (req.userRole === 'manager') {
+    for (const id of ids) {
+      const access = managerCanAccessTimeEntry(req, id);
+      if (!access.authorized) return res.status(access.reason === 'not_found' ? 404 : 403).json({ error: access.reason === 'not_found' ? `Time entry ${id} not found` : `Not authorized to access time entry ${id}` });
+    }
+  }
   if (action === 'confirm') {
     const stmt = db.prepare("UPDATE time_entries SET manager_confirmed=1,needs_review=1 WHERE id=?");
     db.transaction(() => { for (const id of ids) stmt.run(id); })();
