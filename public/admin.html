@@ -17955,10 +17955,16 @@ function _wpZoneHtml(zoneId, label, idx) {
         <span style="font-size:.83rem;font-weight:700;color:#1f2937">📄 ${label}</span>
         <span id="${zoneId}_status" style="font-size:.75rem;color:#9ca3af;background:#f3f4f6;padding:.15rem .55rem;border-radius:20px;white-space:nowrap">未上传</span>
       </div>
-      <div id="${zoneId}_file" style="margin-bottom:.55rem">
-        <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="font-size:.8rem;width:100%;color:#374151"
-          onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
+      <div id="${zoneId}_drop" style="border:2px dashed #d1d5db;border-radius:8px;padding:1.2rem .8rem;text-align:center;cursor:pointer;background:#fafafa;transition:all .2s;margin-bottom:.55rem"
+        ondragover="event.preventDefault();this.style.borderColor='#d97706';this.style.background='#fffbeb'"
+        ondragleave="this.style.borderColor='#d1d5db';this.style.background='#fafafa'"
+        ondrop="event.preventDefault();this.style.borderColor='#d1d5db';this.style.background='#fafafa';wpHandleDropFiles(${idx},'${label.replace(/'/g, "\\'")}',event.dataTransfer.files)"
+        onclick="document.getElementById('${zoneId}_input').click()">
+        <div style="font-size:.82rem;color:#6b7280">📂 拖拽文件到此处 / Drop files here</div>
+        <div style="font-size:.72rem;color:#9ca3af;margin-top:.3rem">或点击选择文件 (PDF / 图片)</div>
       </div>
+      <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="display:none"
+        onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
       <div id="${zoneId}_existing" style="margin-bottom:.4rem"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;align-items:center">
         <div>
@@ -17991,6 +17997,22 @@ function wpSwitchGcDoc() {
   });
 }
 
+
+function wpHandleDropFiles(idx, label, files) {
+  if (!files || !files.length) return;
+  const allowed = ['application/pdf','image/jpeg','image/png','image/gif','image/heic','image/heif'];
+  const file = files[0];
+  if (!allowed.includes(file.type) && !/\.(pdf|jpe?g|png|gif|heic|heif)$/i.test(file.name)) {
+    showToast('仅支持 PDF / 图片文件', 'error'); return;
+  }
+  // Create a fake input-like object and delegate to existing handler
+  const zoneId = `wpUploadZone_${idx}`;
+  const input = document.getElementById(zoneId + '_input');
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  wpHandleFileSelect(idx, label, input);
+}
 
 async function wpHandleFileSelect(idx, label, input) {
   if (!input.files || !input.files[0]) return;
