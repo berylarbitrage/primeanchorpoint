@@ -1973,16 +1973,18 @@ try { db.exec(`ALTER TABLE admin_users ADD COLUMN sms_notify_enabled INTEGER DEF
 // SMS Inbox: auto-create agent accounts if they don't exist, then set phone numbers
 try {
   const agents = [
-    { username: 'berylzhang', password: 'GoodluckBeryl2026$', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
-    { username: 'jimmycai', password: 'GoodluckJimmy2026$', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
-    { username: 'tiexiongzhou', password: 'GoodluckTiexiong2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
-    { username: 'nikizhao', password: 'GoodluckNiki2026$', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
+    { username: 'berylzhang', envKey: 'SMS_AGENT_BERYL_PW', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
+    { username: 'jimmycai', envKey: 'SMS_AGENT_JIMMY_PW', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
+    { username: 'tiexiongzhou', envKey: 'SMS_AGENT_TIEXIONG_PW', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
+    { username: 'nikizhao', envKey: 'SMS_AGENT_NIKI_PW', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
   ];
   for (const a of agents) {
     const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(a.username);
     if (!existing) {
+      const password = process.env[a.envKey] || require('crypto').randomBytes(16).toString('base64url');
+      if (!process.env[a.envKey]) console.warn(`[SECURITY] No ${a.envKey} env var set. Generated random password for ${a.username}: ${password}`);
       const salt = require('crypto').randomBytes(16).toString('hex');
-      const hash = require('crypto').scryptSync(a.password, salt, 64).toString('hex');
+      const hash = require('crypto').scryptSync(password, salt, 64).toString('hex');
       db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, active, sms_notify_phone, sms_notify_enabled) VALUES (?,?,?,?,?,1,?,1)`)
         .run(a.username, hash, salt, a.role, a.display_name, a.phone);
       console.log('SMS agent account created:', a.username);
@@ -1992,17 +1994,6 @@ try {
     }
   }
 } catch(e) { console.warn('SMS agent auto-config:', e.message); }
-
-// One-time password fix for tiexiongzhou
-try {
-  const tx = db.prepare('SELECT id FROM admin_users WHERE username=?').get('tiexiongzhou');
-  if (tx) {
-    const salt = require('crypto').randomBytes(16).toString('hex');
-    const hash = require('crypto').scryptSync('GoodluckTiexiong2026$', salt, 64).toString('hex');
-    db.prepare('UPDATE admin_users SET password_hash=?, salt=? WHERE id=?').run(hash, salt, tx.id);
-    console.log('Password updated for tiexiongzhou');
-  }
-} catch(e) {}
 
 // Helper: read company name from DB (admin-editable), fall back to env var, then default.
 function getCompanyLegalName() {
@@ -2402,6 +2393,7 @@ const punchPhotoUpload = multer({
 const crypto = require('crypto');
 
 // ─── SSN Encryption (AES-256-GCM) ───
+if (!process.env.SSN_SECRET) console.warn('[SECURITY WARNING] SSN_SECRET environment variable not set! Using default key is insecure. Set SSN_SECRET in production.');
 const SSN_KEY = crypto.scryptSync(process.env.SSN_SECRET || 'prime-anchorpoint-ssn-key-default!', 'pa-ssn-salt-v1', 32);
 function encryptSSN(ssn) {
   const normalized = ssn.replace(/\D/g, '');
@@ -19326,10 +19318,10 @@ app.get('/api/sms/agent-status', requireAdmin, requireRole('admin'), (req, res) 
 app.post('/api/sms/create-agents', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const agents = [
-      { username: 'berylzhang', password: 'GoodluckBeryl2026$', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
-      { username: 'jimmycai', password: 'GoodluckJimmy2026$', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
-      { username: 'tiexiongzhou', password: 'GoodluckTiexiong2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
-      { username: 'nikizhao', password: 'GoodluckNiki2026$', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
+      { username: 'berylzhang', envKey: 'SMS_AGENT_BERYL_PW', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
+      { username: 'jimmycai', envKey: 'SMS_AGENT_JIMMY_PW', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
+      { username: 'tiexiongzhou', envKey: 'SMS_AGENT_TIEXIONG_PW', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
+      { username: 'nikizhao', envKey: 'SMS_AGENT_NIKI_PW', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
     ];
     const results = [];
     for (const a of agents) {
@@ -19338,8 +19330,10 @@ app.post('/api/sms/create-agents', requireAdmin, requireRole('admin'), (req, res
         db.prepare(`UPDATE admin_users SET sms_notify_phone=?, sms_notify_enabled=1 WHERE id=?`).run(a.phone, existing.id);
         results.push({ username: a.username, action: 'updated_phone', id: existing.id });
       } else {
+        const password = process.env[a.envKey] || require('crypto').randomBytes(16).toString('base64url');
+        if (!process.env[a.envKey]) console.warn(`[SECURITY] No ${a.envKey} env var set. Generated random password for ${a.username}: ${password}`);
         const salt = require('crypto').randomBytes(16).toString('hex');
-        const hash = require('crypto').scryptSync(a.password, salt, 64).toString('hex');
+        const hash = require('crypto').scryptSync(password, salt, 64).toString('hex');
         const info = db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, active, sms_notify_phone, sms_notify_enabled) VALUES (?,?,?,?,?,1,?,1)`)
           .run(a.username, hash, salt, a.role, a.display_name, a.phone);
         results.push({ username: a.username, action: 'created', id: info.lastInsertRowid });
