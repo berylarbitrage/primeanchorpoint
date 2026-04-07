@@ -18581,7 +18581,7 @@ function smsAudit(entityType, entityId, action, actorType, actorId, metadata = {
 async function sendSmsNotification(threadId, messageId, agentId, agentPhone, contactName, contactPhone, messagePreview) {
   const token = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + SMS_NOTIFICATION_TOKEN_TTL).toISOString();
-  const baseUrl = BASE_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'www.primeanchorpoint.com'}`;
+  const baseUrl = BASE_URL || 'https://www.primeanchorpoint.com';
   const link = `${baseUrl}/sms/t/${token}`;
   const displayName = contactName || contactPhone;
   const preview = (messagePreview || '').substring(0, 80);
