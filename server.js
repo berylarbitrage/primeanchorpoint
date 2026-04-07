@@ -19298,6 +19298,15 @@ app.post('/api/sms/create-agents', requireAdmin, requireRole('admin'), (req, res
 
 // ═══ End of SMS Inbox Module ═══
 
+app.post('/api/sms/test-notify', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const { phone } = req.body;
+    const testPhone = phone || '+13128437890';
+    const result = await sendSMSWithDetail(testPhone, 'Test notification from Prime Anchor Point SMS Inbox. If you received this, notifications are working!');
+    res.json({ result, twilio_from: TWILIO_FROM, twilio_configured: !!twilioClient });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
