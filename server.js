@@ -18931,7 +18931,9 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     let where = '1=1';
     const params = [];
 
-    if (status && status !== 'all') {
+    if (status === 'unassigned') {
+      where += ` AND t.assigned_agent_id IS NULL AND t.status IN ('open','claimed')`;
+    } else if (status && status !== 'all') {
       const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
       where += ` AND t.status IN (${statuses.map(() => '?').join(',')})`;
       params.push(...statuses);
