@@ -17847,7 +17847,7 @@ function wpShowRequiredDocs(category) {
 // ─── Work Permit File Upload Logic ───
 const WP_UPLOAD_DOCS = {
   citizen: ['美国护照 U.S. Passport 或其他身份证明'],
-  green_card: ['绿卡正反面 Green Card (I-551) front & back'],
+  green_card: ['绿卡正反面 Green Card (I-551) front & back', '护照 + I-551 临时绿卡章 Passport with I-551 stamp/MRIV', '过期绿卡 + I-797 延期通知 Expired Green Card + I-797 Extension Notice'],
   work_visa: ['护照 Passport', 'I-797 批准通知 Approval Notice', 'I-94 入境记录'],
   ead: ['EAD 工卡 (I-766) 正反面 front & back', '护照 Passport'],
   opt: ['EAD 工卡 (I-766) 正反面 front & back', 'I-20（含 OPT endorsement）', '护照 Passport'],
@@ -17920,6 +17920,15 @@ function wpRenderUploadZones(category, trData) {
     }
   } else {
     docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
+  }
+
+  // For green card: show hint that only one document is needed
+  if (category === 'green_card') {
+    container.insertAdjacentHTML('beforeend', `
+      <div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:8px;padding:.6rem .85rem;font-size:.82rem;color:#065f46;margin-bottom:.65rem;font-weight:600">
+        ✅ 以下三种证明任选其一上传即可 (Upload any ONE of the following)
+      </div>
+    `);
   }
 
   docs.forEach((label, idx) => {
