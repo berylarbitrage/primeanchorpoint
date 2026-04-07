@@ -260,6 +260,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <h1>SMS Inbox</h1>
       <span id="headerUnread" class="badge-unread" style="display:none"></span>
       <div class="spacer"></div>
+      <button class="btn-icon" onclick="showBroadcastModal()" title="Compose / Broadcast" style="font-size:1.1rem">&#9993;</button>
       <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
       <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
       <button class="btn-icon" onclick="loadThreads()" title="Refresh">&#x21bb;</button>
@@ -339,6 +340,23 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <label>Email</label><input id="editEmail" placeholder="Email">
     <button class="btn" onclick="saveContact()">Save</button>
     <button class="close-modal" onclick="closeEditContactModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- Broadcast Modal -->
+<div class="modal-bg" id="broadcastModal">
+  <div class="modal" style="max-width:480px">
+    <h3>Send SMS to Multiple Recipients</h3>
+    <label>Recipients (one phone number per line)</label>
+    <textarea id="bcRecipients" rows="5" placeholder="(312) 843-7890&#10;(682) 246-3589&#10;+13143270319" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
+    <div style="margin-bottom:8px">
+      <button onclick="loadContactsIntoBC()" style="padding:4px 10px;font-size:.75rem;border:1px solid var(--gray-200);border-radius:var(--radius);background:var(--white);cursor:pointer;color:var(--gray-600)">+ Load from contacts</button>
+    </div>
+    <label>Message</label>
+    <textarea id="bcMessage" rows="4" placeholder="Type your message..." style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
+    <div id="bcStatus" style="font-size:.8rem;color:var(--gray-600);margin-bottom:8px;min-height:1.2em"></div>
+    <button class="btn" id="bcSendBtn" onclick="sendBroadcast()">Send to All</button>
+    <button class="close-modal" onclick="closeBroadcastModal()">Cancel</button>
   </div>
 </div>
 
@@ -1113,6 +1131,68 @@ window.addEventListener('online', () => {
 window.addEventListener('offline', () => {
   document.getElementById('offlineBar').classList.add('show');
 });
+
+// ─── Broadcast / Compose ───
+function showBroadcastModal() {
+  document.getElementById('bcRecipients').value = '';
+  document.getElementById('bcMessage').value = '';
+  document.getElementById('bcStatus').textContent = '';
+  document.getElementById('bcSendBtn').disabled = false;
+  document.getElementById('bcSendBtn').textContent = 'Send to All';
+  document.getElementById('broadcastModal').classList.add('show');
+}
+function closeBroadcastModal() { document.getElementById('broadcastModal').classList.remove('show'); }
+
+async function loadContactsIntoBC() {
+  try {
+    const r = await api('/sms/contacts');
+    if (!r.contacts || r.contacts.length === 0) { toast('No contacts found'); return; }
+    const lines = r.contacts.map(c => {
+      const label = c.name ? c.name + ' ' + c.phone_e164 : c.phone_e164;
+      return label;
+    });
+    const current = document.getElementById('bcRecipients').value.trim();
+    document.getElementById('bcRecipients').value = current ? current + '\n' + lines.join('\n') : lines.join('\n');
+  } catch(e) { toast('Failed to load contacts'); }
+}
+
+async function sendBroadcast() {
+  const rawLines = document.getElementById('bcRecipients').value.trim().split('\n').filter(l => l.trim());
+  const message = document.getElementById('bcMessage').value.trim();
+  if (rawLines.length === 0) { toast('Please enter at least one phone number'); return; }
+  if (!message) { toast('Please enter a message'); return; }
+  // Extract phone numbers from each line (last number-like pattern)
+  const phones = rawLines.map(line => {
+    const nums = line.replace(/[^\d+]/g, ' ').trim().split(/\s+/).filter(n => n.length >= 10);
+    return nums.length > 0 ? nums[nums.length - 1] : line.replace(/[^\d+]/g, '');
+  }).filter(p => p.length >= 10);
+  if (phones.length === 0) { toast('No valid phone numbers found'); return; }
+  if (!confirm('Send this message to ' + phones.length + ' recipient(s)?')) return;
+
+  const btn = document.getElementById('bcSendBtn');
+  const status = document.getElementById('bcStatus');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  status.textContent = 'Sending 0/' + phones.length + '...';
+
+  try {
+    const r = await api('/sms/broadcast', {
+      method: 'POST',
+      body: JSON.stringify({ phones, message })
+    });
+    const sent = r.results ? r.results.filter(x => x.ok).length : 0;
+    const failed = r.results ? r.results.filter(x => !x.ok).length : 0;
+    status.innerHTML = '<span style="color:var(--green)">Sent: ' + sent + '</span>' +
+      (failed > 0 ? ' &nbsp; <span style="color:var(--red)">Failed: ' + failed + '</span>' : '');
+    btn.textContent = 'Done';
+    toast('Broadcast complete: ' + sent + ' sent, ' + failed + ' failed');
+    setTimeout(() => { loadThreads(); }, 1000);
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+    btn.textContent = 'Send to All';
+  }
+}
 
 // ─── Test Notify ───
 async function testNotify() {

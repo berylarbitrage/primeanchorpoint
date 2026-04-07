@@ -19316,6 +19316,59 @@ app.post('/api/sms/create-agents', requireAdmin, requireRole('admin'), (req, res
 
 // ═══ End of SMS Inbox Module ═══
 
+// GET /api/sms/contacts — list all SMS contacts
+app.get('/api/sms/contacts', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const contacts = db.prepare(`SELECT id, phone_e164, name, company, email FROM sms_contacts ORDER BY name, phone_e164`).all();
+    res.json({ contacts });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/broadcast — send SMS to multiple recipients
+app.post('/api/sms/broadcast', requireAdmin, requireSmsAccess, async (req, res) => {
+  try {
+    const { phones, message } = req.body;
+    if (!phones || !Array.isArray(phones) || phones.length === 0) return res.status(400).json({ error: 'phones array required' });
+    if (!message || !message.trim()) return res.status(400).json({ error: 'message required' });
+    if (phones.length > 100) return res.status(400).json({ error: 'Max 100 recipients per broadcast' });
+
+    const results = [];
+    for (const phone of phones) {
+      const phoneE164 = formatPhoneE164(phone);
+      try {
+        // Find or create contact and thread
+        const contact = smsGetOrCreateContact(phoneE164);
+        const twilioNumber = TWILIO_FROM || process.env.TWILIO_PHONE_NUMBER || '';
+        const thread = smsFindOrCreateThread(contact.id, twilioNumber);
+
+        // Send SMS
+        const opts = { body: message.trim(), to: phoneE164 };
+        if (TWILIO_MESSAGING_SID) {
+          opts.messagingServiceSid = TWILIO_MESSAGING_SID;
+        } else {
+          opts.from = TWILIO_FROM;
+        }
+        const msg = await twilioClient.messages.create(opts);
+
+        // Store outbound message
+        db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, from_number, to_number, body, delivery_status, twilio_message_sid, author_agent_id)
+          VALUES (?,?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', twilioNumber, phoneE164, message.trim(), msg.status || 'queued', msg.sid || '', req.userId);
+
+        // Update thread
+        db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_message_preview=?, status=CASE WHEN status='open' THEN 'claimed' ELSE status END,
+          assigned_agent_id=COALESCE(assigned_agent_id,?), updated_at=datetime('now') WHERE id=?`)
+          .run(message.trim().substring(0, 120), req.userId, thread.id);
+
+        smsAudit('message', 0, 'broadcast_sent', 'agent', req.userId, { thread_id: thread.id, to: phoneE164 });
+        results.push({ phone: phoneE164, ok: true, sid: msg.sid });
+      } catch(e) {
+        results.push({ phone: phoneE164, ok: false, error: e.message });
+      }
+    }
+    res.json({ success: true, results, total: phones.length, sent: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/sms/test-notify', requireAdmin, requireRole('admin'), async (req, res) => {
   try {
     const { phone } = req.body;
