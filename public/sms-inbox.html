@@ -708,9 +708,16 @@ function renderActionBar() {
   let html = '';
 
   if (s === 'open') {
-    html += '<button class="action-btn primary" onclick="claimThread()">Claim</button>';
-    html += '<button class="action-btn" onclick="showAssignModal()">Assign</button>';
-    html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
+    if (isAssigned) {
+      if (!isMe) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
+      html += '<button class="action-btn" onclick="showAssignModal()">Reassign</button>';
+      html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
+      html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">Assigned: ' + esc(currentThread.assigned_agent.username) + '</span>';
+    } else {
+      html += '<button class="action-btn primary" onclick="claimThread()">Claim</button>';
+      html += '<button class="action-btn" onclick="showAssignModal()">Assign</button>';
+      html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
+    }
   } else if (s === 'claimed') {
     if (!isMe) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
     html += '<button class="action-btn" onclick="showAssignModal()">Reassign</button>';
