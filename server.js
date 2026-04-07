@@ -18570,7 +18570,7 @@ function smsAudit(entityType, entityId, action, actorType, actorId, metadata = {
 async function sendSmsNotification(threadId, messageId, agentId, agentPhone, contactName, contactPhone, messagePreview) {
   const token = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + SMS_NOTIFICATION_TOKEN_TTL).toISOString();
-  const baseUrl = BASE_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'primeanchorpoint.com'}`;
+  const baseUrl = BASE_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'www.primeanchorpoint.com'}`;
   const link = `${baseUrl}/sms/t/${token}`;
   const displayName = contactName || contactPhone;
   const preview = (messagePreview || '').substring(0, 80);
@@ -18701,16 +18701,21 @@ function requireSmsAccess(req, res, next) {
 
 // ═══ Agent Secure Link ═══
 app.get('/sms/t/:token', (req, res) => {
-  const notification = db.prepare('SELECT * FROM sms_notifications WHERE link_token=?').get(req.params.token);
-  if (!notification) return res.status(404).send('Link not found');
-  if (notification.link_expires_at && new Date(notification.link_expires_at) < new Date()) {
-    return res.status(410).send('<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>Link expired</h2><p>Please log in to <a href="/sms-inbox">SMS Inbox</a> directly.</p></body></html>');
+  try {
+    const notification = db.prepare('SELECT * FROM sms_notifications WHERE link_token=?').get(req.params.token);
+    if (!notification) return res.status(404).send('<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>Link not found</h2><p>Please log in to <a href="/sms-inbox">SMS Inbox</a> directly.</p></body></html>');
+    if (notification.link_expires_at && new Date(notification.link_expires_at) < new Date()) {
+      return res.status(410).send('<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>Link expired</h2><p>Please log in to <a href="/sms-inbox">SMS Inbox</a> directly.</p></body></html>');
+    }
+    // Mark as clicked
+    db.prepare(`UPDATE sms_notifications SET status='clicked', clicked_at=datetime('now') WHERE id=?`).run(notification.id);
+    smsAudit('thread', notification.thread_id, 'link_clicked', 'agent', notification.agent_id, {});
+    // Redirect to SMS inbox with thread context
+    res.redirect(`/sms-inbox#thread/${notification.thread_id}`);
+  } catch(e) {
+    console.error('[SMS Link] Error:', e.message);
+    res.redirect('/sms-inbox');
   }
-  // Mark as clicked
-  db.prepare(`UPDATE sms_notifications SET status='clicked', clicked_at=datetime('now') WHERE id=?`).run(notification.id);
-  smsAudit('thread', notification.thread_id, 'link_clicked', 'agent', notification.agent_id, {});
-  // Redirect to SMS inbox with thread context
-  res.redirect(`/sms-inbox#thread/${notification.thread_id}`);
 });
 
 // ═══ Page Route ═══
