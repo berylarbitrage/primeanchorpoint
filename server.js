@@ -1975,7 +1975,7 @@ try {
   const agents = [
     { username: 'berylzhang', password: 'GoodluckBeryl2026$', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
     { username: 'jimmycai', password: 'GoodluckJimmy2026$', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
-    { username: 'tiexiongzhou', password: 'GoodluckJimmy2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
+    { username: 'tiexiongzhou', password: 'GoodluckTiexiong2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
     { username: 'nikizhao', password: 'GoodluckNiki2026$', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
   ];
   for (const a of agents) {
@@ -1992,6 +1992,17 @@ try {
     }
   }
 } catch(e) { console.warn('SMS agent auto-config:', e.message); }
+
+// One-time password fix for tiexiongzhou
+try {
+  const tx = db.prepare('SELECT id FROM admin_users WHERE username=?').get('tiexiongzhou');
+  if (tx) {
+    const salt = require('crypto').randomBytes(16).toString('hex');
+    const hash = require('crypto').scryptSync('GoodluckTiexiong2026$', salt, 64).toString('hex');
+    db.prepare('UPDATE admin_users SET password_hash=?, salt=? WHERE id=?').run(hash, salt, tx.id);
+    console.log('Password updated for tiexiongzhou');
+  }
+} catch(e) {}
 
 // Helper: read company name from DB (admin-editable), fall back to env var, then default.
 function getCompanyLegalName() {
@@ -19293,7 +19304,7 @@ app.post('/api/sms/create-agents', requireAdmin, requireRole('admin'), (req, res
     const agents = [
       { username: 'berylzhang', password: 'GoodluckBeryl2026$', phone: '+13128437890', role: 'staff', display_name: 'Beryl Zhang' },
       { username: 'jimmycai', password: 'GoodluckJimmy2026$', phone: '+16822463589', role: 'staff', display_name: 'Jimmy Cai' },
-      { username: 'tiexiongzhou', password: 'GoodluckJimmy2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
+      { username: 'tiexiongzhou', password: 'GoodluckTiexiong2026$', phone: '+13143270319', role: 'staff', display_name: 'Tiexiong Zhou' },
       { username: 'nikizhao', password: 'GoodluckNiki2026$', phone: '+18726642397', role: 'staff', display_name: 'Niki Zhao' }
     ];
     const results = [];
