@@ -19324,6 +19324,41 @@ app.get('/api/sms/contacts', requireAdmin, requireSmsAccess, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/sms/partners — list companies for broadcast group selection
+app.get('/api/sms/partners', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const partners = db.prepare(`SELECT id, name, phone, contact_person FROM partners WHERE active=1 ORDER BY name`).all();
+    res.json({ partners });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/partners/:id/employees — list employees linked to a partner (through jobs)
+app.get('/api/sms/partners/:id/employees', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    // Find employees who have worked on jobs for this partner (through time entries)
+    const employees = db.prepare(`
+      SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.email, e.position, e.status
+      FROM employees e
+      WHERE e.status='active' AND e.phone != '' AND e.id IN (
+        SELECT DISTINCT te.employee_id FROM time_entries te
+        JOIN jobs j ON j.id = te.job_id
+        WHERE j.partner_id = ?
+      )
+      ORDER BY e.first_name, e.last_name
+    `).all(partnerId);
+    res.json({ employees });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/all-employees — list all active employees with phone numbers
+app.get('/api/sms/all-employees', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const employees = db.prepare(`SELECT id, first_name, last_name, phone, email, position, status FROM employees WHERE status='active' AND phone != '' ORDER BY first_name, last_name`).all();
+    res.json({ employees });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/sms/broadcast — send SMS to multiple recipients
 app.post('/api/sms/broadcast', requireAdmin, requireSmsAccess, async (req, res) => {
   try {

@@ -345,13 +345,52 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 
 <!-- Broadcast Modal -->
 <div class="modal-bg" id="broadcastModal">
-  <div class="modal" style="max-width:480px">
+  <div class="modal" style="max-width:520px">
     <h3>Send SMS to Multiple Recipients</h3>
-    <label>Recipients (one phone number per line)</label>
-    <textarea id="bcRecipients" rows="5" placeholder="(312) 843-7890&#10;(682) 246-3589&#10;+13143270319" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
-    <div style="margin-bottom:8px">
-      <button onclick="loadContactsIntoBC()" style="padding:4px 10px;font-size:.75rem;border:1px solid var(--gray-200);border-radius:var(--radius);background:var(--white);cursor:pointer;color:var(--gray-600)">+ Load from contacts</button>
+
+    <!-- Tab buttons -->
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <button class="filter-btn active" id="bcTabManual" onclick="switchBcTab('manual')">Manual Input</button>
+      <button class="filter-btn" id="bcTabCompany" onclick="switchBcTab('company')">By Company</button>
+      <button class="filter-btn" id="bcTabAll" onclick="switchBcTab('all')">All Employees</button>
     </div>
+
+    <!-- Manual tab -->
+    <div id="bcPanelManual">
+      <label>Recipients (one phone number per line)</label>
+      <textarea id="bcRecipients" rows="5" placeholder="(312) 843-7890&#10;(682) 246-3589&#10;+13143270319" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
+      <div style="margin-bottom:8px">
+        <button onclick="loadContactsIntoBC()" style="padding:4px 10px;font-size:.75rem;border:1px solid var(--gray-200);border-radius:var(--radius);background:var(--white);cursor:pointer;color:var(--gray-600)">+ Load from contacts</button>
+      </div>
+    </div>
+
+    <!-- Company tab -->
+    <div id="bcPanelCompany" style="display:none">
+      <label>Select Company</label>
+      <select id="bcCompanySelect" onchange="loadCompanyEmployees()" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none">
+        <option value="">-- Select a company --</option>
+      </select>
+      <div id="bcEmployeeList" style="max-height:200px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;display:none">
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button onclick="bcSelectAll(true)" style="padding:4px 10px;font-size:.75rem;border:1px solid var(--gray-200);border-radius:var(--radius);background:var(--white);cursor:pointer;color:var(--gray-600)">Select All</button>
+        <button onclick="bcSelectAll(false)" style="padding:4px 10px;font-size:.75rem;border:1px solid var(--gray-200);border-radius:var(--radius);background:var(--white);cursor:pointer;color:var(--gray-600)">Deselect All</button>
+        <span id="bcSelectedCount" style="font-size:.78rem;color:var(--gray-400);line-height:28px;margin-left:auto">0 selected</span>
+      </div>
+    </div>
+
+    <!-- All employees tab -->
+    <div id="bcPanelAll" style="display:none">
+      <div id="bcAllEmployeeList" style="max-height:250px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px">
+        <div style="padding:12px;color:var(--gray-400);text-align:center">Loading...</div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button onclick="bcSelectAllEmp(true)" style="padding:4px 10px;font-size:.75rem;border:1px solid var(--gray-200);border-radius:var(--radius);background:var(--white);cursor:pointer;color:var(--gray-600)">Select All</button>
+        <button onclick="bcSelectAllEmp(false)" style="padding:4px 10px;font-size:.75rem;border:1px solid var(--gray-200);border-radius:var(--radius);background:var(--white);cursor:pointer;color:var(--gray-600)">Deselect All</button>
+        <span id="bcAllSelectedCount" style="font-size:.78rem;color:var(--gray-400);line-height:28px;margin-left:auto">0 selected</span>
+      </div>
+    </div>
+
     <label>Message</label>
     <textarea id="bcMessage" rows="4" placeholder="Type your message..." style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
     <div id="bcStatus" style="font-size:.8rem;color:var(--gray-600);margin-bottom:8px;min-height:1.2em"></div>
@@ -1133,15 +1172,109 @@ window.addEventListener('offline', () => {
 });
 
 // ─── Broadcast / Compose ───
+let bcCurrentTab = 'manual';
+
 function showBroadcastModal() {
   document.getElementById('bcRecipients').value = '';
   document.getElementById('bcMessage').value = '';
   document.getElementById('bcStatus').textContent = '';
   document.getElementById('bcSendBtn').disabled = false;
   document.getElementById('bcSendBtn').textContent = 'Send to All';
+  switchBcTab('manual');
   document.getElementById('broadcastModal').classList.add('show');
+  loadPartners();
 }
 function closeBroadcastModal() { document.getElementById('broadcastModal').classList.remove('show'); }
+
+function switchBcTab(tab) {
+  bcCurrentTab = tab;
+  document.getElementById('bcPanelManual').style.display = tab === 'manual' ? '' : 'none';
+  document.getElementById('bcPanelCompany').style.display = tab === 'company' ? '' : 'none';
+  document.getElementById('bcPanelAll').style.display = tab === 'all' ? '' : 'none';
+  document.getElementById('bcTabManual').className = 'filter-btn' + (tab === 'manual' ? ' active' : '');
+  document.getElementById('bcTabCompany').className = 'filter-btn' + (tab === 'company' ? ' active' : '');
+  document.getElementById('bcTabAll').className = 'filter-btn' + (tab === 'all' ? ' active' : '');
+  if (tab === 'all') loadAllEmployees();
+}
+
+async function loadPartners() {
+  try {
+    const r = await api('/sms/partners');
+    const sel = document.getElementById('bcCompanySelect');
+    sel.innerHTML = '<option value="">-- Select a company --</option>';
+    (r.partners || []).forEach(p => {
+      sel.innerHTML += '<option value="' + p.id + '">' + esc(p.name) + '</option>';
+    });
+  } catch(e) {}
+}
+
+async function loadCompanyEmployees() {
+  const partnerId = document.getElementById('bcCompanySelect').value;
+  const list = document.getElementById('bcEmployeeList');
+  if (!partnerId) { list.style.display = 'none'; return; }
+  list.style.display = '';
+  list.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">Loading...</div>';
+  try {
+    const r = await api('/sms/partners/' + partnerId + '/employees');
+    const emps = r.employees || [];
+    if (emps.length === 0) {
+      list.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">No employees with phone numbers found for this company</div>';
+      updateBcCount();
+      return;
+    }
+    list.innerHTML = emps.map(e =>
+      '<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer;font-size:.85rem" onchange="updateBcCount()">' +
+        '<input type="checkbox" class="bc-emp-cb" value="' + esc(e.phone) + '" checked>' +
+        '<span style="flex:1">' + esc(e.first_name + ' ' + e.last_name) + '</span>' +
+        '<span style="color:var(--gray-400);font-size:.78rem">' + esc(e.phone) + '</span>' +
+        (e.position ? '<span style="color:var(--gray-400);font-size:.72rem">' + esc(e.position) + '</span>' : '') +
+      '</label>'
+    ).join('');
+    updateBcCount();
+  } catch(e) {
+    list.innerHTML = '<div style="padding:12px;color:var(--red)">Failed to load employees</div>';
+  }
+}
+
+function bcSelectAll(checked) {
+  document.querySelectorAll('#bcEmployeeList .bc-emp-cb').forEach(cb => cb.checked = checked);
+  updateBcCount();
+}
+function updateBcCount() {
+  const n = document.querySelectorAll('#bcEmployeeList .bc-emp-cb:checked').length;
+  document.getElementById('bcSelectedCount').textContent = n + ' selected';
+}
+
+async function loadAllEmployees() {
+  const list = document.getElementById('bcAllEmployeeList');
+  list.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">Loading...</div>';
+  try {
+    const r = await api('/sms/all-employees');
+    const emps = r.employees || [];
+    if (emps.length === 0) {
+      list.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">No employees with phone numbers</div>';
+      return;
+    }
+    list.innerHTML = emps.map(e =>
+      '<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer;font-size:.85rem" onchange="updateBcAllCount()">' +
+        '<input type="checkbox" class="bc-allemp-cb" value="' + esc(e.phone) + '">' +
+        '<span style="flex:1">' + esc(e.first_name + ' ' + e.last_name) + '</span>' +
+        '<span style="color:var(--gray-400);font-size:.78rem">' + esc(e.phone) + '</span>' +
+      '</label>'
+    ).join('');
+    updateBcAllCount();
+  } catch(e) {
+    list.innerHTML = '<div style="padding:12px;color:var(--red)">Failed to load employees</div>';
+  }
+}
+function bcSelectAllEmp(checked) {
+  document.querySelectorAll('#bcAllEmployeeList .bc-allemp-cb').forEach(cb => cb.checked = checked);
+  updateBcAllCount();
+}
+function updateBcAllCount() {
+  const n = document.querySelectorAll('#bcAllEmployeeList .bc-allemp-cb:checked').length;
+  document.getElementById('bcAllSelectedCount').textContent = n + ' selected';
+}
 
 async function loadContactsIntoBC() {
   try {
@@ -1156,24 +1289,36 @@ async function loadContactsIntoBC() {
   } catch(e) { toast('Failed to load contacts'); }
 }
 
+function getBroadcastPhones() {
+  if (bcCurrentTab === 'manual') {
+    const rawLines = document.getElementById('bcRecipients').value.trim().split('\n').filter(l => l.trim());
+    return rawLines.map(line => {
+      const nums = line.replace(/[^\d+]/g, ' ').trim().split(/\s+/).filter(n => n.length >= 10);
+      return nums.length > 0 ? nums[nums.length - 1] : line.replace(/[^\d+]/g, '');
+    }).filter(p => p.length >= 10);
+  } else if (bcCurrentTab === 'company') {
+    const phones = [];
+    document.querySelectorAll('#bcEmployeeList .bc-emp-cb:checked').forEach(cb => phones.push(cb.value));
+    return phones;
+  } else {
+    const phones = [];
+    document.querySelectorAll('#bcAllEmployeeList .bc-allemp-cb:checked').forEach(cb => phones.push(cb.value));
+    return phones;
+  }
+}
+
 async function sendBroadcast() {
-  const rawLines = document.getElementById('bcRecipients').value.trim().split('\n').filter(l => l.trim());
+  const phones = getBroadcastPhones();
   const message = document.getElementById('bcMessage').value.trim();
-  if (rawLines.length === 0) { toast('Please enter at least one phone number'); return; }
+  if (phones.length === 0) { toast('Please select at least one recipient'); return; }
   if (!message) { toast('Please enter a message'); return; }
-  // Extract phone numbers from each line (last number-like pattern)
-  const phones = rawLines.map(line => {
-    const nums = line.replace(/[^\d+]/g, ' ').trim().split(/\s+/).filter(n => n.length >= 10);
-    return nums.length > 0 ? nums[nums.length - 1] : line.replace(/[^\d+]/g, '');
-  }).filter(p => p.length >= 10);
-  if (phones.length === 0) { toast('No valid phone numbers found'); return; }
   if (!confirm('Send this message to ' + phones.length + ' recipient(s)?')) return;
 
   const btn = document.getElementById('bcSendBtn');
   const status = document.getElementById('bcStatus');
   btn.disabled = true;
   btn.textContent = 'Sending...';
-  status.textContent = 'Sending 0/' + phones.length + '...';
+  status.textContent = 'Sending to ' + phones.length + ' recipients...';
 
   try {
     const r = await api('/sms/broadcast', {
