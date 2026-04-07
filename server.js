@@ -19162,6 +19162,19 @@ app.post('/api/sms/threads/:id/assign', requireAdmin, requireRole('admin', 'staf
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/sms/threads/:id/unassign — remove assigned agent so all agents can see it
+app.post('/api/sms/threads/:id/unassign', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    const prevAgentId = thread.assigned_agent_id;
+    db.prepare(`UPDATE sms_threads SET status='open', assigned_agent_id=NULL, updated_at=datetime('now') WHERE id=?`).run(thread.id);
+    db.prepare(`INSERT INTO sms_thread_assignments (thread_id, from_agent_id, to_agent_id, action, reason) VALUES (?,?,NULL,?,?)`).run(thread.id, req.userId, 'unassign', req.body.reason || '');
+    smsAudit('thread', thread.id, 'unassigned', 'agent', req.userId, { from_agent: prevAgentId });
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/sms/threads/:id/close
 app.post('/api/sms/threads/:id/close', requireAdmin, requireSmsAccess, (req, res) => {
   try {

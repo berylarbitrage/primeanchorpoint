@@ -712,6 +712,7 @@ function renderActionBar() {
     if (isAssigned) {
       if (!isMe) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
       html += '<button class="action-btn" onclick="showAssignModal()">Reassign</button>';
+      html += '<button class="action-btn" onclick="unassignThread()">Unassign</button>';
       html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
       html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">Assigned: ' + esc(currentThread.assigned_agent.username) + '</span>';
     } else {
@@ -722,6 +723,7 @@ function renderActionBar() {
   } else if (s === 'claimed') {
     if (!isMe) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
     html += '<button class="action-btn" onclick="showAssignModal()">Reassign</button>';
+    html += '<button class="action-btn" onclick="unassignThread()">Unassign</button>';
     html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
     if (isAssigned) html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">Assigned: ' + esc(currentThread.assigned_agent.username) + '</span>';
   } else if (s === 'closed') {
@@ -852,6 +854,16 @@ async function closeThread() {
     loadThreadDetail(currentThread.id);
     loadThreadsSilent();
   } catch(e) { toast('Close failed'); }
+}
+
+async function unassignThread() {
+  if (!currentThread) return;
+  if (!confirm('Unassign this thread? All agents will be able to see it.')) return;
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/unassign', { method: 'POST' });
+    if (r.success) { toast('Thread unassigned'); loadThreadDetail(currentThread.id); loadThreadsSilent(); }
+    else toast(r.error || 'Unassign failed');
+  } catch(e) { toast(e.message || 'Unassign failed'); }
 }
 
 async function reopenThread() {
