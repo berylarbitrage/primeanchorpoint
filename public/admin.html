@@ -18745,8 +18745,8 @@ async function openW9SendModal() {
   document.getElementById('w9SendModal').classList.add('show');
   const w = _onboardingWorkerData;
   document.getElementById('w9WorkerName').textContent = w ? (w.name || w.username || '') : '';
-  document.getElementById('w9WorkerEmail').value = (w && w.email) || '';
-  document.getElementById('w9WorkerPhone').value = (w && w.phone) || '';
+  document.getElementById('w9WorkerEmail').value = (w && (w.email || w.emp_email)) || '';
+  document.getElementById('w9WorkerPhone').value = (w && (w.phone || w.emp_phone)) || '';
   document.getElementById('w9DsStatus').style.display = 'none';
   document.getElementById('w9AddressBox').style.display = 'none';
   document.getElementById('w9AddrMismatchPanel').style.display = 'none';
