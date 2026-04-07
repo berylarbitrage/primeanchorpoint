@@ -12,6 +12,32 @@ const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Render, Railway, etc.) for correct req.protocol
 const PORT = process.env.PORT || 3000;
 
+// ─── In-memory rate limiter for login endpoints ───
+const loginAttempts = new Map(); // key: ip -> { count, resetAt }
+const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
+const RATE_LIMIT_MAX = 10; // max attempts per window
+function loginRateLimit(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (entry && entry.resetAt > now) {
+    if (entry.count >= RATE_LIMIT_MAX) {
+      return res.status(429).json({ error: 'Too many login attempts. Please try again later.' });
+    }
+    entry.count++;
+  } else {
+    loginAttempts.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+  }
+  next();
+}
+// Cleanup stale entries every 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of loginAttempts) {
+    if (entry.resetAt <= now) loginAttempts.delete(ip);
+  }
+}, 30 * 60 * 1000);
+
 // ─── Twilio SMS ───
 const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
   ? require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
@@ -2324,7 +2350,7 @@ app.use(express.static('public', {
 }));
 // Serve uploaded files only to authenticated admin/staff users
 app.get('/uploads/:filename', (req, res) => {
-  // Authenticate via Bearer token, cookie, or query param (backwards compat)
+  // Authenticate via Bearer token or cookie only (no query param to avoid token leaks in logs/referrers)
   const auth = req.headers.authorization;
   let session = null;
   if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
@@ -2332,7 +2358,6 @@ app.get('/uploads/:filename', (req, res) => {
     const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
     if (cookieMatch) session = getSession(cookieMatch[1]);
   }
-  if (!session && req.query.token) session = getSession(req.query.token);
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
 
   // Prevent path traversal
@@ -6163,7 +6188,8 @@ function requireAdmin(req, res, next) {
   }
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
   // Refresh cookie on each request so it stays alive while the user is active
-  res.setHeader('Set-Cookie', `pa_token=${token};path=/;max-age=${SESSION_TTL / 1000};SameSite=Strict`);
+  const secureCookie = req.protocol === 'https' ? ';Secure' : '';
+  res.setHeader('Set-Cookie', `pa_token=${token};path=/;max-age=${SESSION_TTL / 1000};HttpOnly;SameSite=Strict${secureCookie}`);
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
@@ -6368,7 +6394,7 @@ app.post('/api/quote', (req, res) => {
 // ─── ADMIN API ───
 
 // Admin login
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', loginRateLimit, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
@@ -6377,7 +6403,7 @@ app.post('/api/admin/login', (req, res) => {
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
   const token = createSession(user);
-  res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Lax' });
+  res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Strict', secure: req.protocol === 'https' });
   res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
 });
 
@@ -13948,13 +13974,16 @@ app.get('/ts', (req, res) => {
 });
 
 // ─── Admin Panel Page ───
+// Note: admin.html includes its own login form and client-side auth gate.
+// All sensitive data is protected by requireAdmin middleware on API endpoints.
+// Serving the HTML shell is safe — no data is embedded in the page itself.
 app.get('/admin', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
 // ─── Worker Portal API ───
-app.post('/api/worker/login', (req, res) => {
+app.post('/api/worker/login', loginRateLimit, (req, res) => {
   const { login, username, password } = req.body;
   const identifier = (login || username || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
@@ -16262,7 +16291,7 @@ app.get('/api/admin/worker-accounts/:id/id-docs/:docId/file', requireAdmin, (req
 });
 
 // ─── Customer Portal API ───
-app.post('/api/customer/login', (req, res) => {
+app.post('/api/customer/login', loginRateLimit, (req, res) => {
   const { login, email, password } = req.body;
   const identifier = (login || email || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
