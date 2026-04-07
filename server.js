@@ -2723,6 +2723,13 @@ function calcHours(clockIn, clockOut, breakMin) {
   return { total, regular: Math.round(regular * 100) / 100, overtime };
 }
 
+// Password policy: min 8 chars, at least 1 letter and 1 number
+function validatePassword(password) {
+  if (!password || password.length < 8) return 'Password must be at least 8 characters';
+  if (!/[a-zA-Z]/.test(password)) return 'Password must contain at least one letter';
+  if (!/[0-9]/.test(password)) return 'Password must contain at least one number';
+  return null;
+}
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 64).toString('hex');
 }
@@ -6129,7 +6136,7 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
 }
 
 // DB-backed session store (survives server restarts, sessions roll on activity)
-const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -6137,7 +6144,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   role TEXT NOT NULL,
   created_at INTEGER NOT NULL
 )`);
-// Clean up sessions inactive for 30 days
+// Clean up expired sessions
 try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 // DB-backed worker session store (survives server restarts)
@@ -6411,7 +6418,8 @@ app.post('/api/admin/login', loginRateLimit, (req, res) => {
 app.post('/api/auth/activate', (req, res) => {
   const { username, current_password, new_password } = req.body;
   if (!username || !current_password || !new_password) return res.status(400).json({ error: 'Missing fields' });
-  if (new_password.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  const pwErr = validatePassword(new_password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
   if (!verifyPassword(current_password, user.salt, user.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
@@ -6698,6 +6706,8 @@ app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =>
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
   const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
   if (existing && existing.active) return res.status(400).json({ error: 'Username already exists' });
@@ -6716,6 +6726,8 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (password) {
+    const pwErr = validatePassword(password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(password, salt);
     db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
@@ -6808,7 +6820,8 @@ app.post('/api/admin-invite/send-email-code', async (req, res) => {
 app.post('/api/admin-invite/register', async (req, res) => {
   const { token, username, display_name, first_name, middle_name, last_name, password, phone, email, city, state, zip, sms_code, email_code } = req.body;
   if (!token || !username || !password) return res.status(400).json({ error: '缺少必填字段' });
-  if (password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   if (!phone) return res.status(400).json({ error: '请填写手机号' });
   if (!email) return res.status(400).json({ error: '请填写邮箱' });
   const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
@@ -7029,7 +7042,7 @@ async function doRegister() {
   if (!codeSent && !codeSkipped) { showErr('请先发送手机验证码并填写验证码'); return; }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
   if (!emailCodeSent && !emailCodeSkipped) { showErr('请先发送邮箱验证码并填写验证码'); return; }
-  if (password.length < 6) { showErr('密码至少 6 位'); return; }
+  if (password.length < 8 || !/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) { showErr('密码至少8位，需包含字母和数字'); return; }
   if (password !== password2) { showErr('两次密码不一致'); return; }
   btn.disabled = true; btn.textContent = '注册中…';
   try {
@@ -7246,7 +7259,8 @@ app.post('/api/public/manager-register/complete', async (req, res) => {
   const { token, username, display_name, password, contact, contact_type, code } = req.body;
   if (!token || !username || !password || !contact || !contact_type || !code)
     return res.status(400).json({ error: 'Missing required fields' });
-  if (password.length < 6) return res.status(400).json({ error: '密码至少6位 / Password must be at least 6 characters' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
 
   // Validate invite
   const inv = db.prepare("SELECT * FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
@@ -7377,6 +7391,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
 app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req, res) => {
   const { username, password, employee_id } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   if (db.prepare('SELECT id FROM worker_accounts WHERE username=?').get(username))
     return res.status(400).json({ error: 'Username already exists' });
   const salt = crypto.randomBytes(16).toString('hex');
@@ -7426,6 +7442,8 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
     if (o !== n) db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value) VALUES (?,?,?,?,?)').run(req.params.id, changedBy, field, o, n);
   };
   if (password) {
+    const pwErr = validatePassword(password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
     const salt = crypto.randomBytes(16).toString('hex');
     db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hashPassword(password, salt), salt, req.params.id);
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value) VALUES (?,?,?,?,?)').run(req.params.id, changedBy, 'password', '***', '***（已更新）');
@@ -10989,6 +11007,8 @@ app.get('/api/admin/customer-accounts', requireAdmin, requireRole('admin', 'staf
 app.post('/api/admin/customer-accounts', requireAdmin, requireRole('admin'), (req, res) => {
   const { company_name, contact_name, email, phone, password, partner_id } = req.body;
   if (!email || !password || !company_name) return res.status(400).json({ error: 'Email, company and password required' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   if (db.prepare('SELECT id FROM customer_accounts WHERE email=?').get(email))
     return res.status(400).json({ error: 'Email already registered' });
   const salt = crypto.randomBytes(16).toString('hex');
@@ -15223,7 +15243,8 @@ app.post('/api/worker/forgot-password', async (req, res) => {
 app.post('/api/worker/reset-password', async (req, res) => {
   const { login, code, new_password } = req.body;
   if (!login || !code || !new_password) return res.status(400).json({ error: '请填写完整信息' });
-  if (new_password.length < 6) return res.status(400).json({ error: '密码至少6位' });
+  const pwErr = validatePassword(new_password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   const entry = resetCodes.get('worker:' + login);
   if (!entry) return res.status(400).json({ error: '请先发送验证码 / Please request a code first' });
   if (Date.now() > entry.expires) { resetCodes.delete('worker:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
@@ -16359,7 +16380,8 @@ app.post('/api/customer/forgot-password', (req, res) => {
 app.post('/api/customer/reset-password', (req, res) => {
   const { login, code, new_password } = req.body;
   if (!login || !code || !new_password) return res.status(400).json({ error: '请填写完整信息' });
-  if (new_password.length < 6) return res.status(400).json({ error: '密码至少6位' });
+  const pwErr = validatePassword(new_password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   const entry = resetCodes.get('customer:' + login);
   if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
   if (Date.now() > entry.expires) { resetCodes.delete('customer:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
@@ -16398,6 +16420,8 @@ app.post('/api/register/worker', async (req, res) => {
   const nameParts = [first_name, middle_name, last_name].filter(Boolean);
   if (!first_name || !last_name || !phone || !email || !password)
     return res.status(400).json({ error: '请填写名字、姓氏、手机号、邮箱和密码 / First name, last name, phone, email, and password are required' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   if (!city || !state)
     return res.status(400).json({ error: '请填写城市和州 / City and state are required' });
   const name = nameParts.join(' ');
