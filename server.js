@@ -6135,6 +6135,28 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
   }
 }
 
+// ─── Admin Audit Log ───
+db.exec(`CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL,
+  actor_id INTEGER,
+  actor_username TEXT,
+  target_type TEXT,
+  target_id TEXT,
+  details TEXT,
+  ip TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
+function auditLog(action, req, { targetType, targetId, details } = {}) {
+  try {
+    db.prepare('INSERT INTO admin_audit_log (action, actor_id, actor_username, target_type, target_id, details, ip) VALUES (?,?,?,?,?,?,?)')
+      .run(action, req.userId || null, req.userName || null, targetType || null,
+        targetId != null ? String(targetId) : null,
+        details ? JSON.stringify(details) : null,
+        req.ip || req.connection?.remoteAddress || null);
+  } catch (e) { console.error('[AuditLog]', e.message); }
+}
+
 // DB-backed session store (survives server restarts, sessions roll on activity)
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
@@ -6142,6 +6164,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   user_id INTEGER NOT NULL,
   username TEXT NOT NULL,
   role TEXT NOT NULL,
+  ip TEXT,
+  user_agent TEXT,
   created_at INTEGER NOT NULL
 )`);
 // Clean up expired sessions
@@ -6165,10 +6189,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS customer_sessions (
 )`);
 try { db.prepare('DELETE FROM customer_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
-function createSession(user) {
+// Add ip/user_agent columns to existing sessions table if missing
+try { db.exec('ALTER TABLE admin_sessions ADD COLUMN ip TEXT'); } catch(e) {}
+try { db.exec('ALTER TABLE admin_sessions ADD COLUMN user_agent TEXT'); } catch(e) {}
+
+function createSession(user, req) {
   const token = crypto.randomBytes(32).toString('hex');
-  db.prepare('INSERT INTO admin_sessions (token, user_id, username, role, created_at) VALUES (?,?,?,?,?)')
-    .run(token, user.id, user.username, user.role || 'staff', Date.now());
+  const ip = req ? (req.ip || req.connection?.remoteAddress || '') : '';
+  const ua = req ? (req.headers?.['user-agent'] || '') : '';
+  db.prepare('INSERT INTO admin_sessions (token, user_id, username, role, ip, user_agent, created_at) VALUES (?,?,?,?,?,?,?)')
+    .run(token, user.id, user.username, user.role || 'staff', ip, ua, Date.now());
   return token;
 }
 function getSession(token) {
@@ -6180,7 +6210,7 @@ function getSession(token) {
   if (Date.now() - s.created_at > 60 * 60 * 1000) {
     db.prepare('UPDATE admin_sessions SET created_at=? WHERE token=?').run(Date.now(), token);
   }
-  return { userId: s.user_id, username: s.username, role: s.role, token };
+  return { userId: s.user_id, username: s.username, role: s.role, token, ip: s.ip, userAgent: s.user_agent };
 }
 function validSession(token) { return !!getSession(token); }
 
@@ -6405,11 +6435,18 @@ app.post('/api/admin/login', loginRateLimit, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
-  if (!user) return res.status(401).json({ error: 'Invalid username or password' });
-  if (!verifyPassword(password, user.salt, user.password_hash)) return res.status(401).json({ error: 'Invalid username or password' });
+  if (!user) {
+    auditLog('login_failed', { ip: req.ip, connection: req.connection, headers: req.headers }, { details: { username, reason: 'user_not_found' } });
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+  if (!verifyPassword(password, user.salt, user.password_hash)) {
+    auditLog('login_failed', { ip: req.ip, connection: req.connection, headers: req.headers }, { details: { username, reason: 'wrong_password' } });
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
-  const token = createSession(user);
+  const token = createSession(user, req);
+  auditLog('login', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role } });
   res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Strict', secure: req.protocol === 'https' });
   res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
 });
@@ -6427,7 +6464,7 @@ app.post('/api/auth/activate', (req, res) => {
   const hash = hashPassword(new_password, salt);
   db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
   const updatedUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(user.id);
-  const token = createSession(updatedUser);
+  const token = createSession(updatedUser, req);
   res.json({ success: true, token, user_id: updatedUser.id, role: updatedUser.role || 'staff', username: updatedUser.username, display_name: updatedUser.display_name || '' });
 });
 
@@ -6717,6 +6754,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   const hash = hashPassword(password, salt);
   const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)')
     .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '');
+  auditLog('account_create', req, { targetType: 'admin_user', targetId: result.lastInsertRowid, details: { username, role } });
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
@@ -6735,13 +6773,28 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
   // active field is intentionally excluded — only the user themselves can activate via self-verification
   db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=?, sms_notify_phone=?, sms_notify_enabled=? WHERE id=?')
     .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), sms_notify_phone !== undefined ? sms_notify_phone : (user.sms_notify_phone || ''), sms_notify_enabled !== undefined ? (sms_notify_enabled ? 1 : 0) : (user.sms_notify_enabled ?? 1), req.params.id);
+  const changes = {};
+  if (role && role !== user.role) changes.role = { from: user.role, to: role };
+  if (password) changes.password_reset = true;
+  if (username && username !== user.username) changes.username = { from: user.username, to: username };
+  auditLog('account_update', req, { targetType: 'admin_user', targetId: req.params.id, details: changes });
   res.json({ success: true });
 });
 
 app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   if (parseInt(req.params.id) === req.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
+  const deleted = db.prepare('SELECT username, role FROM admin_users WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM admin_users WHERE id = ?').run(req.params.id);
+  auditLog('account_delete', req, { targetType: 'admin_user', targetId: req.params.id, details: { username: deleted?.username, role: deleted?.role } });
   res.json({ success: true });
+});
+
+// ─── Admin Audit Log Viewer ───
+app.get('/api/admin/audit-log', requireAdmin, requireRole('admin'), (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+  const offset = parseInt(req.query.offset) || 0;
+  const rows = db.prepare('SELECT * FROM admin_audit_log ORDER BY id DESC LIMIT ? OFFSET ?').all(limit, offset);
+  res.json(rows);
 });
 
 // ─── Admin Invite Links ───────────────────────────────────────────
@@ -6849,7 +6902,7 @@ app.post('/api/admin-invite/register', async (req, res) => {
   db.prepare('UPDATE admin_invites SET used=1, used_at=CURRENT_TIMESTAMP WHERE id=?').run(inv.id);
   db.prepare('DELETE FROM admin_reg_codes WHERE token=?').run(token);
   const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
-  const sessionToken = createSession(user);
+  const sessionToken = createSession(user, req);
   res.json({ success: true, token: sessionToken, role: user.role, username: user.username, display_name: user.display_name });
 });
 
@@ -7285,7 +7338,7 @@ app.post('/api/public/manager-register/complete', async (req, res) => {
   db.prepare('DELETE FROM manager_reg_codes WHERE token=?').run(token);
 
   const newUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
-  const sessionToken = createSession(newUser);
+  const sessionToken = createSession(newUser, req);
   res.json({ success: true, token: sessionToken, role: newUser.role, username: newUser.username, display_name: newUser.display_name });
 });
 
@@ -15948,6 +16001,7 @@ app.put('/api/admin/integrations/:provider', requireAdmin, (req, res) => {
   if (!ex) return res.status(404).json({ error: 'Provider not found' });
   db.prepare('UPDATE integration_settings SET enabled=COALESCE(?,enabled), api_key=COALESCE(?,api_key), api_secret=COALESCE(?,api_secret), config=COALESCE(?,config), updated_at=CURRENT_TIMESTAMP WHERE provider=?')
     .run(enabled !== undefined ? (enabled ? 1 : 0) : null, api_key || null, api_secret || null, config ? JSON.stringify(config) : null, req.params.provider);
+  auditLog('integration_update', req, { targetType: 'integration', targetId: req.params.provider, details: { enabled, key_changed: !!api_key, secret_changed: !!api_secret } });
   res.json({ success: true });
 });
 
