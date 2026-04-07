@@ -17,6 +17,7 @@ const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_T
   ? require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
 const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER || '';
+const TWILIO_MESSAGING_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || '';
 const TWILIO_VERIFY_SID = process.env.TWILIO_VERIFY_SERVICE_SID || '';
 
 function formatPhoneE164(phone) {
@@ -27,13 +28,19 @@ function formatPhoneE164(phone) {
 }
 
 async function sendSMS(to, body) {
-  if (!twilioClient || !TWILIO_FROM) {
+  if (!twilioClient || (!TWILIO_FROM && !TWILIO_MESSAGING_SID)) {
     console.log(`[SMS-SKIP] Twilio not configured. To: ${to}, Body: ${body}`);
     return false;
   }
   const formatted = formatPhoneE164(to);
   try {
-    await twilioClient.messages.create({ body, from: TWILIO_FROM, to: formatted });
+    const opts = { body, to: formatted };
+    if (TWILIO_MESSAGING_SID) {
+      opts.messagingServiceSid = TWILIO_MESSAGING_SID;
+    } else {
+      opts.from = TWILIO_FROM;
+    }
+    await twilioClient.messages.create(opts);
     console.log(`[SMS] Sent to ${formatted}`);
     return true;
   } catch (e) {
@@ -77,10 +84,16 @@ async function checkVerifyCode(to, code) {
 // Returns detailed Twilio status for diagnostics (used by admin test endpoint)
 async function sendSMSWithDetail(to, body) {
   if (!twilioClient) return { ok: false, error: 'TWILIO_ACCOUNT_SID 或 TWILIO_AUTH_TOKEN 未配置' };
-  if (!TWILIO_FROM) return { ok: false, error: 'TWILIO_PHONE_NUMBER 未配置' };
+  if (!TWILIO_FROM && !TWILIO_MESSAGING_SID) return { ok: false, error: 'TWILIO_PHONE_NUMBER 或 TWILIO_MESSAGING_SERVICE_SID 未配置' };
   const formatted = formatPhoneE164(to);
   try {
-    const msg = await twilioClient.messages.create({ body, from: TWILIO_FROM, to: formatted });
+    const opts = { body, to: formatted };
+    if (TWILIO_MESSAGING_SID) {
+      opts.messagingServiceSid = TWILIO_MESSAGING_SID;
+    } else {
+      opts.from = TWILIO_FROM;
+    }
+    const msg = await twilioClient.messages.create(opts);
     // Wait 3s then fetch real delivery status (queued → sent/failed/undelivered)
     await new Promise(r => setTimeout(r, 3000));
     const updated = await twilioClient.messages(msg.sid).fetch();
