@@ -18148,8 +18148,19 @@ app.get('/api/admin/docuseal/templates/:id/preview-pdf', requireAdmin, async (re
     const r = await dsealApiCall('GET', `/api/templates/${req.params.id}`, null);
     if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
     const documents = r.data?.documents || r.data?.schema || [];
-    const docUrl = documents[0]?.url || documents[0]?.file_url || null;
-    if (!docUrl) return res.status(404).json({ error: '该模板暂无可预览的文档' });
+    // Try multiple URL fields from DocuSeal response (cloud vs self-hosted have different shapes)
+    const doc = documents[0] || {};
+    const docUrl = doc.url || doc.file_url || doc.preview_image_url || doc.pdf_url || null;
+    if (!docUrl) {
+      console.error('[preview-pdf] No document URL found for template', req.params.id,
+        'doc keys:', Object.keys(doc).join(','),
+        'documents count:', documents.length,
+        'response keys:', Object.keys(r.data || {}).join(','));
+      return res.status(404).json({
+        error: '该模板暂无可预览的文档',
+        debug: { docKeys: Object.keys(doc), responseKeys: Object.keys(r.data || {}), documentsCount: documents.length }
+      });
+    }
     // Proxy the PDF through our server so browser doesn't need to reach DocuSeal directly
     const { apiKey } = dsealGetCreds();
     const parsedUrl = new URL(docUrl);
@@ -18162,13 +18173,34 @@ app.get('/api/admin/docuseal/templates/:id/preview-pdf', requireAdmin, async (re
       method: 'GET',
       headers: { 'X-Auth-Token': apiKey, 'Accept': 'application/pdf,*/*' }
     }, (proxyRes) => {
-      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'application/pdf');
+      const ct = proxyRes.headers['content-type'] || 'application/pdf';
+      res.setHeader('Content-Type', ct);
       res.setHeader('Content-Disposition', `inline; filename="template-${req.params.id}.pdf"`);
+      res.setHeader('Cache-Control', 'no-store');
       proxyRes.pipe(res);
     });
     proxyReq.setTimeout(30000, () => { proxyReq.destroy(new Error('代理超时')); });
     proxyReq.on('error', (e) => { if (!res.headersSent) res.status(500).json({ error: e.message }); });
     proxyReq.end();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/docuseal/templates/:id/debug — debug template response structure
+app.get('/api/admin/docuseal/templates/:id/debug', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const r = await dsealApiCall('GET', `/api/templates/${req.params.id}`, null);
+    const documents = r.data?.documents || r.data?.schema || [];
+    res.json({
+      status: r.status,
+      templateId: req.params.id,
+      templateName: r.data?.name,
+      documentsCount: documents.length,
+      documents: documents.map(d => ({ keys: Object.keys(d), url: d.url, file_url: d.file_url, preview_image_url: d.preview_image_url, name: d.name, filename: d.filename })),
+      responseKeys: Object.keys(r.data || {})
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
