@@ -819,8 +819,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS shift_schedules (
   created_by INTEGER,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  position TEXT DEFAULT '',
   UNIQUE(job_id, employee_id, date)
 )`);
+try { db.exec("ALTER TABLE shift_schedules ADD COLUMN position TEXT DEFAULT ''"); } catch(e) {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -14074,30 +14076,45 @@ app.get('/admin', (req, res) => {
 
 // ─── Shift Scheduling API ───
 
-// GET partners with active jobs for scheduling
+// GET all active partners for scheduling
 app.get('/api/admin/scheduling/partners', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT DISTINCT p.id, p.name FROM partners p
-    JOIN jobs j ON j.partner_id=p.id AND j.active=1
-    WHERE p.active=1 ORDER BY p.name`).all();
+  const rows = db.prepare(`SELECT id, name FROM partners WHERE active=1 ORDER BY name`).all();
   res.json(rows);
 });
 
-// GET jobs for a partner
+// GET jobs for a partner (all jobs, including inactive, so admin can schedule)
 app.get('/api/admin/scheduling/jobs', requireAdmin, (req, res) => {
   const { partner_id } = req.query;
   if (!partner_id) return res.json([]);
-  const rows = db.prepare(`SELECT id, title, schedule, location FROM jobs WHERE partner_id=? AND active=1 ORDER BY title`).all(partner_id);
+  const rows = db.prepare(`SELECT id, title, schedule, location, active FROM jobs WHERE partner_id=? ORDER BY active DESC, title`).all(partner_id);
   res.json(rows);
 });
 
-// GET employees assigned to a job via employee_jobs
+// GET employees for a job: try employee_jobs first, fallback to time_entries linkage, then all partner employees
 app.get('/api/admin/scheduling/employees', requireAdmin, (req, res) => {
   const { job_id } = req.query;
   if (!job_id) return res.json([]);
-  const rows = db.prepare(`SELECT e.id, e.first_name, e.last_name, e.phone, e.employee_id as emp_code
+  // 1) Employees linked via employee_jobs
+  let rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.employee_id as emp_code
     FROM employee_jobs ej JOIN employees e ON e.id=ej.employee_id
-    WHERE ej.job_id=? AND ej.status='active' AND e.status='active'
+    WHERE ej.job_id=? AND e.status='active'
     ORDER BY e.first_name, e.last_name`).all(job_id);
+  if (rows.length) return res.json(rows);
+  // 2) Fallback: employees with time_entries for this job
+  rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.employee_id as emp_code
+    FROM time_entries te JOIN employees e ON e.id=te.employee_id
+    WHERE te.job_id=? AND e.status='active'
+    ORDER BY e.first_name, e.last_name`).all(job_id);
+  if (rows.length) return res.json(rows);
+  // 3) Fallback: all active employees for the partner owning this job
+  const job = db.prepare('SELECT partner_id FROM jobs WHERE id=?').get(job_id);
+  if (job && job.partner_id) {
+    rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.employee_id as emp_code
+      FROM employee_jobs ej JOIN employees e ON e.id=ej.employee_id
+      JOIN jobs j ON j.id=ej.job_id
+      WHERE j.partner_id=? AND e.status='active'
+      ORDER BY e.first_name, e.last_name`).all(job.partner_id);
+  }
   res.json(rows);
 });
 
@@ -14118,14 +14135,14 @@ app.get('/api/admin/scheduling/week', requireAdmin, (req, res) => {
 
 // POST save schedule (bulk upsert)
 app.post('/api/admin/scheduling/save', requireAdmin, (req, res) => {
-  const { job_id, partner_id, entries } = req.body; // entries: [{employee_id, date, status}]
+  const { job_id, partner_id, entries } = req.body; // entries: [{employee_id, date, status, position}]
   if (!job_id || !partner_id || !Array.isArray(entries)) return res.status(400).json({ error: 'Missing fields' });
-  const upsert = db.prepare(`INSERT INTO shift_schedules (partner_id, job_id, employee_id, date, status, created_by, updated_at)
-    VALUES (?,?,?,?,?,?,datetime('now'))
-    ON CONFLICT(job_id, employee_id, date) DO UPDATE SET status=excluded.status, updated_at=datetime('now')`);
+  const upsert = db.prepare(`INSERT INTO shift_schedules (partner_id, job_id, employee_id, date, status, position, created_by, updated_at)
+    VALUES (?,?,?,?,?,?,?,datetime('now'))
+    ON CONFLICT(job_id, employee_id, date) DO UPDATE SET status=excluded.status, position=excluded.position, updated_at=datetime('now')`);
   const tx = db.transaction(() => {
     for (const e of entries) {
-      upsert.run(partner_id, job_id, e.employee_id, e.date, e.status || 'work', req.userId);
+      upsert.run(partner_id, job_id, e.employee_id, e.date, e.status || 'work', e.position || '', req.userId);
     }
   });
   tx();
