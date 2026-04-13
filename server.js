@@ -9596,6 +9596,42 @@ app.get('/api/admin/worker-accounts/:id/w9-signed-pdf', requireAdmin, async (req
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/admin/worker-accounts/:id/w9-upload — upload a W-9 file directly (skip DocuSeal)
+app.post('/api/admin/worker-accounts/:id/w9-upload', requireAdmin, docUpload.single('file'), (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    if (!req.file) return res.status(400).json({ error: '请选择文件' });
+
+    // Store in worker_compliance_docs
+    db.prepare(`INSERT INTO worker_compliance_docs (worker_account_id, doc_type, file_path, file_name, status) VALUES (?,?,?,?,?)`)
+      .run(workerId, 'w9_uploaded', req.file.path, req.file.originalname, 'completed');
+
+    // Mark W-9 task as completed
+    const note = `W-9 已手动上传文件: ${req.file.originalname} (${new Date().toLocaleString('zh-CN')})`;
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, updated_at)
+      VALUES (?, 'w9', 'completed', 1, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id, task_key) DO UPDATE SET
+        status='completed', admin_note=excluded.admin_note, completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, note);
+
+    syncOnboardedStatus(workerId);
+    res.json({ success: true, fileName: req.file.originalname });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/worker-accounts/:id/w9-uploaded-file — serve the uploaded W-9 file
+app.get('/api/admin/worker-accounts/:id/w9-uploaded-file', requireAdmin, (req, res) => {
+  try {
+    const doc = db.prepare(`SELECT file_path, file_name FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9_uploaded' ORDER BY created_at DESC LIMIT 1`).get(req.params.id);
+    if (!doc || !doc.file_path) return res.status(404).json({ error: '未找到上传的 W-9 文件' });
+    if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: '文件不存在' });
+    const ext = path.extname(doc.file_name || '').toLowerCase();
+    const mimeMap = { '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
+    res.set({ 'Content-Type': mimeMap[ext] || 'application/octet-stream', 'Content-Disposition': `inline; filename="${doc.file_name}"` });
+    res.send(fs.readFileSync(doc.file_path));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Update tax questionnaire address and re-verify W-9 address match
 app.put('/api/admin/worker-accounts/:id/tax-address', requireAdmin, async (req, res) => {
   try {
