@@ -19532,6 +19532,27 @@ app.post('/api/sms/translate', requireAdmin, requireSmsAccess, async (req, res) 
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/sms/translate-batch — translate multiple texts at once
+app.post('/api/sms/translate-batch', requireAdmin, requireSmsAccess, async (req, res) => {
+  try {
+    const { items, from, to } = req.body; // items: [{id, text}]
+    if (!Array.isArray(items) || !from || !to) return res.status(400).json({ error: 'items, from, to required' });
+    const results = {};
+    // Translate in parallel (limit concurrency to 5)
+    const chunks = [];
+    for (let i = 0; i < items.length; i += 5) chunks.push(items.slice(i, i + 5));
+    for (const chunk of chunks) {
+      await Promise.all(chunk.map(async (item) => {
+        try {
+          const translated = await translateText(item.text, from, to);
+          if (translated && translated !== item.text) results[item.id] = translated;
+        } catch(e) {}
+      }));
+    }
+    res.json({ results });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/sms/threads/:id/langs — get current language settings
 app.get('/api/sms/threads/:id/langs', requireAdmin, requireSmsAccess, (req, res) => {
   try {
