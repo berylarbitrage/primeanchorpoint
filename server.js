@@ -819,8 +819,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS shift_schedules (
   created_by INTEGER,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  position TEXT DEFAULT '',
   UNIQUE(job_id, employee_id, date)
 )`);
+try { db.exec("ALTER TABLE shift_schedules ADD COLUMN position TEXT DEFAULT ''"); } catch(e) {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -14133,14 +14135,14 @@ app.get('/api/admin/scheduling/week', requireAdmin, (req, res) => {
 
 // POST save schedule (bulk upsert)
 app.post('/api/admin/scheduling/save', requireAdmin, (req, res) => {
-  const { job_id, partner_id, entries } = req.body; // entries: [{employee_id, date, status}]
+  const { job_id, partner_id, entries } = req.body; // entries: [{employee_id, date, status, position}]
   if (!job_id || !partner_id || !Array.isArray(entries)) return res.status(400).json({ error: 'Missing fields' });
-  const upsert = db.prepare(`INSERT INTO shift_schedules (partner_id, job_id, employee_id, date, status, created_by, updated_at)
-    VALUES (?,?,?,?,?,?,datetime('now'))
-    ON CONFLICT(job_id, employee_id, date) DO UPDATE SET status=excluded.status, updated_at=datetime('now')`);
+  const upsert = db.prepare(`INSERT INTO shift_schedules (partner_id, job_id, employee_id, date, status, position, created_by, updated_at)
+    VALUES (?,?,?,?,?,?,?,datetime('now'))
+    ON CONFLICT(job_id, employee_id, date) DO UPDATE SET status=excluded.status, position=excluded.position, updated_at=datetime('now')`);
   const tx = db.transaction(() => {
     for (const e of entries) {
-      upsert.run(partner_id, job_id, e.employee_id, e.date, e.status || 'work', req.userId);
+      upsert.run(partner_id, job_id, e.employee_id, e.date, e.status || 'work', e.position || '', req.userId);
     }
   });
   tx();
