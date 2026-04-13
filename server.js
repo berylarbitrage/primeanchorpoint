@@ -1962,6 +1962,11 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_thread ON sms_message
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_sid ON sms_messages(twilio_message_sid)`); } catch(e) {}
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messages(thread_id, created_at)`); } catch(e) {}
 
+// SMS translation columns (added later — safe to add via ALTER TABLE)
+try { db.exec(`ALTER TABLE sms_threads ADD COLUMN contact_lang TEXT DEFAULT 'es'`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_threads ADD COLUMN agent_lang TEXT DEFAULT 'zh'`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_messages ADD COLUMN translated_body TEXT DEFAULT ''`); } catch(e) {}
+
 db.exec(`CREATE TABLE IF NOT EXISTS sms_thread_assignments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   thread_id INTEGER NOT NULL,
@@ -18204,8 +18209,8 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const allKeys = ['company_contract_template_id','company_contract_en_template_id','company_contract_es_template_id',
     'worker_1099_template_id','worker_1099_en_template_id','worker_1099_es_template_id',
     'worker_w2_template_id','worker_w2_en_template_id','worker_w2_es_template_id',
-    'w4_template_id','w9_template_id','w9_es_template_id','w9_individual_template_id','w9_individual_es_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
-    'i9_template_id','i9_es_template_id','w7_template_id','il_w4_template_id','il_w4_es_template_id',
+    'w4_template_id','w9_template_id','w9_es_template_id','w9_individual_template_id','w9_individual_es_template_id','w8ben_template_id','w8ben_es_template_id','w8bene_template_id','w8bene_es_template_id','form8233_template_id',
+    'i9_template_id','i9_es_template_id','w7_template_id','w7_es_template_id','il_w4_en_template_id','il_w4_es_template_id',
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
     'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
@@ -18243,8 +18248,8 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const _configKeys = ['company_contract_template_id','company_contract_en_template_id','company_contract_es_template_id',
     'worker_1099_template_id','worker_1099_en_template_id','worker_1099_es_template_id',
     'worker_w2_template_id','worker_w2_en_template_id','worker_w2_es_template_id',
-    'w4_template_id','w9_template_id','w9_es_template_id','w9_individual_template_id','w9_individual_es_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
-    'i9_template_id','i9_es_template_id','w7_template_id','il_w4_template_id','il_w4_es_template_id',
+    'w4_template_id','w9_template_id','w9_es_template_id','w9_individual_template_id','w9_individual_es_template_id','w8ben_template_id','w8ben_es_template_id','w8bene_template_id','w8bene_es_template_id','form8233_template_id',
+    'i9_template_id','i9_es_template_id','w7_template_id','w7_es_template_id','il_w4_en_template_id','il_w4_es_template_id',
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
     'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
@@ -18267,7 +18272,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// GET /api/admin/docuseal/templates — list templates from DocuSeal
+// GET /api/admin/docuseal/templates — list templates from DocuSeal (page 1 only, for compat)
 app.get('/api/admin/docuseal/templates', requireAdmin, async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
@@ -18275,6 +18280,31 @@ app.get('/api/admin/docuseal/templates', requireAdmin, async (req, res) => {
     if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
     const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
     res.json(templates);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/docuseal/templates-debug — fetch ALL pages and return summary for diagnosis
+app.get('/api/admin/docuseal/templates-debug', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const pages = [];
+    let page = 1;
+    while (true) {
+      const r = await dsealApiCall('GET', `/api/templates?page=${page}&limit=100`, null);
+      if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status} on page ${page}`, raw: r.data });
+      const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+      pages.push({ page, count: templates.length, ids: templates.map(t => t.id || t.template_id), names: templates.map(t => t.name) });
+      if (!templates.length || (Array.isArray(r.data) && page === 1)) break; // flat = no pagination
+      if (!r.data?.pagination?.next) break;
+      page++;
+      if (page > 20) break;
+    }
+    const localIds = db.prepare('SELECT docuseal_template_id FROM docuseal_templates').all().map(r => String(r.docuseal_template_id));
+    const allRemoteIds = pages.flatMap(p => p.ids.map(String));
+    const missing = allRemoteIds.filter(id => !localIds.includes(id));
+    res.json({ pages, totalRemote: allRemoteIds.length, localCount: localIds.length, missingFromLocal: missing });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -18485,23 +18515,55 @@ app.get('/api/admin/docuseal/my-templates', requireAdmin, (req, res) => {
 app.post('/api/admin/docuseal/sync-from-docuseal', requireAdmin, async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
-    const r = await dsealApiCall('GET', '/api/templates', null);
-    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
-    const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
-    let added = 0;
-    for (const t of templates) {
-      const id = t.id || t.template_id;
-      if (!id) continue;
-      const existing = db.prepare('SELECT id FROM docuseal_templates WHERE docuseal_template_id=?').get(String(id));
-      if (!existing) {
-        db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(t.name || `Template #${id}`, String(id), '');
-        added++;
+    let added = 0, total = 0, page = 1;
+    while (true) {
+      const r = await dsealApiCall('GET', `/api/templates?page=${page}&limit=100`, null);
+      if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+      const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+      if (!templates.length) break;
+      total += templates.length;
+      for (const t of templates) {
+        const id = t.id || t.template_id;
+        if (!id) continue;
+        const existing = db.prepare('SELECT id FROM docuseal_templates WHERE docuseal_template_id=?').get(String(id));
+        if (!existing) {
+          db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(t.name || `Template #${id}`, String(id), '');
+          added++;
+        }
       }
+      // Paginate: flat array response means no pagination; otherwise check pagination.next
+      if (Array.isArray(r.data) || !r.data?.pagination?.next) break;
+      page++;
+      if (page > 50) break; // safety cap
     }
-    res.json({ success: true, added, total: templates.length });
+    res.json({ success: true, added, total });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// POST /api/admin/docuseal/import-by-id — manually add template(s) to local DB by DocuSeal ID
+app.post('/api/admin/docuseal/import-by-id', requireAdmin, async (req, res) => {
+  const { ids } = req.body; // array of { docuseal_template_id, name }
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: '请提供模板 ID 列表' });
+  let added = 0;
+  for (const item of ids) {
+    const idStr = String(item.docuseal_template_id || '').trim();
+    if (!idStr) continue;
+    const existing = db.prepare('SELECT id FROM docuseal_templates WHERE docuseal_template_id=?').get(idStr);
+    if (existing) continue;
+    // Optionally fetch name from DocuSeal
+    let tplName = item.name || `Template #${idStr}`;
+    if (dsealEnabled() && !item.name) {
+      try {
+        const r = await dsealApiCall('GET', `/api/templates/${idStr}`, null);
+        if (r.status === 200 && r.data?.name) tplName = r.data.name;
+      } catch {}
+    }
+    db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tplName, idStr, '');
+    added++;
+  }
+  res.json({ success: true, added });
 });
 
 // PATCH /api/admin/docuseal/my-templates/:id — rename template in local DB
@@ -18991,6 +19053,25 @@ function smsGetNotifyAgents(thread) {
   return db.prepare(`SELECT id, username, sms_notify_phone, sms_notify_enabled FROM admin_users WHERE sms_notify_enabled=1 AND sms_notify_phone != '' AND role IN ('admin','staff')`).all();
 }
 
+// ─── Translation Helper ───
+const SMS_LANG_MAP = { en: 'en', es: 'es', zh: 'zh-CN' };
+async function translateText(text, fromLang, toLang) {
+  if (!text || !text.trim()) return '';
+  const from = SMS_LANG_MAP[fromLang] || fromLang;
+  const to   = SMS_LANG_MAP[toLang]   || toLang;
+  if (from === to) return text;
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(from)}&tl=${encodeURIComponent(to)}&dt=t&q=${encodeURIComponent(text)}`;
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!r.ok) return '';
+    const data = await r.json();
+    return (data[0] || []).map(s => s[0] || '').join('');
+  } catch(e) {
+    console.error('[translateText]', e.message);
+    return '';
+  }
+}
+
 // ═══ Twilio Inbound Webhook ═══
 app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), validateTwilioWebhook, async (req, res) => {
   try {
@@ -19013,20 +19094,24 @@ app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), va
     // 2. Find or create thread
     const thread = smsFindOrCreateThread(contact.id, twilioNumber);
 
-    // 3. Insert message
-    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, twilio_message_sid, direction, source, from_number, to_number, body, media_urls, num_media, delivery_status)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(thread.id, MessageSid || '', 'inbound', 'customer', customerPhone, twilioNumber, Body || '', JSON.stringify(mediaUrls), numMedia, 'received');
+    // 3. Auto-translate inbound message (contact_lang → agent_lang)
+    const freshThread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
+    const translatedBody = await translateText(Body || '', freshThread.contact_lang || 'es', freshThread.agent_lang || 'zh');
+
+    // 4. Insert message
+    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, twilio_message_sid, direction, source, from_number, to_number, body, translated_body, media_urls, num_media, delivery_status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(thread.id, MessageSid || '', 'inbound', 'customer', customerPhone, twilioNumber, Body || '', translatedBody, JSON.stringify(mediaUrls), numMedia, 'received');
 
     const messageId = msgInfo.lastInsertRowid;
 
-    // 4. Update thread
+    // 5. Update thread
     const preview = (Body || '').substring(0, 120);
     db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_inbound_at=datetime('now'),
       last_message_preview=?, unread_count=unread_count+1, updated_at=datetime('now') WHERE id=?`).run(preview, thread.id);
 
     smsAudit('message', messageId, 'received', 'webhook', null, { thread_id: thread.id, from: customerPhone });
 
-    // 5. Notify agents
+    // 6. Notify agents
     const agents = smsGetNotifyAgents(thread);
     for (const agent of agents) {
       try {
@@ -19247,23 +19332,28 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
       return res.status(403).json({ error: 'Only the assigned agent or admin can reply' });
     }
 
+    // Translate agent message (agent_lang → contact_lang) before sending
+    const freshThread2 = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
+    const translated = await translateText(body.trim(), freshThread2.agent_lang || 'zh', freshThread2.contact_lang || 'es');
+    const bodyToSend = translated || body.trim();
+
     // Insert message first
     const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
-    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, author_agent_id, from_number, to_number, body, delivery_status)
-      VALUES (?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', req.userId, thread.twilio_number, thread.phone_e164, body.trim(), 'queued');
+    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, author_agent_id, from_number, to_number, body, translated_body, delivery_status)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', req.userId, thread.twilio_number, thread.phone_e164, body.trim(), bodyToSend, 'queued');
 
     const messageId = msgInfo.lastInsertRowid;
-    const preview = body.trim().substring(0, 120);
+    const preview = bodyToSend.substring(0, 120);
 
     // Update thread
     db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_outbound_at=datetime('now'), last_message_preview=?, updated_at=datetime('now') WHERE id=?`).run(preview, thread.id);
 
-    // Send via Twilio
+    // Send via Twilio (send the translated body)
     let twilioSid = '';
     let deliveryStatus = 'queued';
     try {
       if (twilioClient && TWILIO_FROM) {
-        const createParams = { body: body.trim(), from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
+        const createParams = { body: bodyToSend, from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
         if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
         const msg = await twilioClient.messages.create(createParams);
         twilioSid = msg.sid;
@@ -19411,6 +19501,43 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
       .run(name ?? contact.name, company ?? contact.company, email ?? contact.email, tags ?? contact.tags, notes ?? contact.notes, contact.id);
     smsAudit('contact', contact.id, 'updated', 'agent', req.userId, {});
     res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/sms/threads/:id/langs — update contact_lang / agent_lang
+app.patch('/api/sms/threads/:id/langs', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { contact_lang, agent_lang } = req.body;
+    const allowed = ['en', 'es', 'zh'];
+    if (contact_lang && !allowed.includes(contact_lang)) return res.status(400).json({ error: 'invalid contact_lang' });
+    if (agent_lang && !allowed.includes(agent_lang)) return res.status(400).json({ error: 'invalid agent_lang' });
+    const fields = []; const params = [];
+    if (contact_lang) { fields.push('contact_lang=?'); params.push(contact_lang); }
+    if (agent_lang)   { fields.push('agent_lang=?');   params.push(agent_lang); }
+    if (!fields.length) return res.status(400).json({ error: 'nothing to update' });
+    fields.push("updated_at=datetime('now')");
+    params.push(req.params.id);
+    db.prepare(`UPDATE sms_threads SET ${fields.join(',')} WHERE id=?`).run(...params);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/translate — on-demand translate for preview
+app.post('/api/sms/translate', requireAdmin, requireSmsAccess, async (req, res) => {
+  try {
+    const { text, from, to } = req.body;
+    if (!text || !from || !to) return res.status(400).json({ error: 'text, from, to required' });
+    const translated = await translateText(text, from, to);
+    res.json({ translated });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/threads/:id/langs — get current language settings
+app.get('/api/sms/threads/:id/langs', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const t = db.prepare('SELECT contact_lang, agent_lang FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!t) return res.status(404).json({ error: 'Thread not found' });
+    res.json({ contact_lang: t.contact_lang || 'es', agent_lang: t.agent_lang || 'zh' });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

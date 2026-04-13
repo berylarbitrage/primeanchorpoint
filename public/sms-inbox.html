@@ -209,6 +209,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .install-banner .ib-btn{padding:7px 16px;background:#fff;color:#92400e;border:none;border-radius:20px;font-weight:700;font-size:.78rem;cursor:pointer;white-space:nowrap}
 .install-banner .ib-close{background:none;border:none;color:rgba(255,255,255,.7);font-size:1.2rem;cursor:pointer;padding:4px}
 
+/* Language bar */
+.lang-bar{background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:5px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;font-size:.75rem;color:#166534;flex-wrap:wrap}
+.lang-bar select{padding:3px 6px;border:1px solid #86efac;border-radius:5px;font-size:.75rem;background:#fff;outline:none;cursor:pointer;color:#166534}
+.lang-bar label{color:#166534;font-weight:600;white-space:nowrap}
+
+/* Translation preview bar */
+.translate-preview{background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:6px 12px;margin:4px 0;font-size:.78rem;color:#92400e;display:none;flex-shrink:0;word-break:break-word}
+.translate-preview span.label{font-weight:700;display:block;font-size:.7rem;margin-bottom:2px}
+
+/* Translation shown under messages */
+.msg-translation{font-size:.74rem;font-style:italic;color:var(--gray-400);margin-top:2px;padding:0 2px;word-break:break-word}
+.msg-row.inbound .msg-translation{color:#6b7280}
+
 /* Offline indicator */
 .offline-bar{background:#fee2e2;color:#991b1b;text-align:center;padding:6px;font-size:.78rem;font-weight:600;display:none;flex-shrink:0}
 .offline-bar.show{display:block}
@@ -309,15 +322,35 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     </div>
     <div class="action-bar" id="actionBar"></div>
     <div id="detailTags" style="padding:4px 12px;background:var(--white);border-bottom:1px solid var(--gray-200);display:none"></div>
+    <!-- Language settings bar -->
+    <div class="lang-bar" id="langBar">
+      <label>对方:</label>
+      <select id="contactLangSel" onchange="updateThreadLangs()">
+        <option value="es">西班牙语</option>
+        <option value="en">英语</option>
+        <option value="zh">中文</option>
+      </select>
+      <label style="margin-left:6px">我的:</label>
+      <select id="agentLangSel" onchange="updateThreadLangs()">
+        <option value="zh">中文</option>
+        <option value="en">英语</option>
+        <option value="es">西班牙语</option>
+      </select>
+      <span style="margin-left:auto;font-size:.68rem;color:#4ade80">✓ 收到的消息自动翻译</span>
+    </div>
     <div class="messages-area" id="messagesArea"></div>
     <div class="history-panel" id="historyPanel"></div>
     <div style="position:relative;flex-shrink:0">
       <div class="template-picker" id="templatePicker"></div>
     </div>
+    <div class="translate-preview" id="translatePreview">
+      <span class="label">翻译预览（将发送）:</span>
+      <span id="translatePreviewText"></span>
+    </div>
     <div class="reply-bar" id="replyBar">
       <button class="note-toggle" id="noteToggle" onclick="toggleNoteMode()" title="Internal note">&#128221;</button>
       <button class="note-toggle" id="templateToggle" onclick="toggleTemplates()" title="Quick replies">&#9889;</button>
-      <textarea id="replyInput" rows="1" placeholder="Type a reply..." oninput="autoGrow(this)"></textarea>
+      <textarea id="replyInput" rows="1" placeholder="输入消息（自动翻译后发送）..." oninput="autoGrow(this);onComposeInput()"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendReply()" title="Send">&#9654;</button>
     </div>
   </div>
@@ -421,6 +454,10 @@ let msgRefreshInterval = null;
 let unreadFilter = false;
 let dashboardVisible = false;
 let templates = [];
+let currentContactLang = 'es';
+let currentAgentLang = 'zh';
+let _langDebounce = null;
+let _previewDebounce = null;
 
 // ─── Auth ───
 function getToken() {
@@ -690,14 +727,17 @@ function renderDetail() {
   renderActionBar();
   renderDetailTags();
   renderMessages();
+  // Load language settings for this thread
+  loadThreadLangs(currentThread.id);
   // Hide panels from previous thread
   document.getElementById('historyPanel').classList.remove('show');
   document.getElementById('templatePicker').classList.remove('show');
-  // Reset reply bar
+  // Reset reply bar and translation preview
   noteMode = false;
   document.getElementById('replyBar').classList.remove('note-mode');
   document.getElementById('noteToggle').classList.remove('active');
-  document.getElementById('replyInput').placeholder = 'Type a reply...';
+  document.getElementById('translatePreview').style.display = 'none';
+  document.getElementById('replyInput').placeholder = '输入消息（自动翻译后发送）...';
   document.getElementById('replyInput').value = '';
 }
 
@@ -762,8 +802,15 @@ function renderMessages() {
     } else {
       const dir = item.direction;
       const statusIcon = getStatusIcon(item.delivery_status, item.id);
+      // Show translated_body below inbound messages, or outbound original vs sent
+      let translationHtml = '';
+      if (dir === 'inbound' && item.translated_body && item.translated_body !== item.body) {
+        translationHtml = '<div class="msg-translation">▸ ' + esc(item.translated_body) + '</div>';
+      } else if (dir === 'outbound' && item.translated_body && item.translated_body !== item.body) {
+        translationHtml = '<div class="msg-translation" style="text-align:right;color:rgba(255,255,255,.65)">→ ' + esc(item.translated_body) + '</div>';
+      }
       html += '<div class="msg-row ' + dir + '">'
-        + '<div class="msg-bubble">' + esc(item.body) + '</div>'
+        + '<div class="msg-bubble">' + esc(item.body) + translationHtml + '</div>'
         + '<div class="msg-meta">' + fmtTime(item._time)
         + (dir === 'outbound' ? ' &middot; ' + statusIcon : '')
         + (dir === 'outbound' && item.author_name ? ' &middot; ' + esc(item.author_name) : '')
@@ -835,6 +882,50 @@ async function sendReply() {
     }
   }
   btn.disabled = false;
+}
+
+// ─── Language / Translation ───
+async function loadThreadLangs(threadId) {
+  try {
+    const r = await api('/sms/threads/' + threadId + '/langs');
+    currentContactLang = r.contact_lang || 'es';
+    currentAgentLang = r.agent_lang || 'zh';
+    document.getElementById('contactLangSel').value = currentContactLang;
+    document.getElementById('agentLangSel').value = currentAgentLang;
+  } catch(e) {}
+}
+
+function updateThreadLangs() {
+  if (!currentThread) return;
+  currentContactLang = document.getElementById('contactLangSel').value;
+  currentAgentLang = document.getElementById('agentLangSel').value;
+  clearTimeout(_langDebounce);
+  _langDebounce = setTimeout(() => {
+    api('/sms/threads/' + currentThread.id + '/langs', {
+      method: 'PATCH', body: JSON.stringify({ contact_lang: currentContactLang, agent_lang: currentAgentLang })
+    }).catch(() => {});
+  }, 500);
+  // Trigger preview refresh if there's text
+  onComposeInput();
+}
+
+function onComposeInput() {
+  if (noteMode) { document.getElementById('translatePreview').style.display = 'none'; return; }
+  const text = document.getElementById('replyInput').value.trim();
+  const prevEl = document.getElementById('translatePreview');
+  if (!text || currentContactLang === currentAgentLang) { prevEl.style.display = 'none'; return; }
+  clearTimeout(_previewDebounce);
+  _previewDebounce = setTimeout(async () => {
+    try {
+      const r = await api('/sms/translate', { method: 'POST', body: JSON.stringify({ text, from: currentAgentLang, to: currentContactLang }) });
+      if (r.translated && r.translated !== text) {
+        document.getElementById('translatePreviewText').textContent = r.translated;
+        prevEl.style.display = 'block';
+      } else {
+        prevEl.style.display = 'none';
+      }
+    } catch(e) { prevEl.style.display = 'none'; }
+  }, 600);
 }
 
 async function claimThread() {
@@ -949,10 +1040,11 @@ function toggleNoteMode() {
     bar.classList.add('note-mode');
     btn.classList.add('active');
     input.placeholder = 'Add internal note (not sent to customer)...';
+    document.getElementById('translatePreview').style.display = 'none';
   } else {
     bar.classList.remove('note-mode');
     btn.classList.remove('active');
-    input.placeholder = 'Type a reply...';
+    input.placeholder = '输入消息（自动翻译后发送）...';
   }
   input.focus();
 }
