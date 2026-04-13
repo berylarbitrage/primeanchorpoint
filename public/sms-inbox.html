@@ -960,6 +960,7 @@ async function loadThreadLangs(threadId) {
     currentAgentLang = r.agent_lang || 'zh';
     document.getElementById('contactLangSel').value = currentContactLang;
     document.getElementById('agentLangSel').value = currentAgentLang;
+    autoTranslateMessages();
   } catch(e) {}
 }
 
@@ -975,6 +976,56 @@ function updateThreadLangs() {
   }, 500);
   // Trigger preview refresh if there's text
   onComposeInput();
+  // Re-translate all messages for new language pair
+  autoTranslateMessages(true);
+}
+
+let _autoTranslateAbort = 0;
+async function autoTranslateMessages(force) {
+  if (!currentContactLang || !currentAgentLang || currentContactLang === currentAgentLang) return;
+  const runId = ++_autoTranslateAbort;
+
+  // Collect messages that need translation
+  const inboundItems = [];
+  const outboundItems = [];
+  currentMessages.forEach(m => {
+    if (!m.body || !m.body.trim()) return;
+    if (force || !m.translated_body || m.translated_body === m.body) {
+      if (m.direction === 'inbound') inboundItems.push({ id: m.id, text: m.body });
+      else if (m.direction === 'outbound') outboundItems.push({ id: m.id, text: m.body });
+    }
+  });
+
+  if (!inboundItems.length && !outboundItems.length) return;
+
+  // Batch translate: inbound (contact→agent) and outbound (agent→contact)
+  const promises = [];
+  if (inboundItems.length) {
+    promises.push(
+      api('/sms/translate-batch', { method: 'POST', body: JSON.stringify({ items: inboundItems, from: currentContactLang, to: currentAgentLang }) })
+        .then(r => ({ dir: 'inbound', results: r.results || {} }))
+        .catch(() => ({ dir: 'inbound', results: {} }))
+    );
+  }
+  if (outboundItems.length) {
+    promises.push(
+      api('/sms/translate-batch', { method: 'POST', body: JSON.stringify({ items: outboundItems, from: currentAgentLang, to: currentContactLang }) })
+        .then(r => ({ dir: 'outbound', results: r.results || {} }))
+        .catch(() => ({ dir: 'outbound', results: {} }))
+    );
+  }
+
+  const results = await Promise.all(promises);
+  if (runId !== _autoTranslateAbort) return; // stale
+
+  let changed = false;
+  results.forEach(({ results: translations }) => {
+    for (const [id, translated] of Object.entries(translations)) {
+      const msg = currentMessages.find(m => String(m.id) === String(id));
+      if (msg && translated) { msg.translated_body = translated; changed = true; }
+    }
+  });
+  if (changed) renderMessages();
 }
 
 function onComposeInput() {
