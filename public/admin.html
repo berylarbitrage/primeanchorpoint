@@ -508,6 +508,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('compliance')" data-tab="compliance" data-role="admin,staff">📑 合规审核</a>
       <a onclick="showTab('documents')" data-tab="documents" data-role="admin,staff">📄 HR 文件</a>
       <a onclick="showTab('referrals')" data-tab="referrals" data-role="admin,staff">🎁 推荐奖励</a>
+      <a onclick="showTab('scheduling')" data-tab="scheduling" data-role="admin,staff">📅 排班管理</a>
     </div>
   </div>
 
@@ -2267,6 +2268,58 @@ tr:hover td{background:var(--sky-light)}
       </tr></thead>
       <tbody id="referralTableBody"></tbody>
     </table>
+  </div>
+</div>
+
+<!-- 排班管理 Shift Scheduling -->
+<div id="tab-scheduling" style="display:none">
+  <div class="top"><h1>📅 排班管理</h1></div>
+  <div class="card" style="margin-bottom:1rem">
+    <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <div>
+        <label style="font-size:.78rem;font-weight:600;color:var(--gray-500)">选择公司</label>
+        <select id="schedPartner" onchange="schedLoadJobs()" style="display:block;padding:6px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;min-width:180px">
+          <option value="">-- 选择公司 --</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:.78rem;font-weight:600;color:var(--gray-500)">选择班次 / 职位</label>
+        <select id="schedJob" onchange="schedLoadWeek()" style="display:block;padding:6px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;min-width:180px">
+          <option value="">-- 选择班次 --</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:.78rem;font-weight:600;color:var(--gray-500)">选择周</label>
+        <input type="date" id="schedWeekStart" onchange="schedLoadWeek()" style="display:block;padding:6px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div style="margin-left:auto;display:flex;gap:.5rem;align-items:flex-end">
+        <button class="btn" onclick="schedSave()" style="background:var(--sky);color:#fff;font-size:.82rem;padding:6px 16px">💾 保存排班</button>
+        <button class="btn" onclick="schedNotify()" style="background:#16a34a;color:#fff;font-size:.82rem;padding:6px 16px">📤 发送通知</button>
+      </div>
+    </div>
+  </div>
+  <!-- Summary bar -->
+  <div id="schedSummary" class="card" style="margin-bottom:1rem;display:none">
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;font-size:.85rem" id="schedSummaryContent"></div>
+  </div>
+  <!-- Schedule grid -->
+  <div class="card" style="overflow-x:auto">
+    <table class="data-table" id="schedTable" style="font-size:.82rem">
+      <thead id="schedThead"><tr><th>员工</th></tr></thead>
+      <tbody id="schedTbody">
+        <tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:2rem">请先选择公司和班次</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <!-- History section -->
+  <div class="card" style="margin-top:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+      <h2 style="font-size:.95rem;color:var(--blue);margin:0">📋 排班记录（最近30天）</h2>
+      <button class="btn" onclick="schedLoadHistory()" style="font-size:.78rem;padding:4px 12px;background:var(--sky);color:#fff">刷新</button>
+    </div>
+    <div id="schedHistory" style="max-height:400px;overflow-y:auto">
+      <div style="text-align:center;color:var(--gray-400);padding:1rem;font-size:.82rem">点击刷新查看历史</div>
+    </div>
   </div>
 </div>
 
@@ -6706,7 +6759,7 @@ function logout() {
 // ─── Tabs ───
 const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
-  'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
+  'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker', scheduling:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
   'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
@@ -6760,6 +6813,7 @@ function showTab(t) {
   if (t === 'docuseal-templates') loadDocusealTemplatesPage();
   if (t === 'skill-settings')   loadSkillSettings();
   if (t === 'referrals')   loadAllReferrals();
+  if (t === 'scheduling')  loadScheduling();
   if (t === 'mgr-workers')     loadMgrWorkers();
   if (t === 'mgr-assignments') loadMgrAssignments();
   if (t === 'mgr-interviews')  loadMgrInterviews();
@@ -22998,6 +23052,227 @@ async function saveAllReferralConfig() {
 // ── Referral Rewards Admin (referrals tab) ──────────────────────
 let _referralRows = [];
 let _referralConfig = { bonus_per_referral: 50, min_hours_to_qualify: 8 };
+
+// ─── Shift Scheduling (排班管理) ───
+let _schedEmployees = [];
+let _schedDates = [];
+let _schedData = {}; // {employeeId_date: 'work'|'off'}
+
+async function loadScheduling() {
+  const sel = document.getElementById('schedPartner');
+  const r = await api('/admin/scheduling/partners');
+  sel.innerHTML = '<option value="">-- 选择公司 --</option>';
+  (r || []).forEach(p => { sel.innerHTML += `<option value="${p.id}">${p.name}</option>`; });
+  // Default week to this Monday
+  const now = new Date();
+  const day = now.getDay();
+  const mon = new Date(now); mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+  document.getElementById('schedWeekStart').value = mon.toISOString().slice(0, 10);
+}
+
+async function schedLoadJobs() {
+  const pid = document.getElementById('schedPartner').value;
+  const sel = document.getElementById('schedJob');
+  sel.innerHTML = '<option value="">-- 选择班次 --</option>';
+  if (!pid) return;
+  const r = await api('/admin/scheduling/jobs?partner_id=' + pid);
+  (r || []).forEach(j => { sel.innerHTML += `<option value="${j.id}">${j.title}${j.location ? ' (' + j.location + ')' : ''}</option>`; });
+}
+
+async function schedLoadWeek() {
+  const jobId = document.getElementById('schedJob').value;
+  const startDate = document.getElementById('schedWeekStart').value;
+  if (!jobId || !startDate) return;
+  // Load employees + existing schedule
+  const [emps, weekData] = await Promise.all([
+    api('/admin/scheduling/employees?job_id=' + jobId),
+    api('/admin/scheduling/week?job_id=' + jobId + '&start_date=' + startDate)
+  ]);
+  _schedEmployees = emps || [];
+  _schedDates = weekData?.dates || [];
+  _schedData = {};
+  // Populate existing schedule data
+  (weekData?.schedules || []).forEach(s => {
+    _schedData[s.employee_id + '_' + s.date] = s.status;
+  });
+  schedRenderGrid();
+  schedLoadSummary();
+}
+
+function schedRenderGrid() {
+  const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  // Render header
+  const thead = document.getElementById('schedThead');
+  let hdr = '<tr><th style="position:sticky;left:0;background:#fff;z-index:1;min-width:130px">员工</th>';
+  _schedDates.forEach(d => {
+    const dt = new Date(d + 'T12:00:00');
+    const dn = dayNames[dt.getDay()];
+    const short = (dt.getMonth() + 1) + '/' + dt.getDate();
+    hdr += `<th style="text-align:center;min-width:75px">${short}<br><span style="font-size:.7rem;color:var(--gray-400)">周${dn}</span></th>`;
+  });
+  hdr += '<th style="text-align:center;min-width:60px">全选</th></tr>';
+  thead.innerHTML = hdr;
+  // Render body
+  const tbody = document.getElementById('schedTbody');
+  if (!_schedEmployees.length) {
+    tbody.innerHTML = '<tr><td colspan="' + (_schedDates.length + 2) + '" style="text-align:center;color:var(--gray-400);padding:2rem">该班次暂无员工，请先在职位派工中安排员工</td></tr>';
+    return;
+  }
+  let rows = '';
+  _schedEmployees.forEach(emp => {
+    rows += `<tr>`;
+    rows += `<td style="position:sticky;left:0;background:#fff;z-index:1;font-weight:600;white-space:nowrap">${emp.first_name} ${emp.last_name}<br><span style="font-size:.7rem;color:var(--gray-400)">${emp.emp_code || ''}</span></td>`;
+    _schedDates.forEach(d => {
+      const key = emp.id + '_' + d;
+      const st = _schedData[key] || '';
+      const isWork = st === 'work';
+      const isOff = st === 'off';
+      rows += `<td style="text-align:center;padding:4px">
+        <button onclick="schedToggle(${emp.id},'${d}')" id="sched_${key}"
+          style="width:52px;padding:4px 0;border-radius:6px;border:1px solid ${isWork ? '#16a34a' : isOff ? '#dc2626' : '#d1d5db'};
+          background:${isWork ? '#dcfce7' : isOff ? '#fef2f2' : '#f9fafb'};
+          color:${isWork ? '#15803d' : isOff ? '#b91c1c' : '#9ca3af'};
+          font-size:.75rem;font-weight:600;cursor:pointer">${isWork ? '上班' : isOff ? '休息' : '—'}</button>
+      </td>`;
+    });
+    // "Select all work" button
+    rows += `<td style="text-align:center"><button onclick="schedSetAllForEmp(${emp.id},'work')" style="font-size:.7rem;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f0fdf4;color:#15803d">全上班</button></td>`;
+    rows += `</tr>`;
+  });
+  tbody.innerHTML = rows;
+}
+
+function schedToggle(empId, date) {
+  const key = empId + '_' + date;
+  const cur = _schedData[key] || '';
+  // Cycle: empty → work → off → empty
+  let next = '';
+  if (!cur) next = 'work';
+  else if (cur === 'work') next = 'off';
+  else next = '';
+  if (next) { _schedData[key] = next; } else { delete _schedData[key]; }
+  // Update button
+  const btn = document.getElementById('sched_' + key);
+  if (btn) {
+    const isWork = next === 'work', isOff = next === 'off';
+    btn.style.border = `1px solid ${isWork ? '#16a34a' : isOff ? '#dc2626' : '#d1d5db'}`;
+    btn.style.background = isWork ? '#dcfce7' : isOff ? '#fef2f2' : '#f9fafb';
+    btn.style.color = isWork ? '#15803d' : isOff ? '#b91c1c' : '#9ca3af';
+    btn.textContent = isWork ? '上班' : isOff ? '休息' : '—';
+  }
+}
+
+function schedSetAllForEmp(empId, status) {
+  _schedDates.forEach(d => {
+    _schedData[empId + '_' + d] = status;
+  });
+  schedRenderGrid();
+}
+
+async function schedSave() {
+  const jobId = document.getElementById('schedJob').value;
+  const pid = document.getElementById('schedPartner').value;
+  if (!jobId || !pid) { showToast('请先选择公司和班次', 'error'); return; }
+  const entries = [];
+  for (const [key, status] of Object.entries(_schedData)) {
+    const [empId, date] = key.split('_');
+    entries.push({ employee_id: parseInt(empId), date, status });
+  }
+  if (!entries.length) { showToast('没有排班数据需要保存', 'error'); return; }
+  const r = await api('/admin/scheduling/save', {
+    method: 'POST', body: JSON.stringify({ job_id: parseInt(jobId), partner_id: parseInt(pid), entries })
+  });
+  if (r && r.success) {
+    showToast('排班已保存（' + r.count + ' 条记录）', 'success');
+    schedLoadSummary();
+  } else {
+    showToast('保存失败：' + (r?.error || '未知错误'), 'error');
+  }
+}
+
+async function schedNotify() {
+  const jobId = document.getElementById('schedJob').value;
+  const startDate = document.getElementById('schedWeekStart').value;
+  if (!jobId || !startDate) { showToast('请先选择班次和周', 'error'); return; }
+  // Count working employees
+  const workCount = Object.values(_schedData).filter(s => s === 'work').length;
+  if (!workCount) { showToast('本周没有安排上班的员工', 'error'); return; }
+  const ok = await showConfirm('确认给本周排班上班的员工发送短信通知？\n\n将通知 ' + new Set(Object.entries(_schedData).filter(([,s]) => s === 'work').map(([k]) => k.split('_')[0])).size + ' 位员工', { confirmLabel: '发送通知' });
+  if (!ok) return;
+  const customMsg = prompt('自定义消息（留空使用默认模板）：');
+  const body = { job_id: parseInt(jobId), start_date: startDate };
+  if (customMsg) body.message = customMsg;
+  const r = await api('/admin/scheduling/notify', {
+    method: 'POST', body: JSON.stringify(body)
+  });
+  if (r && r.success) {
+    showToast(`通知已发送：成功 ${r.sent}，失败 ${r.failed}，共 ${r.total} 人`, r.failed ? 'warning' : 'success');
+    schedLoadWeek();
+  } else {
+    showToast('发送失败：' + (r?.error || '未知错误'), 'error');
+  }
+}
+
+async function schedLoadSummary() {
+  const jobId = document.getElementById('schedJob').value;
+  const startDate = document.getElementById('schedWeekStart').value;
+  if (!jobId || !startDate) { document.getElementById('schedSummary').style.display = 'none'; return; }
+  const r = await api('/admin/scheduling/summary?job_id=' + jobId + '&start_date=' + startDate);
+  if (!r) return;
+  const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  let html = '';
+  const totalWork = Object.values(r).reduce((a, v) => a + v.work, 0);
+  const totalOff = Object.values(r).reduce((a, v) => a + v.off, 0);
+  const totalNotified = Object.values(r).reduce((a, v) => a + v.notified, 0);
+  html += `<div style="padding:.4rem .8rem;background:#f0fdf4;border-radius:6px;border:1px solid #bbf7d0"><b style="color:#15803d">${totalWork}</b> <span style="color:#6b7280">人次上班</span></div>`;
+  html += `<div style="padding:.4rem .8rem;background:#fef2f2;border-radius:6px;border:1px solid #fecaca"><b style="color:#dc2626">${totalOff}</b> <span style="color:#6b7280">人次休息</span></div>`;
+  html += `<div style="padding:.4rem .8rem;background:#eff6ff;border-radius:6px;border:1px solid #bfdbfe"><b style="color:#2563eb">${totalNotified}</b> <span style="color:#6b7280">已通知</span></div>`;
+  // Per-day breakdown
+  for (const [dt, v] of Object.entries(r)) {
+    const d = new Date(dt + 'T12:00:00');
+    const dn = dayNames[d.getDay()];
+    const short = (d.getMonth() + 1) + '/' + d.getDate();
+    html += `<div style="font-size:.78rem;color:var(--gray-500)">${short}(${dn}): <span style="color:#15803d">${v.work}</span>/<span style="color:#dc2626">${v.off}</span></div>`;
+  }
+  document.getElementById('schedSummaryContent').innerHTML = html;
+  document.getElementById('schedSummary').style.display = '';
+}
+
+async function schedLoadHistory() {
+  const jobId = document.getElementById('schedJob').value;
+  let url = '/admin/scheduling/history?days=30';
+  if (jobId) url += '&job_id=' + jobId;
+  const rows = await api(url);
+  if (!rows || !rows.length) {
+    document.getElementById('schedHistory').innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:1rem;font-size:.82rem">暂无排班记录</div>';
+    return;
+  }
+  // Group by date
+  const byDate = {};
+  rows.forEach(r => {
+    if (!byDate[r.date]) byDate[r.date] = [];
+    byDate[r.date].push(r);
+  });
+  let html = '<table class="data-table" style="font-size:.8rem"><thead><tr><th>日期</th><th>公司</th><th>班次</th><th>上班人数</th><th>休息人数</th><th>已通知</th></tr></thead><tbody>';
+  for (const [dt, items] of Object.entries(byDate).sort((a, b) => b[0].localeCompare(a[0]))) {
+    const byJob = {};
+    items.forEach(i => {
+      const k = i.job_id + '_' + i.partner_name;
+      if (!byJob[k]) byJob[k] = { ...i, workCount: 0, offCount: 0, notifiedCount: 0 };
+      if (i.status === 'work') byJob[k].workCount++;
+      if (i.status === 'off') byJob[k].offCount++;
+      if (i.notified) byJob[k].notifiedCount++;
+    });
+    for (const j of Object.values(byJob)) {
+      html += `<tr><td>${dt}</td><td>${j.partner_name}</td><td>${j.job_title}</td>
+        <td style="color:#15803d;font-weight:600">${j.workCount}</td>
+        <td style="color:#dc2626;font-weight:600">${j.offCount}</td>
+        <td style="color:#2563eb">${j.notifiedCount}</td></tr>`;
+    }
+  }
+  html += '</tbody></table>';
+  document.getElementById('schedHistory').innerHTML = html;
+}
 
 async function loadAllReferrals() {
   const data = await api('/admin/all-referrals');
