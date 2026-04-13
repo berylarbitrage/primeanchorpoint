@@ -1962,6 +1962,11 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_thread ON sms_message
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_sid ON sms_messages(twilio_message_sid)`); } catch(e) {}
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messages(thread_id, created_at)`); } catch(e) {}
 
+// SMS translation columns (added later — safe to add via ALTER TABLE)
+try { db.exec(`ALTER TABLE sms_threads ADD COLUMN contact_lang TEXT DEFAULT 'es'`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_threads ADD COLUMN agent_lang TEXT DEFAULT 'zh'`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_messages ADD COLUMN translated_body TEXT DEFAULT ''`); } catch(e) {}
+
 db.exec(`CREATE TABLE IF NOT EXISTS sms_thread_assignments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   thread_id INTEGER NOT NULL,
@@ -19050,6 +19055,25 @@ function smsGetNotifyAgents(thread) {
   return db.prepare(`SELECT id, username, sms_notify_phone, sms_notify_enabled FROM admin_users WHERE sms_notify_enabled=1 AND sms_notify_phone != '' AND role IN ('admin','staff')`).all();
 }
 
+// ─── Translation Helper ───
+const SMS_LANG_MAP = { en: 'en', es: 'es', zh: 'zh-CN' };
+async function translateText(text, fromLang, toLang) {
+  if (!text || !text.trim()) return '';
+  const from = SMS_LANG_MAP[fromLang] || fromLang;
+  const to   = SMS_LANG_MAP[toLang]   || toLang;
+  if (from === to) return text;
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(from)}&tl=${encodeURIComponent(to)}&dt=t&q=${encodeURIComponent(text)}`;
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!r.ok) return '';
+    const data = await r.json();
+    return (data[0] || []).map(s => s[0] || '').join('');
+  } catch(e) {
+    console.error('[translateText]', e.message);
+    return '';
+  }
+}
+
 // ═══ Twilio Inbound Webhook ═══
 app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), validateTwilioWebhook, async (req, res) => {
   try {
@@ -19072,20 +19096,24 @@ app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), va
     // 2. Find or create thread
     const thread = smsFindOrCreateThread(contact.id, twilioNumber);
 
-    // 3. Insert message
-    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, twilio_message_sid, direction, source, from_number, to_number, body, media_urls, num_media, delivery_status)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(thread.id, MessageSid || '', 'inbound', 'customer', customerPhone, twilioNumber, Body || '', JSON.stringify(mediaUrls), numMedia, 'received');
+    // 3. Auto-translate inbound message (contact_lang → agent_lang)
+    const freshThread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
+    const translatedBody = await translateText(Body || '', freshThread.contact_lang || 'es', freshThread.agent_lang || 'zh');
+
+    // 4. Insert message
+    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, twilio_message_sid, direction, source, from_number, to_number, body, translated_body, media_urls, num_media, delivery_status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(thread.id, MessageSid || '', 'inbound', 'customer', customerPhone, twilioNumber, Body || '', translatedBody, JSON.stringify(mediaUrls), numMedia, 'received');
 
     const messageId = msgInfo.lastInsertRowid;
 
-    // 4. Update thread
+    // 5. Update thread
     const preview = (Body || '').substring(0, 120);
     db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_inbound_at=datetime('now'),
       last_message_preview=?, unread_count=unread_count+1, updated_at=datetime('now') WHERE id=?`).run(preview, thread.id);
 
     smsAudit('message', messageId, 'received', 'webhook', null, { thread_id: thread.id, from: customerPhone });
 
-    // 5. Notify agents
+    // 6. Notify agents
     const agents = smsGetNotifyAgents(thread);
     for (const agent of agents) {
       try {
@@ -19306,23 +19334,28 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
       return res.status(403).json({ error: 'Only the assigned agent or admin can reply' });
     }
 
+    // Translate agent message (agent_lang → contact_lang) before sending
+    const freshThread2 = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
+    const translated = await translateText(body.trim(), freshThread2.agent_lang || 'zh', freshThread2.contact_lang || 'es');
+    const bodyToSend = translated || body.trim();
+
     // Insert message first
     const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
-    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, author_agent_id, from_number, to_number, body, delivery_status)
-      VALUES (?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', req.userId, thread.twilio_number, thread.phone_e164, body.trim(), 'queued');
+    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, author_agent_id, from_number, to_number, body, translated_body, delivery_status)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', req.userId, thread.twilio_number, thread.phone_e164, body.trim(), bodyToSend, 'queued');
 
     const messageId = msgInfo.lastInsertRowid;
-    const preview = body.trim().substring(0, 120);
+    const preview = bodyToSend.substring(0, 120);
 
     // Update thread
     db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_outbound_at=datetime('now'), last_message_preview=?, updated_at=datetime('now') WHERE id=?`).run(preview, thread.id);
 
-    // Send via Twilio
+    // Send via Twilio (send the translated body)
     let twilioSid = '';
     let deliveryStatus = 'queued';
     try {
       if (twilioClient && TWILIO_FROM) {
-        const createParams = { body: body.trim(), from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
+        const createParams = { body: bodyToSend, from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
         if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
         const msg = await twilioClient.messages.create(createParams);
         twilioSid = msg.sid;
@@ -19470,6 +19503,43 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
       .run(name ?? contact.name, company ?? contact.company, email ?? contact.email, tags ?? contact.tags, notes ?? contact.notes, contact.id);
     smsAudit('contact', contact.id, 'updated', 'agent', req.userId, {});
     res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/sms/threads/:id/langs — update contact_lang / agent_lang
+app.patch('/api/sms/threads/:id/langs', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const { contact_lang, agent_lang } = req.body;
+    const allowed = ['en', 'es', 'zh'];
+    if (contact_lang && !allowed.includes(contact_lang)) return res.status(400).json({ error: 'invalid contact_lang' });
+    if (agent_lang && !allowed.includes(agent_lang)) return res.status(400).json({ error: 'invalid agent_lang' });
+    const fields = []; const params = [];
+    if (contact_lang) { fields.push('contact_lang=?'); params.push(contact_lang); }
+    if (agent_lang)   { fields.push('agent_lang=?');   params.push(agent_lang); }
+    if (!fields.length) return res.status(400).json({ error: 'nothing to update' });
+    fields.push("updated_at=datetime('now')");
+    params.push(req.params.id);
+    db.prepare(`UPDATE sms_threads SET ${fields.join(',')} WHERE id=?`).run(...params);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/translate — on-demand translate for preview
+app.post('/api/sms/translate', requireAdmin, requireSmsAccess, async (req, res) => {
+  try {
+    const { text, from, to } = req.body;
+    if (!text || !from || !to) return res.status(400).json({ error: 'text, from, to required' });
+    const translated = await translateText(text, from, to);
+    res.json({ translated });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/threads/:id/langs — get current language settings
+app.get('/api/sms/threads/:id/langs', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const t = db.prepare('SELECT contact_lang, agent_lang FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!t) return res.status(404).json({ error: 'Thread not found' });
+    res.json({ contact_lang: t.contact_lang || 'es', agent_lang: t.agent_lang || 'zh' });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
