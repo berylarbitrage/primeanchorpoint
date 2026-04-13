@@ -17767,6 +17767,8 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'worker_w2_template_id','worker_w2_en_template_id','worker_w2_es_template_id',
     'w4_template_id','w9_template_id','w9_individual_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
+    'w9_es_template_id','w9_individual_es_template_id','w8ben_es_template_id','w8bene_es_template_id',
+    'i9_es_template_id','w7_es_template_id','il_w4_en_template_id','il_w4_es_template_id',
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
     'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
@@ -17789,7 +17791,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// GET /api/admin/docuseal/templates — list templates from DocuSeal
+// GET /api/admin/docuseal/templates — list templates from DocuSeal (page 1 only, for compat)
 app.get('/api/admin/docuseal/templates', requireAdmin, async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
@@ -17797,6 +17799,31 @@ app.get('/api/admin/docuseal/templates', requireAdmin, async (req, res) => {
     if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
     const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
     res.json(templates);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/docuseal/templates-debug — fetch ALL pages and return summary for diagnosis
+app.get('/api/admin/docuseal/templates-debug', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const pages = [];
+    let page = 1;
+    while (true) {
+      const r = await dsealApiCall('GET', `/api/templates?page=${page}&limit=100`, null);
+      if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status} on page ${page}`, raw: r.data });
+      const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+      pages.push({ page, count: templates.length, ids: templates.map(t => t.id || t.template_id), names: templates.map(t => t.name) });
+      if (!templates.length || (Array.isArray(r.data) && page === 1)) break; // flat = no pagination
+      if (!r.data?.pagination?.next) break;
+      page++;
+      if (page > 20) break;
+    }
+    const localIds = db.prepare('SELECT docuseal_template_id FROM docuseal_templates').all().map(r => String(r.docuseal_template_id));
+    const allRemoteIds = pages.flatMap(p => p.ids.map(String));
+    const missing = allRemoteIds.filter(id => !localIds.includes(id));
+    res.json({ pages, totalRemote: allRemoteIds.length, localCount: localIds.length, missingFromLocal: missing });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
