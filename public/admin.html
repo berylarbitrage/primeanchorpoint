@@ -2785,6 +2785,7 @@ tr:hover td{background:var(--sky-light)}
         <span id="ds-filter-count" style="font-size:.78rem;color:#94a3b8;margin-left:.2rem"></span>
         <div style="margin-left:auto;display:flex;gap:.5rem">
           <button id="ds-sync-btn" onclick="dsSyncFromDocuSeal()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #d1fae5;background:#f0fdf4;color:#15803d;font-size:.8rem;font-weight:600;cursor:pointer">↓ 从 DocuSeal 同步</button>
+          <button onclick="dsShowImportByIdModal()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #e9d5ff;background:#faf5ff;color:#7e22ce;font-size:.8rem;font-weight:600;cursor:pointer">+ 按 ID 导入</button>
           <button id="ds-check-updates-btn" onclick="dsCheckUpdates()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:.8rem;font-weight:600;cursor:pointer">🔍 检查可用更新</button>
         </div>
       </div>
@@ -23355,12 +23356,51 @@ async function dsSyncFromDocuSeal() {
   if (btn) { btn.disabled = true; btn.textContent = '⟳ 同步中…'; }
   try {
     const r = await api('/admin/docuseal/sync-from-docuseal', { method: 'POST' });
-    showToast(r.added > 0 ? `同步完成，新导入 ${r.added} 个模板` : '同步完成，无新模板', 'success');
+    showToast(r.added > 0 ? `同步完成，新导入 ${r.added} 个模板（共扫描 ${r.total} 个）` : `同步完成，无新模板（共扫描 ${r.total} 个）`, 'success');
     await _dsLoadMyTemplates();
   } catch(e) {
     showToast('同步失败：' + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↓ 从 DocuSeal 同步'; }
+  }
+}
+
+function dsShowImportByIdModal() {
+  const overlay = document.createElement('div');
+  overlay.id = 'ds-import-id-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:1.5rem;width:420px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+      <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">按 ID 手动导入模板</div>
+      <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">每行一个 DocuSeal 模板 ID（纯数字）。系统会自动从 DocuSeal 获取模板名称。</div>
+      <textarea id="ds-import-id-input" placeholder="3404289&#10;3404280&#10;3404259" style="width:100%;height:140px;border:1.5px solid #e2e8f0;border-radius:8px;padding:.6rem .8rem;font-size:.88rem;font-family:monospace;resize:vertical;outline:none" oninput="this.style.borderColor='#e2e8f0'"></textarea>
+      <div id="ds-import-id-status" style="font-size:.8rem;color:#64748b;min-height:1.2em;margin-top:.4rem"></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+        <button onclick="document.getElementById('ds-import-id-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
+        <button onclick="dsDoImportById()" style="padding:.4rem 1rem;border-radius:7px;border:none;background:#7e22ce;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">导入</button>
+      </div>
+    </div>`;
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+async function dsDoImportById() {
+  const ta = document.getElementById('ds-import-id-input');
+  const status = document.getElementById('ds-import-id-status');
+  const rawIds = (ta.value || '').split(/[\n,;\s]+/).map(s => s.trim()).filter(Boolean);
+  if (!rawIds.length) { ta.style.borderColor = '#f87171'; return; }
+  status.textContent = '导入中…';
+  status.style.color = '#64748b';
+  try {
+    const ids = rawIds.map(id => ({ docuseal_template_id: id }));
+    const r = await api('/admin/docuseal/import-by-id', { method: 'POST', body: JSON.stringify({ ids }) });
+    status.textContent = r.added > 0 ? `✅ 成功导入 ${r.added} 个模板` : '所有 ID 已存在，无需重复导入';
+    status.style.color = '#15803d';
+    await _dsLoadMyTemplates();
+    if (r.added > 0) setTimeout(() => document.getElementById('ds-import-id-overlay')?.remove(), 1200);
+  } catch(e) {
+    status.textContent = '导入失败：' + e.message;
+    status.style.color = '#dc2626';
   }
 }
 

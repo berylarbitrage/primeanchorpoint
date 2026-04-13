@@ -17975,23 +17975,55 @@ app.get('/api/admin/docuseal/my-templates', requireAdmin, (req, res) => {
 app.post('/api/admin/docuseal/sync-from-docuseal', requireAdmin, async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
-    const r = await dsealApiCall('GET', '/api/templates', null);
-    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
-    const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
-    let added = 0;
-    for (const t of templates) {
-      const id = t.id || t.template_id;
-      if (!id) continue;
-      const existing = db.prepare('SELECT id FROM docuseal_templates WHERE docuseal_template_id=?').get(String(id));
-      if (!existing) {
-        db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(t.name || `Template #${id}`, String(id), '');
-        added++;
+    let added = 0, total = 0, page = 1;
+    while (true) {
+      const r = await dsealApiCall('GET', `/api/templates?page=${page}&limit=100`, null);
+      if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}` });
+      const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+      if (!templates.length) break;
+      total += templates.length;
+      for (const t of templates) {
+        const id = t.id || t.template_id;
+        if (!id) continue;
+        const existing = db.prepare('SELECT id FROM docuseal_templates WHERE docuseal_template_id=?').get(String(id));
+        if (!existing) {
+          db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(t.name || `Template #${id}`, String(id), '');
+          added++;
+        }
       }
+      // Paginate: flat array response means no pagination; otherwise check pagination.next
+      if (Array.isArray(r.data) || !r.data?.pagination?.next) break;
+      page++;
+      if (page > 50) break; // safety cap
     }
-    res.json({ success: true, added, total: templates.length });
+    res.json({ success: true, added, total });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// POST /api/admin/docuseal/import-by-id — manually add template(s) to local DB by DocuSeal ID
+app.post('/api/admin/docuseal/import-by-id', requireAdmin, async (req, res) => {
+  const { ids } = req.body; // array of { docuseal_template_id, name }
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: '请提供模板 ID 列表' });
+  let added = 0;
+  for (const item of ids) {
+    const idStr = String(item.docuseal_template_id || '').trim();
+    if (!idStr) continue;
+    const existing = db.prepare('SELECT id FROM docuseal_templates WHERE docuseal_template_id=?').get(idStr);
+    if (existing) continue;
+    // Optionally fetch name from DocuSeal
+    let tplName = item.name || `Template #${idStr}`;
+    if (dsealEnabled() && !item.name) {
+      try {
+        const r = await dsealApiCall('GET', `/api/templates/${idStr}`, null);
+        if (r.status === 200 && r.data?.name) tplName = r.data.name;
+      } catch {}
+    }
+    db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tplName, idStr, '');
+    added++;
+  }
+  res.json({ success: true, added });
 });
 
 // PATCH /api/admin/docuseal/my-templates/:id — rename template in local DB
