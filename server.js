@@ -806,6 +806,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
   "ALTER TABLE employee_jobs ADD COLUMN notes TEXT DEFAULT ''"
 ].forEach(sql => { try { db.exec(sql); } catch {} });
 
+// ─── Shift Scheduling ───
+db.exec(`CREATE TABLE IF NOT EXISTS shift_schedules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  job_id INTEGER NOT NULL,
+  employee_id INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  status TEXT DEFAULT 'work',
+  notified INTEGER DEFAULT 0,
+  notified_at DATETIME DEFAULT NULL,
+  created_by INTEGER,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(job_id, employee_id, date)
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sheet_id INTEGER NOT NULL,
@@ -14054,6 +14070,139 @@ app.get('/ts', (req, res) => {
 app.get('/admin', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// ─── Shift Scheduling API ───
+
+// GET partners with active jobs for scheduling
+app.get('/api/admin/scheduling/partners', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT DISTINCT p.id, p.name FROM partners p
+    JOIN jobs j ON j.partner_id=p.id AND j.active=1
+    WHERE p.active=1 ORDER BY p.name`).all();
+  res.json(rows);
+});
+
+// GET jobs for a partner
+app.get('/api/admin/scheduling/jobs', requireAdmin, (req, res) => {
+  const { partner_id } = req.query;
+  if (!partner_id) return res.json([]);
+  const rows = db.prepare(`SELECT id, title, schedule, location FROM jobs WHERE partner_id=? AND active=1 ORDER BY title`).all(partner_id);
+  res.json(rows);
+});
+
+// GET employees assigned to a job via employee_jobs
+app.get('/api/admin/scheduling/employees', requireAdmin, (req, res) => {
+  const { job_id } = req.query;
+  if (!job_id) return res.json([]);
+  const rows = db.prepare(`SELECT e.id, e.first_name, e.last_name, e.phone, e.employee_id as emp_code
+    FROM employee_jobs ej JOIN employees e ON e.id=ej.employee_id
+    WHERE ej.job_id=? AND ej.status='active' AND e.status='active'
+    ORDER BY e.first_name, e.last_name`).all(job_id);
+  res.json(rows);
+});
+
+// GET schedule for a week
+app.get('/api/admin/scheduling/week', requireAdmin, (req, res) => {
+  const { job_id, start_date } = req.query;
+  if (!job_id || !start_date) return res.json([]);
+  const d = new Date(start_date);
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const dd = new Date(d); dd.setDate(d.getDate() + i);
+    dates.push(dd.toISOString().slice(0, 10));
+  }
+  const rows = db.prepare(`SELECT * FROM shift_schedules WHERE job_id=? AND date IN (${dates.map(() => '?').join(',')})`)
+    .all(job_id, ...dates);
+  res.json({ dates, schedules: rows });
+});
+
+// POST save schedule (bulk upsert)
+app.post('/api/admin/scheduling/save', requireAdmin, (req, res) => {
+  const { job_id, partner_id, entries } = req.body; // entries: [{employee_id, date, status}]
+  if (!job_id || !partner_id || !Array.isArray(entries)) return res.status(400).json({ error: 'Missing fields' });
+  const upsert = db.prepare(`INSERT INTO shift_schedules (partner_id, job_id, employee_id, date, status, created_by, updated_at)
+    VALUES (?,?,?,?,?,?,datetime('now'))
+    ON CONFLICT(job_id, employee_id, date) DO UPDATE SET status=excluded.status, updated_at=datetime('now')`);
+  const tx = db.transaction(() => {
+    for (const e of entries) {
+      upsert.run(partner_id, job_id, e.employee_id, e.date, e.status || 'work', req.userId);
+    }
+  });
+  tx();
+  res.json({ success: true, count: entries.length });
+});
+
+// POST notify scheduled employees
+app.post('/api/admin/scheduling/notify', requireAdmin, async (req, res) => {
+  const { job_id, start_date, message } = req.body;
+  if (!job_id || !start_date) return res.status(400).json({ error: 'Missing fields' });
+  const d = new Date(start_date);
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const dd = new Date(d); dd.setDate(d.getDate() + i);
+    dates.push(dd.toISOString().slice(0, 10));
+  }
+  // Get all employees scheduled to work this week
+  const rows = db.prepare(`SELECT DISTINCT ss.employee_id, e.phone, e.first_name, e.last_name
+    FROM shift_schedules ss JOIN employees e ON e.id=ss.employee_id
+    WHERE ss.job_id=? AND ss.date IN (${dates.map(() => '?').join(',')}) AND ss.status='work' AND e.phone!=''`)
+    .all(job_id, ...dates);
+  const job = db.prepare('SELECT title FROM jobs WHERE id=?').get(job_id);
+  const jobTitle = job ? job.title : '';
+  let sent = 0, failed = 0;
+  const results = [];
+  for (const r of rows) {
+    const body = message || `Hi ${r.first_name}, you are scheduled to work at ${jobTitle} this week (${start_date}). Please confirm your availability.`;
+    try {
+      const ok = await sendSMS(r.phone, body);
+      if (ok) {
+        sent++;
+        db.prepare(`UPDATE shift_schedules SET notified=1, notified_at=datetime('now') WHERE job_id=? AND employee_id=? AND date IN (${dates.map(() => '?').join(',')})`)
+          .run(job_id, r.employee_id, ...dates);
+      } else { failed++; }
+      results.push({ employee_id: r.employee_id, name: r.first_name + ' ' + r.last_name, ok });
+    } catch (e) { failed++; results.push({ employee_id: r.employee_id, name: r.first_name + ' ' + r.last_name, ok: false, error: e.message }); }
+  }
+  res.json({ success: true, sent, failed, total: rows.length, results });
+});
+
+// GET scheduling history (last 30 days)
+app.get('/api/admin/scheduling/history', requireAdmin, (req, res) => {
+  const { job_id, days } = req.query;
+  const d = parseInt(days) || 30;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - d);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  let where = 'ss.date >= ?';
+  const params = [cutoffStr];
+  if (job_id) { where += ' AND ss.job_id=?'; params.push(job_id); }
+  const rows = db.prepare(`SELECT ss.*, e.first_name, e.last_name, e.employee_id as emp_code,
+    j.title as job_title, p.name as partner_name
+    FROM shift_schedules ss
+    JOIN employees e ON e.id=ss.employee_id
+    JOIN jobs j ON j.id=ss.job_id
+    JOIN partners p ON p.id=ss.partner_id
+    WHERE ${where} ORDER BY ss.date DESC, p.name, j.title, e.first_name`).all(...params);
+  res.json(rows);
+});
+
+// GET scheduling summary for a week
+app.get('/api/admin/scheduling/summary', requireAdmin, (req, res) => {
+  const { job_id, start_date } = req.query;
+  if (!job_id || !start_date) return res.json({});
+  const d = new Date(start_date);
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const dd = new Date(d); dd.setDate(d.getDate() + i);
+    dates.push(dd.toISOString().slice(0, 10));
+  }
+  const summary = {};
+  for (const dt of dates) {
+    const work = db.prepare('SELECT COUNT(*) as c FROM shift_schedules WHERE job_id=? AND date=? AND status=?').get(job_id, dt, 'work');
+    const off = db.prepare('SELECT COUNT(*) as c FROM shift_schedules WHERE job_id=? AND date=? AND status=?').get(job_id, dt, 'off');
+    const notified = db.prepare('SELECT COUNT(*) as c FROM shift_schedules WHERE job_id=? AND date=? AND notified=1').get(job_id, dt);
+    summary[dt] = { work: work.c, off: off.c, notified: notified.c };
+  }
+  res.json(summary);
 });
 
 // ─── Worker Portal API ───
