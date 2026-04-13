@@ -217,6 +217,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 /* Translation preview bar */
 .translate-preview{background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:6px 12px;margin:4px 0;font-size:.78rem;color:#92400e;display:none;flex-shrink:0;word-break:break-word}
 .translate-preview span.label{font-weight:700;display:block;font-size:.7rem;margin-bottom:2px}
+.translate-confirm{background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:8px 12px;margin:4px 0;font-size:.82rem;color:#14532d;flex-shrink:0}
 
 /* Translation shown under messages */
 .msg-translation{font-size:.74rem;font-style:italic;color:var(--gray-400);margin-top:2px;padding:0 2px;word-break:break-word}
@@ -346,6 +347,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <div class="translate-preview" id="translatePreview">
       <span class="label">翻译预览（将发送）:</span>
       <span id="translatePreviewText"></span>
+    </div>
+    <div class="translate-confirm" id="translateConfirm" style="display:none">
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <div style="flex:1;min-width:0">
+          <span style="font-weight:700;font-size:.7rem;display:block;margin-bottom:2px">确认发送翻译:</span>
+          <span id="translateConfirmText" style="word-break:break-word"></span>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="cancelTranslateConfirm()" style="padding:4px 12px;border-radius:6px;border:1px solid #d1d5db;background:#fff;font-size:.78rem;cursor:pointer;color:#374151">取消</button>
+          <button onclick="confirmTranslatedSend()" style="padding:4px 12px;border-radius:6px;border:none;background:#16a34a;color:#fff;font-size:.78rem;font-weight:600;cursor:pointer">确认发送</button>
+        </div>
+      </div>
     </div>
     <div class="reply-bar" id="replyBar">
       <button class="note-toggle" id="noteToggle" onclick="toggleNoteMode()" title="Internal note">&#128221;</button>
@@ -832,16 +845,18 @@ function getStatusIcon(status, msgId) {
 }
 
 // ─── Actions ───
+let _pendingTranslatedText = null;
+
 async function sendReply() {
   const input = document.getElementById('replyInput');
   const body = input.value.trim();
   if (!body || !currentThread) return;
 
   const btn = document.getElementById('sendBtn');
-  btn.disabled = true;
 
-  try {
-    if (noteMode) {
+  if (noteMode) {
+    btn.disabled = true;
+    try {
       const r = await api('/sms/threads/' + currentThread.id + '/notes', {
         method: 'POST', body: JSON.stringify({ body })
       });
@@ -851,35 +866,88 @@ async function sendReply() {
         input.value = '';
         toast('Note added');
       }
-    } else {
-      // Optimistic: add message to UI immediately
-      const tempMsg = {
-        id: Date.now(), thread_id: currentThread.id, direction: 'outbound',
-        source: 'agent', body, delivery_status: 'sending',
-        author_name: USER ? USER.username : '', created_at: new Date().toISOString(),
-        _type: 'message', _time: new Date().toISOString()
-      };
-      currentMessages.push(tempMsg);
-      renderMessages();
-      input.value = '';
+    } catch(e) {
+      toast('Send failed: ' + (e.message || 'Unknown error'));
+    }
+    btn.disabled = false;
+    return;
+  }
 
-      const r = await api('/sms/threads/' + currentThread.id + '/messages', {
-        method: 'POST', body: JSON.stringify({ body })
-      });
-      if (r.success && r.message) {
-        // Replace temp message with real one
-        const idx = currentMessages.findIndex(m => m.id === tempMsg.id);
-        if (idx >= 0) currentMessages[idx] = r.message;
-        renderMessages();
-      }
+  // If languages differ, show translation confirmation first
+  if (currentContactLang && currentAgentLang && currentContactLang !== currentAgentLang) {
+    btn.disabled = true;
+    try {
+      const r = await api('/sms/translate', { method: 'POST', body: JSON.stringify({ text: body, from: currentAgentLang, to: currentContactLang }) });
+      const translated = (r.translated && r.translated !== body) ? r.translated : body;
+      _pendingTranslatedText = translated;
+      document.getElementById('translateConfirmText').textContent = translated;
+      document.getElementById('translateConfirm').style.display = 'block';
+      document.getElementById('translatePreview').style.display = 'none';
+      input.readOnly = true;
+      btn.style.display = 'none';
+    } catch(e) {
+      // Translation failed, send original directly
+      _pendingTranslatedText = null;
+      await doSendMessage(body);
+    }
+    btn.disabled = false;
+    return;
+  }
+
+  // Same language, send directly
+  btn.disabled = true;
+  await doSendMessage(body);
+  btn.disabled = false;
+}
+
+function cancelTranslateConfirm() {
+  _pendingTranslatedText = null;
+  document.getElementById('translateConfirm').style.display = 'none';
+  document.getElementById('replyInput').readOnly = false;
+  document.getElementById('sendBtn').style.display = '';
+  onComposeInput();
+}
+
+async function confirmTranslatedSend() {
+  document.getElementById('translateConfirm').style.display = 'none';
+  document.getElementById('replyInput').readOnly = false;
+  document.getElementById('sendBtn').style.display = '';
+  const body = document.getElementById('replyInput').value.trim();
+  if (!body || !currentThread) { _pendingTranslatedText = null; return; }
+  await doSendMessage(body);
+  _pendingTranslatedText = null;
+}
+
+async function doSendMessage(body) {
+  const input = document.getElementById('replyInput');
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  try {
+    // Optimistic: add message to UI immediately
+    const tempMsg = {
+      id: Date.now(), thread_id: currentThread.id, direction: 'outbound',
+      source: 'agent', body, delivery_status: 'sending',
+      author_name: USER ? USER.username : '', created_at: new Date().toISOString(),
+      _type: 'message', _time: new Date().toISOString()
+    };
+    currentMessages.push(tempMsg);
+    renderMessages();
+    input.value = '';
+    document.getElementById('translatePreview').style.display = 'none';
+
+    const r = await api('/sms/threads/' + currentThread.id + '/messages', {
+      method: 'POST', body: JSON.stringify({ body })
+    });
+    if (r.success && r.message) {
+      // Replace temp message with real one
+      const idx = currentMessages.findIndex(m => m.id === tempMsg.id);
+      if (idx >= 0) currentMessages[idx] = r.message;
+      renderMessages();
     }
   } catch(e) {
     toast('Send failed: ' + (e.message || 'Unknown error'));
-    // Remove optimistic message on failure
-    if (!noteMode) {
-      currentMessages = currentMessages.filter(m => m.id !== Date.now());
-      renderMessages();
-    }
+    currentMessages = currentMessages.filter(m => m.id !== Date.now());
+    renderMessages();
   }
   btn.disabled = false;
 }
