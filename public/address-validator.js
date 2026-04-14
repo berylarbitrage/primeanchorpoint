@@ -19,7 +19,21 @@ async function validateAddress({ street, street2, city, state, zip, regionCode, 
       body: JSON.stringify({ street: street || '', street2: street2 || '', city: city || '', state: state || '', zip: zip || '', ...(regionCode && { regionCode }), ...(countryName && { countryName }) }),
       signal: controller.signal
     });
-    if (!res.ok) return { proceed: true };
+    if (!res.ok) {
+      try {
+        const errData = await res.json();
+        console.error('[Address Validation] Server error:', errData);
+        if (!silent && errData.detail) {
+          await _showAddrDialog({
+            title: '⚠ 地址验证服务错误',
+            body: '<span style="color:#dc2626">' + (errData.detail || errData.error || 'Unknown error') + '</span><br><br>请检查 Google Cloud Console 是否已启用 <b>Address Validation API</b>，并确认 API Key 有权限调用该服务。',
+            confirmLabel: '知道了',
+            cancelLabel: '关闭'
+          });
+        }
+      } catch(e) {}
+      return { proceed: true };
+    }
     const data = await res.json();
     return await _handleResult(data, { street, city, state, zip }, { silent });
   } catch (e) {
