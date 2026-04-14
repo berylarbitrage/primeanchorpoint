@@ -15287,16 +15287,16 @@ let _onboardingInterviewInfo = null;
 
 // Task key → DocuSeal config keys (in priority order)
 const _TASK_TEMPLATE_MAP = {
-  w9:              ['w9_template_id','w9_individual_template_id'],
+  w9:              ['w9_template_id','w9_individual_template_id','w9_es_template_id','w9_individual_es_template_id'],
   contract:        ['company_contract_template_id','company_contract_en_template_id','company_contract_es_template_id','worker_1099_template_id','worker_1099_en_template_id','worker_w2_template_id'],
   payment_method:  ['ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','wire_auth_en_template_id','zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id'],
-  i9:              ['i9_template_id'],
-  ead_upload:      ['i9_template_id'],
-  tax_doc_w8ben:   ['w8ben_template_id'],
-  tax_doc_w8bene:  ['w8bene_template_id'],
+  i9:              ['i9_template_id','i9_es_template_id'],
+  ead_upload:      ['i9_template_id','i9_es_template_id'],
+  tax_doc_w8ben:   ['w8ben_template_id','w8ben_es_template_id'],
+  tax_doc_w8bene:  ['w8bene_template_id','w8bene_es_template_id'],
   tax_doc_8233:    ['form8233_template_id'],
-  tax_doc_w7_itin: ['w7_template_id'],
-  tin_verify:      ['w9_template_id','w9_individual_template_id'],
+  tax_doc_w7_itin: ['w7_template_id','w7_es_template_id'],
+  tin_verify:      ['w9_template_id','w9_individual_template_id','w9_es_template_id','w9_individual_es_template_id'],
 };
 
 function _getOnboardingTaskTemplateId(taskKey) {
