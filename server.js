@@ -17998,8 +17998,8 @@ app.post('/api/validate-address', async (req, res) => {
     });
 
     if (raw.error) {
-      console.error('[Google Address Validation] API error:', raw.error.message);
-      return res.status(500).json({ error: 'Address validation service error' });
+      console.error('[Google Address Validation] API error:', JSON.stringify(raw.error));
+      return res.status(500).json({ error: 'Address validation service error', detail: raw.error.message || raw.error.status || JSON.stringify(raw.error) });
     }
 
     const result = raw.result || {};
