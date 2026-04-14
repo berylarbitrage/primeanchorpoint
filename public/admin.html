@@ -18887,7 +18887,7 @@ async function openW9SendModal() {
     } else if (cfg && cfg.w9_template_id) {
       defaultId = String(Array.isArray(cfg.w9_template_id) ? cfg.w9_template_id[0] : cfg.w9_template_id);
     }
-    const w9Templates = (myTemplates || []).filter(t => t.category === 'w9' || t.category === 'w9_individual');
+    const w9Templates = (myTemplates || []).filter(t => t.category === 'w9' || t.category === 'w9_individual' || t.category === 'w9_es' || t.category === 'w9_individual_es');
     _renderW9TemplateList(w9Templates, dsUrl, defaultId);
   } catch(e) {
     const wrap = document.getElementById('w9TemplateList');
