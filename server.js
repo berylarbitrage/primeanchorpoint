@@ -18771,6 +18771,15 @@ app.post('/api/admin/docuseal/create-html-template', requireAdmin, async (req, r
   }
 });
 
+// GET /api/admin/docuseal/preview-html/:type — preview auto-generated HTML template
+app.get('/api/admin/docuseal/preview-html/:type', requireAdmin, (req, res) => {
+  const tmplDef = DOCUSEAL_AUTO_TEMPLATES[req.params.type];
+  if (!tmplDef || !tmplDef.generator) return res.status(404).json({ error: 'Template type not found' });
+  const html = tmplDef.generator();
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
+
 // GET /api/admin/docuseal/check-updates — compare current generator output with stored hash; also report missing templates
 app.get('/api/admin/docuseal/check-updates', requireAdmin, (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });

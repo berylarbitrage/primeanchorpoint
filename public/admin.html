@@ -19326,12 +19326,17 @@ function previewPaymentAuthTemplate() {
   const lang = document.getElementById('payAuthLang').value;
   const cfg = _onboardingDsConfig || {};
   const keyMap = _PM_TEMPLATE_KEYS[method] || {};
-  // Try exact lang, then zh fallback, then any configured key for this method
   const tid = cfg[keyMap[lang]] || cfg[keyMap['zh']] || cfg[keyMap['en']] || cfg[keyMap['es']];
-  if (!tid) { showToast('未找到该付款方式的表格模板，请先在 DocuSeal 设置中配置', 'error'); return; }
   const methodLabels = { direct_deposit:'ACH Direct Deposit', wire:'Wire Transfer', check:'Check', zelle:'Zelle', third_party:'第三方付款', cash:'现金签收' };
   document.getElementById('onboardingPreviewTitle').textContent = `📄 预览：${methodLabels[method]||method} 授权表格`;
-  document.getElementById('onboardingPreviewFrame').src = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
+  if (tid) {
+    document.getElementById('onboardingPreviewFrame').src = `/api/admin/docuseal/templates/${tid}/preview-pdf`;
+  } else {
+    const templateTypeMap = { direct_deposit:'ach_auth', wire:'wire_auth', check:'check_instruction', zelle:'zelle_auth', third_party:'third_party_pay', cash:'cash_receipt' };
+    const langSuffix = lang === 'en' ? '_en' : lang === 'es' ? '_es' : '';
+    const htmlType = (templateTypeMap[method] || method) + langSuffix;
+    document.getElementById('onboardingPreviewFrame').src = `/api/admin/docuseal/preview-html/${htmlType}`;
+  }
   document.getElementById('onboardingPreviewModal').classList.add('show');
 }
 
