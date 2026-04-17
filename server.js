@@ -5301,6 +5301,13 @@ function _buildZelleAuthRepForm(lang) {
   );
   const lRepName = L('Representative Full Legal Name', '授权代表法定全名', 'Nombre Legal Completo del Representante');
   const lRelationship = L('Relationship to Payee', '与收款人关系', 'Relación con el Beneficiario');
+  const lPayeePhone = L('Payee Phone Number', '收款人电话号码', 'Número de Teléfono del Beneficiario');
+  const lPayeeEmail = L('Payee Email Address', '收款人邮箱地址', 'Correo Electrónico del Beneficiario');
+  const payeeContactNote = L(
+    `By providing the Payee's contact information, the Authorized Representative authorizes ${companyName} to contact the Payee directly to verify this authorization and send any required forms.`,
+    `提供收款人联系方式即表示授权代表同意 ${companyName} 直接联系收款人以核实本授权并发送任何所需表格。`,
+    `Al proporcionar la información de contacto del Beneficiario, el Representante Autorizado autoriza a ${companyName} a contactar directamente al Beneficiario para verificar esta autorización y enviar cualquier formulario requerido.`
+  );
   const repCertText = zh
     ? `I, the undersigned Authorized Representative, certify that:\n(a) I am duly authorized by the Payee named above to act on their behalf regarding payment arrangements with ${companyName}.\n(b) The Zelle account information provided is accurate and is authorized by the Payee to receive payments.\n(c) I accept responsibility for ensuring the accuracy of the information provided.\n(d) I agree to notify ${companyName} in writing of any changes to the Payee's Zelle account information before the next payment is sent.\n\n本人（下方签名的授权代表）声明并确认：\n(a) 本人已获上述收款人的正式授权，代表其处理与 ${companyName} 的付款安排。\n(b) 所提供的 Zelle 账户信息准确无误，且经收款人授权用于接收付款。\n(c) 本人对所提供信息的准确性负责。\n(d) 本人同意在下次付款前以书面形式通知 ${companyName} 收款人 Zelle 账户信息的任何变更。`
     : es
@@ -5359,7 +5366,12 @@ function _buildZelleAuthRepForm(lang) {
       <td style="${c}width:50%"><b>${lRepName}</b><br><text-field name="rep_legal_name" role="First Party" style="${w}"></text-field></td>
       <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="rep_relationship" role="First Party" style="${w}" placeholder="${L('e.g. Spouse, Manager, Family Member','如：配偶、经理、家庭成员','ej. Cónyuge, Gerente, Familiar')}"></text-field></td>
     </tr>
+    <tr>
+      <td style="${c}width:50%"><b>${lPayeePhone}</b><br><text-field name="payee_phone" role="First Party" style="${w}" placeholder="(xxx) xxx-xxxx"></text-field></td>
+      <td style="${c}width:50%"><b>${lPayeeEmail}</b><br><text-field name="payee_email" role="First Party" style="${w}" placeholder="email@example.com"></text-field></td>
+    </tr>
   </table>
+  <div style="font-size:7pt;color:#555;margin-bottom:8px;font-style:italic">${payeeContactNote}</div>
   <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:8px;color:#333">${repCertText}</div>
   <table style="width:100%">
     <tr>
