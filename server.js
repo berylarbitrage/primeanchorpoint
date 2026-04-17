@@ -5053,40 +5053,38 @@ function _buildZelleAuthForm(lang) {
     : es ? `Autorización de Pago y Confirmación de Cuenta Zelle — ${companyName}`
     : `Zelle Payment Authorization and Account Confirmation — ${companyName}`;
 
-  // Change 1: Updated intro with Payee-must-sign and authorized rep language
   const intro = zh
-    ? `I authorize ${companyName} and its authorized representatives to send payments to me via Zelle using the account information provided below. This form must be signed directly by the Payee. If the Payee will not be signing directly, please provide the full name, phone number, and email address of the Payee's authorized representative. ${companyName} may send a separate signature request directly to that person.\n\n本人授权 ${companyName} 及其授权代表通过以下提供的 Zelle 账户信息向本人付款。本表格必须由收款人本人直接签署。如收款人不会直接签署，请提供收款人授权代表的姓名、电话和邮箱。${companyName} 将向该授权代表另行发送签字请求。`
+    ? `I authorize ${companyName} and its authorized representatives to send payments to me via Zelle using the account information provided below.\n\n本人授权 ${companyName} 及其授权代表通过以下提供的 Zelle 账户信息向本人付款。`
     : es
-    ? `I authorize ${companyName} and its authorized representatives to send payments to me via Zelle using the account information provided below. This form must be signed directly by the Payee. If the Payee will not be signing directly, please provide the full name, phone number, and email address of the Payee's authorized representative. ${companyName} may send a separate signature request directly to that person.\n\nAutorizo a ${companyName} y a sus representantes autorizados a enviarme pagos por Zelle utilizando la información de cuenta proporcionada a continuación. Este formulario debe ser firmado directamente por el Beneficiario. Si el Beneficiario no va a firmar directamente, por favor proporcione el nombre completo, número de teléfono y correo electrónico del representante autorizado del Beneficiario. ${companyName} podrá enviar una solicitud de firma por separado directamente a dicha persona.`
-    : `I authorize ${companyName} and its authorized representatives to send payments to me via Zelle using the account information provided below. This form must be signed directly by the Payee. If the Payee will not be signing directly, please provide the full name, phone number, and email address of the Payee's authorized representative. ${companyName} may send a separate signature request directly to that person.`;
+    ? `I authorize ${companyName} and its authorized representatives to send payments to me via Zelle using the account information provided below.\n\nAutorizo a ${companyName} y a sus representantes autorizados a enviarme pagos por Zelle utilizando la información de cuenta proporcionada a continuación.`
+    : `I authorize ${companyName} and its authorized representatives to send payments to me via Zelle using the account information provided below.`;
 
   // Section 1 — Payee Info
   const s1 = L('1. PAYEE INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
   const lName = L('Full Legal Name', '法定全名', 'Nombre Legal Completo');
   const lAccount = L('Zelle Registered Email Address or Mobile Number', 'Zelle 注册邮箱地址或手机号', 'Correo Electrónico o Número de Teléfono Móvil Registrado en Zelle');
 
-  // Change 2: Authorized representative section
   const authRepHeader = L(
-    'If Payee will not sign directly, provide authorized representative contact information below:',
-    '如收款人不会直接签署，请在下方填写授权代表联系方式：',
-    'Si el Beneficiario no firmará directamente, proporcione la información de contacto del representante autorizado a continuación:'
+    'OPTIONAL — If the Payee is authorizing a third-party representative, provide their contact information below:',
+    '可选 — 如收款人授权第三方代表处理，请在下方填写授权代表联系方式：',
+    'OPCIONAL — Si el Beneficiario autoriza a un representante de terceros, proporcione su información de contacto a continuación:'
   );
   const lRepName = L('Authorized Representative Full Name', '授权代表姓名', 'Nombre completo del representante autorizado');
   const lRepPhone = L('Phone Number', '电话号码', 'Número de teléfono');
   const lRepEmail = L('Email Address', '邮箱地址', 'Correo electrónico');
   const authRepNote = L(
-    `If the Payee is not signing directly, the Payee is requesting that ${companyName} send a separate signature request to the authorized representative identified above.`,
-    `如收款人不会直接签署，则收款人请求 ${companyName} 向上方所列的授权代表另行发送签字请求。`,
-    `Si el Beneficiario no firma directamente, el Beneficiario solicita que ${companyName} envíe una solicitud de firma por separado al representante autorizado identificado arriba.`
+    `If completed, ${companyName} may send a separate signature request to the authorized representative identified above.`,
+    `如已填写，${companyName} 将向上方所列的授权代表另行发送签字请求。`,
+    `Si se completa, ${companyName} podrá enviar una solicitud de firma por separado al representante autorizado identificado arriba.`
   );
 
   // Section 2 certification text
   const s2 = L('2. ACCOUNT INFORMATION CONFIRMATION AND CERTIFICATION', '账户信息确认声明', 'CONFIRMACIÓN Y CERTIFICACIÓN DE INFORMACIÓN DE CUENTA');
   const certText = zh
-    ? `I certify that the Zelle email address or phone number provided below is accurate, is registered to an active Zelle account, and is authorized by the Payee to receive payments.\n\n本人确认以下提供的 Zelle 邮箱地址或手机号真实准确，已注册至有效的 Zelle 账户，且经收款人授权用于接收付款。`
+    ? `I certify that the Zelle email address or phone number provided above is accurate and is registered to an active Zelle account that I am authorized to use to receive payments.\n\n本人确认以上提供的 Zelle 邮箱地址或手机号真实准确，已注册至有效的 Zelle 账户，且本人有权使用该账户接收付款。`
     : es
-    ? `I certify that the Zelle email address or phone number provided below is accurate, is registered to an active Zelle account, and is authorized by the Payee to receive payments.\n\nCertifico que la dirección de correo electrónico o el número de teléfono de Zelle proporcionado a continuación es correcto, está registrado en una cuenta activa de Zelle y está autorizado por el Beneficiario para recibir pagos.`
-    : `I certify that the Zelle email address or phone number provided below is accurate, is registered to an active Zelle account, and is authorized by the Payee to receive payments.`;
+    ? `I certify that the Zelle email address or phone number provided above is accurate and is registered to an active Zelle account that I am authorized to use to receive payments.\n\nCertifico que la dirección de correo electrónico o el número de teléfono de Zelle proporcionado arriba es correcto y está registrado en una cuenta activa de Zelle que estoy autorizado a usar para recibir pagos.`
+    : `I certify that the Zelle email address or phone number provided above is accurate and is registered to an active Zelle account that I am authorized to use to receive payments.`;
 
   // Section 3 — Acknowledgment
   const s3 = L('3. ACKNOWLEDGMENT', '确认事项', 'RECONOCIMIENTO');
@@ -5125,27 +5123,27 @@ function _buildZelleAuthForm(lang) {
     ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para fines de confirmación del método de pago y no altera ninguna obligación de declaración de impuestos ni el estatus del contratista.`
     : `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status.`;
 
-  // Signature note + PAYEE SIGNATURE ONLY
-  const sigHeader = L('PAYEE SIGNATURE ONLY', '仅限收款人本人签名', 'SOLO FIRMA DEL BENEFICIARIO');
+  // Signature section
+  const sigHeader = L('PAYEE SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
   const sigNote = L(
-    'If the Payee is not signing directly, do not sign below. Please provide the authorized representative\'s contact information above so a separate signature request can be sent.',
-    '如收款人不会直接签署，请勿在下方签名。请在上方填写授权代表联系方式，以便另行发送签字请求。',
-    'Si el Beneficiario no firma directamente, no firme abajo. Por favor proporcione arriba la información de contacto del representante autorizado para que se le pueda enviar una solicitud de firma por separado.'
+    'If the Payee is signing this form directly, please sign below. If authorizing a third-party representative instead, skip this section and complete the authorization section below.',
+    '如收款人本人直接签署，请在下方签名。如授权第三方代表，请跳过此处，填写下方的授权部分。',
+    'Si el Beneficiario firma este formulario directamente, firme a continuación. Si autoriza a un representante de terceros, omita esta sección y complete la sección de autorización a continuación.'
   );
   const lPrintedName = L('Printed Name (same as Full Legal Name above)', '正楷姓名（与上方法定全名一致）', 'Nombre en Letra de Imprenta (igual al nombre legal completo indicado arriba)');
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
 
-  // Payee authorization of third-party section
+  // Payee authorization of third-party section (optional)
   const authDelegateHeader = L(
-    'PAYEE AUTHORIZATION OF THIRD-PARTY REPRESENTATIVE',
-    '收款人授权第三方代表',
-    'AUTORIZACIÓN DEL BENEFICIARIO A UN REPRESENTANTE DE TERCEROS'
+    'OPTIONAL — PAYEE AUTHORIZATION OF THIRD-PARTY REPRESENTATIVE',
+    '可选 — 收款人授权第三方代表',
+    'OPCIONAL — AUTORIZACIÓN DEL BENEFICIARIO A UN REPRESENTANTE DE TERCEROS'
   );
   const authDelegateText = L(
-    `If I will not be signing this form directly, I hereby authorize the person identified above as my Authorized Representative to provide payment instructions and to sign payment authorization documents on my behalf. I confirm that payments sent to the Zelle account specified above are authorized by me.`,
-    `如本人不会直接签署本表格，本人特此授权上方所列的授权代表代表本人提供付款指示并签署付款授权文件。本人确认发送至上述 Zelle 账户的付款均经本人授权。`,
-    `Si no voy a firmar este formulario directamente, por la presente autorizo a la persona identificada arriba como mi Representante Autorizado para proporcionar instrucciones de pago y firmar documentos de autorización de pago en mi nombre. Confirmo que los pagos enviados a la cuenta Zelle especificada arriba están autorizados por mí.`
+    `Complete this section ONLY if the Payee is not signing the Payee Signature section above and is instead authorizing a third-party representative. By signing below, I hereby authorize the person identified above as my Authorized Representative to provide payment instructions and to sign payment authorization documents on my behalf. I confirm that payments sent to the Zelle account specified above are authorized by me.`,
+    `仅在收款人不直接签署上方"收款人签名"部分、而是授权第三方代表时填写此部分。本人特此授权上方所列的授权代表代表本人提供付款指示并签署付款授权文件。本人确认发送至上述 Zelle 账户的付款均经本人授权。`,
+    `Complete esta sección SOLO si el Beneficiario no firma la sección de Firma del Beneficiario anterior y en su lugar autoriza a un representante de terceros. Al firmar a continuación, por la presente autorizo a la persona identificada arriba como mi Representante Autorizado para proporcionar instrucciones de pago y firmar documentos de autorización de pago en mi nombre. Confirmo que los pagos enviados a la cuenta Zelle especificada arriba están autorizados por mí.`
   );
   const lPayeePrintedName = L('Payee Printed Name', '收款人正楷姓名', 'Nombre del Beneficiario en Letra de Imprenta');
   const lPayeeSig = L('Payee Signature', '收款人签名', 'Firma del Beneficiario');
@@ -5189,7 +5187,7 @@ function _buildZelleAuthForm(lang) {
 
 <p style="font-size:7.5pt;color:#666;margin-top:10px;font-style:italic">${disclaimer}</p>
 
-<div style="background:#fff3cd;border:1px solid #ffc107;padding:6px 10px;margin-top:12px;font-size:7.5pt;color:#664d03;border-radius:4px;font-weight:600">${sigNote}</div>
+<div style="background:#e8f5e9;border:1px solid #4caf50;padding:6px 10px;margin-top:12px;font-size:7.5pt;color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:6px;font-size:8.5pt">
   <b>${sigHeader}</b>
