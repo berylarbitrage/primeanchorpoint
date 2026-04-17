@@ -19385,7 +19385,7 @@ async function openPaymentAuthModal() {
   if (sel) sel.value = pm;
   _updatePayAuthDesc();
   sel.onchange = _updatePayAuthDesc;
-  document.getElementById('payAuthEmail').value = (w && w.email) || '';
+  document.getElementById('payAuthEmail').value = (w && (w.email || w.emp_email)) || '';
   document.getElementById('payAuthPhone').value = (w && w.phone) || '';
   // Default lang based on worker's apparent language preference (phone country code heuristic)
   document.getElementById('payAuthLang').value = 'zh';
