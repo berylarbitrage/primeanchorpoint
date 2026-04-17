@@ -5125,7 +5125,7 @@ function _buildZelleAuthForm(lang) {
     ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para fines de confirmación del método de pago y no altera ninguna obligación de declaración de impuestos ni el estatus del contratista.`
     : `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status.`;
 
-  // Change 4: Signature note + Change 5: PAYEE SIGNATURE ONLY
+  // Signature note + PAYEE SIGNATURE ONLY
   const sigHeader = L('PAYEE SIGNATURE ONLY', '仅限收款人本人签名', 'SOLO FIRMA DEL BENEFICIARIO');
   const sigNote = L(
     'If the Payee is not signing directly, do not sign below. Please provide the authorized representative\'s contact information above so a separate signature request can be sent.',
@@ -5135,6 +5135,20 @@ function _buildZelleAuthForm(lang) {
   const lPrintedName = L('Printed Name (same as Full Legal Name above)', '正楷姓名（与上方法定全名一致）', 'Nombre en Letra de Imprenta (igual al nombre legal completo indicado arriba)');
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
+
+  // Payee authorization of third-party section
+  const authDelegateHeader = L(
+    'PAYEE AUTHORIZATION OF THIRD-PARTY REPRESENTATIVE',
+    '收款人授权第三方代表',
+    'AUTORIZACIÓN DEL BENEFICIARIO A UN REPRESENTANTE DE TERCEROS'
+  );
+  const authDelegateText = L(
+    `If I will not be signing this form directly, I hereby authorize the person identified above as my Authorized Representative to provide payment instructions and to sign payment authorization documents on my behalf. I confirm that payments sent to the Zelle account specified above are authorized by me.`,
+    `如本人不会直接签署本表格，本人特此授权上方所列的授权代表代表本人提供付款指示并签署付款授权文件。本人确认发送至上述 Zelle 账户的付款均经本人授权。`,
+    `Si no voy a firmar este formulario directamente, por la presente autorizo a la persona identificada arriba como mi Representante Autorizado para proporcionar instrucciones de pago y firmar documentos de autorización de pago en mi nombre. Confirmo que los pagos enviados a la cuenta Zelle especificada arriba están autorizados por mí.`
+  );
+  const lPayeePrintedName = L('Payee Printed Name', '收款人正楷姓名', 'Nombre del Beneficiario en Letra de Imprenta');
+  const lPayeeSig = L('Payee Signature', '收款人签名', 'Firma del Beneficiario');
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -5186,6 +5200,20 @@ function _buildZelleAuthForm(lang) {
     <tr>
       <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="payee_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
       <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+    </tr>
+  </table>
+</div>
+
+<div style="border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt;background:#f0f9ff">
+  <b>${authDelegateHeader}</b>
+  <p style="font-size:7.5pt;margin:6px 0 8px;color:#333">${authDelegateText}</p>
+  <table style="width:100%;margin-top:4px">
+    <tr>
+      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPayeePrintedName}:</div><text-field name="payee_auth_printed_name" role="First Party" style="${w}"></text-field></td>
+    </tr>
+    <tr>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPayeeSig}:</div><signature-field name="payee_auth_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
