@@ -3369,6 +3369,36 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- SSN 卡上传 Modal (核对税号 task) -->
+<div class="modal-bg" id="ssnCardModal"><div class="modal" style="max-width:640px">
+  <h2>🔢 核对税号 — <span id="ssnCardWorkerName" style="color:var(--sky)"></span></h2>
+  <div style="margin:.5rem 0 1rem;font-size:.85rem;color:var(--gray-500)">上传 SSN 卡片照片或扫描件以辅助税号核对（支持 JPG / PNG / PDF）</div>
+
+  <div id="ssnCardDropZone"
+       ondragover="event.preventDefault();this.style.background='#eff6ff';this.style.borderColor='#0ea5e9'"
+       ondragleave="this.style.background='#f8fafc';this.style.borderColor='#cbd5e1'"
+       ondrop="ssnCardHandleDrop(event)"
+       onclick="document.getElementById('ssnCardFileInput').click()"
+       style="border:2px dashed #cbd5e1;border-radius:10px;padding:1.5rem;text-align:center;background:#f8fafc;cursor:pointer;transition:all .15s;margin-bottom:1rem">
+    <div style="font-size:2rem;margin-bottom:.4rem">📎</div>
+    <div style="font-weight:600;color:#0f2b5b;margin-bottom:.2rem">拖拽文件到此处或点击选择</div>
+    <div style="font-size:.78rem;color:#64748b">支持 JPG / PNG / PDF，最大 20MB</div>
+    <input type="file" id="ssnCardFileInput" accept=".jpg,.jpeg,.png,.pdf,.gif" style="display:none" onchange="ssnCardHandleFiles(this.files)">
+  </div>
+
+  <div id="ssnCardUploadStatus" style="display:none;margin-bottom:.75rem;padding:.5rem .75rem;border-radius:6px;font-size:.85rem"></div>
+
+  <div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem;color:#0f2b5b">已上传文件</div>
+  <div id="ssnCardList" style="border:1px solid #e2e8f0;border-radius:8px;max-height:240px;overflow-y:auto;background:#fff">
+    <div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.83rem">加载中…</div>
+  </div>
+
+  <div class="modal-actions" style="margin-top:1rem">
+    <button class="btn btn-green" id="ssnCardCompleteBtn" onclick="ssnCardMarkComplete()">✅ 完成核对</button>
+    <button class="btn" onclick="closeModal('ssnCardModal')">关闭</button>
+  </div>
+</div></div>
+
 <!-- 承包商发票 Send Modal -->
 <div class="modal-bg" id="invSendModal"><div class="modal" style="max-width:720px">
   <h2>📄 发送承包商发票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
@@ -15287,16 +15317,16 @@ let _onboardingInterviewInfo = null;
 
 // Task key → DocuSeal config keys (in priority order)
 const _TASK_TEMPLATE_MAP = {
-  w9:              ['w9_template_id','w9_individual_template_id'],
+  w9:              ['w9_template_id','w9_individual_template_id','w9_es_template_id','w9_individual_es_template_id'],
   contract:        ['company_contract_template_id','company_contract_en_template_id','company_contract_es_template_id','worker_1099_template_id','worker_1099_en_template_id','worker_w2_template_id'],
   payment_method:  ['ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','wire_auth_en_template_id','zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id'],
-  i9:              ['i9_template_id'],
-  ead_upload:      ['i9_template_id'],
-  tax_doc_w8ben:   ['w8ben_template_id'],
-  tax_doc_w8bene:  ['w8bene_template_id'],
+  i9:              ['i9_template_id','i9_es_template_id'],
+  ead_upload:      ['i9_template_id','i9_es_template_id'],
+  tax_doc_w8ben:   ['w8ben_template_id','w8ben_es_template_id'],
+  tax_doc_w8bene:  ['w8bene_template_id','w8bene_es_template_id'],
   tax_doc_8233:    ['form8233_template_id'],
-  tax_doc_w7_itin: ['w7_template_id'],
-  tin_verify:      ['w9_template_id','w9_individual_template_id'],
+  tax_doc_w7_itin: ['w7_template_id','w7_es_template_id'],
+  tin_verify:      ['w9_template_id','w9_individual_template_id','w9_es_template_id','w9_individual_es_template_id'],
 };
 
 function _getOnboardingTaskTemplateId(taskKey) {
@@ -15514,7 +15544,7 @@ function renderOnboardingTasks(tasks) {
             : t.key==='work_permit'
             ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openWorkPermitModal()">🛂 ${s==='completed'?'查看/修改验证':'开始工作许可验证'}</button>`
             : t.key==='tin_verify'
-            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button>`
+            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button> <button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openSsnCardModal()">📎 上传 SSN 卡</button>`
             : t.key==='payment_method'
             ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;font-weight:700" onclick="openPaymentAuthModal()">💳 ${t.ds_status==='completed'?'✅ 已签署':t.ds_status==='sent'?'⏳ 等待签署':'发送付款授权'}</button>${(t.ds_status==='completed'&&s==='completed')?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/payment-auth-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('payment_method')">🔗 绑定已签文件</button>`:''}`
             : (t.key==='i9'||t.key==='ead_upload')
@@ -19032,6 +19062,112 @@ async function doSendW9() {
   } else {
     showToast('❌ ' + (r?.error || '发送失败'), 'error');
   }
+}
+
+// ─── SSN Card Upload (tin_verify task) ───
+async function openSsnCardModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  document.getElementById('ssnCardWorkerName').textContent = w ? (w.name || w.username || '') : '';
+  document.getElementById('ssnCardModal').classList.add('show');
+  document.getElementById('ssnCardUploadStatus').style.display = 'none';
+  document.getElementById('ssnCardFileInput').value = '';
+  await loadSsnCardList();
+}
+
+async function loadSsnCardList() {
+  const wrap = document.getElementById('ssnCardList');
+  if (!wrap) return;
+  try {
+    const docs = await api(`/admin/worker-accounts/${_onboardingWorkerId}/ssn-cards`);
+    if (!docs || !docs.length) {
+      wrap.innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.83rem">暂无已上传的 SSN 卡</div>';
+      return;
+    }
+    wrap.innerHTML = docs.map(d => {
+      const dt = d.created_at ? new Date(d.created_at).toLocaleString('zh-CN') : '';
+      const fileUrl = `/api/admin/worker-accounts/${_onboardingWorkerId}/ssn-cards/${d.id}/file`;
+      return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;border-bottom:1px solid #f1f5f9">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.85rem;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.file_name || '未命名文件')}</div>
+          <div style="font-size:.72rem;color:#94a3b8">${dt}</div>
+        </div>
+        <a href="${fileUrl}?inline=1" target="_blank" class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;text-decoration:none">查看</a>
+        <a href="${fileUrl}" class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;text-decoration:none">下载</a>
+        <button class="btn btn-sm" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="deleteSsnCard(${d.id})">删除</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    wrap.innerHTML = `<div style="padding:1rem;text-align:center;color:#ef4444;font-size:.83rem">加载失败：${esc(e.message || '')}</div>`;
+  }
+}
+
+function ssnCardHandleDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('ssnCardDropZone');
+  if (dz) { dz.style.background = '#f8fafc'; dz.style.borderColor = '#cbd5e1'; }
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+    ssnCardHandleFiles(e.dataTransfer.files);
+  }
+}
+
+async function ssnCardHandleFiles(files) {
+  if (!files || !files.length) return;
+  const allowed = /\.(jpe?g|png|pdf|gif)$/i;
+  const status = document.getElementById('ssnCardUploadStatus');
+  for (const f of files) {
+    if (!allowed.test(f.name)) {
+      status.style.display = '';
+      status.style.background = '#fef2f2'; status.style.color = '#dc2626';
+      status.textContent = `❌ ${f.name} 格式不支持`;
+      continue;
+    }
+    if (f.size > 20 * 1024 * 1024) {
+      status.style.display = '';
+      status.style.background = '#fef2f2'; status.style.color = '#dc2626';
+      status.textContent = `❌ ${f.name} 超过 20MB 限制`;
+      continue;
+    }
+    status.style.display = '';
+    status.style.background = '#dbeafe'; status.style.color = '#1d4ed8';
+    status.textContent = `⬆️ 上传中：${f.name}`;
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const r = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/ssn-cards`, {
+        method: 'POST', body: fd, headers: { 'Authorization': 'Bearer ' + TOKEN }
+      });
+      const data = await r.json();
+      if (!r.ok || !data.success) throw new Error(data.error || '上传失败');
+      status.style.background = '#dcfce7'; status.style.color = '#15803d';
+      status.textContent = `✅ ${f.name} 上传成功`;
+    } catch(e) {
+      status.style.background = '#fef2f2'; status.style.color = '#dc2626';
+      status.textContent = `❌ 上传失败：${e.message || ''}`;
+    }
+  }
+  document.getElementById('ssnCardFileInput').value = '';
+  await loadSsnCardList();
+}
+
+async function deleteSsnCard(docId) {
+  if (!await showConfirm('确认删除这张 SSN 卡？此操作不可撤销。')) return;
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/ssn-cards/${docId}`, { method: 'DELETE' });
+    if (r && r.success) {
+      showToast('✅ 已删除', 'success');
+      await loadSsnCardList();
+    } else {
+      showToast('❌ ' + (r?.error || '删除失败'), 'error');
+    }
+  } catch(e) {
+    showToast('❌ ' + (e.message || '删除失败'), 'error');
+  }
+}
+
+async function ssnCardMarkComplete() {
+  closeModal('ssnCardModal');
+  await confirmOnboardingComplete('tin_verify', '核对税号');
 }
 
 async function refreshW9Status() {
