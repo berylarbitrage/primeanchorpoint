@@ -17994,7 +17994,7 @@ function wpShowRequiredDocs(category) {
 
 // ─── Work Permit File Upload Logic ───
 const WP_UPLOAD_DOCS = {
-  citizen: ['美国护照 U.S. Passport 或其他身份证明'],
+  citizen: ['美国护照 U.S. Passport', '美国出生证明 U.S. Birth Certificate', '入籍证书 Certificate of Naturalization (N-550/N-570)', '公民证书 Certificate of Citizenship (N-560/N-561)', '海外出生领事报告 Consular Report of Birth Abroad (FS-240)'],
   green_card: ['绿卡正反面 Green Card (I-551) front & back', '护照 + I-551 临时绿卡章 Passport with I-551 stamp/MRIV', '过期绿卡 + I-797 延期通知 Expired Green Card + I-797 Extension Notice'],
   work_visa: ['护照 Passport', 'I-797 批准通知 Approval Notice', 'I-94 入境记录'],
   ead: ['EAD 工卡 (I-766) 正反面 front & back', '护照 Passport'],
@@ -18070,17 +18070,17 @@ function wpRenderUploadZones(category, trData) {
     docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
   }
 
-  // For green card: show dropdown to pick one option, then render only that upload zone
-  if (category === 'green_card') {
+  // For citizen / green card: show dropdown to pick one option, then render only that upload zone
+  if (category === 'citizen' || category === 'green_card') {
+    const selId = category === 'citizen' ? 'wpCitizenSelect' : 'wpGcSelect';
     container.insertAdjacentHTML('beforeend', `
       <div style="margin-bottom:.65rem">
-        <label style="font-size:.82rem;font-weight:600;color:#065f46;display:block;margin-bottom:.4rem">✅ 选择验证方式 (Choose ONE):</label>
-        <select id="wpGcSelect" onchange="wpSwitchGcDoc()" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:.85rem;outline:none;background:#fff">
+        <label style="font-size:.82rem;font-weight:600;color:#065f46;display:block;margin-bottom:.4rem">✅ 选择身份证明类型 (Choose ONE):</label>
+        <select id="${selId}" onchange="wpSwitchPickOneDoc('${category}')" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:.85rem;outline:none;background:#fff">
           ${docs.map((d, i) => '<option value="' + i + '">' + d + '</option>').join('')}
         </select>
       </div>
     `);
-    // Render all zones but only show the first one
     docs.forEach((label, idx) => {
       const zoneId = `wpUploadZone_${idx}`;
       container.insertAdjacentHTML('beforeend', _wpZoneHtml(zoneId, label, idx));
@@ -18134,10 +18134,14 @@ function _wpZoneHtml(zoneId, label, idx) {
   `;
 }
 
-function wpSwitchGcDoc() {
-  const sel = document.getElementById('wpGcSelect');
+function wpSwitchGcDoc() { wpSwitchPickOneDoc('green_card'); }
+
+function wpSwitchPickOneDoc(category) {
+  const selId = category === 'citizen' ? 'wpCitizenSelect' : 'wpGcSelect';
+  const sel = document.getElementById(selId);
+  if (!sel) return;
   const val = parseInt(sel.value);
-  const docs = WP_UPLOAD_DOCS.green_card;
+  const docs = WP_UPLOAD_DOCS[category] || [];
   docs.forEach((_, i) => {
     const zone = document.getElementById('wpUploadZone_' + i);
     if (zone) zone.style.display = i === val ? '' : 'none';
