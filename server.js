@@ -4463,7 +4463,12 @@ function _buildACHAuthForm(lang) {
     : 'Payee / Account Holder Full Legal Name';
   const lEmail = L('Email', '电邮', 'Correo Electrónico');
 
-  const s2 = L('2. BANK ACCOUNT DETAILS', '银行账户信息', 'DATOS DE LA CUENTA BANCARIA');
+  const s2 = L('3. BANK ACCOUNT DETAILS', '银行账户信息', 'DATOS DE LA CUENTA BANCARIA');
+  const bankSkipNote = zh
+    ? 'Leave this section blank if you authorized a third party above — the third party will complete their own ACH form. 如已授权第三方代收，请勿填写本节，由该第三方在其自己的 ACH 表中填写银行信息。'
+    : es
+    ? 'Leave this section blank if you authorized a third party above — they will complete their own ACH form. / Deje esta sección en blanco si autorizó a un tercero arriba; el tercero completará su propio formulario ACH.'
+    : 'Leave this section blank if you authorized a third party above — the third party will complete their own ACH form with their banking information.';
   const lBankName = L('Bank Name', '银行名称', 'Nombre del Banco');
   const acctTypeLabel = L('Account Type', '账户类型', 'Tipo de Cuenta');
   const acctChecking = L('Checking', '支票账户', 'Cuenta Corriente');
@@ -4481,7 +4486,7 @@ function _buildACHAuthForm(lang) {
     : 'The account must be owned by the payee or an authorized entity of the payee.';
 
   // Third-party recipient section
-  const s3 = L('3. PAYMENT RECIPIENT', '收款方式', 'TIPO DE BENEFICIARIO');
+  const s3 = L('2. PAYMENT RECIPIENT', '收款方式', 'TIPO DE BENEFICIARIO');
   const tpSelf = zh ? 'I am receiving directly into my own account. 本人直接收款至本人账户。'
     : es ? 'I am receiving directly into my own account. / Recibiré los fondos directamente en mi propia cuenta.'
     : 'I am receiving directly into my own account.';
@@ -4495,10 +4500,10 @@ function _buildACHAuthForm(lang) {
   const tpRelLabel = zh ? 'Relationship to Payee 与收款人关系（如：配偶、子女、雇主等）' : es ? 'Relationship to Payee / Relación con el Beneficiario' : 'Relationship to Payee (e.g. spouse, employer, agent)';
   const tpContactLabel = zh ? 'Third Party Phone / Email 第三方电话 / 电邮' : es ? 'Third Party Phone / Email / Teléfono / Correo del Tercero' : 'Third Party Phone / Email';
   const tpAuth = zh
-    ? `I authorize the above-named third party to receive ACH payment(s) on my behalf from ${companyName}. ${companyName} will direct payment to the bank account specified in this form, which is controlled by or associated with the above third party. I assume full responsibility for any arrangements made with the above third party. 本人特此授权上述第三方代表本人从 ${companyName} 接收 ACH 付款。${companyName} 将按本表所填写的银行账户发起付款，该账户由上述第三方控制或关联。本人自行承担与上述第三方之间所作安排的全部责任。`
+    ? `I authorize the above-named third party to receive ACH payment(s) on my behalf from ${companyName}. The above third party will complete and submit their own ACH authorization form containing their banking information; I do NOT need to provide bank details in Section 3 below. I understand that ${companyName} will direct payment to the account specified by that third party, and I assume full responsibility for any arrangements made with the above third party. 本人特此授权上述第三方代表本人从 ${companyName} 接收 ACH 付款。该第三方将另行填写并提交其本人的 ACH 授权表（含其银行信息），本人无需在下方第 3 节填写银行账户。本人理解 ${companyName} 将按该第三方提供的账户发起付款，并自行承担与上述第三方之间所作安排的全部责任。`
     : es
-    ? `I authorize the above-named third party to receive ACH payment(s) on my behalf from ${companyName}. ${companyName} will direct payment to the bank account specified in this form. I assume full responsibility for any arrangements made with the above third party. / Autorizo al tercero indicado a recibir pagos ACH en mi nombre de ${companyName}. Asumo plena responsabilidad por los acuerdos realizados con dicho tercero.`
-    : `I authorize the above-named third party to receive ACH payment(s) on my behalf from ${companyName}. ${companyName} will direct payment to the bank account specified in this form, which is controlled by or associated with the above third party. I assume full responsibility for any arrangements made with the above third party.`;
+    ? `I authorize the above-named third party to receive ACH payment(s) on my behalf from ${companyName}. The third party will complete and submit their own ACH form with their banking information; I do NOT need to fill in Section 3 below. I assume full responsibility for any arrangements with the third party. / Autorizo al tercero indicado a recibir pagos ACH en mi nombre de ${companyName}. El tercero completará su propio formulario ACH con su información bancaria; no necesito llenar la Sección 3 a continuación. Asumo plena responsabilidad por los acuerdos con dicho tercero.`
+    : `I authorize the above-named third party to receive ACH payment(s) on my behalf from ${companyName}. The above third party will complete and submit their own ACH authorization form containing their banking information; I do NOT need to provide bank details in Section 3 below. I understand that ${companyName} will direct payment to the account specified by that third party, and I assume full responsibility for any arrangements made with the above third party.`;
 
   // Authorization section
   const s4 = L('4. AUTHORIZATION', '授权', 'AUTORIZACIÓN');
@@ -4543,28 +4548,6 @@ function _buildACHAuthForm(lang) {
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:4px">
-  <tr>
-    <td style="${c}width:50%"><b>${lBankName}</b><br><text-field name="ach_bank_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%">
-      <b>${acctTypeLabel}</b><br>
-      <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><checkbox-field name="ach_acct_checking" role="First Party" style="width:13px;height:13px"></checkbox-field> ${acctChecking}</label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="ach_acct_savings" role="First Party" style="width:13px;height:13px"></checkbox-field> ${acctSavings}</label>
-      </div>
-    </td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>${lRouting}</b><br><text-field name="ach_routing" role="First Party" required="true" style="${f}width:100%" placeholder="9 digits"></text-field></td>
-    <td style="${c}"><b>${lAccount}</b><br><text-field name="ach_account" role="First Party" required="true" style="${f}width:100%"></text-field></td>
-  </tr>
-  <tr>
-    <td colspan="2" style="${c}"><b>${lConfirmAccount}</b><br><text-field name="ach_account_confirm" role="First Party" required="true" style="${f}width:100%" placeholder="${confirmPlaceholder}"></text-field></td>
-  </tr>
-</table>
-<div style="font-size:7.5pt;color:#555;font-style:italic;margin-bottom:8px;padding:0 6px">${ownershipNote}</div>
-
 <div style="border:1px solid #e2e8f0;border-radius:4px;padding:8px 10px;margin-top:8px;font-size:8.5pt">
   <div style="font-weight:700;margin-bottom:6px;font-size:9pt">${s3}</div>
   <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
@@ -4591,6 +4574,29 @@ function _buildACHAuthForm(lang) {
     <div style="margin-top:6px;font-size:7.5pt;color:#374151;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:5px">${tpAuth}</div>
   </div>
 </div>
+
+<div style="font-weight:700;margin:14px 0 5px;font-size:9.5pt">${s2}</div>
+<div style="font-size:7.5pt;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:3px;padding:5px 8px;margin-bottom:6px">${bankSkipNote}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:4px">
+  <tr>
+    <td style="${c}width:50%"><b>${lBankName}</b><br><text-field name="ach_bank_name" role="First Party" style="${w}"></text-field></td>
+    <td style="${c}width:50%">
+      <b>${acctTypeLabel}</b><br>
+      <div style="margin-top:3px">
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:16px"><checkbox-field name="ach_acct_checking" role="First Party" style="width:13px;height:13px"></checkbox-field> ${acctChecking}</label>
+        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="ach_acct_savings" role="First Party" style="width:13px;height:13px"></checkbox-field> ${acctSavings}</label>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td style="${c}"><b>${lRouting}</b><br><text-field name="ach_routing" role="First Party" style="${f}width:100%" placeholder="9 digits"></text-field></td>
+    <td style="${c}"><b>${lAccount}</b><br><text-field name="ach_account" role="First Party" style="${f}width:100%"></text-field></td>
+  </tr>
+  <tr>
+    <td colspan="2" style="${c}"><b>${lConfirmAccount}</b><br><text-field name="ach_account_confirm" role="First Party" style="${f}width:100%" placeholder="${confirmPlaceholder}"></text-field></td>
+  </tr>
+</table>
+<div style="font-size:7.5pt;color:#555;font-style:italic;margin-bottom:8px;padding:0 6px">${ownershipNote}</div>
 
 <div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:8px;font-size:7.5pt;line-height:1.6">
   <div style="font-weight:700;margin-bottom:4px;font-size:9pt">${s4}</div>
