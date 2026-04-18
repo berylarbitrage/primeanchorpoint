@@ -23629,6 +23629,7 @@ let _dsFileData = null;
 let _dsFilterLang = '';
 let _dsFilterCat = '';
 let _dsSort = 'date_desc'; // date_desc | name_asc | name_desc
+let _dsShowHidden = false;
 
 async function loadDocusealTemplatesPage() {
   await Promise.all([_dsLoadConfig(), _dsLoadMyTemplates()]);
