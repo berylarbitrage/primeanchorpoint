@@ -24214,11 +24214,12 @@ function dsChangeCategoryModal(dsTemplateId) {
       { cat: 'w7_es',           label: 'W-7 (ES)',       bg:'#dcfce7', color:'#15803d' },
     ]},
     { title: '付款授权', items: [
-      { cat: 'ach_auth',          label: 'ACH',    bg:'#f0f9ff', color:'#0c4a6e' },
-      { cat: 'wire_auth',         label: '电汇',   bg:'#fffbeb', color:'#78350f' },
-      { cat: 'check_instruction', label: '支票',   bg:'#fafaf9', color:'#292524' },
-      { cat: 'zelle_auth',        label: 'Zelle',  bg:'#fdf4ff', color:'#86198f' },
-      { cat: 'cash_receipt',      label: '现金',   bg:'#fff1f2', color:'#9f1239' },
+      { cat: 'ach_auth',       label: 'ACH',    bg:'#f0f9ff', color:'#0c4a6e' },
+      { cat: 'wire_auth',      label: '电汇',   bg:'#fffbeb', color:'#78350f' },
+      { cat: 'check_instruction', label: '支票', bg:'#fafaf9', color:'#292524' },
+      { cat: 'zelle_auth',     label: 'Zelle', bg:'#fdf4ff', color:'#86198f' },
+      { cat: 'third_party_pay',label: '第三方', bg:'#ecfdf5', color:'#065f46' },
+      { cat: 'cash_receipt',   label: '现金',   bg:'#fff1f2', color:'#9f1239' },
     ]},
     { title: 'Invoice', items: [
       { cat: 'contractor_invoice', label: '员工Invoice', bg:'#fef3c7', color:'#92400e' },
@@ -24240,21 +24241,11 @@ function dsChangeCategoryModal(dsTemplateId) {
     return `<div style="margin-bottom:.9rem"><div style="font-size:.73rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">${g.title}</div><div style="display:flex;flex-wrap:wrap;gap:.1rem">${items}</div></div>`;
   }).join('');
 
-  const isThirdParty = currentBase === 'third_party_pay';
-  const thirdPartyHtml = `<div style="border-top:1px solid #f1f5f9;margin-top:.5rem;padding-top:.75rem">
-    <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.3rem .2rem">
-      <input type="checkbox" id="ds-cat-third-party-cb" ${isThirdParty ? 'checked' : ''} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
-      <span style="font-size:.85rem;font-weight:600;color:#065f46">第三方平台 (PayPal / Venmo / CashApp)</span>
-    </label>
-    <div style="font-size:.75rem;color:#94a3b8;margin-left:1.5rem">勾选后分类将被设为「第三方」，忽略上方选择</div>
-  </div>`;
-
   const modalHtml = `<div id="ds-cat-modal-overlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center">
     <div style="background:#fff;border-radius:12px;padding:1.5rem;width:380px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
       <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">改变分类</div>
       <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为「${_dsEsc(tplName)}」选择所属小类</div>
       <div id="ds-cat-modal-groups">${rowsHtml}</div>
-      ${thirdPartyHtml}
       <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
         <button onclick="document.getElementById('ds-cat-modal-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
         <button onclick="dsApplyCategoryChanges(${dsTemplateId})" style="padding:.4rem 1rem;border-radius:7px;border:none;background:#0ea5e9;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">保存</button>
@@ -24266,11 +24257,9 @@ function dsChangeCategoryModal(dsTemplateId) {
 
 async function dsApplyCategoryChanges(dsTemplateId) {
   const overlay = document.getElementById('ds-cat-modal-overlay');
-  const thirdPartyCb = overlay.querySelector('#ds-cat-third-party-cb');
-  const isThirdParty = thirdPartyCb && thirdPartyCb.checked;
   const selected = overlay.querySelector('input[name="ds-cat-radio"]:checked');
-  if (!selected && !isThirdParty) { overlay.remove(); return; }
-  const baseCat = isThirdParty ? 'third_party_pay' : selected.value;
+  if (!selected) { overlay.remove(); return; }
+  const baseCat = selected.value;
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
   if (!tpl) { overlay.remove(); return; }
   // Derive full category key from base + current languages
