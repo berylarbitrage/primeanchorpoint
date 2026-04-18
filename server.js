@@ -5397,6 +5397,127 @@ function generateZelleAuthRepTemplate_EN() { return _buildZelleAuthRepForm('en')
 function generateZelleAuthRepTemplate_ES() { return _buildZelleAuthRepForm('en-es'); }
 
 
+// ── Zelle Third-Party Payment Authorization (sent TO the third party) ──
+function _buildZelleThirdPartyForm(lang) {
+  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const w = `${f}width:100%;min-height:22px;`;
+  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const companyName = getCompanySignerName();
+  const zh = lang === 'zh-en';
+  const es = lang === 'en-es';
+  const L = (en, zhTxt, esTxt) => {
+    if (zh && zhTxt) return `${en} ${zhTxt}`;
+    if (es && esTxt) return `${en} / ${esTxt}`;
+    return en;
+  };
+
+  const formTitle = 'THIRD-PARTY ZELLE PAYMENT AUTHORIZATION';
+  const subtitle = zh
+    ? `第三方 Zelle 收款授权书 — ${companyName}`
+    : es ? `Autorización de Pago Zelle a Terceros — ${companyName}`
+    : `Third-Party Zelle Payment Authorization — ${companyName}`;
+
+  const intro = zh
+    ? `This form must be completed and signed by the third party who has been designated to receive Zelle payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName} via your Zelle account.\n\n本表格须由被指定代为接收 Zelle 付款的第三方填写并签署。签署本表格即表示您确认已获得下方所列人员的授权，通过您的 Zelle 账户接收来自 ${companyName} 的付款。`
+    : es
+    ? `This form must be completed and signed by the third party who has been designated to receive Zelle payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName} via your Zelle account.\n\nEste formulario debe ser completado y firmado por el tercero designado para recibir pagos por Zelle en nombre de la persona indicada a continuación. Al firmar este formulario, usted confirma que ha sido autorizado por dicha persona para recibir pagos de ${companyName} a través de su cuenta Zelle.`
+    : `This form must be completed and signed by the third party who has been designated to receive Zelle payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName} via your Zelle account.`;
+
+  // Section 1 — Person who authorized you
+  const s1 = L('1. AUTHORIZING INDIVIDUAL', '授权人信息', 'PERSONA QUE AUTORIZA');
+  const lAuthName = L('Full Legal Name of the Person Who Authorized You', '授权人法定全名', 'Nombre Legal Completo de la Persona que lo Autorizó');
+
+  // Section 2 — Your (third party) info
+  const s2 = L('2. YOUR INFORMATION (THIRD PARTY)', '您的信息（第三方）', 'SU INFORMACIÓN (TERCERO)');
+  const lYourName = L('Your Full Legal Name', '您的法定全名', 'Su Nombre Legal Completo');
+  const lYourZelle = L('Your Zelle Registered Email Address or Mobile Number', '您的 Zelle 注册邮箱地址或手机号', 'Su Correo Electrónico o Número de Teléfono Registrado en Zelle');
+  const lRelationship = L('Your Relationship to the Authorizing Individual', '您与授权人的关系', 'Su Relación con la Persona que Autoriza');
+
+  // Section 3 — Certification
+  const s3 = L('3. CERTIFICATION', '声明确认', 'CERTIFICACIÓN');
+  const certText = zh
+    ? `I, the undersigned, certify that:\n\n(a) I have been duly authorized by the individual named above to receive Zelle payments from ${companyName} on their behalf.\n(b) The Zelle account information I have provided is accurate and is registered to an active Zelle account in my name.\n(c) I am responsible for ensuring that my Zelle account is active, properly enrolled, and able to receive payments.\n(d) I will promptly forward all payments received to the authorizing individual, unless otherwise agreed between us.\n(e) I agree to notify ${companyName} in writing of any changes to my Zelle account information before the next payment is sent.\n(f) I understand that ${companyName} is not responsible for delays, failed delivery, or other issues caused by the Zelle network, my bank, or incorrect account information.\n\n本人（下方签名人）声明并确认：\n\n(a) 本人已获得上方所列人员的正式授权，代其接收来自 ${companyName} 的 Zelle 付款。\n(b) 本人提供的 Zelle 账户信息准确无误，已注册至本人名下的有效 Zelle 账户。\n(c) 本人负责确保 Zelle 账户已激活、正确注册并能够接收付款。\n(d) 本人将及时将收到的所有付款转交授权人，除非双方另有约定。\n(e) 如本人 Zelle 收款信息发生任何变化，本人同意在下次付款前以书面形式通知 ${companyName}。\n(f) 本人理解 ${companyName} 不对因 Zelle 网络、本人银行或错误账户信息造成的延迟、投递失败或其他问题承担责任。`
+    : es
+    ? `I, the undersigned, certify that:\n\n(a) I have been duly authorized by the individual named above to receive Zelle payments from ${companyName} on their behalf.\n(b) The Zelle account information I have provided is accurate and is registered to an active Zelle account in my name.\n(c) I am responsible for ensuring that my Zelle account is active, properly enrolled, and able to receive payments.\n(d) I will promptly forward all payments received to the authorizing individual, unless otherwise agreed between us.\n(e) I agree to notify ${companyName} in writing of any changes to my Zelle account information before the next payment is sent.\n(f) I understand that ${companyName} is not responsible for delays, failed delivery, or other issues caused by the Zelle network, my bank, or incorrect account information.\n\nYo, el abajo firmante, certifico que:\n\n(a) He sido debidamente autorizado por la persona mencionada arriba para recibir pagos por Zelle de ${companyName} en su nombre.\n(b) La información de cuenta Zelle que he proporcionado es correcta y está registrada en una cuenta activa de Zelle a mi nombre.\n(c) Soy responsable de asegurar que mi cuenta Zelle esté activa, debidamente registrada y pueda recibir pagos.\n(d) Transferiré oportunamente todos los pagos recibidos a la persona que me autorizó, salvo acuerdo contrario entre nosotros.\n(e) Acepto notificar a ${companyName} por escrito sobre cualquier cambio en mi información de cuenta Zelle antes de que se envíe el próximo pago.\n(f) Entiendo que ${companyName} no es responsable de retrasos, entregas fallidas u otros problemas causados por la red Zelle, mi banco o información de cuenta incorrecta.`
+    : `I, the undersigned, certify that:\n\n(a) I have been duly authorized by the individual named above to receive Zelle payments from ${companyName} on their behalf.\n(b) The Zelle account information I have provided is accurate and is registered to an active Zelle account in my name.\n(c) I am responsible for ensuring that my Zelle account is active, properly enrolled, and able to receive payments.\n(d) I will promptly forward all payments received to the authorizing individual, unless otherwise agreed between us.\n(e) I agree to notify ${companyName} in writing of any changes to my Zelle account information before the next payment is sent.\n(f) I understand that ${companyName} is not responsible for delays, failed delivery, or other issues caused by the Zelle network, my bank, or incorrect account information.`;
+
+  // Section 4 — Acknowledgment
+  const s4 = L('4. ACKNOWLEDGMENT', '确认事项', 'RECONOCIMIENTO');
+  const ackText = zh
+    ? `Payment sent to the Zelle email address or phone number I have provided will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation to the authorizing individual. I understand that this authorization may be revoked at any time by the authorizing individual by providing written notice to ${companyName}.\n\n按本人提供的 Zelle 邮箱地址或手机号发送付款后，即视为 ${companyName} 已有效履行对授权人的付款义务。本人理解授权人可随时以书面形式通知 ${companyName} 撤销本授权。`
+    : es
+    ? `Payment sent to the Zelle email address or phone number I have provided will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation to the authorizing individual. I understand that this authorization may be revoked at any time by the authorizing individual by providing written notice to ${companyName}.\n\nEl pago enviado a la dirección de correo electrónico o número de teléfono de Zelle que he proporcionado se considerará un pago válido y cumplimiento total de la obligación de pago de ${companyName} hacia la persona que autorizó. Entiendo que esta autorización puede ser revocada en cualquier momento por la persona que autorizó mediante notificación escrita a ${companyName}.`
+    : `Payment sent to the Zelle email address or phone number I have provided will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation to the authorizing individual. I understand that this authorization may be revoked at any time by the authorizing individual by providing written notice to ${companyName}.`;
+
+  const disclaimer = zh
+    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认收款方式，不改变任何税务申报义务或承包关系性质。`
+    : es
+    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para fines de confirmación del método de pago y no altera ninguna obligación de declaración de impuestos ni el estatus del contratista.`
+    : `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status.`;
+
+  const sigHeader = L('THIRD-PARTY SIGNATURE', '第三方签名', 'FIRMA DEL TERCERO');
+  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en Letra de Imprenta');
+  const lSig = L('Signature', '签名', 'Firma');
+  const lDate = L('Date', '日期', 'Fecha');
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
+  <div style="font-size:12pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
+</div>
+
+<p style="font-size:8.5pt;white-space:pre-line">${intro}</p>
+
+<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+  <tr>
+    <td style="${c}width:100%"><b>${lAuthName}</b><br><text-field name="authorizing_person_name" role="First Party" required="true" style="${w}"></text-field></td>
+  </tr>
+</table>
+
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+  <tr>
+    <td style="${c}width:50%"><b>${lYourName}</b><br><text-field name="tp_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" required="true" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}width:100%" colspan="2"><b>${lYourZelle}</b><br><text-field name="tp_zelle_contact" role="First Party" required="true" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field>
+    <div style="font-size:7pt;color:#c00;margin-top:3px">${L('Please verify this information is correct before signing. Payments sent to this account will be treated as valid payment.','请在签署前确认所填信息准确无误。按该信息付款后将视为已有效完成付款。','Verifique que esta información sea correcta antes de firmar. Los pagos enviados a esta cuenta se considerarán como pago válido.')}</div></td>
+  </tr>
+</table>
+
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
+<div style="font-size:8pt;white-space:pre-line">${certText}</div>
+
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s4}</div>
+<div style="font-size:8pt;white-space:pre-line">${ackText}</div>
+
+<p style="font-size:7.5pt;color:#666;margin-top:10px;font-style:italic">${disclaimer}</p>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
+  <b>${sigHeader}</b>
+  <table style="width:100%;margin-top:6px">
+    <tr>
+      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td>
+    </tr>
+    <tr>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+    </tr>
+  </table>
+</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
+</div>`;
+}
+
+function generateZelleTPAuthTemplate()    { return _buildZelleThirdPartyForm('zh-en'); }
+function generateZelleTPAuthTemplate_EN() { return _buildZelleThirdPartyForm('en'); }
+function generateZelleTPAuthTemplate_ES() { return _buildZelleThirdPartyForm('en-es'); }
+
+
 // ── Cash Payment Receipt (ZH+EN) ──
 function generateCashReceiptHtmlTemplate() {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
@@ -5690,6 +5811,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   zelle_auth_rep:    { name: 'Zelle Auth — Authorized Representative Signature (ZH+EN)', configKey: 'zelle_auth_rep_template_id',    category: 'zelle_auth_rep',    generator: generateZelleAuthRepTemplate },
   zelle_auth_rep_en: { name: 'Zelle Auth — Authorized Representative Signature (EN)',    configKey: 'zelle_auth_rep_en_template_id', category: 'zelle_auth_rep_en', generator: generateZelleAuthRepTemplate_EN },
   zelle_auth_rep_es: { name: 'Zelle Auth — Authorized Representative Signature (EN+ES)', configKey: 'zelle_auth_rep_es_template_id', category: 'zelle_auth_rep_es', generator: generateZelleAuthRepTemplate_ES },
+  zelle_tp_auth:    { name: 'Zelle — Third-Party Payment Authorization (ZH+EN)', configKey: 'zelle_tp_auth_template_id',    category: 'zelle_tp_auth',    generator: generateZelleTPAuthTemplate },
+  zelle_tp_auth_en: { name: 'Zelle — Third-Party Payment Authorization (EN)',    configKey: 'zelle_tp_auth_en_template_id', category: 'zelle_tp_auth_en', generator: generateZelleTPAuthTemplate_EN },
+  zelle_tp_auth_es: { name: 'Zelle — Third-Party Payment Authorization (EN+ES)', configKey: 'zelle_tp_auth_es_template_id', category: 'zelle_tp_auth_es', generator: generateZelleTPAuthTemplate_ES },
   third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方收款账户授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
   third_party_pay_en: { name: 'Third-Party Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
   third_party_pay_es: { name: 'Third-Party Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
@@ -18508,7 +18632,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
     'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
     'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id'];
   const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
@@ -18547,7 +18671,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
     'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
     'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id',
     'contract_template_id' /* legacy */,
@@ -18720,7 +18844,7 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
         'w4_template_id','w9_template_id','w9_individual_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
         'i9_template_id','w7_template_id',
         'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','check_instruction_template_id',
-        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
+        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
         'contractor_invoice_template_id','invoice_approval_template_id',
         'invoice_approval_en_template_id','invoice_approval_es_template_id'
       ];
