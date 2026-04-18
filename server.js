@@ -4292,6 +4292,33 @@ function _buildThirdPartyPayForm(lang) {
     ? `${companyName} — Third-Party Payment Account Authorization — For payment authorization records.`
     : `${companyName} — Third-Party Payment Account Authorization — For payment authorization records.`;
 
+  // Zone A/B labels
+  const zoneATitle = zh ? 'OPTION A — 直接收款至本人平台账户 / My Own Platform Account' : es ? 'OPTION A — MY OWN PLATFORM ACCOUNT / 直接收款至本人平台账户' : 'OPTION A — 直接收款至本人平台账户 / My Own Platform Account';
+  const zoneBTitle = zh ? 'OPTION B — 委托第三方代收 / Third-Party Authorization' : es ? 'OPTION B — THIRD-PARTY AUTHORIZATION / 委托第三方代收' : 'OPTION B — 委托第三方代收 / Third-Party Authorization';
+  const tpSelf = zh ? 'I am receiving payment directly into my own platform account. 本人直接通过本人平台账户收款。'
+    : es ? 'I am receiving payment directly into my own platform account. / Recibiré el pago directamente en mi propia cuenta de plataforma.'
+    : 'I am receiving payment directly into my own platform account.';
+  const tpThird = zh ? 'I am authorizing a third party to receive payment on my behalf. 本人授权第三方代为收款。'
+    : es ? 'I am authorizing a third party to receive payment on my behalf. / Autorizo a un tercero a recibir el pago en mi nombre.'
+    : 'I am authorizing a third party to receive payment on my behalf.';
+  const tpHeader = zh ? 'If third-party payee, complete below / 如代收，请填写以下信息：'
+    : es ? 'If third-party payee, complete below / Si es tercero, complete lo siguiente:'
+    : 'If third-party payee, complete below:';
+  const tpNameLabel = zh ? 'Third Party Full Legal Name 第三方法定全名' : es ? 'Third Party Full Legal Name / Nombre Legal Completo del Tercero' : 'Third Party Full Legal Name';
+  const tpRelLabel = zh ? 'Relationship to Payee 与收款人关系' : es ? 'Relationship to Payee / Relación con el Beneficiario' : 'Relationship to Payee';
+  const tpContactLabel = zh ? 'Third Party Phone / Email 第三方电话/电邮' : es ? 'Third Party Phone / Email / Teléfono / Correo del Tercero' : 'Third Party Phone / Email';
+  const tpAuth = zh
+    ? `I authorize the above-named third party to receive payment(s) on my behalf through their own platform account. The third party will provide their own platform/account information directly; I do NOT need to fill in Section A above. I assume full responsibility for any arrangements with the above third party. 本人授权上述第三方通过其自有平台账户代表本人收款。该第三方将自行提供其平台及账户信息；本人无需填写上方 A 节。本人自行承担与上述第三方之间所作安排的全部责任。`
+    : es
+    ? `I authorize the above-named third party to receive payment(s) on my behalf through their own platform account. The third party will provide their own platform/account information directly; I do NOT need to fill in Section A above. I assume full responsibility for any arrangements with the above third party. / Autorizo al tercero indicado a recibir pagos en mi nombre a través de su propia cuenta de plataforma. El tercero proporcionará su propia información de plataforma/cuenta directamente; no necesito completar la Sección A anterior. Asumo plena responsabilidad por los acuerdos con dicho tercero.`
+    : `I authorize the above-named third party to receive payment(s) on my behalf through their own platform account. The third party will provide their own platform/account information directly; I do NOT need to fill in Section A above. I assume full responsibility for any arrangements with the above third party.`;
+  const sAuthSig = zh ? 'AUTHORIZER SIGNATURE 授权人签名' : es ? 'AUTHORIZER SIGNATURE / FIRMA DEL AUTORIZANTE' : 'AUTHORIZER SIGNATURE';
+  const lConfirmAuth = zh
+    ? 'I confirm I am authorizing the above-named third party to receive payment on my behalf, and I take full responsibility for this arrangement. 本人确认已授权上述第三方代为收款，并对此安排承担全部责任。'
+    : es
+    ? 'I confirm I am authorizing the above-named third party to receive payment on my behalf, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir el pago en mi nombre y asumo plena responsabilidad.'
+    : 'I confirm I am authorizing the above-named third party to receive payment on my behalf, and I take full responsibility for this arrangement.';
+
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
   <div style="font-size:11pt;font-weight:900;letter-spacing:0.5px">${formTitle}</div>
@@ -4309,45 +4336,120 @@ function _buildThirdPartyPayForm(lang) {
   </tr>
 </table>
 
-<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s2}</div>
-<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${lSelectOne}</div>
-<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:8.5pt">
-  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>PayPal</b></label>
-  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Venmo</b></label>
-  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Cash App</b></label>
-  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_other" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>${lOther}:</b></label>
-  <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #aaa;min-width:90px;background:transparent;font-size:8pt" placeholder="${lOtherName}"></text-field>
+<!-- Zone A — Direct Receipt to Own Platform Account -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+    <checkbox-field name="tp_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
+      <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
+    </div>
+  </label>
+  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+    <div style="font-weight:700;margin:0 0 4px;font-size:8.5pt">${s2}</div>
+    <div style="font-size:7.5pt;color:#555;margin-bottom:4px">${lSelectOne}</div>
+    <div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:8.5pt">
+      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>PayPal</b></label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Venmo</b></label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Cash App</b></label>
+      <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_other" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>${lOther}:</b></label>
+      <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #aaa;min-width:90px;background:transparent;font-size:8pt" placeholder="${lOtherName}"></text-field>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+      <tr style="background:#f1f5f9">
+        <td style="${c}width:22%;font-weight:700;font-size:7.5pt">${lPlatform}</td>
+        <td style="${c}width:42%;font-weight:700;font-size:7.5pt">${lHandle}<br><span style="font-weight:400;color:#777;font-size:6.5pt">${lHandleHint}</span></td>
+        <td style="${c}width:36%;font-weight:700;font-size:7.5pt">${lContact}</td>
+      </tr>
+      <tr>
+        <td style="${c}"><b>PayPal</b></td>
+        <td style="${c}"><text-field name="paypal_account" role="First Party" style="${w}" placeholder="PayPal email / @username"></text-field></td>
+        <td style="${c}"><text-field name="paypal_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+      </tr>
+      <tr>
+        <td style="${c}"><b>Venmo</b></td>
+        <td style="${c}"><text-field name="venmo_account" role="First Party" style="${w}" placeholder="@username"></text-field></td>
+        <td style="${c}"><text-field name="venmo_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+      </tr>
+      <tr>
+        <td style="${c}"><b>Cash App</b></td>
+        <td style="${c}"><text-field name="cashapp_account" role="First Party" style="${w}" placeholder="$cashtag"></text-field></td>
+        <td style="${c}"><text-field name="cashapp_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+      </tr>
+      <tr>
+        <td style="${c}"><b>${lOther}</b></td>
+        <td style="${c}"><text-field name="other_account" role="First Party" style="${w}" placeholder="@username / account ID"></text-field></td>
+        <td style="${c}"><text-field name="other_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+      </tr>
+      <tr>
+        <td style="${c}" colspan="3"><b>${lReference}</b><br><text-field name="reference_invoice" role="First Party" style="${w}" placeholder="e.g. INV-001"></text-field></td>
+      </tr>
+    </table>
+    <!-- Payee signature sub-box (blue) -->
+    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:9px 12px;margin-top:6px">
+      <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+      <text-field name="payee_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+      <signature-field name="contractor_signature" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+      <date-field name="signature_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+        <checkbox-field name="tp_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+        <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
+      </label>
+    </div>
+  </div>
 </div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr style="background:#f1f5f9">
-    <td style="${c}width:22%;font-weight:700;font-size:7.5pt">${lPlatform}</td>
-    <td style="${c}width:42%;font-weight:700;font-size:7.5pt">${lHandle}<br><span style="font-weight:400;color:#777;font-size:6.5pt">${lHandleHint}</span></td>
-    <td style="${c}width:36%;font-weight:700;font-size:7.5pt">${lContact}</td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>PayPal</b></td>
-    <td style="${c}"><text-field name="paypal_account" role="First Party" style="${w}" placeholder="PayPal email / @username"></text-field></td>
-    <td style="${c}"><text-field name="paypal_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>Venmo</b></td>
-    <td style="${c}"><text-field name="venmo_account" role="First Party" style="${w}" placeholder="@username"></text-field></td>
-    <td style="${c}"><text-field name="venmo_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>Cash App</b></td>
-    <td style="${c}"><text-field name="cashapp_account" role="First Party" style="${w}" placeholder="$cashtag"></text-field></td>
-    <td style="${c}"><text-field name="cashapp_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>${lOther}</b></td>
-    <td style="${c}"><text-field name="other_account" role="First Party" style="${w}" placeholder="@username / account ID"></text-field></td>
-    <td style="${c}"><text-field name="other_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}" colspan="3"><b>${lReference}</b><br><text-field name="reference_invoice" role="First Party" style="${w}" placeholder="e.g. INV-001"></text-field></td>
-  </tr>
-</table>
+
+<!-- Zone B — Third-Party Authorization -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+    <checkbox-field name="tp_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
+      <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
+    </div>
+  </label>
+  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
+      <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr>
+          <td style="padding:0 6px 6px 0;width:50%;vertical-align:top">
+            <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpNameLabel}</div>
+            <text-field name="tp_tp_name" role="First Party" style="${w}"></text-field>
+          </td>
+          <td style="padding:0 0 6px 0;vertical-align:top">
+            <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpRelLabel}</div>
+            <text-field name="tp_tp_relationship" role="First Party" style="${w}"></text-field>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="vertical-align:top">
+            <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpContactLabel}</div>
+            <text-field name="tp_tp_contact" role="First Party" style="${w}"></text-field>
+          </td>
+        </tr>
+      </table>
+      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+    </div>
+    <!-- Authorizer signature sub-box (green) -->
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+      <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+      <text-field name="tp_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+      <signature-field name="tp_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+      <date-field name="tp_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+        <checkbox-field name="tp_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+        <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
+      </label>
+    </div>
+  </div>
+</div>
 
 <div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
 <div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.5;background:#fafafa;margin-bottom:8px">
@@ -4357,20 +4459,6 @@ function _buildThirdPartyPayForm(lang) {
   <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack4}</span></div>
   <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack5}</span></div>
   <div style="display:flex;gap:5px"><span>☑</span><span>${ack6}</span></div>
-</div>
-
-<div style="padding:10px 12px;background:#eff6ff;border:2px solid #93c5fd;border-radius:7px;margin-top:8px">
-  <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-  <text-field name="payee_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="contractor_signature" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="signature_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="tp_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
-  </label>
 </div>
 <div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
   <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
@@ -4949,57 +5037,130 @@ function _buildWireAuthForm(lang) {
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 2px;font-size:9pt">${s2dom}</div>
-<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${domHint}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px;border:1px solid #d0d8e8;border-radius:4px">
-  <tr style="background:#f0f4ff">
-    <td style="${c}width:50%"><b>Bank Name ${zh ? '银行名称' : es ? '/ Nombre del Banco' : ''}</b><br><text-field name="wire_dom_bank_name" role="Contractor" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>ABA / Routing Number ${zh ? '路由号' : es ? '/ Número de Ruta' : ''}</b><br><text-field name="wire_dom_routing" role="Contractor" style="${f}width:100%" placeholder="9-digit ABA routing number"></text-field></td>
-  </tr>
-  <tr style="background:#f0f4ff">
-    <td style="${c}width:50%"><b>Account Number ${zh ? '账号' : es ? '/ Número de Cuenta' : ''}</b><br><text-field name="wire_dom_account" role="Contractor" style="${f}width:100%"></text-field></td>
-    <td style="${c}width:50%"><b>${confirmAcctLabel}</b><br><text-field name="wire_dom_account_confirm" role="Contractor" style="${f}width:100%" placeholder="${zh ? 'Re-enter account number 再次输入账号' : es ? 'Re-enter account number / Reingrese el número de cuenta' : 'Re-enter account number'}"></text-field></td>
-  </tr>
-  <tr style="background:#f0f4ff">
-    <td colspan="2" style="${c}">
-      <b>${acctTypeLabel}</b><br>
-      <div style="margin-top:2px">
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="wire_acct_checking" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${acctChecking}</label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="wire_acct_savings" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${acctSavings}</label>
-      </div>
-    </td>
-  </tr>
-</table>
+<!-- Zone A — Direct Wire to Own Account -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+    <checkbox-field name="wire_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
+      <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
+    </div>
+  </label>
+  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+    <div style="font-weight:700;margin:0 0 2px;font-size:8.5pt">${s2dom}</div>
+    <div style="font-size:7.5pt;color:#555;margin-bottom:4px">${domHint}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px;border:1px solid #d0d8e8;border-radius:4px">
+      <tr style="background:#f0f4ff">
+        <td style="${c}width:50%"><b>Bank Name ${zh ? '银行名称' : es ? '/ Nombre del Banco' : ''}</b><br><text-field name="wire_dom_bank_name" role="Contractor" style="${w}"></text-field></td>
+        <td style="${c}width:50%"><b>ABA / Routing Number ${zh ? '路由号' : es ? '/ Número de Ruta' : ''}</b><br><text-field name="wire_dom_routing" role="Contractor" style="${f}width:100%" placeholder="9-digit ABA routing number"></text-field></td>
+      </tr>
+      <tr style="background:#f0f4ff">
+        <td style="${c}width:50%"><b>Account Number ${zh ? '账号' : es ? '/ Número de Cuenta' : ''}</b><br><text-field name="wire_dom_account" role="Contractor" style="${f}width:100%"></text-field></td>
+        <td style="${c}width:50%"><b>${confirmAcctLabel}</b><br><text-field name="wire_dom_account_confirm" role="Contractor" style="${f}width:100%" placeholder="${zh ? 'Re-enter account number 再次输入账号' : es ? 'Re-enter account number / Reingrese el número de cuenta' : 'Re-enter account number'}"></text-field></td>
+      </tr>
+      <tr style="background:#f0f4ff">
+        <td colspan="2" style="${c}">
+          <b>${acctTypeLabel}</b><br>
+          <div style="margin-top:2px">
+            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="wire_acct_checking" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${acctChecking}</label>
+            <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="wire_acct_savings" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${acctSavings}</label>
+          </div>
+        </td>
+      </tr>
+    </table>
+    <div style="font-weight:700;margin:8px 0 2px;font-size:8.5pt">${s2int}</div>
+    <div style="font-size:7.5pt;color:#555;margin-bottom:4px">${intHint}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px;border:1px solid #d8e8d0;border-radius:4px">
+      <tr style="background:#f0fff4">
+        <td style="${c}width:50%"><b>Bank Name ${zh ? '银行名称' : es ? '/ Nombre del Banco' : ''}</b><br><text-field name="wire_int_bank_name" role="Contractor" style="${w}"></text-field></td>
+        <td style="${c}width:50%"><b>SWIFT / BIC</b><br><text-field name="wire_int_swift" role="Contractor" style="${f}width:100%" placeholder="e.g., CHASUS33"></text-field></td>
+      </tr>
+      <tr style="background:#f0fff4">
+        <td style="${c}width:50%"><b>IBAN / Account Number ${zh ? '账号' : es ? '/ Número de Cuenta' : ''}</b><br><text-field name="wire_int_iban" role="Contractor" style="${w}"></text-field></td>
+        <td style="${c}width:50%"><b>${confirmAcctLabel}</b><br><text-field name="wire_int_iban_confirm" role="Contractor" style="${w}" placeholder="${zh ? 'Re-enter IBAN / account number 再次输入' : es ? 'Reingrese IBAN / número de cuenta' : 'Re-enter IBAN / account number'}"></text-field></td>
+      </tr>
+      <tr style="background:#f0fff4">
+        <td style="${c}width:50%"><b>${intBankCountry}</b><br><text-field name="wire_int_bank_country" role="Contractor" style="${w}"></text-field></td>
+        <td style="${c}width:50%"><b>${intCurrency}</b><br><text-field name="wire_int_currency" role="Contractor" style="${f}width:100%" placeholder="e.g., USD, EUR, GBP, CNY"></text-field></td>
+      </tr>
+      <tr style="background:#f0fff4">
+        <td colspan="2" style="${c}"><b>${intBankAddr}</b><br><text-field name="wire_int_bank_addr" role="Contractor" style="${w}"></text-field></td>
+      </tr>
+      <tr style="background:#f0fff4">
+        <td colspan="2" style="${c}">
+          <b>${intIntermediary}</b>
+          <div style="font-size:7pt;color:#777;margin-bottom:2px">${intIntermediaryHint}</div>
+          <text-field name="wire_intermediary" role="Contractor" style="${w}" placeholder="Bank Name, SWIFT/BIC, Account # (if required)"></text-field>
+        </td>
+      </tr>
+    </table>
+    <div style="font-weight:700;margin:6px 0 2px;font-size:8.5pt">${s3}</div>
+    <text-field name="wire_notes" role="Contractor" style="${w};min-height:34px" placeholder="${s3hint}"></text-field>
+    <!-- Beneficiary signature sub-box (blue) -->
+    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:9px 12px;margin-top:10px">
+      <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${s5ben}</div>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+      <text-field name="wire_printed_name" role="Contractor" required="true" style="${w};margin-bottom:6px"></text-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+      <signature-field name="wire_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+      <date-field name="wire_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+        <checkbox-field name="wire_ben_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+        <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
+      </label>
+    </div>
+  </div>
+</div>
 
-<div style="font-weight:700;margin:10px 0 2px;font-size:9pt">${s2int}</div>
-<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${intHint}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px;border:1px solid #d8e8d0;border-radius:4px">
-  <tr style="background:#f0fff4">
-    <td style="${c}width:50%"><b>Bank Name ${zh ? '银行名称' : es ? '/ Nombre del Banco' : ''}</b><br><text-field name="wire_int_bank_name" role="Contractor" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>SWIFT / BIC</b><br><text-field name="wire_int_swift" role="Contractor" style="${f}width:100%" placeholder="e.g., CHASUS33"></text-field></td>
-  </tr>
-  <tr style="background:#f0fff4">
-    <td style="${c}width:50%"><b>IBAN / Account Number ${zh ? '账号' : es ? '/ Número de Cuenta' : ''}</b><br><text-field name="wire_int_iban" role="Contractor" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>${confirmAcctLabel}</b><br><text-field name="wire_int_iban_confirm" role="Contractor" style="${w}" placeholder="${zh ? 'Re-enter IBAN / account number 再次输入' : es ? 'Reingrese IBAN / número de cuenta' : 'Re-enter IBAN / account number'}"></text-field></td>
-  </tr>
-  <tr style="background:#f0fff4">
-    <td style="${c}width:50%"><b>${intBankCountry}</b><br><text-field name="wire_int_bank_country" role="Contractor" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>${intCurrency}</b><br><text-field name="wire_int_currency" role="Contractor" style="${f}width:100%" placeholder="e.g., USD, EUR, GBP, CNY"></text-field></td>
-  </tr>
-  <tr style="background:#f0fff4">
-    <td colspan="2" style="${c}"><b>${intBankAddr}</b><br><text-field name="wire_int_bank_addr" role="Contractor" style="${w}"></text-field></td>
-  </tr>
-  <tr style="background:#f0fff4">
-    <td colspan="2" style="${c}">
-      <b>${intIntermediary}</b>
-      <div style="font-size:7pt;color:#777;margin-bottom:2px">${intIntermediaryHint}</div>
-      <text-field name="wire_intermediary" role="Contractor" style="${w}" placeholder="Bank Name, SWIFT/BIC, Account # (if required)"></text-field>
-    </td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:8px 0 2px;font-size:9pt">${s3}</div>
-<text-field name="wire_notes" role="Contractor" style="${w};min-height:34px" placeholder="${s3hint}"></text-field>
+<!-- Zone B — Third-Party Authorization -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+    <checkbox-field name="wire_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
+      <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
+    </div>
+  </label>
+  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
+      <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr>
+          <td style="padding:0 6px 6px 0;width:50%;vertical-align:top">
+            <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpNameLabel}</div>
+            <text-field name="wire_tp_name" role="First Party" style="${w}"></text-field>
+          </td>
+          <td style="padding:0 0 6px 0;vertical-align:top">
+            <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpRelLabel}</div>
+            <text-field name="wire_tp_relationship" role="First Party" style="${w}"></text-field>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="vertical-align:top">
+            <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpContactLabel}</div>
+            <text-field name="wire_tp_contact" role="First Party" style="${w}"></text-field>
+          </td>
+        </tr>
+      </table>
+      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+    </div>
+    <!-- Authorizer signature sub-box (green) -->
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+      <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+      <text-field name="wire_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+      <signature-field name="wire_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+      <date-field name="wire_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+        <checkbox-field name="wire_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+        <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
+      </label>
+    </div>
+  </div>
+</div>
 
 <div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:10px;font-size:7.5pt;line-height:1.6">
   <div style="font-weight:700;margin-bottom:4px;font-size:8.5pt">${s4}</div>
@@ -5008,20 +5169,6 @@ function _buildWireAuthForm(lang) {
   <div style="margin-bottom:3px">③ ${cert3}</div>
   <div style="margin-bottom:3px">④ ${cert4}</div>
   <div>⑤ ${cert5}</div>
-</div>
-
-<div style="padding:10px 12px;background:#eff6ff;border:2px solid #93c5fd;border-radius:7px;margin-top:10px">
-  <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${s5ben}</div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-  <text-field name="wire_printed_name" role="Contractor" required="true" style="${w};margin-bottom:6px"></text-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="wire_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="wire_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="wire_ben_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
-  </label>
 </div>
 <div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
   <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${s5co}</div>
@@ -5058,22 +5205,22 @@ function _buildCheckInstructionForm(lang) {
 
   // ── 1. Title ──
   const formTitle = zh
-    ? 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM<br><span style="font-size:9pt;font-weight:700;color:#444">支票收款人及邮寄地址确认表</span>'
+    ? 'CHECK PAYMENT IN-PERSON RECEIPT AUTHORIZATION FORM<br><span style="font-size:9pt;font-weight:700;color:#444">支票付款当面签收授权表</span>'
     : es
-    ? 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM<br><span style="font-size:9pt;font-weight:700;color:#444">FORMULARIO DE CONFIRMACIÓN DE BENEFICIARIO Y DIRECCIÓN POSTAL</span>'
-    : 'CHECK PAYEE & MAILING ADDRESS CONFIRMATION FORM';
+    ? 'CHECK PAYMENT IN-PERSON RECEIPT AUTHORIZATION FORM<br><span style="font-size:9pt;font-weight:700;color:#444">FORMULARIO DE AUTORIZACIÓN DE RECIBO DE CHEQUE EN PERSONA</span>'
+    : 'CHECK PAYMENT IN-PERSON RECEIPT AUTHORIZATION FORM';
   const subtitle = zh
-    ? `支票收款人及邮寄地址确认表 — ${companyName}`
+    ? `支票付款当面签收授权表 — ${companyName}`
     : es
-    ? `Confirmación de Beneficiario y Dirección Postal — ${companyName}`
-    : `Check Payee & Mailing Address Confirmation — ${companyName}`;
+    ? `Autorización de Recibo de Cheque en Persona — ${companyName}`
+    : `Check Payment In-Person Receipt Authorization — ${companyName}`;
 
   // ── 2. Intro paragraph ──
   const introPara = zh
-    ? `I request that ${companyName} issue payment by check using the payee name and mailing address provided below.<br><span style="color:#555">本人要求 ${companyName} 按以下提供的收款人名称及邮寄地址开具并邮寄支票。</span>`
+    ? `I authorize ${companyName} to issue a check payment to be received in person by the payee or authorized representative designated below. The recipient must sign in person upon receiving the check.<br><span style="color:#555">本人授权 ${companyName} 以支票方式付款，由以下指定收款人或授权代表当面签收。收款人须在领取支票时当场签字确认。</span>`
     : es
-    ? `I request that ${companyName} issue payment by check using the payee name and mailing address provided below.<br><span style="color:#555">Solicito que ${companyName} emita el pago mediante cheque utilizando el nombre del beneficiario y la dirección postal indicados a continuación.</span>`
-    : `I request that ${companyName} issue payment by check using the payee name and mailing address provided below.`;
+    ? `I authorize ${companyName} to issue a check payment to be received in person by the payee or authorized representative designated below. The recipient must sign in person upon receiving the check.<br><span style="color:#555">Autorizo a ${companyName} a emitir un pago mediante cheque para ser recibido en persona por el beneficiario o representante autorizado designado a continuación. El receptor debe firmar en persona al recibir el cheque.</span>`
+    : `I authorize ${companyName} to issue a check payment to be received in person by the payee or authorized representative designated below. The recipient must sign in person upon receiving the check.`;
 
   // ── Section 1: Payee Information ──
   const s1 = zh ? sh('1. PAYEE INFORMATION', '收款人信息') : es ? sh('1. PAYEE INFORMATION', 'INFORMACIÓN DEL BENEFICIARIO') : '1. PAYEE INFORMATION';
@@ -5093,52 +5240,40 @@ function _buildCheckInstructionForm(lang) {
   const lContact = bi('Phone / Email', zh ? '电话/电邮' : es ? '' : '');
   const lContactOpt = zh ? ' (optional 可选)' : es ? ' (opcional)' : ' (optional)';
 
-  // ── Section 2: Payment Mailing Address ──
-  const s2 = zh ? sh('2. PAYMENT MAILING ADDRESS', '付款邮寄地址') : es ? sh('2. PAYMENT MAILING ADDRESS', 'DIRECCIÓN POSTAL DE PAGO') : '2. PAYMENT MAILING ADDRESS';
-  const lStreet  = bi('Street Address', zh ? '街道地址' : es ? 'Dirección' : '');
-  const lApt     = bi('Apt / Suite / Unit', zh ? '门牌号' : es ? '' : '');
-  const lAptOpt  = zh ? ' (optional 可选)' : es ? ' (opcional)' : ' (optional)';
-  const lCity    = bi('City', zh ? '城市' : es ? 'Ciudad' : '');
-  const lState   = bi('State', zh ? '州' : es ? 'Estado' : '');
-  const lZip     = '<b>ZIP</b>';
-  const lCountry = bi('Country', zh ? '国家' : es ? 'País' : '');
-  const lCountryNote = zh ? ' (if outside U.S. 境外填写)' : es ? ' (si fuera de EE.UU.)' : ' (if outside U.S.)';
-
-  // ── Section 3: Payment Reference ──
-  const s3 = zh ? sh('3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME', '付款参考 / 发票号 / 项目名称') : es ? sh('3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME', 'REFERENCIA DE PAGO') : '3. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME';
+  // ── Section 2: Payment Reference ──
+  const s3 = zh ? sh('2. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME', '付款参考 / 发票号 / 项目名称') : es ? sh('2. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME', 'REFERENCIA DE PAGO') : '2. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME';
   const refPlaceholder = 'e.g., INV-2026-001 / Project Alpha';
 
-  // ── Section 4: Special Instructions ──
-  const s4 = zh ? sh('4. SPECIAL INSTRUCTIONS', '特别说明') + ' (optional 可选)' : es ? sh('4. SPECIAL INSTRUCTIONS', 'INSTRUCCIONES ESPECIALES') + ' (opcional)' : '4. SPECIAL INSTRUCTIONS (optional)';
+  // ── Section 3: Special Instructions ──
+  const s4 = zh ? sh('3. SPECIAL INSTRUCTIONS', '特别说明') + ' (optional 可选)' : es ? sh('3. SPECIAL INSTRUCTIONS', 'INSTRUCCIONES ESPECIALES') + ' (opcional)' : '3. SPECIAL INSTRUCTIONS (optional)';
   const specialHint = zh
     ? 'Special instructions are subject to company review and may require additional verification.<br><span style="color:#999">特殊说明需经公司审核，必要时可能需要额外核实。</span>'
     : es
     ? 'Special instructions are subject to company review and may require additional verification.<br><span style="color:#999">Las instrucciones especiales están sujetas a revisión de la empresa y pueden requerir verificación adicional.</span>'
     : 'Special instructions are subject to company review and may require additional verification.';
 
-  // ── Section 5: Confirmation & Agreement ──
-  const s5 = zh ? sh('5. CONFIRMATION & AGREEMENT', '确认与承诺') : es ? sh('5. CONFIRMATION & AGREEMENT', 'CONFIRMACIÓN Y ACUERDO') : '5. CONFIRMATION & AGREEMENT';
+  // ── Section 4: Confirmation & Agreement ──
+  const s5 = zh ? sh('4. CONFIRMATION & AGREEMENT', '确认与承诺') : es ? sh('4. CONFIRMATION & AGREEMENT', 'CONFIRMACIÓN Y ACUERDO') : '4. CONFIRMATION & AGREEMENT';
   const confirmLine1 = zh
-    ? 'I confirm that the payee name and mailing address provided above are accurate. <span style="color:#555">本人确认以上收款人名称及邮寄地址真实准确。</span>'
+    ? 'I confirm that the payee name and information provided above are accurate. <span style="color:#555">本人确认以上收款人名称及相关信息真实准确。</span>'
     : es
-    ? 'I confirm that the payee name and mailing address provided above are accurate. <span style="color:#555">Confirmo que el nombre del beneficiario y la dirección postal indicados son correctos.</span>'
-    : 'I confirm that the payee name and mailing address provided above are accurate.';
+    ? 'I confirm that the payee name and information provided above are accurate. <span style="color:#555">Confirmo que el nombre del beneficiario y la información indicada son correctos.</span>'
+    : 'I confirm that the payee name and information provided above are accurate.';
   const confirmLine2 = zh
-    ? `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing. <span style="color:#555">除非本人在支票寄出前以书面形式提供更新信息，否则按上述信息签发并邮寄支票即视为 ${companyName} 已正确送达付款。</span>`
+    ? `I understand that this check must be received in person and that the recipient must sign upon receipt. <span style="color:#555">本人理解本支票须当面领取，领取人须在收到支票时当场签字。</span>`
     : es
-    ? `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing. <span style="color:#555">El envío del cheque a la información indicada se considerará entrega válida del pago, salvo que se proporcionen instrucciones actualizadas por escrito antes del envío.</span>`
-    : `Mailing a check to the above information will be deemed proper delivery of payment unless updated instructions are provided in writing before mailing.`;
+    ? `I understand that this check must be received in person and that the recipient must sign upon receipt. <span style="color:#555">Entiendo que este cheque debe ser recibido en persona y que el receptor debe firmar al recibirlo.</span>`
+    : `I understand that this check must be received in person and that the recipient must sign upon receipt.`;
   const confirmLine3 = zh
-    ? `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect. <span style="color:#555">如本人收款人名称或邮寄地址发生变化，本人同意在支票寄出前以书面形式通知 ${companyName}。</span>`
+    ? `I agree to notify ${companyName} in writing of any change to the payee name or authorized representative before the check is issued. <span style="color:#555">如收款人名称或授权代表发生变化，本人同意在支票开具前以书面形式通知 ${companyName}。</span>`
     : es
-    ? `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect. <span style="color:#555">Acepto notificar a ${companyName} por escrito antes de que entre en vigor cualquier cambio en mi nombre o dirección postal.</span>`
-    : `I agree to notify ${companyName} in writing before any change to my payee name or mailing address takes effect.`;
-  // ── Change effectiveness clause ──
+    ? `I agree to notify ${companyName} in writing of any change to the payee name or authorized representative before the check is issued. <span style="color:#555">Acepto notificar a ${companyName} por escrito cualquier cambio en el nombre del beneficiario o representante autorizado antes de que se emita el cheque.</span>`
+    : `I agree to notify ${companyName} in writing of any change to the payee name or authorized representative before the check is issued.`;
   const confirmLine4 = zh
-    ? `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions. <span style="color:#555">任何收款人名称或邮寄地址的变更，仅在 ${companyName} 收到并处理更新后的书面指示后生效。</span>`
+    ? `Delivery of the check to the payee or authorized representative in person constitutes full satisfaction of ${companyName}'s payment obligation for the referenced invoice or service. <span style="color:#555">将支票当面交付给收款人或授权代表，即视为 ${companyName} 就相关发票或服务的付款义务已完全履行。</span>`
     : es
-    ? `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions. <span style="color:#555">Cualquier cambio en el nombre del beneficiario o la dirección postal solo entrará en vigor después de que ${companyName} reciba y procese las instrucciones escritas actualizadas.</span>`
-    : `Any change to payee name or mailing address will only take effect after ${companyName} receives and processes updated written instructions.`;
+    ? `Delivery of the check to the payee or authorized representative in person constitutes full satisfaction of ${companyName}'s payment obligation for the referenced invoice or service. <span style="color:#555">La entrega del cheque en persona al beneficiario o representante autorizado constituye el cumplimiento total de la obligación de pago de ${companyName} para la factura o servicio indicado.</span>`
+    : `Delivery of the check to the payee or authorized representative in person constitutes full satisfaction of ${companyName}'s payment obligation for the referenced invoice or service.`;
 
   // ── Signature section ──
   const sigHeader = zh ? sh('PAYEE SIGNATURE', '收款人签名') : es ? 'FIRMA DEL BENEFICIARIO' : 'PAYEE SIGNATURE';
@@ -5160,6 +5295,33 @@ function _buildCheckInstructionForm(lang) {
     : es
     ? 'I have verified the above information and confirm it can be entered into the payment system. / He verificado la información anterior y confirmo que puede ingresarse al sistema de pagos.'
     : 'I have verified the above information and confirm it can be entered into the payment system.';
+
+  // Zone A/B labels
+  const zoneATitle = zh ? 'OPTION A — 本人当面领取支票 / I Receive the Check in Person' : es ? 'OPTION A — I RECEIVE THE CHECK IN PERSON / Recibo el Cheque en Persona' : 'OPTION A — I RECEIVE THE CHECK IN PERSON';
+  const zoneBTitle = zh ? 'OPTION B — 委托第三方当面代收支票 / Third Party Receives on My Behalf' : es ? 'OPTION B — THIRD PARTY RECEIVES CHECK ON MY BEHALF / Tercero Recibe el Cheque en Mi Nombre' : 'OPTION B — THIRD PARTY RECEIVES CHECK ON MY BEHALF';
+  const tpSelf = zh ? 'I will receive the check in person at the company office and sign upon receipt. 本人将亲自前往公司当面领取支票并签字确认。'
+    : es ? 'I will receive the check in person at the company office and sign upon receipt. / Recibiré el cheque en persona en la oficina de la empresa y firmaré al recibirlo.'
+    : 'I will receive the check in person at the company office and sign upon receipt.';
+  const tpThird = zh ? 'I am authorizing a third party to receive the check in person on my behalf and sign upon receipt. 本人授权第三方代表本人当面领取支票并签字确认。'
+    : es ? 'I am authorizing a third party to receive the check in person on my behalf and sign upon receipt. / Autorizo a un tercero a recibir el cheque en persona en mi nombre y firmar al recibirlo.'
+    : 'I am authorizing a third party to receive the check in person on my behalf and sign upon receipt.';
+  const tpHeader = zh ? 'Authorized Representative Information / 授权代表信息：'
+    : es ? 'Authorized Representative Information / Información del Representante Autorizado:'
+    : 'Authorized Representative Information:';
+  const tpNameLabel = zh ? 'Third Party Full Legal Name 第三方法定全名' : es ? 'Third Party Full Legal Name / Nombre Legal Completo del Tercero' : 'Third Party Full Legal Name';
+  const tpRelLabel = zh ? 'Relationship to Payee 与收款人关系（如：配偶、子女、雇主等）' : es ? 'Relationship to Payee / Relación con el Beneficiario' : 'Relationship to Payee (e.g. spouse, employer, agent)';
+  const tpContactLabel = zh ? 'Third Party Phone / Email 第三方电话/电邮' : es ? 'Third Party Phone / Email / Teléfono / Correo del Tercero' : 'Third Party Phone / Email';
+  const tpAuth = zh
+    ? `I authorize the above-named individual to receive the check from ${companyName} in person on my behalf and to sign the receipt on my behalf. I understand that delivery of the check to this person constitutes full payment to me, and I assume full responsibility for any arrangements made with the above individual. 本人授权上述人员代表本人亲自从 ${companyName} 领取支票并签收。本人理解将支票交付给该人员即视为已向本人完成付款，并自行承担与上述人员之间所作安排的全部责任。`
+    : es
+    ? `I authorize the above-named individual to receive the check from ${companyName} in person on my behalf and to sign the receipt on my behalf. I understand that delivery of the check to this person constitutes full payment to me, and I assume full responsibility for any arrangements made with the above individual. / Autorizo al individuo mencionado a recibir el cheque de ${companyName} en persona en mi nombre y a firmar el recibo en mi nombre. Entiendo que la entrega del cheque a esta persona constituye pago completo a mí, y asumo plena responsabilidad por los acuerdos con dicho individuo.`
+    : `I authorize the above-named individual to receive the check from ${companyName} in person on my behalf and to sign the receipt on my behalf. I understand that delivery of the check to this person constitutes full payment to me, and I assume full responsibility for any arrangements made with the above individual.`;
+  const sAuthSig = zh ? 'AUTHORIZER SIGNATURE 授权人签名' : es ? 'AUTHORIZER SIGNATURE / FIRMA DEL AUTORIZANTE' : 'AUTHORIZER SIGNATURE';
+  const lConfirmAuth = zh
+    ? 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement. 本人确认已授权上述第三方当面代为领取支票，并对此安排承担全部责任。'
+    : es
+    ? 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir el cheque en persona en mi nombre y asumo plena responsabilidad.'
+    : 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement.';
 
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:18px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
@@ -5188,21 +5350,89 @@ function _buildCheckInstructionForm(lang) {
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 4px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s2}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
-  <tr>
-    <td style="${c}width:60%">${lStreet}<br><text-field name="check_street" role="Contractor" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:40%">${lApt}<span style="font-size:7.5pt;color:#888">${lAptOpt}</span><br><text-field name="check_apt" role="Contractor" style="${w}"></text-field></td>
-  </tr>
-  <tr>
-    <td colspan="2" style="${c}">
-      ${lCity} <text-field name="check_city" role="Contractor" required="true" style="${f}width:160px"></text-field>
-      &nbsp;&nbsp;${lState} <text-field name="check_state" role="Contractor" required="true" style="${f}width:70px"></text-field>
-      &nbsp;&nbsp;${lZip} <text-field name="check_zip" role="Contractor" required="true" style="${f}width:90px"></text-field>
-    </td>
-  </tr>
-  <tr><td colspan="2" style="${c}">${lCountry}<span style="font-size:7.5pt;color:#888">${lCountryNote}</span>&nbsp;<text-field name="check_country" role="Contractor" style="${f}width:200px" placeholder="United States"></text-field></td></tr>
-</table>
+<!-- Zone A — Check Mailed to Own Address -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+    <checkbox-field name="check_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
+      <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
+    </div>
+  </label>
+  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+    <!-- Payee signature sub-box (blue) -->
+    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:9px 12px;margin-top:6px">
+      <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
+      <div style="display:flex;gap:10px;margin-bottom:6px">
+        <div style="flex:1">
+          <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+          <text-field name="check_printed_name" role="Contractor" required="true" style="${w}"></text-field>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lTitleRel}:</div>
+          <text-field name="check_title_relationship" role="Contractor" style="${w}" placeholder="${titlePlaceholder}"></text-field>
+        </div>
+      </div>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+      <signature-field name="check_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+      <date-field name="check_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+        <checkbox-field name="check_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+        <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
+      </label>
+    </div>
+  </div>
+</div>
+
+<!-- Zone B — Third Party Receives Check -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+    <checkbox-field name="check_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
+      <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
+    </div>
+  </label>
+  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
+      <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr>
+          <td style="padding:0 6px 6px 0;width:50%;vertical-align:top">
+            <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpNameLabel}</div>
+            <text-field name="check_tp_name" role="First Party" style="${w}"></text-field>
+          </td>
+          <td style="padding:0 0 6px 0;vertical-align:top">
+            <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpRelLabel}</div>
+            <text-field name="check_tp_relationship" role="First Party" style="${w}"></text-field>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="vertical-align:top">
+            <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpContactLabel}</div>
+            <text-field name="check_tp_contact" role="First Party" style="${w}"></text-field>
+          </td>
+        </tr>
+      </table>
+      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+    </div>
+    <!-- Authorizer signature sub-box (green) -->
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+      <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+      <text-field name="check_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+      <signature-field name="check_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+      <date-field name="check_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+        <checkbox-field name="check_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+        <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
+      </label>
+    </div>
+  </div>
+</div>
 
 <div style="font-weight:700;margin:10px 0 4px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s3}</div>
 <text-field name="check_reference" role="Contractor" style="${w}" placeholder="${refPlaceholder}"></text-field>
@@ -5217,28 +5447,6 @@ function _buildCheckInstructionForm(lang) {
   <div style="margin-bottom:3px">② ${confirmLine2}</div>
   <div style="margin-bottom:3px">③ ${confirmLine3}</div>
   <div>④ ${confirmLine4}</div>
-</div>
-
-<div style="padding:10px 12px;background:#eff6ff;border:2px solid #93c5fd;border-radius:7px;margin-top:10px">
-  <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
-  <div style="display:flex;gap:10px;margin-bottom:6px">
-    <div style="flex:1">
-      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="check_printed_name" role="Contractor" required="true" style="${w}"></text-field>
-    </div>
-    <div style="flex:1">
-      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lTitleRel}:</div>
-      <text-field name="check_title_relationship" role="Contractor" style="${w}" placeholder="${titlePlaceholder}"></text-field>
-    </div>
-  </div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="check_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="check_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="check_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
-  </label>
 </div>
 <div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
   <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
