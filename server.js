@@ -5982,22 +5982,7 @@ function _buildThirdPartyPayAuthForm(lang, method) {
       accountFieldsHtml += `\n  <tr><td style="${c}width:100%" colspan="2"><b>${lSwift}</b><br><text-field name="tp_swift_code" role="First Party" style="${w}"></text-field></td></tr>`;
     }
   } else if (method === 'check') {
-    const lStreet = L('Mailing Address (Street)', '邮寄地址（街道）', 'Dirección Postal (Calle)');
-    const lCity = L('City', '城市', 'Ciudad');
-    const lState = L('State', '州', 'Estado');
-    const lZip = L('ZIP Code', '邮编', 'Código Postal');
-    accountFieldsHtml = `
-  <tr>
-    <td style="${c}width:100%" colspan="2"><b>${lStreet}</b><br><text-field name="tp_street" role="First Party" required="true" style="${w}"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}width:40%"><b>${lCity}</b><br><text-field name="tp_city" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:30%"><b>${lState}</b><br><text-field name="tp_state" role="First Party" required="true" style="${w}"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}width:30%"><b>${lZip}</b><br><text-field name="tp_zip" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:70%"></td>
-  </tr>`;
+    // Check is handed directly — no mailing address needed
   } else if (method === 'paypal') {
     const lPlatform = L('Platform', '平台', 'Plataforma');
     const lUsername = L('Your Username, Email, or Phone Number on the Platform', '您在该平台的用户名、邮箱或手机号', 'Su Nombre de Usuario, Correo Electrónico o Teléfono en la Plataforma');
