@@ -19061,7 +19061,7 @@ app.get('/api/admin/docuseal/check-updates', requireAdmin, (req, res) => {
 // POST /api/admin/docuseal/create-all-templates — create all templates at once
 app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-  const { types, force } = req.body; // optional: array of types to create; if empty, create all; force=true to regenerate existing
+  const { types, force, override_confirmed } = req.body; // optional: array of types to create; if empty, create all; force=true to regenerate existing; override_confirmed=true to also regen confirmed templates
   const targetTypes = (types && types.length) ? types : Object.keys(DOCUSEAL_AUTO_TEMPLATES);
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
@@ -19071,8 +19071,8 @@ app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, r
     if (!tmplDef) { results.push({ type, error: 'Unknown type' }); continue; }
     // Skip if already configured (unless force=true)
     if (!force && cfg[tmplDef.configKey]) { results.push({ type, skipped: true, template_id: cfg[tmplDef.configKey] }); continue; }
-    // Skip confirmed templates even on force regen
-    if (force && cfg[tmplDef.configKey]) {
+    // Skip confirmed templates unless override_confirmed=true
+    if (force && cfg[tmplDef.configKey] && !override_confirmed) {
       const existing = db.prepare('SELECT confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(cfg[tmplDef.configKey]);
       if (existing?.confirmed) { results.push({ type, skipped: true, confirmed: true, template_id: cfg[tmplDef.configKey] }); continue; }
     }
