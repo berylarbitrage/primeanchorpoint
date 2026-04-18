@@ -5245,38 +5245,14 @@ function _buildZelleAuthRepForm(lang) {
     : `Zelle Payment Authorization and Account Confirmation — ${companyName}`;
 
   const intro = zh
-    ? `I authorize ${companyName} and its authorized representatives to send payments to me via Zelle using the account information provided below. This form may be signed by the Payee directly, or by an Authorized Representative on behalf of the Payee. Please complete the applicable signature section below.\n\n本人授权 ${companyName} 及其授权代表通过以下提供的 Zelle 账户信息向本人付款。本表格可由收款人本人直接签署，也可由授权代表代表收款人签署。请填写下方适用的签名部分。`
+    ? `Please complete one of the two options below:\n• Option A: If you will receive Zelle payments directly, provide your own Zelle account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's Zelle account information and contact details. ${companyName} will send a separate authorization form to the third party.\n\n请填写以下两个选项之一：\n• 选项 A：如您本人直接通过 Zelle 收款，请提供您自己的 Zelle 账户信息并签名。\n• 选项 B：如您本人无法直接收款，需由第三方代为收款，请提供第三方的 Zelle 账户信息及联系方式。${companyName} 将向第三方另行发送授权表格。`
     : es
-    ? `I authorize ${companyName} and its authorized representatives to send payments to me via Zelle using the account information provided below. This form may be signed by the Payee directly, or by an Authorized Representative on behalf of the Payee. Please complete the applicable signature section below.\n\nAutorizo a ${companyName} y a sus representantes autorizados a enviarme pagos por Zelle utilizando la información de cuenta proporcionada a continuación. Este formulario puede ser firmado directamente por el Beneficiario, o por un Representante Autorizado en nombre del Beneficiario. Complete la sección de firma correspondiente a continuación.`
-    : `I authorize ${companyName} and its authorized representatives to send payments to me via Zelle using the account information provided below. This form may be signed by the Payee directly, or by an Authorized Representative on behalf of the Payee. Please complete the applicable signature section below.`;
+    ? `Please complete one of the two options below:\n• Option A: If you will receive Zelle payments directly, provide your own Zelle account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's Zelle account information and contact details. ${companyName} will send a separate authorization form to the third party.\n\nComplete una de las dos opciones a continuación:\n• Opción A: Si usted recibirá pagos por Zelle directamente, proporcione su propia información de cuenta Zelle y firme.\n• Opción B: Si no puede recibir pagos directamente y un tercero recibirá los pagos en su nombre, proporcione la información de la cuenta Zelle y los datos de contacto del tercero. ${companyName} enviará un formulario de autorización por separado al tercero.`
+    : `Please complete one of the two options below:\n• Option A: If you will receive Zelle payments directly, provide your own Zelle account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's Zelle account information and contact details. ${companyName} will send a separate authorization form to the third party.`;
 
-  // Section 1 — Payee Info
-  const s1 = L('1. PAYEE INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
-  const lPayeeName = L('Payee Full Legal Name', '收款人法定全名', 'Nombre Legal Completo del Beneficiario');
-  const lAccount = L('Zelle Registered Email Address or Mobile Number', 'Zelle 注册邮箱地址或手机号', 'Correo Electrónico o Número de Teléfono Móvil Registrado en Zelle');
-
-  // Section 2 — Account Certification
-  const s2 = L('2. ACCOUNT INFORMATION CONFIRMATION', '账户信息确认', 'CONFIRMACIÓN DE INFORMACIÓN DE CUENTA');
-  const certText = zh
-    ? `I certify that the Zelle email address or phone number provided above is accurate and is registered to an active Zelle account that is authorized to receive payments.\n\n本人确认以上提供的 Zelle 邮箱地址或手机号真实准确，已注册至有效的 Zelle 账户，且已授权接收付款。`
-    : es
-    ? `I certify that the Zelle email address or phone number provided above is accurate and is registered to an active Zelle account that is authorized to receive payments.\n\nCertifico que la dirección de correo electrónico o el número de teléfono de Zelle proporcionado arriba es correcto y está registrado en una cuenta activa de Zelle autorizada para recibir pagos.`
-    : `I certify that the Zelle email address or phone number provided above is accurate and is registered to an active Zelle account that is authorized to receive payments.`;
-
-  // Section 3 — Acknowledgment
-  const s3 = L('3. ACKNOWLEDGMENT', '确认事项', 'RECONOCIMIENTO');
-  const ackItems = zh ? `(a) I am responsible for ensuring that the Zelle account is active, properly enrolled, and able to receive payments. 本人负责确保 Zelle 账户已激活、正确注册并能够接收付款。
-(b) Payment sent to the Zelle email address or phone number provided will be deemed valid payment and full satisfaction of the payer's payment obligation. 按所提供的 Zelle 邮箱地址或手机号发送付款后，即视为已有效履行付款义务。
-(c) I agree to notify ${companyName} in writing before any change to the Zelle account information. 如 Zelle 收款信息发生任何变化，本人同意在付款前以书面形式通知 ${companyName}。
-(d) ${companyName} is not responsible for delays, failed delivery, or other issues caused by the Zelle network, the receiving bank, or incorrect account information. ${companyName} 不对因 Zelle 网络、收款银行或错误账户信息造成的延迟、投递失败或其他问题承担责任。`
-    : es ? `(a) I am responsible for ensuring that the Zelle account is active, properly enrolled, and able to receive payments. Soy responsable de asegurar que la cuenta de Zelle esté activa, debidamente registrada y pueda recibir pagos.
-(b) Payment sent to the Zelle email address or phone number provided will be deemed valid payment and full satisfaction of the payer's payment obligation. El pago enviado a la dirección de correo electrónico o número de teléfono de Zelle proporcionado se considerará un pago válido y cumplimiento total de la obligación de pago.
-(c) I agree to notify ${companyName} in writing before any change to the Zelle account information. Acepto notificar a ${companyName} por escrito antes de cualquier cambio en la información de la cuenta Zelle.
-(d) ${companyName} is not responsible for delays, failed delivery, or other issues caused by the Zelle network, the receiving bank, or incorrect account information. ${companyName} no es responsable de retrasos, entregas fallidas u otros problemas causados por la red Zelle, el banco receptor o información de cuenta incorrecta.`
-    : `(a) I am responsible for ensuring that the Zelle account is active, properly enrolled, and able to receive payments.
-(b) Payment sent to the Zelle email address or phone number provided will be deemed valid payment and full satisfaction of the payer's payment obligation.
-(c) I agree to notify ${companyName} in writing before any change to the Zelle account information.
-(d) ${companyName} is not responsible for delays, failed delivery, or other issues caused by the Zelle network, the receiving bank, or incorrect account information.`;
+  // Section 1 — Employee Info (always required)
+  const s1 = L('1. EMPLOYEE INFORMATION', '员工信息', 'INFORMACIÓN DEL EMPLEADO');
+  const lEmpName = L('Employee Full Legal Name', '员工法定全名', 'Nombre Legal Completo del Empleado');
 
   const disclaimer = zh
     ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认收款方式，不改变任何税务申报义务或承包关系性质。`
@@ -5284,35 +5260,50 @@ function _buildZelleAuthRepForm(lang) {
     ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para fines de confirmación del método de pago y no altera ninguna obligación de declaración de impuestos ni el estatus del contratista.`
     : `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status.`;
 
-  // Option A labels — Payee signs directly
-  const optAHeader = L('OPTION A — PAYEE SIGNATURE (if signing directly)', '选项 A — 收款人签名（如本人直接签署）', 'OPCIÓN A — FIRMA DEL BENEFICIARIO (si firma directamente)');
+  // ── Option A: Employee receives payment directly ──
+  const optAHeader = L(
+    'OPTION A — I WILL RECEIVE ZELLE PAYMENTS DIRECTLY',
+    '选项 A — 本人直接通过 Zelle 收款',
+    'OPCIÓN A — RECIBIRÉ PAGOS POR ZELLE DIRECTAMENTE'
+  );
   const optANote = L(
-    'Complete this section if the Payee is signing this form directly.',
-    '如收款人本人直接签署本表格，请填写此部分。',
-    'Complete esta sección si el Beneficiario firma este formulario directamente.'
+    'Complete this section if you will receive payments to your own Zelle account.',
+    '如您本人直接收款到自己的 Zelle 账户，请填写此部分。',
+    'Complete esta sección si usted recibirá pagos en su propia cuenta Zelle.'
   );
-
-  // Option B labels — Authorized Rep signs
-  const optBHeader = L('OPTION B — AUTHORIZED REPRESENTATIVE SIGNATURE (if signing on behalf of the Payee)', '选项 B — 授权代表签名（如代表收款人签署）', 'OPCIÓN B — FIRMA DEL REPRESENTANTE AUTORIZADO (si firma en nombre del Beneficiario)');
-  const optBNote = L(
-    'Complete this section if an Authorized Representative is signing on behalf of the Payee. Provide the representative\'s information and signature below.',
-    '如授权代表代表收款人签署本表格，请填写此部分。在下方提供代表信息和签名。',
-    'Complete esta sección si un Representante Autorizado firma en nombre del Beneficiario. Proporcione la información y firma del representante a continuación.'
-  );
-  const lRepName = L('Representative Full Legal Name', '授权代表法定全名', 'Nombre Legal Completo del Representante');
-  const lRelationship = L('Relationship to Payee', '与收款人关系', 'Relación con el Beneficiario');
-  const lPayeePhone = L('Payee Phone Number', '收款人电话号码', 'Número de Teléfono del Beneficiario');
-  const lPayeeEmail = L('Payee Email Address', '收款人邮箱地址', 'Correo Electrónico del Beneficiario');
-  const payeeContactNote = L(
-    `By providing the Payee's contact information, the Authorized Representative authorizes ${companyName} to contact the Payee directly to verify this authorization and send any required forms.`,
-    `提供收款人联系方式即表示授权代表同意 ${companyName} 直接联系收款人以核实本授权并发送任何所需表格。`,
-    `Al proporcionar la información de contacto del Beneficiario, el Representante Autorizado autoriza a ${companyName} a contactar directamente al Beneficiario para verificar esta autorización y enviar cualquier formulario requerido.`
-  );
-  const repCertText = zh
-    ? `I, the undersigned Authorized Representative, certify that:\n(a) I am duly authorized by the Payee named above to act on their behalf regarding payment arrangements with ${companyName}.\n(b) The Zelle account information provided is accurate and is authorized by the Payee to receive payments.\n(c) I accept responsibility for ensuring the accuracy of the information provided.\n(d) I agree to notify ${companyName} in writing of any changes to the Payee's Zelle account information before the next payment is sent.\n\n本人（下方签名的授权代表）声明并确认：\n(a) 本人已获上述收款人的正式授权，代表其处理与 ${companyName} 的付款安排。\n(b) 所提供的 Zelle 账户信息准确无误，且经收款人授权用于接收付款。\n(c) 本人对所提供信息的准确性负责。\n(d) 本人同意在下次付款前以书面形式通知 ${companyName} 收款人 Zelle 账户信息的任何变更。`
+  const lMyZelle = L('My Zelle Registered Email Address or Mobile Number', '本人 Zelle 注册邮箱地址或手机号', 'Mi Correo Electrónico o Número de Teléfono Registrado en Zelle');
+  const optACert = zh
+    ? `I certify that the Zelle email address or phone number provided above is my own, is accurate, and is registered to an active Zelle account. I am responsible for ensuring that my account is active and able to receive payments. I agree to notify ${companyName} in writing before any change to my Zelle account information.\n\n本人确认以上提供的 Zelle 邮箱地址或手机号为本人所有，真实准确，已注册至有效的 Zelle 账户。本人负责确保账户已激活并能够接收付款。如 Zelle 收款信息发生任何变化，本人同意提前以书面形式通知 ${companyName}。`
     : es
-    ? `I, the undersigned Authorized Representative, certify that:\n(a) I am duly authorized by the Payee named above to act on their behalf regarding payment arrangements with ${companyName}.\n(b) The Zelle account information provided is accurate and is authorized by the Payee to receive payments.\n(c) I accept responsibility for ensuring the accuracy of the information provided.\n(d) I agree to notify ${companyName} in writing of any changes to the Payee's Zelle account information before the next payment is sent.\n\nYo, el Representante Autorizado abajo firmante, certifico que:\n(a) Estoy debidamente autorizado por el Beneficiario arriba mencionado para actuar en su nombre con respecto a los arreglos de pago con ${companyName}.\n(b) La información de cuenta Zelle proporcionada es precisa y está autorizada por el Beneficiario para recibir pagos.\n(c) Acepto la responsabilidad de garantizar la exactitud de la información proporcionada.\n(d) Acepto notificar a ${companyName} por escrito sobre cualquier cambio en la información de la cuenta Zelle del Beneficiario antes de que se envíe el próximo pago.`
-    : `I, the undersigned Authorized Representative, certify that:\n(a) I am duly authorized by the Payee named above to act on their behalf regarding payment arrangements with ${companyName}.\n(b) The Zelle account information provided is accurate and is authorized by the Payee to receive payments.\n(c) I accept responsibility for ensuring the accuracy of the information provided.\n(d) I agree to notify ${companyName} in writing of any changes to the Payee's Zelle account information before the next payment is sent.`;
+    ? `I certify that the Zelle email address or phone number provided above is my own, is accurate, and is registered to an active Zelle account. I am responsible for ensuring that my account is active and able to receive payments. I agree to notify ${companyName} in writing before any change to my Zelle account information.\n\nCertifico que la dirección de correo electrónico o número de teléfono de Zelle proporcionado arriba es mío, es correcto y está registrado en una cuenta activa de Zelle. Soy responsable de asegurar que mi cuenta esté activa y pueda recibir pagos. Acepto notificar a ${companyName} por escrito antes de cualquier cambio en mi información de cuenta Zelle.`
+    : `I certify that the Zelle email address or phone number provided above is my own, is accurate, and is registered to an active Zelle account. I am responsible for ensuring that my account is active and able to receive payments. I agree to notify ${companyName} in writing before any change to my Zelle account information.`;
+
+  // ── Option B: Third party receives payment ──
+  const optBHeader = L(
+    'OPTION B — A THIRD PARTY WILL RECEIVE ZELLE PAYMENTS ON MY BEHALF',
+    '选项 B — 第三方代为通过 Zelle 收款',
+    'OPCIÓN B — UN TERCERO RECIBIRÁ PAGOS POR ZELLE EN MI NOMBRE'
+  );
+  const optBNote = L(
+    'Complete this section if you cannot receive Zelle payments directly and a third party will receive payments on your behalf.',
+    '如您本人无法直接通过 Zelle 收款，需由第三方代为收款，请填写此部分。',
+    'Complete esta sección si no puede recibir pagos por Zelle directamente y un tercero recibirá pagos en su nombre.'
+  );
+  const lThirdPartyName = L('Third Party Full Legal Name', '第三方法定全名', 'Nombre Legal Completo del Tercero');
+  const lThirdPartyZelle = L('Third Party Zelle Registered Email or Mobile Number', '第三方 Zelle 注册邮箱或手机号', 'Correo Electrónico o Teléfono Registrado en Zelle del Tercero');
+  const lRelationship = L('Relationship to Employee', '与员工关系', 'Relación con el Empleado');
+  const lThirdPartyPhone = L('Third Party Phone Number', '第三方电话号码', 'Número de Teléfono del Tercero');
+  const lThirdPartyEmail = L('Third Party Email Address', '第三方邮箱地址', 'Correo Electrónico del Tercero');
+  const optBContactNote = L(
+    `By providing the third party's contact information above, I authorize ${companyName} to contact the third party directly to verify this arrangement and send any required authorization forms for their signature.`,
+    `提供上述第三方联系方式即表示本人授权 ${companyName} 直接联系该第三方以核实本安排并发送任何所需的授权表格供其签署。`,
+    `Al proporcionar la información de contacto del tercero arriba, autorizo a ${companyName} a contactar directamente al tercero para verificar este acuerdo y enviar cualquier formulario de autorización requerido para su firma.`
+  );
+  const optBCert = zh
+    ? `I certify that I am unable to receive Zelle payments directly, and I authorize the third party named above to receive payments on my behalf. The Zelle account information provided belongs to the third party and is accurate. I understand that ${companyName} will send a separate authorization form to the third party for their signature before payments can be processed.\n\n本人确认本人无法直接通过 Zelle 收款，特此授权上方所列第三方代表本人接收付款。所提供的 Zelle 账户信息属于该第三方且真实准确。本人理解 ${companyName} 将向该第三方另行发送授权表格供其签署，签署完成后方可处理付款。`
+    : es
+    ? `I certify that I am unable to receive Zelle payments directly, and I authorize the third party named above to receive payments on my behalf. The Zelle account information provided belongs to the third party and is accurate. I understand that ${companyName} will send a separate authorization form to the third party for their signature before payments can be processed.\n\nCertifico que no puedo recibir pagos por Zelle directamente y autorizo al tercero mencionado arriba a recibir pagos en mi nombre. La información de cuenta Zelle proporcionada pertenece al tercero y es correcta. Entiendo que ${companyName} enviará un formulario de autorización por separado al tercero para su firma antes de que se puedan procesar los pagos.`
+    : `I certify that I am unable to receive Zelle payments directly, and I authorize the third party named above to receive payments on my behalf. The Zelle account information provided belongs to the third party and is accurate. I understand that ${companyName} will send a separate authorization form to the third party for their signature before payments can be processed.`;
 
   const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en Letra de Imprenta');
   const lSig = L('Signature', '签名', 'Firma');
@@ -5331,57 +5322,69 @@ function _buildZelleAuthRepForm(lang) {
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
-    <td style="${c}width:50%"><b>${lPayeeName}</b><br><text-field name="payee_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>${lAccount}</b><br><text-field name="zelle_contact" role="First Party" required="true" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field></td>
+    <td style="${c}width:100%"><b>${lEmpName}</b><br><text-field name="employee_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
-<div style="font-size:8pt;white-space:pre-line">${certText}</div>
+<p style="font-size:7.5pt;color:#666;font-style:italic">${disclaimer}</p>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
-<div style="font-size:8pt;white-space:pre-line">${ackItems}</div>
+<div style="background:#e8f5e9;border:2px solid #4caf50;padding:10px;margin-top:14px;font-size:8.5pt;border-radius:4px">
+  <div style="font-weight:900;font-size:9.5pt;color:#2e7d32;margin-bottom:4px">${optAHeader}</div>
+  <p style="font-size:7.5pt;color:#2e7d32;margin:0 0 8px">${optANote}</p>
 
-<p style="font-size:7.5pt;color:#666;margin-top:10px;font-style:italic">${disclaimer}</p>
-
-<div style="background:#e8f5e9;border:1px solid #4caf50;padding:8px;margin-top:14px;font-size:8.5pt;border-radius:4px">
-  <b>${optAHeader}</b>
-  <p style="font-size:7.5pt;color:#2e7d32;margin:4px 0 8px">${optANote}</p>
-  <table style="width:100%">
+  <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
     <tr>
-      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" style="${w}"></text-field></td>
-    </tr>
-    <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="payee_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="${c}width:100%"><b>${lMyZelle}</b><br><text-field name="my_zelle_contact" role="First Party" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field></td>
     </tr>
   </table>
+
+  <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:10px;color:#333">${optACert}</div>
+
+  <div style="border-top:1px solid #4caf50;padding-top:8px;margin-top:4px">
+    <b>${L('EMPLOYEE SIGNATURE', '员工签名', 'FIRMA DEL EMPLEADO')}</b>
+    <table style="width:100%;margin-top:6px">
+      <tr>
+        <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="optA_printed_name" role="First Party" style="${w}"></text-field></td>
+      </tr>
+      <tr>
+        <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="optA_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+        <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="optA_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      </tr>
+    </table>
+  </div>
 </div>
 
-<div style="background:#f0f9ff;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt;border-radius:4px">
-  <b>${optBHeader}</b>
-  <p style="font-size:7.5pt;color:#555;margin:4px 0 8px">${optBNote}</p>
-  <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:8px">
+<div style="background:#f0f9ff;border:2px solid #1976d2;padding:10px;margin-top:14px;font-size:8.5pt;border-radius:4px">
+  <div style="font-weight:900;font-size:9.5pt;color:#1565c0;margin-bottom:4px">${optBHeader}</div>
+  <p style="font-size:7.5pt;color:#1565c0;margin:0 0 8px">${optBNote}</p>
+
+  <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:4px">
     <tr>
-      <td style="${c}width:50%"><b>${lRepName}</b><br><text-field name="rep_legal_name" role="First Party" style="${w}"></text-field></td>
-      <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="rep_relationship" role="First Party" style="${w}" placeholder="${L('e.g. Spouse, Manager, Family Member','如：配偶、经理、家庭成员','ej. Cónyuge, Gerente, Familiar')}"></text-field></td>
+      <td style="${c}width:50%"><b>${lThirdPartyName}</b><br><text-field name="tp_legal_name" role="First Party" style="${w}"></text-field></td>
+      <td style="${c}width:50%"><b>${lThirdPartyZelle}</b><br><text-field name="tp_zelle_contact" role="First Party" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field></td>
     </tr>
     <tr>
-      <td style="${c}width:50%"><b>${lPayeePhone}</b><br><text-field name="payee_phone" role="First Party" style="${w}" placeholder="(xxx) xxx-xxxx"></text-field></td>
-      <td style="${c}width:50%"><b>${lPayeeEmail}</b><br><text-field name="payee_email" role="First Party" style="${w}" placeholder="email@example.com"></text-field></td>
-    </tr>
-  </table>
-  <div style="font-size:7pt;color:#555;margin-bottom:8px;font-style:italic">${payeeContactNote}</div>
-  <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:8px;color:#333">${repCertText}</div>
-  <table style="width:100%">
-    <tr>
-      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="rep_printed_name" role="First Party" style="${w}"></text-field></td>
-    </tr>
-    <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="rep_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="rep_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="${c}width:34%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
+      <td style="${c}width:33%"><b>${lThirdPartyPhone}</b><br><text-field name="tp_phone" role="First Party" style="${w}" placeholder="(xxx) xxx-xxxx"></text-field></td>
+      <td style="${c}width:33%"><b>${lThirdPartyEmail}</b><br><text-field name="tp_email" role="First Party" style="${w}" placeholder="email@example.com"></text-field></td>
     </tr>
   </table>
+  <div style="font-size:7pt;color:#555;margin-bottom:8px;font-style:italic">${optBContactNote}</div>
+
+  <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:10px;color:#333">${optBCert}</div>
+
+  <div style="border-top:1px solid #1976d2;padding-top:8px;margin-top:4px">
+    <b>${L('EMPLOYEE SIGNATURE (authorizing third party)', '员工签名（授权第三方收款）', 'FIRMA DEL EMPLEADO (autorizando al tercero)')}</b>
+    <table style="width:100%;margin-top:6px">
+      <tr>
+        <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="optB_printed_name" role="First Party" style="${w}"></text-field></td>
+      </tr>
+      <tr>
+        <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="optB_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+        <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="optB_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      </tr>
+    </table>
+  </div>
 </div>
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
 </div>`;
