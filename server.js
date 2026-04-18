@@ -4532,6 +4532,17 @@ function _buildACHAuthForm(lang) {
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
 
+  const lConfirmSig = zh
+    ? 'I confirm the above signature is authentic and the information provided is accurate. 本人确认以上签名属实，所提供信息准确无误。'
+    : es
+    ? 'I confirm the above signature is authentic and the information provided is accurate. / Confirmo que la firma anterior es auténtica y la información proporcionada es precisa.'
+    : 'I confirm the above signature is authentic and the information provided is accurate.';
+  const lConfirmVerify = zh
+    ? 'I have verified the above information and confirm it can be entered into the payment system. 本人已核验上述信息，确认可录入付款系统。'
+    : es
+    ? 'I have verified the above information and confirm it can be entered into the payment system. / He verificado la información anterior y confirmo que puede ingresarse al sistema de pagos.'
+    : 'I have verified the above information and confirm it can be entered into the payment system.';
+
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:3px solid #1d4ed8;padding-bottom:12px;margin-bottom:14px">
   <div style="font-size:12.5pt;font-weight:900;letter-spacing:.4px">${formTitle}</div>
@@ -4558,22 +4569,53 @@ function _buildACHAuthForm(lang) {
 <!-- 2. PAYMENT RECIPIENT -->
 <div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 7px;color:#1e3a8a">${s3}</div>
 <div style="margin-bottom:16px">
+
+  <!-- Option A: Self — bank details nested inside -->
   <div style="border:1.5px solid #bfdbfe;border-radius:7px;padding:9px 12px;margin-bottom:6px;background:#f8faff">
-    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:8px">
       <checkbox-field name="ach_recipient_self" role="First Party" style="width:14px;height:14px;margin-top:2px;flex-shrink:0"></checkbox-field>
-      <div>
-        <div style="font-weight:700;font-size:8.5pt;color:#1e40af">${tpSelf}</div>
-        <div style="font-size:7pt;color:#6b7280;margin-top:2px">${zh ? '→ 请继续填写下方第 3 节银行账户信息' : es ? '→ Complete Section 3 below / Complete la Sección 3 a continuación' : '→ Continue to Section 3 (Bank Account Details) below'}</div>
-      </div>
+      <div style="font-weight:700;font-size:8.5pt;color:#1e40af">${tpSelf}</div>
     </label>
+    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;overflow:hidden">
+      <div style="font-size:7.5pt;font-weight:700;color:#1e40af;padding:5px 10px;background:#dbeafe;border-bottom:1px solid #bfdbfe">${s2}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
+        <tr>
+          <td style="padding:7px 10px;width:50%;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
+            <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lBankName}</div>
+            <text-field name="ach_bank_name" role="First Party" style="${w}"></text-field>
+          </td>
+          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0">
+            <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:4px">${acctTypeLabel}</div>
+            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px"><checkbox-field name="ach_acct_checking" role="First Party" style="width:13px;height:13px"></checkbox-field><span style="font-size:8pt">${acctChecking}</span></label>
+            <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="ach_acct_savings" role="First Party" style="width:13px;height:13px"></checkbox-field><span style="font-size:8pt">${acctSavings}</span></label>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:7px 10px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
+            <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lRouting}</div>
+            <text-field name="ach_routing" role="First Party" style="${f}width:100%" placeholder="9 digits"></text-field>
+          </td>
+          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0">
+            <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lAccount}</div>
+            <text-field name="ach_account" role="First Party" style="${f}width:100%"></text-field>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding:7px 10px">
+            <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lConfirmAccount}</div>
+            <text-field name="ach_account_confirm" role="First Party" style="${f}width:100%" placeholder="${confirmPlaceholder}"></text-field>
+          </td>
+        </tr>
+      </table>
+      <div style="font-size:7pt;color:#6b7280;font-style:italic;padding:5px 10px;border-top:1px solid #e2e8f0">${ownershipNote}</div>
+    </div>
   </div>
+
+  <!-- Option B: Third Party -->
   <div style="border:1.5px solid #6ee7b7;border-radius:7px;padding:9px 12px;background:#f0fdf4">
     <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:8px">
       <checkbox-field name="ach_recipient_third_party" role="First Party" style="width:14px;height:14px;margin-top:2px;flex-shrink:0"></checkbox-field>
-      <div>
-        <div style="font-weight:700;font-size:8.5pt;color:#065f46">${tpThird}</div>
-        <div style="font-size:7pt;color:#6b7280;margin-top:2px">${zh ? '→ 请填写以下第三方信息，第 3 节留空不填' : es ? '→ Complete third-party info below; leave Section 3 blank / Complete la sección de abajo; deje la Sección 3 en blanco' : '→ Complete third-party info below; leave Section 3 blank'}</div>
-      </div>
+      <div style="font-weight:700;font-size:8.5pt;color:#065f46">${tpThird}</div>
     </label>
     <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px">
       <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
@@ -4600,43 +4642,7 @@ function _buildACHAuthForm(lang) {
   </div>
 </div>
 
-<!-- 3. BANK ACCOUNT DETAILS -->
-<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 6px;color:#1e3a8a">${s2}</div>
-<div style="font-size:7.5pt;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:5px 10px;margin-bottom:8px">${bankSkipNote}</div>
-<div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin-bottom:4px">
-  <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
-    <tr>
-      <td style="padding:8px 10px;width:50%;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
-        <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lBankName}</div>
-        <text-field name="ach_bank_name" role="First Party" style="${w}"></text-field>
-      </td>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">
-        <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:4px">${acctTypeLabel}</div>
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px"><checkbox-field name="ach_acct_checking" role="First Party" style="width:13px;height:13px"></checkbox-field><span style="font-size:8pt">${acctChecking}</span></label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="ach_acct_savings" role="First Party" style="width:13px;height:13px"></checkbox-field><span style="font-size:8pt">${acctSavings}</span></label>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:8px 10px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
-        <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lRouting}</div>
-        <text-field name="ach_routing" role="First Party" style="${f}width:100%" placeholder="9 digits"></text-field>
-      </td>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">
-        <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lAccount}</div>
-        <text-field name="ach_account" role="First Party" style="${f}width:100%"></text-field>
-      </td>
-    </tr>
-    <tr>
-      <td colspan="2" style="padding:8px 10px">
-        <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lConfirmAccount}</div>
-        <text-field name="ach_account_confirm" role="First Party" style="${f}width:100%" placeholder="${confirmPlaceholder}"></text-field>
-      </td>
-    </tr>
-  </table>
-</div>
-<div style="font-size:7pt;color:#6b7280;font-style:italic;padding:2px 4px;margin-bottom:12px">${ownershipNote}</div>
-
-<!-- 4. AUTHORIZATION -->
+<!-- 3. AUTHORIZATION -->
 <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:10px 13px;margin-bottom:14px">
   <div style="font-size:9pt;font-weight:800;color:#92400e;margin-bottom:6px">${s4}</div>
   <div style="font-size:7.5pt;color:#374151;line-height:1.7">
@@ -4656,7 +4662,11 @@ function _buildACHAuthForm(lang) {
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
       <signature-field name="ach_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="ach_date1" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff"></date-field>
+      <date-field name="ach_date1" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+        <checkbox-field name="ach_payee_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+        <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
+      </label>
     </td>
     <td style="padding:10px 12px;vertical-align:top;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px">
       <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
@@ -4665,7 +4675,11 @@ function _buildACHAuthForm(lang) {
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
       <signature-field name="ach_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="ach_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff"></date-field>
+      <date-field name="ach_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
+        <checkbox-field name="ach_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+        <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
+      </label>
     </td>
   </tr>
 </table>
