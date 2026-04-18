@@ -5537,7 +5537,8 @@ function _buildThirdPartyPayAuthForm(lang, method) {
     wire:  { en: 'Wire Transfer', zh: '电汇', es: 'Transferencia Bancaria' },
     check: { en: 'Check', zh: '支票', es: 'Cheque' },
     zelle: { en: 'Zelle', zh: 'Zelle', es: 'Zelle' },
-    cash:  { en: 'Cash', zh: '现金', es: 'Efectivo' },
+    cash:    { en: 'Cash', zh: '现金', es: 'Efectivo' },
+    paypal:  { en: 'PayPal / Venmo / CashApp', zh: '第三方平台', es: 'PayPal / Venmo / CashApp' },
   };
   const mn = methodNames[method] || methodNames.zelle;
   const methodLabel = zh ? `${mn.en} ${mn.zh}` : es ? `${mn.en} / ${mn.es}` : mn.en;
@@ -5597,6 +5598,14 @@ function _buildThirdPartyPayAuthForm(lang, method) {
   <tr>
     <td style="${c}width:30%"><b>${lZip}</b><br><text-field name="tp_zip" role="First Party" required="true" style="${w}"></text-field></td>
     <td style="${c}width:70%"></td>
+  </tr>`;
+  } else if (method === 'paypal') {
+    const lPlatform = L('Platform', '平台', 'Plataforma');
+    const lUsername = L('Your Username, Email, or Phone Number on the Platform', '您在该平台的用户名、邮箱或手机号', 'Su Nombre de Usuario, Correo Electrónico o Teléfono en la Plataforma');
+    accountFieldsHtml = `
+  <tr>
+    <td style="${c}width:40%"><b>${lPlatform}</b><br><text-field name="tp_platform" role="First Party" required="true" style="${w}" placeholder="${L('PayPal / Venmo / CashApp','PayPal / Venmo / CashApp','PayPal / Venmo / CashApp')}"></text-field></td>
+    <td style="${c}width:60%"><b>${lUsername}</b><br><text-field name="tp_platform_account" role="First Party" required="true" style="${w}" placeholder="email@example.com / @username / (xxx) xxx-xxxx"></text-field></td>
   </tr>`;
   } else if (method === 'zelle') {
     const lZelle = L('Your Zelle Registered Email Address or Mobile Number', '您的 Zelle 注册邮箱地址或手机号', 'Su Correo Electrónico o Número de Teléfono Registrado en Zelle');
@@ -5694,6 +5703,10 @@ function generateCheckTPAuthTemplate_ES() { return _buildThirdPartyPayAuthForm('
 function generateCashTPAuthTemplate()    { return _buildThirdPartyPayAuthForm('zh-en', 'cash'); }
 function generateCashTPAuthTemplate_EN() { return _buildThirdPartyPayAuthForm('en', 'cash'); }
 function generateCashTPAuthTemplate_ES() { return _buildThirdPartyPayAuthForm('en-es', 'cash'); }
+// PayPal/Venmo/CashApp third-party auth
+function generatePaypalTPAuthTemplate()    { return _buildThirdPartyPayAuthForm('zh-en', 'paypal'); }
+function generatePaypalTPAuthTemplate_EN() { return _buildThirdPartyPayAuthForm('en', 'paypal'); }
+function generatePaypalTPAuthTemplate_ES() { return _buildThirdPartyPayAuthForm('en-es', 'paypal'); }
 
 
 // ── Cash Payment Receipt (ZH+EN) ──
@@ -6003,7 +6016,10 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   check_tp_auth_es: { name: 'Check — Third-Party Payment Authorization (EN+ES)', configKey: 'check_tp_auth_es_template_id', category: 'check_tp_auth_es', generator: generateCheckTPAuthTemplate_ES },
   cash_tp_auth:     { name: 'Cash — Third-Party Payment Authorization (ZH+EN)', configKey: 'cash_tp_auth_template_id',     category: 'cash_tp_auth',     generator: generateCashTPAuthTemplate },
   cash_tp_auth_en:  { name: 'Cash — Third-Party Payment Authorization (EN)',    configKey: 'cash_tp_auth_en_template_id',  category: 'cash_tp_auth_en',  generator: generateCashTPAuthTemplate_EN },
-  cash_tp_auth_es:  { name: 'Cash — Third-Party Payment Authorization (EN+ES)', configKey: 'cash_tp_auth_es_template_id',  category: 'cash_tp_auth_es',  generator: generateCashTPAuthTemplate_ES },
+  cash_tp_auth_es:    { name: 'Cash — Third-Party Payment Authorization (EN+ES)', configKey: 'cash_tp_auth_es_template_id',    category: 'cash_tp_auth_es',    generator: generateCashTPAuthTemplate_ES },
+  paypal_tp_auth:     { name: 'PayPal/Venmo/CashApp — Third-Party Authorization (ZH+EN)', configKey: 'paypal_tp_auth_template_id',     category: 'paypal_tp_auth',     generator: generatePaypalTPAuthTemplate },
+  paypal_tp_auth_en:  { name: 'PayPal/Venmo/CashApp — Third-Party Authorization (EN)',    configKey: 'paypal_tp_auth_en_template_id',  category: 'paypal_tp_auth_en',  generator: generatePaypalTPAuthTemplate_EN },
+  paypal_tp_auth_es:  { name: 'PayPal/Venmo/CashApp — Third-Party Authorization (EN+ES)', configKey: 'paypal_tp_auth_es_template_id',  category: 'paypal_tp_auth_es',  generator: generatePaypalTPAuthTemplate_ES },
   third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方收款账户授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
   third_party_pay_en: { name: 'Third-Party Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
   third_party_pay_es: { name: 'Third-Party Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
@@ -18822,7 +18838,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
     'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','paypal_tp_auth_template_id','paypal_tp_auth_en_template_id','paypal_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
     'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id'];
   const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
@@ -18861,7 +18877,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
     'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','paypal_tp_auth_template_id','paypal_tp_auth_en_template_id','paypal_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
     'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id',
     'contract_template_id' /* legacy */,
@@ -19034,7 +19050,7 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
         'w4_template_id','w9_template_id','w9_individual_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
         'i9_template_id','w7_template_id',
         'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','check_instruction_template_id',
-        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
+        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','paypal_tp_auth_template_id','paypal_tp_auth_en_template_id','paypal_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
         'contractor_invoice_template_id','invoice_approval_template_id',
         'invoice_approval_en_template_id','invoice_approval_es_template_id'
       ];
