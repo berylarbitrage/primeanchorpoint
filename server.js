@@ -4605,25 +4605,25 @@ function _buildACHAuthForm(lang) {
   <div>③ ${auth3}</div>
 </div>
 
-<table style="width:100%;border-collapse:collapse;margin-top:12px;border:1px solid #999;border-radius:3px">
+<table style="width:100%;border-collapse:separate;border-spacing:0;margin-top:12px">
   <tr>
-    <td style="width:50%;padding:7px 8px;border-right:1px solid #ccc;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${sPayeeSig}</div>
+    <td style="width:50%;padding:8px 10px;vertical-align:top;background:#eff6ff;border:2px solid #93c5fd;border-radius:6px 0 0 6px">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#1d4ed8">${sPayeeSig}</div>
       <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
       <text-field name="ach_printed_name" role="First Party" required="true" style="${w};margin-bottom:5px"></text-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
-      <signature-field name="ach_sig1" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <signature-field name="ach_sig1" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #93c5fd;border-radius:3px;background:#fff"></signature-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
-      <date-field name="ach_date1" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+      <date-field name="ach_date1" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #93c5fd;border-radius:3px;background:#fff"></date-field>
     </td>
-    <td style="width:50%;padding:7px 8px;vertical-align:top;background:#f9fafb">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#555">${sCompany}</div>
+    <td style="width:50%;padding:8px 10px;vertical-align:top;background:#fffbeb;border:2px solid #fcd34d;border-left:none;border-radius:0 6px 6px 0">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#92400e">${sCompany}</div>
       <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lVerifiedBy}:</div>
       <text-field name="ach_co_printed_name" role="Second Party" style="${w};margin-bottom:5px"></text-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
-      <signature-field name="ach_sig2" role="Second Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <signature-field name="ach_sig2" role="Second Party" style="width:100%;height:46px;display:block;border:1px solid #fcd34d;border-radius:3px;background:#fff"></signature-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
-      <date-field name="ach_date2" role="Second Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+      <date-field name="ach_date2" role="Second Party" style="width:100%;height:22px;display:block;border:1px solid #fcd34d;border-radius:3px;background:#fff"></date-field>
     </td>
   </tr>
 </table>
@@ -4864,23 +4864,23 @@ function _buildWireAuthForm(lang) {
   <div>⑤ ${cert5}</div>
 </div>
 
-<table style="width:100%;border-collapse:collapse;margin-top:10px;border:1px solid #999;border-radius:3px">
+<table style="width:100%;border-collapse:separate;border-spacing:0;margin-top:10px">
   <tr>
-    <td style="width:50%;padding:7px 8px;border-right:1px solid #ccc;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${s5ben}</div>
+    <td style="width:50%;padding:8px 10px;vertical-align:top;background:#eff6ff;border:2px solid #93c5fd;border-radius:6px 0 0 6px">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#1d4ed8">${s5ben}</div>
       <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
       <text-field name="wire_printed_name" role="Contractor" required="true" style="${w};margin-bottom:5px"></text-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
-      <signature-field name="wire_sig" role="Contractor" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <signature-field name="wire_sig" role="Contractor" style="width:100%;height:46px;display:block;border:1px solid #93c5fd;border-radius:3px;background:#fff"></signature-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
-      <date-field name="wire_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+      <date-field name="wire_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #93c5fd;border-radius:3px;background:#fff"></date-field>
     </td>
-    <td style="width:50%;padding:7px 8px;vertical-align:top;background:#f9fafb">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#555">${s5co}</div>
+    <td style="width:50%;padding:8px 10px;vertical-align:top;background:#fffbeb;border:2px solid #fcd34d;border-left:none;border-radius:0 6px 6px 0">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#92400e">${s5co}</div>
       <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lVerifiedBy}:</div>
       <text-field name="wire_co_printed_name" role="First Party" style="${w};margin-bottom:5px"></text-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
-      <signature-field name="wire_co_sig" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <signature-field name="wire_co_sig" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #fcd34d;border-radius:3px;background:#fff"></signature-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
       <date-field name="wire_co_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
     </td>
