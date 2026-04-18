@@ -4210,17 +4210,22 @@ function _buildThirdPartyPayForm(lang) {
     : 'Third-Party Payment Account Authorization';
 
   const intro = zh
-    ? `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform and account specified below. 本人授权 <b>${companyName}</b> 及其授权代表通过下方指定的第三方支付平台及收款账户向本人支付经批准的应付款项。`
+    ? `Please complete one of the two options below:\n• Option A: If you will receive payments directly via PayPal/Venmo/Cash App, provide your own account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's account information and contact details. ${companyName} will send a separate authorization form to the third party.\n\n请填写以下两个选项之一：\n• 选项 A：如您本人直接通过 PayPal/Venmo/Cash App 收款，请提供您自己的账户信息并签名。\n• 选项 B：如您本人无法直接收款，需由第三方代为收款，请提供第三方的账户信息及联系方式。${companyName} 将向第三方另行发送授权表格。`
     : es
-    ? `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform and account specified below. Autorizo a <b>${companyName}</b> y sus representantes autorizados a enviar los pagos correspondientes a través de la plataforma de terceros y la cuenta especificadas a continuación.`
-    : `I authorize <b>${companyName}</b> and its authorized representatives to send payments owed to me for approved services through the third-party platform and account specified below.`;
+    ? `Please complete one of the two options below:\n• Option A: If you will receive payments directly via PayPal/Venmo/Cash App, provide your own account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's account information and contact details. ${companyName} will send a separate authorization form to the third party.\n\nComplete una de las dos opciones a continuación:\n• Opción A: Si recibirá pagos directamente por PayPal/Venmo/Cash App, proporcione su propia información de cuenta y firme.\n• Opción B: Si no puede recibir pagos directamente y un tercero recibirá los pagos en su nombre, proporcione la información de cuenta y datos de contacto del tercero. ${companyName} enviará un formulario de autorización por separado al tercero.`
+    : `Please complete one of the two options below:\n• Option A: If you will receive payments directly via PayPal/Venmo/Cash App, provide your own account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's account information and contact details. ${companyName} will send a separate authorization form to the third party.`;
 
-  const s1          = zh ? '1. PAYEE INFORMATION 收款人信息' : es ? '1. PAYEE INFORMATION / INFORMACIÓN DEL BENEFICIARIO' : '1. PAYEE INFORMATION';
+  const s1          = L('1. YOUR INFORMATION', '您的信息', 'SU INFORMACIÓN');
   const lLegalName  = L('Full Legal Name', '法定全名', 'Nombre Legal Completo');
   const lEmail      = L('Email Address', '电子邮箱', 'Correo Electrónico');
   const lOptEmail   = zh ? '(optional 可选)' : es ? '(opcional)' : '(optional)';
 
-  const s2          = zh ? '2. PAYMENT PLATFORM &amp; ACCOUNT 付款平台及账户' : es ? '2. PAYMENT PLATFORM &amp; ACCOUNT / PLATAFORMA Y CUENTA DE PAGO' : '2. PAYMENT PLATFORM &amp; ACCOUNT';
+  const disclaimer = zh
+    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认收款方式，不改变任何税务申报义务或承包关系性质。`
+    : es
+    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para fines de confirmación del método de pago y no altera ninguna obligación de declaración de impuestos ni el estatus del contratista.`
+    : `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status.`;
+
   const lPlatform   = L('Platform', '平台', 'Plataforma');
   const lSelectOne  = zh ? '（可多选 Check all that apply）' : es ? '（Seleccione todas las que apliquen）' : '(Check all that apply)';
   const lHandle     = L('Account / Username', '账号 / 用户名', 'Usuario / Cuenta');
@@ -4229,138 +4234,172 @@ function _buildThirdPartyPayForm(lang) {
   const lOther      = L('Other', '其他', 'Otro');
   const lOtherName  = L('Platform name', '平台名称', 'Nombre de plataforma');
   const lReference  = zh ? 'Reference / Payment Note (optional) 参考编号 / 付款备注（可选）' : es ? 'Reference / Payment Note (optional) / Referencia / Nota de Pago (opcional)' : 'Reference / Payment Note (optional)';
+  const lPrintedName= L('Printed Name', '姓名（正楷）', 'Nombre en Letra de Imprenta');
+  const lSig        = L('Signature', '签名', 'Firma');
+  const lDate       = L('Date Signed', '签署日期', 'Fecha de Firma');
 
-  const s3 = zh ? '3. ACKNOWLEDGMENT 确认事项' : es ? '3. ACKNOWLEDGMENT / DECLARACIÓN Y ACUERDO' : '3. ACKNOWLEDGMENT';
-
-  const _ack = (en, zhTxt, esTxt) => {
-    const enLine = `<b>${en}</b>`;
-    if (zh && zhTxt) return `${enLine}<br><span style="font-size:7.5pt;color:#555;font-weight:400">${zhTxt}</span>`;
-    if (es && esTxt) return `${enLine}<br><span style="font-size:7.5pt;color:#555;font-weight:400">${esTxt}</span>`;
-    return enLine;
-  };
-
-  const ack1 = _ack(
-    'I certify that the account information provided above is accurate and that the account is owned by me or under my control.',
-    '本人证明上述账户信息真实准确，且该账户归本人所有或由本人控制。',
-    'Certifico que la información de cuenta es precisa y que la cuenta es de mi propiedad o está bajo mi control.'
+  const optAHeader = L(
+    'OPTION A — I WILL RECEIVE PAYMENTS DIRECTLY',
+    '选项 A — 本人直接收款',
+    'OPCIÓN A — RECIBIRÉ PAGOS DIRECTAMENTE'
   );
-  const ack2 = _ack(
-    `Payment sent to the account information provided by me will be treated as payment made to me, and ${companyName}'s payment obligation will be satisfied unless I provided updated account information in writing before the payment was sent.`,
-    `${companyName} 按本人提供的账户信息发送付款后，视为已向本人完成有效付款；除非本人在付款发送前已以书面形式通知 ${companyName} 更新后的账户信息，否则 ${companyName} 就该笔款项的付款义务即告履行完毕。`,
-    `El pago enviado a la información de cuenta proporcionada se considerará pago válido. La obligación de pago de ${companyName} quedará satisfecha salvo notificación escrita previa al envío.`
+  const optANote = L(
+    'Complete this section if you will receive payments to your own PayPal / Venmo / Cash App account.',
+    '如您本人直接收款到自己的 PayPal / Venmo / Cash App 账户，请填写此部分。',
+    'Complete esta sección si recibirá pagos en su propia cuenta de PayPal / Venmo / Cash App.'
   );
-  const ack3 = _ack(
-    `I agree to notify ${companyName} in writing before any change to my payment platform or account details.`,
-    `如收款平台或账户信息发生变化，本人同意在变更生效前以书面形式通知 ${companyName}。`,
-    `Acepto notificar por escrito a ${companyName} antes de cualquier cambio en mi plataforma de pago o datos de cuenta.`
-  );
-  const ack4 = _ack(
-    `${companyName} is not responsible for delays, holds, service interruptions, or fees imposed by the selected third-party platform after payment is sent successfully.`,
-    `付款成功发送后，如第三方平台产生延迟、冻结、中断或手续费，${companyName} 不承担相应责任。`,
-    `${companyName} no es responsable de demoras, retenciones, interrupciones o cargos impuestos por la plataforma de terceros una vez enviado el pago.`
-  );
-  const ack5 = _ack(
-    'I understand that transaction fees charged by the platform are my responsibility.',
-    '本人理解平台可能收取手续费，由本人自行承担。',
-    'Entiendo que las comisiones por transacción cobradas por la plataforma son mi responsabilidad.'
-  );
-  const ack6 = _ack(
-    'This authorization is for payment method purposes only and does not alter any tax reporting obligations or the underlying work relationship between the parties.',
-    '本授权仅用于确认付款方式，不改变任何税务申报义务或双方基础合作关系。',
-    'Esta autorización es únicamente para fines del método de pago y no altera obligaciones fiscales ni la relación laboral entre las partes.'
-  );
-
-  const sigHeader    = zh ? 'PAYEE AUTHORIZATION AND SIGNATURE 收款人确认与签名' : es ? 'PAYEE AUTHORIZATION AND SIGNATURE / FIRMA Y AUTORIZACIÓN DEL BENEFICIARIO' : 'PAYEE AUTHORIZATION AND SIGNATURE';
-  const lPrintedName = L('Printed Name', '姓名（正楷）', 'Nombre en Letra de Imprenta');
-  const lSig         = L('Signature', '签名', 'Firma');
-  const lDate        = L('Date Signed', '签署日期', 'Fecha de Firma');
-  const footer       = zh
-    ? `${companyName} — 第三方收款账户授权 — For payment authorization records.`
+  const optACert = zh
+    ? `I certify that the account information provided above is accurate and that the account is owned by me or under my control. I am responsible for ensuring that my account is active and able to receive payments. I agree to notify ${companyName} in writing before any change to my account information.\n\n本人确认以上账户信息真实准确，且该账户归本人所有或由本人控制。本人负责确保账户已激活并能够接收付款。如账户信息发生任何变化，本人同意提前以书面形式通知 ${companyName}。`
     : es
-    ? `${companyName} — Third-Party Payment Account Authorization — For payment authorization records.`
-    : `${companyName} — Third-Party Payment Account Authorization — For payment authorization records.`;
+    ? `I certify that the account information provided above is accurate and that the account is owned by me or under my control. I am responsible for ensuring that my account is active and able to receive payments. I agree to notify ${companyName} in writing before any change to my account information.\n\nCertifico que la información de cuenta proporcionada es correcta y que la cuenta es de mi propiedad o está bajo mi control. Soy responsable de asegurar que mi cuenta esté activa y pueda recibir pagos. Acepto notificar por escrito a ${companyName} antes de cualquier cambio en mi información de cuenta.`
+    : `I certify that the account information provided above is accurate and that the account is owned by me or under my control. I am responsible for ensuring that my account is active and able to receive payments. I agree to notify ${companyName} in writing before any change to my account information.`;
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
+  const optBHeader = L(
+    'OPTION B — A THIRD PARTY WILL RECEIVE PAYMENTS ON MY BEHALF',
+    '选项 B — 第三方代为收款',
+    'OPCIÓN B — UN TERCERO RECIBIRÁ PAGOS EN MI NOMBRE'
+  );
+  const optBNote = L(
+    'Complete this section if you cannot receive payments directly and a third party will receive payments on your behalf.',
+    '如您本人无法直接收款，需由第三方代为收款，请填写此部分。',
+    'Complete esta sección si no puede recibir pagos directamente y un tercero recibirá pagos en su nombre.'
+  );
+  const lThirdPartyName = L('Third Party Full Legal Name', '第三方法定全名', 'Nombre Legal Completo del Tercero');
+  const lRelationship   = L('Relationship to You', '与您的关系', 'Relación con Usted');
+  const lThirdPartyPhone= L('Third Party Phone Number', '第三方电话号码', 'Número de Teléfono del Tercero');
+  const lThirdPartyEmail= L('Third Party Email Address', '第三方邮箱地址', 'Correo Electrónico del Tercero');
+  const lTPPlatformHint = L('Third party PayPal email / Venmo username / $cashtag', '第三方 PayPal 邮箱 / Venmo 用户名 / $cashtag', 'Correo PayPal / usuario Venmo / $cashtag del tercero');
+  const optBContactNote = L(
+    `By providing the third party's contact information above, I authorize ${companyName} to contact the third party directly to verify this arrangement and send any required authorization forms for their signature.`,
+    `提供上述第三方联系方式即表示本人授权 ${companyName} 直接联系该第三方以核实本安排并发送任何所需的授权表格供其签署。`,
+    `Al proporcionar la información de contacto del tercero arriba, autorizo a ${companyName} a contactar directamente al tercero para verificar este acuerdo y enviar cualquier formulario de autorización requerido para su firma.`
+  );
+  const optBCert = zh
+    ? `I certify that I am unable to receive payments directly, and I authorize the third party named above to receive payments on my behalf. The account information provided belongs to the third party and is accurate. I understand that ${companyName} will send a separate authorization form to the third party for their signature before payments can be processed.\n\n本人确认本人无法直接收款，特此授权上方所列第三方代表本人接收付款。所提供的账户信息属于该第三方且真实准确。本人理解 ${companyName} 将向该第三方另行发送授权表格供其签署，签署完成后方可处理付款。`
+    : es
+    ? `I certify that I am unable to receive payments directly, and I authorize the third party named above to receive payments on my behalf. The account information provided belongs to the third party and is accurate. I understand that ${companyName} will send a separate authorization form to the third party for their signature before payments can be processed.\n\nCertifico que no puedo recibir pagos directamente y autorizo al tercero mencionado arriba a recibir pagos en mi nombre. La información de cuenta proporcionada pertenece al tercero y es correcta. Entiendo que ${companyName} enviará un formulario de autorización por separado al tercero para su firma antes de que se puedan procesar los pagos.`
+    : `I certify that I am unable to receive payments directly, and I authorize the third party named above to receive payments on my behalf. The account information provided belongs to the third party and is accurate. I understand that ${companyName} will send a separate authorization form to the third party for their signature before payments can be processed.`;
+
+  const footer = `${companyName} — Third-Party Payment Account Authorization — For payment authorization records.`;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Platform account table (reused for A and B with different field-name prefix)
+  const platformTable = (prefix, placeholderHint) => `
+<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${lSelectOne}</div>
+<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:8.5pt">
+  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="${prefix}_platform_paypal" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>PayPal</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="${prefix}_platform_venmo" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Venmo</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="${prefix}_platform_cashapp" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Cash App</b></label>
+  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="${prefix}_platform_other" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>${lOther}:</b></label>
+  <text-field name="${prefix}_platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #aaa;min-width:90px;background:transparent;font-size:8pt" placeholder="${lOtherName}"></text-field>
+</div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+  <tr style="background:#f1f5f9">
+    <td style="${c}width:22%;font-weight:700;font-size:7.5pt">${lPlatform}</td>
+    <td style="${c}width:42%;font-weight:700;font-size:7.5pt">${lHandle}<br><span style="font-weight:400;color:#777;font-size:6.5pt">${placeholderHint}</span></td>
+    <td style="${c}width:36%;font-weight:700;font-size:7.5pt">${lContact}</td>
+  </tr>
+  <tr>
+    <td style="${c}"><b>PayPal</b></td>
+    <td style="${c}"><text-field name="${prefix}_paypal_account" role="First Party" style="${w}" placeholder="PayPal email / @username"></text-field></td>
+    <td style="${c}"><text-field name="${prefix}_paypal_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}"><b>Venmo</b></td>
+    <td style="${c}"><text-field name="${prefix}_venmo_account" role="First Party" style="${w}" placeholder="@username"></text-field></td>
+    <td style="${c}"><text-field name="${prefix}_venmo_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}"><b>Cash App</b></td>
+    <td style="${c}"><text-field name="${prefix}_cashapp_account" role="First Party" style="${w}" placeholder="$cashtag"></text-field></td>
+    <td style="${c}"><text-field name="${prefix}_cashapp_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}"><b>${lOther}</b></td>
+    <td style="${c}"><text-field name="${prefix}_other_account" role="First Party" style="${w}" placeholder="@username / account ID"></text-field></td>
+    <td style="${c}"><text-field name="${prefix}_other_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}" colspan="3"><b>${lReference}</b><br><text-field name="${prefix}_reference_invoice" role="First Party" style="${w}" placeholder="e.g. INV-001"></text-field></td>
+  </tr>
+</table>`;
+
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:14px 20px;color:#111;line-height:1.4">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
   <div style="font-size:11pt;font-weight:900;letter-spacing:0.5px">${formTitle}</div>
   <div style="font-size:9pt;font-weight:600;color:#222;margin-top:3px">${companyName}</div>
 </div>
-<div style="font-size:8.5pt;margin-bottom:10px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc">
-  ${intro}
-</div>
+
+<p style="font-size:8.5pt;white-space:pre-line;margin:8px 0 10px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc">${intro}</p>
 
 <div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:6px">
   <tr>
     <td style="${c}width:55%"><b>${lLegalName}</b><br><text-field name="payee_full_name" role="First Party" required="true" style="${w}"></text-field></td>
     <td style="${c}width:45%"><b>${lEmail}</b> <span style="font-size:7pt;color:#777;font-weight:400">${lOptEmail}</span><br><text-field name="payee_email" role="First Party" style="${w}"></text-field></td>
   </tr>
 </table>
 
-<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s2}</div>
-<div style="font-size:7.5pt;color:#555;margin-bottom:4px">${lSelectOne}</div>
-<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:8.5pt">
-  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_paypal" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>PayPal</b></label>
-  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_venmo" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Venmo</b></label>
-  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_cashapp" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>Cash App</b></label>
-  <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="platform_other" role="First Party" style="width:13px;height:13px"></checkbox-field> <b>${lOther}:</b></label>
-  <text-field name="platform_other_name" role="First Party" style="border:none;border-bottom:1px solid #aaa;min-width:90px;background:transparent;font-size:8pt" placeholder="${lOtherName}"></text-field>
-</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr style="background:#f1f5f9">
-    <td style="${c}width:22%;font-weight:700;font-size:7.5pt">${lPlatform}</td>
-    <td style="${c}width:42%;font-weight:700;font-size:7.5pt">${lHandle}<br><span style="font-weight:400;color:#777;font-size:6.5pt">${lHandleHint}</span></td>
-    <td style="${c}width:36%;font-weight:700;font-size:7.5pt">${lContact}</td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>PayPal</b></td>
-    <td style="${c}"><text-field name="paypal_account" role="First Party" style="${w}" placeholder="PayPal email / @username"></text-field></td>
-    <td style="${c}"><text-field name="paypal_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>Venmo</b></td>
-    <td style="${c}"><text-field name="venmo_account" role="First Party" style="${w}" placeholder="@username"></text-field></td>
-    <td style="${c}"><text-field name="venmo_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>Cash App</b></td>
-    <td style="${c}"><text-field name="cashapp_account" role="First Party" style="${w}" placeholder="$cashtag"></text-field></td>
-    <td style="${c}"><text-field name="cashapp_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}"><b>${lOther}</b></td>
-    <td style="${c}"><text-field name="other_account" role="First Party" style="${w}" placeholder="@username / account ID"></text-field></td>
-    <td style="${c}"><text-field name="other_contact" role="First Party" style="${w}" placeholder="email or phone"></text-field></td>
-  </tr>
-  <tr>
-    <td style="${c}" colspan="3"><b>${lReference}</b><br><text-field name="reference_invoice" role="First Party" style="${w}" placeholder="e.g. INV-001"></text-field></td>
-  </tr>
-</table>
+<p style="font-size:7.5pt;color:#666;font-style:italic;margin:4px 0 8px">${disclaimer}</p>
 
-<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
-<div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.5;background:#fafafa;margin-bottom:8px">
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack1}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack2}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack3}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack4}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack5}</span></div>
-  <div style="display:flex;gap:5px"><span>☑</span><span>${ack6}</span></div>
+<div style="background:#e8f5e9;border:2px solid #4caf50;padding:10px;margin-top:12px;font-size:8.5pt;border-radius:4px">
+  <div style="font-weight:900;font-size:9.5pt;color:#2e7d32;margin-bottom:4px">${optAHeader}</div>
+  <p style="font-size:7.5pt;color:#2e7d32;margin:0 0 8px">${optANote}</p>
+
+  ${platformTable('a', lHandleHint)}
+
+  <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:10px;color:#333">${optACert}</div>
+
+  <div style="border-top:1px solid #4caf50;padding-top:8px;margin-top:4px">
+    <b>${L('YOUR SIGNATURE', '您的签名', 'SU FIRMA')}</b>
+    <table style="width:100%;margin-top:6px">
+      <tr>
+        <td colspan="2" style="padding-bottom:5px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lPrintedName}:</div><text-field name="optA_printed_name" role="First Party" style="${f}width:100%;margin-top:2px"></text-field></td>
+      </tr>
+      <tr>
+        <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="optA_signature" role="First Party" style="width:100%;height:48px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
+        <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lDate}:</div><date-field name="optA_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+      </tr>
+    </table>
+  </div>
 </div>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:7px 8px;font-size:8.5pt">
-  <div style="font-size:7.5pt;font-weight:700;margin-bottom:5px">${sigHeader}</div>
-  <table style="width:100%">
+<div style="background:#f0f9ff;border:2px solid #1976d2;padding:10px;margin-top:12px;font-size:8.5pt;border-radius:4px">
+  <div style="font-weight:900;font-size:9.5pt;color:#1565c0;margin-bottom:4px">${optBHeader}</div>
+  <p style="font-size:7.5pt;color:#1565c0;margin:0 0 8px">${optBNote}</p>
+
+  <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
     <tr>
-      <td colspan="2" style="padding-bottom:5px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${f}width:100%;margin-top:2px"></text-field></td>
+      <td style="${c}width:50%"><b>${lThirdPartyName}</b><br><text-field name="tp_legal_name" role="First Party" style="${w}"></text-field></td>
+      <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
     </tr>
     <tr>
-      <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="contractor_signature" role="Contractor" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
-      <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lDate}:</div><date-field name="signature_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+      <td style="${c}width:50%"><b>${lThirdPartyPhone}</b><br><text-field name="tp_phone" role="First Party" style="${w}" placeholder="(xxx) xxx-xxxx"></text-field></td>
+      <td style="${c}width:50%"><b>${lThirdPartyEmail}</b><br><text-field name="tp_email" role="First Party" style="${w}" placeholder="email@example.com"></text-field></td>
     </tr>
   </table>
+
+  ${platformTable('b', lTPPlatformHint)}
+
+  <div style="font-size:7pt;color:#555;margin-bottom:8px;font-style:italic">${optBContactNote}</div>
+  <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:10px;color:#333">${optBCert}</div>
+
+  <div style="border-top:1px solid #1976d2;padding-top:8px;margin-top:4px">
+    <b>${L('YOUR SIGNATURE (authorizing third party)', '您的签名（授权第三方收款）', 'SU FIRMA (autorizando al tercero)')}</b>
+    <table style="width:100%;margin-top:6px">
+      <tr>
+        <td colspan="2" style="padding-bottom:5px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lPrintedName}:</div><text-field name="optB_printed_name" role="First Party" style="${f}width:100%;margin-top:2px"></text-field></td>
+      </tr>
+      <tr>
+        <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="optB_signature" role="First Party" style="width:100%;height:48px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
+        <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lDate}:</div><date-field name="optB_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+      </tr>
+    </table>
+  </div>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 11:38 CDT</div>
+
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${footer}</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
 </div>`;
 }
 
