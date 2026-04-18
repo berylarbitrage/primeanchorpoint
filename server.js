@@ -4271,9 +4271,21 @@ function _buildThirdPartyPayForm(lang) {
   );
 
   const sigHeader    = zh ? 'PAYEE AUTHORIZATION AND SIGNATURE 收款人确认与签名' : es ? 'PAYEE AUTHORIZATION AND SIGNATURE / FIRMA Y AUTORIZACIÓN DEL BENEFICIARIO' : 'PAYEE AUTHORIZATION AND SIGNATURE';
+  const sCompany     = L('FOR INTERNAL USE ONLY — COMPANY VERIFICATION', '仅供公司内部使用 — 公司核验', 'SOLO PARA USO INTERNO — VERIFICACIÓN DE LA EMPRESA');
   const lPrintedName = L('Printed Name', '姓名（正楷）', 'Nombre en Letra de Imprenta');
+  const lVerifiedBy  = L('Verified By', '核验人', 'Verificado por');
   const lSig         = L('Signature', '签名', 'Firma');
   const lDate        = L('Date Signed', '签署日期', 'Fecha de Firma');
+  const lConfirmSig = zh
+    ? 'I confirm the above signature is authentic and the information provided is accurate. 本人确认以上签名属实，所提供信息准确无误。'
+    : es
+    ? 'I confirm the above signature is authentic and the information provided is accurate. / Confirmo que la firma anterior es auténtica y la información proporcionada es precisa.'
+    : 'I confirm the above signature is authentic and the information provided is accurate.';
+  const lConfirmVerify = zh
+    ? 'I have verified the above information and confirm it can be entered into the payment system. 本人已核验上述信息，确认可录入付款系统。'
+    : es
+    ? 'I have verified the above information and confirm it can be entered into the payment system. / He verificado la información anterior y confirmo que puede ingresarse al sistema de pagos.'
+    : 'I have verified the above information and confirm it can be entered into the payment system.';
   const footer       = zh
     ? `${companyName} — 第三方收款账户授权 — For payment authorization records.`
     : es
@@ -4347,20 +4359,34 @@ function _buildThirdPartyPayForm(lang) {
   <div style="display:flex;gap:5px"><span>☑</span><span>${ack6}</span></div>
 </div>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:7px 8px;font-size:8.5pt">
-  <div style="font-size:7.5pt;font-weight:700;margin-bottom:5px">${sigHeader}</div>
-  <table style="width:100%">
-    <tr>
-      <td colspan="2" style="padding-bottom:5px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${f}width:100%;margin-top:2px"></text-field></td>
-    </tr>
-    <tr>
-      <td style="width:60%;padding-right:10px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lSig}:</div><signature-field name="contractor_signature" role="Contractor" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
-      <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${lDate}:</div><date-field name="signature_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
-    </tr>
-  </table>
+<div style="padding:10px 12px;background:#eff6ff;border:2px solid #93c5fd;border-radius:7px;margin-top:8px">
+  <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+  <text-field name="payee_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+  <signature-field name="contractor_signature" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+  <date-field name="signature_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+  <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+    <checkbox-field name="tp_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
+  </label>
+</div>
+<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
+  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
+  <text-field name="tp_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+  <signature-field name="tp_co_sig" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+  <date-field name="tp_co_date" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
+    <checkbox-field name="tp_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
+  </label>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 11:38 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
 
@@ -4836,6 +4862,16 @@ function _buildWireAuthForm(lang) {
   const lVerifiedBy  = L('Verified By', '核验人', 'Verificado por');
   const lSig         = L('Signature', '签名', 'Firma');
   const lDate        = L('Date', '日期', 'Fecha');
+  const lConfirmSig = zh
+    ? 'I confirm the above signature is authentic and the information provided is accurate. 本人确认以上签名属实，所提供信息准确无误。'
+    : es
+    ? 'I confirm the above signature is authentic and the information provided is accurate. / Confirmo que la firma anterior es auténtica y la información proporcionada es precisa.'
+    : 'I confirm the above signature is authentic and the information provided is accurate.';
+  const lConfirmVerify = zh
+    ? 'I have verified the above information and confirm it can be entered into the payment system. 本人已核验上述信息，确认可录入付款系统。'
+    : es
+    ? 'I have verified the above information and confirm it can be entered into the payment system. / He verificado la información anterior y confirmo que puede ingresarse al sistema de pagos.'
+    : 'I have verified the above information and confirm it can be entered into the payment system.';
 
   // Checkbox style
   const chk = 'display:inline-block;width:13px;height:13px;border:1.5px solid #555;border-radius:2px;margin-right:4px;vertical-align:middle;';
@@ -4936,29 +4972,33 @@ function _buildWireAuthForm(lang) {
   <div>⑤ ${cert5}</div>
 </div>
 
-<table style="width:100%;border-collapse:separate;border-spacing:0;margin-top:10px">
-  <tr>
-    <td style="width:50%;padding:8px 10px;vertical-align:top;background:#eff6ff;border:2px solid #93c5fd;border-radius:6px 0 0 6px">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#1d4ed8">${s5ben}</div>
-      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
-      <text-field name="wire_printed_name" role="Contractor" required="true" style="${w};margin-bottom:5px"></text-field>
-      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
-      <signature-field name="wire_sig" role="Contractor" style="width:100%;height:46px;display:block;border:1px solid #93c5fd;border-radius:3px;background:#fff"></signature-field>
-      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
-      <date-field name="wire_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #93c5fd;border-radius:3px;background:#fff"></date-field>
-    </td>
-    <td style="width:50%;padding:8px 10px;vertical-align:top;background:#fffbeb;border:2px solid #fcd34d;border-left:none;border-radius:0 6px 6px 0">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#92400e">${s5co}</div>
-      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lVerifiedBy}:</div>
-      <text-field name="wire_co_printed_name" role="First Party" style="${w};margin-bottom:5px"></text-field>
-      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
-      <signature-field name="wire_co_sig" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #fcd34d;border-radius:3px;background:#fff"></signature-field>
-      <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
-      <date-field name="wire_co_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
-  </tr>
-</table>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-04-18 CDT</div>
+<div style="padding:10px 12px;background:#eff6ff;border:2px solid #93c5fd;border-radius:7px;margin-top:10px">
+  <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${s5ben}</div>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+  <text-field name="wire_printed_name" role="Contractor" required="true" style="${w};margin-bottom:6px"></text-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+  <signature-field name="wire_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+  <date-field name="wire_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+  <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+    <checkbox-field name="wire_ben_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
+  </label>
+</div>
+<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
+  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${s5co}</div>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
+  <text-field name="wire_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+  <signature-field name="wire_co_sig" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+  <date-field name="wire_co_date" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
+    <checkbox-field name="wire_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
+  </label>
+</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
 function generateWireAuthHtmlTemplate()    { return _buildWireAuthForm('zh-en'); }
@@ -5064,12 +5104,24 @@ function _buildCheckInstructionForm(lang) {
 
   // ── Signature section ──
   const sigHeader = zh ? sh('PAYEE SIGNATURE', '收款人签名') : es ? 'FIRMA DEL BENEFICIARIO' : 'PAYEE SIGNATURE';
+  const sCompany  = zh ? 'FOR INTERNAL USE ONLY — COMPANY VERIFICATION 仅供公司内部使用 — 公司核验' : es ? 'FOR INTERNAL USE ONLY — COMPANY VERIFICATION / SOLO PARA USO INTERNO — VERIFICACIÓN DE LA EMPRESA' : 'FOR INTERNAL USE ONLY — COMPANY VERIFICATION';
   const lPrintedName = zh ? 'Printed Name <span style="font-weight:400;color:#555">正楷姓名</span>' : es ? 'Printed Name / Nombre en letra de molde' : 'Printed Name';
+  const lVerifiedBy  = zh ? 'Verified By <span style="font-weight:400;color:#555">核验人</span>' : es ? 'Verified By / Verificado por' : 'Verified By';
   // ── Title / Relationship ──
   const lTitleRel = zh ? 'Title / Relationship <span style="font-weight:400;color:#555">职务 / 与收款人关系</span>' : es ? 'Title / Relationship / Cargo / Relación' : 'Title / Relationship';
   const titlePlaceholder = 'e.g., Owner, Manager, Self';
   const lSig  = zh ? 'Signature <span style="font-weight:400;color:#555">签名</span>' : es ? 'Signature / Firma' : 'Signature';
   const lDate = zh ? 'Date <span style="font-weight:400;color:#555">日期</span>' : es ? 'Date / Fecha' : 'Date';
+  const lConfirmSig = zh
+    ? 'I confirm the above signature is authentic and the information provided is accurate. 本人确认以上签名属实，所提供信息准确无误。'
+    : es
+    ? 'I confirm the above signature is authentic and the information provided is accurate. / Confirmo que la firma anterior es auténtica y la información proporcionada es precisa.'
+    : 'I confirm the above signature is authentic and the information provided is accurate.';
+  const lConfirmVerify = zh
+    ? 'I have verified the above information and confirm it can be entered into the payment system. 本人已核验上述信息，确认可录入付款系统。'
+    : es
+    ? 'I have verified the above information and confirm it can be entered into the payment system. / He verificado la información anterior y confirmo que puede ingresarse al sistema de pagos.'
+    : 'I have verified the above information and confirm it can be entered into the payment system.';
 
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:18px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
@@ -5129,26 +5181,41 @@ function _buildCheckInstructionForm(lang) {
   <div>④ ${confirmLine4}</div>
 </div>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:10px;font-size:8pt;border-radius:3px">
-  <div style="font-weight:700;margin-bottom:5px;font-size:8.5pt">${sigHeader}</div>
-  <table style="width:100%;margin-top:4px">
-    <tr>
-      <td style="width:55%;padding-right:8px;padding-bottom:6px;vertical-align:top">
-        <div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div>
-        <text-field name="check_printed_name" role="Contractor" required="true" style="${w}"></text-field>
-      </td>
-      <td style="width:45%;padding-bottom:6px;vertical-align:top">
-        <div style="font-size:7.5pt;font-weight:700">${lTitleRel}:</div>
-        <text-field name="check_title_relationship" role="Contractor" style="${w}" placeholder="${titlePlaceholder}"></text-field>
-      </td>
-    </tr>
-    <tr>
-      <td style="width:55%;padding-right:8px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="check_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:45%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate}:</div><date-field name="check_date" role="Contractor" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
-    </tr>
-  </table>
+<div style="padding:10px 12px;background:#eff6ff;border:2px solid #93c5fd;border-radius:7px;margin-top:10px">
+  <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
+  <div style="display:flex;gap:10px;margin-bottom:6px">
+    <div style="flex:1">
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+      <text-field name="check_printed_name" role="Contractor" required="true" style="${w}"></text-field>
+    </div>
+    <div style="flex:1">
+      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lTitleRel}:</div>
+      <text-field name="check_title_relationship" role="Contractor" style="${w}" placeholder="${titlePlaceholder}"></text-field>
+    </div>
+  </div>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+  <signature-field name="check_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+  <date-field name="check_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+  <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+    <checkbox-field name="check_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
+  </label>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-18 CDT</div>
+<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
+  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
+  <text-field name="check_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+  <signature-field name="check_co_sig" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+  <date-field name="check_co_date" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
+    <checkbox-field name="check_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
+  </label>
+</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
 function generateCheckInstructionHtmlTemplate()    { return _buildCheckInstructionForm('zh-en'); }
