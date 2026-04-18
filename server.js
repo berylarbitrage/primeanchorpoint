@@ -4578,7 +4578,7 @@ function _buildACHAuthForm(lang) {
     </td>
   </tr>
 </table>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-18 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
 function generateACHAuthHtmlTemplate()    { return _buildACHAuthForm('zh-en'); }
@@ -4837,7 +4837,7 @@ function _buildWireAuthForm(lang) {
     </td>
   </tr>
 </table>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-18 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
 function generateWireAuthHtmlTemplate()    { return _buildWireAuthForm('zh-en'); }
