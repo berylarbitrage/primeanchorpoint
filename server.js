@@ -19474,7 +19474,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
 //
 // TEMPLATE_REGEN_VERSION: bump this number to force a one-time regen of ALL templates on next startup.
-const TEMPLATE_REGEN_VERSION = 3;
+const TEMPLATE_REGEN_VERSION = 4;
 
 async function autoRegenerateTemplatesForCompanyName() {
   if (!dsealEnabled()) return;
