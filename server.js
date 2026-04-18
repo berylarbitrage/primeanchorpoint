@@ -4856,27 +4856,15 @@ function _buildWireAuthForm(lang) {
     : `Wire Transfer Authorization & Bank Account Confirmation Form — ${companyName}`;
 
   const introPara = zh
-    ? `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments using the beneficiary and bank account information provided in this form. 本人特此授权 ${companyName} 及其授权代表按照本表所提供的收款人及银行账户信息进行电汇付款。`
+    ? `I hereby authorize ${companyName} and its authorized representatives to send all wire transfer payments owed to me using the beneficiary and bank account information provided in this form. This is a standing authorization applicable to all future wire transfers. 本人特此授权 ${companyName} 及其授权代表按照本表所提供的收款人及银行账户信息，对本人的所有应得款项进行电汇付款。本授权为长期授权，适用于以后所有电汇付款。`
     : es
-    ? `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments using the beneficiary and bank account information provided in this form. Por medio del presente, autorizo a ${companyName} y a sus representantes autorizados a enviar transferencias bancarias utilizando la información del beneficiario y de la cuenta bancaria proporcionada en este formulario.`
-    : `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments using the beneficiary and bank account information provided in this form.`;
+    ? `I hereby authorize ${companyName} and its authorized representatives to send all wire transfer payments owed to me using the beneficiary and bank account information provided in this form. This is a standing authorization applicable to all future wire transfers. Por medio del presente, autorizo a ${companyName} y a sus representantes autorizados a enviar todos los pagos que se me adeuden mediante transferencia bancaria, utilizando la información del beneficiario y de la cuenta proporcionada en este formulario. Esta es una autorización permanente aplicable a todas las transferencias futuras.`
+    : `I hereby authorize ${companyName} and its authorized representatives to send all wire transfer payments owed to me using the beneficiary and bank account information provided in this form. This is a standing authorization applicable to all future wire transfers.`;
 
   // Wire type selection
   const wireTypeLabel = zh ? 'Wire Type 电汇类型' : es ? 'Wire Type / Tipo de Transferencia' : 'Wire Type';
-  const wireTypeDom = zh ? 'Domestic (U.S.) 美国境内电汇' : es ? 'Domestic (U.S.) / Doméstica (EE.UU.)' : 'Domestic (U.S.)';
-  const wireTypeInt = zh ? 'International 国际电汇' : es ? 'International / Internacional' : 'International';
-
-  // Payment reference
-  const payRefLabel = zh
-    ? 'Payment Reference / Invoice No. / Project Name 付款参考 / 发票号 / 项目名称'
-    : es
-    ? 'Payment Reference / Invoice No. / Project Name / Referencia de Pago / N.º de Factura / Nombre del Proyecto'
-    : 'Payment Reference / Invoice No. / Project Name';
-  const payRefHint = zh
-    ? '(optional 可选)'
-    : es
-    ? '(opcional)'
-    : '(optional)';
+  const wireTypeDom   = zh ? 'Domestic (U.S.) 美国境内电汇' : es ? 'Domestic (U.S.) / Doméstica (EE.UU.)' : 'Domestic (U.S.)';
+  const wireTypeInt   = zh ? 'International 国际电汇' : es ? 'International / Internacional' : 'International';
 
   // Section labels
   const s1 = L('1. BENEFICIARY INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
@@ -5012,16 +5000,12 @@ function _buildWireAuthForm(lang) {
 
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:8px">
   <tr>
-    <td style="${c}width:40%">
+    <td style="${c}width:100%">
       <b>${wireTypeLabel}</b><br>
       <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="wire_type_domestic" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${wireTypeDom}</label><br>
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="wire_type_domestic" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${wireTypeDom}</label>
         <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="wire_type_international" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${wireTypeInt}</label>
       </div>
-    </td>
-    <td style="${c}width:60%">
-      <b>${payRefLabel}</b> <span style="font-size:7pt;color:#777">${payRefHint}</span><br>
-      <text-field name="wire_payment_ref" role="Contractor" style="${w}"></text-field>
     </td>
   </tr>
 </table>
@@ -19818,7 +19802,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
 //
 // TEMPLATE_REGEN_VERSION: bump this number to force a one-time regen of ALL templates on next startup.
-const TEMPLATE_REGEN_VERSION = 8;
+const TEMPLATE_REGEN_VERSION = 9;
 
 async function autoRegenerateTemplatesForCompanyName() {
   if (!dsealEnabled()) return;
