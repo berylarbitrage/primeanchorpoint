@@ -4883,6 +4883,34 @@ function _buildWireAuthForm(lang) {
     ? 'I have verified the above information and confirm it can be entered into the payment system. / He verificado la información anterior y confirmo que puede ingresarse al sistema de pagos.'
     : 'I have verified the above information and confirm it can be entered into the payment system.';
 
+  // Zone A/B labels
+  const zoneATitle = zh ? 'OPTION A — DIRECT WIRE TO MY OWN ACCOUNT / 直接收款至本人账户' : es ? 'OPTION A — DIRECT WIRE TO MY OWN ACCOUNT / 直接收款至本人账户' : 'OPTION A — DIRECT WIRE TO MY OWN ACCOUNT / 直接收款至本人账户';
+  const zoneBTitle = zh ? 'OPTION B — 委托第三方代收 / Third-Party Authorization' : es ? 'OPTION B — THIRD-PARTY AUTHORIZATION / 委托第三方代收' : 'OPTION B — THIRD-PARTY AUTHORIZATION / 委托第三方代收';
+  const tpSelf = zh ? 'I am receiving directly into my own account. 本人直接收款至本人账户。'
+    : es ? 'I am receiving directly into my own account. / Recibiré los fondos directamente en mi propia cuenta.'
+    : 'I am receiving directly into my own account.';
+  const tpThird = zh ? 'I am authorizing a third party to receive on my behalf (third-party payee / 代收). 本人授权第三方代为收款。'
+    : es ? 'I am authorizing a third party to receive on my behalf. / Autorizo a un tercero a recibir fondos en mi nombre.'
+    : 'I am authorizing a third party to receive on my behalf.';
+  const tpHeader = zh ? 'If third-party payee, complete below / 如代收，请填写以下信息：'
+    : es ? 'If third-party payee, complete below / Si es tercero, complete lo siguiente:'
+    : 'If third-party payee, complete below:';
+  const tpNameLabel = zh ? 'Third Party Full Legal Name 第三方法定全名' : es ? 'Third Party Full Legal Name / Nombre Legal Completo del Tercero' : 'Third Party Full Legal Name';
+  const tpRelLabel = zh ? 'Relationship to Payee 与收款人关系' : es ? 'Relationship to Payee / Relación con el Beneficiario' : 'Relationship to Payee';
+  const tpContactLabel = zh ? 'Third Party Phone / Email 第三方电话/电邮' : es ? 'Third Party Phone / Email / Teléfono / Correo del Tercero' : 'Third Party Phone / Email';
+  const tpAuth = zh
+    ? `I authorize the above-named third party to receive wire payment(s) on my behalf from ${companyName}. The third party will submit their own banking information directly; I do NOT need to fill in Section A above. I assume full responsibility for any arrangements with the above third party. 本人授权上述第三方代表本人从 ${companyName} 接收电汇付款。该第三方将自行提供其银行信息；本人无需填写上方 A 节。本人自行承担与上述第三方之间所作安排的全部责任。`
+    : es
+    ? `I authorize the above-named third party to receive wire payment(s) on my behalf from ${companyName}. The third party will submit their own banking information directly; I do NOT need to fill in Section A above. I assume full responsibility for any arrangements with the above third party. / Autorizo al tercero indicado a recibir transferencias bancarias en mi nombre de ${companyName}. El tercero proporcionará su propia información bancaria directamente; no necesito completar la Sección A anterior. Asumo plena responsabilidad por los acuerdos con dicho tercero.`
+    : `I authorize the above-named third party to receive wire payment(s) on my behalf from ${companyName}. The third party will submit their own banking information directly; I do NOT need to fill in Section A above. I assume full responsibility for any arrangements with the above third party.`;
+  const sAuthSig = zh ? 'AUTHORIZER SIGNATURE 授权人签名' : es ? 'AUTHORIZER SIGNATURE / FIRMA DEL AUTORIZANTE' : 'AUTHORIZER SIGNATURE';
+  const lConfirmAuth = zh
+    ? 'I confirm I am authorizing the above-named third party to receive payment on my behalf, and I take full responsibility for this arrangement. 本人确认已授权上述第三方代为收款，并对此安排承担全部责任。'
+    : es
+    ? 'I confirm I am authorizing the above-named third party to receive payment on my behalf, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir el pago en mi nombre y asumo plena responsabilidad.'
+    : 'I confirm I am authorizing the above-named third party to receive payment on my behalf, and I take full responsibility for this arrangement.';
+  const sSectionLabel = zh ? '2. PAYMENT RECIPIENT 收款方式' : es ? '2. PAYMENT RECIPIENT / TIPO DE BENEFICIARIO' : '2. PAYMENT RECIPIENT';
+
   // Checkbox style
   const chk = 'display:inline-block;width:13px;height:13px;border:1.5px solid #555;border-radius:2px;margin-right:4px;vertical-align:middle;';
 
