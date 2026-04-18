@@ -1684,6 +1684,9 @@ try {
 try {
   db.exec("ALTER TABLE docuseal_templates ADD COLUMN content_hash TEXT DEFAULT NULL");
 } catch(e) { /* column already exists */ }
+try {
+  db.exec("ALTER TABLE docuseal_templates ADD COLUMN hidden INTEGER DEFAULT 0");
+} catch(e) { /* column already exists */ }
 
 // Migrate: update broad categories (tax, contract, payment, invoice) to specific doc_types
 try {
@@ -18798,7 +18801,10 @@ app.get('/api/admin/docuseal/builder-token/:id', requireAdmin, async (req, res) 
 
 // GET /api/admin/docuseal/my-templates — list only user-uploaded templates from local DB
 app.get('/api/admin/docuseal/my-templates', requireAdmin, (req, res) => {
-  const rows = db.prepare('SELECT * FROM docuseal_templates ORDER BY created_at DESC').all();
+  const showHidden = req.query.show_hidden === '1';
+  const rows = showHidden
+    ? db.prepare('SELECT * FROM docuseal_templates ORDER BY created_at DESC').all()
+    : db.prepare('SELECT * FROM docuseal_templates WHERE hidden=0 ORDER BY created_at DESC').all();
   res.json(rows);
 });
 
@@ -18935,6 +18941,20 @@ app.put('/api/admin/docuseal/my-templates/:id/languages', requireAdmin, (req, re
   const langStr = Array.isArray(languages) ? languages.join(',') : (languages || '');
   db.prepare('UPDATE docuseal_templates SET languages=? WHERE id=?').run(langStr, req.params.id);
   res.json({ success: true, languages: langStr });
+});
+
+// PUT /api/admin/docuseal/my-templates/:id/hide — hide a template from default view
+app.put('/api/admin/docuseal/my-templates/:id/hide', requireAdmin, (req, res) => {
+  const result = db.prepare('UPDATE docuseal_templates SET hidden=1 WHERE id=?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: '模板不存在' });
+  res.json({ success: true, hidden: 1 });
+});
+
+// PUT /api/admin/docuseal/my-templates/:id/unhide — restore a hidden template
+app.put('/api/admin/docuseal/my-templates/:id/unhide', requireAdmin, (req, res) => {
+  const result = db.prepare('UPDATE docuseal_templates SET hidden=0 WHERE id=?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: '模板不存在' });
+  res.json({ success: true, hidden: 0 });
 });
 
 // POST /api/admin/docuseal/templates/:dsId/apply-field-requirements
