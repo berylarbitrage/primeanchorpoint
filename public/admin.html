@@ -24202,8 +24202,17 @@ function dsChangeCategoryModal(dsTemplateId) {
       { cat: 'wire_auth',      label: '电汇',   bg:'#fffbeb', color:'#78350f' },
       { cat: 'check_instruction', label: '支票', bg:'#fafaf9', color:'#292524' },
       { cat: 'zelle_auth',     label: 'Zelle', bg:'#fdf4ff', color:'#86198f' },
-      { cat: 'third_party_pay',label: '第三方', bg:'#ecfdf5', color:'#065f46' },
+      { cat: 'third_party_pay',label: '第三方平台', bg:'#ecfdf5', color:'#065f46' },
       { cat: 'cash_receipt',   label: '现金',   bg:'#fff1f2', color:'#9f1239' },
+    ]},
+    { title: '第三方收款', items: [
+      { cat: 'ach_tp_auth',    label: 'ACH',    bg:'#e0f2fe', color:'#075985' },
+      { cat: 'wire_tp_auth',   label: '电汇',   bg:'#fef3c7', color:'#92400e' },
+      { cat: 'check_tp_auth',  label: '支票',   bg:'#f5f5f4', color:'#44403c' },
+      { cat: 'zelle_tp_auth',  label: 'Zelle',  bg:'#fae8ff', color:'#7e22ce' },
+      { cat: 'zelle_auth_rep', label: 'Zelle授权代表', bg:'#f5f3ff', color:'#6d28d9' },
+      { cat: 'paypal_tp_auth', label: '第三方平台', bg:'#d1fae5', color:'#047857' },
+      { cat: 'cash_tp_auth',   label: '现金',   bg:'#ffe4e6', color:'#be123c' },
     ]},
     { title: 'Invoice', items: [
       { cat: 'contractor_invoice', label: '员工Invoice', bg:'#fef3c7', color:'#92400e' },
@@ -24249,7 +24258,7 @@ async function dsApplyCategoryChanges(dsTemplateId) {
   // Derive full category key from base + current languages
   const suffix = _dsCatLangSuffix(tpl.languages);
   // Only apply suffix to categories that have multi-language variants
-  const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt','contractor_invoice','invoice_approval']);
+  const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','zelle_auth_rep','third_party_pay','cash_receipt','ach_tp_auth','wire_tp_auth','check_tp_auth','zelle_tp_auth','paypal_tp_auth','cash_tp_auth','contractor_invoice','invoice_approval']);
   const newCat = multiLangBases.has(baseCat) ? baseCat + suffix : baseCat;
   if (tpl.category === newCat) { overlay.remove(); return; }
   try {
@@ -24305,7 +24314,7 @@ async function dsApplyLanguageChanges(localId) {
     await api(`/admin/docuseal/my-templates/${localId}/languages`, { method: 'PUT', body: JSON.stringify({ languages: checked }) });
     tpl.languages = checked.join(',');
     // If the template has a multi-language base category, sync the category suffix to match new languages
-    const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt','contractor_invoice','invoice_approval']);
+    const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','zelle_auth_rep','third_party_pay','cash_receipt','ach_tp_auth','wire_tp_auth','check_tp_auth','zelle_tp_auth','paypal_tp_auth','cash_tp_auth','contractor_invoice','invoice_approval']);
     const base = _dsCatBase(tpl.category || '');
     if (multiLangBases.has(base)) {
       const newCat = base + _dsCatLangSuffix(tpl.languages);
