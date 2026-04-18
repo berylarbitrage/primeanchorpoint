@@ -23891,7 +23891,7 @@ function _dsRenderMyTemplates() {
     const hiddenBadge = isHidden ? ' <span style="display:inline-block;background:#f1f5f9;color:#94a3b8;border-radius:4px;padding:1px 6px;font-size:.72rem;font-weight:700;margin-left:.3rem;border:1px solid #e2e8f0">已隐藏</span>' : '';
     const hideBtn = isHidden
       ? `<button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #d1fae5;background:#f0fdf4;color:#15803d;white-space:nowrap" onclick="dsUnhideTemplate(${t.id})">恢复显示</button>`
-      : `<button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#f8fafc;color:#94a3b8;white-space:nowrap" onclick="dsHideTemplate(${t.id})">隐藏</button>`;
+      : (!isConfirmed ? `<button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#f8fafc;color:#94a3b8;white-space:nowrap" onclick="dsHideTemplate(${t.id})">隐藏</button>` : '');
     const rowBg = isHidden ? ';background:#f8fafc;opacity:.7' : (isConfirmed ? ';background:#fafffe' : '');
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9${rowBg}">
       <div>

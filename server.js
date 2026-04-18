@@ -18945,8 +18945,10 @@ app.put('/api/admin/docuseal/my-templates/:id/languages', requireAdmin, (req, re
 
 // PUT /api/admin/docuseal/my-templates/:id/hide — hide a template from default view
 app.put('/api/admin/docuseal/my-templates/:id/hide', requireAdmin, (req, res) => {
-  const result = db.prepare('UPDATE docuseal_templates SET hidden=1 WHERE id=?').run(req.params.id);
-  if (!result.changes) return res.status(404).json({ error: '模板不存在' });
+  const local = db.prepare('SELECT confirmed FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  if (local.confirmed) return res.status(400).json({ error: '已确定的模板不能隐藏' });
+  db.prepare('UPDATE docuseal_templates SET hidden=1 WHERE id=?').run(req.params.id);
   res.json({ success: true, hidden: 1 });
 });
 
