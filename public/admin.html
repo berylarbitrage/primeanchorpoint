@@ -24224,6 +24224,9 @@ function dsChangeCategoryModal(dsTemplateId) {
   const tplName = tpl ? tpl.name : `#${dsTemplateId}`;
   const currentCat = tpl ? (tpl.category || '') : '';
   const currentBase = _dsCatBase(currentCat);
+  const _tpToBase = { ach_tp_auth:'ach_auth', wire_tp_auth:'wire_auth', check_tp_auth:'check_instruction', zelle_tp_auth:'zelle_auth', paypal_tp_auth:'third_party_pay', cash_tp_auth:'cash_receipt' };
+  const _isTP = _tpToBase.hasOwnProperty(currentBase);
+  const radioBase = _isTP ? _tpToBase[currentBase] : currentBase;
 
   const groups = [
     { title: '合同', items: [
@@ -24254,10 +24257,8 @@ function dsChangeCategoryModal(dsTemplateId) {
       { cat: 'wire_auth',         label: '电汇',   bg:'#fffbeb', color:'#78350f' },
       { cat: 'check_instruction', label: '支票',   bg:'#fafaf9', color:'#292524' },
       { cat: 'zelle_auth',        label: 'Zelle',  bg:'#fdf4ff', color:'#86198f' },
+      { cat: 'third_party_pay',   label: '第三方平台', bg:'#ecfdf5', color:'#065f46' },
       { cat: 'cash_receipt',      label: '现金',   bg:'#fff1f2', color:'#9f1239' },
-    ]},
-    { title: '第三方收款', items: [
-      { cat: 'third_party_pay', label: '第三方收款', bg:'#ecfdf5', color:'#065f46' },
     ]},
     { title: 'Invoice', items: [
       { cat: 'contractor_invoice', label: '员工Invoice', bg:'#fef3c7', color:'#92400e' },
@@ -24270,7 +24271,7 @@ function dsChangeCategoryModal(dsTemplateId) {
   const hasExact = allItems.some(it => it.cat === currentCat);
   const rowsHtml = groups.map(g => {
     const items = g.items.map(it => {
-      const checked = hasExact ? (it.cat === currentCat ? 'checked' : '') : (it.cat === currentBase ? 'checked' : '');
+      const checked = hasExact ? (it.cat === currentCat ? 'checked' : '') : (it.cat === radioBase ? 'checked' : '');
       return `<label style="display:flex;align-items:center;gap:.5rem;padding:.28rem .2rem;cursor:pointer">
         <input type="radio" name="ds-cat-radio" value="${it.cat}" ${checked} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
         <span style="display:inline-block;background:${it.bg};color:${it.color};border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700">${it.label}</span>
@@ -24279,11 +24280,21 @@ function dsChangeCategoryModal(dsTemplateId) {
     return `<div style="margin-bottom:.9rem"><div style="font-size:.73rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">${g.title}</div><div style="display:flex;flex-wrap:wrap;gap:.1rem">${items}</div></div>`;
   }).join('');
 
+  const tpChecked = _isTP ? 'checked' : '';
+  const tpCheckboxHtml = `<div style="margin-top:.3rem;padding:.6rem .4rem;border-top:1px dashed #cbd5e1;background:#f8fafc;border-radius:0 0 8px 8px">
+    <label style="display:flex;align-items:center;gap:.55rem;cursor:pointer">
+      <input type="checkbox" id="ds-cat-tp-cb" ${tpChecked} style="width:16px;height:16px;cursor:pointer;accent-color:#1565c0">
+      <span style="font-size:.82rem;font-weight:700;color:#1565c0">授权第三方收款</span>
+      <span style="font-size:.7rem;color:#94a3b8;margin-left:auto">可与付款方式同时选中</span>
+    </label>
+  </div>`;
+
   const modalHtml = `<div id="ds-cat-modal-overlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center">
     <div style="background:#fff;border-radius:12px;padding:1.5rem;width:380px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
       <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">改变分类</div>
       <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为「${_dsEsc(tplName)}」选择所属小类</div>
       <div id="ds-cat-modal-groups">${rowsHtml}</div>
+      ${tpCheckboxHtml}
       <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
         <button onclick="document.getElementById('ds-cat-modal-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
         <button onclick="dsApplyCategoryChanges(${dsTemplateId})" style="padding:.4rem 1rem;border-radius:7px;border:none;background:#0ea5e9;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">保存</button>
@@ -24297,13 +24308,18 @@ async function dsApplyCategoryChanges(dsTemplateId) {
   const overlay = document.getElementById('ds-cat-modal-overlay');
   const selected = overlay.querySelector('input[name="ds-cat-radio"]:checked');
   if (!selected) { overlay.remove(); return; }
-  const baseCat = selected.value;
+  let baseCat = selected.value;
+  const tpCb = overlay.querySelector('#ds-cat-tp-cb');
+  if (tpCb && tpCb.checked) {
+    const _baseToTP = { ach_auth:'ach_tp_auth', wire_auth:'wire_tp_auth', check_instruction:'check_tp_auth', zelle_auth:'zelle_tp_auth', third_party_pay:'paypal_tp_auth', cash_receipt:'cash_tp_auth' };
+    if (_baseToTP[baseCat]) baseCat = _baseToTP[baseCat];
+  }
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
   if (!tpl) { overlay.remove(); return; }
   // Derive full category key from base + current languages
   const suffix = _dsCatLangSuffix(tpl.languages);
   // Only apply suffix to categories that have multi-language variants
-  const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt','contractor_invoice','invoice_approval']);
+  const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','zelle_auth_rep','third_party_pay','cash_receipt','ach_tp_auth','wire_tp_auth','check_tp_auth','zelle_tp_auth','paypal_tp_auth','cash_tp_auth','contractor_invoice','invoice_approval']);
   const newCat = multiLangBases.has(baseCat) ? baseCat + suffix : baseCat;
   if (tpl.category === newCat) { overlay.remove(); return; }
   try {
@@ -24359,7 +24375,7 @@ async function dsApplyLanguageChanges(localId) {
     await api(`/admin/docuseal/my-templates/${localId}/languages`, { method: 'PUT', body: JSON.stringify({ languages: checked }) });
     tpl.languages = checked.join(',');
     // If the template has a multi-language base category, sync the category suffix to match new languages
-    const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt','contractor_invoice','invoice_approval']);
+    const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','zelle_auth_rep','third_party_pay','cash_receipt','ach_tp_auth','wire_tp_auth','check_tp_auth','zelle_tp_auth','paypal_tp_auth','cash_tp_auth','contractor_invoice','invoice_approval']);
     const base = _dsCatBase(tpl.category || '');
     if (multiLangBases.has(base)) {
       const newCat = base + _dsCatLangSuffix(tpl.languages);
