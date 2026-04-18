@@ -6133,53 +6133,26 @@ function _buildCashReceiptForm(lang) {
   const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
   const companyName = getCompanySignerName();
 
-  const sFormTitle   = zh ? 'CASH PAYMENT RECEIPT<br><span style="font-size:10pt;font-weight:700;color:#555">现金付款签收表</span>'
-                     : es ? 'CASH PAYMENT RECEIPT<br><span style="font-size:10pt;font-weight:700;color:#555">Recibo de Pago en Efectivo</span>'
-                     :      'CASH PAYMENT RECEIPT';
-  const sSubtitle    = zh ? `现金付款签收表 — ${companyName}` : es ? `Recibo de Pago en Efectivo — ${companyName}` : companyName;
-  const sIntro       = zh ? `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization for all future cash payments. Select the applicable option and sign in the corresponding zone.<br><span style="color:#555">本人授权 <b>${companyName}</b> 以现金方式支付本人的所有应得款项。本授权适用于以后所有现金付款。请选择适用选项并在相应区域签名。</span>`
-                     : es ? `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization for all future cash payments. Select the applicable option and sign in the corresponding zone.<br><span style="color:#555">Autorizo a <b>${companyName}</b> a pagar todos los montos que se me adeuden en efectivo. Esta es una autorización permanente para todos los pagos futuros en efectivo. Seleccione la opción aplicable y firme en la zona correspondiente.</span>`
-                     :      `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization for all future cash payments. Select the applicable option and sign in the corresponding zone.`;
+  const sFormTitle   = zh ? 'CASH PAYMENT AUTHORIZATION FORM<br><span style="font-size:10pt;font-weight:700;color:#555">现金收款授权表</span>'
+                     : es ? 'CASH PAYMENT AUTHORIZATION FORM<br><span style="font-size:10pt;font-weight:700;color:#555">Formulario de Autorización de Pago en Efectivo</span>'
+                     :      'CASH PAYMENT AUTHORIZATION FORM';
+  const sSubtitle    = zh ? `现金收款授权表 — ${companyName}` : es ? `Formulario de Autorización de Pago en Efectivo — ${companyName}` : companyName;
+  const sIntro       = zh ? `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization applicable to all future cash payments. Select the applicable option and sign in the corresponding zone.<br><span style="color:#555">本人授权 <b>${companyName}</b> 以现金方式支付本人的所有应得款项。本授权为长期授权，适用于以后所有现金付款。请选择适用选项并在相应区域签名。</span>`
+                     : es ? `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization applicable to all future cash payments. Select the applicable option and sign in the corresponding zone.<br><span style="color:#555">Autorizo a <b>${companyName}</b> a pagar todos los montos que se me adeuden en efectivo. Esta es una autorización permanente aplicable a todos los pagos futuros en efectivo. Seleccione la opción aplicable y firme en la zona correspondiente.</span>`
+                     :      `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization applicable to all future cash payments. Select the applicable option and sign in the corresponding zone.`;
 
-  const s1Title      = zh ? '1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款详情</span>'
-                     : es ? '1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Detalles del Pago</span>'
-                     :      '1. Payment Details';
-  const sRecipName   = zh ? 'Recipient Name &nbsp;<span style="font-weight:400;color:#555">收款人姓名</span>'
-                     : es ? 'Recipient Name &nbsp;<span style="font-weight:400;color:#555">Nombre del Destinatario</span>'
-                     :      'Recipient Name';
-  const sPayDate     = zh ? 'Payment Date &nbsp;<span style="font-weight:400;color:#555">付款日期</span>'
-                     : es ? 'Payment Date &nbsp;<span style="font-weight:400;color:#555">Fecha de Pago</span>'
-                     :      'Payment Date';
-  const sMethod      = zh ? 'Payment Method &nbsp;<span style="font-weight:400;color:#555">付款方式</span>'
-                     : es ? 'Payment Method &nbsp;<span style="font-weight:400;color:#555">Método de Pago</span>'
-                     :      'Payment Method';
-  const sMethodVal   = zh ? 'Cash / 现金' : es ? 'Cash / Efectivo' : 'Cash';
-
-  const s2Title      = zh ? '2. Purpose / Description &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款用途说明</span>'
-                     : es ? '2. Purpose / Description &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Propósito / Descripción</span>'
-                     :      '2. Purpose / Description';
-  const sDescLabel   = zh ? 'Description of Services or Payment Purpose &nbsp;<span style="font-weight:400;color:#555">服务或付款用途说明</span>'
-                     : es ? 'Description of Services or Payment Purpose &nbsp;<span style="font-weight:400;color:#555">Descripción de Servicios o Propósito del Pago</span>'
-                     :      'Description of Services or Payment Purpose';
-  const sPeriodLabel = zh ? 'Service Period (if applicable) &nbsp;<span style="font-weight:400;color:#555">服务期间（如适用）</span>'
-                     : es ? 'Service Period (if applicable) &nbsp;<span style="font-weight:400;color:#555">Período de Servicio (si aplica)</span>'
-                     :      'Service Period (if applicable)';
-  const sRefLabel    = zh ? 'Invoice / Job / Payment Reference &nbsp;<span style="font-weight:400;color:#555">发票号 / 工作编号 / 付款参考号</span>'
-                     : es ? 'Invoice / Job / Payment Reference &nbsp;<span style="font-weight:400;color:#555">Factura / Trabajo / Referencia de Pago</span>'
-                     :      'Invoice / Job / Payment Reference';
-
-  const s3Title      = zh ? '3. Receipt Confirmation &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">收款确认</span>'
-                     : es ? '3. Receipt Confirmation &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Confirmación de Recepción</span>'
-                     :      '3. Receipt Confirmation';
+  const s1Title      = zh ? '1. Receipt Authorization &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">收款确认授权</span>'
+                     : es ? '1. Receipt Authorization &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Autorización de Recepción</span>'
+                     :      '1. Receipt Authorization';
 
   const zoneATitle   = zh ? 'OPTION A — 本人直接收款 / I Received the Cash Directly'
                      : es ? 'OPTION A — I Received the Cash Directly / Yo Recibí el Efectivo Directamente'
                      :      'OPTION A — I Received the Cash Directly';
-  const tpSelf       = zh ? 'I personally received the cash payment described above from the company.'
-                           + '<br><span style="color:#bfdbfe">我本人从公司亲自收取了上述现金款项。</span>'
-                     : es ? 'I personally received the cash payment described above from the company.'
-                           + '<br><span style="color:#bfdbfe">Yo personalmente recibí el pago en efectivo descrito arriba de la empresa.</span>'
-                     :      'I personally received the cash payment described above from the company.';
+  const tpSelf       = zh ? 'I personally receive all cash payments from the company.'
+                           + '<br><span style="color:#bfdbfe">本人亲自从公司收取所有现金款项。</span>'
+                     : es ? 'I personally receive all cash payments from the company.'
+                           + '<br><span style="color:#bfdbfe">Yo personalmente recibo todos los pagos en efectivo de la empresa.</span>'
+                     :      'I personally receive all cash payments from the company.';
   const sRecipSig    = zh ? 'RECIPIENT SIGNATURE 收款人签名' : es ? 'RECIPIENT SIGNATURE / Firma del Destinatario' : 'RECIPIENT SIGNATURE';
   const sConfirmA    = zh ? 'I confirm I personally received the cash payment from the company.'
                            + '<br><span style="color:#1e40af">我确认本人已亲自从公司收取了现金款项。</span>'
@@ -6190,11 +6163,11 @@ function _buildCashReceiptForm(lang) {
   const zoneBTitle   = zh ? 'OPTION B — 委托第三方代收 / Third Party Received on My Behalf'
                      : es ? 'OPTION B — Third Party Received on My Behalf / Un Tercero Recibió en Mi Nombre'
                      :      'OPTION B — Third Party Received on My Behalf';
-  const tpThird      = zh ? 'I am authorizing a third party to receive this cash payment on my behalf.'
-                           + '<br><span style="color:#6ee7b7">我委托第三方代表本人收取此现金款项。</span>'
-                     : es ? 'I am authorizing a third party to receive this cash payment on my behalf.'
-                           + '<br><span style="color:#6ee7b7">Estoy autorizando a un tercero a recibir este pago en efectivo en mi nombre.</span>'
-                     :      'I am authorizing a third party to receive this cash payment on my behalf.';
+  const tpThird      = zh ? 'I am authorizing a third party to receive all cash payments on my behalf.'
+                           + '<br><span style="color:#6ee7b7">我委托第三方代表本人收取所有现金款项。</span>'
+                     : es ? 'I am authorizing a third party to receive all cash payments on my behalf.'
+                           + '<br><span style="color:#6ee7b7">Estoy autorizando a un tercero a recibir todos los pagos en efectivo en mi nombre.</span>'
+                     :      'I am authorizing a third party to receive all cash payments on my behalf.';
   const sTPName      = zh ? 'Third Party Name &nbsp;<span style="font-weight:400;color:#555">第三方姓名</span>'
                      : es ? 'Third Party Name &nbsp;<span style="font-weight:400;color:#555">Nombre del Tercero</span>'
                      :      'Third Party Name';
@@ -6229,9 +6202,9 @@ function _buildCashReceiptForm(lang) {
   const sDateLbl     = zh ? 'Date 日期:' : es ? 'Date / Fecha:' : 'Date:';
   const sPrintedLbl2 = zh ? 'Printed Name 正楷姓名:' : es ? 'Printed Name / Nombre en Letra de Molde:' : 'Printed Name:';
 
-  const sFooter      = zh ? `${companyName} — Cash Payment Receipt / 现金付款签收表 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质。`
-                     : es ? `${companyName} — Cash Payment Receipt / Recibo de Pago en Efectivo — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. Este recibo solo reconoce el pago y no altera ninguna obligación fiscal ni el estado de contratista independiente.`
-                     :      `${companyName} — Cash Payment Receipt — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status.`;
+  const sFooter      = zh ? `${companyName} — Cash Payment Authorization / 现金收款授权表 — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认付款方式，不改变任何税务申报义务或承包关系性质。`
+                     : es ? `${companyName} — Cash Payment Authorization / Autorización de Pago en Efectivo — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para confirmar el método de pago y no altera ninguna obligación fiscal ni el estado de contratista independiente.`
+                     :      `${companyName} — Cash Payment Authorization — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status.`;
 
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
@@ -6243,27 +6216,7 @@ function _buildCashReceiptForm(lang) {
   ${sIntro}
 </div>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">${s1Title}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr>
-    <td style="${c}width:50%"><b>${sRecipName}</b><br><text-field name="cash_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>${sPayDate}</b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
-  </tr>
-  <tr>
-    <td style="${c}" colspan="2"><b>${sMethod}</b><br><div style="margin-top:3px;font-weight:700">${sMethodVal}</div></td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">${s2Title}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr><td style="${c}" colspan="2"><b>${sDescLabel}</b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
-  <tr>
-    <td style="${c}width:50%"><b>${sPeriodLabel}</b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
-    <td style="${c}width:50%"><b>${sRefLabel}</b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:12px 0 8px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">${s3Title}</div>
+<div style="font-weight:700;margin:12px 0 8px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">${s1Title}</div>
 
 <!-- Zone A — blue -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
@@ -19865,7 +19818,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
 //
 // TEMPLATE_REGEN_VERSION: bump this number to force a one-time regen of ALL templates on next startup.
-const TEMPLATE_REGEN_VERSION = 7;
+const TEMPLATE_REGEN_VERSION = 8;
 
 async function autoRegenerateTemplatesForCompanyName() {
   if (!dsealEnabled()) return;
