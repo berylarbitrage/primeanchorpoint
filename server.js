@@ -4513,6 +4513,8 @@ function _buildACHAuthForm(lang) {
 
   // Third-party recipient section
   const s3 = L('2. PAYMENT RECIPIENT', '收款方式', 'TIPO DE BENEFICIARIO');
+  const zoneATitle = zh ? 'OPTION A — 直接收款 / Direct Receipt' : es ? 'OPTION A — DIRECT DEPOSIT TO MY OWN ACCOUNT' : 'OPTION A — DIRECT DEPOSIT TO MY OWN ACCOUNT';
+  const zoneBTitle = zh ? 'OPTION B — 委托第三方代收 / Third-Party Authorization' : es ? 'OPTION B — THIRD-PARTY AUTHORIZATION' : 'OPTION B — THIRD-PARTY AUTHORIZATION';
   const tpSelf = zh ? 'I am receiving directly into my own account. 本人直接收款至本人账户。'
     : es ? 'I am receiving directly into my own account. / Recibiré los fondos directamente en mi propia cuenta.'
     : 'I am receiving directly into my own account.';
@@ -4600,16 +4602,19 @@ function _buildACHAuthForm(lang) {
 </table>
 
 <!-- 2. PAYMENT RECIPIENT -->
-<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 7px;color:#1e3a8a">${s3}</div>
-<div style="margin-bottom:16px">
+<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 10px;color:#1e3a8a">${s3}</div>
 
-  <!-- Option A: Self — bank details nested inside -->
-  <div style="border:1.5px solid #bfdbfe;border-radius:7px;padding:9px 12px;margin-bottom:6px;background:#f8faff">
-    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:8px">
-      <checkbox-field name="ach_recipient_self" role="First Party" style="width:14px;height:14px;margin-top:2px;flex-shrink:0"></checkbox-field>
-      <div style="font-weight:700;font-size:8.5pt;color:#1e40af">${tpSelf}</div>
-    </label>
-    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;overflow:hidden">
+<!-- Zone A: Self / Direct -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+    <checkbox-field name="ach_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
+      <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
+    </div>
+  </label>
+  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;overflow:hidden;margin-bottom:10px">
       <div style="font-size:7.5pt;font-weight:700;color:#1e40af;padding:5px 10px;background:#dbeafe;border-bottom:1px solid #bfdbfe">${s2}</div>
       <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
         <tr>
@@ -4642,7 +4647,7 @@ function _buildACHAuthForm(lang) {
       </table>
       <div style="font-size:7pt;color:#6b7280;font-style:italic;padding:5px 10px;border-top:1px solid #e2e8f0">${ownershipNote}</div>
     </div>
-    <div style="margin-top:8px;background:#fff;border:1px solid #bfdbfe;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;padding:9px 12px">
       <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sPayeeSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
       <text-field name="ach_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
@@ -4656,14 +4661,19 @@ function _buildACHAuthForm(lang) {
       </label>
     </div>
   </div>
+</div>
 
-  <!-- Option B: Third Party -->
-  <div style="border:1.5px solid #6ee7b7;border-radius:7px;padding:9px 12px;background:#f0fdf4">
-    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:8px">
-      <checkbox-field name="ach_recipient_third_party" role="First Party" style="width:14px;height:14px;margin-top:2px;flex-shrink:0"></checkbox-field>
-      <div style="font-weight:700;font-size:8.5pt;color:#065f46">${tpThird}</div>
-    </label>
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px">
+<!-- Zone B: Third Party -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+    <checkbox-field name="ach_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
+      <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
+    </div>
+  </label>
+  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
       <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
       <table style="width:100%;border-collapse:collapse">
         <tr>
@@ -4685,7 +4695,7 @@ function _buildACHAuthForm(lang) {
       </table>
       <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
     </div>
-    <div style="margin-top:8px;background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
       <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
       <text-field name="ach_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
