@@ -4499,8 +4499,9 @@ function _buildACHAuthForm(lang) {
   // Signature labels
   const sSigTitle = L('SIGNATURES', '签名', 'FIRMAS');
   const sPayeeSig = L('PAYEE SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
-  const sCompany = L('COMPANY APPROVAL', '公司审批', 'APROBACIÓN DE LA EMPRESA');
+  const sCompany = L('FOR INTERNAL USE ONLY — COMPANY VERIFICATION', '仅供公司内部使用 — 公司核验', 'SOLO PARA USO INTERNO — VERIFICACIÓN DE LA EMPRESA');
   const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en letra de molde');
+  const lVerifiedBy = L('Verified By', '核验人', 'Verificado por');
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
 
@@ -4563,9 +4564,9 @@ function _buildACHAuthForm(lang) {
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
       <date-field name="ach_date1" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
     </td>
-    <td style="width:50%;padding:7px 8px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${sCompany}</div>
-      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
+    <td style="width:50%;padding:7px 8px;vertical-align:top;background:#f9fafb">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#555">${sCompany}</div>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lVerifiedBy}:</div>
       <text-field name="ach_co_printed_name" role="Second Party" style="${w};margin-bottom:5px"></text-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
       <signature-field name="ach_sig2" role="Second Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
@@ -4706,9 +4707,9 @@ function _buildWireAuthForm(lang) {
     : `${companyName} is not responsible for delays, rejection, misdirection, or additional fees resulting from inaccurate, incomplete, or outdated banking information provided by the beneficiary.`;
 
   const s5ben = L('BENEFICIARY SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
-  const s5co  = L('COMPANY APPROVAL', '公司审批', 'APROBACIÓN DE LA EMPRESA');
+  const s5co  = L('FOR INTERNAL USE ONLY — COMPANY VERIFICATION', '仅供公司内部使用 — 公司核验', 'SOLO PARA USO INTERNO — VERIFICACIÓN DE LA EMPRESA');
   const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en letra de molde');
-  const lTitle       = L('Title', '职位', 'Cargo');
+  const lVerifiedBy  = L('Verified By', '核验人', 'Verificado por');
   const lSig         = L('Signature', '签名', 'Firma');
   const lDate        = L('Date', '日期', 'Fecha');
 
@@ -4822,12 +4823,10 @@ function _buildWireAuthForm(lang) {
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
       <date-field name="wire_date" role="Contractor" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
     </td>
-    <td style="width:50%;padding:7px 8px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">${s5co}</div>
-      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lPrintedName}:</div>
+    <td style="width:50%;padding:7px 8px;vertical-align:top;background:#f9fafb">
+      <div style="font-size:7.5pt;font-weight:700;margin-bottom:4px;color:#555">${s5co}</div>
+      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lVerifiedBy}:</div>
       <text-field name="wire_co_printed_name" role="First Party" style="${w};margin-bottom:5px"></text-field>
-      <div style="font-size:7pt;font-weight:600;margin-bottom:1px">${lTitle}:</div>
-      <text-field name="wire_co_title" role="First Party" style="${w};margin-bottom:5px"></text-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lSig}:</div>
       <signature-field name="wire_co_sig" role="First Party" style="width:100%;height:46px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       <div style="font-size:7pt;font-weight:600;margin:4px 0 1px">${lDate}:</div>
