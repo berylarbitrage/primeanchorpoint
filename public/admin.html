@@ -2880,7 +2880,11 @@ tr:hover td{background:var(--sky-light)}
           <button onclick="dsShowImportByIdModal()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #e9d5ff;background:#faf5ff;color:#7e22ce;font-size:.8rem;font-weight:600;cursor:pointer">+ 按 ID 导入</button>
           <button onclick="dsRunDebug()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #fed7aa;background:#fff7ed;color:#c2410c;font-size:.8rem;font-weight:600;cursor:pointer">🔎 诊断</button>
           <button id="ds-check-updates-btn" onclick="dsCheckUpdates()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:.8rem;font-weight:600;cursor:pointer">🔍 检查可用更新</button>
+          <button id="ds-regen-ach-btn" onclick="dsForceRegenACHWire()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #fde68a;background:#fffbeb;color:#92400e;font-size:.8rem;font-weight:600;cursor:pointer">↺ 重新生成 ACH/Wire</button>
         </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;padding:.4rem 0 .2rem">
+        <button id="ds-show-hidden-btn" onclick="dsToggleShowHidden()" style="padding:.25rem .7rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.78rem;cursor:pointer">显示已隐藏</button>
       </div>
       <div id="ds-my-templates-wrap">
         <div style="text-align:center;padding:1.5rem;color:#94a3b8;font-size:.9rem">正在加载…</div>
@@ -23619,6 +23623,7 @@ let _dsMyTemplates = [];
 let _dsFileData = null;
 let _dsFilterLang = '';
 let _dsFilterCat = '';
+let _dsShowHidden = false;
 
 async function loadDocusealTemplatesPage() {
   await Promise.all([_dsLoadConfig(), _dsLoadMyTemplates()]);
@@ -23672,12 +23677,52 @@ async function _dsTestConnection() {
 async function _dsLoadMyTemplates() {
   const wrap = document.getElementById('ds-my-templates-wrap');
   try {
-    _dsMyTemplates = await api('/admin/docuseal/my-templates');
+    const qs = _dsShowHidden ? '?show_hidden=1' : '';
+    _dsMyTemplates = await api('/admin/docuseal/my-templates' + qs);
     _dsRenderMyTemplates();
     _dsRefreshSelects();
   } catch(e) {
     wrap.innerHTML = `<div style="text-align:center;padding:1.5rem;color:#ef4444;font-size:.88rem">${_dsEsc(e.message)}</div>`;
   }
+}
+
+async function dsForceRegenACHWire() {
+  const btn = document.getElementById('ds-regen-ach-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ 重新生成中…'; }
+  try {
+    const types = ['ach_auth','ach_auth_en','ach_auth_es','wire_auth','wire_auth_en','wire_auth_es'];
+    const r = await api('/admin/docuseal/create-all-templates', { method: 'POST', body: JSON.stringify({ types, force: true, override_confirmed: true }) });
+    const done = (r.results || []).filter(x => !x.skipped && !x.error).length;
+    const errs = (r.results || []).filter(x => x.error).length;
+    if (errs) showToast(`完成，${done} 个成功，${errs} 个失败`, 'error', 5000);
+    else showToast(`✅ ACH/Wire 模板已重新生成（${done} 个）`, 'success', 4000);
+    await _dsLoadMyTemplates();
+  } catch(e) {
+    showToast('重新生成失败: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↺ 重新生成 ACH/Wire'; }
+  }
+}
+
+async function dsToggleShowHidden() {
+  _dsShowHidden = !_dsShowHidden;
+  const btn = document.getElementById('ds-show-hidden-btn');
+  if (btn) btn.textContent = _dsShowHidden ? '隐藏已隐藏' : '显示已隐藏';
+  await _dsLoadMyTemplates();
+}
+
+async function dsHideTemplate(id) {
+  try {
+    await api(`/admin/docuseal/my-templates/${id}/hide`, { method: 'PUT' });
+    await _dsLoadMyTemplates();
+  } catch(e) { showToast('操作失败: ' + e.message, 'error'); }
+}
+
+async function dsUnhideTemplate(id) {
+  try {
+    await api(`/admin/docuseal/my-templates/${id}/unhide`, { method: 'PUT' });
+    await _dsLoadMyTemplates();
+  } catch(e) { showToast('操作失败: ' + e.message, 'error'); }
 }
 
 const _DS_SELECTORS = [
@@ -23874,16 +23919,23 @@ function _dsRenderMyTemplates() {
     }).filter(Boolean).join('');
     const langSubtitle = tLangs.length ? ` · 语言: ${tLangs.join('+')}` : '';
     const isConfirmed = !!t.confirmed;
+    const isHidden = !!t.hidden;
     const confirmBtnStyle = isConfirmed
       ? 'padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #86efac;background:#f0fdf4;color:#16a34a;white-space:nowrap'
       : 'padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#6b7280;white-space:nowrap';
     const confirmBadge = isConfirmed ? ' <span style="display:inline-block;background:#dcfce7;color:#16a34a;border-radius:4px;padding:1px 6px;font-size:.72rem;font-weight:700;margin-left:.3rem;border:1px solid #86efac">✓ 已确定</span>' : '';
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9${isConfirmed ? ';background:#fafffe' : ''}">
+    const hiddenBadge = isHidden ? ' <span style="display:inline-block;background:#f1f5f9;color:#94a3b8;border-radius:4px;padding:1px 6px;font-size:.72rem;font-weight:700;margin-left:.3rem;border:1px solid #e2e8f0">已隐藏</span>' : '';
+    const hideBtn = isHidden
+      ? `<button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #d1fae5;background:#f0fdf4;color:#15803d;white-space:nowrap" onclick="dsUnhideTemplate(${t.id})">恢复显示</button>`
+      : (!isConfirmed ? `<button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#f8fafc;color:#94a3b8;white-space:nowrap" onclick="dsHideTemplate(${t.id})">隐藏</button>` : '');
+    const rowBg = isHidden ? ';background:#f8fafc;opacity:.7' : (isConfirmed ? ';background:#fafffe' : '');
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9${rowBg}">
       <div>
-        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}${langBadges}${confirmBadge}
+        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}${langBadges}${confirmBadge}${hiddenBadge}
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${(_CAT_BADGE[t.category]||{}).label||t.category||'未分类'}${langSubtitle} · 上传于 ${t.created_at ? (()=>{const d=new Date(t.created_at.replace(' ','T')+'Z');return d.toLocaleString('zh-CN',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\//g,'-')+' CDT';})() : '—'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+        ${hideBtn}
         <button style="${confirmBtnStyle}" onclick="dsToggleConfirm(${t.id})">${isConfirmed ? '✓ 已确定' : '待确定'}</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
@@ -24198,14 +24250,14 @@ function dsChangeCategoryModal(dsTemplateId) {
       { cat: 'w7_es',           label: 'W-7 (ES)',       bg:'#dcfce7', color:'#15803d' },
     ]},
     { title: '付款授权', items: [
-      { cat: 'ach_auth',       label: 'ACH',    bg:'#f0f9ff', color:'#0c4a6e' },
-      { cat: 'wire_auth',      label: '电汇',   bg:'#fffbeb', color:'#78350f' },
-      { cat: 'check_instruction', label: '支票', bg:'#fafaf9', color:'#292524' },
-      { cat: 'zelle_auth',     label: 'Zelle', bg:'#fdf4ff', color:'#86198f' },
-      { cat: 'third_party_pay',label: '第三方平台', bg:'#ecfdf5', color:'#065f46' },
-      { cat: 'cash_receipt',   label: '现金',   bg:'#fff1f2', color:'#9f1239' },
+      { cat: 'ach_auth',          label: 'ACH',    bg:'#f0f9ff', color:'#0c4a6e' },
+      { cat: 'wire_auth',         label: '电汇',   bg:'#fffbeb', color:'#78350f' },
+      { cat: 'check_instruction', label: '支票',   bg:'#fafaf9', color:'#292524' },
+      { cat: 'zelle_auth',        label: 'Zelle',  bg:'#fdf4ff', color:'#86198f' },
+      { cat: 'cash_receipt',      label: '现金',   bg:'#fff1f2', color:'#9f1239' },
     ]},
     { title: '第三方收款', items: [
+      { cat: 'third_party_pay', label: '第三方平台', bg:'#ecfdf5', color:'#065f46' },
       { cat: 'ach_tp_auth',    label: 'ACH',    bg:'#e0f2fe', color:'#075985' },
       { cat: 'wire_tp_auth',   label: '电汇',   bg:'#fef3c7', color:'#92400e' },
       { cat: 'check_tp_auth',  label: '支票',   bg:'#f5f5f4', color:'#44403c' },
