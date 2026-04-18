@@ -4462,7 +4462,6 @@ function _buildACHAuthForm(lang) {
     ? 'Payee / Account Holder Full Legal Name / Nombre Legal Completo del Beneficiario / Titular de la Cuenta'
     : 'Payee / Account Holder Full Legal Name';
   const lEmail = L('Email', '电邮', 'Correo Electrónico');
-  const lAddress = L('Address', '地址', 'Dirección');
 
   const s2 = L('2. BANK ACCOUNT DETAILS', '银行账户信息', 'DATOS DE LA CUENTA BANCARIA');
   const lBankName = L('Bank Name', '银行名称', 'Nombre del Banco');
@@ -4481,8 +4480,28 @@ function _buildACHAuthForm(lang) {
     ? 'The account must be owned by the payee or an authorized entity of the payee. La cuenta debe pertenecer al beneficiario o a una entidad autorizada del beneficiario.'
     : 'The account must be owned by the payee or an authorized entity of the payee.';
 
+  // Third-party recipient section
+  const s3 = L('3. PAYMENT RECIPIENT', '收款方式', 'TIPO DE BENEFICIARIO');
+  const tpSelf = zh ? 'I am receiving directly into my own account. 本人直接收款至本人账户。'
+    : es ? 'I am receiving directly into my own account. / Recibiré los fondos directamente en mi propia cuenta.'
+    : 'I am receiving directly into my own account.';
+  const tpThird = zh ? 'I am authorizing a third party to receive on my behalf (third-party payee / 代收). 本人授权第三方代为收款。'
+    : es ? 'I am authorizing a third party to receive on my behalf. / Autorizo a un tercero a recibir fondos en mi nombre.'
+    : 'I am authorizing a third party to receive on my behalf.';
+  const tpHeader = zh ? 'If third-party payee, complete below / 如代收，请填写以下信息：'
+    : es ? 'If third-party payee, complete below / Si es tercero, complete lo siguiente:'
+    : 'If third-party payee, complete below:';
+  const tpNameLabel = zh ? 'Third Party Full Legal Name 第三方法定全名' : es ? 'Third Party Full Legal Name / Nombre Legal Completo del Tercero' : 'Third Party Full Legal Name';
+  const tpRelLabel = zh ? 'Relationship to Payee 与收款人关系（如：配偶、子女、雇主等）' : es ? 'Relationship to Payee / Relación con el Beneficiario' : 'Relationship to Payee (e.g. spouse, employer, agent)';
+  const tpContactLabel = zh ? 'Third Party Phone / Email 第三方电话 / 电邮' : es ? 'Third Party Phone / Email / Teléfono / Correo del Tercero' : 'Third Party Phone / Email';
+  const tpAuth = zh
+    ? `I authorize the above-named third party to receive ACH payment(s) on my behalf from ${companyName}. ${companyName} will direct payment to the bank account specified in this form, which is controlled by or associated with the above third party. I assume full responsibility for any arrangements made with the above third party. 本人特此授权上述第三方代表本人从 ${companyName} 接收 ACH 付款。${companyName} 将按本表所填写的银行账户发起付款，该账户由上述第三方控制或关联。本人自行承担与上述第三方之间所作安排的全部责任。`
+    : es
+    ? `I authorize the above-named third party to receive ACH payment(s) on my behalf from ${companyName}. ${companyName} will direct payment to the bank account specified in this form. I assume full responsibility for any arrangements made with the above third party. / Autorizo al tercero indicado a recibir pagos ACH en mi nombre de ${companyName}. Asumo plena responsabilidad por los acuerdos realizados con dicho tercero.`
+    : `I authorize the above-named third party to receive ACH payment(s) on my behalf from ${companyName}. ${companyName} will direct payment to the bank account specified in this form, which is controlled by or associated with the above third party. I assume full responsibility for any arrangements made with the above third party.`;
+
   // Authorization section
-  const s3 = L('3. AUTHORIZATION', '授权', 'AUTORIZACIÓN');
+  const s4 = L('4. AUTHORIZATION', '授权', 'AUTORIZACIÓN');
   const auth1 = zh
     ? `I agree that ACH transactions I authorize comply with all applicable U.S. law. I understand that this authorization may be revoked by notifying ${companyName} in writing. 本人同意所授权的 ACH 交易符合所有适用的美国法律。本人理解可通过书面通知 ${companyName} 撤销本授权。`
     : es
@@ -4519,11 +4538,8 @@ function _buildACHAuthForm(lang) {
 <div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
   <tr>
-    <td style="${c}width:50%"><b>${lPayeeName}</b><br><text-field name="ach_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>${lEmail}</b><br><text-field name="ach_email" role="First Party" style="${w}"></text-field></td>
-  </tr>
-  <tr>
-    <td colspan="2" style="${c}"><b>${lAddress}</b><br><text-field name="ach_address" role="First Party" style="${w}"></text-field></td>
+    <td style="${c}width:55%"><b>${lPayeeName}</b><br><text-field name="ach_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:45%"><b>${lEmail}</b><br><text-field name="ach_email" role="First Party" style="${w}"></text-field></td>
   </tr>
 </table>
 
@@ -4549,8 +4565,35 @@ function _buildACHAuthForm(lang) {
 </table>
 <div style="font-size:7.5pt;color:#555;font-style:italic;margin-bottom:8px;padding:0 6px">${ownershipNote}</div>
 
+<div style="border:1px solid #e2e8f0;border-radius:4px;padding:8px 10px;margin-top:8px;font-size:8.5pt">
+  <div style="font-weight:700;margin-bottom:6px;font-size:9pt">${s3}</div>
+  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+    <label style="display:flex;align-items:flex-start;gap:6px">
+      <checkbox-field name="ach_recipient_self" role="First Party" style="width:13px;height:13px;margin-top:2px;flex-shrink:0"></checkbox-field>
+      <span style="font-size:8pt">${tpSelf}</span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:6px">
+      <checkbox-field name="ach_recipient_third_party" role="First Party" style="width:13px;height:13px;margin-top:2px;flex-shrink:0"></checkbox-field>
+      <span style="font-size:8pt">${tpThird}</span>
+    </label>
+  </div>
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:3px;padding:7px 8px;font-size:8pt">
+    <div style="font-weight:600;margin-bottom:5px;color:#475569">${tpHeader}</div>
+    <table style="width:100%;border-collapse:collapse">
+      <tr>
+        <td style="${c}width:50%"><b>${tpNameLabel}</b><br><text-field name="ach_tp_name" role="First Party" style="${w}"></text-field></td>
+        <td style="${c}width:50%"><b>${tpRelLabel}</b><br><text-field name="ach_tp_relationship" role="First Party" style="${w}"></text-field></td>
+      </tr>
+      <tr>
+        <td colspan="2" style="${c}"><b>${tpContactLabel}</b><br><text-field name="ach_tp_contact" role="First Party" style="${w}"></text-field></td>
+      </tr>
+    </table>
+    <div style="margin-top:6px;font-size:7.5pt;color:#374151;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:5px">${tpAuth}</div>
+  </div>
+</div>
+
 <div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:8px;font-size:7.5pt;line-height:1.6">
-  <div style="font-weight:700;margin-bottom:4px;font-size:9pt">${s3}</div>
+  <div style="font-weight:700;margin-bottom:4px;font-size:9pt">${s4}</div>
   <div style="margin-bottom:3px">① ${auth1}</div>
   <div style="margin-bottom:3px">② ${auth2}</div>
   <div>③ ${auth3}</div>
