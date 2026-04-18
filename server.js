@@ -5981,8 +5981,6 @@ function _buildThirdPartyPayAuthForm(lang, method) {
       const lSwift = L('SWIFT / BIC Code (if applicable)', 'SWIFT / BIC 代码（如适用）', 'Código SWIFT / BIC (si aplica)');
       accountFieldsHtml += `\n  <tr><td style="${c}width:100%" colspan="2"><b>${lSwift}</b><br><text-field name="tp_swift_code" role="First Party" style="${w}"></text-field></td></tr>`;
     }
-  } else if (method === 'check') {
-    // Check is handed directly — no mailing address needed
   } else if (method === 'paypal') {
     const lPlatform = L('Platform', '平台', 'Plataforma');
     const lUsername = L('Your Username, Email, or Phone Number on the Platform', '您在该平台的用户名、邮箱或手机号', 'Su Nombre de Usuario, Correo Electrónico o Teléfono en la Plataforma');
@@ -6079,10 +6077,168 @@ function generateAchTPAuthTemplate_ES() { return _buildThirdPartyPayAuthForm('en
 function generateWireTPAuthTemplate()    { return _buildThirdPartyPayAuthForm('zh-en', 'wire'); }
 function generateWireTPAuthTemplate_EN() { return _buildThirdPartyPayAuthForm('en', 'wire'); }
 function generateWireTPAuthTemplate_ES() { return _buildThirdPartyPayAuthForm('en-es', 'wire'); }
-// Check third-party auth
-function generateCheckTPAuthTemplate()    { return _buildThirdPartyPayAuthForm('zh-en', 'check'); }
-function generateCheckTPAuthTemplate_EN() { return _buildThirdPartyPayAuthForm('en', 'check'); }
-function generateCheckTPAuthTemplate_ES() { return _buildThirdPartyPayAuthForm('en-es', 'check'); }
+// Check third-party auth — third party's info on check; either worker or third party can pick up; receipt signature required
+function _buildCheckTpAuthForm(lang) {
+  const companyName = getCompanyLegalName();
+  const companyName2 = getCompanySignerName();
+  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const w = `${f}width:100%;min-height:22px;`;
+  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const zh = lang === 'zh-en';
+  const es = lang === 'en-es';
+  const L = (en, zhTxt, esTxt) => {
+    if (zh && zhTxt) return `${en} ${zhTxt}`;
+    if (es && esTxt) return `${en} / ${esTxt}`;
+    return en;
+  };
+
+  const formTitle = 'THIRD-PARTY CHECK PAYMENT AUTHORIZATION';
+  const subtitle = zh
+    ? `第三方支票收款授权书 — ${companyName2}`
+    : es ? `Autorización de Pago con Cheque a Terceros — ${companyName2}`
+    : `Third-Party Check Payment Authorization — ${companyName2}`;
+
+  const intro = zh
+    ? `This form must be completed and signed by the third party who has been designated to receive Check payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName2} via Check. The check may be picked up by the authorizing individual or by the third party; whoever picks up the check must sign the Receipt Confirmation section.\n\n本表格须由被指定代为接收支票付款的第三方填写并签署。签署本表格即表示您确认已获得下方所列人员的授权，通过支票接收来自 ${companyName2} 的付款。支票可由委托人或第三方领取；领取人须在签收确认处签名。`
+    : es
+    ? `This form must be completed and signed by the third party who has been designated to receive Check payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName2} via Check. The check may be picked up by the authorizing individual or by the third party; whoever picks up the check must sign the Receipt Confirmation section.\n\nEste formulario debe ser completado y firmado por el tercero designado para recibir pagos con Cheque en nombre de la persona indicada. El cheque puede ser recogido por la persona que autoriza o por el tercero; quien lo recoja debe firmar la sección de Confirmación de Recibo.`
+    : `This form must be completed and signed by the third party who has been designated to receive Check payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName2} via Check. The check may be picked up by the authorizing individual or by the third party; whoever picks up the check must sign the Receipt Confirmation section.`;
+
+  const s1 = L('1. AUTHORIZING INDIVIDUAL', '授权人信息', 'PERSONA QUE AUTORIZA');
+  const lAuthName = L('Full Legal Name of the Person Who Authorized You', '授权人法定全名', 'Nombre Legal Completo de la Persona que lo Autorizó');
+
+  const s2 = L('2. YOUR INFORMATION (THIRD PARTY)', '您的信息（第三方）', 'SU INFORMACIÓN (TERCERO)');
+  const lYourName = L('Your Full Legal Name', '您的法定全名', 'Su Nombre Legal Completo');
+  const lRelationship = L('Your Relationship to the Authorizing Individual', '您与授权人的关系', 'Su Relación con la Persona que Autoriza');
+
+  const s3 = zh ? '3. CHECK PICKUP DESIGNATION 支票领取方式' : es ? '3. CHECK PICKUP DESIGNATION / DESIGNACIÓN DE RECOGIDA' : '3. CHECK PICKUP DESIGNATION';
+  const pickupNote = zh
+    ? 'Please indicate who will pick up the check (check one): 请选择谁将领取支票（勾选一项）：'
+    : es
+    ? 'Please indicate who will pick up the check (check one): / Indique quién recogerá el cheque (marque uno):'
+    : 'Please indicate who will pick up the check (check one):';
+  const pickupWorker = zh
+    ? 'The authorizing individual (worker) will pick up the check. 委托人（工作人员）亲自领取支票。'
+    : es
+    ? 'The authorizing individual (worker) will pick up the check. / La persona que autoriza recogerá el cheque.'
+    : 'The authorizing individual (worker) will pick up the check.';
+  const pickupTP = zh
+    ? 'I (the third party) will pick up the check. 本人（第三方）亲自领取支票。'
+    : es
+    ? 'I (the third party) will pick up the check. / Yo (el tercero) recogeré el cheque.'
+    : 'I (the third party) will pick up the check.';
+
+  const s4 = L('4. CERTIFICATION', '声明确认', 'CERTIFICACIÓN');
+  const certText = zh
+    ? `I, the undersigned, certify that:\n\n(a) I have been duly authorized by the individual named above to receive Check payments from ${companyName2} on their behalf.\n(b) The information I have provided is accurate.\n(c) I will promptly forward all payments received to the authorizing individual, unless otherwise agreed between us.\n(d) I agree to notify ${companyName2} in writing of any changes before the next payment is sent.\n(e) I understand that ${companyName2} is not responsible for delays or other issues caused by incorrect information.\n\n本人（下方签名人）声明并确认：\n\n(a) 本人已获得上方所列人员的正式授权，代其接收来自 ${companyName2} 的支票付款。\n(b) 本人提供的信息准确无误。\n(c) 本人将及时将收到的所有付款转交授权人，除非双方另有约定。\n(d) 如信息发生任何变化，本人同意在下次付款前以书面形式通知 ${companyName2}。\n(e) 本人理解 ${companyName2} 不对因错误信息造成的延迟或其他问题承担责任。`
+    : es
+    ? `I, the undersigned, certify that:\n\n(a) I have been duly authorized by the individual named above to receive Check payments from ${companyName2} on their behalf.\n(b) The information I have provided is accurate.\n(c) I will promptly forward all payments received to the authorizing individual, unless otherwise agreed between us.\n(d) I agree to notify ${companyName2} in writing of any changes before the next payment is sent.\n(e) I understand that ${companyName2} is not responsible for delays or other issues caused by incorrect information.\n\nYo, el abajo firmante, certifico que:\n\n(a) He sido debidamente autorizado por la persona mencionada para recibir pagos con Cheque de ${companyName2} en su nombre.\n(b) La información que he proporcionado es correcta.\n(c) Transferiré oportunamente todos los pagos recibidos a la persona que me autorizó.\n(d) Acepto notificar a ${companyName2} por escrito sobre cualquier cambio antes del próximo pago.\n(e) Entiendo que ${companyName2} no es responsable de retrasos u otros problemas causados por información incorrecta.`
+    : `I, the undersigned, certify that:\n\n(a) I have been duly authorized by the individual named above to receive Check payments from ${companyName2} on their behalf.\n(b) The information I have provided is accurate.\n(c) I will promptly forward all payments received to the authorizing individual, unless otherwise agreed between us.\n(d) I agree to notify ${companyName2} in writing of any changes before the next payment is sent.\n(e) I understand that ${companyName2} is not responsible for delays or other issues caused by incorrect information.`;
+
+  const disclaimer = zh
+    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认收款方式，不改变任何税务申报义务或承包关系性质。`
+    : es
+    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para fines de confirmación del método de pago.`
+    : `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status.`;
+
+  const sigHeader = L('THIRD-PARTY SIGNATURE', '第三方签名', 'FIRMA DEL TERCERO');
+  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en Letra de Imprenta');
+  const lSig = L('Signature', '签名', 'Firma');
+  const lDate = L('Date', '日期', 'Fecha');
+
+  const receiptHeader = zh ? '5. CHECK RECEIPT CONFIRMATION 支票签收确认' : es ? '5. CHECK RECEIPT CONFIRMATION / CONFIRMACIÓN DE RECIBO' : '5. CHECK RECEIPT CONFIRMATION';
+  const receiptNote = zh
+    ? 'Whoever picks up the check (the authorizing individual or the third party) must sign below to confirm receipt. 无论是委托人还是第三方领取支票，领取人须在下方签名确认收到。'
+    : es
+    ? 'Whoever picks up the check (the authorizing individual or the third party) must sign below to confirm receipt. / Quien recoja el cheque debe firmar a continuación para confirmar el recibo.'
+    : 'Whoever picks up the check (the authorizing individual or the third party) must sign below to confirm receipt.';
+  const lReceivedBy = L('Received By (Printed Name)', '签收人姓名（正楷）', 'Recibido por (Nombre)');
+  const lConfirmReceipt = zh
+    ? 'I confirm I have received the check and the above information is correct. 本人确认已收到支票，以上信息准确无误。'
+    : es
+    ? 'I confirm I have received the check and the above information is correct. / Confirmo haber recibido el cheque y que la información es correcta.'
+    : 'I confirm I have received the check and the above information is correct.';
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
+  <div style="font-size:12pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
+</div>
+
+<p style="font-size:8.5pt;white-space:pre-line">${intro}</p>
+
+<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+  <tr><td style="${c}width:100%"><b>${lAuthName}</b><br><text-field name="authorizing_person_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
+</table>
+
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
+<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+  <tr>
+    <td style="${c}width:50%"><b>${lYourName}</b><br><text-field name="tp_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" required="true" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
+  </tr>
+</table>
+<div style="font-size:7pt;color:#c00;margin-top:3px">${L('Please verify this information is correct before signing. Payments sent to this account will be treated as valid payment.','请在签署前确认所填信息准确无误。按该信息付款后将视为已有效完成付款。','Verifique que esta información sea correcta antes de firmar. Los pagos enviados a esta cuenta se considerarán como pago válido.')}</div>
+
+<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s3}</div>
+<div style="font-size:8pt;margin-bottom:6px">${pickupNote}</div>
+<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;margin-bottom:8px">
+  <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+    <checkbox-field name="ck_pickup_worker" role="First Party" style="width:14px;height:14px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:8.5pt">${pickupWorker}</span>
+  </label>
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+    <checkbox-field name="ck_pickup_third_party" role="First Party" style="width:14px;height:14px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:8.5pt">${pickupTP}</span>
+  </label>
+</div>
+
+<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s4}</div>
+<div style="font-size:8pt;white-space:pre-line">${certText}</div>
+
+<p style="font-size:7.5pt;color:#666;margin-top:10px;font-style:italic">${disclaimer}</p>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
+  <b>${sigHeader}</b>
+  <table style="width:100%;margin-top:6px">
+    <tr><td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
+    <tr>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+    </tr>
+  </table>
+</div>
+
+<!-- Receipt Confirmation (orange) -->
+<div style="border-radius:8px;overflow:hidden;margin-top:14px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <div style="background:#c2410c;padding:10px 14px">
+    <div style="font-weight:800;font-size:9.5pt;color:#fff;letter-spacing:.3px">${receiptHeader}</div>
+    <div style="font-size:7.5pt;color:#fed7aa;margin-top:2px">${receiptNote}</div>
+  </div>
+  <div style="background:#fff7ed;padding:12px 14px;border:1.5px solid #fdba74;border-top:none;border-radius:0 0 8px 8px">
+    <table style="width:100%;font-size:8.5pt">
+      <tr><td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lReceivedBy}:</div><text-field name="ck_received_by" role="Contractor" required="true" style="${w}"></text-field></td></tr>
+      <tr>
+        <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="ck_receipt_sig" role="Contractor" style="width:100%;height:52px;display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></signature-field></td>
+        <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="ck_receipt_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></date-field></td>
+      </tr>
+    </table>
+    <label style="display:flex;align-items:flex-start;gap:6px;background:#ffedd5;border-radius:4px;padding:5px 7px;margin-top:8px">
+      <checkbox-field name="ck_receipt_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+      <span style="font-size:7pt;color:#c2410c;line-height:1.4">${lConfirmReceipt}</span>
+    </label>
+  </div>
+</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
+</div>`;
+}
+
+function generateCheckTPAuthTemplate()    { return _buildCheckTpAuthForm('zh-en'); }
+function generateCheckTPAuthTemplate_EN() { return _buildCheckTpAuthForm('en'); }
+function generateCheckTPAuthTemplate_ES() { return _buildCheckTpAuthForm('en-es'); }
 // Cash third-party auth
 function generateCashTPAuthTemplate()    { return _buildThirdPartyPayAuthForm('zh-en', 'cash'); }
 function generateCashTPAuthTemplate_EN() { return _buildThirdPartyPayAuthForm('en', 'cash'); }
