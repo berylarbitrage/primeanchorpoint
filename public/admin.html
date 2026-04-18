@@ -2873,7 +2873,12 @@ tr:hover td{background:var(--sky-light)}
           <option value="JA">JA</option>
           <option value="VI">VI</option>
         </select>
-        <button onclick="_dsFilterLang='';_dsFilterCat='';document.getElementById('ds-filter-lang').value='';document.getElementById('ds-filter-cat').value='';_dsRenderMyTemplates()" style="padding:.3rem .65rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.8rem;cursor:pointer">重置</button>
+        <select id="ds-sort-sel" onchange="_dsSort=this.value;_dsRenderMyTemplates()" style="border:1px solid #e2e8f0;border-radius:7px;padding:.3rem .65rem;font-size:.82rem;color:#334155;background:#fff;cursor:pointer;outline:none">
+          <option value="date_desc">上传时间 ↓</option>
+          <option value="name_asc">文件名 A→Z</option>
+          <option value="name_desc">文件名 Z→A</option>
+        </select>
+        <button onclick="_dsFilterLang='';_dsFilterCat='';_dsSort='date_desc';document.getElementById('ds-filter-lang').value='';document.getElementById('ds-filter-cat').value='';document.getElementById('ds-sort-sel').value='date_desc';_dsRenderMyTemplates()" style="padding:.3rem .65rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.8rem;cursor:pointer">重置</button>
         <span id="ds-filter-count" style="font-size:.78rem;color:#94a3b8;margin-left:.2rem"></span>
         <div style="margin-left:auto;display:flex;gap:.5rem">
           <button id="ds-sync-btn" onclick="dsSyncFromDocuSeal()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #d1fae5;background:#f0fdf4;color:#15803d;font-size:.8rem;font-weight:600;cursor:pointer">↓ 从 DocuSeal 同步</button>
@@ -23623,7 +23628,7 @@ let _dsMyTemplates = [];
 let _dsFileData = null;
 let _dsFilterLang = '';
 let _dsFilterCat = '';
-let _dsShowHidden = false;
+let _dsSort = 'date_desc'; // date_desc | name_asc | name_desc
 
 async function loadDocusealTemplatesPage() {
   await Promise.all([_dsLoadConfig(), _dsLoadMyTemplates()]);
@@ -23845,6 +23850,14 @@ function _dsRenderMyTemplates() {
       return langs.includes(_dsFilterLang);
     });
   }
+  // Apply sort
+  if (_dsSort === 'name_asc') {
+    filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+  } else if (_dsSort === 'name_desc') {
+    filtered = [...filtered].sort((a, b) => b.name.localeCompare(a.name));
+  }
+  // date_desc: server already returns newest-first
+
   const countEl = document.getElementById('ds-filter-count');
   if (countEl) {
     const isFiltered = _dsFilterLang || _dsFilterCat;
