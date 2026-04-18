@@ -2873,7 +2873,12 @@ tr:hover td{background:var(--sky-light)}
           <option value="JA">JA</option>
           <option value="VI">VI</option>
         </select>
-        <button onclick="_dsFilterLang='';_dsFilterCat='';document.getElementById('ds-filter-lang').value='';document.getElementById('ds-filter-cat').value='';_dsRenderMyTemplates()" style="padding:.3rem .65rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.8rem;cursor:pointer">重置</button>
+        <select id="ds-sort-sel" onchange="_dsSort=this.value;_dsRenderMyTemplates()" style="border:1px solid #e2e8f0;border-radius:7px;padding:.3rem .65rem;font-size:.82rem;color:#334155;background:#fff;cursor:pointer;outline:none">
+          <option value="date_desc">上传时间 ↓</option>
+          <option value="name_asc">文件名 A→Z</option>
+          <option value="name_desc">文件名 Z→A</option>
+        </select>
+        <button onclick="_dsFilterLang='';_dsFilterCat='';_dsSort='date_desc';document.getElementById('ds-filter-lang').value='';document.getElementById('ds-filter-cat').value='';document.getElementById('ds-sort-sel').value='date_desc';_dsRenderMyTemplates()" style="padding:.3rem .65rem;border-radius:7px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;font-size:.8rem;cursor:pointer">重置</button>
         <span id="ds-filter-count" style="font-size:.78rem;color:#94a3b8;margin-left:.2rem"></span>
         <div style="margin-left:auto;display:flex;gap:.5rem">
           <button id="ds-sync-btn" onclick="dsSyncFromDocuSeal()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #d1fae5;background:#f0fdf4;color:#15803d;font-size:.8rem;font-weight:600;cursor:pointer">↓ 从 DocuSeal 同步</button>
@@ -2881,6 +2886,7 @@ tr:hover td{background:var(--sky-light)}
           <button onclick="dsRunDebug()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #fed7aa;background:#fff7ed;color:#c2410c;font-size:.8rem;font-weight:600;cursor:pointer">🔎 诊断</button>
           <button id="ds-check-updates-btn" onclick="dsCheckUpdates()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:.8rem;font-weight:600;cursor:pointer">🔍 检查可用更新</button>
           <button id="ds-regen-ach-btn" onclick="dsForceRegenACHWire()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #fde68a;background:#fffbeb;color:#92400e;font-size:.8rem;font-weight:600;cursor:pointer">↺ 重新生成 ACH/Wire</button>
+          <button id="ds-regen-all-btn" onclick="dsForceRegenAll()" style="padding:.3rem .8rem;border-radius:7px;border:1px solid #a7f3d0;background:#f0fdf4;color:#065f46;font-size:.8rem;font-weight:600;cursor:pointer">↺ 重新生成全部付款表格</button>
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;padding:.4rem 0 .2rem">
@@ -23623,6 +23629,7 @@ let _dsMyTemplates = [];
 let _dsFileData = null;
 let _dsFilterLang = '';
 let _dsFilterCat = '';
+let _dsSort = 'date_desc'; // date_desc | name_asc | name_desc
 let _dsShowHidden = false;
 
 async function loadDocusealTemplatesPage() {
@@ -23701,6 +23708,30 @@ async function dsForceRegenACHWire() {
     showToast('重新生成失败: ' + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↺ 重新生成 ACH/Wire'; }
+  }
+}
+
+async function dsForceRegenAll() {
+  const btn = document.getElementById('ds-regen-all-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ 重新生成中…'; }
+  try {
+    const types = [
+      'ach_auth','ach_auth_en','ach_auth_es',
+      'wire_auth','wire_auth_en','wire_auth_es',
+      'check_instruction','check_instruction_en','check_instruction_es',
+      'third_party_pay','third_party_pay_en','third_party_pay_es',
+      'cash_receipt','cash_receipt_en','cash_receipt_es',
+    ];
+    const r = await api('/admin/docuseal/create-all-templates', { method: 'POST', body: JSON.stringify({ types, force: true, override_confirmed: true }) });
+    const done = (r.results || []).filter(x => !x.skipped && !x.error).length;
+    const errs = (r.results || []).filter(x => x.error).length;
+    if (errs) showToast(`完成，${done} 个成功，${errs} 个失败`, 'error', 5000);
+    else showToast(`✅ 全部付款表格已重新生成（${done} 个）`, 'success', 4000);
+    await _dsLoadMyTemplates();
+  } catch(e) {
+    showToast('重新生成失败: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↺ 重新生成全部付款表格'; }
   }
 }
 
@@ -23845,6 +23876,14 @@ function _dsRenderMyTemplates() {
       return langs.includes(_dsFilterLang);
     });
   }
+  // Apply sort
+  if (_dsSort === 'name_asc') {
+    filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+  } else if (_dsSort === 'name_desc') {
+    filtered = [...filtered].sort((a, b) => b.name.localeCompare(a.name));
+  }
+  // date_desc: server already returns newest-first
+
   const countEl = document.getElementById('ds-filter-count');
   if (countEl) {
     const isFiltered = _dsFilterLang || _dsFilterCat;
