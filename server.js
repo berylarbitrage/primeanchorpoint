@@ -5249,9 +5249,9 @@ function _buildZelleAuthRepForm(lang) {
     ? `Please complete one of the two options below:\n• Option A: If you will receive Zelle payments directly, provide your own Zelle account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's Zelle account information and contact details. ${companyName} will send a separate authorization form to the third party.\n\nComplete una de las dos opciones a continuación:\n• Opción A: Si usted recibirá pagos por Zelle directamente, proporcione su propia información de cuenta Zelle y firme.\n• Opción B: Si no puede recibir pagos directamente y un tercero recibirá los pagos en su nombre, proporcione la información de la cuenta Zelle y los datos de contacto del tercero. ${companyName} enviará un formulario de autorización por separado al tercero.`
     : `Please complete one of the two options below:\n• Option A: If you will receive Zelle payments directly, provide your own Zelle account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's Zelle account information and contact details. ${companyName} will send a separate authorization form to the third party.`;
 
-  // Section 1 — Employee Info (always required)
-  const s1 = L('1. EMPLOYEE INFORMATION', '员工信息', 'INFORMACIÓN DEL EMPLEADO');
-  const lEmpName = L('Employee Full Legal Name', '员工法定全名', 'Nombre Legal Completo del Empleado');
+  // Section 1 — Signer Info (always required)
+  const s1 = L('1. YOUR INFORMATION', '您的信息', 'SU INFORMACIÓN');
+  const lEmpName = L('Full Legal Name', '法定全名', 'Nombre Legal Completo');
 
   const disclaimer = zh
     ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认收款方式，不改变任何税务申报义务或承包关系性质。`
@@ -5290,7 +5290,7 @@ function _buildZelleAuthRepForm(lang) {
   );
   const lThirdPartyName = L('Third Party Full Legal Name', '第三方法定全名', 'Nombre Legal Completo del Tercero');
   const lThirdPartyZelle = L('Third Party Zelle Registered Email or Mobile Number', '第三方 Zelle 注册邮箱或手机号', 'Correo Electrónico o Teléfono Registrado en Zelle del Tercero');
-  const lRelationship = L('Relationship to Employee', '与员工关系', 'Relación con el Empleado');
+  const lRelationship = L('Relationship to You', '与您的关系', 'Relación con Usted');
   const lThirdPartyPhone = L('Third Party Phone Number', '第三方电话号码', 'Número de Teléfono del Tercero');
   const lThirdPartyEmail = L('Third Party Email Address', '第三方邮箱地址', 'Correo Electrónico del Tercero');
   const optBContactNote = L(
@@ -5340,7 +5340,7 @@ function _buildZelleAuthRepForm(lang) {
   <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:10px;color:#333">${optACert}</div>
 
   <div style="border-top:1px solid #4caf50;padding-top:8px;margin-top:4px">
-    <b>${L('EMPLOYEE SIGNATURE', '员工签名', 'FIRMA DEL EMPLEADO')}</b>
+    <b>${L('YOUR SIGNATURE', '您的签名', 'SU FIRMA')}</b>
     <table style="width:100%;margin-top:6px">
       <tr>
         <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="optA_printed_name" role="First Party" style="${w}"></text-field></td>
@@ -5360,12 +5360,14 @@ function _buildZelleAuthRepForm(lang) {
   <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:4px">
     <tr>
       <td style="${c}width:50%"><b>${lThirdPartyName}</b><br><text-field name="tp_legal_name" role="First Party" style="${w}"></text-field></td>
-      <td style="${c}width:50%"><b>${lThirdPartyZelle}</b><br><text-field name="tp_zelle_contact" role="First Party" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field></td>
+      <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
     </tr>
     <tr>
-      <td style="${c}width:34%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
-      <td style="${c}width:33%"><b>${lThirdPartyPhone}</b><br><text-field name="tp_phone" role="First Party" style="${w}" placeholder="(xxx) xxx-xxxx"></text-field></td>
-      <td style="${c}width:33%"><b>${lThirdPartyEmail}</b><br><text-field name="tp_email" role="First Party" style="${w}" placeholder="email@example.com"></text-field></td>
+      <td style="${c}width:100%" colspan="2"><b>${lThirdPartyZelle}</b><br><text-field name="tp_zelle_contact" role="First Party" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field></td>
+    </tr>
+    <tr>
+      <td style="${c}width:50%"><b>${lThirdPartyPhone}</b><br><text-field name="tp_phone" role="First Party" style="${w}" placeholder="(xxx) xxx-xxxx"></text-field></td>
+      <td style="${c}width:50%"><b>${lThirdPartyEmail}</b><br><text-field name="tp_email" role="First Party" style="${w}" placeholder="email@example.com"></text-field></td>
     </tr>
   </table>
   <div style="font-size:7pt;color:#555;margin-bottom:8px;font-style:italic">${optBContactNote}</div>
@@ -5373,7 +5375,7 @@ function _buildZelleAuthRepForm(lang) {
   <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:10px;color:#333">${optBCert}</div>
 
   <div style="border-top:1px solid #1976d2;padding-top:8px;margin-top:4px">
-    <b>${L('EMPLOYEE SIGNATURE (authorizing third party)', '员工签名（授权第三方收款）', 'FIRMA DEL EMPLEADO (autorizando al tercero)')}</b>
+    <b>${L('YOUR SIGNATURE (authorizing third party)', '您的签名（授权第三方收款）', 'SU FIRMA (autorizando al tercero)')}</b>
     <table style="width:100%;margin-top:6px">
       <tr>
         <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="optB_printed_name" role="First Party" style="${w}"></text-field></td>
