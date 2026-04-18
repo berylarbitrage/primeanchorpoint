@@ -5217,10 +5217,10 @@ function _buildCheckInstructionForm(lang) {
 
   // ── 2. Intro paragraph ──
   const introPara = zh
-    ? `I authorize ${companyName} to issue a check payment to be received in person by the payee or authorized representative designated below. The recipient must sign in person upon receiving the check.<br><span style="color:#555">本人授权 ${companyName} 以支票方式付款，由以下指定收款人或授权代表当面签收。收款人须在领取支票时当场签字确认。</span>`
+    ? `I authorize ${companyName} to issue all future payments owed to me by check, to be received in person by the payee or authorized representative designated below. This is a standing authorization and applies to all check payments unless I notify ${companyName} in writing of a change. The recipient must sign in person upon receiving each check.<br><span style="color:#555">本人授权 ${companyName} 以支票方式发放今后所有应付款项，由以下指定收款人或授权代表当面签收。本授权为长期授权，适用于所有支票付款，除非本人以书面形式通知 ${companyName} 变更。收款人须在领取每张支票时当场签字确认。</span>`
     : es
-    ? `I authorize ${companyName} to issue a check payment to be received in person by the payee or authorized representative designated below. The recipient must sign in person upon receiving the check.<br><span style="color:#555">Autorizo a ${companyName} a emitir un pago mediante cheque para ser recibido en persona por el beneficiario o representante autorizado designado a continuación. El receptor debe firmar en persona al recibir el cheque.</span>`
-    : `I authorize ${companyName} to issue a check payment to be received in person by the payee or authorized representative designated below. The recipient must sign in person upon receiving the check.`;
+    ? `I authorize ${companyName} to issue all future payments owed to me by check, to be received in person by the payee or authorized representative designated below. This is a standing authorization and applies to all check payments unless I notify ${companyName} in writing of a change. The recipient must sign in person upon receiving each check.<br><span style="color:#555">Autorizo a ${companyName} a emitir todos los pagos futuros que se me adeuden mediante cheque, para ser recibidos en persona por el beneficiario o representante autorizado designado a continuación. Esta es una autorización permanente y aplica a todos los pagos por cheque salvo notificación escrita de cambio a ${companyName}. El receptor debe firmar en persona al recibir cada cheque.</span>`
+    : `I authorize ${companyName} to issue all future payments owed to me by check, to be received in person by the payee or authorized representative designated below. This is a standing authorization and applies to all check payments unless I notify ${companyName} in writing of a change. The recipient must sign in person upon receiving each check.`;
 
   // ── Section 1: Payee Information ──
   const s1 = zh ? sh('1. PAYEE INFORMATION', '收款人信息') : es ? sh('1. PAYEE INFORMATION', 'INFORMACIÓN DEL BENEFICIARIO') : '1. PAYEE INFORMATION';
@@ -5240,20 +5240,8 @@ function _buildCheckInstructionForm(lang) {
   const lContact = bi('Phone / Email', zh ? '电话/电邮' : es ? '' : '');
   const lContactOpt = zh ? ' (optional 可选)' : es ? ' (opcional)' : ' (optional)';
 
-  // ── Section 2: Payment Reference ──
-  const s3 = zh ? sh('2. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME', '付款参考 / 发票号 / 项目名称') : es ? sh('2. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME', 'REFERENCIA DE PAGO') : '2. PAYMENT REFERENCE / INVOICE NO. / PROJECT NAME';
-  const refPlaceholder = 'e.g., INV-2026-001 / Project Alpha';
-
-  // ── Section 3: Special Instructions ──
-  const s4 = zh ? sh('3. SPECIAL INSTRUCTIONS', '特别说明') + ' (optional 可选)' : es ? sh('3. SPECIAL INSTRUCTIONS', 'INSTRUCCIONES ESPECIALES') + ' (opcional)' : '3. SPECIAL INSTRUCTIONS (optional)';
-  const specialHint = zh
-    ? 'Special instructions are subject to company review and may require additional verification.<br><span style="color:#999">特殊说明需经公司审核，必要时可能需要额外核实。</span>'
-    : es
-    ? 'Special instructions are subject to company review and may require additional verification.<br><span style="color:#999">Las instrucciones especiales están sujetas a revisión de la empresa y pueden requerir verificación adicional.</span>'
-    : 'Special instructions are subject to company review and may require additional verification.';
-
-  // ── Section 4: Confirmation & Agreement ──
-  const s5 = zh ? sh('4. CONFIRMATION & AGREEMENT', '确认与承诺') : es ? sh('4. CONFIRMATION & AGREEMENT', 'CONFIRMACIÓN Y ACUERDO') : '4. CONFIRMATION & AGREEMENT';
+  // ── Section 2: Confirmation & Agreement ──
+  const s5 = zh ? sh('2. CONFIRMATION & AGREEMENT', '确认与承诺') : es ? sh('2. CONFIRMATION & AGREEMENT', 'CONFIRMACIÓN Y ACUERDO') : '2. CONFIRMATION & AGREEMENT';
   const confirmLine1 = zh
     ? 'I confirm that the payee name and information provided above are accurate. <span style="color:#555">本人确认以上收款人名称及相关信息真实准确。</span>'
     : es
@@ -5434,14 +5422,7 @@ function _buildCheckInstructionForm(lang) {
   </div>
 </div>
 
-<div style="font-weight:700;margin:10px 0 4px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s3}</div>
-<text-field name="check_reference" role="Contractor" style="${w}" placeholder="${refPlaceholder}"></text-field>
-
-<div style="font-weight:700;margin:10px 0 3px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s4}</div>
-<div style="font-size:7pt;color:#888;margin-bottom:3px;line-height:1.35">${specialHint}</div>
-<text-field name="check_notes" role="Contractor" style="${w};min-height:36px" placeholder="e.g., Attn: ..., c/o ..."></text-field>
-
-<div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:12px;font-size:7.5pt;line-height:1.6">
+<div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:4px;font-size:7.5pt;line-height:1.6">
   <div style="font-weight:700;margin-bottom:5px;font-size:8.5pt">${s5}</div>
   <div style="margin-bottom:3px">① ${confirmLine1}</div>
   <div style="margin-bottom:3px">② ${confirmLine2}</div>
