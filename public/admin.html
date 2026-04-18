@@ -24269,32 +24269,39 @@ function dsChangeCategoryModal(dsTemplateId) {
   // Prefer exact match; fall back to base match only if no exact match exists in any group
   const allItems = groups.flatMap(g => g.items);
   const hasExact = allItems.some(it => it.cat === currentCat);
+  const _paySet = new Set(['ach_auth','wire_auth','check_instruction','zelle_auth','third_party_pay','cash_receipt']);
   const rowsHtml = groups.map(g => {
     const items = g.items.map(it => {
       const checked = hasExact ? (it.cat === currentCat ? 'checked' : '') : (it.cat === radioBase ? 'checked' : '');
+      const payAttr = _paySet.has(it.cat) ? ' data-pay="1"' : '';
       return `<label style="display:flex;align-items:center;gap:.5rem;padding:.28rem .2rem;cursor:pointer">
-        <input type="radio" name="ds-cat-radio" value="${it.cat}" ${checked} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
+        <input type="radio" name="ds-cat-radio" value="${it.cat}" ${checked}${payAttr} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
         <span style="display:inline-block;background:${it.bg};color:${it.color};border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700">${it.label}</span>
       </label>`;
     }).join('');
     return `<div style="margin-bottom:.9rem"><div style="font-size:.73rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">${g.title}</div><div style="display:flex;flex-wrap:wrap;gap:.1rem">${items}</div></div>`;
   }).join('');
 
+  const _paySelected = _isTP || _paySet.has(currentBase);
   const tpChecked = _isTP ? 'checked' : '';
-  const tpCheckboxHtml = `<div style="margin-top:.3rem;padding:.6rem .4rem;border-top:1px dashed #cbd5e1;background:#f8fafc;border-radius:0 0 8px 8px">
-    <label style="display:flex;align-items:center;gap:.55rem;cursor:pointer">
-      <input type="checkbox" id="ds-cat-tp-cb" ${tpChecked} style="width:16px;height:16px;cursor:pointer;accent-color:#1565c0">
-      <span style="font-size:.82rem;font-weight:700;color:#1565c0">授权第三方收款</span>
-      <span style="font-size:.7rem;color:#94a3b8;margin-left:auto">可与付款方式同时选中</span>
-    </label>
+  const tpDisabled = _paySelected ? '' : 'disabled';
+  const tpOpacity = _paySelected ? '1' : '.4';
+  const tpCursor = _paySelected ? 'pointer' : 'not-allowed';
+  const tpCheckboxHtml = `<div id="ds-cat-tp-row" style="margin-bottom:.9rem;opacity:${tpOpacity};transition:opacity .2s">
+    <div style="font-size:.73rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">第三方收款</div>
+    <div style="display:flex;flex-wrap:wrap;gap:.1rem">
+      <label style="display:flex;align-items:center;gap:.5rem;padding:.28rem .2rem;cursor:${tpCursor}">
+        <input type="checkbox" id="ds-cat-tp-cb" ${tpChecked} ${tpDisabled} style="width:15px;height:15px;flex-shrink:0;cursor:${tpCursor}">
+        <span style="display:inline-block;background:#e0f2fe;color:#0c4a6e;border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700">授权第三方收款</span>
+      </label>
+    </div>
   </div>`;
 
   const modalHtml = `<div id="ds-cat-modal-overlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center">
     <div style="background:#fff;border-radius:12px;padding:1.5rem;width:380px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
       <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">改变分类</div>
       <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为「${_dsEsc(tplName)}」选择所属小类</div>
-      <div id="ds-cat-modal-groups">${rowsHtml}</div>
-      ${tpCheckboxHtml}
+      <div id="ds-cat-modal-groups">${rowsHtml}${tpCheckboxHtml}</div>
       <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
         <button onclick="document.getElementById('ds-cat-modal-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
         <button onclick="dsApplyCategoryChanges(${dsTemplateId})" style="padding:.4rem 1rem;border-radius:7px;border:none;background:#0ea5e9;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">保存</button>
@@ -24302,6 +24309,22 @@ function dsChangeCategoryModal(dsTemplateId) {
     </div>
   </div>`;
   document.body.insertAdjacentHTML('beforeend', modalHtml);
+  // Enable/disable third-party checkbox based on payment method selection
+  const _overlay = document.getElementById('ds-cat-modal-overlay');
+  _overlay.querySelectorAll('input[name="ds-cat-radio"]').forEach(r => {
+    r.addEventListener('change', () => {
+      const row = document.getElementById('ds-cat-tp-row');
+      const cb = document.getElementById('ds-cat-tp-cb');
+      if (!row || !cb) return;
+      const sel = _overlay.querySelector('input[name="ds-cat-radio"]:checked');
+      const isPay = sel && sel.dataset.pay === '1';
+      row.style.opacity = isPay ? '1' : '.4';
+      cb.disabled = !isPay;
+      cb.style.cursor = isPay ? 'pointer' : 'not-allowed';
+      cb.parentElement.style.cursor = isPay ? 'pointer' : 'not-allowed';
+      if (!isPay) cb.checked = false;
+    });
+  });
 }
 
 async function dsApplyCategoryChanges(dsTemplateId) {
