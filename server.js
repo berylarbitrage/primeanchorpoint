@@ -6115,9 +6115,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   wire_auth:    { name: 'Wire Transfer Authorization & Bank Account Confirmation Form (ZH+EN) / 电汇付款授权及银行账户确认表', configKey: 'wire_auth_template_id',    category: 'wire_auth',    generator: generateWireAuthHtmlTemplate },
   wire_auth_en: { name: 'Wire Transfer Authorization & Bank Account Confirmation Form (EN)',                                                    configKey: 'wire_auth_en_template_id', category: 'wire_auth_en', generator: generateWireAuthHtmlTemplate_EN },
   wire_auth_es: { name: 'Wire Transfer Authorization & Bank Account Confirmation Form (EN+ES)',                                                 configKey: 'wire_auth_es_template_id', category: 'wire_auth_es', generator: generateWireAuthHtmlTemplate_ES },
-  check_instruction:    { name: 'Check Payee & Mailing Address Confirmation Form (ZH+EN) / 支票收款人及邮寄地址确认表', configKey: 'check_instruction_template_id',    category: 'check_instruction',    generator: generateCheckInstructionHtmlTemplate },
-  check_instruction_en: { name: 'Check Payee & Mailing Address Confirmation Form (EN)',                                             configKey: 'check_instruction_en_template_id', category: 'check_instruction_en', generator: generateCheckInstructionHtmlTemplate_EN },
-  check_instruction_es: { name: 'Check Payee & Mailing Address Confirmation Form (EN+ES)',                                          configKey: 'check_instruction_es_template_id', category: 'check_instruction_es', generator: generateCheckInstructionHtmlTemplate_ES },
+  check_instruction:    { name: 'Check Payment In-Person Receipt Authorization (ZH+EN) / 支票付款当面签收授权表', configKey: 'check_instruction_template_id',    category: 'check_instruction',    generator: generateCheckInstructionHtmlTemplate },
+  check_instruction_en: { name: 'Check Payment In-Person Receipt Authorization (EN)',                                                    configKey: 'check_instruction_en_template_id', category: 'check_instruction_en', generator: generateCheckInstructionHtmlTemplate_EN },
+  check_instruction_es: { name: 'Check Payment In-Person Receipt Authorization (EN+ES)',                                                 configKey: 'check_instruction_es_template_id', category: 'check_instruction_es', generator: generateCheckInstructionHtmlTemplate_ES },
   zelle_auth:    { name: 'Zelle Payment Authorization and Account Confirmation (ZH+EN)', configKey: 'zelle_auth_template_id',    category: 'zelle_auth',    generator: generateZelleAuthHtmlTemplate },
   zelle_auth_en: { name: 'Zelle Payment Authorization and Account Confirmation (EN)',   configKey: 'zelle_auth_en_template_id', category: 'zelle_auth_en', generator: generateZelleAuthHtmlTemplate_EN },
   zelle_auth_es: { name: 'Zelle Payment Authorization and Account Confirmation (EN+ES)', configKey: 'zelle_auth_es_template_id', category: 'zelle_auth_es', generator: generateZelleAuthHtmlTemplate_ES },
@@ -19578,7 +19578,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
 //
 // TEMPLATE_REGEN_VERSION: bump this number to force a one-time regen of ALL templates on next startup.
-const TEMPLATE_REGEN_VERSION = 4;
+const TEMPLATE_REGEN_VERSION = 5;
 
 async function autoRegenerateTemplatesForCompanyName() {
   if (!dsealEnabled()) return;
