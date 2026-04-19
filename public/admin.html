@@ -10034,7 +10034,7 @@ function parseLocationIntoFields(loc, opts) {
     document.getElementById('aWorkGeoMapLink').style.display = 'block';
     updateAssignWorkMap();
   } else {
-    geocodeWorkAddress();
+    geocodeWorkAddress({ skipConfirm: true });
   }
 }
 
@@ -10047,9 +10047,17 @@ function getWorkAddressString() {
   return [street, city, state && zip ? `${state} ${zip}` : (state || zip), country].filter(Boolean).join(', ');
 }
 
-async function geocodeWorkAddress() {
+async function geocodeWorkAddress(opts) {
+  opts = opts || {};
   const addr = getWorkAddressString();
   if (!addr) { document.getElementById('aWorkGeoStatus').textContent = '请先填写地址'; return; }
+  // Guard: if coords already exist, confirm before overwriting (unless caller says skipConfirm)
+  const curLat = (document.getElementById('aWorkLat').value || '').trim();
+  const curLng = (document.getElementById('aWorkLng').value || '').trim();
+  if (curLat && curLng && !opts.skipConfirm) {
+    const ok = await showConfirm(`当前已保存坐标 (${curLat}, ${curLng})，重新查坐标将用地址解析结果覆盖，继续吗？`);
+    if (!ok) return;
+  }
   const statusEl = document.getElementById('aWorkGeoStatus');
   statusEl.textContent = '🔍 正在查找坐标…';
   try {
@@ -11005,6 +11013,14 @@ async function geocodePartnerAddr(btnOrRow) {
   const city   = row.querySelector('.pa-city').value.trim();
   const state  = row.querySelector('.pa-state').value;
   const zip    = row.querySelector('.pa-zip').value.trim();
+  // Guard: if coords already exist, confirm before overwriting (Nominatim often drifts the pin)
+  const curLat = row.querySelector('.pa-lat').value.trim();
+  const curLng = row.querySelector('.pa-lng').value.trim();
+  const isUserClick = btnOrRow && btnOrRow.tagName === 'BUTTON';
+  if (curLat && curLng && isUserClick) {
+    const ok = await showConfirm(`当前已保存坐标 (${curLat}, ${curLng})，重新查坐标将用地址解析结果覆盖，继续吗？`);
+    if (!ok) return;
+  }
   // Strip unit/apt suffixes for geocoding (Google handles them, but Nominatim doesn't)
   const streetForGeo = street.replace(/\s*(#\S+|(?:apt|apartment|suite|ste|unit|bldg|building|fl|floor)\s*\S+)\s*$/i, '').trim();
   const addrStr = [streetForGeo, city, state && zip ? `${state} ${zip}` : (state || zip), 'USA'].filter(Boolean).join(', ');
