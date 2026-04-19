@@ -560,7 +560,75 @@ db.exec(`
   );
 `);
 
-// ─── Migrations for existing databases ───
+// ── Warehouse Check-In Schema ──
+db.exec(`
+  CREATE TABLE IF NOT EXISTS warehouses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    warehouse_code TEXT UNIQUE NOT NULL,
+    warehouse_name TEXT NOT NULL,
+    address TEXT DEFAULT '',
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    geofence_radius_meters INTEGER DEFAULT 150,
+    timezone TEXT DEFAULT 'America/Los_Angeles',
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS checkin_otp (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone TEXT NOT NULL,
+    code TEXT NOT NULL,
+    warehouse_code TEXT NOT NULL DEFAULT '',
+    expires_at INTEGER NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    verified INTEGER DEFAULT 0,
+    last_sent_at INTEGER NOT NULL,
+    ip_address TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS checkin_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    phone TEXT NOT NULL,
+    employee_id INTEGER NOT NULL,
+    warehouse_id INTEGER NOT NULL,
+    step TEXT DEFAULT 'otp_verified',
+    gps_latitude REAL,
+    gps_longitude REAL,
+    gps_accuracy REAL,
+    gps_distance REAL,
+    expires_at INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS warehouse_checkins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    employee_no TEXT DEFAULT '',
+    employee_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    warehouse_id INTEGER NOT NULL,
+    warehouse_code TEXT NOT NULL,
+    warehouse_name TEXT NOT NULL,
+    gps_latitude REAL,
+    gps_longitude REAL,
+    gps_accuracy REAL,
+    distance_from_warehouse REAL,
+    gps_verified INTEGER DEFAULT 0,
+    media_type TEXT DEFAULT 'photo',
+    media_path TEXT DEFAULT '',
+    checkin_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    checkin_date TEXT DEFAULT '',
+    sms_sent INTEGER DEFAULT 0,
+    sms_sent_at DATETIME,
+    ip_address TEXT DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_ids TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -2965,7 +3033,7 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   const subRes = await dsealApiCall('POST', '/api/submissions/pdf', {
     name: emailSubject || docName,
     documents: [{ name: docName, file: docBase64 }],
-    send_email: false,
+    send_email: true,
     order: 'preserved',
     submitters: [
       { role: 'First Party', name: signer1.name, email: signer1.email },
@@ -4866,27 +4934,15 @@ function _buildWireAuthForm(lang) {
     : `Wire Transfer Authorization & Bank Account Confirmation Form — ${companyName}`;
 
   const introPara = zh
-    ? `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments using the beneficiary and bank account information provided in this form. 本人特此授权 ${companyName} 及其授权代表按照本表所提供的收款人及银行账户信息进行电汇付款。`
+    ? `I hereby authorize ${companyName} and its authorized representatives to send all wire transfer payments owed to me using the beneficiary and bank account information provided in this form. This is a standing authorization applicable to all future wire transfers. 本人特此授权 ${companyName} 及其授权代表按照本表所提供的收款人及银行账户信息，对本人的所有应得款项进行电汇付款。本授权为长期授权，适用于以后所有电汇付款。`
     : es
-    ? `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments using the beneficiary and bank account information provided in this form. Por medio del presente, autorizo a ${companyName} y a sus representantes autorizados a enviar transferencias bancarias utilizando la información del beneficiario y de la cuenta bancaria proporcionada en este formulario.`
-    : `I hereby authorize ${companyName} and its authorized representatives to send wire transfer payments using the beneficiary and bank account information provided in this form.`;
+    ? `I hereby authorize ${companyName} and its authorized representatives to send all wire transfer payments owed to me using the beneficiary and bank account information provided in this form. This is a standing authorization applicable to all future wire transfers. Por medio del presente, autorizo a ${companyName} y a sus representantes autorizados a enviar todos los pagos que se me adeuden mediante transferencia bancaria, utilizando la información del beneficiario y de la cuenta proporcionada en este formulario. Esta es una autorización permanente aplicable a todas las transferencias futuras.`
+    : `I hereby authorize ${companyName} and its authorized representatives to send all wire transfer payments owed to me using the beneficiary and bank account information provided in this form. This is a standing authorization applicable to all future wire transfers.`;
 
   // Wire type selection
   const wireTypeLabel = zh ? 'Wire Type 电汇类型' : es ? 'Wire Type / Tipo de Transferencia' : 'Wire Type';
-  const wireTypeDom = zh ? 'Domestic (U.S.) 美国境内电汇' : es ? 'Domestic (U.S.) / Doméstica (EE.UU.)' : 'Domestic (U.S.)';
-  const wireTypeInt = zh ? 'International 国际电汇' : es ? 'International / Internacional' : 'International';
-
-  // Payment reference
-  const payRefLabel = zh
-    ? 'Payment Reference / Invoice No. / Project Name 付款参考 / 发票号 / 项目名称'
-    : es
-    ? 'Payment Reference / Invoice No. / Project Name / Referencia de Pago / N.º de Factura / Nombre del Proyecto'
-    : 'Payment Reference / Invoice No. / Project Name';
-  const payRefHint = zh
-    ? '(optional 可选)'
-    : es
-    ? '(opcional)'
-    : '(optional)';
+  const wireTypeDom   = zh ? 'Domestic (U.S.) 美国境内电汇' : es ? 'Domestic (U.S.) / Doméstica (EE.UU.)' : 'Domestic (U.S.)';
+  const wireTypeInt   = zh ? 'International 国际电汇' : es ? 'International / Internacional' : 'International';
 
   // Section labels
   const s1 = L('1. BENEFICIARY INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
@@ -5022,16 +5078,12 @@ function _buildWireAuthForm(lang) {
 
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:8px">
   <tr>
-    <td style="${c}width:40%">
+    <td style="${c}width:100%">
       <b>${wireTypeLabel}</b><br>
       <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="wire_type_domestic" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${wireTypeDom}</label><br>
+        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="wire_type_domestic" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${wireTypeDom}</label>
         <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="wire_type_international" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${wireTypeInt}</label>
       </div>
-    </td>
-    <td style="${c}width:60%">
-      <b>${payRefLabel}</b> <span style="font-size:7pt;color:#777">${payRefHint}</span><br>
-      <text-field name="wire_payment_ref" role="Contractor" style="${w}"></text-field>
     </td>
   </tr>
 </table>
@@ -6275,265 +6327,194 @@ function generatePaypalTPAuthTemplate_EN() { return _buildThirdPartyPayAuthForm(
 function generatePaypalTPAuthTemplate_ES() { return _buildThirdPartyPayAuthForm('en-es', 'paypal'); }
 
 
-// ── Cash Payment Receipt (ZH+EN) ──
-function generateCashReceiptHtmlTemplate() {
+// ── Cash Payment Receipt — builder ──
+function _buildCashReceiptForm(lang) {
+  const zh = lang === 'zh-en';
+  const es = lang === 'en-es';
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
   const companyName = getCompanySignerName();
+
+  const sFormTitle   = zh ? 'CASH PAYMENT AUTHORIZATION FORM<br><span style="font-size:10pt;font-weight:700;color:#555">现金收款授权表</span>'
+                     : es ? 'CASH PAYMENT AUTHORIZATION FORM<br><span style="font-size:10pt;font-weight:700;color:#555">Formulario de Autorización de Pago en Efectivo</span>'
+                     :      'CASH PAYMENT AUTHORIZATION FORM';
+  const sSubtitle    = zh ? `现金收款授权表 — ${companyName}` : es ? `Formulario de Autorización de Pago en Efectivo — ${companyName}` : companyName;
+  const sIntro       = zh ? `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization applicable to all future cash payments. Select the applicable option and sign in the corresponding zone.<br><span style="color:#555">本人授权 <b>${companyName}</b> 以现金方式支付本人的所有应得款项。本授权为长期授权，适用于以后所有现金付款。请选择适用选项并在相应区域签名。</span>`
+                     : es ? `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization applicable to all future cash payments. Select the applicable option and sign in the corresponding zone.<br><span style="color:#555">Autorizo a <b>${companyName}</b> a pagar todos los montos que se me adeuden en efectivo. Esta es una autorización permanente aplicable a todos los pagos futuros en efectivo. Seleccione la opción aplicable y firme en la zona correspondiente.</span>`
+                     :      `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization applicable to all future cash payments. Select the applicable option and sign in the corresponding zone.`;
+
+  const s1Title      = zh ? '1. Receipt Authorization &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">收款确认授权</span>'
+                     : es ? '1. Receipt Authorization &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Autorización de Recepción</span>'
+                     :      '1. Receipt Authorization';
+
+  const zoneATitle   = zh ? 'OPTION A — 本人直接收款 / I Received the Cash Directly'
+                     : es ? 'OPTION A — I Received the Cash Directly / Yo Recibí el Efectivo Directamente'
+                     :      'OPTION A — I Received the Cash Directly';
+  const tpSelf       = zh ? 'I personally receive all cash payments from the company.'
+                           + '<br><span style="color:#bfdbfe">本人亲自从公司收取所有现金款项。</span>'
+                     : es ? 'I personally receive all cash payments from the company.'
+                           + '<br><span style="color:#bfdbfe">Yo personalmente recibo todos los pagos en efectivo de la empresa.</span>'
+                     :      'I personally receive all cash payments from the company.';
+  const sRecipSig    = zh ? 'RECIPIENT SIGNATURE 收款人签名' : es ? 'RECIPIENT SIGNATURE / Firma del Destinatario' : 'RECIPIENT SIGNATURE';
+  const sConfirmA    = zh ? 'I confirm I personally received the cash payment from the company.'
+                           + '<br><span style="color:#1e40af">我确认本人已亲自从公司收取了现金款项。</span>'
+                     : es ? 'I confirm I personally received the cash payment from the company.'
+                           + '<br><span style="color:#1e40af">Confirmo que yo personalmente recibí el pago en efectivo de la empresa.</span>'
+                     :      'I confirm I personally received the cash payment from the company.';
+
+  const zoneBTitle   = zh ? 'OPTION B — 委托第三方代收 / Third Party Received on My Behalf'
+                     : es ? 'OPTION B — Third Party Received on My Behalf / Un Tercero Recibió en Mi Nombre'
+                     :      'OPTION B — Third Party Received on My Behalf';
+  const tpThird      = zh ? 'I am authorizing a third party to receive all cash payments on my behalf.'
+                           + '<br><span style="color:#6ee7b7">我委托第三方代表本人收取所有现金款项。</span>'
+                     : es ? 'I am authorizing a third party to receive all cash payments on my behalf.'
+                           + '<br><span style="color:#6ee7b7">Estoy autorizando a un tercero a recibir todos los pagos en efectivo en mi nombre.</span>'
+                     :      'I am authorizing a third party to receive all cash payments on my behalf.';
+  const sTPName      = zh ? 'Third Party Name &nbsp;<span style="font-weight:400;color:#555">第三方姓名</span>'
+                     : es ? 'Third Party Name &nbsp;<span style="font-weight:400;color:#555">Nombre del Tercero</span>'
+                     :      'Third Party Name';
+  const sTPRel       = zh ? 'Relationship to Recipient &nbsp;<span style="font-weight:400;color:#555">与收款人关系</span>'
+                     : es ? 'Relationship to Recipient &nbsp;<span style="font-weight:400;color:#555">Relación con el Destinatario</span>'
+                     :      'Relationship to Recipient';
+  const sTPContact   = zh ? 'Third Party Contact (Phone/Email) &nbsp;<span style="font-weight:400;color:#555">第三方联系方式</span>'
+                     : es ? 'Third Party Contact (Phone/Email) &nbsp;<span style="font-weight:400;color:#555">Contacto del Tercero (Teléfono/Email)</span>'
+                     :      'Third Party Contact (Phone/Email)';
+  const sAuthText    = zh ? `I hereby authorize the above-named individual to receive cash payment from ${companyName} on my behalf. I understand I remain fully responsible for this payment.`
+                           + `<br><span style="color:#555">本人特此授权上述人员代表本人从 ${companyName} 收取现金款项。本人了解本人对该款项仍承担全部责任。</span>`
+                     : es ? `I hereby authorize the above-named individual to receive cash payment from ${companyName} on my behalf. I understand I remain fully responsible for this payment.`
+                           + `<br><span style="color:#555">Por medio de la presente, autorizo a la persona mencionada arriba a recibir el pago en efectivo de ${companyName} en mi nombre. Entiendo que sigo siendo totalmente responsable de este pago.</span>`
+                     :      `I hereby authorize the above-named individual to receive cash payment from ${companyName} on my behalf. I understand I remain fully responsible for this payment.`;
+  const sAuthSig     = zh ? 'AUTHORIZER SIGNATURE 授权人签名' : es ? 'AUTHORIZER SIGNATURE / Firma del Autorizante' : 'AUTHORIZER SIGNATURE';
+  const sConfirmB    = zh ? 'I confirm I am authorizing the above-named third party to receive this cash payment on my behalf and I accept responsibility for the receipt.'
+                           + '<br><span style="color:#065f46">我确认我授权上述第三方代本人收取此现金款项，并接受对该款项收取的责任。</span>'
+                     : es ? 'I confirm I am authorizing the above-named third party to receive this cash payment on my behalf and I accept responsibility for the receipt.'
+                           + '<br><span style="color:#065f46">Confirmo que estoy autorizando al tercero indicado a recibir este pago en efectivo en mi nombre y acepto la responsabilidad por la recepción.</span>'
+                     :      'I confirm I am authorizing the above-named third party to receive this cash payment on my behalf and I accept responsibility for the receipt.';
+
+  const sNotice      = zh ? '<b>NOTICE 注意:</b> The recipient or authorized third party must sign in the applicable zone above. The company representative signs below to verify. This authorization is for record-keeping and tax documentation purposes only. 收款人或授权第三方须在上方适用区域签名。公司代表在下方签字核实。本授权仅用于留档及税务记录。'
+                     : es ? '<b>NOTICE / AVISO:</b> The recipient or authorized third party must sign in the applicable zone above. The company representative signs below to verify. This authorization is for record-keeping and tax documentation purposes only. El destinatario o tercero autorizado debe firmar en la zona aplicable. El representante de la empresa firma abajo para verificar. Esta autorización es solo para fines de registro y documentación fiscal.'
+                     :      '<b>NOTICE:</b> The recipient or authorized third party must sign in the applicable zone above. The company representative signs below to verify. This authorization is for record-keeping and tax documentation purposes only.';
+
+  const sCompVerify  = zh ? `COMPANY VERIFICATION 公司核实 — ${companyName}`
+                     : es ? `COMPANY VERIFICATION / Verificación de la Empresa — ${companyName}`
+                     :      `COMPANY VERIFICATION — ${companyName}`;
+  const sVerifiedBy  = zh ? 'Verified and confirmed by 核实确认人:' : es ? 'Verified and confirmed by / Verificado y confirmado por:' : 'Verified and confirmed by:';
+  const sPrintedLbl  = zh ? 'Printed Name 正楷姓名:' : es ? 'Printed Name / Nombre en Letra de Molde:' : 'Printed Name:';
+  const sSigLbl      = zh ? 'Signature 签名:' : es ? 'Signature / Firma:' : 'Signature:';
+  const sDateLbl     = zh ? 'Date 日期:' : es ? 'Date / Fecha:' : 'Date:';
+  const sPrintedLbl2 = zh ? 'Printed Name 正楷姓名:' : es ? 'Printed Name / Nombre en Letra de Molde:' : 'Printed Name:';
+
+  const sFooter      = zh ? `${companyName} — Cash Payment Authorization / 现金收款授权表 — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认付款方式，不改变任何税务申报义务或承包关系性质。`
+                     : es ? `${companyName} — Cash Payment Authorization / Autorización de Pago en Efectivo — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para confirmar el método de pago y no altera ninguna obligación fiscal ni el estado de contratista independiente.`
+                     :      `${companyName} — Cash Payment Authorization — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status.`;
+
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">CASH PAYMENT RECEIPT</div>
-  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">现金付款签收表 — ${companyName}</div>
+  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">${sFormTitle}</div>
+  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">${sSubtitle}</div>
 </div>
 
 <div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services, invoice, job, or other payment reference described below.<br>
-  <span style="color:#555">本收据确认，下述签署收款人已收到 <b>${companyName}</b> 支付的现金款项，对应下列服务、发票、工作编号或其他付款参考信息。</span>
+  ${sIntro}
 </div>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款详情</span></div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr>
-    <td style="${c}width:50%"><b>Recipient Name &nbsp;<span style="font-weight:400;color:#555">收款人姓名</span></b><br><text-field name="cash_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Payment Date &nbsp;<span style="font-weight:400;color:#555">付款日期</span></b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
-  </tr>
-  <tr>
-    <td style="${c}" colspan="2"><b>Amount Received (USD) &nbsp;<span style="font-weight:400;color:#555">收到金额（美元）</span></b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
-  </tr>
-  <tr>
-    <td style="${c}width:50%">
-      <b>Payment Method &nbsp;<span style="font-weight:400;color:#555">付款方式</span></b><br>
-      <div style="margin-top:3px;font-weight:700">Cash / 现金</div>
-    </td>
-    <td style="${c}width:50%">
-      <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">付款性质</span></b><br>
-      <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment / 全额付款</label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / 部分付款</label>
-      </div>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" style="${c}"><b>Remaining Balance (if Partial Payment) &nbsp;<span style="font-weight:400;color:#555">剩余金额（仅部分付款时填写）</span></b><br>
-      <div style="margin-top:3px">$ <text-field name="cash_remaining" role="First Party" style="${f}width:180px" placeholder="0.00"></text-field></div>
-    </td>
-  </tr>
-</table>
+<div style="font-weight:700;margin:12px 0 8px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">${s1Title}</div>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">付款用途说明</span></div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr><td style="${c}"><b>Description of Services or Payment Purpose &nbsp;<span style="font-weight:400;color:#555">服务或付款用途说明</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
-  <tr>
-    <td style="${c}width:50%"><b>Service Period (if applicable) &nbsp;<span style="font-weight:400;color:#555">服务期间（如适用）</span></b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
-    <td style="${c}width:50%"><b>Invoice / Job / Payment Reference &nbsp;<span style="font-weight:400;color:#555">发票号 / 工作编号 / 付款参考号</span></b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
-  </tr>
-</table>
+<!-- Zone A — blue -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer">
+    <checkbox-field name="cash_self_receipt" role="First Party" style="width:16px;height:16px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;text-transform:uppercase;letter-spacing:.5px">${zoneATitle}</div>
+      <div style="font-size:7pt;color:#bfdbfe;margin-top:1px">${tpSelf}</div>
+    </div>
+  </label>
+  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#dbeafe;border-radius:6px;padding:10px 12px">
+      <div style="font-size:7.5pt;font-weight:700;color:#1e3a8a;margin-bottom:6px;text-transform:uppercase;letter-spacing:.3px">${sRecipSig}</div>
+      <div style="font-size:7pt;color:#1e40af;margin-bottom:2px">${sPrintedLbl}</div>
+      <text-field name="cash_printed1" role="First Party" required="true" style="${w}margin-bottom:4px"></text-field>
+      <div style="font-size:7pt;color:#1e40af;margin:6px 0 2px">${sSigLbl}</div>
+      <signature-field name="cash_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff"></signature-field>
+      <div style="font-size:7pt;color:#1e40af;margin:6px 0 2px">${sDateLbl}</div>
+      <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff"></date-field>
+    </div>
+    <label style="display:flex;align-items:flex-start;gap:8px;margin-top:8px;font-size:7.5pt;color:#1e3a8a;cursor:pointer">
+      <checkbox-field name="cash_confirm_self" role="First Party" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"></checkbox-field>
+      <span>${sConfirmA}</span>
+    </label>
+  </div>
+</div>
+
+<!-- Zone B — green -->
+<div style="border-radius:8px;overflow:hidden;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer">
+    <checkbox-field name="cash_third_receipt" role="First Party" style="width:16px;height:16px;flex-shrink:0"></checkbox-field>
+    <div>
+      <div style="font-weight:800;font-size:9pt;color:#fff;text-transform:uppercase;letter-spacing:.5px">${zoneBTitle}</div>
+      <div style="font-size:7pt;color:#6ee7b7;margin-top:1px">${tpThird}</div>
+    </div>
+  </label>
+  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+      <tr>
+        <td style="${c}width:50%"><b>${sTPName}</b><br><text-field name="cash_tp_name" role="First Party" style="${w}"></text-field></td>
+        <td style="${c}width:50%"><b>${sTPRel}</b><br><text-field name="cash_tp_rel" role="First Party" style="${w}"></text-field></td>
+      </tr>
+      <tr>
+        <td colspan="2" style="${c}"><b>${sTPContact}</b><br><text-field name="cash_tp_contact" role="First Party" style="${w}"></text-field></td>
+      </tr>
+    </table>
+    <div style="font-size:7.5pt;color:#065f46;background:#dcfce7;border-radius:4px;padding:6px 8px;margin-bottom:8px">${sAuthText}</div>
+    <div style="background:#bbf7d0;border-radius:6px;padding:10px 12px">
+      <div style="font-size:7.5pt;font-weight:700;color:#064e3b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.3px">${sAuthSig}</div>
+      <div style="font-size:7pt;color:#065f46;margin-bottom:2px">${sPrintedLbl2}</div>
+      <text-field name="cash_auth_printed" role="First Party" style="${w}margin-bottom:4px"></text-field>
+      <div style="font-size:7pt;color:#065f46;margin:6px 0 2px">${sSigLbl}</div>
+      <signature-field name="cash_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff"></signature-field>
+      <div style="font-size:7pt;color:#065f46;margin:6px 0 2px">${sDateLbl}</div>
+      <date-field name="cash_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff"></date-field>
+    </div>
+    <label style="display:flex;align-items:flex-start;gap:8px;margin-top:8px;font-size:7.5pt;color:#064e3b;cursor:pointer">
+      <checkbox-field name="cash_confirm_auth" role="First Party" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"></checkbox-field>
+      <span>${sConfirmB}</span>
+    </label>
+  </div>
+</div>
 
 <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
-  <b>NOTICE 注意:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is for record-keeping and tax documentation purposes only. 双方应在下方签字确认本收据所载现金付款事项。本收据仅用于留档及税务记录。
+  ${sNotice}
 </div>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
-  <div style="font-size:8pt;font-weight:700;margin-bottom:8px">SIGNATURES &nbsp;<span style="font-weight:400;color:#555">签名</span></div>
-  <table style="width:100%"><tr>
-    <td style="width:50%;padding-right:12px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Recipient / 收款人</div>
-      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name 正楷姓名:</div>
-      <text-field name="cash_printed1" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature 签名:</div>
-      <signature-field name="cash_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date 日期:</div>
-      <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
-    <td style="width:50%;padding-left:12px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Authorized Representative of ${companyName}<br><span style="font-weight:400;color:#555">${companyName} 授权代表</span></div>
-      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name 正楷姓名:</div>
-      <text-field name="cash_printed2" role="Second Party" required="true" style="${w};margin-bottom:4px"></text-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature 签名:</div>
-      <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date 日期:</div>
-      <date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
-  </tr></table>
+<div style="border-radius:8px;overflow:hidden;margin-top:6px;box-shadow:0 1px 3px rgba(0,0,0,.10)">
+  <div style="background:#92400e;padding:8px 14px">
+    <div style="font-size:8pt;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:.5px">${sCompVerify}</div>
+    <div style="font-size:7pt;color:#fde68a;margin-top:1px">${sVerifiedBy}</div>
+  </div>
+  <div style="background:#fffbeb;padding:10px 14px;border:1.5px solid #fcd34d;border-top:none;border-radius:0 0 8px 8px">
+    <div style="font-size:7pt;color:#92400e;margin-bottom:2px">${sPrintedLbl}</div>
+    <text-field name="cash_printed2" role="Second Party" required="true" style="${w}margin-bottom:4px"></text-field>
+    <div style="font-size:7pt;color:#92400e;margin:6px 0 2px">${sSigLbl}</div>
+    <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff"></signature-field>
+    <div style="font-size:7pt;color:#92400e;margin:6px 0 2px">${sDateLbl}</div>
+    <date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff"></date-field>
+  </div>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / 现金付款签收表 — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. 本收据仅确认付款事实，不改变任何税务申报义务或承包关系性质。</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 14:10 CDT</div>
+
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:8px">${sFooter}</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
+
+// ── Cash Payment Receipt (ZH+EN) ──
+function generateCashReceiptHtmlTemplate()   { return _buildCashReceiptForm('zh-en'); }
 
 // ── Cash Payment Receipt (EN only) ──
-function generateCashReceiptEnHtmlTemplate() {
-  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
-  const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = getCompanySignerName();
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">CASH PAYMENT RECEIPT</div>
-  <div style="font-size:8pt;color:#777;margin-top:4px">${companyName}</div>
-</div>
-
-<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services, invoice, job, or other payment reference described below.
-</div>
-
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr>
-    <td style="${c}width:50%"><b>Recipient Name</b><br><text-field name="cash_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Payment Date</b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
-  </tr>
-  <tr>
-    <td style="${c}" colspan="2"><b>Amount Received (USD)</b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
-  </tr>
-  <tr>
-    <td style="${c}width:50%">
-      <b>Payment Method</b><br>
-      <div style="margin-top:3px;font-weight:700">Cash</div>
-    </td>
-    <td style="${c}width:50%">
-      <b>Payment Type</b><br>
-      <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment</label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment</label>
-      </div>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" style="${c}"><b>Remaining Balance (if Partial Payment)</b><br>
-      <div style="margin-top:3px">$ <text-field name="cash_remaining" role="First Party" style="${f}width:180px" placeholder="0.00"></text-field></div>
-    </td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr><td style="${c}"><b>Description of Services or Payment Purpose</b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
-  <tr>
-    <td style="${c}width:50%"><b>Service Period (if applicable)</b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
-    <td style="${c}width:50%"><b>Invoice / Job / Payment Reference</b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
-  </tr>
-</table>
-
-<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
-  <b>NOTICE:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is for record-keeping and tax documentation purposes only.
-</div>
-
-<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
-  <div style="font-size:8pt;font-weight:700;margin-bottom:8px">SIGNATURES</div>
-  <table style="width:100%"><tr>
-    <td style="width:50%;padding-right:12px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Recipient</div>
-      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name:</div>
-      <text-field name="cash_printed1" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature:</div>
-      <signature-field name="cash_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date:</div>
-      <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
-    <td style="width:50%;padding-left:12px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Authorized Representative of ${companyName}</div>
-      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name:</div>
-      <text-field name="cash_printed2" role="Second Party" required="true" style="${w};margin-bottom:4px"></text-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature:</div>
-      <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date:</div>
-      <date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
-  </tr></table>
-</div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status.</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 14:10 CDT</div>
-</div>`;
-}
+function generateCashReceiptEnHtmlTemplate() { return _buildCashReceiptForm('en'); }
 
 // ── Cash Payment Receipt (EN+ES) ──
-function generateCashReceiptEsHtmlTemplate() {
-  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
-  const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:6px 8px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = getCompanySignerName();
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:14pt;font-weight:900;letter-spacing:1px;text-transform:uppercase">CASH PAYMENT RECEIPT</div>
-  <div style="font-size:8.5pt;font-weight:700;color:#555;margin-top:3px">Recibo de Pago en Efectivo — ${companyName}</div>
-</div>
-
-<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;font-size:8.5pt;margin-bottom:14px">
-  This receipt confirms that the undersigned recipient has received a cash payment from <b>${companyName}</b> for the services, invoice, job, or other payment reference described below.<br>
-  <span style="color:#555">Este recibo confirma que el destinatario firmante ha recibido un pago en efectivo de <b>${companyName}</b> por los servicios, factura, trabajo u otra referencia de pago descritos a continuación.</span>
-</div>
-
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">1. Payment Details &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Detalles del Pago</span></div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr>
-    <td style="${c}width:50%"><b>Recipient Name &nbsp;<span style="font-weight:400;color:#555">Nombre del Destinatario</span></b><br><text-field name="cash_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>Payment Date &nbsp;<span style="font-weight:400;color:#555">Fecha de Pago</span></b><br><date-field name="cash_pay_date" role="First Party" required="true" style="${f}width:100%;min-height:22px"></date-field></td>
-  </tr>
-  <tr>
-    <td style="${c}" colspan="2"><b>Amount Received (USD) &nbsp;<span style="font-weight:400;color:#555">Monto Recibido (USD)</span></b><br><div style="font-size:12pt;font-weight:700">$ <text-field name="cash_amount" role="First Party" required="true" style="${f}width:160px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div></td>
-  </tr>
-  <tr>
-    <td style="${c}width:50%">
-      <b>Payment Method &nbsp;<span style="font-weight:400;color:#555">Método de Pago</span></b><br>
-      <div style="margin-top:3px;font-weight:700">Cash / Efectivo</div>
-    </td>
-    <td style="${c}width:50%">
-      <b>Payment Type &nbsp;<span style="font-weight:400;color:#555">Tipo de Pago</span></b><br>
-      <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payment_full" role="First Party" style="width:13px;height:13px"></checkbox-field> Full Payment / Pago Total</label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payment_partial" role="First Party" style="width:13px;height:13px"></checkbox-field> Partial Payment / Pago Parcial</label>
-      </div>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" style="${c}"><b>Remaining Balance (if Partial Payment) &nbsp;<span style="font-weight:400;color:#555">Saldo Pendiente (solo si Pago Parcial)</span></b><br>
-      <div style="margin-top:3px">$ <text-field name="cash_remaining" role="First Party" style="${f}width:180px" placeholder="0.00"></text-field></div>
-    </td>
-  </tr>
-</table>
-
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">2. Purpose / Description &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Propósito / Descripción</span></div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px">
-  <tr><td style="${c}"><b>Description of Services or Payment Purpose &nbsp;<span style="font-weight:400;color:#555">Descripción de Servicios o Propósito del Pago</span></b><br><text-field name="cash_description" role="First Party" required="true" style="${w};min-height:38px" placeholder="e.g., Warehouse sorting services for week of 03/10/2026"></text-field></td></tr>
-  <tr>
-    <td style="${c}width:50%"><b>Service Period (if applicable) &nbsp;<span style="font-weight:400;color:#555">Período de Servicio (si aplica)</span></b><br><text-field name="cash_period" role="First Party" style="${f}width:100%;min-height:22px" placeholder="e.g., Mar 10–16, 2026"></text-field></td>
-    <td style="${c}width:50%"><b>Invoice / Job / Payment Reference &nbsp;<span style="font-weight:400;color:#555">Factura / Trabajo / Referencia de Pago</span></b><br><text-field name="cash_ref" role="First Party" style="${f}width:100%;min-height:22px"></text-field></td>
-  </tr>
-</table>
-
-<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
-  <b>NOTICE / AVISO:</b> Both parties should sign below to confirm the cash payment described in this receipt. This receipt is for record-keeping and tax documentation purposes only. Ambas partes deben firmar para confirmar el pago en efectivo descrito en este recibo. Este recibo es solo para fines de registro y documentación fiscal.
-</div>
-
-<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:6px;font-size:8.5pt">
-  <div style="font-size:8pt;font-weight:700;margin-bottom:8px">SIGNATURES &nbsp;<span style="font-weight:400;color:#555">Firmas</span></div>
-  <table style="width:100%"><tr>
-    <td style="width:50%;padding-right:12px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Recipient / Destinatario</div>
-      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name / Nombre en Letra de Molde:</div>
-      <text-field name="cash_printed1" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature / Firma:</div>
-      <signature-field name="cash_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date / Fecha:</div>
-      <date-field name="cash_date1" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
-    <td style="width:50%;padding-left:12px;vertical-align:top">
-      <div style="font-size:7.5pt;font-weight:700;margin-bottom:2px">Authorized Representative of ${companyName}<br><span style="font-weight:400;color:#555">Representante Autorizado de ${companyName}</span></div>
-      <div style="font-size:7pt;color:#555;margin-bottom:2px">Printed Name / Nombre en Letra de Molde:</div>
-      <text-field name="cash_printed2" role="Second Party" required="true" style="${w};margin-bottom:4px"></text-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Signature / Firma:</div>
-      <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-      <div style="font-size:7pt;color:#555;margin:4px 0 2px">Date / Fecha:</div>
-      <date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
-  </tr></table>
-</div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:6px">${companyName} — Cash Payment Receipt / Recibo de Pago en Efectivo — This receipt acknowledges payment only and does not alter any tax reporting obligations or contractor status. Este recibo solo reconoce el pago y no altera ninguna obligación fiscal ni el estado de contratista independiente.</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-03-17 14:10 CDT</div>
-</div>`;
-}
+function generateCashReceiptEsHtmlTemplate() { return _buildCashReceiptForm('en-es'); }
 
 
 // ── Map of all auto-creatable templates ──
@@ -9064,9 +9045,13 @@ function syncOnboardedStatus(workerId) {
     if (typeTasks.length) assigned = [...typeTasks];
   }
   if (!assigned.length) return; // no tasks assigned — don't auto-mark
+  // phone_verify and email_verify are always required for account access but
+  // should not block onboarding-ready status
+  const checkable = assigned.filter(key => key !== 'phone_verify' && key !== 'email_verify');
+  if (!checkable.length) return;
   const tasks = db.prepare('SELECT task_key, status FROM worker_onboarding WHERE worker_account_id=?').all(workerId);
   const statusMap = Object.fromEntries(tasks.map(t => [t.task_key, t.status]));
-  const allDone = assigned.every(key => statusMap[key] === 'completed' || statusMap[key] === 'waived');
+  const allDone = checkable.every(key => statusMap[key] === 'completed' || statusMap[key] === 'waived');
   // When all assigned tasks are done, mark onboarded AND auto-enable dispatch_ready
   // When not all done, clear onboarded and dispatch_ready
   db.prepare('UPDATE worker_accounts SET onboarded=?, dispatch_ready=? WHERE id=?').run(allDone ? 1 : 0, allDone ? 1 : 0, workerId);
@@ -20375,7 +20360,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // COMPANY_LEGAL_NAME (e.g. "Qiushi Zhang") and need to be rebuilt with the correct name.
 //
 // TEMPLATE_REGEN_VERSION: bump this number to force a one-time regen of ALL templates on next startup.
-const TEMPLATE_REGEN_VERSION = 5;
+const TEMPLATE_REGEN_VERSION = 9;
 
 async function autoRegenerateTemplatesForCompanyName() {
   if (!dsealEnabled()) return;
@@ -21491,6 +21476,261 @@ app.post('/api/sms/test-notify', requireAdmin, requireRole('admin'), async (req,
     res.json({ result, twilio_from: TWILIO_FROM, twilio_configured: !!twilioClient });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// ── WAREHOUSE CHECK-IN SYSTEM ────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+
+// Checkin photo storage
+const checkinPhotosDir = path.join(dataDir, 'checkin_photos');
+if (!fs.existsSync(checkinPhotosDir)) fs.mkdirSync(checkinPhotosDir, { recursive: true });
+const checkinMediaUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, checkinPhotosDir),
+    filename:    (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      cb(null, `ci-${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(jpg|jpeg|png|webp|heic|heif|mp4|mov|webm)$/i.test(file.originalname)
+            || /^(image|video)\//.test(file.mimetype);
+    cb(ok ? null : new Error('Invalid file type'), ok);
+  }
+});
+
+// Haversine distance (meters)
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Normalize phone → last 10 digits
+function normalizePhone10(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('1')) return d.slice(1);
+  if (d.length === 10) return d;
+  return null;
+}
+
+// SQLite expression: strip phone to last 10 digits for comparison
+const PHONE_NORM_SQL = `substr(replace(replace(replace(replace(replace(phone,' ',''),'-',''),'(',''),')',''),'.',''), -10)`;
+
+// ── Public check-in page ─────────────────────────────────────────────────
+app.get('/checkin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'checkin.html'));
+});
+
+// ── Get warehouse info by code ───────────────────────────────────────────
+app.get('/api/checkin/warehouse', (req, res) => {
+  const wh = String(req.query.wh || '').toUpperCase();
+  if (!wh) return res.json({ ok: false, error: 'Missing warehouse code' });
+  const row = db.prepare('SELECT id, warehouse_code, warehouse_name, address FROM warehouses WHERE warehouse_code=? AND is_active=1').get(wh);
+  if (!row) return res.json({ ok: false, error: '无效的仓库二维码，请联系管理员' });
+  res.json({ ok: true, warehouse: row });
+});
+
+// ── Send OTP ─────────────────────────────────────────────────────────────
+app.post('/api/checkin/send-otp', async (req, res) => {
+  const { phone, warehouse_code } = req.body || {};
+  const ip = req.ip || '';
+  if (!phone || !warehouse_code) return res.json({ ok: false, error: 'Missing fields' });
+
+  const p10 = normalizePhone10(phone);
+  if (!p10) return res.json({ ok: false, error: '手机号格式无效，请输入10位美国手机号' });
+
+  const wh = db.prepare('SELECT id FROM warehouses WHERE warehouse_code=? AND is_active=1').get(warehouse_code.toUpperCase());
+  if (!wh) return res.json({ ok: false, error: '仓库无效' });
+
+  const emp = db.prepare(`SELECT id, status FROM employees WHERE ${PHONE_NORM_SQL}=?`).get(p10);
+  if (!emp) return res.json({ ok: false, error: '手机号未登记，无法签到，请联系管理员' });
+  if (emp.status !== 'active') return res.json({ ok: false, error: '您的账号已停用，请联系管理员' });
+
+  const now = Math.floor(Date.now() / 1000);
+  const recent = db.prepare('SELECT last_sent_at FROM checkin_otp WHERE phone=? ORDER BY id DESC LIMIT 1').get(p10);
+  if (recent && (now - recent.last_sent_at) < 60) {
+    return res.json({ ok: false, error: `请等待 ${60 - (now - recent.last_sent_at)} 秒后再次发送`, retry_in: 60 - (now - recent.last_sent_at) });
+  }
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  db.prepare('INSERT INTO checkin_otp (phone, code, warehouse_code, expires_at, last_sent_at, ip_address) VALUES (?,?,?,?,?,?)').run(p10, code, warehouse_code.toUpperCase(), now + 300, now, ip);
+
+  const body = `【Prime Anchor Point】签到验证码：${code}，5分钟有效，请勿泄露。\nCheck-in code: ${code} (expires in 5 min).`;
+  const sent = await sendSMS(formatPhoneE164(p10), body);
+  res.json({ ok: true, sent, expires_in: 300 });
+});
+
+// ── Verify OTP ───────────────────────────────────────────────────────────
+app.post('/api/checkin/verify-otp', (req, res) => {
+  const { phone, code, warehouse_code } = req.body || {};
+  if (!phone || !code || !warehouse_code) return res.json({ ok: false, error: 'Missing fields' });
+
+  const p10 = normalizePhone10(phone);
+  if (!p10) return res.json({ ok: false, error: '手机号格式无效' });
+
+  const now = Math.floor(Date.now() / 1000);
+  const otp = db.prepare('SELECT * FROM checkin_otp WHERE phone=? AND warehouse_code=? AND verified=0 AND expires_at>? ORDER BY id DESC LIMIT 1').get(p10, warehouse_code.toUpperCase(), now);
+  if (!otp) return res.json({ ok: false, error: '验证码已过期，请重新获取' });
+  if (otp.attempts >= 5) return res.json({ ok: false, error: '验证码错误次数过多，请重新获取' });
+  if (otp.code !== String(code).trim()) {
+    db.prepare('UPDATE checkin_otp SET attempts=attempts+1 WHERE id=?').run(otp.id);
+    const left = 5 - (otp.attempts + 1);
+    return res.json({ ok: false, error: `验证码错误，剩余 ${left} 次机会` });
+  }
+
+  db.prepare('UPDATE checkin_otp SET verified=1 WHERE id=?').run(otp.id);
+
+  const emp = db.prepare(`SELECT id, employee_id, first_name, last_name FROM employees WHERE ${PHONE_NORM_SQL}=?`).get(p10);
+  const wh  = db.prepare('SELECT id FROM warehouses WHERE warehouse_code=? AND is_active=1').get(warehouse_code.toUpperCase());
+
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare('INSERT INTO checkin_sessions (token, phone, employee_id, warehouse_id, step, expires_at) VALUES (?,?,?,?,?,?)').run(token, p10, emp.id, wh.id, 'otp_verified', now + 900);
+
+  res.json({ ok: true, session_token: token, employee_name: `${emp.first_name} ${emp.last_name}` });
+});
+
+// ── Verify GPS ───────────────────────────────────────────────────────────
+app.post('/api/checkin/verify-gps', (req, res) => {
+  const token = req.headers['x-checkin-token'];
+  const { latitude, longitude, accuracy } = req.body || {};
+  if (!token) return res.json({ ok: false, error: '无效会话' });
+
+  const now = Math.floor(Date.now() / 1000);
+  const sess = db.prepare('SELECT * FROM checkin_sessions WHERE token=? AND expires_at>?').get(token, now);
+  if (!sess) return res.json({ ok: false, error: '会话已过期，请重新扫码' });
+  if (sess.step !== 'otp_verified') return res.json({ ok: false, error: '请先完成验证码验证' });
+  if (latitude == null || longitude == null) return res.json({ ok: false, error: '无法获取定位' });
+
+  const wh = db.prepare('SELECT * FROM warehouses WHERE id=?').get(sess.warehouse_id);
+  const dist = Math.round(haversineMeters(Number(latitude), Number(longitude), wh.latitude, wh.longitude));
+  const acc  = Number(accuracy) || 999;
+
+  if (acc > 200) {
+    return res.json({ ok: false, error: `定位精度不足（误差 ${Math.round(acc)}m），请到开阔地带重试`, accuracy_poor: true });
+  }
+  if (dist > wh.geofence_radius_meters) {
+    return res.json({ ok: false, out_of_range: true, distance: dist, radius: wh.geofence_radius_meters,
+      error: `您不在签到范围内（当前距仓库 ${dist}m，允许范围 ${wh.geofence_radius_meters}m）` });
+  }
+
+  db.prepare('UPDATE checkin_sessions SET step=?, gps_latitude=?, gps_longitude=?, gps_accuracy=?, gps_distance=? WHERE token=?').run('gps_verified', latitude, longitude, accuracy, dist, token);
+  res.json({ ok: true, distance: dist, radius: wh.geofence_radius_meters });
+});
+
+// ── Submit check-in ──────────────────────────────────────────────────────
+app.post('/api/checkin/submit', checkinMediaUpload.single('media'), async (req, res) => {
+  const token = req.headers['x-checkin-token'];
+  if (!token) return res.json({ ok: false, error: '无效会话' });
+
+  const now = Math.floor(Date.now() / 1000);
+  const sess = db.prepare('SELECT * FROM checkin_sessions WHERE token=? AND expires_at>?').get(token, now);
+  if (!sess) return res.json({ ok: false, error: '会话已过期，请重新扫码' });
+  if (sess.step !== 'gps_verified') return res.json({ ok: false, error: '请先完成定位验证' });
+  if (!req.file) return res.json({ ok: false, error: '请先拍照再提交' });
+
+  // Duplicate check: same employee, same warehouse, within 10 minutes
+  const dupCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  const dup = db.prepare("SELECT id FROM warehouse_checkins WHERE employee_id=? AND warehouse_id=? AND checkin_time>?").get(sess.employee_id, sess.warehouse_id, dupCutoff);
+  if (dup) {
+    fs.unlink(path.join(checkinPhotosDir, req.file.filename), () => {});
+    return res.json({ ok: false, error: '您10分钟内已签到，请勿重复打卡' });
+  }
+
+  const emp = db.prepare('SELECT id, employee_id, first_name, last_name FROM employees WHERE id=?').get(sess.employee_id);
+  const wh  = db.prepare('SELECT * FROM warehouses WHERE id=?').get(sess.warehouse_id);
+  const mediaType  = (req.file.mimetype || '').startsWith('video') ? 'video' : 'photo';
+  const now_dt     = new Date();
+  const checkinTime = now_dt.toISOString().replace('T', ' ').slice(0, 19);
+  const checkinDate = now_dt.toISOString().slice(0, 10);
+
+  const r = db.prepare(`INSERT INTO warehouse_checkins
+    (employee_id, employee_no, employee_name, phone, warehouse_id, warehouse_code, warehouse_name,
+     gps_latitude, gps_longitude, gps_accuracy, distance_from_warehouse, gps_verified,
+     media_type, media_path, checkin_time, checkin_date, ip_address, user_agent)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)`)
+    .run(emp.id, emp.employee_id || '', `${emp.first_name} ${emp.last_name}`, sess.phone,
+         wh.id, wh.warehouse_code, wh.warehouse_name,
+         sess.gps_latitude, sess.gps_longitude, sess.gps_accuracy, sess.gps_distance,
+         mediaType, req.file.filename, checkinTime, checkinDate,
+         req.ip || '', req.headers['user-agent'] || '');
+  const checkinId = r.lastInsertRowid;
+
+  db.prepare('UPDATE checkin_sessions SET step=?, expires_at=0 WHERE token=?').run('completed', token);
+
+  const empName = `${emp.first_name} ${emp.last_name}`;
+  const smsBody = `${wh.warehouse_name} 签到成功 ✓\n姓名：${empName}\n员工号：${emp.employee_id || 'N/A'}\n仓库：${wh.warehouse_code}\n时间：${checkinTime}`;
+  const smsSent = await sendSMS(formatPhoneE164(sess.phone), smsBody);
+  if (smsSent) db.prepare('UPDATE warehouse_checkins SET sms_sent=1, sms_sent_at=CURRENT_TIMESTAMP WHERE id=?').run(checkinId);
+
+  res.json({
+    ok: true, checkin_id: checkinId,
+    employee_name: empName, employee_no: emp.employee_id || '',
+    phone: sess.phone, warehouse_name: wh.warehouse_name, warehouse_code: wh.warehouse_code,
+    checkin_time: checkinTime, checkin_date: checkinDate, media_type: mediaType, sms_sent: smsSent
+  });
+});
+
+// ── Admin: manage warehouses ─────────────────────────────────────────────
+app.get('/api/admin/warehouses', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT w.*, p.name AS partner_name
+    FROM warehouses w
+    LEFT JOIN partners p ON p.id = w.company_id
+    ORDER BY w.warehouse_code
+  `).all();
+  res.json({ ok: true, warehouses: rows });
+});
+
+app.post('/api/admin/warehouses', requireAdmin, (req, res) => {
+  const { warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, company_ids, company_name } = req.body || {};
+  if (!warehouse_code || !warehouse_name || latitude == null || longitude == null)
+    return res.json({ ok: false, error: 'Missing required fields' });
+  const ids = Array.isArray(company_ids) ? company_ids : [];
+  try {
+    const r = db.prepare('INSERT INTO warehouses (warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, company_id, company_name, company_ids) VALUES (?,?,?,?,?,?,?,?,?,?)').run(
+      warehouse_code.toUpperCase().trim(), warehouse_name.trim(), address || '',
+      latitude, longitude, geofence_radius_meters || 150, timezone || 'America/Los_Angeles',
+      ids[0] || null, company_name || '', JSON.stringify(ids));
+    res.json({ ok: true, id: r.lastInsertRowid });
+  } catch(e) {
+    res.json({ ok: false, error: e.message.includes('UNIQUE') ? '仓库代码已存在' : e.message });
+  }
+});
+
+app.put('/api/admin/warehouses/:id', requireAdmin, (req, res) => {
+  const { warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, is_active, company_ids, company_name } = req.body || {};
+  const ids = Array.isArray(company_ids) ? company_ids : [];
+  db.prepare('UPDATE warehouses SET warehouse_name=?, address=?, latitude=?, longitude=?, geofence_radius_meters=?, timezone=?, is_active=?, company_id=?, company_name=?, company_ids=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(
+    warehouse_name, address || '', latitude, longitude, geofence_radius_meters || 150,
+    timezone || 'America/Los_Angeles', is_active ? 1 : 0, ids[0] || null, company_name || '', JSON.stringify(ids), req.params.id);
+  res.json({ ok: true });
+});
+
+// ── Admin: checkin records ───────────────────────────────────────────────
+app.get('/api/admin/checkins', requireAdmin, (req, res) => {
+  const { warehouse_code, date, q, page = 1, per = 50 } = req.query;
+  const where = []; const params = [];
+  if (warehouse_code) { where.push('warehouse_code=?'); params.push(warehouse_code.toUpperCase()); }
+  if (date)           { where.push('checkin_date=?');    params.push(date); }
+  if (q)              { where.push('(employee_name LIKE ? OR employee_no LIKE ? OR phone LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
+  const total = db.prepare(`SELECT COUNT(*) as c FROM warehouse_checkins${w}`).get(...params).c;
+  const rows  = db.prepare(`SELECT * FROM warehouse_checkins${w} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, Number(per), (Number(page) - 1) * Number(per));
+  res.json({ ok: true, checkins: rows, total, page: Number(page), per: Number(per) });
+});
+
+// Serve checkin photos (admin only)
+app.get('/checkin-photos/:filename', requireAdmin, (req, res) => {
+  const file = path.join(checkinPhotosDir, path.basename(req.params.filename));
+  if (!fs.existsSync(file)) return res.status(404).send('Not found');
+  res.sendFile(file);
+});
+// ── END WAREHOUSE CHECK-IN SYSTEM ────────────────────────────────────────
 
 app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
