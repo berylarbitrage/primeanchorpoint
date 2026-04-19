@@ -159,6 +159,9 @@ let _userLat = null;
 let _userLng = null;
 let _photoData = null;
 let _countdownTimer = null;
+let _siteLat = null;
+let _siteLng = null;
+let _siteRadius = 200;
 
 function showMsg(id, text, type) {
   const el = document.getElementById(id);
@@ -190,6 +193,9 @@ async function api(url, opts) {
   try {
     const d = await api('/api/checkin/site-info?site=' + _siteId);
     document.getElementById('siteName').textContent = d.name + (d.code ? ' (' + d.code + ')' : '');
+    _siteLat = d.latitude;
+    _siteLng = d.longitude;
+    _siteRadius = d.radius_meters || 200;
   } catch (e) {
     document.getElementById('siteName').textContent = '无法加载工作地点信息';
   }
@@ -330,9 +336,26 @@ function startGPS() {
     pos => {
       _userLat = pos.coords.latitude;
       _userLng = pos.coords.longitude;
+
+      if (_siteLat != null && _siteLng != null) {
+        const dist = haversineDistance(_userLat, _userLng, _siteLat, _siteLng);
+        const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + 'km' : Math.round(dist) + 'm';
+        if (dist > _siteRadius) {
+          _gpsOk = false;
+          bar.className = 'gps-bar gps-fail';
+          txt.textContent = '不在签到范围内（距离 ' + distStr + '）';
+          showMsg('msg3', '您不在工作地点范围内（距离约' + distStr + '），请到达工作地点后再签到\n\n您的坐标: ' + _userLat.toFixed(6) + ', ' + _userLng.toFixed(6) + '\n仓库坐标: ' + _siteLat.toFixed(6) + ', ' + _siteLng.toFixed(6), 'err');
+          document.getElementById('photoArea').style.display = 'none';
+          return;
+        }
+        bar.className = 'gps-bar gps-ok';
+        txt.textContent = '定位成功 ✓（距离 ' + distStr + '）';
+      } else {
+        bar.className = 'gps-bar gps-ok';
+        txt.textContent = '定位成功 ✓';
+      }
+
       _gpsOk = true;
-      bar.className = 'gps-bar gps-ok';
-      txt.textContent = '定位成功 ✓';
       document.getElementById('photoArea').style.display = '';
       updatePunchBtn();
     },
