@@ -10311,7 +10311,7 @@ function renderPartners(partners) {
         ${(p.signed_contract_count||0)>0
           ? `<button class="btn btn-sm" style="background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="event.stopPropagation();showPartnerById(${p.id})">📄 查看合同</button>`
           : (p.contract_file_count||0)>0
-            ? `<button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A" onclick="event.stopPropagation();showPartnerById(${p.id})">📋 签署中</button>`
+            ? `<button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A" onclick="event.stopPropagation();showPartnerById(${p.id})">📋 签署中</button><button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">🔄 重新发送</button>`
             : `<button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">✍ 发送合同</button>`}
         ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>`:''}
       </td>
@@ -10334,7 +10334,9 @@ async function showPartnerById(id) {
   const files = await api(`/admin/partners/${id}/files`);
   const hasContract = files.some(f=>f.file_type==='contract'||f.file_type==='agreement');
   document.getElementById('btnEditContract').style.display = hasContract ? 'none' : '';
-  document.getElementById('btnSendContract').style.display = hasContract ? 'none' : '';
+  const contractDone = files.some(f => (f.file_type==='contract'||f.file_type==='agreement') && f.ds_status==='completed');
+  document.getElementById('btnSendContract').style.display = contractDone ? 'none' : '';
+  document.getElementById('btnSendContract').textContent = hasContract ? '🔄 重新发送合同' : '✍ 发送合同';
   // Show refresh button if there are any files with an active DocuSign envelope (not yet completed)
   const hasPendingDs = files.some(f => f.ds_envelope_id && f.ds_status && f.ds_status !== 'completed' && f.ds_status !== 'voided');
   document.getElementById('btnRefreshDsStatus').style.display = hasPendingDs ? '' : 'none';
