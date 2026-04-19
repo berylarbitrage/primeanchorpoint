@@ -10523,21 +10523,28 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
       dsealError = `未配置 ${pmLabel} 授权模板，请在 DocuSeal 配置页面设置对应模板`;
     } else {
       try {
-        const submitter = { role: 'First Party', name: workerName, email: workerEmail };
-        if (workerPhone) submitter.phone = formatPhoneE164(workerPhone);
+        const submitter1 = { role: 'First Party', name: workerName, email: workerEmail };
+        if (workerPhone) submitter1.phone = formatPhoneE164(workerPhone);
+        const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+        const companySignerName = getCompanySignerName();
+        const submitters = [submitter1];
+        if (companyEmail) {
+          submitters.push({ role: 'Second Party', name: companySignerName, email: companyEmail });
+        }
         const subRes = await dsealApiCall('POST', '/api/submissions', {
           template_id: parseInt(templateId),
           send_email: true,
           send_sms: true,
-          submitters: [submitter]
+          order: 'preserved',
+          submitters
         });
-        const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
-        if (subRes.status >= 400 || !submitters.length) throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
-        const signer = submitters[0];
-        submissionId = String(subRes.data?.id || signer?.submission_id || signer?.id || '');
-        signUrl = signer?.embed_src || '';
-        if (!signUrl && signer?.slug) signUrl = `${dsealPublicHost()}/s/${signer.slug}`;
-        console.log(`[payment-auth send] DocuSeal submission ${submissionId}, method=${paymentMethod}`);
+        const subs = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+        if (subRes.status >= 400 || !subs.length) throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+        const workerSub = subs.find(s => s.role === 'First Party') || subs[0];
+        submissionId = String(subRes.data?.id || workerSub?.submission_id || workerSub?.id || '');
+        signUrl = workerSub?.embed_src || '';
+        if (!signUrl && workerSub?.slug) signUrl = `${dsealPublicHost()}/s/${workerSub.slug}`;
+        console.log(`[payment-auth send] DocuSeal submission ${submissionId}, method=${paymentMethod}, submitters=${subs.length}`);
       } catch (e) {
         dsealError = e.message;
         console.error('[payment-auth send] DocuSeal error:', e.message);
