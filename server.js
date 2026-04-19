@@ -17554,13 +17554,18 @@ app.post('/api/checkin/punch', async (req, res) => {
     return res.status(400).json({ error: `您的位置不在工作地点范围内（距离约${distStr}），请到达工作地点后再签到` });
   }
 
-  // Save photo if provided
+  // Save photo/video if provided
   let photoFilename = null;
   if (photo) {
     try {
-      const base64Data = photo.replace(/^data:image\/\w+;base64,/, '');
+      const m = /^data:(image|video)\/([A-Za-z0-9.+-]+);base64,/.exec(photo);
+      const kind = m ? m[1] : 'image';
+      const subtypeRaw = (m ? m[2] : 'jpeg').toLowerCase();
+      const extMap = { jpeg: 'jpg', 'svg+xml': 'svg', quicktime: 'mov', 'x-matroska': 'mkv', 'x-msvideo': 'avi' };
+      const ext = extMap[subtypeRaw] || subtypeRaw.replace(/[^a-z0-9]/g, '') || (kind === 'video' ? 'mp4' : 'jpg');
+      const base64Data = photo.replace(/^data:(image|video)\/[A-Za-z0-9.+-]+;base64,/, '');
       const buf = Buffer.from(base64Data, 'base64');
-      photoFilename = `checkin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.jpg`;
+      photoFilename = `checkin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
       fs.writeFileSync(path.join(checkinPhotosDir, photoFilename), buf);
     } catch (e) {
       console.error('[Checkin] Photo save error:', e.message);
