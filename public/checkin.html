@@ -66,10 +66,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
 .step{display:none}
 .step.active{display:block}
 
-.code-input{display:flex;gap:.4rem;justify-content:center;margin-bottom:.85rem}
-.code-input input{width:44px;height:52px;text-align:center;font-size:1.3rem;font-weight:700;border:2px solid var(--gray-200);border-radius:8px;outline:none;font-family:inherit}
-.code-input input:focus{border-color:var(--sky)}
-
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -103,13 +99,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
     <h2><span class="step-badge">2</span> 输入验证码</h2>
     <div id="msg2" class="msg"></div>
     <p style="font-size:.82rem;color:var(--gray-600);margin-bottom:.75rem">验证码已发送至 <strong id="phoneDisplay"></strong></p>
-    <div class="code-input" id="codeInputs">
-      <input type="tel" maxlength="1" inputmode="numeric" data-idx="0">
-      <input type="tel" maxlength="1" inputmode="numeric" data-idx="1">
-      <input type="tel" maxlength="1" inputmode="numeric" data-idx="2">
-      <input type="tel" maxlength="1" inputmode="numeric" data-idx="3">
-      <input type="tel" maxlength="1" inputmode="numeric" data-idx="4">
-      <input type="tel" maxlength="1" inputmode="numeric" data-idx="5">
+    <div class="field">
+      <input type="tel" id="codeInput" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="输入6位验证码" style="text-align:center;font-size:1.4rem;font-weight:700;letter-spacing:8px">
     </div>
     <div class="countdown" id="countdown"></div>
     <button class="btn btn-primary" id="btnVerify" onclick="verifyCode()" disabled>验证 / Verify</button>
@@ -242,7 +233,7 @@ async function sendCode() {
     document.getElementById('phoneDisplay').textContent = phoneInput.value;
     goStep(2);
     startCountdown(300);
-    document.querySelector('#codeInputs input').focus();
+    codeInput.focus();
   } catch (e) {
     showMsg('msg1', e.message, 'err');
   } finally {
@@ -252,33 +243,15 @@ async function sendCode() {
 }
 
 // Code input handling
-const codeBoxes = document.querySelectorAll('#codeInputs input');
-codeBoxes.forEach((inp, i) => {
-  inp.addEventListener('input', function() {
-    this.value = this.value.replace(/\D/g, '').slice(0, 1);
-    if (this.value && i < 5) codeBoxes[i + 1].focus();
-    checkCodeComplete();
-  });
-  inp.addEventListener('keydown', function(e) {
-    if (e.key === 'Backspace' && !this.value && i > 0) {
-      codeBoxes[i - 1].focus();
-      codeBoxes[i - 1].value = '';
-    }
-    if (e.key === 'Enter') verifyCode();
-  });
-  inp.addEventListener('paste', function(e) {
-    e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
-    for (let j = 0; j < text.length && j < 6; j++) codeBoxes[j].value = text[j];
-    if (text.length > 0) codeBoxes[Math.min(text.length, 5)].focus();
-    checkCodeComplete();
-  });
+const codeInput = document.getElementById('codeInput');
+codeInput.addEventListener('input', function() {
+  this.value = this.value.replace(/\D/g, '').slice(0, 6);
+  document.getElementById('btnVerify').disabled = this.value.length < 6;
+  if (this.value.length === 6) verifyCode();
 });
-
-function checkCodeComplete() {
-  const code = Array.from(codeBoxes).map(b => b.value).join('');
-  document.getElementById('btnVerify').disabled = code.length < 6;
-}
+codeInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && this.value.length === 6) verifyCode();
+});
 
 function startCountdown(seconds) {
   let remaining = seconds;
@@ -299,7 +272,7 @@ function startCountdown(seconds) {
 }
 
 async function verifyCode() {
-  const code = Array.from(codeBoxes).map(b => b.value).join('');
+  const code = codeInput.value.replace(/\D/g, '');
   if (code.length < 6) return;
   hideMsg('msg2');
   const btn = document.getElementById('btnVerify');
