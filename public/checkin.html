@@ -122,10 +122,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
     <div class="photo-area" id="photoArea" style="display:none">
       <div class="camera-btn" id="cameraBtn">
         <div class="cam-icon">📷</div>
-        <span>点击拍照 / Take Photo</span>
-        <input type="file" accept="image/*" capture="environment" id="photoFile" onchange="handlePhoto(this)">
+        <span>拍照 或 录像 / Photo or Video</span>
+        <input type="file" accept="image/*,video/*" capture="environment" id="photoFile" onchange="handlePhoto(this)">
       </div>
       <img id="photoPreview" class="photo-preview" alt="Photo preview">
+      <video id="videoPreview" class="photo-preview" controls playsinline style="display:none;background:#000"></video>
     </div>
     <button class="btn btn-green" id="btnPunch" onclick="submitPunch()" disabled>签到 / Check In</button>
   </div>
@@ -416,12 +417,27 @@ function startGPS() {
 function handlePhoto(input) {
   const file = input.files[0];
   if (!file) return;
+  const isVideo = (file.type || '').startsWith('video/');
+  // base64 JSON upload limit: ~15MB → keep raw file ≤10MB
+  if (file.size > 10 * 1024 * 1024) {
+    showMsg('msg3', '文件过大（上限 10MB），请缩短视频或降低分辨率再试', 'err');
+    input.value = '';
+    return;
+  }
   const reader = new FileReader();
   reader.onload = function(e) {
     _photoData = e.target.result;
-    const preview = document.getElementById('photoPreview');
-    preview.src = _photoData;
-    preview.style.display = 'block';
+    const imgPrev = document.getElementById('photoPreview');
+    const vidPrev = document.getElementById('videoPreview');
+    if (isVideo) {
+      vidPrev.src = _photoData;
+      vidPrev.style.display = 'block';
+      imgPrev.style.display = 'none';
+    } else {
+      imgPrev.src = _photoData;
+      imgPrev.style.display = 'block';
+      vidPrev.style.display = 'none';
+    }
     document.getElementById('cameraBtn').classList.add('has-photo');
     updatePunchBtn();
   };
