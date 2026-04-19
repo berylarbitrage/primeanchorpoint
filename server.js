@@ -19436,39 +19436,28 @@ app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
   res.json({ success: true });
 });
 
-// ─── Geocode proxy: Google Maps → Nominatim fallback ───
+// ─── Geocode proxy: Google Maps Geocoding API only ───
 app.get('/api/geocode', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.status(400).json({ error: 'q required' });
-  const https = require('https');
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  // Try Google Geocoding API first if key is available
-  if (apiKey) {
-    try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${apiKey}`;
-      const data = await new Promise((resolve, reject) => {
-        https.get(url, resp => {
-          let d = ''; resp.on('data', c => d += c); resp.on('end', () => resolve(JSON.parse(d)));
-        }).on('error', reject);
-      });
-      if (data.status === 'OK' && data.results.length) {
-        const r = data.results[0];
-        return res.json({ lat: r.geometry.location.lat, lng: r.geometry.location.lng, display: r.formatted_address, source: 'google' });
-      }
-    } catch (e) { /* fall through to Nominatim */ }
+  if (!apiKey) {
+    return res.status(503).json({ error: 'GOOGLE_MAPS_API_KEY not configured' });
   }
-  // Nominatim fallback
+  const https = require('https');
   try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&countrycodes=us`;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${apiKey}`;
     const data = await new Promise((resolve, reject) => {
-      https.get(url, { headers: { 'User-Agent': 'PrimeAnchorpoint/1.0' } }, resp => {
-        let d = ''; resp.on('data', c => d += c); resp.on('end', () => resolve(JSON.parse(d)));
+      https.get(url, resp => {
+        let d = ''; resp.on('data', c => d += c); resp.on('end', () => { try { resolve(JSON.parse(d)); } catch (err) { reject(err); } });
       }).on('error', reject);
     });
-    if (data.length) {
-      return res.json({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name, source: 'nominatim' });
+    if (data.status === 'OK' && data.results.length) {
+      const r = data.results[0];
+      return res.json({ lat: r.geometry.location.lat, lng: r.geometry.location.lng, display: r.formatted_address, source: 'google' });
     }
-    return res.json({ found: false });
+    if (data.status === 'ZERO_RESULTS') return res.json({ found: false });
+    return res.status(502).json({ error: `geocode failed: ${data.status || 'unknown'}`, details: data.error_message || null });
   } catch (e) {
     return res.status(500).json({ error: 'geocode failed' });
   }
