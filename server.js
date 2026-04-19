@@ -3023,7 +3023,7 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   const subRes = await dsealApiCall('POST', '/api/submissions/pdf', {
     name: emailSubject || docName,
     documents: [{ name: docName, file: docBase64 }],
-    send_email: false,
+    send_email: true,
     order: 'preserved',
     submitters: [
       { role: 'First Party', name: signer1.name, email: signer1.email },
