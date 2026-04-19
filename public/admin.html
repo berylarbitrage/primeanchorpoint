@@ -27380,17 +27380,20 @@ function printInvoice() {
 <!-- ════════════════════ WAREHOUSES TAB ════════════════════ -->
 <div id="tab-warehouses" style="display:none">
   <div class="top">
-    <h1>仓库签到管理</h1>
+    <div>
+      <h1>仓库签到管理</h1>
+      <p style="color:var(--gray-600);font-size:.88rem;margin-top:.25rem">管理仓库地点与 GPS 围栏，员工扫码打卡时使用</p>
+    </div>
     <div class="top-actions">
       <button class="btn btn-green" onclick="openWhModal(null)">+ 新增仓库</button>
     </div>
   </div>
-  <div class="card" style="padding:0;overflow:hidden">
-    <table>
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table style="min-width:1000px">
       <thead><tr>
         <th style="min-width:100px">仓库代码</th>
         <th style="min-width:150px">仓库名称</th>
-        <th style="min-width:140px">关联公司</th>
+        <th style="min-width:160px">关联公司</th>
         <th style="min-width:180px">地址</th>
         <th style="min-width:170px">位置 / 围栏</th>
         <th style="min-width:70px">状态</th>
@@ -27404,7 +27407,10 @@ function printInvoice() {
 <!-- ════════════════════ WAREHOUSE CHECKINS TAB ════════════════════ -->
 <div id="tab-warehouse-checkins" style="display:none">
   <div class="top">
-    <h1>签到记录</h1>
+    <div>
+      <h1>签到记录</h1>
+      <p style="color:var(--gray-600);font-size:.88rem;margin-top:.25rem">员工仓库签到历史，包含 GPS 位置与拍照记录</p>
+    </div>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="showTab('warehouses')">← 仓库管理</button>
     </div>
@@ -27417,7 +27423,7 @@ function printInvoice() {
     <input type="text" id="whCheckinSearch" placeholder="搜索姓名、员工号、电话..." oninput="_whCIPage=1;loadWarehouseCheckins()">
     <button class="btn btn-outline" onclick="clearWhCheckinFilter()">清除</button>
   </div>
-  <div class="card" style="padding:0;overflow:hidden">
+  <div class="card" style="padding:0;overflow-x:auto">
     <div style="overflow-x:auto">
       <table>
         <thead><tr>
