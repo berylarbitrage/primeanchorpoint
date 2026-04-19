@@ -626,6 +626,8 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
+try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -9040,9 +9042,13 @@ function syncOnboardedStatus(workerId) {
     if (typeTasks.length) assigned = [...typeTasks];
   }
   if (!assigned.length) return; // no tasks assigned — don't auto-mark
+  // phone_verify and email_verify are always required for account access but
+  // should not block onboarding-ready status
+  const checkable = assigned.filter(key => key !== 'phone_verify' && key !== 'email_verify');
+  if (!checkable.length) return;
   const tasks = db.prepare('SELECT task_key, status FROM worker_onboarding WHERE worker_account_id=?').all(workerId);
   const statusMap = Object.fromEntries(tasks.map(t => [t.task_key, t.status]));
-  const allDone = assigned.every(key => statusMap[key] === 'completed' || statusMap[key] === 'waived');
+  const allDone = checkable.every(key => statusMap[key] === 'completed' || statusMap[key] === 'waived');
   // When all assigned tasks are done, mark onboarded AND auto-enable dispatch_ready
   // When not all done, clear onboarded and dispatch_ready
   db.prepare('UPDATE worker_accounts SET onboarded=?, dispatch_ready=? WHERE id=?').run(allDone ? 1 : 0, allDone ? 1 : 0, workerId);
@@ -21395,17 +21401,24 @@ app.post('/api/checkin/submit', checkinMediaUpload.single('media'), async (req, 
 
 // ── Admin: manage warehouses ─────────────────────────────────────────────
 app.get('/api/admin/warehouses', requireAdmin, (req, res) => {
-  res.json({ ok: true, warehouses: db.prepare('SELECT * FROM warehouses ORDER BY warehouse_code').all() });
+  const rows = db.prepare(`
+    SELECT w.*, p.name AS partner_name
+    FROM warehouses w
+    LEFT JOIN partners p ON p.id = w.company_id
+    ORDER BY w.warehouse_code
+  `).all();
+  res.json({ ok: true, warehouses: rows });
 });
 
 app.post('/api/admin/warehouses', requireAdmin, (req, res) => {
-  const { warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone } = req.body || {};
+  const { warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, company_id, company_name } = req.body || {};
   if (!warehouse_code || !warehouse_name || latitude == null || longitude == null)
     return res.json({ ok: false, error: 'Missing required fields' });
   try {
-    const r = db.prepare('INSERT INTO warehouses (warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone) VALUES (?,?,?,?,?,?,?)').run(
+    const r = db.prepare('INSERT INTO warehouses (warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, company_id, company_name) VALUES (?,?,?,?,?,?,?,?,?)').run(
       warehouse_code.toUpperCase().trim(), warehouse_name.trim(), address || '',
-      latitude, longitude, geofence_radius_meters || 150, timezone || 'America/Los_Angeles');
+      latitude, longitude, geofence_radius_meters || 150, timezone || 'America/Los_Angeles',
+      company_id || null, company_name || '');
     res.json({ ok: true, id: r.lastInsertRowid });
   } catch(e) {
     res.json({ ok: false, error: e.message.includes('UNIQUE') ? '仓库代码已存在' : e.message });
@@ -21413,10 +21426,10 @@ app.post('/api/admin/warehouses', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/warehouses/:id', requireAdmin, (req, res) => {
-  const { warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, is_active } = req.body || {};
-  db.prepare('UPDATE warehouses SET warehouse_name=?, address=?, latitude=?, longitude=?, geofence_radius_meters=?, timezone=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(
+  const { warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, is_active, company_id, company_name } = req.body || {};
+  db.prepare('UPDATE warehouses SET warehouse_name=?, address=?, latitude=?, longitude=?, geofence_radius_meters=?, timezone=?, is_active=?, company_id=?, company_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(
     warehouse_name, address || '', latitude, longitude, geofence_radius_meters || 150,
-    timezone || 'America/Los_Angeles', is_active ? 1 : 0, req.params.id);
+    timezone || 'America/Los_Angeles', is_active ? 1 : 0, company_id || null, company_name || '', req.params.id);
   res.json({ ok: true });
 });
 
