@@ -6,6 +6,8 @@
 <title>Prime Anchor Point — 仓库签到</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--green:#2D9D78;--red:#E63946;--orange:#F5A623;--white:#fff;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--radius:14px}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -121,6 +123,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
     <div class="gps-bar gps-pending" id="gpsBar">
       <span>📡</span> <span id="gpsText">GPS 定位中...</span>
     </div>
+    <div id="gpsMapWrap" style="display:none;margin-bottom:.85rem">
+      <div id="gpsMap" style="width:100%;height:220px;border-radius:10px;border:2px solid var(--gray-200)"></div>
+      <div style="font-size:.7rem;color:var(--gray-400);margin-top:.3rem;text-align:center">
+        🔴 仓库位置 &nbsp; 🔵 您的位置 &nbsp; ⭕ 签到范围
+      </div>
+    </div>
     <div class="photo-area" id="photoArea" style="display:none">
       <div class="camera-btn" id="cameraBtn">
         <div class="cam-icon">📷</div>
@@ -164,6 +172,9 @@ let _siteLng = null;
 let _siteRadius = 200;
 let _gpsWatchId = null;
 let _gpsBestAccuracy = 99999;
+let _map = null;
+let _userMarker = null;
+let _accuracyCircle = null;
 
 function showMsg(id, text, type) {
   const el = document.getElementById(id);
@@ -322,11 +333,46 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function initMap() {
+  if (_map) return;
+  document.getElementById('gpsMapWrap').style.display = '';
+  _map = L.map('gpsMap', { zoomControl: false, attributionControl: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_map);
+  if (_siteLat != null && _siteLng != null) {
+    L.marker([_siteLat, _siteLng], {
+      icon: L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#E63946;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] })
+    }).addTo(_map).bindPopup('仓库位置');
+    L.circle([_siteLat, _siteLng], { radius: _siteRadius, color: '#E63946', fillColor: '#E63946', fillOpacity: 0.08, weight: 1.5, dashArray: '5,5' }).addTo(_map);
+  }
+}
+
+function updateMapUser(lat, lng, acc) {
+  initMap();
+  const pos = [lat, lng];
+  if (_userMarker) {
+    _userMarker.setLatLng(pos);
+  } else {
+    _userMarker = L.marker(pos, {
+      icon: L.divIcon({ className: '', html: '<div style="width:12px;height:12px;background:#4A90D9;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [12, 12], iconAnchor: [6, 6] })
+    }).addTo(_map).bindPopup('您的位置');
+  }
+  if (_accuracyCircle) {
+    _accuracyCircle.setLatLng(pos).setRadius(Math.min(acc, 5000));
+  } else {
+    _accuracyCircle = L.circle(pos, { radius: Math.min(acc, 5000), color: '#4A90D9', fillColor: '#4A90D9', fillOpacity: 0.1, weight: 1 }).addTo(_map);
+  }
+  if (_siteLat != null) {
+    _map.fitBounds([[lat, lng], [_siteLat, _siteLng]], { padding: [30, 30], maxZoom: 16 });
+  } else {
+    _map.setView(pos, 15);
+  }
+}
+
 function startGPS() {
   const bar = document.getElementById('gpsBar');
   const txt = document.getElementById('gpsText');
   bar.className = 'gps-bar gps-pending';
-  txt.textContent = 'GPS 卫星定位中... 请稍等';
+  txt.textContent = 'GPS 定位中...';
   _gpsBestAccuracy = 99999;
   _gpsOk = false;
   hideMsg('msg3');
@@ -338,8 +384,6 @@ function startGPS() {
   }
 
   if (_gpsWatchId != null) navigator.geolocation.clearWatch(_gpsWatchId);
-
-  const MAX_ACCURACY = 150; // max acceptable GPS accuracy in meters
 
   _gpsWatchId = navigator.geolocation.watchPosition(
     pos => {
@@ -353,39 +397,32 @@ function startGPS() {
         _userLng = lng;
       }
 
-      const bestAccStr = _gpsBestAccuracy >= 1000 ? (_gpsBestAccuracy / 1000).toFixed(1) + 'km' : Math.round(_gpsBestAccuracy) + 'm';
+      updateMapUser(_userLat, _userLng, _gpsBestAccuracy);
 
-      if (_gpsBestAccuracy > MAX_ACCURACY) {
-        bar.className = 'gps-bar gps-pending';
-        txt.textContent = '定位精度不足（' + bestAccStr + '），请走到门口或窗户旁...';
-        document.getElementById('photoArea').style.display = 'none';
-        _gpsOk = false;
-        updatePunchBtn();
-        return;
-      }
+      const bestAccStr = _gpsBestAccuracy >= 1000 ? (_gpsBestAccuracy / 1000).toFixed(1) + 'km' : Math.round(_gpsBestAccuracy) + 'm';
 
       if (_siteLat != null && _siteLng != null) {
         const dist = haversineDistance(_userLat, _userLng, _siteLat, _siteLng);
         const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + 'km' : Math.round(dist) + 'm';
+        const inRange = dist <= _siteRadius + _gpsBestAccuracy;
 
-        if (dist > _siteRadius) {
+        if (inRange) {
+          navigator.geolocation.clearWatch(_gpsWatchId);
+          _gpsWatchId = null;
+          _gpsOk = true;
+          bar.className = 'gps-bar gps-ok';
+          txt.textContent = '定位成功 ✓（距离 ' + distStr + '，精度 ' + bestAccStr + '）';
+          hideMsg('msg3');
+          document.getElementById('photoArea').style.display = '';
+          updatePunchBtn();
+        } else {
           _gpsOk = false;
           bar.className = 'gps-bar gps-fail';
-          txt.textContent = '不在签到范围内（距离 ' + distStr + '，精度 ' + bestAccStr + '）';
+          txt.textContent = '不在签到范围（距离 ' + distStr + '，精度 ' + bestAccStr + '）';
           showMsg('msg3', '您不在工作地点范围内（距离约' + distStr + '），请到达工作地点后再签到', 'err');
           document.getElementById('photoArea').style.display = 'none';
           updatePunchBtn();
-          return;
         }
-
-        navigator.geolocation.clearWatch(_gpsWatchId);
-        _gpsWatchId = null;
-        _gpsOk = true;
-        bar.className = 'gps-bar gps-ok';
-        txt.textContent = '定位成功 ✓（距离 ' + distStr + '，精度 ' + bestAccStr + '）';
-        hideMsg('msg3');
-        document.getElementById('photoArea').style.display = '';
-        updatePunchBtn();
       }
     },
     err => {
