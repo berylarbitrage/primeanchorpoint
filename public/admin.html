@@ -523,7 +523,8 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('jobs')" data-tab="jobs" data-role="admin,staff">职位管理</a>
       <a onclick="showTab('assignments')" data-tab="assignments" data-role="admin,staff">派工管理</a>
       <a onclick="showTab('interviews')" data-tab="interviews" data-role="admin,staff">🗓️ 面试管理</a>
-      <a onclick="showTab('jobsites')" data-tab="jobsites" data-role="admin,staff">📍 工作地点</a>
+      <a onclick="showTab('jobsites')" data-tab="jobsites" data-role="admin,staff">🏭 仓库签到</a>
+      <a onclick="showTab('time')" data-tab="time" data-role="admin,staff">📋 签到记录</a>
     </div>
   </div>
 
@@ -2212,13 +2213,13 @@ tr:hover td{background:var(--sky-light)}
 <!-- Job Sites 工作地点 -->
 <div id="tab-jobsites" style="display:none">
   <div class="top">
-    <h1>工作地点管理 (GPS 围栏)</h1>
-    <button class="btn btn-green" onclick="openJobSiteModal()">+ 添加地点</button>
+    <h1>🏭 仓库管理</h1>
+    <button class="btn btn-green" onclick="openJobSiteModal()">+ 新增仓库</button>
   </div>
   <div class="card">
     <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">工人打卡时系统用 Haversine 公式计算是否在指定半径内</p>
     <table><thead><tr>
-      <th>名称</th><th>地址</th><th>坐标 (Lat, Lng)</th><th>半径</th><th>状态</th><th>操作</th>
+      <th>代码</th><th>名称</th><th>关联公司</th><th>地址</th><th>坐标</th><th>半径</th><th>时区</th><th>状态</th><th>操作</th>
     </tr></thead>
     <tbody id="jobSitesTable"></tbody></table>
   </div>
@@ -2980,38 +2981,50 @@ tr:hover td{background:var(--sky-light)}
 
 </div></div>
 
-<!-- Job Site Modal -->
-<div class="modal-bg" id="jobSiteModal"><div class="modal" style="max-width:480px">
-  <h2 id="jobSiteModalTitle">添加工作地点</h2>
+<!-- Job Site / Warehouse Modal -->
+<div class="modal-bg" id="jobSiteModal"><div class="modal" style="max-width:520px">
+  <h2 id="jobSiteModalTitle">新增仓库</h2>
   <input type="hidden" id="siteId">
-  <div class="field"><label>名称 *</label><input id="siteName" placeholder="例: 仓库A"></div>
   <div class="field">
-    <label>地址</label>
-    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.4rem">
-      <button type="button" class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;white-space:nowrap" onclick="toggleJobAddrPicker()">📋 从职位导入地址</button>
-      <span id="siteJobPickerStatus" style="font-size:.8rem;color:var(--gray-400)"></span>
-    </div>
-    <div id="siteJobPickerWrap" style="display:none;margin-bottom:.5rem;border:1px solid var(--gray-200);border-radius:8px;max-height:180px;overflow-y:auto">
-      <div id="siteJobPickerList"></div>
-    </div>
-    <input id="siteAddress" placeholder="123 Main St, City, ST" oninput="clearAddrStatus('siteAddrStatus')" onblur="autoVerifySingleAddr('siteAddress','siteAddrStatus')">
+    <label style="font-weight:700">关联公司 <span style="font-weight:400;color:var(--gray-400);font-size:.82rem">（可多选，选中后自动填入地址）</span></label>
+    <div id="sitePartnerCheckboxes" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem;max-height:160px;overflow-y:auto;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px"></div>
   </div>
-  <div style="display:flex;align-items:center;gap:.5rem;margin-top:-.25rem;margin-bottom:.5rem">
-    <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('siteAddress','siteAddrStatus')">🔍 验证地址 Verify</button>
+  <div style="display:flex;gap:1rem;margin-bottom:0">
+    <div class="field" style="flex:1"><label>仓库代码 *</label><input id="siteCode" placeholder="如 WH001"></div>
+    <div class="field" style="flex:1"><label>仓库名称 *</label><input id="siteName" placeholder="如 洛杉矶主仓库"></div>
+  </div>
+  <div class="field">
+    <label>地址 *</label>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <input id="siteAddress" style="flex:1" placeholder="输入完整地址，然后点击验证" oninput="clearAddrStatus('siteAddrStatus')" onblur="autoVerifySingleAddr('siteAddress','siteAddrStatus')">
+      <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('siteAddress','siteAddrStatus')">验证地址</button>
+    </div>
     <span id="siteAddrStatus" style="font-size:.8rem;font-weight:600"></span>
   </div>
-  <div class="field-row" style="display:flex;gap:1rem">
-    <div class="field" style="flex:1"><label>纬度 Latitude *</label><input id="siteLat" type="number" step="any" placeholder="40.7128" oninput="updateSiteMap()"></div>
-    <div class="field" style="flex:1"><label>经度 Longitude *</label><input id="siteLng" type="number" step="any" placeholder="-74.0060" oninput="updateSiteMap()"></div>
+  <div style="display:flex;gap:1rem">
+    <div class="field" style="flex:1"><label>纬度 LATITUDE *</label><input id="siteLat" type="number" step="any" placeholder="验证地址后自动填入" oninput="updateSiteMap()"></div>
+    <div class="field" style="flex:1"><label>经度 LONGITUDE *</label><input id="siteLng" type="number" step="any" placeholder="验证地址后自动填入" oninput="updateSiteMap()"></div>
   </div>
-  <div class="field"><label>围栏半径 (米)</label><input id="siteRadius" type="number" value="200" min="50" max="2000" oninput="updateSiteMap()"></div>
-  <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:.6rem">提示: 可以在 Google Maps 上右键点击获取坐标，或输入坐标后下方地图预览会自动更新</div>
+  <div style="display:flex;gap:1rem">
+    <div class="field" style="flex:1"><label>GPS 围栏半径（米）</label><input id="siteRadius" type="number" value="150" min="50" max="2000" oninput="updateSiteMap()"></div>
+    <div class="field" style="flex:1"><label>时区</label>
+      <select id="siteTz" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem">
+        <option value="America/Los_Angeles">太平洋时间 (PT)</option>
+        <option value="America/Denver">山地时间 (MT)</option>
+        <option value="America/Chicago">中部时间 (CT)</option>
+        <option value="America/New_York">东部时间 (ET)</option>
+        <option value="Pacific/Honolulu">夏威夷时间 (HT)</option>
+        <option value="America/Anchorage">阿拉斯加时间 (AKT)</option>
+      </select>
+    </div>
+  </div>
   <div id="siteMapWrap" style="display:none;margin-bottom:1rem">
     <div id="siteMapPreview" style="height:220px;border-radius:10px;border:1px solid var(--gray-200);overflow:hidden"></div>
   </div>
+  <label style="display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;cursor:pointer;font-size:.88rem"><input type="checkbox" id="siteActive" checked style="width:16px;height:16px"> 仓库启用</label>
   <div class="modal-actions">
-    <button class="btn btn-green" onclick="saveJobSite()">保存</button>
     <button class="btn" onclick="closeModal('jobSiteModal')">取消</button>
+    <button class="btn btn-green" onclick="saveJobSite()">保存</button>
   </div>
 </div></div>
 
@@ -23114,75 +23127,89 @@ function resetSiteMap() {
   document.getElementById('siteMapPreview').innerHTML = '';
 }
 
+const _TZ_LABELS = {'America/Los_Angeles':'太平洋 PT','America/Denver':'山地 MT','America/Chicago':'中部 CT','America/New_York':'东部 ET','Pacific/Honolulu':'夏威夷 HT','America/Anchorage':'阿拉斯加 AKT'};
+
 async function loadJobSites() {
   const sites = await api('/admin/job-sites');
   if (!sites) return;
   _jobSites = sites;
   document.getElementById('jobSitesTable').innerHTML = sites.length ? sites.map(s => `<tr>
+    <td style="font-family:monospace;font-size:.8rem;white-space:nowrap">${esc(s.code||'—')}</td>
     <td><strong>${esc(s.name)}</strong></td>
-    <td>${esc(s.address||'—')}</td>
-    <td><a href="https://maps.google.com/?q=${s.latitude},${s.longitude}" target="_blank">${(+s.latitude).toFixed(5)}, ${(+s.longitude).toFixed(5)}</a></td>
+    <td style="font-size:.82rem">${(s.partner_names||[]).length ? s.partner_names.map(n=>'<span style="display:inline-block;background:#eff6ff;color:#1d4ed8;padding:1px 6px;border-radius:4px;font-size:.75rem;margin:1px">'+esc(n)+'</span>').join(' ') : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.82rem">${esc(s.address||'—')}</td>
+    <td style="font-size:.8rem"><a href="https://maps.google.com/?q=${s.latitude},${s.longitude}" target="_blank">${(+s.latitude).toFixed(4)}, ${(+s.longitude).toFixed(4)}</a></td>
     <td>${s.radius_meters}m</td>
+    <td style="font-size:.8rem">${_TZ_LABELS[s.timezone]||s.timezone||'—'}</td>
     <td>${s.active ? '<span style="color:var(--green);font-weight:600">启用</span>' : '<span style="color:var(--gray-400)">禁用</span>'}</td>
-    <td>
+    <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editJobSite(${s.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteJobSite(${s.id})">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:2rem">暂无工作地点，请添加</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:2rem">暂无仓库，请添加</td></tr>';
 }
 
-function openJobSiteModal() {
+async function _loadSitePartnerCheckboxes(selectedIds) {
+  let partners = _allPartners;
+  if (!partners || !partners.length) {
+    partners = await api('/admin/partners').catch(()=>[]);
+    _allPartners = partners;
+  }
+  const sids = (selectedIds || '').split(',').map(s=>s.trim()).filter(Boolean);
+  const activePartners = partners.filter(p => p.active);
+  document.getElementById('sitePartnerCheckboxes').innerHTML = activePartners.length ? activePartners.map(p => {
+    const sel = sids.includes(String(p.id));
+    return `<label style="display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.84rem;border:1px solid ${sel?'var(--sky)':'var(--gray-200)'};background:${sel?'#eff6ff':'#fff'}" onchange="this.style.borderColor=this.querySelector('input').checked?'var(--sky)':'var(--gray-200)';this.style.background=this.querySelector('input').checked?'#eff6ff':'#fff';_onSitePartnerChange()"><input type="checkbox" name="sitePartner" value="${p.id}" ${sel?'checked':''} style="width:14px;height:14px">${esc(p.name)}</label>`;
+  }).join('') : '<span style="font-size:.82rem;color:var(--gray-400)">暂无合作公司</span>';
+}
+
+function _onSitePartnerChange() {
+  const checked = [...document.querySelectorAll('#sitePartnerCheckboxes input[name=sitePartner]:checked')];
+  if (checked.length === 1) {
+    const pid = checked[0].value;
+    const p = (_allPartners||[]).find(x => String(x.id) === pid);
+    if (p) {
+      const addrParts = [p.address, p.city, p.state, p.zip].filter(Boolean);
+      if (addrParts.length && !document.getElementById('siteAddress').value.trim()) {
+        document.getElementById('siteAddress').value = addrParts.join(', ');
+        autoVerifySingleAddr('siteAddress', 'siteAddrStatus');
+      }
+    }
+  }
+}
+
+async function openJobSiteModal() {
   document.getElementById('siteId').value = '';
+  document.getElementById('siteCode').value = '';
   document.getElementById('siteName').value = '';
   document.getElementById('siteAddress').value = '';
   document.getElementById('siteLat').value = '';
   document.getElementById('siteLng').value = '';
-  document.getElementById('siteRadius').value = '200';
-  document.getElementById('siteJobPickerWrap').style.display = 'none';
-  document.getElementById('siteJobPickerStatus').textContent = '';
-  document.getElementById('jobSiteModalTitle').textContent = '添加工作地点';
+  document.getElementById('siteRadius').value = '150';
+  document.getElementById('siteTz').value = 'America/Los_Angeles';
+  document.getElementById('siteActive').checked = true;
+  document.getElementById('jobSiteModalTitle').textContent = '新增仓库';
+  clearAddrStatus('siteAddrStatus');
+  await _loadSitePartnerCheckboxes('');
   resetSiteMap();
   document.getElementById('jobSiteModal').classList.add('show');
 }
 
-function toggleJobAddrPicker() {
-  const wrap = document.getElementById('siteJobPickerWrap');
-  if (wrap.style.display !== 'none') { wrap.style.display = 'none'; return; }
-  const jobs = (_allJobs || []).filter(j => j.active && j.location);
-  if (!jobs.length) {
-    document.getElementById('siteJobPickerStatus').textContent = '暂无有地址的职位';
-    return;
-  }
-  document.getElementById('siteJobPickerList').innerHTML = jobs.map(j =>
-    `<div onclick="pickJobAddr(${j.id})" style="padding:.55rem .85rem;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-100)" onmouseenter="this.style.background='#f0fdf4'" onmouseleave="this.style.background=''">
-      <strong>${esc(j.title||'')}</strong> <span style="color:var(--gray-400);font-size:.8rem">${esc(j.company_name||'')}</span><br>
-      <span style="color:var(--gray-600)">${esc(j.location)}</span>
-    </div>`
-  ).join('');
-  wrap.style.display = '';
-}
-
-function pickJobAddr(jobId) {
-  const j = (_allJobs || []).find(x => x.id === jobId);
-  if (!j || !j.location) return;
-  document.getElementById('siteAddress').value = j.location;
-  if (!document.getElementById('siteName').value) document.getElementById('siteName').value = j.title || '';
-  document.getElementById('siteJobPickerWrap').style.display = 'none';
-  document.getElementById('siteJobPickerStatus').textContent = '';
-  clearAddrStatus('siteAddrStatus');
-  autoVerifySingleAddr('siteAddress', 'siteAddrStatus');
-}
-
-function editJobSite(id) {
+async function editJobSite(id) {
   const s = _jobSites.find(x => x.id === id);
   if (!s) return;
   document.getElementById('siteId').value = s.id;
+  document.getElementById('siteCode').value = s.code || '';
   document.getElementById('siteName').value = s.name;
   document.getElementById('siteAddress').value = s.address || '';
   document.getElementById('siteLat').value = s.latitude;
   document.getElementById('siteLng').value = s.longitude;
   document.getElementById('siteRadius').value = s.radius_meters;
-  document.getElementById('jobSiteModalTitle').textContent = '编辑工作地点';
+  document.getElementById('siteTz').value = s.timezone || 'America/Los_Angeles';
+  document.getElementById('siteActive').checked = !!s.active;
+  document.getElementById('jobSiteModalTitle').textContent = '编辑仓库';
+  clearAddrStatus('siteAddrStatus');
+  await _loadSitePartnerCheckboxes(s.partner_ids || (s.partner_id ? String(s.partner_id) : ''));
   resetSiteMap();
   document.getElementById('jobSiteModal').classList.add('show');
   setTimeout(updateSiteMap, 150);
@@ -23190,14 +23217,19 @@ function editJobSite(id) {
 
 async function saveJobSite() {
   const id = document.getElementById('siteId').value;
+  const partnerIds = [...document.querySelectorAll('#sitePartnerCheckboxes input[name=sitePartner]:checked')].map(c=>c.value).join(',');
   const data = {
+    code: document.getElementById('siteCode').value.trim(),
     name: document.getElementById('siteName').value.trim(),
     address: document.getElementById('siteAddress').value.trim(),
     latitude: parseFloat(document.getElementById('siteLat').value),
     longitude: parseFloat(document.getElementById('siteLng').value),
-    radius_meters: parseInt(document.getElementById('siteRadius').value) || 200
+    radius_meters: parseInt(document.getElementById('siteRadius').value) || 150,
+    timezone: document.getElementById('siteTz').value,
+    active: document.getElementById('siteActive').checked ? 1 : 0,
+    partner_ids: partnerIds
   };
-  if (!data.name || isNaN(data.latitude) || isNaN(data.longitude)) return alert('请填写名称和坐标');
+  if (!data.name || isNaN(data.latitude) || isNaN(data.longitude)) return showToast('请填写仓库名称和坐标', 'error');
   if (data.address) {
     const addrResult = await validateAddressSingleField(data.address);
     if (!addrResult.proceed) return;
@@ -23217,7 +23249,7 @@ async function saveJobSite() {
 }
 
 async function deleteJobSite(id) {
-  if (!await showConfirm('确认删除此工作地点？', { danger: true })) return;
+  if (!await showConfirm('确认删除此仓库？', { danger: true })) return;
   await api(`/admin/job-sites/${id}`, { method:'DELETE' });
   showToast('✅ 已删除');
   loadJobSites();
