@@ -2514,8 +2514,8 @@ const punchPhotoUpload = multer({
       cb(null, `punch-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
     }
   }),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => cb(null, /jpg|jpeg|png|gif|webp|heic/.test(file.mimetype))
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /jpg|jpeg|png|gif|webp|heic|mp4|mov|webm|avi|quicktime|video/.test(file.mimetype))
 });
 
 // ─── ADMIN AUTH (username + password with session tokens) ───
@@ -14393,9 +14393,15 @@ app.get('/api/admin/documents/:id/file', (req, res, next) => {
 app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
   const { employee_id, date_from, date_to, status, needs_review } = req.query;
   let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code,
-    COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone,
+    COALESCE(jst.latitude, js.latitude) as site_lat,
+    COALESCE(jst.longitude, js.longitude) as site_lng,
+    COALESCE(jst.radius_meters, js.radius_meters) as site_radius,
+    COALESCE(jst.name, js.name) as site_name,
+    COALESCE(jst.address, js.address) as site_address
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
-    LEFT JOIN jobs j2 ON t.job_id=j2.id LEFT JOIN job_sites js ON j2.site_id=js.id WHERE 1=1`;
+    LEFT JOIN jobs j2 ON t.job_id=j2.id LEFT JOIN job_sites js ON j2.site_id=js.id
+    LEFT JOIN job_sites jst ON t.site_id=jst.id WHERE 1=1`;
   const p = [];
   if (employee_id) { q += ' AND t.employee_id=?'; p.push(employee_id); }
   if (date_from)   { q += ' AND DATE(t.clock_in)>=?'; p.push(date_from); }
@@ -16067,6 +16073,20 @@ app.get('/api/admin/punch-photo/:filename', (req, res) => {
   const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' };
   if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
   res.sendFile(fp);
+});
+
+// Admin upload photo/video to a time entry
+app.post('/api/admin/time-entries/:id/media', requireAdmin, punchPhotoUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const entry = db.prepare('SELECT id FROM time_entries WHERE id=?').get(req.params.id);
+  if (!entry) return res.status(404).json({ error: 'Not found' });
+  const type = req.query.type || 'out';
+  if (type === 'in') {
+    db.prepare('UPDATE time_entries SET clock_in_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  } else {
+    db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  }
+  res.json({ ok: true, filename: req.file.filename, type });
 });
 
 // ─── Worker task (my-tasks) endpoints ────────────────────────────

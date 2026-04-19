@@ -13768,10 +13768,10 @@ async function loadTimeEntries() {
 }
 
 function renderTimeEntries(list) {
+  window._punchEntries = {};
+  list.forEach(t => window._punchEntries[t.id] = t);
   document.getElementById('timeTable').innerHTML = list.length ? list.map(t=>{
-    const photoSrc = t.punch_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`
-                   : t.punch_photo ? t.punch_photo : '';
-    const photoCell = punchPhotoThumb(photoSrc);
+    const photoCell = punchMediaBadge(t);
     return `<tr>
     <td><strong>${esc(t.first_name||'')} ${esc(t.last_name||'')}</strong><br><span class="emp-meta">${esc(t.emp_code||'')}</span></td>
     <td>${fmtDT(t.clock_in, t.display_timezone)}</td>
@@ -13791,6 +13791,14 @@ function renderTimeEntries(list) {
     </td>
   </tr>`;
   }).join('') : '<tr><td colspan="11" class="empty">暂无工时记录</td></tr>';
+}
+
+function punchMediaBadge(t) {
+  let count = 0;
+  if (t.clock_in_photo_path) count++;
+  if (t.punch_photo_path) count++;
+  try { const b = JSON.parse(t.break_records||'[]'); count += b.filter(x=>x.photo_path).length; } catch {}
+  return `<span onclick="openPunchMediaModal(${t.id})" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:12px;font-size:.78rem;background:${count>0?'var(--accent-50,#fff7ed)':'var(--gray-100)'};color:${count>0?'var(--accent)':'var(--gray-400)'}">📷${count>0?` ${count}`:''}</span>`;
 }
 
 function openPunchPhoto(src) {
@@ -13815,18 +13823,21 @@ function punchPhotoUrl(src) {
 
 // Render all GPS pins for a time entry (clock-in, breaks, clock-out)
 function punchLocationPins(t) {
+  const siteArgs = (t.site_lat && t.site_lng)
+    ? `,${t.site_lat},${t.site_lng},${JSON.stringify(t.site_name||'工作地点')},${t.site_radius||200}`
+    : '';
   const pins = [];
   if (t.latitude && t.longitude)
-    pins.push(`<span onclick="showMiniMap(event,${t.latitude},${t.longitude},'上班打卡')" title="上班位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🟢</span>`);
+    pins.push(`<span onclick="showMiniMap(event,${t.latitude},${t.longitude},'上班打卡'${siteArgs})" title="上班位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🟢</span>`);
   try {
     const breaks = JSON.parse(t.break_records || '[]');
     breaks.forEach((b, i) => {
       if (b.latitude && b.longitude)
-        pins.push(`<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}')" title="休息${i+1}位置 (${(+b.latitude).toFixed(4)}, ${(+b.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🟡</span>`);
+        pins.push(`<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}'${siteArgs})" title="休息${i+1}位置 (${(+b.latitude).toFixed(4)}, ${(+b.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🟡</span>`);
     });
   } catch {}
   if (t.clock_out_latitude && t.clock_out_longitude)
-    pins.push(`<span onclick="showMiniMap(event,${t.clock_out_latitude},${t.clock_out_longitude},'下班打卡')" title="下班位置 (${(+t.clock_out_latitude).toFixed(4)}, ${(+t.clock_out_longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🔴</span>`);
+    pins.push(`<span onclick="showMiniMap(event,${t.clock_out_latitude},${t.clock_out_longitude},'下班打卡'${siteArgs})" title="下班位置 (${(+t.clock_out_latitude).toFixed(4)}, ${(+t.clock_out_longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🔴</span>`);
   return pins.join(' ') || '';
 }
 
@@ -25330,13 +25341,29 @@ function escHtml(s) {
 </div>
 <script>
 (function() {
-  let _mmMap = null, _mmMarker = null;
+  let _mmMap = null, _mmMarker = null, _mmSiteMarker = null, _mmGeofence = null, _mmLine = null;
 
-  window.showMiniMap = function(e, lat, lng, label) {
+  function haversineM(lat1, lon1, lat2, lon2) {
+    const R = 6371000, dLat = (lat2-lat1)*Math.PI/180, dLon = (lon2-lon1)*Math.PI/180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  window.showMiniMap = function(e, lat, lng, label, siteLat, siteLng, siteName, siteRadius) {
     e.stopPropagation();
     const popup = document.getElementById('miniMapPopup');
     const coordStr = `${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
-    document.getElementById('miniMapLabel').textContent = label ? `📍 ${label} · ${coordStr}` : `📍 ${coordStr}`;
+
+    let distStr = '';
+    if (siteLat && siteLng) {
+      const d = haversineM(+lat, +lng, +siteLat, +siteLng);
+      const r = siteRadius || 200;
+      const dFmt = d >= 1000 ? `${(d/1000).toFixed(2)} km` : `${Math.round(d)} m`;
+      distStr = d > r
+        ? ` · ⚠️ 超出范围 ${dFmt}`
+        : ` · ✅ 距工作点 ${dFmt}`;
+    }
+    document.getElementById('miniMapLabel').textContent = label ? `📍 ${label} · ${coordStr}${distStr}` : `📍 ${coordStr}${distStr}`;
     document.getElementById('miniMapGoogleLink').href = `https://maps.google.com/?q=${lat},${lng}`;
 
     // Position near click
@@ -25356,6 +25383,19 @@ function escHtml(s) {
       _mmMap.setView([lat, lng], 16);
     } else {
       _mmMarker.setLatLng([lat, lng]);
+    }
+
+    // Remove previous site overlay layers
+    [_mmSiteMarker, _mmGeofence, _mmLine].forEach(l => { if (l) { try { _mmMap.removeLayer(l); } catch {} } });
+    _mmSiteMarker = _mmGeofence = _mmLine = null;
+
+    if (siteLat && siteLng) {
+      const siteIcon = L.divIcon({ html: `<div title="${siteName||'工作地点'}" style="font-size:1.3rem;line-height:1">🏢</div>`, iconSize: [22, 22], iconAnchor: [11, 11], className: '' });
+      _mmSiteMarker = L.marker([+siteLat, +siteLng], { icon: siteIcon }).bindTooltip(siteName||'工作地点', { permanent: false }).addTo(_mmMap);
+      _mmGeofence = L.circle([+siteLat, +siteLng], { radius: +(siteRadius||200), color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.08, weight: 2 }).addTo(_mmMap);
+      _mmLine = L.polyline([[+lat, +lng], [+siteLat, +siteLng]], { color: '#ef4444', dashArray: '6 4', weight: 2 }).addTo(_mmMap);
+      _mmMap.fitBounds([[+lat, +lng], [+siteLat, +siteLng]], { padding: [30, 30] });
+    } else {
       _mmMap.setView([lat, lng], 16);
     }
     setTimeout(() => _mmMap && _mmMap.invalidateSize(), 80);
@@ -27768,6 +27808,90 @@ function printInvoice() {
     <div id="invPreviewContent" style="background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:2rem"></div>
   </div>
 </div>
+
+<!-- ─── Punch Media Modal ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="punchMediaModal" style="display:none">
+  <div class="modal" style="max-width:680px;width:96vw">
+    <div class="modal-header">
+      <h3 id="punchMediaTitle">📷 打卡照片/视频</h3>
+      <button class="modal-close" onclick="closePunchMediaModal()">✕</button>
+    </div>
+    <div id="punchMediaBody" style="padding:1rem;min-height:100px"></div>
+    <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center">
+      <label class="btn btn-sm" style="cursor:pointer;background:var(--accent);color:#fff;border:none">
+        ＋ 上传照片/视频
+        <input type="file" id="punchMediaUploadInput" accept="image/*,video/*" style="display:none" onchange="uploadPunchMedia(this)">
+      </label>
+      <button class="btn btn-sm" onclick="closePunchMediaModal()">关闭</button>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  let _pmEntryId = null;
+  window._punchEntries = {};
+
+  function isVideo(name) { return /\.(mp4|mov|webm|avi|m4v)$/i.test(name || ''); }
+
+  function mediaItem(filename, label) {
+    if (!filename) return '';
+    const url = punchPhotoUrl(`/api/admin/punch-photo/${encodeURIComponent(filename)}`);
+    const vid = isVideo(filename);
+    return `<div style="flex:0 0 auto;width:180px">
+      <div style="font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">${label}</div>
+      ${vid
+        ? `<video src="${url}" controls style="width:180px;max-height:200px;border-radius:8px;background:#000;display:block"></video>`
+        : `<img src="${url}" onclick="openPunchPhoto('${filename.replace(/'/g,"\\'")}')" style="width:180px;height:160px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1.5px solid var(--gray-200)">`
+      }
+    </div>`;
+  }
+
+  window.openPunchMediaModal = function(entryId) {
+    _pmEntryId = entryId;
+    const t = window._punchEntries[entryId];
+    if (!t) return;
+    const items = [];
+    if (t.clock_in_photo_path) items.push(mediaItem(t.clock_in_photo_path, '🟢 上班打卡'));
+    try {
+      const breaks = JSON.parse(t.break_records || '[]');
+      breaks.forEach((b, i) => { if (b.photo_path) items.push(mediaItem(b.photo_path, `🟡 休息 ${i+1}`)); });
+    } catch {}
+    if (t.punch_photo_path) items.push(mediaItem(t.punch_photo_path, '🔴 下班打卡'));
+
+    const body = document.getElementById('punchMediaBody');
+    body.innerHTML = items.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:12px;padding-bottom:.5rem">${items.join('')}</div>`
+      : `<div style="color:var(--gray-400);text-align:center;padding:2rem">暂无照片/视频，可使用下方按钮上传</div>`;
+    document.getElementById('punchMediaModal').classList.add('show');
+  };
+
+  window.closePunchMediaModal = function() {
+    document.getElementById('punchMediaModal').classList.remove('show');
+  };
+
+  window.uploadPunchMedia = async function(input) {
+    if (!input.files.length || !_pmEntryId) return;
+    const file = input.files[0];
+    const type = /clock_in|^in$/i.test('') ? 'in' : 'out'; // default out
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const r = await fetch(`/api/admin/time-entries/${_pmEntryId}/media?type=out`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TOKEN}` },
+        body: fd
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      // Reload entries and reopen modal
+      await loadTimeEntries();
+      // Give _punchEntries time to update
+      setTimeout(() => openPunchMediaModal(_pmEntryId), 200);
+    } catch(e) { alert('上传失败: ' + e.message); }
+    input.value = '';
+  };
+})();
+</script>
 
 </body>
 </html>
