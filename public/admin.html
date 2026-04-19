@@ -3030,6 +3030,19 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Warehouse QR Code Modal -->
+<div class="modal-bg" id="siteQRModal"><div class="modal" style="max-width:380px;text-align:center">
+  <h2 id="siteQRTitle" style="margin-bottom:.5rem">📱 打卡二维码</h2>
+  <p id="siteQRSubtitle" style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem"></p>
+  <div id="siteQRCodeBox" style="display:inline-block;padding:12px;background:#fff;border:2px solid var(--gray-200);border-radius:12px;margin-bottom:1rem"></div>
+  <div id="siteQRUrl" style="font-size:.75rem;color:var(--gray-400);word-break:break-all;margin-bottom:1rem"></div>
+  <div class="modal-actions" style="justify-content:center;gap:.5rem">
+    <button class="btn btn-sm btn-outline" onclick="copySiteQRUrl()">📋 复制链接</button>
+    <button class="btn btn-sm btn-outline" onclick="printSiteQR()">🖨️ 打印</button>
+    <button class="btn btn-sm" onclick="closeModal('siteQRModal')">关闭</button>
+  </div>
+</div></div>
+
 <!-- Compliance Review Modal -->
 <div class="modal-bg" id="complianceReviewModal"><div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto">
   <h2>审核合规文件</h2>
@@ -23145,6 +23158,7 @@ async function loadJobSites() {
     <td style="font-size:.8rem">${_TZ_LABELS[s.timezone]||s.timezone||'—'}</td>
     <td>${s.active ? '<span style="color:var(--green);font-weight:600">启用</span>' : '<span style="color:var(--gray-400)">禁用</span>'}</td>
     <td style="white-space:nowrap">
+      <button class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="showSiteQR(${s.id})">📱 二维码</button>
       <button class="btn btn-sm" onclick="editJobSite(${s.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteJobSite(${s.id})">删除</button>
     </td>
@@ -23249,6 +23263,40 @@ document.addEventListener('click', e => {
   const dd = document.getElementById('sitePartnerDropdown');
   if (dd && !dd.contains(e.target) && e.target.id !== 'sitePartnerSearch') dd.style.display = 'none';
 });
+
+let _siteQRUrl = '';
+async function showSiteQR(siteId) {
+  const s = _jobSites.find(x => x.id === siteId);
+  if (!s) return;
+  await _loadQRLib();
+  const url = location.origin + '/timeclock?site=' + siteId;
+  _siteQRUrl = url;
+  document.getElementById('siteQRTitle').textContent = '📱 ' + (s.name || '打卡二维码');
+  document.getElementById('siteQRSubtitle').textContent = (s.code ? s.code + ' · ' : '') + (s.address || '');
+  const box = document.getElementById('siteQRCodeBox');
+  box.innerHTML = '';
+  new QRCode(box, { text: url, width: 200, height: 200, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  document.getElementById('siteQRUrl').textContent = url;
+  document.getElementById('siteQRModal').classList.add('show');
+}
+
+function copySiteQRUrl() {
+  navigator.clipboard.writeText(_siteQRUrl).then(() => showToast('✅ 链接已复制')).catch(() => showToast('复制失败', 'error'));
+}
+
+function printSiteQR() {
+  const box = document.getElementById('siteQRCodeBox');
+  const title = document.getElementById('siteQRTitle').textContent;
+  const sub = document.getElementById('siteQRSubtitle').textContent;
+  const img = box.querySelector('img') || box.querySelector('canvas');
+  let imgHtml = '';
+  if (img && img.tagName === 'CANVAS') imgHtml = `<img src="${img.toDataURL()}" style="width:280px;height:280px">`;
+  else if (img) imgHtml = `<img src="${img.src}" style="width:280px;height:280px">`;
+  const w = window.open('', '_blank');
+  w.document.write(`<html><head><title>打卡二维码</title></head><body style="text-align:center;font-family:sans-serif;padding:2rem"><h2>${title}</h2><p style="color:#666;margin:.5rem 0 1.5rem">${sub}</p>${imgHtml}<p style="margin-top:1rem;font-size:12px;color:#999">${_siteQRUrl}</p><p style="margin-top:2rem;font-size:14px;color:#333">扫码打卡 · Scan to Clock In</p></body></html>`);
+  w.document.close();
+  setTimeout(() => { w.print(); }, 300);
+}
 
 async function openJobSiteModal() {
   document.getElementById('siteId').value = '';
