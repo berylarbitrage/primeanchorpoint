@@ -17378,6 +17378,14 @@ app.get('/api/worker/job-sites', requireWorker, (req, res) => {
 });
 
 // ─── Admin: Job Sites Management ───
+app.get('/api/admin/job-sites/lookup-tz', requireAdmin, async (req, res) => {
+  const lat = parseFloat(req.query.lat);
+  const lng = parseFloat(req.query.lng);
+  if (isNaN(lat) || isNaN(lng)) return res.status(400).json({ error: 'lat/lng required' });
+  const tz = await lookupTimezone(lat, lng);
+  res.json({ timezone: tz });
+});
+
 app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
   const sites = db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all();
   const allPartners = db.prepare('SELECT id, name FROM partners ORDER BY name').all();
