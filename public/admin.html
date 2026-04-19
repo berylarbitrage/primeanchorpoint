@@ -2986,8 +2986,12 @@ tr:hover td{background:var(--sky-light)}
   <h2 id="jobSiteModalTitle">新增仓库</h2>
   <input type="hidden" id="siteId">
   <div class="field">
-    <label style="font-weight:700">关联公司 <span style="font-weight:400;color:var(--gray-400);font-size:.82rem">（可多选，选中后自动填入地址）</span></label>
-    <div id="sitePartnerCheckboxes" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem;max-height:160px;overflow-y:auto;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+    <label style="font-weight:700">关联公司 <span style="font-weight:400;color:var(--gray-400);font-size:.82rem">（选中后自动填入地址）</span></label>
+    <div style="position:relative">
+      <input id="sitePartnerSearch" type="text" placeholder="搜索公司名称…" autocomplete="off" oninput="_filterSitePartners()" onfocus="_filterSitePartners()" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;box-sizing:border-box">
+      <input type="hidden" id="sitePartnerId" value="">
+      <div id="sitePartnerDropdown" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:1px solid var(--gray-200);border-top:none;border-radius:0 0 8px 8px;max-height:180px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.1)"></div>
+    </div>
   </div>
   <div style="display:flex;gap:1rem;margin-bottom:0">
     <div class="field" style="flex:1"><label>仓库代码 *</label><input id="siteCode" placeholder="如 WH001"></div>
@@ -2996,8 +3000,8 @@ tr:hover td{background:var(--sky-light)}
   <div class="field">
     <label>地址 *</label>
     <div style="display:flex;gap:.5rem;align-items:center">
-      <input id="siteAddress" style="flex:1" placeholder="输入完整地址，然后点击验证" oninput="clearAddrStatus('siteAddrStatus')" onblur="autoVerifySingleAddr('siteAddress','siteAddrStatus')">
-      <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('siteAddress','siteAddrStatus')">验证地址</button>
+      <input id="siteAddress" style="flex:1" placeholder="输入完整地址，然后点击验证" oninput="clearAddrStatus('siteAddrStatus')">
+      <button type="button" class="btn btn-sm btn-outline" onclick="_verifySiteAddress()">验证地址</button>
     </div>
     <span id="siteAddrStatus" style="font-size:.8rem;font-weight:600"></span>
   </div>
@@ -23151,34 +23155,104 @@ async function loadJobSites() {
   </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:2rem">暂无仓库，请添加</td></tr>';
 }
 
-async function _loadSitePartnerCheckboxes(selectedIds) {
-  let partners = _allPartners;
-  if (!partners || !partners.length) {
-    partners = await api('/admin/partners').catch(()=>[]);
-    _allPartners = partners;
+async function _loadSitePartners() {
+  if (!_allPartners || !_allPartners.length) {
+    _allPartners = await api('/admin/partners').catch(()=>[]);
   }
-  const sids = (selectedIds || '').split(',').map(s=>s.trim()).filter(Boolean);
-  const activePartners = partners.filter(p => p.active);
-  document.getElementById('sitePartnerCheckboxes').innerHTML = activePartners.length ? activePartners.map(p => {
-    const sel = sids.includes(String(p.id));
-    return `<label style="display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.84rem;border:1px solid ${sel?'var(--sky)':'var(--gray-200)'};background:${sel?'#eff6ff':'#fff'}" onchange="this.style.borderColor=this.querySelector('input').checked?'var(--sky)':'var(--gray-200)';this.style.background=this.querySelector('input').checked?'#eff6ff':'#fff';_onSitePartnerChange()"><input type="checkbox" name="sitePartner" value="${p.id}" ${sel?'checked':''} style="width:14px;height:14px">${esc(p.name)}</label>`;
-  }).join('') : '<span style="font-size:.82rem;color:var(--gray-400)">暂无合作公司</span>';
 }
 
-function _onSitePartnerChange() {
-  const checked = [...document.querySelectorAll('#sitePartnerCheckboxes input[name=sitePartner]:checked')];
-  if (checked.length === 1) {
-    const pid = checked[0].value;
-    const p = (_allPartners||[]).find(x => String(x.id) === pid);
+function _setSitePartner(id, name, skipAutoGen) {
+  document.getElementById('sitePartnerId').value = id || '';
+  document.getElementById('sitePartnerSearch').value = name || '';
+  document.getElementById('sitePartnerDropdown').style.display = 'none';
+  if (id && !skipAutoGen) {
+    const p = (_allPartners||[]).find(x => String(x.id) === String(id));
     if (p) {
       const addrParts = [p.address, p.city, p.state, p.zip].filter(Boolean);
       if (addrParts.length && !document.getElementById('siteAddress').value.trim()) {
         document.getElementById('siteAddress').value = addrParts.join(', ');
-        autoVerifySingleAddr('siteAddress', 'siteAddrStatus');
+        _verifySiteAddress();
       }
+      _autoGenSiteCodeName(p.name);
     }
   }
 }
+
+function _autoGenSiteCodeName(companyName) {
+  if (!companyName) return;
+  const existing = (_jobSites||[]).filter(s => {
+    const pids = (s.partner_ids||'').split(',');
+    const pid = document.getElementById('sitePartnerId').value;
+    return pids.includes(pid);
+  });
+  const editId = document.getElementById('siteId').value;
+  const count = editId ? existing.length : existing.length + 1;
+  const num = String(count).padStart(4, '0');
+  const prefix = companyName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) || companyName.toUpperCase().slice(0, 10);
+  if (!document.getElementById('siteCode').value.trim()) {
+    document.getElementById('siteCode').value = `${prefix}-${num}`;
+  }
+  if (!document.getElementById('siteName').value.trim()) {
+    document.getElementById('siteName').value = `${companyName} - ${count}号仓库`;
+  }
+}
+
+async function _verifySiteAddress() {
+  const input = document.getElementById('siteAddress');
+  const statusEl = document.getElementById('siteAddrStatus');
+  if (!input || !input.value.trim()) return;
+  statusEl.textContent = '验证中…';
+  statusEl.style.color = 'var(--gray-400)';
+  try {
+    const result = await validateAddressSingleField(input.value.trim());
+    if (result.skipped) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; }
+    else if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
+    else {
+      if (result.standardized) input.value = result.standardized;
+      _setAddrStatus(statusEl, result.verified === true);
+    }
+  } catch (e) {
+    console.error('[verifySiteAddr]', e);
+    _setAddrStatus(statusEl, false);
+  }
+  try {
+    const geo = await api(`/geocode?q=${encodeURIComponent(input.value.trim())}`);
+    if (geo && geo.lat && geo.lng) {
+      document.getElementById('siteLat').value = geo.lat;
+      document.getElementById('siteLng').value = geo.lng;
+      updateSiteMap();
+    }
+  } catch {}
+  const lat = parseFloat(document.getElementById('siteLat').value);
+  const lng = parseFloat(document.getElementById('siteLng').value);
+  if (!isNaN(lat) && !isNaN(lng)) {
+    try {
+      const tzRes = await api('/admin/job-sites/lookup-tz?lat=' + lat + '&lng=' + lng);
+      if (tzRes && tzRes.timezone) document.getElementById('siteTz').value = tzRes.timezone;
+    } catch {}
+  }
+}
+
+function _filterSitePartners() {
+  const q = (document.getElementById('sitePartnerSearch').value||'').trim().toLowerCase();
+  const list = (_allPartners||[]).filter(p => p.active && (!q || p.name.toLowerCase().includes(q)));
+  const dd = document.getElementById('sitePartnerDropdown');
+  if (!list.length) { dd.innerHTML = '<div style="padding:.6rem .8rem;color:var(--gray-400);font-size:.84rem">无匹配公司</div>'; dd.style.display = ''; return; }
+  dd.innerHTML = list.map(p => {
+    const safeName = esc(p.name).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+    return `<div data-pid="${p.id}" data-pname="${safeName}" onclick="_pickSitePartner(this)" style="padding:.5rem .8rem;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-100)" onmouseenter="this.style.background='#f0f9ff'" onmouseleave="this.style.background=''">${esc(p.name)}</div>`;
+  }).join('');
+  dd.style.display = '';
+}
+
+function _pickSitePartner(el) {
+  _setSitePartner(el.dataset.pid, el.dataset.pname.replace(/&#39;/g,"'").replace(/&amp;/g,'&').replace(/&quot;/g,'"'));
+}
+
+document.addEventListener('click', e => {
+  const dd = document.getElementById('sitePartnerDropdown');
+  if (dd && !dd.contains(e.target) && e.target.id !== 'sitePartnerSearch') dd.style.display = 'none';
+});
 
 async function openJobSiteModal() {
   document.getElementById('siteId').value = '';
@@ -23192,7 +23266,8 @@ async function openJobSiteModal() {
   document.getElementById('siteActive').checked = true;
   document.getElementById('jobSiteModalTitle').textContent = '新增仓库';
   clearAddrStatus('siteAddrStatus');
-  await _loadSitePartnerCheckboxes('');
+  await _loadSitePartners();
+  _setSitePartner('', '');
   resetSiteMap();
   document.getElementById('jobSiteModal').classList.add('show');
 }
@@ -23211,7 +23286,10 @@ async function editJobSite(id) {
   document.getElementById('siteActive').checked = !!s.active;
   document.getElementById('jobSiteModalTitle').textContent = '编辑仓库';
   clearAddrStatus('siteAddrStatus');
-  await _loadSitePartnerCheckboxes(s.partner_ids || (s.partner_id ? String(s.partner_id) : ''));
+  await _loadSitePartners();
+  const pid = (s.partner_ids || (s.partner_id ? String(s.partner_id) : '')).split(',')[0] || '';
+  const pName = pid ? ((_allPartners||[]).find(x => String(x.id) === pid)?.name || '') : '';
+  _setSitePartner(pid, pName, true);
   resetSiteMap();
   document.getElementById('jobSiteModal').classList.add('show');
   setTimeout(updateSiteMap, 150);
@@ -23219,7 +23297,7 @@ async function editJobSite(id) {
 
 async function saveJobSite() {
   const id = document.getElementById('siteId').value;
-  const partnerIds = [...document.querySelectorAll('#sitePartnerCheckboxes input[name=sitePartner]:checked')].map(c=>c.value).join(',');
+  const partnerIds = document.getElementById('sitePartnerId').value || '';
   const data = {
     code: document.getElementById('siteCode').value.trim(),
     name: document.getElementById('siteName').value.trim(),
