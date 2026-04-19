@@ -17363,6 +17363,12 @@ app.get('/api/worker/job-sites', requireWorker, (req, res) => {
 });
 
 // ─── Admin: Job Sites Management ───
+app.get('/api/admin/job-sites/info/:id', (req, res) => {
+  const s = db.prepare('SELECT name, code, address FROM job_sites WHERE id=?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  res.json(s);
+});
+
 app.get('/api/admin/job-sites/lookup-tz', requireAdmin, async (req, res) => {
   const lat = parseFloat(req.query.lat);
   const lng = parseFloat(req.query.lng);

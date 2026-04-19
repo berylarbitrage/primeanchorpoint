@@ -86,7 +86,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
   <div class="logo-area">
     <img src="/logo.svg" alt="Prime Anchor Point">
     <h1>Prime Anchor Point</h1>
-    <p>员工打卡系统</p>
+    <p id="clockSubtitle">员工打卡系统</p>
   </div>
 
   <!-- Screen 1: Enter Employee ID -->
@@ -184,6 +184,14 @@ let geoBlocked = false;
   if (el) el.textContent = new Date().toLocaleString('zh-CN', {hour12:false, weekday:'short', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', timeZone:_ltz, timeZoneName:'short'});
   setTimeout(tick, 1000);
 })();
+
+const _urlParams = new URLSearchParams(location.search);
+const _siteId = _urlParams.get('site') || '';
+if (_siteId) {
+  fetch('/api/admin/job-sites/info/' + _siteId).then(r=>r.json()).then(s => {
+    if (s && s.name) document.getElementById('clockSubtitle').textContent = s.name + (s.code ? ' (' + s.code + ')' : '');
+  }).catch(()=>{});
+}
 
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
 const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
