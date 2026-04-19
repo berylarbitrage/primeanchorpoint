@@ -23152,10 +23152,10 @@ async function _loadSitePartnerCheckboxes(selectedIds) {
     _allPartners = partners;
   }
   const sids = (selectedIds || '').split(',').map(s=>s.trim()).filter(Boolean);
-  document.getElementById('sitePartnerCheckboxes').innerHTML = partners.length ? partners.map(p => {
+  const activePartners = partners.filter(p => p.active);
+  document.getElementById('sitePartnerCheckboxes').innerHTML = activePartners.length ? activePartners.map(p => {
     const sel = sids.includes(String(p.id));
-    const statusLabel = p.active ? '' : ' <span style="opacity:.5;font-size:.72rem">(待签约)</span>';
-    return `<label style="display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.84rem;border:1px solid ${sel?'var(--sky)':'var(--gray-200)'};background:${sel?'#eff6ff':'#fff'}" onchange="this.style.borderColor=this.querySelector('input').checked?'var(--sky)':'var(--gray-200)';this.style.background=this.querySelector('input').checked?'#eff6ff':'#fff';_onSitePartnerChange()"><input type="checkbox" name="sitePartner" value="${p.id}" ${sel?'checked':''} style="width:14px;height:14px">${esc(p.name)}${statusLabel}</label>`;
+    return `<label style="display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.84rem;border:1px solid ${sel?'var(--sky)':'var(--gray-200)'};background:${sel?'#eff6ff':'#fff'}" onchange="this.style.borderColor=this.querySelector('input').checked?'var(--sky)':'var(--gray-200)';this.style.background=this.querySelector('input').checked?'#eff6ff':'#fff';_onSitePartnerChange()"><input type="checkbox" name="sitePartner" value="${p.id}" ${sel?'checked':''} style="width:14px;height:14px">${esc(p.name)}</label>`;
   }).join('') : '<span style="font-size:.82rem;color:var(--gray-400)">暂无合作公司</span>';
 }
 
