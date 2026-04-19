@@ -2128,6 +2128,14 @@ function getCompanySignerName() {
   return process.env.COMPANY_SIGNER_NAME || 'Prime Anchor Point LLC';
 }
 
+function getCompanySignerEmail() {
+  try {
+    const r = db.prepare("SELECT value FROM app_settings WHERE key='company_signer_email'").get();
+    if (r && r.value && r.value.trim()) return r.value.trim();
+  } catch(e) {}
+  return process.env.COMPANY_SIGNER_EMAIL || '';
+}
+
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
   .split(',').map(d => d.trim()).filter(Boolean);
@@ -9403,7 +9411,7 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
     employment_type: empType,
     ds_envelope_id: onb?.ds_envelope_id || '',
     ds_status: onb?.ds_status || '',
-    company_email: process.env.COMPANY_SIGNER_EMAIL || '',
+    company_email: getCompanySignerEmail(),
     company_name: companyName,
     docuseal_enabled: dsealEnabled()
   });
@@ -9427,7 +9435,7 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
     if (!w) return res.status(404).json({ error: 'Worker not found' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置，请在 .env 设置 DOCUSEAL_API_KEY 和 DOCUSEAL_URL' });
-    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyEmail = getCompanySignerEmail();
     const companyName = getCompanySignerName();
     if (!companyEmail) return res.status(503).json({ error: '请在 .env 设置 COMPANY_SIGNER_EMAIL' });
     const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
@@ -10503,7 +10511,7 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
       try {
         const submitter1 = { role: 'First Party', name: workerName, email: workerEmail };
         if (workerPhone) submitter1.phone = formatPhoneE164(workerPhone);
-        const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+        const companyEmail = getCompanySignerEmail();
         const companySignerName = getCompanySignerName();
         const submitters = [submitter1];
         if (companyEmail) {
@@ -10564,7 +10572,7 @@ app.post('/api/admin/worker-accounts/:id/payment-auth-add-company', requireAdmin
     const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='payment_method'").get(workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '未找到付款授权表单提交记录' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyEmail = getCompanySignerEmail();
     const companyName = getCompanySignerName();
     if (!companyEmail) return res.status(400).json({ error: '请在 .env 设置 COMPANY_SIGNER_EMAIL' });
 
@@ -13392,7 +13400,7 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
       } catch {}
     }
     if (!partnerEmail) return res.status(400).json({ error: '合作方邮箱未找到，请在请求体中传 partner_email' });
-    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyEmail = getCompanySignerEmail();
     const companyName = getCompanySignerName();
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, f.file_path);
@@ -13609,7 +13617,7 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
     const workerEmail = req.body.worker_email || a.inquiry_email || '';
     const workerName = req.body.worker_name || a.inquiry_name || '工人';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱未找到，请在请求体中传 worker_email' });
-    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyEmail = getCompanySignerEmail();
     const companyName = getCompanySignerName();
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, a.contract_file);
@@ -13636,7 +13644,7 @@ app.get('/api/admin/assignments/:id/docusign-sign-url', requireAdmin, blockManag
   try {
     const a = db.prepare("SELECT id, ds_envelope_id FROM assignments WHERE id=?").get(req.params.id);
     if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyEmail = getCompanySignerEmail();
     const companyName = getCompanySignerName();
     const _proto4 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
     const _host4 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
@@ -17419,9 +17427,11 @@ app.put('/api/admin/app-settings', requireAdmin, blockManager, (req, res) => {
 app.get('/api/admin/company-settings', requireAdmin, (req, res) => {
   const legal  = db.prepare("SELECT value FROM app_settings WHERE key='company_legal_name'").get();
   const signer = db.prepare("SELECT value FROM app_settings WHERE key='company_signer_name'").get();
+  const signerEmail = db.prepare("SELECT value FROM app_settings WHERE key='company_signer_email'").get();
   res.json({
     company_legal_name:  legal?.value  || 'Prime Anchor Point LLC',
     company_signer_name: signer?.value || 'Prime Anchor Point LLC',
+    company_signer_email: signerEmail?.value || process.env.COMPANY_SIGNER_EMAIL || '',
   });
 });
 
