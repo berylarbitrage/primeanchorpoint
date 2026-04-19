@@ -14394,14 +14394,22 @@ app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
   const { employee_id, date_from, date_to, status, needs_review } = req.query;
   let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code,
     COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone,
-    COALESCE(jst.latitude, js.latitude) as site_lat,
-    COALESCE(jst.longitude, js.longitude) as site_lng,
-    COALESCE(jst.radius_meters, js.radius_meters) as site_radius,
-    COALESCE(jst.name, js.name) as site_name,
-    COALESCE(jst.address, js.address) as site_address
+    COALESCE(jst.latitude, asn.work_lat, js.latitude) as site_lat,
+    COALESCE(jst.longitude, asn.work_lng, js.longitude) as site_lng,
+    COALESCE(jst.radius_meters, asn.work_radius, js.radius_meters) as site_radius,
+    COALESCE(jst.name, asn.work_address, js.name) as site_name,
+    COALESCE(jst.address, asn.work_address, js.address) as site_address
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
     LEFT JOIN jobs j2 ON t.job_id=j2.id LEFT JOIN job_sites js ON j2.site_id=js.id
-    LEFT JOIN job_sites jst ON t.site_id=jst.id WHERE 1=1`;
+    LEFT JOIN job_sites jst ON t.site_id=jst.id
+    LEFT JOIN assignments asn ON asn.id = (
+      SELECT a2.id FROM assignments a2
+      WHERE a2.inquiry_id = e.inquiry_id
+        AND a2.job_id = t.job_id
+        AND a2.work_lat IS NOT NULL
+      ORDER BY a2.assigned_at DESC LIMIT 1
+    )
+    WHERE 1=1`;
   const p = [];
   if (employee_id) { q += ' AND t.employee_id=?'; p.push(employee_id); }
   if (date_from)   { q += ' AND DATE(t.clock_in)>=?'; p.push(date_from); }
