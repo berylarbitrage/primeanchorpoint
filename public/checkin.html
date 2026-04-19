@@ -7,7 +7,6 @@
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--green:#2D9D78;--red:#E63946;--orange:#F5A623;--white:#fff;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--radius:14px}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -334,38 +333,43 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 function initMap() {
-  if (_map) return;
-  document.getElementById('gpsMapWrap').style.display = '';
-  _map = L.map('gpsMap', { zoomControl: false, attributionControl: false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_map);
-  if (_siteLat != null && _siteLng != null) {
-    L.marker([_siteLat, _siteLng], {
-      icon: L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#E63946;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] })
-    }).addTo(_map).bindPopup('仓库位置');
-    L.circle([_siteLat, _siteLng], { radius: _siteRadius, color: '#E63946', fillColor: '#E63946', fillOpacity: 0.08, weight: 1.5, dashArray: '5,5' }).addTo(_map);
-  }
+  if (_map || typeof L === 'undefined') return;
+  try {
+    document.getElementById('gpsMapWrap').style.display = '';
+    _map = L.map('gpsMap', { zoomControl: false, attributionControl: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_map);
+    if (_siteLat != null && _siteLng != null) {
+      L.marker([_siteLat, _siteLng], {
+        icon: L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#E63946;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] })
+      }).addTo(_map).bindPopup('仓库位置');
+      L.circle([_siteLat, _siteLng], { radius: _siteRadius, color: '#E63946', fillColor: '#E63946', fillOpacity: 0.08, weight: 1.5, dashArray: '5,5' }).addTo(_map);
+    }
+  } catch(e) { console.error('Map init error:', e); }
 }
 
 function updateMapUser(lat, lng, acc) {
-  initMap();
-  const pos = [lat, lng];
-  if (_userMarker) {
-    _userMarker.setLatLng(pos);
-  } else {
-    _userMarker = L.marker(pos, {
-      icon: L.divIcon({ className: '', html: '<div style="width:12px;height:12px;background:#4A90D9;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [12, 12], iconAnchor: [6, 6] })
-    }).addTo(_map).bindPopup('您的位置');
-  }
-  if (_accuracyCircle) {
-    _accuracyCircle.setLatLng(pos).setRadius(Math.min(acc, 5000));
-  } else {
-    _accuracyCircle = L.circle(pos, { radius: Math.min(acc, 5000), color: '#4A90D9', fillColor: '#4A90D9', fillOpacity: 0.1, weight: 1 }).addTo(_map);
-  }
-  if (_siteLat != null) {
-    _map.fitBounds([[lat, lng], [_siteLat, _siteLng]], { padding: [30, 30], maxZoom: 16 });
-  } else {
-    _map.setView(pos, 15);
-  }
+  try {
+    initMap();
+    if (!_map) return;
+    const pos = [lat, lng];
+    if (_userMarker) {
+      _userMarker.setLatLng(pos);
+    } else {
+      _userMarker = L.marker(pos, {
+        icon: L.divIcon({ className: '', html: '<div style="width:12px;height:12px;background:#4A90D9;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [12, 12], iconAnchor: [6, 6] })
+      }).addTo(_map).bindPopup('您的位置');
+    }
+    if (_accuracyCircle) {
+      _accuracyCircle.setLatLng(pos).setRadius(Math.min(acc, 5000));
+    } else {
+      _accuracyCircle = L.circle(pos, { radius: Math.min(acc, 5000), color: '#4A90D9', fillColor: '#4A90D9', fillOpacity: 0.1, weight: 1 }).addTo(_map);
+    }
+    if (_siteLat != null) {
+      _map.fitBounds([[lat, lng], [_siteLat, _siteLng]], { padding: [30, 30], maxZoom: 16 });
+    } else {
+      _map.setView(pos, 15);
+    }
+  } catch(e) { console.error('Map update error:', e); }
 }
 
 function startGPS() {
@@ -495,5 +499,6 @@ async function submitPunch() {
   }
 }
 </script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" async></script>
 </body>
 </html>
