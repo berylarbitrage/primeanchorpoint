@@ -17506,7 +17506,7 @@ app.post('/api/checkin/verify', (req, res) => {
 
 // POST /api/checkin/punch
 app.post('/api/checkin/punch', async (req, res) => {
-  const { site_id, phone, token, latitude, longitude, photo } = req.body;
+  const { site_id, phone, token, latitude, longitude, accuracy, photo } = req.body;
   if (!site_id || !token) return res.status(400).json({ error: '缺少必要参数' });
 
   // Verify token
@@ -17528,7 +17528,8 @@ app.post('/api/checkin/punch', async (req, res) => {
   }
   const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
   const maxRadius = site.radius_meters || 200;
-  if (dist > maxRadius) {
+  const gpsAccuracy = Math.min(Number(accuracy) || 0, 5000);
+  if (dist > maxRadius + gpsAccuracy) {
     const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`;
     return res.status(400).json({ error: `您的位置不在工作地点范围内（距离约${distStr}），请到达工作地点后再签到` });
   }
