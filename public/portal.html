@@ -3109,7 +3109,7 @@ function initGPS() {
       enablePunchBtn(true);
     },
     () => {},
-    { enableHighAccuracy: false, timeout: 3000, maximumAge: 30000 }
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
   );
   // Then watch for continuous high-accuracy updates
   _gpsWatchId = navigator.geolocation.watchPosition(

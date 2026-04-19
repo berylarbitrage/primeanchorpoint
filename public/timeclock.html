@@ -217,7 +217,7 @@ function startGps() {
   navigator.geolocation.getCurrentPosition(
     pos => { gps.lat = pos.coords.latitude; gps.lng = pos.coords.longitude; gps.status = 'ok'; setGpsBar('ok', '📍', '位置已获取'); },
     ()  => { gps.status = 'denied'; setGpsBar('na', '📵', '位置权限未开启（无需位置也可打卡，但距离远时会被拦截）'); },
-    { timeout: 10000, maximumAge: 60000 }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
   );
 }
 
