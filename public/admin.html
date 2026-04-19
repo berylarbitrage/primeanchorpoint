@@ -13823,8 +13823,9 @@ function punchPhotoUrl(src) {
 
 // Render all GPS pins for a time entry (clock-in, breaks, clock-out)
 function punchLocationPins(t) {
+  const safeName = (t.site_name||'工作地点').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
   const siteArgs = (t.site_lat && t.site_lng)
-    ? `,${t.site_lat},${t.site_lng},${JSON.stringify(t.site_name||'工作地点')},${t.site_radius||200}`
+    ? `,${t.site_lat},${t.site_lng},'${safeName}',${t.site_radius||200}`
     : '';
   const pins = [];
   if (t.latitude && t.longitude)
@@ -27810,15 +27811,15 @@ function printInvoice() {
 </div>
 
 <!-- ─── Punch Media Modal ─────────────────────────────────────────── -->
-<div class="modal-overlay" id="punchMediaModal" style="display:none">
-  <div class="modal" style="max-width:680px;width:96vw">
-    <div class="modal-header">
-      <h3 id="punchMediaTitle">📷 打卡照片/视频</h3>
-      <button class="modal-close" onclick="closePunchMediaModal()">✕</button>
+<div class="modal-bg" id="punchMediaModal" onclick="if(event.target===this)closePunchMediaModal()">
+  <div class="modal" style="max-width:680px;width:96vw;padding:0;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.2rem;border-bottom:1px solid var(--gray-200)">
+      <h3 id="punchMediaTitle" style="margin:0;font-size:1rem">📷 打卡照片/视频</h3>
+      <button onclick="closePunchMediaModal()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#64748b">✕</button>
     </div>
-    <div id="punchMediaBody" style="padding:1rem;min-height:100px"></div>
-    <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center">
-      <label class="btn btn-sm" style="cursor:pointer;background:var(--accent);color:#fff;border:none">
+    <div id="punchMediaBody" style="padding:1rem;min-height:120px;max-height:60vh;overflow-y:auto"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.8rem 1.2rem;border-top:1px solid var(--gray-200);background:#f8fafc">
+      <label class="btn btn-sm btn-accent" style="cursor:pointer;margin:0">
         ＋ 上传照片/视频
         <input type="file" id="punchMediaUploadInput" accept="image/*,video/*" style="display:none" onchange="uploadPunchMedia(this)">
       </label>
@@ -27835,13 +27836,14 @@ function printInvoice() {
 
   function mediaItem(filename, label) {
     if (!filename) return '';
-    const url = punchPhotoUrl(`/api/admin/punch-photo/${encodeURIComponent(filename)}`);
+    const src = `/api/admin/punch-photo/${encodeURIComponent(filename)}`;
+    const url = punchPhotoUrl(src);
     const vid = isVideo(filename);
     return `<div style="flex:0 0 auto;width:180px">
       <div style="font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:4px">${label}</div>
       ${vid
         ? `<video src="${url}" controls style="width:180px;max-height:200px;border-radius:8px;background:#000;display:block"></video>`
-        : `<img src="${url}" onclick="openPunchPhoto('${filename.replace(/'/g,"\\'")}')" style="width:180px;height:160px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1.5px solid var(--gray-200)">`
+        : `<img src="${url}" onclick="openPunchPhoto('${src.replace(/'/g,"\\'")}')" style="width:180px;height:160px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1.5px solid var(--gray-200)">`
       }
     </div>`;
   }
