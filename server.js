@@ -10436,21 +10436,28 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
       dsealError = `未配置 ${pmLabel} 授权模板，请在 DocuSeal 配置页面设置对应模板`;
     } else {
       try {
-        const submitter = { role: 'First Party', name: workerName, email: workerEmail };
-        if (workerPhone) submitter.phone = formatPhoneE164(workerPhone);
+        const submitter1 = { role: 'First Party', name: workerName, email: workerEmail };
+        if (workerPhone) submitter1.phone = formatPhoneE164(workerPhone);
+        const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+        const companySignerName = getCompanySignerName();
+        const submitters = [submitter1];
+        if (companyEmail) {
+          submitters.push({ role: 'Second Party', name: companySignerName, email: companyEmail });
+        }
         const subRes = await dsealApiCall('POST', '/api/submissions', {
           template_id: parseInt(templateId),
           send_email: true,
           send_sms: true,
-          submitters: [submitter]
+          order: 'preserved',
+          submitters
         });
-        const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
-        if (subRes.status >= 400 || !submitters.length) throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
-        const signer = submitters[0];
-        submissionId = String(subRes.data?.id || signer?.submission_id || signer?.id || '');
-        signUrl = signer?.embed_src || '';
-        if (!signUrl && signer?.slug) signUrl = `${dsealPublicHost()}/s/${signer.slug}`;
-        console.log(`[payment-auth send] DocuSeal submission ${submissionId}, method=${paymentMethod}`);
+        const subs = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+        if (subRes.status >= 400 || !subs.length) throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+        const workerSub = subs.find(s => s.role === 'First Party') || subs[0];
+        submissionId = String(subRes.data?.id || workerSub?.submission_id || workerSub?.id || '');
+        signUrl = workerSub?.embed_src || '';
+        if (!signUrl && workerSub?.slug) signUrl = `${dsealPublicHost()}/s/${workerSub.slug}`;
+        console.log(`[payment-auth send] DocuSeal submission ${submissionId}, method=${paymentMethod}, submitters=${subs.length}`);
       } catch (e) {
         dsealError = e.message;
         console.error('[payment-auth send] DocuSeal error:', e.message);
@@ -10481,6 +10488,59 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
     res.json({ success: true, signUrl, submissionId, warnings, pmLabel });
   } catch (e) {
     console.error('[payment-auth send error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: add company (Second Party) to existing payment auth submission so admin can sign
+app.post('/api/admin/worker-accounts/:id/payment-auth-add-company', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='payment_method'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '未找到付款授权表单提交记录' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyName = getCompanySignerName();
+    if (!companyEmail) return res.status(400).json({ error: '请在 .env 设置 COMPANY_SIGNER_EMAIL' });
+
+    const submissionId = onb.ds_envelope_id;
+
+    // First check if Second Party already exists in this submission
+    const subRes = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+    if (subRes.status >= 400) throw new Error(`获取提交信息失败: ${subRes.status}`);
+    const existingSubs = subRes.data?.submitters || subRes.data?.submission?.submitters || [];
+    const existing2nd = existingSubs.find(s => s.role === 'Second Party');
+
+    let companySignUrl = '';
+
+    if (existing2nd) {
+      // Second Party already exists — just get the signing URL
+      companySignUrl = existing2nd.embed_src || '';
+      if (!companySignUrl && existing2nd.slug) companySignUrl = `${dsealPublicHost()}/s/${existing2nd.slug}`;
+      // If still no URL, try PUT to refresh embed_src
+      if (!companySignUrl && existing2nd.id) {
+        const putRes = await dsealApiCall('PUT', `/api/submitters/${existing2nd.id}`, { name: companyName, email: companyEmail });
+        if (putRes.data?.embed_src) companySignUrl = putRes.data.embed_src;
+        else if (putRes.data?.slug) companySignUrl = `${dsealPublicHost()}/s/${putRes.data.slug}`;
+      }
+    } else {
+      // No Second Party yet — add one via POST /api/submitters
+      const addRes = await dsealApiCall('POST', '/api/submitters', {
+        submission_id: parseInt(submissionId),
+        role: 'Second Party',
+        name: companyName,
+        email: companyEmail
+      });
+      if (addRes.status >= 400) throw new Error(`添加公司签名人失败: ${addRes.status} ${JSON.stringify(addRes.data)}`);
+      const newSub = addRes.data;
+      companySignUrl = newSub?.embed_src || '';
+      if (!companySignUrl && newSub?.slug) companySignUrl = `${dsealPublicHost()}/s/${newSub.slug}`;
+      console.log(`[payment-auth] Added Second Party to submission ${submissionId} for worker ${workerId}`);
+    }
+
+    res.json({ success: true, companySignUrl, alreadyExisted: !!existing2nd });
+  } catch (e) {
+    console.error('[payment-auth add-company error]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
