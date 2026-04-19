@@ -10492,7 +10492,7 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
   }
 });
 
-// Admin: add company (Second Party) to existing payment auth submission so admin can sign
+// Admin: find company (Second Party) signing URL for existing payment auth submission
 app.post('/api/admin/worker-accounts/:id/payment-auth-add-company', requireAdmin, async (req, res) => {
   try {
     const workerId = parseInt(req.params.id);
@@ -10505,40 +10505,38 @@ app.post('/api/admin/worker-accounts/:id/payment-auth-add-company', requireAdmin
 
     const submissionId = onb.ds_envelope_id;
 
-    // First check if Second Party already exists in this submission
+    // Try to find Second Party submitter in the submission
     const subRes = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
     if (subRes.status >= 400) throw new Error(`获取提交信息失败: ${subRes.status}`);
     const existingSubs = subRes.data?.submitters || subRes.data?.submission?.submitters || [];
-    const existing2nd = existingSubs.find(s => s.role === 'Second Party');
+    console.log(`[payment-auth add-company] submission ${submissionId} has ${existingSubs.length} submitters: ${JSON.stringify(existingSubs.map(s => ({ id: s.id, role: s.role, status: s.status })))}`);
+    let secondParty = existingSubs.find(s => s.role === 'Second Party');
 
-    let companySignUrl = '';
+    // Fallback: try listing submitters via GET /api/submitters?submission_id=
+    if (!secondParty) {
+      try {
+        const listRes = await dsealApiCall('GET', `/api/submitters?submission_id=${submissionId}`, null);
+        if (listRes.status < 400) {
+          const listed = Array.isArray(listRes.data) ? listRes.data : listRes.data?.data || [];
+          secondParty = listed.find(s => s.role === 'Second Party');
+          if (secondParty) console.log(`[payment-auth add-company] Found Second Party via submitters list: ${secondParty.id}`);
+        }
+      } catch (e) { console.warn('[payment-auth add-company] submitters list error:', e.message); }
+    }
 
-    if (existing2nd) {
-      // Second Party already exists — just get the signing URL
-      companySignUrl = existing2nd.embed_src || '';
-      if (!companySignUrl && existing2nd.slug) companySignUrl = `${dsealPublicHost()}/s/${existing2nd.slug}`;
-      // If still no URL, try PUT to refresh embed_src
-      if (!companySignUrl && existing2nd.id) {
-        const putRes = await dsealApiCall('PUT', `/api/submitters/${existing2nd.id}`, { name: companyName, email: companyEmail });
+    if (secondParty) {
+      let companySignUrl = secondParty.embed_src || '';
+      if (!companySignUrl && secondParty.slug) companySignUrl = `${dsealPublicHost()}/s/${secondParty.slug}`;
+      if (!companySignUrl && secondParty.id) {
+        const putRes = await dsealApiCall('PUT', `/api/submitters/${secondParty.id}`, { name: companyName, email: companyEmail });
         if (putRes.data?.embed_src) companySignUrl = putRes.data.embed_src;
         else if (putRes.data?.slug) companySignUrl = `${dsealPublicHost()}/s/${putRes.data.slug}`;
       }
-    } else {
-      // No Second Party yet — add one via POST /api/submitters
-      const addRes = await dsealApiCall('POST', '/api/submitters', {
-        submission_id: parseInt(submissionId),
-        role: 'Second Party',
-        name: companyName,
-        email: companyEmail
-      });
-      if (addRes.status >= 400) throw new Error(`添加公司签名人失败: ${addRes.status} ${JSON.stringify(addRes.data)}`);
-      const newSub = addRes.data;
-      companySignUrl = newSub?.embed_src || '';
-      if (!companySignUrl && newSub?.slug) companySignUrl = `${dsealPublicHost()}/s/${newSub.slug}`;
-      console.log(`[payment-auth] Added Second Party to submission ${submissionId} for worker ${workerId}`);
+      return res.json({ success: true, companySignUrl });
     }
 
-    res.json({ success: true, companySignUrl, alreadyExisted: !!existing2nd });
+    // No Second Party found — this submission was created before the fix
+    res.json({ success: false, needsResend: true, message: '此表单创建时未包含公司签名人，需要重新发送才能双方签字。' });
   } catch (e) {
     console.error('[payment-auth add-company error]', e.message);
     res.status(500).json({ error: e.message });

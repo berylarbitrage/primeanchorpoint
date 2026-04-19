@@ -19434,6 +19434,10 @@ async function paymentAuthAddCompany() {
     if (r.error) { alert('❌ ' + r.error); return; }
     if (r.companySignUrl) {
       window.open(r.companySignUrl, '_blank');
+    } else if (r.needsResend) {
+      if (confirm('此表单创建时未包含公司签名人。\n\n需要重新发送表单（包含双方签名），工人需要重新签署。\n\n是否重新发送？')) {
+        openPaymentAuthModal();
+      }
     } else {
       alert('⚠️ 未获取到公司签名链接，请检查 DocuSeal 配置');
     }
