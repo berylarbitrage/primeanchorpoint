@@ -24913,7 +24913,7 @@ async function loadWarehouses() {
     <tr>
       <td><code style="background:var(--gray-100);padding:2px 7px;border-radius:4px;font-size:.85rem">${w.warehouse_code}</code></td>
       <td style="font-weight:600">${escHtml(w.warehouse_name)}</td>
-      <td style="font-size:.82rem;color:var(--gray-600)">${escHtml(w.partner_name || w.company_name || '—')}</td>
+      <td style="font-size:.82rem;color:var(--gray-600)">${escHtml(w.company_name || w.partner_name || '—')}</td>
       <td style="color:var(--gray-500);font-size:.82rem">${escHtml(w.address || '—')}</td>
       <td style="font-size:.8rem;color:var(--gray-500)">${(+w.latitude).toFixed(5)}, ${(+w.longitude).toFixed(5)}<br><span style="font-size:.74rem">围栏半径 ${w.geofence_radius_meters} m</span></td>
       <td><span class="badge ${w.is_active ? 'badge-active' : 'badge-terminated'}">${w.is_active ? '启用' : '停用'}</span></td>
@@ -24940,37 +24940,52 @@ async function openWhModal(id) {
   document.getElementById('whTimezone').value = w ? (w.timezone || 'America/Los_Angeles') : 'America/Los_Angeles';
   document.getElementById('whActive').checked = w ? !!w.is_active : true;
   document.getElementById('whAddrVerified').style.display = 'none';
-  // Load company options
-  await loadWhCompanyOptions(w ? w.company_id : null);
+  // Load company options (pass existing IDs array for pre-selection)
+  let existingIds = [];
+  if (w) {
+    try { existingIds = JSON.parse(w.company_ids || '[]'); } catch(e) {}
+    if (!existingIds.length && w.company_id) existingIds = [w.company_id];
+  }
+  await loadWhCompanyOptions(existingIds);
   document.getElementById('whModal').classList.add('show');
 }
 
 let _whPartners = [];
 
-async function loadWhCompanyOptions(selectedId) {
-  const sel = document.getElementById('whCompany');
-  sel.innerHTML = '<option value="">— 不关联公司 —</option>';
+async function loadWhCompanyOptions(selectedIds) {
+  const sel = Array.isArray(selectedIds) ? selectedIds.map(Number) : (selectedIds ? [Number(selectedIds)] : []);
+  const container = document.getElementById('whCompanyList');
+  container.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.25rem">加载中...</div>';
   try {
     const res = await fetch('/api/admin/partners');
     const d = await res.json();
     _whPartners = (Array.isArray(d) ? d : (d.partners || [])).filter(p => p.active !== 0);
-    _whPartners.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name;
-      if (selectedId && p.id == selectedId) opt.selected = true;
-      sel.appendChild(opt);
-    });
-  } catch(e) {}
+    if (!_whPartners.length) {
+      container.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.25rem">暂无合作公司</div>';
+      return;
+    }
+    container.innerHTML = _whPartners.map(p => `
+      <label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .2rem;cursor:pointer;border-radius:4px;font-size:.9rem" onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background=''">
+        <input type="checkbox" value="${p.id}" onchange="onWhCompanyCheck(this)" ${sel.includes(p.id) ? 'checked' : ''} style="width:auto;margin:0">
+        ${escHtml(p.name)}
+      </label>`).join('');
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--red);font-size:.82rem;padding:.25rem">加载失败</div>';
+  }
 }
 
-function onWhCompanyChange() {
-  const sel = document.getElementById('whCompany');
-  const id = parseInt(sel.value);
-  if (!id) return;
+function getWhSelectedCompanyIds() {
+  return [...document.querySelectorAll('#whCompanyList input[type=checkbox]:checked')].map(el => parseInt(el.value));
+}
+
+function onWhCompanyCheck(checkbox) {
+  if (!checkbox.checked) return;
+  const id = parseInt(checkbox.value);
   const p = _whPartners.find(x => x.id === id);
   if (!p) return;
-  // Try address field first, then first entry of addresses JSON array
+  // Auto-fill address only if address field is currently empty
+  const addrEl = document.getElementById('whAddress');
+  if (addrEl.value.trim()) return;
   let addr = p.address || '';
   if (!addr) {
     try {
@@ -24979,7 +24994,7 @@ function onWhCompanyChange() {
     } catch(e) {}
   }
   if (addr) {
-    document.getElementById('whAddress').value = addr;
+    addrEl.value = addr;
     document.getElementById('whAddrVerified').style.display = 'none';
     document.getElementById('whLat').value = '';
     document.getElementById('whLng').value = '';
@@ -25009,9 +25024,8 @@ async function geocodeWhAddress() {
 
 async function saveWarehouse() {
   const id = document.getElementById('whId').value;
-  const compSel = document.getElementById('whCompany');
-  const compId = compSel.value ? parseInt(compSel.value) : null;
-  const compName = compId ? compSel.options[compSel.selectedIndex].textContent : '';
+  const selectedIds = getWhSelectedCompanyIds();
+  const compNames = selectedIds.map(cid => { const p = _whPartners.find(x => x.id === cid); return p ? p.name : ''; }).filter(Boolean);
   const payload = {
     warehouse_code: document.getElementById('whCode').value.trim().toUpperCase(),
     warehouse_name: document.getElementById('whName').value.trim(),
@@ -25021,8 +25035,8 @@ async function saveWarehouse() {
     geofence_radius_meters: parseInt(document.getElementById('whRadius').value) || 150,
     timezone: document.getElementById('whTimezone').value,
     is_active: document.getElementById('whActive').checked ? 1 : 0,
-    company_id: compId,
-    company_name: compName
+    company_ids: selectedIds,
+    company_name: compNames.join(', ')
   };
   if (!payload.warehouse_code || !payload.warehouse_name || isNaN(payload.latitude) || isNaN(payload.longitude)) {
     alert('请填写仓库代码、名称，并验证地址以获取经纬度');
@@ -27499,10 +27513,10 @@ function printInvoice() {
     <h2 id="whModalTitle">新增仓库</h2>
     <input type="hidden" id="whId">
     <div class="field">
-      <label>关联公司</label>
-      <select id="whCompany" onchange="onWhCompanyChange()">
-        <option value="">— 不关联公司 —</option>
-      </select>
+      <label>关联公司 <span style="font-size:.78rem;color:var(--gray-500);font-weight:400">（可多选，选中后自动填入地址）</span></label>
+      <div id="whCompanyList" style="max-height:130px;overflow-y:auto;border:1px solid var(--gray-300);border-radius:6px;padding:.3rem .5rem;background:#fff">
+        <div style="color:var(--gray-400);font-size:.82rem;padding:.25rem">加载中...</div>
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
       <div class="field">

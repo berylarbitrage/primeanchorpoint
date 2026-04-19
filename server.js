@@ -628,6 +628,7 @@ db.exec(`
 `);
 try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_ids TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -21411,14 +21412,15 @@ app.get('/api/admin/warehouses', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/warehouses', requireAdmin, (req, res) => {
-  const { warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, company_id, company_name } = req.body || {};
+  const { warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, company_ids, company_name } = req.body || {};
   if (!warehouse_code || !warehouse_name || latitude == null || longitude == null)
     return res.json({ ok: false, error: 'Missing required fields' });
+  const ids = Array.isArray(company_ids) ? company_ids : [];
   try {
-    const r = db.prepare('INSERT INTO warehouses (warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, company_id, company_name) VALUES (?,?,?,?,?,?,?,?,?)').run(
+    const r = db.prepare('INSERT INTO warehouses (warehouse_code, warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, company_id, company_name, company_ids) VALUES (?,?,?,?,?,?,?,?,?,?)').run(
       warehouse_code.toUpperCase().trim(), warehouse_name.trim(), address || '',
       latitude, longitude, geofence_radius_meters || 150, timezone || 'America/Los_Angeles',
-      company_id || null, company_name || '');
+      ids[0] || null, company_name || '', JSON.stringify(ids));
     res.json({ ok: true, id: r.lastInsertRowid });
   } catch(e) {
     res.json({ ok: false, error: e.message.includes('UNIQUE') ? '仓库代码已存在' : e.message });
@@ -21426,10 +21428,11 @@ app.post('/api/admin/warehouses', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/warehouses/:id', requireAdmin, (req, res) => {
-  const { warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, is_active, company_id, company_name } = req.body || {};
-  db.prepare('UPDATE warehouses SET warehouse_name=?, address=?, latitude=?, longitude=?, geofence_radius_meters=?, timezone=?, is_active=?, company_id=?, company_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(
+  const { warehouse_name, address, latitude, longitude, geofence_radius_meters, timezone, is_active, company_ids, company_name } = req.body || {};
+  const ids = Array.isArray(company_ids) ? company_ids : [];
+  db.prepare('UPDATE warehouses SET warehouse_name=?, address=?, latitude=?, longitude=?, geofence_radius_meters=?, timezone=?, is_active=?, company_id=?, company_name=?, company_ids=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(
     warehouse_name, address || '', latitude, longitude, geofence_radius_meters || 150,
-    timezone || 'America/Los_Angeles', is_active ? 1 : 0, company_id || null, company_name || '', req.params.id);
+    timezone || 'America/Los_Angeles', is_active ? 1 : 0, ids[0] || null, company_name || '', JSON.stringify(ids), req.params.id);
   res.json({ ok: true });
 });
 
