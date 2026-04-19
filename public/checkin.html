@@ -356,33 +356,27 @@ function startGPS() {
         const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + 'km' : Math.round(dist) + 'm';
         const accStr = acc >= 1000 ? (acc / 1000).toFixed(1) + 'km' : Math.round(acc) + 'm';
 
-        if (acc > 500) {
-          bar.className = 'gps-bar gps-pending';
-          txt.textContent = '定位精度不足（误差 ' + accStr + '），等待卫星信号...';
-          document.getElementById('photoArea').style.display = 'none';
-          _gpsOk = false;
-          updatePunchBtn();
-          return;
-        }
+        // If distance minus accuracy could put user inside radius, accept it
+        // This handles indoor/warehouse scenarios where GPS accuracy is poor
+        const couldBeInRange = dist <= _siteRadius + acc;
 
-        if (dist > _siteRadius) {
+        if (couldBeInRange) {
+          navigator.geolocation.clearWatch(_gpsWatchId);
+          _gpsWatchId = null;
+          _gpsOk = true;
+          bar.className = 'gps-bar gps-ok';
+          txt.textContent = '定位成功 ✓（距离 ' + distStr + '，精度 ' + accStr + '）';
+          hideMsg('msg3');
+          document.getElementById('photoArea').style.display = '';
+          updatePunchBtn();
+        } else {
           _gpsOk = false;
           bar.className = 'gps-bar gps-fail';
           txt.textContent = '不在签到范围内（距离 ' + distStr + '，精度 ' + accStr + '）';
-          showMsg('msg3', '您不在工作地点范围内（距离约' + distStr + '），请到达工作地点后再签到\n\n您的坐标: ' + _userLat.toFixed(6) + ', ' + _userLng.toFixed(6) + '\n仓库坐标: ' + _siteLat.toFixed(6) + ', ' + _siteLng.toFixed(6) + '\nGPS精度: ' + accStr, 'err');
+          showMsg('msg3', '您不在工作地点范围内（距离约' + distStr + '），请到达工作地点后再签到', 'err');
           document.getElementById('photoArea').style.display = 'none';
           updatePunchBtn();
-          return;
         }
-
-        navigator.geolocation.clearWatch(_gpsWatchId);
-        _gpsWatchId = null;
-        _gpsOk = true;
-        bar.className = 'gps-bar gps-ok';
-        txt.textContent = '定位成功 ✓（距离 ' + distStr + '，精度 ' + accStr + '）';
-        hideMsg('msg3');
-        document.getElementById('photoArea').style.display = '';
-        updatePunchBtn();
       }
     },
     err => {
@@ -432,6 +426,7 @@ async function submitPunch() {
         token: _token,
         latitude: _userLat,
         longitude: _userLng,
+        accuracy: _gpsBestAccuracy,
         photo: _photoData
       })
     });
