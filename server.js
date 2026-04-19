@@ -17394,9 +17394,9 @@ app.get('/checkin', (req, res) => {
 app.get('/api/checkin/site-info', (req, res) => {
   const siteId = parseInt(req.query.site);
   if (!siteId) return res.status(400).json({ error: '缺少工作地点参数' });
-  const s = db.prepare('SELECT name, code, address FROM job_sites WHERE id=? AND active=1').get(siteId);
+  const s = db.prepare('SELECT name, code, address, latitude, longitude, radius_meters FROM job_sites WHERE id=? AND active=1').get(siteId);
   if (!s) return res.status(404).json({ error: '未找到该工作地点' });
-  res.json({ name: s.name, code: s.code, address: s.address });
+  res.json({ name: s.name, code: s.code, address: s.address, latitude: s.latitude, longitude: s.longitude, radius_meters: s.radius_meters || 200 });
 });
 
 // POST /api/checkin/send-code
