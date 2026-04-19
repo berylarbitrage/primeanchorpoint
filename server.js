@@ -17449,9 +17449,11 @@ app.put('/api/admin/app-settings', requireAdmin, blockManager, (req, res) => {
 app.get('/api/admin/company-settings', requireAdmin, (req, res) => {
   const legal  = db.prepare("SELECT value FROM app_settings WHERE key='company_legal_name'").get();
   const signer = db.prepare("SELECT value FROM app_settings WHERE key='company_signer_name'").get();
+  const signerEmail = db.prepare("SELECT value FROM app_settings WHERE key='company_signer_email'").get();
   res.json({
     company_legal_name:  legal?.value  || 'Prime Anchor Point LLC',
     company_signer_name: signer?.value || 'Prime Anchor Point LLC',
+    company_signer_email: signerEmail?.value || process.env.COMPANY_SIGNER_EMAIL || '',
   });
 });
 

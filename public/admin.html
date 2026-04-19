@@ -3243,6 +3243,20 @@ tr:hover td{background:var(--sky-light)}
   <div id="payAuthSignLink" style="display:none;padding:.6rem .8rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.82rem;margin-bottom:1rem;word-break:break-all">
     🔗 签署链接：<a id="payAuthSignLinkAnchor" href="#" target="_blank" style="color:var(--sky)"></a>
   </div>
+  <div id="payAuthFlowPreview" style="padding:.7rem .9rem;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;font-size:.82rem;color:#581c87;margin-bottom:1rem;line-height:1.6">
+    <div style="font-weight:600;margin-bottom:.4rem">📋 点击「发送授权表单」后：</div>
+    <div style="display:flex;align-items:flex-start;gap:.4rem;margin-bottom:.3rem">
+      <span style="background:#7c3aed;color:#fff;border-radius:50%;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;margin-top:1px">1</span>
+      <span><b>工人签署</b>：<span id="payAuthPreviewWorker">—</span> 将收到邮件+短信通知，优先签署</span>
+    </div>
+    <div style="display:flex;align-items:flex-start;gap:.4rem;margin-bottom:.3rem">
+      <span style="background:#7c3aed;color:#fff;border-radius:50%;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;margin-top:1px">2</span>
+      <span><b>公司审核签署</b>：<span id="payAuthPreviewCompany">—</span> 在工人签署完成后收到通知，审核并签字确认</span>
+    </div>
+    <div style="margin-top:.35rem;padding-top:.35rem;border-top:1px dashed #d8b4fe;color:#6b21a8;font-size:.78rem">
+      ⏱ 签署顺序为 <b>依次签署</b>（工人 → 公司），工人签完后公司才会收到通知
+    </div>
+  </div>
   <div class="modal-actions" style="margin-top:.5rem;gap:.5rem;display:flex;justify-content:flex-end;flex-wrap:wrap">
     <button class="btn btn-outline" onclick="closeModal('paymentAuthModal')">取消</button>
     <button class="btn btn-sm" style="background:#fdf4ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="previewPaymentAuthTemplate()">🔍 预览表格</button>
@@ -19446,6 +19460,7 @@ async function paymentAuthAddCompany() {
   } catch (e) { alert('❌ ' + e.message); }
 }
 
+let _payAuthCompanyInfo = null;
 async function openPaymentAuthModal() {
   if (!_onboardingWorkerId) return;
   const w = _onboardingWorkerData;
@@ -19456,10 +19471,20 @@ async function openPaymentAuthModal() {
   sel.onchange = _updatePayAuthDesc;
   document.getElementById('payAuthEmail').value = (w && (w.email || w.emp_email)) || '';
   document.getElementById('payAuthPhone').value = (w && w.phone) || '';
-  // Default lang based on worker's apparent language preference (phone country code heuristic)
   document.getElementById('payAuthLang').value = 'zh';
   document.getElementById('payAuthStatusBox').style.display = 'none';
   document.getElementById('payAuthSignLink').style.display = 'none';
+  const emailInput = document.getElementById('payAuthEmail');
+  const phoneInput = document.getElementById('payAuthPhone');
+  emailInput.removeEventListener('input', _updatePayAuthFlowPreview);
+  phoneInput.removeEventListener('input', _updatePayAuthFlowPreview);
+  emailInput.addEventListener('input', _updatePayAuthFlowPreview);
+  phoneInput.addEventListener('input', _updatePayAuthFlowPreview);
+  try {
+    const cs = await api('/admin/company-settings');
+    _payAuthCompanyInfo = { name: cs.company_signer_name, email: cs.company_signer_email };
+  } catch { _payAuthCompanyInfo = null; }
+  _updatePayAuthFlowPreview();
   try {
     const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
     const pmTask = tasks && tasks.find(t => t.key === 'payment_method');
@@ -19468,6 +19493,24 @@ async function openPaymentAuthModal() {
     }
   } catch {}
   document.getElementById('paymentAuthModal').classList.add('show');
+}
+
+function _updatePayAuthFlowPreview() {
+  const w = _onboardingWorkerData;
+  const workerName = (w && w.name) || (w && [w.first_name, w.last_name].filter(Boolean).join(' ')) || '工人';
+  const workerEmail = (document.getElementById('payAuthEmail').value || '').trim();
+  const workerPhone = (document.getElementById('payAuthPhone').value || '').trim();
+  const workerParts = [workerName];
+  if (workerEmail) workerParts.push(workerEmail);
+  if (workerPhone) workerParts.push(workerPhone);
+  document.getElementById('payAuthPreviewWorker').textContent = workerParts.join(' / ');
+  if (_payAuthCompanyInfo && _payAuthCompanyInfo.email) {
+    document.getElementById('payAuthPreviewCompany').textContent = _payAuthCompanyInfo.name + ' / ' + _payAuthCompanyInfo.email;
+    document.getElementById('payAuthFlowPreview').style.display = '';
+  } else {
+    document.getElementById('payAuthPreviewCompany').textContent = '（未配置公司签名邮箱，仅工人签署）';
+    document.getElementById('payAuthFlowPreview').style.display = '';
+  }
 }
 
 function _updatePayAuthDesc() {
