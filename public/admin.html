@@ -24881,13 +24881,16 @@ async function openWhModal(id) {
   document.getElementById('whModal').classList.add('show');
 }
 
+let _whPartners = [];
+
 async function loadWhCompanyOptions(selectedId) {
   const sel = document.getElementById('whCompany');
   sel.innerHTML = '<option value="">— 不关联公司 —</option>';
   try {
     const res = await fetch('/api/admin/partners');
     const d = await res.json();
-    (d.partners || []).filter(p => p.active).forEach(p => {
+    _whPartners = (Array.isArray(d) ? d : (d.partners || [])).filter(p => p.active !== 0);
+    _whPartners.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
       opt.textContent = p.name;
@@ -24895,6 +24898,28 @@ async function loadWhCompanyOptions(selectedId) {
       sel.appendChild(opt);
     });
   } catch(e) {}
+}
+
+function onWhCompanyChange() {
+  const sel = document.getElementById('whCompany');
+  const id = parseInt(sel.value);
+  if (!id) return;
+  const p = _whPartners.find(x => x.id === id);
+  if (!p) return;
+  // Try address field first, then first entry of addresses JSON array
+  let addr = p.address || '';
+  if (!addr) {
+    try {
+      const arr = JSON.parse(p.addresses || '[]');
+      if (arr.length) addr = arr[0].address || arr[0] || '';
+    } catch(e) {}
+  }
+  if (addr) {
+    document.getElementById('whAddress').value = addr;
+    document.getElementById('whAddrVerified').style.display = 'none';
+    document.getElementById('whLat').value = '';
+    document.getElementById('whLng').value = '';
+  }
 }
 
 async function geocodeWhAddress() {
@@ -27411,7 +27436,7 @@ function printInvoice() {
     <input type="hidden" id="whId">
     <div class="field">
       <label>关联公司</label>
-      <select id="whCompany">
+      <select id="whCompany" onchange="onWhCompanyChange()">
         <option value="">— 不关联公司 —</option>
       </select>
     </div>
