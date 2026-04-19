@@ -23273,7 +23273,7 @@ async function showSiteQR(siteId) {
   const s = _jobSites.find(x => x.id === siteId);
   if (!s) return;
   await _loadQRLib();
-  const url = location.origin + '/timeclock?site=' + siteId;
+  const url = location.origin + '/checkin?site=' + siteId;
   _siteQRUrl = url;
   document.getElementById('siteQRTitle').textContent = '📱 ' + (s.name || '打卡二维码');
   document.getElementById('siteQRSubtitle').textContent = (s.code ? s.code + ' · ' : '') + (s.address || '');
