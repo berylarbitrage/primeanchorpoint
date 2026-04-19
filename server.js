@@ -1789,6 +1789,8 @@ try { db.exec("ALTER TABLE time_entries ADD COLUMN needs_review INTEGER DEFAULT 
 try { db.exec("ALTER TABLE time_entries ADD COLUMN review_reason TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE manager_time_entries ADD COLUMN needs_review INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
+try { db.exec("ALTER TABLE job_sites ADD COLUMN code TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE job_sites ADD COLUMN partner_ids TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN site_timezone TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_latitude REAL DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_longitude REAL DEFAULT NULL"); } catch {}
@@ -17377,25 +17379,33 @@ app.get('/api/worker/job-sites', requireWorker, (req, res) => {
 
 // ─── Admin: Job Sites Management ───
 app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
-  res.json(db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all());
+  const sites = db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all();
+  const allPartners = db.prepare('SELECT id, name FROM partners ORDER BY name').all();
+  const partnerMap = {};
+  allPartners.forEach(p => { partnerMap[p.id] = p.name; });
+  res.json(sites.map(s => {
+    const pids = (s.partner_ids || '').split(',').filter(Boolean).map(Number);
+    if (!pids.length && s.partner_id) pids.push(s.partner_id);
+    return { ...s, partner_ids: pids.join(','), partner_names: pids.map(id => partnerMap[id] || '').filter(Boolean) };
+  }));
 });
 
 app.post('/api/admin/job-sites', requireAdmin, blockManager, async (req, res) => {
-  const { name, address, latitude, longitude, radius_meters, partner_id, timezone } = req.body;
+  const { name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone } = req.body;
   if (!name || !latitude || !longitude) return res.status(400).json({ error: 'Name, latitude, longitude required' });
   const tz = timezone || await lookupTimezone(latitude, longitude);
-  const r = db.prepare('INSERT INTO job_sites (name, address, latitude, longitude, radius_meters, partner_id, timezone) VALUES (?,?,?,?,?,?,?)')
-    .run(name, address || '', latitude, longitude, radius_meters || 200, partner_id || null, tz);
+  const pids = partner_ids || (partner_id ? String(partner_id) : '');
+  const r = db.prepare('INSERT INTO job_sites (name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(name, code || '', address || '', latitude, longitude, radius_meters || 200, partner_id || null, pids, tz);
   res.json({ success: true, id: r.lastInsertRowid, timezone: tz });
 });
 
 app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, async (req, res) => {
-  const { name, address, latitude, longitude, radius_meters, active, timezone } = req.body;
-  // If lat/lng changed and no explicit timezone, re-detect
+  const { name, code, address, latitude, longitude, radius_meters, active, partner_ids, timezone } = req.body;
   let tz = timezone || null;
   if (!tz && latitude && longitude) tz = await lookupTimezone(latitude, longitude);
-  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active), timezone=COALESCE(?,timezone) WHERE id=?')
-    .run(name, address, latitude, longitude, radius_meters, active, tz, req.params.id);
+  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), code=COALESCE(?,code), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active), partner_ids=COALESCE(?,partner_ids), timezone=COALESCE(?,timezone) WHERE id=?')
+    .run(name, code, address, latitude, longitude, radius_meters, active, partner_ids, tz, req.params.id);
   res.json({ success: true });
 });
 
