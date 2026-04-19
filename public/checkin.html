@@ -1,460 +1,408 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#1e40af">
-<title>仓库签到 / Warehouse Check-In</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Prime Anchor Point — 仓库签到</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f4f8;color:#1a202c;min-height:100vh}
-.header{background:#1e40af;color:#fff;padding:16px 20px;text-align:center}
-.header h1{font-size:17px;font-weight:700;letter-spacing:.3px}
-.header .sub{font-size:12px;color:#bfdbfe;margin-top:3px}
-.card{background:#fff;border-radius:12px;padding:20px;margin:16px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+:root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--green:#2D9D78;--red:#E63946;--orange:#F5A623;--white:#fff;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--radius:14px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:1rem}
+.wrap{width:100%;max-width:420px;margin-top:2rem}
+.logo-area{text-align:center;margin-bottom:1.5rem}
+.logo-area img{width:48px;height:auto;margin-bottom:.5rem}
+.logo-area h1{color:#fff;font-size:1.2rem;font-weight:700}
+.logo-area p{color:rgba(255,255,255,.6);font-size:.78rem;margin-top:.2rem}
+.site-name{color:rgba(255,255,255,.85);font-size:.9rem;margin-top:.35rem;font-weight:600}
+.card{background:var(--white);border-radius:var(--radius);padding:1.5rem;box-shadow:0 8px 40px rgba(0,0,0,.28)}
+.card h2{font-size:.95rem;color:var(--blue);margin-bottom:1rem;font-weight:700;display:flex;align-items:center;gap:.4rem}
+.step-badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--sky);color:#fff;font-size:.72rem;font-weight:700}
+.field{margin-bottom:.85rem}
+.field label{display:block;font-size:.72rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.field input{width:100%;padding:13px 15px;border:2px solid var(--gray-200);border-radius:10px;font-size:1rem;outline:none;font-family:inherit;transition:border .2s}
+.field input:focus{border-color:var(--sky)}
+.field input:disabled{background:#f3f3f3;color:var(--gray-400)}
+.phone-row{display:flex;gap:.5rem}
+.phone-row input{flex:1}
+.phone-row .btn-code{flex-shrink:0;white-space:nowrap}
+.btn{padding:13px 20px;border:none;border-radius:10px;font-size:.92rem;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit;width:100%;display:flex;align-items:center;justify-content:center;gap:.35rem}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:var(--sky);color:#fff}
+.btn-primary:hover:not(:disabled){background:#3A7BC8}
+.btn-green{background:var(--green);color:#fff}
+.btn-green:hover:not(:disabled){background:#248A66}
+.btn-code{padding:13px 14px;border:none;border-radius:10px;font-size:.82rem;font-weight:700;cursor:pointer;background:var(--sky);color:#fff;font-family:inherit;transition:all .2s}
+.btn-code:disabled{opacity:.45;cursor:not-allowed}
+.msg{padding:11px 14px;border-radius:8px;font-size:.85rem;font-weight:600;margin-bottom:.85rem;text-align:center;display:none}
+.msg.show{display:block}
+.msg-err{background:#FFEAEA;color:var(--red);border:1px solid #FFC8C8}
+.msg-ok{background:#E8F5E9;color:var(--green);border:1px solid #A8D5B5}
+.msg-info{background:var(--sky-light);color:var(--blue);border:1px solid #B8D4F8}
+
+.gps-bar{display:flex;align-items:center;gap:.5rem;font-size:.82rem;padding:.65rem .85rem;border-radius:8px;margin-bottom:.85rem;font-weight:600}
+.gps-ok{background:#E8F5E9;color:var(--green);border:1px solid #A8D5B5}
+.gps-fail{background:#FFEAEA;color:var(--red);border:1px solid #FFC8C8}
+.gps-pending{background:var(--sky-light);color:var(--blue);border:1px solid #B8D4F8}
+
+.photo-area{margin-bottom:.85rem}
+.photo-preview{width:100%;max-height:300px;object-fit:cover;border-radius:10px;border:2px solid var(--gray-200);display:none}
+.camera-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.4rem;border:2px dashed var(--gray-200);border-radius:10px;padding:2rem;cursor:pointer;color:var(--gray-400);transition:all .2s;position:relative;overflow:hidden}
+.camera-btn:hover{border-color:var(--sky);color:var(--sky)}
+.camera-btn.has-photo{border-style:solid;border-color:var(--green)}
+.camera-btn .cam-icon{font-size:2rem}
+.camera-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+.result-card{background:var(--off);border-radius:10px;padding:1.1rem 1.2rem;margin-bottom:1rem}
+.result-card h3{font-size:.85rem;color:var(--blue);margin-bottom:.6rem;font-weight:700}
+.result-row{display:flex;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid var(--gray-200);font-size:.88rem}
+.result-row:last-child{border:none}
+.result-row span:first-child{color:var(--gray-600)}
+.result-row span:last-child{font-weight:700;color:var(--gray-800)}
+.check-icon{font-size:2.5rem;text-align:center;margin-bottom:.5rem}
+
 .step{display:none}
 .step.active{display:block}
-label{font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:5px}
-input[type=tel],input[type=text]{width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:12px 14px;font-size:16px;outline:none;transition:border-color .2s;background:#fff}
-input:focus{border-color:#1e40af}
-.row{display:flex;gap:10px;align-items:flex-end}
-.row input{flex:1}
-.btn{display:block;width:100%;padding:14px;border-radius:10px;border:none;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .15s,transform .1s}
-.btn:active{transform:scale(.97)}
-.btn-primary{background:#1e40af;color:#fff}
-.btn-primary:disabled{background:#93c5fd;cursor:not-allowed;transform:none}
-.btn-secondary{background:#f3f4f6;color:#374151;border:1.5px solid #d1d5db}
-.btn-green{background:#065f46;color:#fff}
-.btn-red{background:#dc2626;color:#fff}
-.btn-sm{padding:10px 16px;font-size:13px;width:auto;border-radius:8px}
-.mt{margin-top:12px}
-.mt2{margin-top:8px}
-.error{background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 12px;color:#dc2626;font-size:13px;margin-top:10px;display:none}
-.info{background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:10px 12px;color:#1e40af;font-size:13px;margin-top:10px}
-.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700}
-.badge-blue{background:#dbeafe;color:#1e3a8a}
-.badge-green{background:#d1fae5;color:#065f46}
-.step-indicator{display:flex;justify-content:center;gap:8px;padding:12px 0 4px}
-.dot{width:8px;height:8px;border-radius:50%;background:#d1d5db;transition:background .3s}
-.dot.active{background:#1e40af}
-.dot.done{background:#6ee7b7}
-/* GPS */
-.gps-icon{font-size:48px;text-align:center;padding:20px 0 10px;animation:pulse 1.5s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.gps-icon.done{animation:none}
-.progress-ring{width:80px;height:80px;margin:0 auto 12px}
-/* Camera */
-#camera-container{position:relative;background:#000;border-radius:12px;overflow:hidden;margin-bottom:12px}
-#video-preview{width:100%;max-height:340px;object-fit:cover;display:block}
-#canvas-preview{width:100%;max-height:340px;object-fit:cover;display:none}
-#rec-badge{position:absolute;top:10px;left:10px;background:#dc2626;color:#fff;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;display:none}
-#rec-timer{margin-left:4px}
-.camera-controls{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-/* Success */
-.success-icon{font-size:64px;text-align:center;padding:20px 0 12px}
-.info-grid{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:14px}
-.info-grid .lbl{color:#6b7280;font-weight:600;white-space:nowrap}
-.info-grid .val{color:#111827;font-weight:500;word-break:break-all}
-/* Warehouse banner */
-.wh-banner{background:#1e3a8a;color:#fff;border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px}
-.wh-banner .icon{font-size:22px}
-.wh-banner .name{font-weight:700;font-size:15px}
-.wh-banner .code{font-size:11px;color:#bfdbfe;margin-top:1px}
-.countdown{font-size:12px;color:#6b7280;text-align:right;margin-top:4px}
-.otp-row{display:flex;gap:8px}
-.otp-row input{flex:1;letter-spacing:8px;font-size:20px;text-align:center;font-weight:700}
+
+.code-input{display:flex;gap:.4rem;justify-content:center;margin-bottom:.85rem}
+.code-input input{width:44px;height:52px;text-align:center;font-size:1.3rem;font-weight:700;border:2px solid var(--gray-200);border-radius:8px;outline:none;font-family:inherit}
+.code-input input:focus{border-color:var(--sky)}
+
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.countdown{font-size:.78rem;color:var(--gray-400);text-align:center;margin-top:.3rem}
 </style>
 </head>
 <body>
+<div class="wrap">
+  <div class="logo-area">
+    <img src="logo.svg" alt="Logo">
+    <h1>Prime Anchor Point</h1>
+    <p>仓库签到 / Warehouse Check-in</p>
+    <div class="site-name" id="siteName">加载中...</div>
+  </div>
 
-<div class="header">
-  <h1>仓库签到 / Warehouse Check-In</h1>
-  <div class="sub" id="header-sub">请扫码进入签到流程</div>
-</div>
-
-<div class="step-indicator">
-  <div class="dot active" id="dot-0"></div>
-  <div class="dot" id="dot-1"></div>
-  <div class="dot" id="dot-2"></div>
-  <div class="dot" id="dot-3"></div>
-</div>
-
-<!-- ── STEP 1: 手机号 + 验证码 ── -->
-<div class="step active" id="step-phone">
-  <div class="card">
-    <div class="wh-banner" id="wh-banner" style="display:none">
-      <div class="icon">🏭</div>
-      <div><div class="name" id="wh-name">—</div><div class="code" id="wh-code">—</div></div>
-    </div>
-    <div id="wh-loading" class="info">正在加载仓库信息…</div>
-
-    <div style="margin-top:14px">
-      <label>手机号 / Phone Number</label>
-      <div class="row">
-        <div style="flex:1">
-          <input type="tel" id="phone-input" placeholder="(xxx) xxx-xxxx" maxlength="14" inputmode="numeric" autocomplete="tel">
-        </div>
-        <button class="btn btn-secondary btn-sm" id="send-otp-btn" onclick="sendOTP()" style="white-space:nowrap">发送验证码</button>
+  <!-- Step 1: Phone Input -->
+  <div class="card step active" id="step1">
+    <h2><span class="step-badge">1</span> 输入手机号</h2>
+    <div id="msg1" class="msg"></div>
+    <div class="field">
+      <label>手机号码 / Phone Number</label>
+      <div class="phone-row">
+        <input type="tel" id="phoneInput" placeholder="(xxx) xxx-xxxx" maxlength="14" inputmode="tel" autocomplete="tel">
+        <button class="btn-code" id="btnSendCode" onclick="sendCode()">发送验证码</button>
       </div>
-      <div class="countdown" id="otp-countdown" style="display:none"></div>
     </div>
+  </div>
 
-    <div style="margin-top:14px" id="otp-section" style="display:none">
-      <label>验证码 / Verification Code</label>
-      <div class="otp-row">
-        <input type="tel" id="otp-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+  <!-- Step 2: Verify Code -->
+  <div class="card step" id="step2">
+    <h2><span class="step-badge">2</span> 输入验证码</h2>
+    <div id="msg2" class="msg"></div>
+    <p style="font-size:.82rem;color:var(--gray-600);margin-bottom:.75rem">验证码已发送至 <strong id="phoneDisplay"></strong></p>
+    <div class="code-input" id="codeInputs">
+      <input type="tel" maxlength="1" inputmode="numeric" data-idx="0">
+      <input type="tel" maxlength="1" inputmode="numeric" data-idx="1">
+      <input type="tel" maxlength="1" inputmode="numeric" data-idx="2">
+      <input type="tel" maxlength="1" inputmode="numeric" data-idx="3">
+      <input type="tel" maxlength="1" inputmode="numeric" data-idx="4">
+      <input type="tel" maxlength="1" inputmode="numeric" data-idx="5">
+    </div>
+    <div class="countdown" id="countdown"></div>
+    <button class="btn btn-primary" id="btnVerify" onclick="verifyCode()" disabled>验证 / Verify</button>
+  </div>
+
+  <!-- Step 3: GPS + Photo -->
+  <div class="card step" id="step3">
+    <h2><span class="step-badge">3</span> 定位 & 拍照</h2>
+    <div id="msg3" class="msg"></div>
+    <div class="gps-bar gps-pending" id="gpsBar">
+      <span>📡</span> <span id="gpsText">GPS 定位中...</span>
+    </div>
+    <div class="photo-area" id="photoArea" style="display:none">
+      <div class="camera-btn" id="cameraBtn">
+        <div class="cam-icon">📷</div>
+        <span>点击拍照 / Take Photo</span>
+        <input type="file" accept="image/*" capture="environment" id="photoFile" onchange="handlePhoto(this)">
       </div>
-      <div class="mt2" style="font-size:12px;color:#6b7280">已发送6位验证码到您的手机（5分钟有效）<br>Verification code sent to your phone (valid 5 min)</div>
+      <img id="photoPreview" class="photo-preview" alt="Photo preview">
     </div>
-
-    <div class="error" id="phone-error"></div>
-    <button class="btn btn-primary mt" id="verify-otp-btn" onclick="verifyOTP()" disabled>验证并继续 / Verify &amp; Continue</button>
+    <button class="btn btn-green" id="btnPunch" onclick="submitPunch()" disabled>签到 / Check In</button>
   </div>
-</div>
 
-<!-- ── STEP 2: GPS 定位 ── -->
-<div class="step" id="step-gps">
-  <div class="card">
-    <div class="wh-banner">
-      <div class="icon">🏭</div>
-      <div><div class="name" id="wh-name2">—</div><div class="code" id="wh-code2">签到定位验证</div></div>
+  <!-- Step 4: Result -->
+  <div class="card step" id="step4">
+    <h2><span class="step-badge">✓</span> 签到完成</h2>
+    <div class="check-icon" id="resultIcon">✅</div>
+    <div class="result-card">
+      <h3 id="resultTitle">签到成功</h3>
+      <div class="result-row"><span>姓名</span><span id="resName">-</span></div>
+      <div class="result-row"><span>手机号</span><span id="resPhone">-</span></div>
+      <div class="result-row"><span>员工号</span><span id="resEmpId">-</span></div>
+      <div class="result-row"><span>时间</span><span id="resTime">-</span></div>
+      <div class="result-row"><span>地点</span><span id="resSite">-</span></div>
     </div>
-    <div class="gps-icon" id="gps-icon">📍</div>
-    <div style="text-align:center;font-size:15px;font-weight:600;color:#374151" id="gps-status">正在获取您的位置…</div>
-    <div style="text-align:center;font-size:13px;color:#6b7280;margin-top:6px" id="gps-sub">请确认已允许定位权限<br>Please allow location access</div>
-    <div class="error" id="gps-error"></div>
-    <button class="btn btn-secondary mt" id="gps-retry-btn" onclick="startGPS()" style="display:none">重试定位 / Retry</button>
-  </div>
-</div>
-
-<!-- ── STEP 3: 拍照 ── -->
-<div class="step" id="step-camera">
-  <div class="card" style="padding:14px">
-    <div style="font-size:13px;color:#065f46;background:#d1fae5;border-radius:8px;padding:8px 12px;margin-bottom:12px">
-      📷 <b>请现场拍摄 / Take a Live Photo</b><br>
-      <span style="font-size:12px">只能使用摄像头现场拍摄，不能上传相册图片</span>
-    </div>
-    <div id="camera-container">
-      <video id="video-preview" autoplay playsinline muted></video>
-      <canvas id="canvas-preview"></canvas>
-      <div id="rec-badge">● REC <span id="rec-timer">0:00</span></div>
-    </div>
-    <div class="camera-controls" id="capture-controls">
-      <button class="btn btn-primary btn-sm" onclick="capturePhoto()" id="capture-photo-btn">📷 拍照</button>
-      <button class="btn btn-secondary btn-sm" onclick="toggleCamera()" id="flip-btn">🔄 翻转</button>
-    </div>
-    <div class="camera-controls" id="preview-controls" style="display:none">
-      <button class="btn btn-secondary btn-sm" onclick="retakePhoto()">↩ 重拍</button>
-      <button class="btn btn-green btn-sm" onclick="submitCheckin()" id="submit-btn">✓ 提交签到</button>
-    </div>
-    <div class="error" id="camera-error"></div>
-  </div>
-</div>
-
-<!-- ── STEP 4: 成功 ── -->
-<div class="step" id="step-success">
-  <div class="card">
-    <div class="success-icon">✅</div>
-    <div style="text-align:center;font-size:18px;font-weight:800;color:#065f46;margin-bottom:4px">签到成功！</div>
-    <div style="text-align:center;font-size:13px;color:#6b7280;margin-bottom:16px">Check-In Successful</div>
-    <div class="info-grid" id="success-info"></div>
-    <div class="info mt" id="sms-notice" style="display:none">
-      📱 确认短信已发送到您的手机<br><span style="font-size:12px;color:#374151">Confirmation SMS sent to your phone</span>
-    </div>
+    <div id="msg4" class="msg msg-ok show">短信确认已发送至您的手机</div>
   </div>
 </div>
 
 <script>
-// ── State ────────────────────────────────────────────────────────────────
-let warehouseCode = '';
-let warehouseInfo = null;
-let sessionToken  = '';
-let otpSent       = false;
-let cameraStream  = null;
-let capturedBlob  = null;
-let facingMode    = 'environment';
-let countdownTimer = null;
+const params = new URLSearchParams(location.search);
+const _siteId = params.get('site');
+let _phone = '';
+let _token = '';
+let _empInfo = {};
+let _gpsOk = false;
+let _userLat = null;
+let _userLng = null;
+let _photoData = null;
+let _countdownTimer = null;
 
-// ── Init ─────────────────────────────────────────────────────────────────
-(async function init() {
-  const params = new URLSearchParams(location.search);
-  warehouseCode = (params.get('wh') || '').toUpperCase();
-  if (!warehouseCode) {
-    document.getElementById('wh-loading').textContent = '❌ 二维码无效，缺少仓库信息。Invalid QR code.';
-    document.getElementById('wh-loading').style.background = '#fef2f2';
-    document.getElementById('wh-loading').style.color = '#dc2626';
-    document.getElementById('wh-loading').style.borderColor = '#fca5a5';
+function showMsg(id, text, type) {
+  const el = document.getElementById(id);
+  el.className = 'msg show msg-' + type;
+  el.textContent = text;
+}
+function hideMsg(id) {
+  const el = document.getElementById(id);
+  el.className = 'msg';
+}
+function goStep(n) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById('step' + n).classList.add('active');
+}
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || '请求失败');
+  return d;
+}
+
+// Load site info
+(async function() {
+  if (!_siteId) {
+    document.getElementById('siteName').textContent = '错误：缺少工作地点参数';
     return;
   }
   try {
-    const r = await api('GET', `/api/checkin/warehouse?wh=${warehouseCode}`);
-    if (!r.ok) throw new Error(r.error || '仓库无效');
-    warehouseInfo = r.warehouse;
-    document.getElementById('wh-loading').style.display = 'none';
-    document.getElementById('wh-banner').style.display = 'flex';
-    document.getElementById('wh-name').textContent = r.warehouse.warehouse_name;
-    document.getElementById('wh-code').textContent = r.warehouse.warehouse_code;
-    document.getElementById('wh-name2').textContent = r.warehouse.warehouse_name;
-    document.getElementById('header-sub').textContent = r.warehouse.warehouse_name;
-  } catch(e) {
-    document.getElementById('wh-loading').textContent = '❌ ' + e.message;
-    document.getElementById('wh-loading').style.background = '#fef2f2';
-    document.getElementById('wh-loading').style.color = '#dc2626';
-    document.getElementById('wh-loading').style.borderColor = '#fca5a5';
+    const d = await api('/api/checkin/site-info?site=' + _siteId);
+    document.getElementById('siteName').textContent = d.name + (d.code ? ' (' + d.code + ')' : '');
+  } catch (e) {
+    document.getElementById('siteName').textContent = '无法加载工作地点信息';
   }
 })();
 
-// Format phone input
-document.getElementById('phone-input').addEventListener('input', function() {
-  let v = this.value.replace(/\D/g, '').slice(0, 10);
-  if (v.length >= 7) v = `(${v.slice(0,3)}) ${v.slice(3,6)}-${v.slice(6)}`;
-  else if (v.length >= 4) v = `(${v.slice(0,3)}) ${v.slice(3)}`;
-  this.value = v;
-  document.getElementById('verify-otp-btn').disabled = !otpSent;
+// Phone formatting
+const phoneInput = document.getElementById('phoneInput');
+phoneInput.addEventListener('input', function() {
+  let d = this.value.replace(/\D/g, '').slice(0, 10);
+  if (d.length > 6) d = '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
+  else if (d.length > 3) d = '(' + d.slice(0, 3) + ') ' + d.slice(3);
+  this.value = d;
 });
-document.getElementById('otp-input').addEventListener('input', function() {
-  this.value = this.value.replace(/\D/g, '').slice(0, 6);
-  document.getElementById('verify-otp-btn').disabled = this.value.length < 6;
+phoneInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') sendCode();
 });
 
-// ── API helper ───────────────────────────────────────────────────────────
-async function api(method, url, body, token) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (token) opts.headers['x-checkin-token'] = token;
-  if (body && method !== 'GET') opts.body = JSON.stringify(body);
-  const r = await fetch(url, opts);
-  return r.json();
-}
-
-function showErr(id, msg) {
-  const el = document.getElementById(id);
-  el.textContent = msg;
-  el.style.display = msg ? 'block' : 'none';
-}
-
-function setStep(n) {
-  document.querySelectorAll('.step').forEach((s, i) => s.classList.toggle('active', i === n));
-  document.querySelectorAll('.dot').forEach((d, i) => {
-    d.classList.remove('active', 'done');
-    if (i === n) d.classList.add('active');
-    if (i < n)  d.classList.add('done');
-  });
-  window.scrollTo(0, 0);
-}
-
-// ── Step 1: OTP ──────────────────────────────────────────────────────────
-async function sendOTP() {
-  if (!warehouseInfo) return;
-  showErr('phone-error', '');
-  const phone = document.getElementById('phone-input').value;
-  if (!phone || phone.replace(/\D/g,'').length < 10) {
-    return showErr('phone-error', '请输入有效的10位手机号');
+async function sendCode() {
+  const raw = phoneInput.value.replace(/\D/g, '');
+  if (raw.length < 10) return showMsg('msg1', '请输入有效的10位手机号码', 'err');
+  hideMsg('msg1');
+  const btn = document.getElementById('btnSendCode');
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+  try {
+    await api('/api/checkin/send-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: raw, site_id: _siteId })
+    });
+    _phone = raw;
+    document.getElementById('phoneDisplay').textContent = phoneInput.value;
+    goStep(2);
+    startCountdown(300);
+    document.querySelector('#codeInputs input').focus();
+  } catch (e) {
+    showMsg('msg1', e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '发送验证码';
   }
-  const btn = document.getElementById('send-otp-btn');
-  btn.disabled = true; btn.textContent = '发送中…';
-  try {
-    const r = await api('POST', '/api/checkin/send-otp', { phone, warehouse_code: warehouseCode });
-    if (!r.ok) { showErr('phone-error', r.error); return; }
-    otpSent = true;
-    document.getElementById('otp-section').style.display = 'block';
-    document.getElementById('otp-input').focus();
-    startCountdown(60);
-  } catch(e) { showErr('phone-error', '网络错误，请重试'); }
-  finally { btn.disabled = false; btn.textContent = '重新发送'; }
 }
 
-function startCountdown(secs) {
-  clearInterval(countdownTimer);
-  const cd = document.getElementById('otp-countdown');
-  cd.style.display = 'block';
-  let t = secs;
-  countdownTimer = setInterval(() => {
-    t--;
-    cd.textContent = `${t}秒后可重新发送 / Resend in ${t}s`;
-    if (t <= 0) { clearInterval(countdownTimer); cd.style.display = 'none'; }
+// Code input handling
+const codeBoxes = document.querySelectorAll('#codeInputs input');
+codeBoxes.forEach((inp, i) => {
+  inp.addEventListener('input', function() {
+    this.value = this.value.replace(/\D/g, '').slice(0, 1);
+    if (this.value && i < 5) codeBoxes[i + 1].focus();
+    checkCodeComplete();
+  });
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Backspace' && !this.value && i > 0) {
+      codeBoxes[i - 1].focus();
+      codeBoxes[i - 1].value = '';
+    }
+    if (e.key === 'Enter') verifyCode();
+  });
+  inp.addEventListener('paste', function(e) {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
+    for (let j = 0; j < text.length && j < 6; j++) codeBoxes[j].value = text[j];
+    if (text.length > 0) codeBoxes[Math.min(text.length, 5)].focus();
+    checkCodeComplete();
+  });
+});
+
+function checkCodeComplete() {
+  const code = Array.from(codeBoxes).map(b => b.value).join('');
+  document.getElementById('btnVerify').disabled = code.length < 6;
+}
+
+function startCountdown(seconds) {
+  let remaining = seconds;
+  const el = document.getElementById('countdown');
+  clearInterval(_countdownTimer);
+  _countdownTimer = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(_countdownTimer);
+      el.textContent = '验证码已过期，请返回重新获取';
+      return;
+    }
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    el.textContent = `验证码有效期：${m}:${String(s).padStart(2, '0')}`;
   }, 1000);
+  el.textContent = `验证码有效期：${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-async function verifyOTP() {
-  showErr('phone-error', '');
-  const phone = document.getElementById('phone-input').value;
-  const code  = document.getElementById('otp-input').value;
-  if (code.length < 6) return showErr('phone-error', '请输入6位验证码');
-  const btn = document.getElementById('verify-otp-btn');
-  btn.disabled = true; btn.textContent = '验证中…';
+async function verifyCode() {
+  const code = Array.from(codeBoxes).map(b => b.value).join('');
+  if (code.length < 6) return;
+  hideMsg('msg2');
+  const btn = document.getElementById('btnVerify');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 验证中...';
   try {
-    const r = await api('POST', '/api/checkin/verify-otp', { phone, code, warehouse_code: warehouseCode });
-    if (!r.ok) { showErr('phone-error', r.error); return; }
-    sessionToken = r.session_token;
-    setStep(1);
+    const d = await api('/api/checkin/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: _phone, code, site_id: _siteId })
+    });
+    _token = d.token;
+    _empInfo = { name: d.name, employee_id: d.employee_id, phone: d.phone };
+    clearInterval(_countdownTimer);
+    goStep(3);
     startGPS();
-  } catch(e) { showErr('phone-error', '网络错误，请重试'); }
-  finally { btn.disabled = false; btn.textContent = '验证并继续 / Verify & Continue'; }
+  } catch (e) {
+    showMsg('msg2', e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = '验证 / Verify';
+  }
 }
 
-// ── Step 2: GPS ───────────────────────────────────────────────────────────
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function startGPS() {
-  showErr('gps-error', '');
-  document.getElementById('gps-retry-btn').style.display = 'none';
-  document.getElementById('gps-status').textContent = '正在获取您的位置…';
-  document.getElementById('gps-sub').textContent = '请确认已允许定位权限\nPlease allow location access';
-  document.getElementById('gps-icon').className = 'gps-icon';
-  document.getElementById('gps-icon').textContent = '📍';
+  const bar = document.getElementById('gpsBar');
+  const txt = document.getElementById('gpsText');
+  bar.className = 'gps-bar gps-pending';
+  txt.textContent = 'GPS 定位中...';
 
   if (!navigator.geolocation) {
-    showErr('gps-error', '您的浏览器不支持定位功能，请使用 Safari 或 Chrome');
-    document.getElementById('gps-retry-btn').style.display = 'block';
+    bar.className = 'gps-bar gps-fail';
+    txt.textContent = '您的浏览器不支持GPS定位';
     return;
   }
+
   navigator.geolocation.getCurrentPosition(
-    async pos => {
-      const { latitude, longitude, accuracy } = pos.coords;
-      document.getElementById('gps-status').textContent = `定位成功（精度 ${Math.round(accuracy)}m），正在验证…`;
-      try {
-        const r = await api('POST', '/api/checkin/verify-gps', { latitude, longitude, accuracy }, sessionToken);
-        if (!r.ok) {
-          document.getElementById('gps-icon').textContent = '❌';
-          document.getElementById('gps-icon').className = 'gps-icon done';
-          showErr('gps-error', r.error);
-          document.getElementById('gps-retry-btn').style.display = 'block';
-          return;
-        }
-        document.getElementById('gps-icon').textContent = '✅';
-        document.getElementById('gps-icon').className = 'gps-icon done';
-        document.getElementById('gps-status').textContent = `定位验证通过（距仓库 ${r.distance}m）`;
-        document.getElementById('gps-sub').textContent = '即将进入拍照页面…';
-        setTimeout(() => { setStep(2); startCamera(); }, 1200);
-      } catch(e) { showErr('gps-error', '网络错误，请重试'); document.getElementById('gps-retry-btn').style.display = 'block'; }
+    pos => {
+      _userLat = pos.coords.latitude;
+      _userLng = pos.coords.longitude;
+      _gpsOk = true;
+      bar.className = 'gps-bar gps-ok';
+      txt.textContent = '定位成功 ✓';
+      document.getElementById('photoArea').style.display = '';
+      updatePunchBtn();
     },
     err => {
-      const msgs = { 1:'已拒绝定位权限，请在设置中允许后重试', 2:'无法获取位置信息，请到开阔地带重试', 3:'定位超时，请重试' };
-      document.getElementById('gps-icon').textContent = '❌';
-      document.getElementById('gps-icon').className = 'gps-icon done';
-      showErr('gps-error', msgs[err.code] || '定位失败');
-      document.getElementById('gps-retry-btn').style.display = 'block';
+      bar.className = 'gps-bar gps-fail';
+      if (err.code === 1) txt.textContent = '定位权限被拒绝，请在浏览器设置中开启定位';
+      else if (err.code === 2) txt.textContent = '无法获取位置信息，请检查GPS是否开启';
+      else txt.textContent = '定位超时，请重试';
+      showMsg('msg3', '无法获取GPS定位，请开启手机定位后刷新页面', 'err');
     },
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   );
 }
 
-// ── Step 3: Camera ────────────────────────────────────────────────────────
-async function startCamera() {
-  showErr('camera-error', '');
-  stopCamera();
-  const video = document.getElementById('video-preview');
-  const canvas = document.getElementById('canvas-preview');
-  video.style.display = 'block';
-  canvas.style.display = 'none';
-  document.getElementById('capture-controls').style.display = 'flex';
-  document.getElementById('preview-controls').style.display = 'none';
-  capturedBlob = null;
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false
-    });
-    cameraStream = stream;
-    video.srcObject = stream;
-  } catch(e) {
-    // Fallback to any camera
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      cameraStream = stream;
-      video.srcObject = stream;
-    } catch(e2) {
-      showErr('camera-error', '无法访问摄像头，请检查权限设置\n' + (e2.message || e2.name));
-    }
-  }
-}
-
-function stopCamera() {
-  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
-}
-
-function toggleCamera() {
-  facingMode = facingMode === 'environment' ? 'user' : 'environment';
-  startCamera();
-}
-
-function capturePhoto() {
-  const video = document.getElementById('video-preview');
-  const canvas = document.getElementById('canvas-preview');
-  canvas.width  = video.videoWidth  || 1280;
-  canvas.height = video.videoHeight || 720;
-  const ctx = canvas.getContext('2d');
-  if (facingMode === 'user') {
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
-  }
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  stopCamera();
-  video.style.display = 'none';
-  canvas.style.display = 'block';
-  document.getElementById('capture-controls').style.display = 'none';
-  document.getElementById('preview-controls').style.display = 'flex';
-
-  canvas.toBlob(blob => { capturedBlob = blob; }, 'image/jpeg', 0.88);
-}
-
-function retakePhoto() {
-  capturedBlob = null;
-  startCamera();
-}
-
-async function submitCheckin() {
-  if (!capturedBlob) return showErr('camera-error', '请先拍照');
-  showErr('camera-error', '');
-  const btn = document.getElementById('submit-btn');
-  btn.disabled = true; btn.textContent = '提交中…';
-
-  try {
-    const fd = new FormData();
-    fd.append('media', capturedBlob, `checkin-${Date.now()}.jpg`);
-    const r = await fetch('/api/checkin/submit', {
-      method: 'POST',
-      headers: { 'x-checkin-token': sessionToken },
-      body: fd
-    });
-    const data = await r.json();
-    if (!data.ok) { showErr('camera-error', data.error || '提交失败，请重试'); return; }
-    showSuccess(data);
-  } catch(e) {
-    showErr('camera-error', '网络错误，请重试');
-  } finally {
-    btn.disabled = false; btn.textContent = '✓ 提交签到';
-  }
-}
-
-function showSuccess(d) {
-  stopCamera();
-  setStep(3);
-  const fmt = t => {
-    if (!t) return '—';
-    const s = String(t);
-    // "2026-04-18 08:05:33" → show nicely
-    return s;
+function handlePhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    _photoData = e.target.result;
+    const preview = document.getElementById('photoPreview');
+    preview.src = _photoData;
+    preview.style.display = 'block';
+    document.getElementById('cameraBtn').classList.add('has-photo');
+    updatePunchBtn();
   };
-  const rows = [
-    ['姓名 / Name', d.employee_name],
-    ['手机号 / Phone', formatDisplay(d.phone)],
-    ['员工号 / Employee ID', d.employee_no || 'N/A'],
-    ['仓库 / Warehouse', d.warehouse_name],
-    ['签到日期 / Date', d.checkin_date],
-    ['签到时间 / Time', (d.checkin_time || '').slice(11, 19)],
-    ['状态 / Status', '✅ 签到成功'],
-  ];
-  document.getElementById('success-info').innerHTML = rows.map(([l, v]) =>
-    `<div class="lbl">${l}</div><div class="val">${v}</div>`
-  ).join('');
-  if (d.sms_sent) document.getElementById('sms-notice').style.display = 'block';
+  reader.readAsDataURL(file);
 }
 
-function formatDisplay(p10) {
-  if (!p10) return '—';
-  const d = String(p10).replace(/\D/g, '');
-  if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
-  return p10;
+function updatePunchBtn() {
+  document.getElementById('btnPunch').disabled = !(_gpsOk && _photoData);
+}
+
+async function submitPunch() {
+  if (!_gpsOk || !_photoData) return;
+  hideMsg('msg3');
+  const btn = document.getElementById('btnPunch');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 提交中...';
+
+  try {
+    const d = await api('/api/checkin/punch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        site_id: _siteId,
+        phone: _phone,
+        token: _token,
+        latitude: _userLat,
+        longitude: _userLng,
+        photo: _photoData
+      })
+    });
+
+    const actionLabel = d.action === 'out' ? '签退成功 / Check-out Complete' : '签到成功 / Check-in Complete';
+    document.getElementById('resultIcon').textContent = d.action === 'out' ? '👋' : '✅';
+    document.getElementById('resultTitle').textContent = actionLabel;
+    document.getElementById('resName').textContent = d.name || '-';
+    document.getElementById('resPhone').textContent = _empInfo.phone || '-';
+    document.getElementById('resEmpId').textContent = d.employee_id || '-';
+    document.getElementById('resTime').textContent = d.clock_time || '-';
+    const siteEl = document.getElementById('siteName');
+    document.getElementById('resSite').textContent = siteEl.textContent || '-';
+
+    goStep(4);
+  } catch (e) {
+    showMsg('msg3', e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = '签到 / Check In';
+  }
 }
 </script>
 </body>
