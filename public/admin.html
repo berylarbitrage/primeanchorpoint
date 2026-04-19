@@ -24842,14 +24842,15 @@ async function loadWarehouses() {
   _whList = d.warehouses || [];
   const tbody = document.getElementById('whTable');
   if (!_whList.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无仓库，点击右上角新增</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无仓库，点击右上角新增</td></tr>';
     return;
   }
   tbody.innerHTML = _whList.map(w => `
     <tr>
       <td><code style="background:var(--gray-100);padding:2px 7px;border-radius:4px;font-size:.85rem">${w.warehouse_code}</code></td>
-      <td style="font-weight:600">${w.warehouse_name}</td>
-      <td style="color:var(--gray-500);font-size:.82rem">${w.address || '—'}</td>
+      <td style="font-weight:600">${escHtml(w.warehouse_name)}</td>
+      <td style="font-size:.82rem;color:var(--gray-600)">${escHtml(w.partner_name || w.company_name || '—')}</td>
+      <td style="color:var(--gray-500);font-size:.82rem">${escHtml(w.address || '—')}</td>
       <td style="font-size:.8rem;color:var(--gray-500)">${(+w.latitude).toFixed(5)}, ${(+w.longitude).toFixed(5)}<br><span style="font-size:.74rem">围栏半径 ${w.geofence_radius_meters} m</span></td>
       <td><span class="badge ${w.is_active ? 'badge-active' : 'badge-terminated'}">${w.is_active ? '启用' : '停用'}</span></td>
       <td style="white-space:nowrap">
@@ -24860,7 +24861,7 @@ async function loadWarehouses() {
     </tr>`).join('');
 }
 
-function openWhModal(id) {
+async function openWhModal(id) {
   const w = id ? _whList.find(x => x.id === id) : null;
   document.getElementById('whModalTitle').textContent = id ? '编辑仓库' : '新增仓库';
   document.getElementById('whId').value = id || '';
@@ -24874,11 +24875,54 @@ function openWhModal(id) {
   document.getElementById('whRadius').value = w ? w.geofence_radius_meters : 150;
   document.getElementById('whTimezone').value = w ? (w.timezone || 'America/Los_Angeles') : 'America/Los_Angeles';
   document.getElementById('whActive').checked = w ? !!w.is_active : true;
+  document.getElementById('whAddrVerified').style.display = 'none';
+  // Load company options
+  await loadWhCompanyOptions(w ? w.company_id : null);
   document.getElementById('whModal').classList.add('show');
+}
+
+async function loadWhCompanyOptions(selectedId) {
+  const sel = document.getElementById('whCompany');
+  sel.innerHTML = '<option value="">— 不关联公司 —</option>';
+  try {
+    const res = await fetch('/api/admin/partners');
+    const d = await res.json();
+    (d.partners || []).filter(p => p.active).forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      if (selectedId && p.id == selectedId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+async function geocodeWhAddress() {
+  const addr = document.getElementById('whAddress').value.trim();
+  if (!addr) { alert('请先输入地址'); return; }
+  const btn = document.getElementById('whGeocodeBtn');
+  btn.disabled = true; btn.textContent = '验证中...';
+  try {
+    const res = await fetch('/api/geocode?q=' + encodeURIComponent(addr));
+    const d = await res.json();
+    if (d.lat == null) throw new Error(d.error || '找不到该地址');
+    document.getElementById('whLat').value = d.lat.toFixed(7);
+    document.getElementById('whLng').value = d.lng.toFixed(7);
+    const verEl = document.getElementById('whAddrVerified');
+    verEl.textContent = '✅ ' + d.display;
+    verEl.style.display = 'block';
+  } catch(e) {
+    alert('地址验证失败: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '验证地址';
+  }
 }
 
 async function saveWarehouse() {
   const id = document.getElementById('whId').value;
+  const compSel = document.getElementById('whCompany');
+  const compId = compSel.value ? parseInt(compSel.value) : null;
+  const compName = compId ? compSel.options[compSel.selectedIndex].textContent : '';
   const payload = {
     warehouse_code: document.getElementById('whCode').value.trim().toUpperCase(),
     warehouse_name: document.getElementById('whName').value.trim(),
@@ -24887,10 +24931,12 @@ async function saveWarehouse() {
     longitude: parseFloat(document.getElementById('whLng').value),
     geofence_radius_meters: parseInt(document.getElementById('whRadius').value) || 150,
     timezone: document.getElementById('whTimezone').value,
-    is_active: document.getElementById('whActive').checked ? 1 : 0
+    is_active: document.getElementById('whActive').checked ? 1 : 0,
+    company_id: compId,
+    company_name: compName
   };
   if (!payload.warehouse_code || !payload.warehouse_name || isNaN(payload.latitude) || isNaN(payload.longitude)) {
-    alert('请填写仓库代码、名称和经纬度');
+    alert('请填写仓库代码、名称，并验证地址以获取经纬度');
     return;
   }
   const btn = document.getElementById('whSaveBtn');
@@ -27304,13 +27350,14 @@ function printInvoice() {
     <table>
       <thead><tr>
         <th style="min-width:100px">仓库代码</th>
-        <th style="min-width:160px">仓库名称</th>
-        <th style="min-width:200px">地址</th>
-        <th style="min-width:180px">位置 / 围栏</th>
+        <th style="min-width:150px">仓库名称</th>
+        <th style="min-width:140px">关联公司</th>
+        <th style="min-width:180px">地址</th>
+        <th style="min-width:170px">位置 / 围栏</th>
         <th style="min-width:70px">状态</th>
         <th style="min-width:200px">操作</th>
       </tr></thead>
-      <tbody id="whTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+      <tbody id="whTable"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -27359,9 +27406,15 @@ function printInvoice() {
 
 <!-- ════════════════════ WAREHOUSE CREATE/EDIT MODAL ════════════════════ -->
 <div class="modal-bg" id="whModal">
-  <div class="modal" style="max-width:520px">
+  <div class="modal" style="max-width:540px">
     <h2 id="whModalTitle">新增仓库</h2>
     <input type="hidden" id="whId">
+    <div class="field">
+      <label>关联公司</label>
+      <select id="whCompany">
+        <option value="">— 不关联公司 —</option>
+      </select>
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
       <div class="field">
         <label>仓库代码 <span style="color:var(--red)">*</span></label>
@@ -27373,17 +27426,21 @@ function printInvoice() {
       </div>
     </div>
     <div class="field">
-      <label>地址</label>
-      <input type="text" id="whAddress" placeholder="仓库地址（可选）">
+      <label>地址 <span style="color:var(--red)">*</span></label>
+      <div style="display:flex;gap:.5rem">
+        <input type="text" id="whAddress" placeholder="输入完整地址，然后点击验证" style="flex:1">
+        <button class="btn btn-outline" id="whGeocodeBtn" onclick="geocodeWhAddress()" style="white-space:nowrap">验证地址</button>
+      </div>
+      <div id="whAddrVerified" style="display:none;font-size:.78rem;color:var(--green);margin-top:.35rem;padding:.3rem .5rem;background:#f0fdf4;border-radius:5px"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
       <div class="field">
         <label>纬度 Latitude <span style="color:var(--red)">*</span></label>
-        <input type="number" id="whLat" placeholder="如 34.0522" step="0.00001">
+        <input type="number" id="whLat" placeholder="验证地址后自动填入" step="0.0000001" style="background:var(--gray-50)">
       </div>
       <div class="field">
         <label>经度 Longitude <span style="color:var(--red)">*</span></label>
-        <input type="number" id="whLng" placeholder="如 -118.2437" step="0.00001">
+        <input type="number" id="whLng" placeholder="验证地址后自动填入" step="0.0000001" style="background:var(--gray-50)">
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
@@ -27404,9 +27461,6 @@ function printInvoice() {
     <div class="field" style="display:flex;align-items:center;gap:.5rem">
       <input type="checkbox" id="whActive" checked style="width:auto;margin:0">
       <label for="whActive" style="margin:0;cursor:pointer">仓库启用</label>
-    </div>
-    <div style="font-size:.8rem;color:var(--gray-500);background:var(--gray-50);padding:.6rem .8rem;border-radius:6px;margin-top:.5rem">
-      💡 获取经纬度：在 Google Maps 中右击目标位置 → 点击坐标即可复制
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="document.getElementById('whModal').classList.remove('show')">取消</button>
