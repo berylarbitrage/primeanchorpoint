@@ -13581,7 +13581,7 @@ async function openAssignJobModal(empId, empName) {
     // Load job records and available jobs in parallel
     const [records, jobs] = await Promise.all([
       api(`/admin/employees/${empId}/job-records`),
-      _allJobsCache ? Promise.resolve(_allJobsCache) : api('/admin/jobs')
+      api('/admin/jobs')
     ]);
 
     // Populate existing records list
