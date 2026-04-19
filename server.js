@@ -17377,6 +17377,257 @@ app.get('/api/worker/job-sites', requireWorker, (req, res) => {
   res.json(sites);
 });
 
+// ─── Warehouse Check-in (public, no auth) ───
+const _checkinCodes = {}; // { normalizedPhone: { code, expires, site_id } }
+const _checkinTokens = {}; // { token: { phone, employee_id, worker_code, name, expires } }
+
+const checkinPhotosDir = path.join(dataDir, 'checkin_photos');
+if (!fs.existsSync(checkinPhotosDir)) fs.mkdirSync(checkinPhotosDir, { recursive: true });
+
+// Cleanup expired codes/tokens every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const k in _checkinCodes) { if (_checkinCodes[k].expires <= now) delete _checkinCodes[k]; }
+  for (const k in _checkinTokens) { if (_checkinTokens[k].expires <= now) delete _checkinTokens[k]; }
+}, 10 * 60 * 1000);
+
+// Haversine distance (meters) – server-side validation
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Serve checkin page
+app.get('/checkin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'checkin.html'));
+});
+
+// GET /api/checkin/site-info?site=<id>
+app.get('/api/checkin/site-info', (req, res) => {
+  const siteId = parseInt(req.query.site);
+  if (!siteId) return res.status(400).json({ error: '缺少工作地点参数' });
+  const s = db.prepare('SELECT name, code, address FROM job_sites WHERE id=? AND active=1').get(siteId);
+  if (!s) return res.status(404).json({ error: '未找到该工作地点' });
+  res.json({ name: s.name, code: s.code, address: s.address });
+});
+
+// POST /api/checkin/send-code
+app.post('/api/checkin/send-code', async (req, res) => {
+  const { phone, site_id } = req.body;
+  if (!phone || !site_id) return res.status(400).json({ error: '缺少手机号或工作地点' });
+
+  const digits10 = phone.replace(/\D/g, '').slice(-10);
+  if (digits10.length < 10) return res.status(400).json({ error: '请输入有效的手机号码' });
+
+  // Look up in worker_accounts first, then employees
+  const worker = db.prepare(
+    "SELECT id, name, phone, employee_id, worker_code FROM worker_accounts WHERE active=1 AND phone10(phone)=?"
+  ).get(digits10);
+
+  let emp = null;
+  if (worker && worker.employee_id) {
+    emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE id=?").get(worker.employee_id);
+  }
+  if (!worker && !emp) {
+    emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status='active'").get(digits10);
+  }
+
+  if (!worker && !emp) {
+    return res.status(404).json({ error: '该手机号未在系统中注册' });
+  }
+
+  const normalizedPhone = formatPhoneE164(phone);
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  _checkinCodes[normalizedPhone] = { code, expires: Date.now() + 5 * 60 * 1000, site_id: parseInt(site_id) };
+
+  console.log(`[Checkin] Code for ${normalizedPhone}: ${code}`);
+  await sendSMS(phone, `[Prime Anchor Point] 您的签到验证码 / Your check-in code: ${code}  (5分钟内有效)`);
+
+  res.json({ success: true });
+});
+
+// POST /api/checkin/verify
+app.post('/api/checkin/verify', (req, res) => {
+  const { phone, code, site_id } = req.body;
+  if (!phone || !code || !site_id) return res.status(400).json({ error: '缺少必要参数' });
+
+  const normalizedPhone = formatPhoneE164(phone);
+  const entry = _checkinCodes[normalizedPhone];
+
+  if (!entry || entry.code !== code.trim()) {
+    return res.status(400).json({ error: '验证码错误' });
+  }
+  if (entry.expires < Date.now()) {
+    delete _checkinCodes[normalizedPhone];
+    return res.status(400).json({ error: '验证码已过期，请重新获取' });
+  }
+  if (entry.site_id !== parseInt(site_id)) {
+    return res.status(400).json({ error: '工作地点不匹配' });
+  }
+
+  // Code is valid – look up worker info
+  const digits10 = phone.replace(/\D/g, '').slice(-10);
+  const worker = db.prepare(
+    "SELECT id, name, phone, employee_id, worker_code FROM worker_accounts WHERE active=1 AND phone10(phone)=?"
+  ).get(digits10);
+
+  let empName = '', empId = '', empDbId = null;
+  if (worker) {
+    empName = worker.name || '';
+    empId = worker.worker_code || '';
+    empDbId = worker.employee_id || null;
+    if (worker.employee_id) {
+      const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?").get(worker.employee_id);
+      if (emp) {
+        if (!empName) empName = `${emp.first_name} ${emp.last_name}`.trim();
+        if (!empId) empId = emp.employee_id || '';
+        empDbId = emp.id;
+      }
+    }
+  } else {
+    const emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status='active'").get(digits10);
+    if (emp) {
+      empName = `${emp.first_name} ${emp.last_name}`.trim();
+      empId = emp.employee_id || '';
+      empDbId = emp.id;
+    }
+  }
+
+  // Generate session token
+  const token = crypto.randomBytes(24).toString('hex');
+  _checkinTokens[token] = {
+    phone: normalizedPhone,
+    employee_id: empDbId,
+    worker_code: empId,
+    name: empName,
+    site_id: parseInt(site_id),
+    expires: Date.now() + 30 * 60 * 1000 // 30 min
+  };
+
+  // Clean up the used code
+  delete _checkinCodes[normalizedPhone];
+
+  res.json({
+    success: true,
+    name: empName,
+    employee_id: empId,
+    phone: normalizedPhone,
+    token
+  });
+});
+
+// POST /api/checkin/punch
+app.post('/api/checkin/punch', async (req, res) => {
+  const { site_id, phone, token, latitude, longitude, photo } = req.body;
+  if (!site_id || !token) return res.status(400).json({ error: '缺少必要参数' });
+
+  // Verify token
+  const sess = _checkinTokens[token];
+  if (!sess || sess.expires < Date.now()) {
+    return res.status(401).json({ error: '会话已过期，请重新验证' });
+  }
+  if (sess.site_id !== parseInt(site_id)) {
+    return res.status(400).json({ error: '工作地点不匹配' });
+  }
+
+  // Get site info
+  const site = db.prepare('SELECT id, name, code, latitude, longitude, radius_meters, timezone FROM job_sites WHERE id=? AND active=1').get(parseInt(site_id));
+  if (!site) return res.status(404).json({ error: '未找到该工作地点' });
+
+  // Verify GPS is within radius
+  if (latitude == null || longitude == null) {
+    return res.status(400).json({ error: '无法获取您的位置信息，请开启定位权限' });
+  }
+  const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
+  const maxRadius = site.radius_meters || 200;
+  if (dist > maxRadius) {
+    const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`;
+    return res.status(400).json({ error: `您的位置不在工作地点范围内（距离约${distStr}），请到达工作地点后再签到` });
+  }
+
+  // Save photo if provided
+  let photoFilename = null;
+  if (photo) {
+    try {
+      const base64Data = photo.replace(/^data:image\/\w+;base64,/, '');
+      const buf = Buffer.from(base64Data, 'base64');
+      photoFilename = `checkin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.jpg`;
+      fs.writeFileSync(path.join(checkinPhotosDir, photoFilename), buf);
+    } catch (e) {
+      console.error('[Checkin] Photo save error:', e.message);
+    }
+  }
+
+  const siteTimezone = site.timezone || 'America/Chicago';
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  // Check if employee already has an open entry today at this site
+  const empDbId = sess.employee_id;
+  if (!empDbId) return res.status(400).json({ error: '未找到对应的员工记录' });
+
+  // Get today's date in site timezone
+  const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: siteTimezone }); // YYYY-MM-DD
+
+  const openEntry = db.prepare(
+    "SELECT id, clock_in FROM time_entries WHERE employee_id=? AND status='open' AND site_id=? AND date(clock_in)=?"
+  ).get(empDbId, site.id, todayInTz);
+
+  let action, entryId, clockTime;
+  if (openEntry) {
+    // Clock out
+    const clockIn = new Date(openEntry.clock_in.replace(' ', 'T') + 'Z');
+    const clockOut = new Date();
+    const diffMs = clockOut - clockIn;
+    const totalHours = Math.round((diffMs / 3600000) * 100) / 100;
+    const regularHours = Math.min(totalHours, 8);
+    const overtimeHours = Math.max(0, totalHours - 8);
+
+    db.prepare(
+      "UPDATE time_entries SET clock_out=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', punch_photo=?, clock_out_latitude=?, clock_out_longitude=? WHERE id=?"
+    ).run(now, totalHours, regularHours, overtimeHours, photoFilename, latitude, longitude, openEntry.id);
+
+    action = 'out';
+    entryId = openEntry.id;
+    clockTime = now;
+  } else {
+    // Clock in
+    const r = db.prepare(
+      "INSERT INTO time_entries (employee_id, clock_in, status, latitude, longitude, site_id, geo_verified, punch_type, break_records, on_break, site_timezone, clock_in_photo_path) VALUES(?,?,'open',?,?,?,1,'in','[]',0,?,?)"
+    ).run(empDbId, now, latitude, longitude, site.id, siteTimezone, photoFilename);
+    action = 'in';
+    entryId = r.lastInsertRowid;
+    clockTime = now;
+  }
+
+  // Invalidate the token after use
+  delete _checkinTokens[token];
+
+  // Format time in site timezone for display
+  const displayTime = new Date(clockTime.replace(' ', 'T') + 'Z').toLocaleString('zh-CN', {
+    timeZone: siteTimezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  });
+
+  // Send SMS confirmation
+  const actionText = action === 'in' ? '签到成功 / Check-in confirmed' : '签退成功 / Check-out confirmed';
+  await sendSMS(sess.phone, `[Prime Anchor Point] ${actionText}: ${sess.name}, ${site.name}, ${displayTime}`);
+
+  res.json({
+    success: true,
+    action,
+    name: sess.name,
+    employee_id: sess.worker_code,
+    clock_time: displayTime,
+    photo_saved: !!photoFilename,
+    entry_id: entryId
+  });
+});
+
 // ─── Admin: Job Sites Management ───
 app.get('/api/admin/job-sites/info/:id', (req, res) => {
   const s = db.prepare('SELECT name, code, address FROM job_sites WHERE id=?').get(req.params.id);
