@@ -17528,9 +17528,7 @@ app.post('/api/checkin/punch', async (req, res) => {
   }
   const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
   const maxRadius = site.radius_meters || 200;
-  const gpsAccuracy = Number(accuracy) || 0;
-  // Accept if user could be in range given GPS accuracy (distance - accuracy <= radius)
-  if (dist > maxRadius + gpsAccuracy) {
+  if (dist > maxRadius) {
     const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`;
     return res.status(400).json({ error: `您的位置不在工作地点范围内（距离约${distStr}），请到达工作地点后再签到` });
   }

@@ -339,6 +339,8 @@ function startGPS() {
 
   if (_gpsWatchId != null) navigator.geolocation.clearWatch(_gpsWatchId);
 
+  const MAX_ACCURACY = 150; // max acceptable GPS accuracy in meters
+
   _gpsWatchId = navigator.geolocation.watchPosition(
     pos => {
       const acc = pos.coords.accuracy;
@@ -351,32 +353,39 @@ function startGPS() {
         _userLng = lng;
       }
 
+      const bestAccStr = _gpsBestAccuracy >= 1000 ? (_gpsBestAccuracy / 1000).toFixed(1) + 'km' : Math.round(_gpsBestAccuracy) + 'm';
+
+      if (_gpsBestAccuracy > MAX_ACCURACY) {
+        bar.className = 'gps-bar gps-pending';
+        txt.textContent = '定位精度不足（' + bestAccStr + '），请走到门口或窗户旁...';
+        document.getElementById('photoArea').style.display = 'none';
+        _gpsOk = false;
+        updatePunchBtn();
+        return;
+      }
+
       if (_siteLat != null && _siteLng != null) {
         const dist = haversineDistance(_userLat, _userLng, _siteLat, _siteLng);
         const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + 'km' : Math.round(dist) + 'm';
-        const accStr = acc >= 1000 ? (acc / 1000).toFixed(1) + 'km' : Math.round(acc) + 'm';
 
-        // If distance minus accuracy could put user inside radius, accept it
-        // This handles indoor/warehouse scenarios where GPS accuracy is poor
-        const couldBeInRange = dist <= _siteRadius + acc;
-
-        if (couldBeInRange) {
-          navigator.geolocation.clearWatch(_gpsWatchId);
-          _gpsWatchId = null;
-          _gpsOk = true;
-          bar.className = 'gps-bar gps-ok';
-          txt.textContent = '定位成功 ✓（距离 ' + distStr + '，精度 ' + accStr + '）';
-          hideMsg('msg3');
-          document.getElementById('photoArea').style.display = '';
-          updatePunchBtn();
-        } else {
+        if (dist > _siteRadius) {
           _gpsOk = false;
           bar.className = 'gps-bar gps-fail';
-          txt.textContent = '不在签到范围内（距离 ' + distStr + '，精度 ' + accStr + '）';
+          txt.textContent = '不在签到范围内（距离 ' + distStr + '，精度 ' + bestAccStr + '）';
           showMsg('msg3', '您不在工作地点范围内（距离约' + distStr + '），请到达工作地点后再签到', 'err');
           document.getElementById('photoArea').style.display = 'none';
           updatePunchBtn();
+          return;
         }
+
+        navigator.geolocation.clearWatch(_gpsWatchId);
+        _gpsWatchId = null;
+        _gpsOk = true;
+        bar.className = 'gps-bar gps-ok';
+        txt.textContent = '定位成功 ✓（距离 ' + distStr + '，精度 ' + bestAccStr + '）';
+        hideMsg('msg3');
+        document.getElementById('photoArea').style.display = '';
+        updatePunchBtn();
       }
     },
     err => {
