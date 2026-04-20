@@ -12,6 +12,9 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:1rem}
 .wrap{width:100%;max-width:420px;margin-top:2rem}
+.lang-bar{display:flex;gap:.4rem;justify-content:center;margin-bottom:1rem}
+.lang-btn{padding:.3rem .75rem;border:1.5px solid rgba(255,255,255,.4);border-radius:20px;background:transparent;color:rgba(255,255,255,.65);font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
+.lang-btn.active{background:#fff;color:var(--blue);border-color:#fff}
 .logo-area{text-align:center;margin-bottom:1.5rem}
 .logo-area img{width:48px;height:auto;margin-bottom:.5rem}
 .logo-area h1{color:#fff;font-size:1.2rem;font-weight:700}
@@ -74,19 +77,26 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
 </head>
 <body>
 <div class="wrap">
+  <!-- Language switcher -->
+  <div class="lang-bar">
+    <button class="lang-btn active" id="ciLangZh" onclick="ciSetLang('zh')">中文</button>
+    <button class="lang-btn" id="ciLangEn" onclick="ciSetLang('en')">English</button>
+    <button class="lang-btn" id="ciLangEs" onclick="ciSetLang('es')">Español</button>
+  </div>
+
   <div class="logo-area">
     <img src="logo.svg" alt="Logo">
     <h1>Prime Anchor Point</h1>
-    <p>仓库签到 / Warehouse Check-in</p>
+    <p id="ciSubtitle">仓库签到 / Warehouse Check-in / Registro de entrada</p>
     <div class="site-name" id="siteName">加载中...</div>
   </div>
 
   <!-- Step 1: Phone Input -->
   <div class="card step active" id="step1">
-    <h2><span class="step-badge">1</span> 输入手机号</h2>
+    <h2><span class="step-badge">1</span> <span id="s1Title">输入手机号 / Enter Phone / Ingrese Teléfono</span></h2>
     <div id="msg1" class="msg"></div>
     <div class="field">
-      <label>手机号码 / Phone Number</label>
+      <label id="s1PhoneLabel">手机号码 / Phone Number / Número de Teléfono</label>
       <div class="phone-row">
         <input type="tel" id="phoneInput" placeholder="(xxx) xxx-xxxx" maxlength="14" inputmode="tel" autocomplete="tel">
         <button class="btn-code" id="btnSendCode" onclick="sendCode()">发送验证码</button>
@@ -96,54 +106,53 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
 
   <!-- Step 2: Verify Code -->
   <div class="card step" id="step2">
-    <h2><span class="step-badge">2</span> 输入验证码</h2>
+    <h2><span class="step-badge">2</span> <span id="s2Title">输入验证码 / Enter Code / Ingrese Código</span></h2>
     <div id="msg2" class="msg"></div>
-    <p style="font-size:.82rem;color:var(--gray-600);margin-bottom:.75rem">验证码已发送至 <strong id="phoneDisplay"></strong></p>
+    <p id="s2Sent" style="font-size:.82rem;color:var(--gray-600);margin-bottom:.75rem">验证码已发送至 <strong id="phoneDisplay"></strong></p>
     <div class="field">
       <input type="tel" id="codeInput" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="输入6位验证码" style="text-align:center;font-size:1.4rem;font-weight:700;letter-spacing:8px">
     </div>
     <div class="countdown" id="countdown"></div>
-    <button class="btn btn-primary" id="btnVerify" onclick="verifyCode()" disabled>验证 / Verify</button>
+    <button class="btn btn-primary" id="btnVerify" onclick="verifyCode()" disabled>验证 / Verify / Verificar</button>
   </div>
 
   <!-- Step 3: GPS + Photo -->
   <div class="card step" id="step3">
-    <h2><span class="step-badge">3</span> 定位 & 拍照</h2>
+    <h2><span class="step-badge">3</span> <span id="s3Title">定位 & 拍照 / GPS & Photo / GPS y Foto</span></h2>
     <div id="msg3" class="msg"></div>
     <div class="gps-bar gps-pending" id="gpsBar">
       <span>📡</span> <span id="gpsText">GPS 定位中...</span>
     </div>
     <div id="gpsMapWrap" style="display:none;margin-bottom:.85rem">
       <div id="gpsMap" style="width:100%;height:220px;border-radius:10px;border:2px solid var(--gray-200)"></div>
-      <div style="font-size:.7rem;color:var(--gray-400);margin-top:.3rem;text-align:center">
-        🔴 仓库位置 &nbsp; 🔵 您的位置 &nbsp; ⭕ 签到范围
+      <div id="s3MapLegend" style="font-size:.7rem;color:var(--gray-400);margin-top:.3rem;text-align:center">
+        🔴 仓库位置 / Warehouse &nbsp; 🔵 您的位置 / Your Location / Su Ubicación &nbsp; ⭕ 签到范围 / Check-in Range / Zona
       </div>
     </div>
     <div class="photo-area" id="photoArea" style="display:none">
       <div class="camera-btn" id="cameraBtn">
         <div class="cam-icon">📷</div>
-        <span>拍照 或 录像 / Photo or Video</span>
+        <span id="s3PhotoBtn">拍照 或 录像 / Photo or Video / Foto o Video</span>
         <input type="file" accept="image/*,video/*" capture="environment" id="photoFile" onchange="handlePhoto(this)">
       </div>
       <img id="photoPreview" class="photo-preview" alt="Photo preview">
       <video id="videoPreview" class="photo-preview" controls playsinline style="display:none;background:#000"></video>
     </div>
-    <button class="btn btn-green" id="btnPunch" onclick="submitPunch()" disabled>签到 / Check In</button>
+    <button class="btn btn-green" id="btnPunch" onclick="submitPunch()" disabled>签到 / Check In / Marcar Entrada</button>
   </div>
 
   <!-- Step 4: Result -->
   <div class="card step" id="step4">
-    <h2><span class="step-badge">✓</span> 签到完成</h2>
+    <h2><span class="step-badge">✓</span> <span id="s4Title">签到完成 / Check-in Complete / Registro Completo</span></h2>
     <div class="check-icon" id="resultIcon">✅</div>
     <div class="result-card">
       <h3 id="resultTitle">签到成功</h3>
-      <div class="result-row"><span>姓名</span><span id="resName">-</span></div>
-      <div class="result-row"><span>手机号</span><span id="resPhone">-</span></div>
-      <div class="result-row"><span>员工号</span><span id="resEmpId">-</span></div>
-      <div class="result-row"><span>时间</span><span id="resTime">-</span></div>
-      <div class="result-row"><span>地点</span><span id="resSite">-</span></div>
+      <div class="result-row"><span id="resLabelName">姓名 / Name / Nombre</span><span id="resName">-</span></div>
+      <div class="result-row"><span id="resLabelPhone">手机号 / Phone / Teléfono</span><span id="resPhone">-</span></div>
+      <div class="result-row"><span id="resLabelEmpId">员工号 / Employee ID / ID Empleado</span><span id="resEmpId">-</span></div>
+      <div class="result-row"><span id="resLabelTime">时间 / Time / Hora</span><span id="resTime">-</span></div>
+      <div class="result-row"><span id="resLabelSite">地点 / Location / Lugar</span><span id="resSite">-</span></div>
     </div>
-    <div id="msg4" class="msg msg-ok show">短信确认已发送至您的手机</div>
   </div>
 </div>
 
@@ -167,6 +176,148 @@ let _map = null;
 let _userMarker = null;
 let _accuracyCircle = null;
 
+// ─── Trilingual support ───
+const CI_LANG = {
+  zh: {
+    subtitle: '仓库签到',
+    s1Title: '输入手机号', s1PhoneLabel: '手机号码',
+    btnSendCode: '发送验证码', btnSendingCode: '发送中...',
+    s2Title: '输入验证码', s2Sent: '验证码已发送至',
+    codeInputPlaceholder: '输入6位验证码',
+    btnVerify: '验证',
+    s3Title: '定位 & 拍照',
+    gpsSearching: 'GPS 定位中...',
+    gpsPermDenied: '定位权限被拒绝，请在浏览器设置中开启定位',
+    gpsUnavail: '无法获取位置信息，请检查GPS是否开启',
+    gpsTimeout: '定位超时，请重试',
+    gpsErrMsg: '无法获取GPS定位，请开启手机定位后刷新页面',
+    gpsInRange: (dist, acc) => `定位成功 ✓（距离 ${dist}，精度 ${acc}）`,
+    gpsOutRange: (dist, acc) => `不在签到范围（距离 ${dist}，精度 ${acc}）`,
+    gpsOutRangeMsg: dist => `您不在工作地点范围内（距离约${dist}），请到达工作地点后再签到`,
+    s3PhotoBtn: '拍照 或 录像',
+    btnPunch: '签到',
+    btnPunching: '提交中...',
+    s4Title: '签到完成',
+    resultIn: '签到成功',
+    resultOut: '签退成功',
+    resLabelName: '姓名', resLabelPhone: '手机号', resLabelEmpId: '员工号',
+    resLabelTime: '时间', resLabelSite: '地点',
+    errPhone: '请输入有效的10位手机号码',
+    errReqFail: '请求失败',
+    siteLoading: '加载中...',
+    siteLoadFail: '无法加载工作地点信息',
+    siteErr: '错误：缺少工作地点参数',
+    fileTooLarge: '文件过大（上限 10MB），请缩短视频或降低分辨率再试',
+    codeExpired: '验证码已过期，请返回重新获取',
+    countdownFmt: (m, s) => `验证码有效期：${m}:${s}`,
+  },
+  en: {
+    subtitle: 'Warehouse Check-in',
+    s1Title: 'Enter Phone Number', s1PhoneLabel: 'Phone Number',
+    btnSendCode: 'Send Code', btnSendingCode: 'Sending...',
+    s2Title: 'Enter Verification Code', s2Sent: 'Code sent to',
+    codeInputPlaceholder: 'Enter 6-digit code',
+    btnVerify: 'Verify',
+    s3Title: 'GPS & Photo',
+    gpsSearching: 'Getting GPS location...',
+    gpsPermDenied: 'Location permission denied. Please enable in browser settings.',
+    gpsUnavail: 'Cannot get location. Please check that GPS is enabled.',
+    gpsTimeout: 'Location timed out. Please try again.',
+    gpsErrMsg: 'Cannot get GPS location. Enable location on your phone and refresh.',
+    gpsInRange: (dist, acc) => `Location confirmed ✓ (distance ${dist}, accuracy ${acc})`,
+    gpsOutRange: (dist, acc) => `Outside check-in range (distance ${dist}, accuracy ${acc})`,
+    gpsOutRangeMsg: dist => `You are not within the work site range (approx. ${dist} away). Please arrive at the site first.`,
+    s3PhotoBtn: 'Take Photo or Video',
+    btnPunch: 'Check In',
+    btnPunching: 'Submitting...',
+    s4Title: 'Check-in Complete',
+    resultIn: 'Check-in Successful',
+    resultOut: 'Check-out Successful',
+    resLabelName: 'Name', resLabelPhone: 'Phone', resLabelEmpId: 'Employee ID',
+    resLabelTime: 'Time', resLabelSite: 'Location',
+    errPhone: 'Please enter a valid 10-digit phone number',
+    errReqFail: 'Request failed',
+    siteLoading: 'Loading...',
+    siteLoadFail: 'Could not load site information',
+    siteErr: 'Error: missing site parameter',
+    fileTooLarge: 'File too large (max 10MB). Shorten video or lower resolution.',
+    codeExpired: 'Code expired. Go back to request a new one.',
+    countdownFmt: (m, s) => `Code valid for: ${m}:${s}`,
+  },
+  es: {
+    subtitle: 'Registro de Entrada',
+    s1Title: 'Ingrese Número de Teléfono', s1PhoneLabel: 'Número de Teléfono',
+    btnSendCode: 'Enviar Código', btnSendingCode: 'Enviando...',
+    s2Title: 'Ingrese el Código', s2Sent: 'Código enviado a',
+    codeInputPlaceholder: 'Ingrese código de 6 dígitos',
+    btnVerify: 'Verificar',
+    s3Title: 'GPS y Foto',
+    gpsSearching: 'Obteniendo ubicación GPS...',
+    gpsPermDenied: 'Permiso de ubicación denegado. Actívelo en la configuración del navegador.',
+    gpsUnavail: 'No se puede obtener la ubicación. Verifique que el GPS esté activado.',
+    gpsTimeout: 'Tiempo de espera agotado. Por favor intente de nuevo.',
+    gpsErrMsg: 'No se puede obtener GPS. Active la ubicación en su teléfono y recargue.',
+    gpsInRange: (dist, acc) => `Ubicación confirmada ✓ (distancia ${dist}, precisión ${acc})`,
+    gpsOutRange: (dist, acc) => `Fuera del rango de registro (distancia ${dist}, precisión ${acc})`,
+    gpsOutRangeMsg: dist => `No está dentro del rango del sitio de trabajo (aprox. ${dist}). Por favor llegue al sitio primero.`,
+    s3PhotoBtn: 'Tomar Foto o Video',
+    btnPunch: 'Marcar Entrada',
+    btnPunching: 'Enviando...',
+    s4Title: 'Registro Completo',
+    resultIn: 'Entrada Registrada',
+    resultOut: 'Salida Registrada',
+    resLabelName: 'Nombre', resLabelPhone: 'Teléfono', resLabelEmpId: 'ID Empleado',
+    resLabelTime: 'Hora', resLabelSite: 'Lugar',
+    errPhone: 'Ingrese un número de teléfono válido de 10 dígitos',
+    errReqFail: 'Error en la solicitud',
+    siteLoading: 'Cargando...',
+    siteLoadFail: 'No se pudo cargar la información del sitio',
+    siteErr: 'Error: falta el parámetro del sitio',
+    fileTooLarge: 'Archivo demasiado grande (máx 10MB). Acorte el video o reduzca la resolución.',
+    codeExpired: 'Código expirado. Regrese para obtener uno nuevo.',
+    countdownFmt: (m, s) => `Código válido por: ${m}:${s}`,
+  }
+};
+
+let _ciLang = 'zh';
+
+function ciSetLang(lang) {
+  _ciLang = lang;
+  ['zh','en','es'].forEach(l => {
+    document.getElementById('ciLang' + l.charAt(0).toUpperCase() + l.slice(1)).classList.toggle('active', l === lang);
+  });
+  const t = CI_LANG[lang];
+  document.getElementById('ciSubtitle').textContent = t.subtitle;
+  document.getElementById('s1Title').textContent = t.s1Title;
+  document.getElementById('s1PhoneLabel').textContent = t.s1PhoneLabel;
+  document.getElementById('btnSendCode').textContent = t.btnSendCode;
+  document.getElementById('s2Title').textContent = t.s2Title;
+  document.getElementById('codeInput').placeholder = t.codeInputPlaceholder;
+  document.getElementById('btnVerify').textContent = t.btnVerify;
+  document.getElementById('s3Title').textContent = t.s3Title;
+  document.getElementById('s3PhotoBtn').textContent = t.s3PhotoBtn;
+  document.getElementById('btnPunch').textContent = t.btnPunch;
+  document.getElementById('s4Title').textContent = t.s4Title;
+  document.getElementById('resLabelName').textContent = t.resLabelName;
+  document.getElementById('resLabelPhone').textContent = t.resLabelPhone;
+  document.getElementById('resLabelEmpId').textContent = t.resLabelEmpId;
+  document.getElementById('resLabelTime').textContent = t.resLabelTime;
+  document.getElementById('resLabelSite').textContent = t.resLabelSite;
+  // update s2Sent if phone already shown
+  const pd = document.getElementById('phoneDisplay');
+  if (pd && pd.textContent) {
+    document.getElementById('s2Sent').innerHTML = t.s2Sent + ' <strong>' + pd.textContent + '</strong>';
+  } else {
+    document.getElementById('s2Sent').textContent = t.s2Sent;
+  }
+}
+
+// Initialize language from URL param or default zh
+(function() {
+  const langParam = params.get('lang');
+  if (langParam && CI_LANG[langParam]) ciSetLang(langParam);
+})();
+
 function showMsg(id, text, type) {
   const el = document.getElementById(id);
   el.className = 'msg show msg-' + type;
@@ -184,16 +335,17 @@ function goStep(n) {
 async function api(url, opts) {
   const r = await fetch(url, opts);
   const d = await r.json();
-  if (!r.ok) throw new Error(d.error || '请求失败');
+  if (!r.ok) throw new Error(d.error || CI_LANG[_ciLang].errReqFail);
   return d;
 }
 
 // Load site info
 (async function() {
   if (!_siteId) {
-    document.getElementById('siteName').textContent = '错误：缺少工作地点参数';
+    document.getElementById('siteName').textContent = CI_LANG[_ciLang].siteErr;
     return;
   }
+  document.getElementById('siteName').textContent = CI_LANG[_ciLang].siteLoading;
   try {
     const d = await api('/api/checkin/site-info?site=' + _siteId);
     document.getElementById('siteName').textContent = d.name + (d.code ? ' (' + d.code + ')' : '');
@@ -201,7 +353,7 @@ async function api(url, opts) {
     _siteLng = d.longitude;
     _siteRadius = d.radius_meters || 200;
   } catch (e) {
-    document.getElementById('siteName').textContent = '无法加载工作地点信息';
+    document.getElementById('siteName').textContent = CI_LANG[_ciLang].siteLoadFail;
   }
 })();
 
@@ -218,12 +370,13 @@ phoneInput.addEventListener('keydown', function(e) {
 });
 
 async function sendCode() {
+  const t = CI_LANG[_ciLang];
   const raw = phoneInput.value.replace(/\D/g, '');
-  if (raw.length < 10) return showMsg('msg1', '请输入有效的10位手机号码', 'err');
+  if (raw.length < 10) return showMsg('msg1', t.errPhone, 'err');
   hideMsg('msg1');
   const btn = document.getElementById('btnSendCode');
   btn.disabled = true;
-  btn.textContent = '发送中...';
+  btn.textContent = t.btnSendingCode;
   try {
     await api('/api/checkin/send-code', {
       method: 'POST',
@@ -232,6 +385,7 @@ async function sendCode() {
     });
     _phone = raw;
     document.getElementById('phoneDisplay').textContent = phoneInput.value;
+    document.getElementById('s2Sent').innerHTML = t.s2Sent + ' <strong>' + phoneInput.value + '</strong>';
     goStep(2);
     startCountdown(300);
     codeInput.focus();
@@ -239,7 +393,7 @@ async function sendCode() {
     showMsg('msg1', e.message, 'err');
   } finally {
     btn.disabled = false;
-    btn.textContent = '发送验证码';
+    btn.textContent = t.btnSendCode;
   }
 }
 
@@ -260,16 +414,18 @@ function startCountdown(seconds) {
   clearInterval(_countdownTimer);
   _countdownTimer = setInterval(() => {
     remaining--;
+    const t = CI_LANG[_ciLang];
     if (remaining <= 0) {
       clearInterval(_countdownTimer);
-      el.textContent = '验证码已过期，请返回重新获取';
+      el.textContent = t.codeExpired;
       return;
     }
     const m = Math.floor(remaining / 60);
     const s = remaining % 60;
-    el.textContent = `验证码有效期：${m}:${String(s).padStart(2, '0')}`;
+    el.textContent = t.countdownFmt(m, String(s).padStart(2, '0'));
   }, 1000);
-  el.textContent = `验证码有效期：${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  const t = CI_LANG[_ciLang];
+  el.textContent = t.countdownFmt(Math.floor(seconds / 60), String(seconds % 60).padStart(2, '0'));
 }
 
 async function verifyCode() {
@@ -278,7 +434,7 @@ async function verifyCode() {
   hideMsg('msg2');
   const btn = document.getElementById('btnVerify');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> 验证中...';
+  btn.innerHTML = '<span class="spinner"></span>';
   try {
     const d = await api('/api/checkin/verify', {
       method: 'POST',
@@ -293,7 +449,7 @@ async function verifyCode() {
   } catch (e) {
     showMsg('msg2', e.message, 'err');
     btn.disabled = false;
-    btn.textContent = '验证 / Verify';
+    btn.textContent = CI_LANG[_ciLang].btnVerify;
   }
 }
 
@@ -349,15 +505,16 @@ function updateMapUser(lat, lng, acc) {
 function startGPS() {
   const bar = document.getElementById('gpsBar');
   const txt = document.getElementById('gpsText');
+  const t = CI_LANG[_ciLang];
   bar.className = 'gps-bar gps-pending';
-  txt.textContent = 'GPS 定位中...';
+  txt.textContent = t.gpsSearching;
   _gpsBestAccuracy = 99999;
   _gpsOk = false;
   hideMsg('msg3');
 
   if (!navigator.geolocation) {
     bar.className = 'gps-bar gps-fail';
-    txt.textContent = '您的浏览器不支持GPS定位';
+    txt.textContent = t.gpsUnavail;
     return;
   }
 
@@ -368,6 +525,7 @@ function startGPS() {
       const acc = pos.coords.accuracy;
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
+      const tl = CI_LANG[_ciLang];
 
       if (acc < _gpsBestAccuracy) {
         _gpsBestAccuracy = acc;
@@ -389,26 +547,27 @@ function startGPS() {
           _gpsWatchId = null;
           _gpsOk = true;
           bar.className = 'gps-bar gps-ok';
-          txt.textContent = '定位成功 ✓（距离 ' + distStr + '，精度 ' + bestAccStr + '）';
+          txt.textContent = tl.gpsInRange(distStr, bestAccStr);
           hideMsg('msg3');
           document.getElementById('photoArea').style.display = '';
           updatePunchBtn();
         } else {
           _gpsOk = false;
           bar.className = 'gps-bar gps-fail';
-          txt.textContent = '不在签到范围（距离 ' + distStr + '，精度 ' + bestAccStr + '）';
-          showMsg('msg3', '您不在工作地点范围内（距离约' + distStr + '），请到达工作地点后再签到', 'err');
+          txt.textContent = tl.gpsOutRange(distStr, bestAccStr);
+          showMsg('msg3', tl.gpsOutRangeMsg(distStr), 'err');
           document.getElementById('photoArea').style.display = 'none';
           updatePunchBtn();
         }
       }
     },
     err => {
+      const tl = CI_LANG[_ciLang];
       bar.className = 'gps-bar gps-fail';
-      if (err.code === 1) txt.textContent = '定位权限被拒绝，请在浏览器设置中开启定位';
-      else if (err.code === 2) txt.textContent = '无法获取位置信息，请检查GPS是否开启';
-      else txt.textContent = '定位超时，请重试';
-      showMsg('msg3', '无法获取GPS定位，请开启手机定位后刷新页面', 'err');
+      if (err.code === 1) txt.textContent = tl.gpsPermDenied;
+      else if (err.code === 2) txt.textContent = tl.gpsUnavail;
+      else txt.textContent = tl.gpsTimeout;
+      showMsg('msg3', tl.gpsErrMsg, 'err');
     },
     { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
   );
@@ -418,9 +577,8 @@ function handlePhoto(input) {
   const file = input.files[0];
   if (!file) return;
   const isVideo = (file.type || '').startsWith('video/');
-  // base64 JSON upload limit: ~15MB → keep raw file ≤10MB
   if (file.size > 10 * 1024 * 1024) {
-    showMsg('msg3', '文件过大（上限 10MB），请缩短视频或降低分辨率再试', 'err');
+    showMsg('msg3', CI_LANG[_ciLang].fileTooLarge, 'err');
     input.value = '';
     return;
   }
@@ -451,9 +609,10 @@ function updatePunchBtn() {
 async function submitPunch() {
   if (!_gpsOk || !_photoData) return;
   hideMsg('msg3');
+  const t = CI_LANG[_ciLang];
   const btn = document.getElementById('btnPunch');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> 提交中...';
+  btn.innerHTML = '<span class="spinner"></span> ' + t.btnPunching;
 
   try {
     const d = await api('/api/checkin/punch', {
@@ -470,21 +629,19 @@ async function submitPunch() {
       })
     });
 
-    const actionLabel = d.action === 'out' ? '签退成功 / Check-out Complete' : '签到成功 / Check-in Complete';
     document.getElementById('resultIcon').textContent = d.action === 'out' ? '👋' : '✅';
-    document.getElementById('resultTitle').textContent = actionLabel;
+    document.getElementById('resultTitle').textContent = d.action === 'out' ? t.resultOut : t.resultIn;
     document.getElementById('resName').textContent = d.name || '-';
     document.getElementById('resPhone').textContent = _empInfo.phone || '-';
     document.getElementById('resEmpId').textContent = d.employee_id || '-';
     document.getElementById('resTime').textContent = d.clock_time || '-';
-    const siteEl = document.getElementById('siteName');
-    document.getElementById('resSite').textContent = siteEl.textContent || '-';
+    document.getElementById('resSite').textContent = document.getElementById('siteName').textContent || '-';
 
     goStep(4);
   } catch (e) {
     showMsg('msg3', e.message, 'err');
     btn.disabled = false;
-    btn.textContent = '签到 / Check In';
+    btn.textContent = t.btnPunch;
   }
 }
 </script>
