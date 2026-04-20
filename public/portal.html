@@ -1178,6 +1178,23 @@ function googleTranslateElementInit() {
 </div>
 
 <!-- Generic Confirm / Alert Modal -->
+<div id="gpsSetupModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.6);align-items:flex-end;justify-content:center;padding:0">
+  <div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:1.5rem 1.5rem 2rem;animation:slideUp .25s ease">
+    <div style="text-align:center;margin-bottom:1rem">
+      <div style="font-size:2rem;margin-bottom:.4rem" id="gpsSetupIcon">📍</div>
+      <h2 style="font-size:1.05rem;font-weight:700;color:#1e293b;margin:0 0 .3rem" id="gpsSetupTitle">需要开启位置权限</h2>
+      <p style="font-size:.82rem;color:#64748b;margin:0" id="gpsSetupSubtitle">打卡需要读取您的精确位置</p>
+    </div>
+    <div id="gpsSetupSteps" style="background:#f8fafc;border-radius:12px;padding:1rem;margin-bottom:1rem;font-size:.85rem;line-height:1.9;color:#334155"></div>
+    <div id="gpsSetupTip" style="display:none;background:#fef3c7;border-radius:8px;padding:.6rem .8rem;font-size:.78rem;color:#92400e;margin-bottom:1rem"></div>
+    <div style="display:flex;flex-direction:column;gap:.5rem">
+      <button onclick="retryGpsSetup()" style="padding:.75rem;border:none;border-radius:10px;background:#1d4ed8;color:#fff;font-size:.95rem;font-weight:700;cursor:pointer" id="gpsSetupRetryBtn">✅ 我已设置好了，重新定位</button>
+      <button onclick="closeGpsSetup()" style="padding:.6rem;border:none;border-radius:10px;background:#f1f5f9;color:#64748b;font-size:.88rem;cursor:pointer">稍后再说</button>
+    </div>
+  </div>
+</div>
+<style>@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}</style>
+
 <div class="modal-overlay" id="customDialogModal">
   <div class="modal-box" style="max-width:400px;width:92%">
     <div style="text-align:center;margin-bottom:1rem">
@@ -3086,6 +3103,94 @@ function closeAppDetail() {
   document.getElementById('appDetailModal').style.display = 'none';
 }
 
+// ─── GPS Setup Guide ───
+function _isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+function _isAndroid() { return /Android/.test(navigator.userAgent); }
+
+function showGpsSetupModal(reason) {
+  const modal = document.getElementById('gpsSetupModal');
+  const steps = document.getElementById('gpsSetupSteps');
+  const tip   = document.getElementById('gpsSetupTip');
+  const title = document.getElementById('gpsSetupTitle');
+  const sub   = document.getElementById('gpsSetupSubtitle');
+  const icon  = document.getElementById('gpsSetupIcon');
+  const retryBtn = document.getElementById('gpsSetupRetryBtn');
+
+  if (reason === 'denied') {
+    icon.textContent = '🔒';
+    title.textContent = '位置权限被禁用';
+    sub.textContent = '请按以下步骤开启定位，打卡才能记录位置';
+    retryBtn.textContent = '✅ 我已开启，重新定位';
+    if (_isIOS()) {
+      steps.innerHTML = `
+        <b>iPhone 开启步骤：</b><br>
+        1️⃣ 打开手机 <b>设置</b><br>
+        2️⃣ 滑到 <b>隐私与安全性</b> → <b>定位服务</b><br>
+        3️⃣ 找到 <b>Safari 浏览器</b>（或您使用的浏览器）<br>
+        4️⃣ 选择 <b>"使用 App 期间"</b><br>
+        5️⃣ 打开下方的 <b>精确位置</b> 开关 🔵<br>
+        6️⃣ 回到此页面点击"重新定位"`;
+      tip.style.display = '';
+      tip.textContent = '💡 设置完回到浏览器可能需要刷新页面';
+    } else if (_isAndroid()) {
+      steps.innerHTML = `
+        <b>Android 开启步骤：</b><br>
+        1️⃣ 点击浏览器地址栏左侧的 🔒 锁图标<br>
+        2️⃣ 点击 <b>权限</b> 或 <b>位置</b><br>
+        3️⃣ 选择 <b>允许</b><br>
+        4️⃣ 回到此页面点击"重新定位"<br><br>
+        <b>如果找不到：</b><br>
+        手机设置 → 应用 → 浏览器 → 权限 → 位置 → 允许`;
+      tip.style.display = '';
+      tip.textContent = '💡 部分安卓手机需要在"精确位置"选项额外确认';
+    } else {
+      steps.innerHTML = `
+        <b>开启步骤：</b><br>
+        1️⃣ 点击浏览器地址栏的 🔒 图标<br>
+        2️⃣ 找到"位置"权限 → 设为<b>允许</b><br>
+        3️⃣ 刷新页面后重新定位`;
+      tip.style.display = 'none';
+    }
+  } else if (reason === 'poor') {
+    icon.textContent = '📡';
+    title.textContent = '定位精度较差';
+    sub.textContent = `当前误差约 ${_gpsAccuracy ? Math.round(_gpsAccuracy) + 'm' : '较大'}，打卡位置可能不准`;
+    retryBtn.textContent = '🔄 重新获取位置';
+    steps.innerHTML = `
+      <b>提高精度的方法：</b><br>
+      1️⃣ <b>走到室外</b>（GPS 需要看到天空）<br>
+      2️⃣ 确认定位权限为 <b>精确位置</b>（不是大致位置）<br>
+      3️⃣ 关闭 <b>VPN</b>（VPN 会干扰定位）<br>
+      4️⃣ 等待几秒让 GPS 信号锁定后再打卡`;
+    tip.style.display = '';
+    tip.textContent = '💡 室内误差通常较大，建议到门口或窗边';
+  } else {
+    // prompt / unavailable
+    icon.textContent = '📍';
+    title.textContent = '请允许使用位置';
+    sub.textContent = '打卡需要您的位置来验证您在工作地点';
+    retryBtn.textContent = '📍 允许定位并打卡';
+    steps.innerHTML = `
+      <b>为什么需要位置？</b><br>
+      ✅ 验证您在工作地点范围内<br>
+      ✅ 记录打卡坐标<br>
+      ✅ 防止异地代打卡<br><br>
+      点击下方按钮后，<b>浏览器会弹出位置请求</b>，<br>请选择 <b>"允许"</b> 即可。`;
+    tip.style.display = 'none';
+  }
+  modal.style.display = 'flex';
+}
+
+function closeGpsSetup() {
+  document.getElementById('gpsSetupModal').style.display = 'none';
+}
+
+function retryGpsSetup() {
+  closeGpsSetup();
+  if (_gpsWatchId !== null) { navigator.geolocation.clearWatch(_gpsWatchId); _gpsWatchId = null; }
+  initGPS();
+}
+
 // ─── GPS Punch ───
 let _gpsCoords = null;
 let _gpsAccuracy = null;
@@ -3101,37 +3206,43 @@ function initGPS() {
     enablePunchBtn(false);
     return;
   }
-  // First try: get initial GPS fix
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      _gpsAccuracy = Math.round(pos.coords.accuracy);
-      const acc = _gpsAccuracy;
-      const accWarn = acc > 500 ? ` ⚠️ 精度较差(${acc}m)` : '';
-      document.getElementById('gpsIndicator').innerHTML = `📍 ${_t('tcGpsReady').replace('{acc}', acc)}${accWarn}`;
-      enablePunchBtn(true);
-    },
-    () => {},
-    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-  );
-  // Then watch for continuous high-accuracy updates
-  _gpsWatchId = navigator.geolocation.watchPosition(
-    pos => {
-      _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      _gpsAccuracy = Math.round(pos.coords.accuracy);
-      const acc = _gpsAccuracy;
-      const accWarn = acc > 500 ? ` ⚠️ 精度较差(${acc}m)` : '';
-      document.getElementById('gpsIndicator').innerHTML = `📍 ${_t('tcGpsReady').replace('{acc}', acc)}${accWarn}`;
-      enablePunchBtn(true);
-    },
-    err => {
-      if (!_gpsCoords) {
-        document.getElementById('gpsIndicator').innerHTML = _t('tcGpsFailed');
+  function onGpsSuccess(pos) {
+    _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+    _gpsAccuracy = Math.round(pos.coords.accuracy);
+    const acc = _gpsAccuracy;
+    const accWarn = acc > 500 ? ` ⚠️ 精度较差(${acc}m)` : '';
+    document.getElementById('gpsIndicator').innerHTML = `📍 ${_t('tcGpsReady').replace('{acc}', acc)}${accWarn}`;
+    enablePunchBtn(true);
+    if (acc > 2000) showGpsSetupModal('poor');
+  }
+  function onGpsError(err) {
+    if (!_gpsCoords) {
+      document.getElementById('gpsIndicator').innerHTML = _t('tcGpsFailed');
+      enablePunchBtn(false);
+      if (err && err.code === 1) showGpsSetupModal('denied');
+    }
+  }
+
+  // Check permission state first, then start watching
+  if (navigator.permissions) {
+    navigator.permissions.query({ name: 'geolocation' }).then(perm => {
+      if (perm.state === 'denied') {
+        document.getElementById('gpsIndicator').innerHTML = '🔒 位置权限未开启';
         enablePunchBtn(false);
+        showGpsSetupModal('denied');
+        return;
       }
-    },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-  );
+      if (perm.state === 'prompt') {
+        showGpsSetupModal('prompt');
+      }
+      navigator.geolocation.getCurrentPosition(onGpsSuccess, onGpsError, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
+      _gpsWatchId = navigator.geolocation.watchPosition(onGpsSuccess, onGpsError, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+      perm.onchange = () => { if (perm.state === 'denied') showGpsSetupModal('denied'); };
+    });
+  } else {
+    navigator.geolocation.getCurrentPosition(onGpsSuccess, onGpsError, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
+    _gpsWatchId = navigator.geolocation.watchPosition(onGpsSuccess, onGpsError, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+  }
 }
 
 function setBtn(btn, enabled) {
