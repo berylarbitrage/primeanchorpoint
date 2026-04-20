@@ -8622,7 +8622,7 @@ app.post('/api/admin/employees/:id/ensure-worker-account', requireAdmin, (req, r
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type, enable_timeclock, enable_invoice } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type, enable_timeclock, enable_invoice, preferred_lang } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -8659,6 +8659,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
   if (enable_timeclock !== undefined) logChange('enable_timeclock', w.enable_timeclock||0, enable_timeclock?1:0);
   if (enable_invoice !== undefined) logChange('enable_invoice', w.enable_invoice||0, enable_invoice?1:0);
+  if (preferred_lang !== undefined) logChange('preferred_lang', w.preferred_lang||'', preferred_lang);
   // When reactivating a deactivated account (active 0→1), clear old interview
   // and onboarding records so the worker starts fresh
   if (!w.active && newActive) {
@@ -8679,7 +8680,8 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
     work_status=COALESCE(?,work_status), has_ssn=?, position_interests=?,
     employment_type=COALESCE(?,employment_type),
     entity_type=COALESCE(?,entity_type),
-    enable_timeclock=?, enable_invoice=? WHERE id=?`)
+    enable_timeclock=?, enable_invoice=?,
+    preferred_lang=COALESCE(?,preferred_lang) WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
       newActive, newSuspended,
@@ -8693,6 +8695,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       employment_type !== undefined ? employment_type : null,
       entity_type !== undefined ? entity_type : null,
       newEnableTimeclock, newEnableInvoice,
+      preferred_lang !== undefined ? preferred_lang : null,
       req.params.id
     );
   res.json({ success: true });
@@ -17631,10 +17634,6 @@ app.post('/api/checkin/punch', async (req, res) => {
     hour: '2-digit', minute: '2-digit', second: '2-digit',
     hour12: false
   });
-
-  // Send SMS confirmation
-  const actionText = action === 'in' ? '签到成功 / Check-in confirmed' : '签退成功 / Check-out confirmed';
-  await sendSMS(sess.phone, `[Prime Anchor Point] ${actionText}: ${sess.name}, ${site.name}, ${displayTime}`);
 
   res.json({
     success: true,
