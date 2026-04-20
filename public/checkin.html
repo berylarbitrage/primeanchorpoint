@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -79,8 +79,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
 <div class="wrap">
   <!-- Language switcher -->
   <div class="lang-bar">
-    <button class="lang-btn active" id="ciLangZh" onclick="ciSetLang('zh')">中文</button>
-    <button class="lang-btn" id="ciLangEn" onclick="ciSetLang('en')">English</button>
+    <button class="lang-btn" id="ciLangZh" onclick="ciSetLang('zh')">中文</button>
+    <button class="lang-btn active" id="ciLangEn" onclick="ciSetLang('en')">English</button>
     <button class="lang-btn" id="ciLangEs" onclick="ciSetLang('es')">Español</button>
   </div>
 
@@ -279,7 +279,7 @@ const CI_LANG = {
   }
 };
 
-let _ciLang = 'zh';
+let _ciLang = 'en';
 
 function ciSetLang(lang) {
   _ciLang = lang;
@@ -312,10 +312,10 @@ function ciSetLang(lang) {
   }
 }
 
-// Initialize language from URL param or default zh
+// Initialize language from URL param or default en
 (function() {
   const langParam = params.get('lang');
-  if (langParam && CI_LANG[langParam]) ciSetLang(langParam);
+  ciSetLang((langParam && CI_LANG[langParam]) ? langParam : 'en');
 })();
 
 function showMsg(id, text, type) {
