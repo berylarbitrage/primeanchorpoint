@@ -13861,17 +13861,54 @@ window.openPunchVideo = function(src) {
   overlay.style.display = 'flex';
 };
 
+let _hoverTimer = null;
+function showPhotoHover(imgEl, url) {
+  clearTimeout(_hoverTimer);
+  _hoverTimer = setTimeout(() => {
+    let tip = document.getElementById('photoHoverTip');
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.id = 'photoHoverTip';
+      tip.style.cssText = 'position:fixed;z-index:99998;pointer-events:none;border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.45);border:2px solid #fff';
+      document.body.appendChild(tip);
+    }
+    const img = document.createElement('img');
+    img.src = url;
+    img.style.cssText = 'width:220px;height:220px;object-fit:cover;display:block';
+    tip.innerHTML = '';
+    tip.appendChild(img);
+    const r = imgEl.getBoundingClientRect();
+    const top = Math.min(r.top, window.innerHeight - 240);
+    tip.style.left = (r.right + 10) + 'px';
+    tip.style.top = top + 'px';
+    tip.style.display = 'block';
+  }, 120);
+}
+function hidePhotoHover() {
+  clearTimeout(_hoverTimer);
+  const tip = document.getElementById('photoHoverTip');
+  if (tip) tip.style.display = 'none';
+}
+
+
 function openPunchPhoto(src) {
+  hidePhotoHover();
   let overlay = document.getElementById('punchPhotoOverlay');
   if (!overlay) {
     overlay = document.createElement('div');
     overlay.id = 'punchPhotoOverlay';
-    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;align-items:center;justify-content:center;cursor:zoom-out';
-    overlay.innerHTML = '<img id="punchPhotoFull" style="max-width:92vw;max-height:92vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.6)">';
-    overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:99999;align-items:center;justify-content:center;cursor:zoom-out;flex-direction:column;gap:.75rem';
+    overlay.innerHTML = `
+      <img id="punchPhotoFull" style="max-width:92vw;max-height:88vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.6);object-fit:contain">
+      <div style="color:#fff;font-size:.8rem;opacity:.6">点击任意处关闭 · <a id="punchPhotoDownload" style="color:#93c5fd;text-decoration:none" download>⬇ 下载原图</a></div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay || e.target.id === 'punchPhotoFull') overlay.style.display = 'none'; });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') overlay.style.display = 'none'; });
     document.body.appendChild(overlay);
   }
-  document.getElementById('punchPhotoFull').src = punchPhotoUrl(src);
+  const fullUrl = punchPhotoUrl(src);
+  document.getElementById('punchPhotoFull').src = fullUrl;
+  const dl = document.getElementById('punchPhotoDownload');
+  if (dl) { dl.href = fullUrl; dl.download = src.split('/').pop() || 'punch-photo.jpg'; }
   overlay.style.display = 'flex';
 }
 
@@ -13931,7 +13968,13 @@ function punchLocationPins(t) {
 function punchPhotoThumb(src) {
   if (!src) return '—';
   const url = punchPhotoUrl(src);
-  return `<img src="${url}" onclick="openPunchPhoto('${src.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)" title="点击查看大图">`;
+  return `<div style="position:relative;display:inline-block">
+    <img src="${url}" onclick="openPunchPhoto('${src.replace(/'/g,"\\'")}')"
+      style="width:56px;height:56px;object-fit:cover;border-radius:8px;cursor:zoom-in;border:1.5px solid var(--gray-200);display:block"
+      title="点击查看大图"
+      onmouseover="showPhotoHover(this,'${url}')"
+      onmouseout="hidePhotoHover()">
+  </div>`;
 }
 
 async function openTimeModal(entry) {
