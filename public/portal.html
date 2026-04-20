@@ -3088,6 +3088,7 @@ function closeAppDetail() {
 
 // ─── GPS Punch ───
 let _gpsCoords = null;
+let _gpsAccuracy = null;
 let _punchStatus = null;
 let _pendingPunchType = null; // type queued for confirmation modal
 let _confirmClockTimer = null;
@@ -3100,12 +3101,14 @@ function initGPS() {
     enablePunchBtn(false);
     return;
   }
-  // First try: quickly get a cached/low-accuracy fix so buttons enable fast
+  // First try: get initial GPS fix
   navigator.geolocation.getCurrentPosition(
     pos => {
       _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      const acc = Math.round(pos.coords.accuracy);
-      document.getElementById('gpsIndicator').innerHTML = `📍 ${_t('tcGpsReady').replace('{acc}', acc)}`;
+      _gpsAccuracy = Math.round(pos.coords.accuracy);
+      const acc = _gpsAccuracy;
+      const accWarn = acc > 500 ? ` ⚠️ 精度较差(${acc}m)` : '';
+      document.getElementById('gpsIndicator').innerHTML = `📍 ${_t('tcGpsReady').replace('{acc}', acc)}${accWarn}`;
       enablePunchBtn(true);
     },
     () => {},
@@ -3115,8 +3118,10 @@ function initGPS() {
   _gpsWatchId = navigator.geolocation.watchPosition(
     pos => {
       _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      const acc = Math.round(pos.coords.accuracy);
-      document.getElementById('gpsIndicator').innerHTML = `📍 ${_t('tcGpsReady').replace('{acc}', acc)}`;
+      _gpsAccuracy = Math.round(pos.coords.accuracy);
+      const acc = _gpsAccuracy;
+      const accWarn = acc > 500 ? ` ⚠️ 精度较差(${acc}m)` : '';
+      document.getElementById('gpsIndicator').innerHTML = `📍 ${_t('tcGpsReady').replace('{acc}', acc)}${accWarn}`;
       enablePunchBtn(true);
     },
     err => {
@@ -3125,7 +3130,7 @@ function initGPS() {
         enablePunchBtn(false);
       }
     },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
   );
 }
 
@@ -3485,6 +3490,10 @@ async function confirmPunchWithPhoto() {
 }
 
 async function doPunch(type, photo) {
+  if (_gpsAccuracy !== null && _gpsAccuracy > 2000) {
+    const go = await customConfirm(`当前定位精度较差（误差约 ${_gpsAccuracy}m），可能导致打卡地点不准确。\n\n建议：到室外等待 GPS 锁定后再打卡，或检查手机定位权限是否设置为"精确位置"。\n\n是否仍然继续打卡？`, '定位精度警告', '⚠️');
+    if (!go) { cancelPunchPhoto(); enablePunchBtn(true); return; }
+  }
   const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null, punch_type: type };
   const sel = document.getElementById('jobSelector');
   if (type === 'in') {
