@@ -108,7 +108,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
   <div class="card step" id="step2">
     <h2><span class="step-badge">2</span> <span id="s2Title">输入验证码 / Enter Code / Ingrese Código</span></h2>
     <div id="msg2" class="msg"></div>
-    <p id="s2Sent" style="font-size:.82rem;color:var(--gray-600);margin-bottom:.75rem">验证码已发送至 <strong id="phoneDisplay"></strong></p>
+    <p id="s2Sent" style="font-size:.82rem;color:var(--gray-600);margin-bottom:.75rem"><span id="s2SentText">Code sent to</span> <strong id="phoneDisplay"></strong></p>
     <div class="field">
       <input type="tel" id="codeInput" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="输入6位验证码" style="text-align:center;font-size:1.4rem;font-weight:700;letter-spacing:8px">
     </div>
@@ -279,6 +279,38 @@ const CI_LANG = {
   }
 };
 
+// Client-side translation of server error messages
+const ERR_MAP = {
+  zh: {
+    '该手机号未在系统中注册': { en: 'This phone number is not registered in the system', es: 'Este número de teléfono no está registrado en el sistema' },
+    '请输入有效的手机号码': { en: 'Please enter a valid phone number', es: 'Por favor ingrese un número de teléfono válido' },
+    '缺少手机号或工作地点': { en: 'Missing phone number or work site', es: 'Falta número de teléfono o sitio de trabajo' },
+    '验证码错误': { en: 'Incorrect verification code', es: 'Código de verificación incorrecto' },
+    '验证码已过期，请重新获取': { en: 'Code expired. Please go back and request a new one.', es: 'Código expirado. Por favor regrese y solicite uno nuevo.' },
+    '工作地点不匹配': { en: 'Work site does not match', es: 'El sitio de trabajo no coincide' },
+    '缺少必要参数': { en: 'Missing required parameters', es: 'Faltan parámetros requeridos' },
+    '会话已过期，请重新验证': { en: 'Session expired. Please verify again.', es: 'Sesión expirada. Por favor verifique nuevamente.' },
+    '未找到该工作地点': { en: 'Work site not found', es: 'Sitio de trabajo no encontrado' },
+    '无法获取您的位置信息，请开启定位权限': { en: 'Cannot get your location. Please enable location permission.', es: 'No se puede obtener su ubicación. Active el permiso de ubicación.' },
+    '未找到对应的员工记录': { en: 'No matching employee record found', es: 'No se encontró registro de empleado correspondiente' },
+  }
+};
+
+function xlateErr(msg) {
+  if (_ciLang === 'zh') return msg;
+  const map = ERR_MAP.zh[msg];
+  if (map && map[_ciLang]) return map[_ciLang];
+  // dynamic out-of-range message from server: "您的位置不在工作地点范围内（距离约Xm）..."
+  const outOfRange = msg.match(/距离约(\S+)/);
+  if (outOfRange) {
+    const dist = outOfRange[1];
+    return _ciLang === 'es'
+      ? `No está dentro del rango del sitio de trabajo (aprox. ${dist}). Por favor llegue al sitio primero.`
+      : `You are not within the work site range (approx. ${dist} away). Please arrive at the site first.`;
+  }
+  return msg;
+}
+
 let _ciLang = 'en';
 
 function ciSetLang(lang) {
@@ -303,13 +335,7 @@ function ciSetLang(lang) {
   document.getElementById('resLabelEmpId').textContent = t.resLabelEmpId;
   document.getElementById('resLabelTime').textContent = t.resLabelTime;
   document.getElementById('resLabelSite').textContent = t.resLabelSite;
-  // update s2Sent if phone already shown
-  const pd = document.getElementById('phoneDisplay');
-  if (pd && pd.textContent) {
-    document.getElementById('s2Sent').innerHTML = t.s2Sent + ' <strong>' + pd.textContent + '</strong>';
-  } else {
-    document.getElementById('s2Sent').textContent = t.s2Sent;
-  }
+  document.getElementById('s2SentText').textContent = t.s2Sent;
 }
 
 // Initialize language from URL param or default en
@@ -384,13 +410,13 @@ async function sendCode() {
       body: JSON.stringify({ phone: raw, site_id: _siteId })
     });
     _phone = raw;
+    document.getElementById('s2SentText').textContent = t.s2Sent;
     document.getElementById('phoneDisplay').textContent = phoneInput.value;
-    document.getElementById('s2Sent').innerHTML = t.s2Sent + ' <strong>' + phoneInput.value + '</strong>';
     goStep(2);
     startCountdown(300);
     codeInput.focus();
   } catch (e) {
-    showMsg('msg1', e.message, 'err');
+    showMsg('msg1', xlateErr(e.message), 'err');
   } finally {
     btn.disabled = false;
     btn.textContent = t.btnSendCode;
@@ -447,7 +473,7 @@ async function verifyCode() {
     goStep(3);
     startGPS();
   } catch (e) {
-    showMsg('msg2', e.message, 'err');
+    showMsg('msg2', xlateErr(e.message), 'err');
     btn.disabled = false;
     btn.textContent = CI_LANG[_ciLang].btnVerify;
   }
@@ -639,7 +665,7 @@ async function submitPunch() {
 
     goStep(4);
   } catch (e) {
-    showMsg('msg3', e.message, 'err');
+    showMsg('msg3', xlateErr(e.message), 'err');
     btn.disabled = false;
     btn.textContent = t.btnPunch;
   }
