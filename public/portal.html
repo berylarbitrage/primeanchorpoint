@@ -3572,11 +3572,32 @@ function executePunch() {
 
 function onPunchPhotoSelected(input) {
   if (!input.files || !input.files[0]) return;
-  _pendingPunchPhoto = input.files[0];
-  const url = URL.createObjectURL(_pendingPunchPhoto);
-  document.getElementById('punchPhotoImg').src = url;
-  document.getElementById('punchPhotoPreview').style.display = '';
-  document.getElementById('punchPhotoConfirmRow').style.display = 'flex';
+  const file = input.files[0];
+  // Resize to max 1280px and compress to JPEG for faster upload and clear rendering
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1280;
+      let w = img.width, h = img.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => {
+        _pendingPunchPhoto = new File([blob], 'punch.jpg', { type: 'image/jpeg' });
+        const url = URL.createObjectURL(_pendingPunchPhoto);
+        document.getElementById('punchPhotoImg').src = url;
+        document.getElementById('punchPhotoPreview').style.display = '';
+        document.getElementById('punchPhotoConfirmRow').style.display = 'flex';
+      }, 'image/jpeg', 0.88);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 function cancelPunchPhoto() {
