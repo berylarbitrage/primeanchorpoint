@@ -1859,6 +1859,20 @@ try { db.exec("ALTER TABLE manager_time_entries ADD COLUMN needs_review INTEGER 
 try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN code TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN partner_ids TEXT DEFAULT ''"); } catch {}
+// One-time migration: rename sites with Chinese "N号仓库" suffix to zero-padded number format
+{
+  const chineseSites = db.prepare("SELECT id, name FROM job_sites WHERE name LIKE '%号仓库%'").all();
+  for (const site of chineseSites) {
+    const m = site.name.match(/^(.*?)\s*-\s*(\d+)号仓库/);
+    if (m) {
+      const company = m[1].trim();
+      const num = String(parseInt(m[2])).padStart(4, '0');
+      const newName = `${company} - ${num}`;
+      db.prepare("UPDATE job_sites SET name=? WHERE id=?").run(newName, site.id);
+      console.log(`[Migration] Renamed site ${site.id}: "${site.name}" → "${newName}"`);
+    }
+  }
+}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN site_timezone TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_latitude REAL DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_longitude REAL DEFAULT NULL"); } catch {}
