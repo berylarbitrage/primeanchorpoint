@@ -126,7 +126,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
     <div id="gpsMapWrap" style="display:none;margin-bottom:.85rem">
       <div id="gpsMap" style="width:100%;height:220px;border-radius:10px;border:2px solid var(--gray-200)"></div>
       <div id="s3MapLegend" style="font-size:.7rem;color:var(--gray-400);margin-top:.3rem;text-align:center">
-        🔴 仓库位置 / Warehouse &nbsp; 🔵 您的位置 / Your Location / Su Ubicación &nbsp; ⭕ 签到范围 / Check-in Range / Zona
+        🔴 Warehouse &nbsp; 🔵 Your Location &nbsp; ⭕ Check-in Range
       </div>
     </div>
     <div class="photo-area" id="photoArea" style="display:none">
@@ -210,6 +210,7 @@ const CI_LANG = {
     fileTooLarge: '文件过大（上限 10MB），请缩短视频或降低分辨率再试',
     codeExpired: '验证码已过期，请返回重新获取',
     countdownFmt: (m, s) => `验证码有效期：${m}:${s}`,
+    mapLegend: '🔴 仓库位置 &nbsp; 🔵 您的位置 &nbsp; ⭕ 签到范围',
   },
   en: {
     subtitle: 'Warehouse Check-in',
@@ -243,6 +244,7 @@ const CI_LANG = {
     fileTooLarge: 'File too large (max 10MB). Shorten video or lower resolution.',
     codeExpired: 'Code expired. Go back to request a new one.',
     countdownFmt: (m, s) => `Code valid for: ${m}:${s}`,
+    mapLegend: '🔴 Warehouse &nbsp; 🔵 Your Location &nbsp; ⭕ Check-in Range',
   },
   es: {
     subtitle: 'Registro de Entrada',
@@ -276,6 +278,7 @@ const CI_LANG = {
     fileTooLarge: 'Archivo demasiado grande (máx 10MB). Acorte el video o reduzca la resolución.',
     codeExpired: 'Código expirado. Regrese para obtener uno nuevo.',
     countdownFmt: (m, s) => `Código válido por: ${m}:${s}`,
+    mapLegend: '🔴 Almacén &nbsp; 🔵 Su Ubicación &nbsp; ⭕ Zona de Registro',
   }
 };
 
@@ -336,6 +339,8 @@ function ciSetLang(lang) {
   document.getElementById('resLabelTime').textContent = t.resLabelTime;
   document.getElementById('resLabelSite').textContent = t.resLabelSite;
   document.getElementById('s2SentText').textContent = t.s2Sent;
+  const legend = document.getElementById('s3MapLegend');
+  if (legend) legend.innerHTML = t.mapLegend;
 }
 
 // Initialize language from URL param or default en
