@@ -16091,7 +16091,9 @@ app.get('/api/admin/punch-photo/:filename', (req, res) => {
   }
   if (!session && req.query.token) session = getSession(req.query.token);
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
-  const fp = path.join(punchPhotosDir, path.basename(req.params.filename));
+  // Check both punch_photos and checkin_photos directories
+  let fp = path.join(punchPhotosDir, path.basename(req.params.filename));
+  if (!fs.existsSync(fp)) fp = path.join(checkinPhotosDir, path.basename(req.params.filename));
   if (!fs.existsSync(fp)) return res.status(404).send('Not found');
   // Explicitly set Content-Type for formats that mime may not know
   const ext = path.extname(fp).toLowerCase();
@@ -17540,18 +17542,39 @@ app.post('/api/checkin/verify', (req, res) => {
   // Clean up the used code
   delete _checkinCodes[normalizedPhone];
 
+  // Determine current punch state for this employee today at this site
+  const siteForState = db.prepare('SELECT timezone FROM job_sites WHERE id=? AND active=1').get(parseInt(site_id));
+  const tzForState = (siteForState && siteForState.timezone) || 'America/Chicago';
+  const todayForState = new Date().toLocaleDateString('en-CA', { timeZone: tzForState });
+  let suggestedPunchType = 'in';
+  let hasOpenEntry = false;
+  let onBreak = false;
+  if (empDbId) {
+    const openEnt = db.prepare(
+      "SELECT id, on_break, break_records FROM time_entries WHERE employee_id=? AND status='open' AND site_id=? AND date(clock_in)=?"
+    ).get(empDbId, parseInt(site_id), todayForState);
+    if (openEnt) {
+      hasOpenEntry = true;
+      onBreak = !!openEnt.on_break;
+      suggestedPunchType = onBreak ? 'break_end' : 'out';
+    }
+  }
+
   res.json({
     success: true,
     name: empName,
     employee_id: empId,
     phone: normalizedPhone,
-    token
+    token,
+    suggested_punch_type: suggestedPunchType,
+    has_open_entry: hasOpenEntry,
+    on_break: onBreak
   });
 });
 
 // POST /api/checkin/punch
 app.post('/api/checkin/punch', async (req, res) => {
-  const { site_id, phone, token, latitude, longitude, accuracy, photo } = req.body;
+  const { site_id, phone, token, latitude, longitude, accuracy, photo, punch_type: requestedPunchType } = req.body;
   if (!site_id || !token) return res.status(400).json({ error: '缺少必要参数' });
 
   // Verify token
@@ -17608,33 +17631,84 @@ app.post('/api/checkin/punch', async (req, res) => {
   const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: siteTimezone }); // YYYY-MM-DD
 
   const openEntry = db.prepare(
-    "SELECT id, clock_in FROM time_entries WHERE employee_id=? AND status='open' AND site_id=? AND date(clock_in)=?"
+    "SELECT id, clock_in, on_break, break_records FROM time_entries WHERE employee_id=? AND status='open' AND site_id=? AND date(clock_in)=?"
   ).get(empDbId, site.id, todayInTz);
 
+  // Determine effective punch type
+  let punchType = requestedPunchType || (openEntry ? 'out' : 'in');
+  if (!['in','break_start','break_end','out'].includes(punchType)) punchType = openEntry ? 'out' : 'in';
+
   let action, entryId, clockTime;
-  if (openEntry) {
-    // Clock out
-    const clockIn = new Date(openEntry.clock_in.replace(' ', 'T') + 'Z');
-    const clockOut = new Date();
-    const diffMs = clockOut - clockIn;
-    const totalHours = Math.round((diffMs / 3600000) * 100) / 100;
-    const regularHours = Math.min(totalHours, 8);
-    const overtimeHours = Math.max(0, totalHours - 8);
 
-    db.prepare(
-      "UPDATE time_entries SET clock_out=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', punch_photo=?, clock_out_latitude=?, clock_out_longitude=? WHERE id=?"
-    ).run(now, totalHours, regularHours, overtimeHours, photoFilename, latitude, longitude, openEntry.id);
-
-    action = 'out';
-    entryId = openEntry.id;
-    clockTime = now;
-  } else {
-    // Clock in
+  if (punchType === 'in') {
+    // Clock in — create new entry (close any stale open entry first if present)
+    if (openEntry) {
+      const clockIn = new Date(openEntry.clock_in.replace(' ', 'T') + 'Z');
+      const diffMs = Date.now() - clockIn;
+      const totalHours = Math.round((diffMs / 3600000) * 100) / 100;
+      db.prepare("UPDATE time_entries SET clock_out=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed' WHERE id=?")
+        .run(now, totalHours, Math.min(totalHours, 8), Math.max(0, totalHours - 8), openEntry.id);
+    }
     const r = db.prepare(
       "INSERT INTO time_entries (employee_id, clock_in, status, latitude, longitude, site_id, geo_verified, punch_type, break_records, on_break, site_timezone, clock_in_photo_path) VALUES(?,?,'open',?,?,?,1,'in','[]',0,?,?)"
     ).run(empDbId, now, latitude, longitude, site.id, siteTimezone, photoFilename);
     action = 'in';
     entryId = r.lastInsertRowid;
+    clockTime = now;
+
+  } else if (punchType === 'break_start') {
+    if (!openEntry) {
+      // No open entry — create one then start break
+      const r = db.prepare(
+        "INSERT INTO time_entries (employee_id, clock_in, status, latitude, longitude, site_id, geo_verified, punch_type, break_records, on_break, site_timezone, clock_in_photo_path) VALUES(?,?,'open',?,?,?,1,'in','[]',0,?,?)"
+      ).run(empDbId, now, latitude, longitude, site.id, siteTimezone, null);
+      entryId = r.lastInsertRowid;
+      db.prepare("UPDATE time_entries SET on_break=1, break_records=? WHERE id=?")
+        .run(JSON.stringify([{ start: now, photo_path: photoFilename }]), entryId);
+    } else {
+      entryId = openEntry.id;
+      let breaks = [];
+      try { breaks = JSON.parse(openEntry.break_records || '[]'); } catch {}
+      breaks.push({ start: now, photo_path: photoFilename });
+      db.prepare("UPDATE time_entries SET on_break=1, break_records=? WHERE id=?")
+        .run(JSON.stringify(breaks), openEntry.id);
+    }
+    action = 'break_start';
+    clockTime = now;
+
+  } else if (punchType === 'break_end') {
+    if (openEntry) {
+      entryId = openEntry.id;
+      let breaks = [];
+      try { breaks = JSON.parse(openEntry.break_records || '[]'); } catch {}
+      // Close the last open break (one without an end)
+      const lastBreak = [...breaks].reverse().find(b => !b.end);
+      if (lastBreak) { lastBreak.end = now; }
+      else { breaks.push({ start: now, end: now }); } // graceful: missed break_start
+      db.prepare("UPDATE time_entries SET on_break=0, break_records=? WHERE id=?")
+        .run(JSON.stringify(breaks), openEntry.id);
+    } else {
+      entryId = null; // nothing to update, still succeed
+    }
+    action = 'break_end';
+    clockTime = now;
+
+  } else {
+    // 'out' — clock out
+    if (openEntry) {
+      const clockIn = new Date(openEntry.clock_in.replace(' ', 'T') + 'Z');
+      const diffMs = Date.now() - clockIn;
+      const totalHours = Math.round((diffMs / 3600000) * 100) / 100;
+      const regularHours = Math.min(totalHours, 8);
+      const overtimeHours = Math.max(0, totalHours - 8);
+      db.prepare(
+        "UPDATE time_entries SET clock_out=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', punch_photo_path=?, clock_out_latitude=?, clock_out_longitude=? WHERE id=?"
+      ).run(now, totalHours, regularHours, overtimeHours, photoFilename, latitude, longitude, openEntry.id);
+      entryId = openEntry.id;
+    } else {
+      entryId = null; // graceful: nothing to close
+    }
+    action = 'out';
     clockTime = now;
   }
 

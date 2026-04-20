@@ -116,42 +116,50 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
     <button class="btn btn-primary" id="btnVerify" onclick="verifyCode()" disabled>验证 / Verify / Verificar</button>
   </div>
 
-  <!-- Step 3: GPS + Photo -->
+  <!-- Step 3: Punch Type Selection -->
   <div class="card step" id="step3">
-    <h2><span class="step-badge">3</span> <span id="s3Title">定位 & 拍照 / GPS & Photo / GPS y Foto</span></h2>
+    <h2><span class="step-badge">3</span> <span id="s3Title">选择打卡类型 / Select Punch Type / Tipo de Marcaje</span></h2>
     <div id="msg3" class="msg"></div>
+    <div id="punchTypeGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1rem"></div>
+    <button class="btn btn-primary" id="btnConfirmPunch" onclick="confirmPunchType()" disabled><span id="btnConfirmPunchText">Continue / 继续</span></button>
+  </div>
+
+  <!-- Step 4: GPS + Photo -->
+  <div class="card step" id="step4">
+    <h2><span class="step-badge">4</span> <span id="s4Title">定位 & 拍照 / GPS & Photo / GPS y Foto</span></h2>
+    <div id="msg4" class="msg"></div>
     <div class="gps-bar gps-pending" id="gpsBar">
       <span>📡</span> <span id="gpsText">GPS 定位中...</span>
     </div>
     <div id="gpsMapWrap" style="display:none;margin-bottom:.85rem">
       <div id="gpsMap" style="width:100%;height:220px;border-radius:10px;border:2px solid var(--gray-200)"></div>
-      <div id="s3MapLegend" style="font-size:.7rem;color:var(--gray-400);margin-top:.3rem;text-align:center">
+      <div id="s4MapLegend" style="font-size:.7rem;color:var(--gray-400);margin-top:.3rem;text-align:center">
         🔴 Warehouse &nbsp; 🔵 Your Location &nbsp; ⭕ Check-in Range
       </div>
     </div>
     <div class="photo-area" id="photoArea" style="display:none">
       <div class="camera-btn" id="cameraBtn">
         <div class="cam-icon">📷</div>
-        <span id="s3PhotoBtn">拍照 或 录像 / Photo or Video / Foto o Video</span>
+        <span id="s4PhotoBtn">Take Photo or Video</span>
         <input type="file" accept="image/*,video/*" capture="environment" id="photoFile" onchange="handlePhoto(this)">
       </div>
       <img id="photoPreview" class="photo-preview" alt="Photo preview">
       <video id="videoPreview" class="photo-preview" controls playsinline style="display:none;background:#000"></video>
     </div>
-    <button class="btn btn-green" id="btnPunch" onclick="submitPunch()" disabled>签到 / Check In / Marcar Entrada</button>
+    <button class="btn btn-green" id="btnPunch" onclick="submitPunch()" disabled><span id="btnPunchText">Check In</span></button>
   </div>
 
-  <!-- Step 4: Result -->
-  <div class="card step" id="step4">
-    <h2><span class="step-badge">✓</span> <span id="s4Title">签到完成 / Check-in Complete / Registro Completo</span></h2>
+  <!-- Step 5: Result -->
+  <div class="card step" id="step5">
+    <h2><span class="step-badge">✓</span> <span id="s5Title">打卡完成 / Done / Listo</span></h2>
     <div class="check-icon" id="resultIcon">✅</div>
     <div class="result-card">
-      <h3 id="resultTitle">签到成功</h3>
-      <div class="result-row"><span id="resLabelName">姓名 / Name / Nombre</span><span id="resName">-</span></div>
-      <div class="result-row"><span id="resLabelPhone">手机号 / Phone / Teléfono</span><span id="resPhone">-</span></div>
-      <div class="result-row"><span id="resLabelEmpId">员工号 / Employee ID / ID Empleado</span><span id="resEmpId">-</span></div>
-      <div class="result-row"><span id="resLabelTime">时间 / Time / Hora</span><span id="resTime">-</span></div>
-      <div class="result-row"><span id="resLabelSite">地点 / Location / Lugar</span><span id="resSite">-</span></div>
+      <h3 id="resultTitle">-</h3>
+      <div class="result-row"><span id="resLabelName">Name</span><span id="resName">-</span></div>
+      <div class="result-row"><span id="resLabelPhone">Phone</span><span id="resPhone">-</span></div>
+      <div class="result-row"><span id="resLabelEmpId">Employee ID</span><span id="resEmpId">-</span></div>
+      <div class="result-row"><span id="resLabelTime">Time</span><span id="resTime">-</span></div>
+      <div class="result-row"><span id="resLabelSite">Location</span><span id="resSite">-</span></div>
     </div>
   </div>
 </div>
@@ -175,6 +183,8 @@ let _gpsBestAccuracy = 99999;
 let _map = null;
 let _userMarker = null;
 let _accuracyCircle = null;
+let _selectedPunchType = null;
+let _suggestedPunchType = null;
 
 // ─── Trilingual support ───
 const CI_LANG = {
@@ -185,7 +195,10 @@ const CI_LANG = {
     s2Title: '输入验证码', s2Sent: '验证码已发送至',
     codeInputPlaceholder: '输入6位验证码',
     btnVerify: '验证',
-    s3Title: '定位 & 拍照',
+    s3Title: '选择打卡类型',
+    punchTypes: { in:'🟢 上班打卡', break_start:'🟡 休息开始', break_end:'🟡 休息结束', out:'🔴 下班打卡' },
+    btnConfirmPunch: '继续',
+    s4Title: '定位 & 拍照',
     gpsSearching: 'GPS 定位中...',
     gpsPermDenied: '定位权限被拒绝，请在浏览器设置中开启定位',
     gpsUnavail: '无法获取位置信息，请检查GPS是否开启',
@@ -194,12 +207,11 @@ const CI_LANG = {
     gpsInRange: (dist, acc) => `定位成功 ✓（距离 ${dist}，精度 ${acc}）`,
     gpsOutRange: (dist, acc) => `不在签到范围（距离 ${dist}，精度 ${acc}）`,
     gpsOutRangeMsg: dist => `您不在工作地点范围内（距离约${dist}），请到达工作地点后再签到`,
-    s3PhotoBtn: '拍照 或 录像',
-    btnPunch: '签到',
+    s4PhotoBtn: '拍照 或 录像',
+    btnPunch: { in:'上班打卡', break_start:'休息开始', break_end:'休息结束', out:'下班打卡' },
     btnPunching: '提交中...',
-    s4Title: '签到完成',
-    resultIn: '签到成功',
-    resultOut: '签退成功',
+    s5Title: '打卡完成',
+    resultLabels: { in:'上班打卡成功', break_start:'休息开始', break_end:'休息结束', out:'下班打卡成功' },
     resLabelName: '姓名', resLabelPhone: '手机号', resLabelEmpId: '员工号',
     resLabelTime: '时间', resLabelSite: '地点',
     errPhone: '请输入有效的10位手机号码',
@@ -219,7 +231,10 @@ const CI_LANG = {
     s2Title: 'Enter Verification Code', s2Sent: 'Code sent to',
     codeInputPlaceholder: 'Enter 6-digit code',
     btnVerify: 'Verify',
-    s3Title: 'GPS & Photo',
+    s3Title: 'Select Punch Type',
+    punchTypes: { in:'🟢 Clock In', break_start:'🟡 Break Start', break_end:'🟡 Break End', out:'🔴 Clock Out' },
+    btnConfirmPunch: 'Continue',
+    s4Title: 'GPS & Photo',
     gpsSearching: 'Getting GPS location...',
     gpsPermDenied: 'Location permission denied. Please enable in browser settings.',
     gpsUnavail: 'Cannot get location. Please check that GPS is enabled.',
@@ -228,12 +243,11 @@ const CI_LANG = {
     gpsInRange: (dist, acc) => `Location confirmed ✓ (distance ${dist}, accuracy ${acc})`,
     gpsOutRange: (dist, acc) => `Outside check-in range (distance ${dist}, accuracy ${acc})`,
     gpsOutRangeMsg: dist => `You are not within the work site range (approx. ${dist} away). Please arrive at the site first.`,
-    s3PhotoBtn: 'Take Photo or Video',
-    btnPunch: 'Check In',
+    s4PhotoBtn: 'Take Photo or Video',
+    btnPunch: { in:'Clock In', break_start:'Break Start', break_end:'Break End', out:'Clock Out' },
     btnPunching: 'Submitting...',
-    s4Title: 'Check-in Complete',
-    resultIn: 'Check-in Successful',
-    resultOut: 'Check-out Successful',
+    s5Title: 'Punch Recorded',
+    resultLabels: { in:'Clocked In', break_start:'Break Started', break_end:'Break Ended', out:'Clocked Out' },
     resLabelName: 'Name', resLabelPhone: 'Phone', resLabelEmpId: 'Employee ID',
     resLabelTime: 'Time', resLabelSite: 'Location',
     errPhone: 'Please enter a valid 10-digit phone number',
@@ -253,7 +267,10 @@ const CI_LANG = {
     s2Title: 'Ingrese el Código', s2Sent: 'Código enviado a',
     codeInputPlaceholder: 'Ingrese código de 6 dígitos',
     btnVerify: 'Verificar',
-    s3Title: 'GPS y Foto',
+    s3Title: 'Tipo de Marcaje',
+    punchTypes: { in:'🟢 Entrada', break_start:'🟡 Inicio Descanso', break_end:'🟡 Fin Descanso', out:'🔴 Salida' },
+    btnConfirmPunch: 'Continuar',
+    s4Title: 'GPS y Foto',
     gpsSearching: 'Obteniendo ubicación GPS...',
     gpsPermDenied: 'Permiso de ubicación denegado. Actívelo en la configuración del navegador.',
     gpsUnavail: 'No se puede obtener la ubicación. Verifique que el GPS esté activado.',
@@ -262,12 +279,11 @@ const CI_LANG = {
     gpsInRange: (dist, acc) => `Ubicación confirmada ✓ (distancia ${dist}, precisión ${acc})`,
     gpsOutRange: (dist, acc) => `Fuera del rango de registro (distancia ${dist}, precisión ${acc})`,
     gpsOutRangeMsg: dist => `No está dentro del rango del sitio de trabajo (aprox. ${dist}). Por favor llegue al sitio primero.`,
-    s3PhotoBtn: 'Tomar Foto o Video',
-    btnPunch: 'Marcar Entrada',
+    s4PhotoBtn: 'Tomar Foto o Video',
+    btnPunch: { in:'Entrada', break_start:'Inicio Descanso', break_end:'Fin Descanso', out:'Salida' },
     btnPunching: 'Enviando...',
-    s4Title: 'Registro Completo',
-    resultIn: 'Entrada Registrada',
-    resultOut: 'Salida Registrada',
+    s5Title: 'Marcaje Registrado',
+    resultLabels: { in:'Entrada Registrada', break_start:'Descanso Iniciado', break_end:'Descanso Terminado', out:'Salida Registrada' },
     resLabelName: 'Nombre', resLabelPhone: 'Teléfono', resLabelEmpId: 'ID Empleado',
     resLabelTime: 'Hora', resLabelSite: 'Lugar',
     errPhone: 'Ingrese un número de teléfono válido de 10 dígitos',
@@ -330,16 +346,23 @@ function ciSetLang(lang) {
   document.getElementById('codeInput').placeholder = t.codeInputPlaceholder;
   document.getElementById('btnVerify').textContent = t.btnVerify;
   document.getElementById('s3Title').textContent = t.s3Title;
-  document.getElementById('s3PhotoBtn').textContent = t.s3PhotoBtn;
-  document.getElementById('btnPunch').textContent = t.btnPunch;
+  document.getElementById('btnConfirmPunchText').textContent = t.btnConfirmPunch;
   document.getElementById('s4Title').textContent = t.s4Title;
+  document.getElementById('s4PhotoBtn').textContent = t.s4PhotoBtn;
+  document.getElementById('s5Title').textContent = t.s5Title;
+  // Update punch button label if punch type already chosen
+  if (_selectedPunchType) {
+    document.getElementById('btnPunchText').textContent = t.btnPunch[_selectedPunchType] || t.btnPunch.in;
+  }
+  // Re-render punch type grid if visible
+  if (_suggestedPunchType) renderPunchTypeGrid();
   document.getElementById('resLabelName').textContent = t.resLabelName;
   document.getElementById('resLabelPhone').textContent = t.resLabelPhone;
   document.getElementById('resLabelEmpId').textContent = t.resLabelEmpId;
   document.getElementById('resLabelTime').textContent = t.resLabelTime;
   document.getElementById('resLabelSite').textContent = t.resLabelSite;
   document.getElementById('s2SentText').textContent = t.s2Sent;
-  const legend = document.getElementById('s3MapLegend');
+  const legend = document.getElementById('s4MapLegend');
   if (legend) legend.innerHTML = t.mapLegend;
 }
 
@@ -474,14 +497,49 @@ async function verifyCode() {
     });
     _token = d.token;
     _empInfo = { name: d.name, employee_id: d.employee_id, phone: d.phone };
+    _suggestedPunchType = d.suggested_punch_type || 'in';
     clearInterval(_countdownTimer);
+    renderPunchTypeGrid();
     goStep(3);
-    startGPS();
   } catch (e) {
     showMsg('msg2', xlateErr(e.message), 'err');
     btn.disabled = false;
     btn.textContent = CI_LANG[_ciLang].btnVerify;
   }
+}
+
+function renderPunchTypeGrid() {
+  const t = CI_LANG[_ciLang];
+  const types = ['in', 'break_start', 'break_end', 'out'];
+  const colors = { in: '#2D9D78', break_start: '#F5A623', break_end: '#4A90D9', out: '#E63946' };
+  const grid = document.getElementById('punchTypeGrid');
+  grid.innerHTML = types.map(type => {
+    const isSuggested = type === _suggestedPunchType;
+    const isSelected = type === _selectedPunchType;
+    const border = isSelected ? `2px solid ${colors[type]}` : '2px solid var(--gray-200)';
+    const bg = isSelected ? (colors[type] + '15') : '#fff';
+    return `<label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.7rem .8rem;border:${border};border-radius:10px;background:${bg};transition:all .2s;position:relative" onclick="selectPunchType('${type}')">
+      <input type="radio" name="punchType" value="${type}" ${isSelected?'checked':''} style="accent-color:${colors[type]};width:18px;height:18px;flex-shrink:0">
+      <div>
+        <div style="font-weight:700;font-size:.92rem">${t.punchTypes[type]}</div>
+        ${isSuggested ? `<div style="font-size:.7rem;color:${colors[type]};font-weight:600">★ Suggested</div>` : ''}
+      </div>
+    </label>`;
+  }).join('');
+}
+
+function selectPunchType(type) {
+  _selectedPunchType = type;
+  renderPunchTypeGrid();
+  document.getElementById('btnConfirmPunch').disabled = false;
+  const t = CI_LANG[_ciLang];
+  document.getElementById('btnPunchText').textContent = t.btnPunch[type];
+}
+
+function confirmPunchType() {
+  if (!_selectedPunchType) return;
+  goStep(4);
+  startGPS();
 }
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
@@ -541,7 +599,7 @@ function startGPS() {
   txt.textContent = t.gpsSearching;
   _gpsBestAccuracy = 99999;
   _gpsOk = false;
-  hideMsg('msg3');
+  hideMsg('msg4');
 
   if (!navigator.geolocation) {
     bar.className = 'gps-bar gps-fail';
@@ -579,14 +637,14 @@ function startGPS() {
           _gpsOk = true;
           bar.className = 'gps-bar gps-ok';
           txt.textContent = tl.gpsInRange(distStr, bestAccStr);
-          hideMsg('msg3');
+          hideMsg('msg4');
           document.getElementById('photoArea').style.display = '';
           updatePunchBtn();
         } else {
           _gpsOk = false;
           bar.className = 'gps-bar gps-fail';
           txt.textContent = tl.gpsOutRange(distStr, bestAccStr);
-          showMsg('msg3', tl.gpsOutRangeMsg(distStr), 'err');
+          showMsg('msg4', tl.gpsOutRangeMsg(distStr), 'err');
           document.getElementById('photoArea').style.display = 'none';
           updatePunchBtn();
         }
@@ -598,7 +656,7 @@ function startGPS() {
       if (err.code === 1) txt.textContent = tl.gpsPermDenied;
       else if (err.code === 2) txt.textContent = tl.gpsUnavail;
       else txt.textContent = tl.gpsTimeout;
-      showMsg('msg3', tl.gpsErrMsg, 'err');
+      showMsg('msg4', tl.gpsErrMsg, 'err');
     },
     { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
   );
@@ -609,7 +667,7 @@ function handlePhoto(input) {
   if (!file) return;
   const isVideo = (file.type || '').startsWith('video/');
   if (file.size > 10 * 1024 * 1024) {
-    showMsg('msg3', CI_LANG[_ciLang].fileTooLarge, 'err');
+    showMsg('msg4', CI_LANG[_ciLang].fileTooLarge, 'err');
     input.value = '';
     return;
   }
@@ -639,8 +697,9 @@ function updatePunchBtn() {
 
 async function submitPunch() {
   if (!_gpsOk || !_photoData) return;
-  hideMsg('msg3');
+  hideMsg('msg4');
   const t = CI_LANG[_ciLang];
+  const pt = _selectedPunchType || 'in';
   const btn = document.getElementById('btnPunch');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> ' + t.btnPunching;
@@ -656,23 +715,25 @@ async function submitPunch() {
         latitude: _userLat,
         longitude: _userLng,
         accuracy: _gpsBestAccuracy,
-        photo: _photoData
+        photo: _photoData,
+        punch_type: pt
       })
     });
 
-    document.getElementById('resultIcon').textContent = d.action === 'out' ? '👋' : '✅';
-    document.getElementById('resultTitle').textContent = d.action === 'out' ? t.resultOut : t.resultIn;
+    const iconMap = { in: '✅', break_start: '☕', break_end: '💪', out: '👋' };
+    document.getElementById('resultIcon').textContent = iconMap[d.action] || '✅';
+    document.getElementById('resultTitle').textContent = t.resultLabels[d.action] || t.resultLabels.in;
     document.getElementById('resName').textContent = d.name || '-';
     document.getElementById('resPhone').textContent = _empInfo.phone || '-';
     document.getElementById('resEmpId').textContent = d.employee_id || '-';
     document.getElementById('resTime').textContent = d.clock_time || '-';
     document.getElementById('resSite').textContent = document.getElementById('siteName').textContent || '-';
 
-    goStep(4);
+    goStep(5);
   } catch (e) {
-    showMsg('msg3', xlateErr(e.message), 'err');
+    showMsg('msg4', xlateErr(e.message), 'err');
     btn.disabled = false;
-    btn.textContent = t.btnPunch;
+    btn.innerHTML = '<span id="btnPunchText">' + (t.btnPunch[pt] || t.btnPunch.in) + '</span>';
   }
 }
 </script>
