@@ -19261,7 +19261,7 @@ async function openW9SendModal() {
             refreshOnboardingModal();
           }
           // Show address verification result
-          if (r.addressCheck && (r.addressCheck.match || !r.approved)) showW9AddressCheckUI(r.addressCheck);
+          if (r.addressCheck) showW9AddressCheckUI(r.addressCheck, r.approved);
         } else {
           updateW9DsStatusUI(w9Task.ds_status || 'sent');
         }
@@ -19497,7 +19497,7 @@ async function refreshW9Status() {
     showToast(info, 'info', 5000);
     if (r.status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
     // Show address verification result
-    if (r.addressCheck && (r.addressCheck.match || !r.approved)) showW9AddressCheckUI(r.addressCheck);
+    if (r.addressCheck) showW9AddressCheckUI(r.addressCheck, r.approved);
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
@@ -19512,7 +19512,7 @@ async function downloadSignedW9() {
 // ─── W-9 Address Mismatch UI & Actions ───
 let _w9AddrCheckData = null;
 
-function showW9AddressCheckUI(addressCheck) {
+function showW9AddressCheckUI(addressCheck, approved) {
   const addrEl = document.getElementById('w9AddrVerify');
   const mismatchPanel = document.getElementById('w9AddrMismatchPanel');
   _w9AddrCheckData = addressCheck;
@@ -19520,6 +19520,12 @@ function showW9AddressCheckUI(addressCheck) {
   if (addressCheck.match) {
     addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
     addrEl.innerHTML = '📍 ' + esc(addressCheck.note);
+    mismatchPanel.style.display = 'none';
+  } else if (approved) {
+    const w9Line = addressCheck.w9Full || '—';
+    const trLine = addressCheck.trFull || '—';
+    addrEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:8px;font-size:.84rem;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+    addrEl.innerHTML = `<b>✅ 地址已由管理员核对确认（两地址不完全一致，已批准保留）</b><br><span style="color:#374151;font-size:.82rem;display:block;margin-top:.25rem">🏠 <b>W-9 地址：</b>${esc(w9Line)}</span><span style="color:#374151;font-size:.82rem;display:block;margin-top:.15rem">🗂 <b>税务问卷地址：</b>${esc(trLine)}</span>`;
     mismatchPanel.style.display = 'none';
   } else {
     const w9Line = addressCheck.w9Full || '—';
