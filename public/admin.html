@@ -11867,9 +11867,11 @@ function renderEmployees(list) {
     const jobNames = jobs.map(j=>j.job_title).filter(Boolean);
     const companyNames = [...new Set(jobs.map(j=>j.company_name).filter(Boolean))];
     const payLabel = e.pay_rate ? '$'+Number(e.pay_rate).toFixed(0)+'/'+(e.pay_type==='hourly'?'hr':'yr') : '—';
+    let extraPhones = []; try { extraPhones = JSON.parse(e.extra_phones || '[]'); } catch(err) {}
     const contactHtml = [
       e.email ? `<a href="mailto:${esc(e.email)}">${esc(e.email)}</a>` : '',
-      e.phone ? `<a href="tel:${esc(e.phone)}">${esc(e.phone)}</a>` : ''
+      e.phone ? `<a href="tel:${esc(e.phone)}">${esc(e.phone)}</a>` : '',
+      ...extraPhones.filter(Boolean).map(p => `<a href="tel:${esc(p)}">${esc(p)}</a>`)
     ].filter(Boolean).join('<span style="color:var(--gray-200)">|</span>');
     const workerCodeHtml = e.worker_code
       ? `<span style="font-family:monospace;font-size:.72rem;color:var(--sky);font-weight:600">${esc(e.worker_code)}</span>`
