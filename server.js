@@ -10729,6 +10729,8 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
     if (!dsealEnabled()) {
       const addrCheck = onb.ds_status === 'completed' ? verifyW9Address(workerId) : null;
+      const curW9nd = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
+      const approved = !!(curW9nd && curW9nd.status === 'completed');
       // Also return address data from DB so frontend can display it
       let w9Address = '', w9CityStateZip = '', storedAllFields = [];
       try {
@@ -10740,7 +10742,7 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
           storedAllFields = fd._allFields || [];
         }
       } catch {}
-      return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, addressCheck: addrCheck, w9Address, w9CityStateZip, allFields: storedAllFields });
+      return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, addressCheck: addrCheck, approved, w9Address, w9CityStateZip, allFields: storedAllFields });
     }
     const { status, workerSigned, declineReason, w9Address: extractedAddr, w9CityStateZip: extractedCity, raw, allFields } = await dsealGetW9Status(onb.ds_envelope_id);
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
@@ -10831,7 +10833,7 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
       db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
         .run(`工人已拒签 W-9: ${declineReason || ''}`, workerId);
     }
-    res.json({ status, workerSigned, declineReason, addressCheck, w9Address: extractedAddr, w9CityStateZip: extractedCity, allFields: allFields || [] });
+    res.json({ status, workerSigned, declineReason, addressCheck, approved: alreadyApproved, w9Address: extractedAddr, w9CityStateZip: extractedCity, allFields: allFields || [] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

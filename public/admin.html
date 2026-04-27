@@ -19261,7 +19261,7 @@ async function openW9SendModal() {
             refreshOnboardingModal();
           }
           // Show address verification result
-          if (r.addressCheck) showW9AddressCheckUI(r.addressCheck);
+          if (r.addressCheck && (r.addressCheck.match || !r.approved)) showW9AddressCheckUI(r.addressCheck);
         } else {
           updateW9DsStatusUI(w9Task.ds_status || 'sent');
         }
@@ -19497,7 +19497,7 @@ async function refreshW9Status() {
     showToast(info, 'info', 5000);
     if (r.status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
     // Show address verification result
-    if (r.addressCheck) showW9AddressCheckUI(r.addressCheck);
+    if (r.addressCheck && (r.addressCheck.match || !r.approved)) showW9AddressCheckUI(r.addressCheck);
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
