@@ -12793,8 +12793,11 @@ async function saveEmployee() {
   if (!id && !data.dob) return alert('请填写出生日期（用于工时确认页身份验证）');
   const zipErr = validateZip(data.zip);
   if (zipErr) return alert(zipErr);
-  const ssn = document.getElementById('eSSN').value.replace(/\D/g,'');
-  if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
+  const ssnField = document.getElementById('eSSN');
+  if (ssnField.dataset.ssnMasked !== '1') {
+    const ssn = ssnField.value.replace(/\D/g,'');
+    if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
+  }
   if (data.address || data.city || data.zip) {
     const addrResult = await validateAddress({ street: data.address, street2: data.street2, city: data.city, state: data.state, zip: data.zip });
     if (!addrResult.proceed) return;
