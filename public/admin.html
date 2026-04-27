@@ -11894,7 +11894,7 @@ function renderEmployees(list) {
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
     <td style="white-space:nowrap">
-      ${e.onboarded && jobs.length
+      ${e.status === 'active' || (e.onboarded && jobs.length)
         ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(empFullName)}")'>🎉 已入职</button>`
         : e.onboarded
         ? `<button class="btn btn-sm" style="background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(empFullName)}")'>✅ 可入职</button>`
