@@ -15644,6 +15644,8 @@ async function refreshOnboardingModal() {
     document.getElementById('onboardingTaskList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:#dc2626">加载失败，请刷新页面重试。<br><span style="font-size:.78rem;color:var(--gray-400)">' + e.message + '</span></div>';
     return;
   }
+  // Refresh employee list so the list-row onboarding button reflects the latest onboarded flag
+  if (typeof loadEmployees === 'function') { loadEmployees().catch(() => {}); }
   if (!Array.isArray(rows)) rows = [];
   const w = rows.find(r => r.id === _onboardingWorkerId);
   _onboardingDispatchReady = !!(w && w.dispatch_ready);
