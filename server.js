@@ -10748,6 +10748,7 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
       .run(status, workerSigned, workerId);
     let addressCheck = null;
+    let alreadyApproved = false;
     if (status === 'completed') {
       // Clear stale form_data that has no address so re-extraction can work
       try {
@@ -10820,7 +10821,7 @@ app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, re
       const addrCheck = verifyW9Address(workerId);
       addressCheck = addrCheck;
       const curW9 = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
-      const alreadyApproved = curW9 && curW9.status === 'completed';
+      alreadyApproved = !!(curW9 && curW9.status === 'completed');
       if (addrCheck.match) {
         db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
           .run(addrCheck.note, workerId);
