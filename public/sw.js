@@ -1,4 +1,4 @@
-// Prime Anchor Point SMS — Service Worker
+// Prime Anchor Workforce SMS — Service Worker
 const CACHE_NAME = 'pa-sms-v1';
 const APP_SHELL = [
   '/sms-inbox',

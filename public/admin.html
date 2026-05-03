@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prime Anchor Point — 管理后台</title>
+<title>Prime Anchor Workforce — 管理后台</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -376,8 +376,8 @@ tr:hover td{background:var(--sky-light)}
 <!-- LOGIN -->
 <div class="login-wrap" id="loginWrap">
 <div class="login-box">
-  <img src="/logo.svg" alt="Prime Anchor Point" class="logo">
-  <h1>Prime Anchor Point</h1>
+  <img src="/logo.svg" alt="Prime Anchor Workforce" class="logo">
+  <h1>Prime Anchor Workforce</h1>
   <p id="loginSubtitle">管理后台</p>
   <input type="text" id="userInput" placeholder="用户名" autocomplete="username">
   <div class="pass-wrap">
@@ -2340,12 +2340,12 @@ tr:hover td{background:var(--sky-light)}
     <div style="display:flex;flex-direction:column;gap:.9rem;margin-bottom:1.2rem">
       <div>
         <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem">公司法定名称 (Legal Name) <span style="color:#ef4444">*</span></label>
-        <input id="companyLegalNameInput" type="text" placeholder="Prime Anchor Point LLC" style="width:100%;border:1.5px solid #cbd5e1;border-radius:7px;padding:.55rem .75rem;font-size:.9rem">
+        <input id="companyLegalNameInput" type="text" placeholder="Prime Anchor Workforce LLC" style="width:100%;border:1.5px solid #cbd5e1;border-radius:7px;padding:.55rem .75rem;font-size:.9rem">
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.25rem">用于税务表格（W-9、W-4 等）及付款授权表</div>
       </div>
       <div>
         <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem">公司签署名称 (Signer Name)</label>
-        <input id="companySignerNameInput" type="text" placeholder="Prime Anchor Point LLC" style="width:100%;border:1.5px solid #cbd5e1;border-radius:7px;padding:.55rem .75rem;font-size:.9rem">
+        <input id="companySignerNameInput" type="text" placeholder="Prime Anchor Workforce LLC" style="width:100%;border:1.5px solid #cbd5e1;border-radius:7px;padding:.55rem .75rem;font-size:.9rem">
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.25rem">用于劳务合同签署方名称（通常与法定名称相同）</div>
       </div>
     </div>
@@ -6101,7 +6101,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <!-- Print header (hidden on screen) -->
   <div id="tsPrintHeader" style="display:none;margin-bottom:1.5rem">
-    <h2 style="text-align:center;color:#92400e;margin-bottom:.5rem">Prime Anchor Point — Employee Timesheet</h2>
+    <h2 style="text-align:center;color:#92400e;margin-bottom:.5rem">Prime Anchor Workforce — Employee Timesheet</h2>
     <div style="display:flex;justify-content:space-between;font-size:.9rem;border-bottom:2px solid #92400e;padding-bottom:.5rem;margin-bottom:.5rem">
       <div><strong>Employee:</strong> <span id="tsPrintName"></span></div>
       <div><strong>ID:</strong> <span id="tsPrintId"></span></div>
@@ -8459,7 +8459,7 @@ function shareJobPlatform(platform) {
   const link = document.getElementById('jobShareLink').value;
   const title = document.getElementById('jobShareTitle').textContent;
   const url = encodeURIComponent(link);
-  const text = encodeURIComponent('正在招聘：' + title + ' — Prime Anchor Point');
+  const text = encodeURIComponent('正在招聘：' + title + ' — Prime Anchor Workforce');
   const platforms = {
     wa:     'https://wa.me/?text=' + text + '%20' + url,
     fb:     'https://www.facebook.com/sharer/sharer.php?u=' + url,
@@ -11219,7 +11219,7 @@ let _contractEditorPid = null;
 
 const DEFAULT_AGREEMENT_TEMPLATE = (partnerName, today) => `PARTNERSHIP AGREEMENT
 
-This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between Prime Anchor Point LLC, a staffing and workforce solutions company ("Service Provider"), and ${partnerName} ("Partner").
+This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between Prime Anchor Workforce LLC, a staffing and workforce solutions company ("Service Provider"), and ${partnerName} ("Partner").
 
 1. SERVICES
 Service Provider agrees to provide staffing, recruitment, and workforce management services as mutually agreed upon by the parties in writing. Specific scope, timelines, and deliverables for each engagement shall be documented in separate statements of work.
@@ -11244,7 +11244,7 @@ This Agreement constitutes the entire understanding between the parties.
 
 SIGNATURES
 
-Prime Anchor Point LLC (Service Provider)
+Prime Anchor Workforce LLC (Service Provider)
 Authorized Signature: /sig1/
 Date: /date1/
 
@@ -14375,14 +14375,14 @@ function openTsEmail() {
   const emp = _tsLinkEmp;
   const subject = encodeURIComponent('请确认您的工时记录 / Please confirm your timesheet');
   const body = encodeURIComponent(
-    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchor Point`
+    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchor Workforce`
   );
   window.open(`mailto:${emp ? emp.email : ''}?subject=${subject}&body=${body}`);
 }
 function openTsSms() {
   const url = document.getElementById('tsLinkUrl').textContent;
   const emp = _tsLinkEmp;
-  const msg = encodeURIComponent(`[Prime Anchor Point] 请确认您的工时记录: ${url}`);
+  const msg = encodeURIComponent(`[Prime Anchor Workforce] 请确认您的工时记录: ${url}`);
   window.open(`sms:${emp ? emp.phone : ''}?body=${msg}`);
 }
 
@@ -27690,7 +27690,7 @@ function showInvoicePreview(inv) {
           <div style="font-size:.85rem;color:#64748b">服务周期：${fmtDate(inv.period_start)} — ${fmtDate(inv.period_end)}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:1.05rem;font-weight:700;color:#0f172a">Prime Anchor Point</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#0f172a">Prime Anchor Workforce</div>
         </div>
       </div>
       <!-- Bill To -->

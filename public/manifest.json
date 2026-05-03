@@ -1,7 +1,7 @@
 {
-  "name": "Prime Anchor Point SMS",
+  "name": "Prime Anchor Workforce SMS",
   "short_name": "PA SMS",
-  "description": "SMS Inbox for Prime Anchor Point internal team",
+  "description": "SMS Inbox for Prime Anchor Workforce internal team",
   "start_url": "/sms-inbox",
   "scope": "/",
   "display": "standalone",
