@@ -21592,6 +21592,423 @@ app.post('/api/sms/test-notify', requireAdmin, requireRole('admin'), async (req,
 
 
 
+// ============================================================
+// PRIME ANCHOR WORKFORCE COMMUNICATIONS INBOX (CTM System)
+// ============================================================
+
+// --- Database Tables ---
+try {
+  db.prepare(`CREATE TABLE IF NOT EXISTS phone_contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_number TEXT NOT NULL UNIQUE,
+    display_name TEXT DEFAULT '',
+    company_name TEXT DEFAULT '',
+    language_preference TEXT DEFAULT 'unknown',
+    source TEXT DEFAULT 'inbound_call',
+    sms_opted_out INTEGER DEFAULT 0,
+    is_blocked INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    last_contacted_at TEXT
+  )`).run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS phone_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    call_sid TEXT NOT NULL UNIQUE,
+    from_number TEXT NOT NULL,
+    to_number TEXT DEFAULT '',
+    call_status TEXT DEFAULT '',
+    direction TEXT DEFAULT 'inbound',
+    caller_name TEXT DEFAULT '',
+    sms_sent INTEGER DEFAULT 0,
+    sms_message_sid TEXT,
+    sms_error_code TEXT,
+    sms_error_message TEXT,
+    recording_url TEXT,
+    transcription_text TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS comm_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_sid TEXT UNIQUE,
+    from_number TEXT NOT NULL,
+    to_number TEXT NOT NULL,
+    body TEXT DEFAULT '',
+    direction TEXT DEFAULT 'inbound',
+    status TEXT DEFAULT 'received',
+    error_code TEXT,
+    error_message TEXT,
+    related_call_sid TEXT,
+    thread_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS comm_threads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_phone TEXT NOT NULL,
+    customer_name TEXT DEFAULT '',
+    company_name TEXT DEFAULT '',
+    status TEXT DEFAULT 'open',
+    assigned_to TEXT DEFAULT '',
+    unread_count INTEGER DEFAULT 0,
+    last_message_preview TEXT DEFAULT '',
+    last_message_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS comm_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    body TEXT DEFAULT '',
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+  )`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_comm_threads_phone ON comm_threads(customer_phone)`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_comm_threads_status ON comm_threads(status)`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_comm_events_thread ON comm_events(thread_id)`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_comm_messages_thread ON comm_messages(thread_id)`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_phone_calls_from ON phone_calls(from_number)`).run();
+  console.log('[CTM] Tables and indexes ready');
+} catch(e) { console.error('[CTM] Table creation error:', e.message); }
+
+// --- CTM Helper Functions ---
+const CTM_RATE_LIMIT_MINUTES = 10;
+const CTM_RATE_LIMIT_24H = 5;
+const CTM_COMPANY = process.env.COMPANY_DISPLAY_NAME || 'Prime Anchor Workforce';
+const CTM_ADMIN_NOTIFY_PHONE = process.env.ADMIN_NOTIFY_PHONE || '';
+
+function ctmUpsertContact(phoneNumber, { source = 'inbound_call', callerName = '' } = {}) {
+  const existing = db.prepare('SELECT * FROM phone_contacts WHERE phone_number=?').get(phoneNumber);
+  if (existing) {
+    db.prepare("UPDATE phone_contacts SET last_contacted_at=datetime('now'), updated_at=datetime('now') WHERE phone_number=?").run(phoneNumber);
+    return db.prepare('SELECT * FROM phone_contacts WHERE phone_number=?').get(phoneNumber);
+  }
+  db.prepare(`INSERT INTO phone_contacts (phone_number, display_name, source, last_contacted_at) VALUES (?,?,?,datetime('now'))`)
+    .run(phoneNumber, callerName || '', source);
+  return db.prepare('SELECT * FROM phone_contacts WHERE phone_number=?').get(phoneNumber);
+}
+
+function ctmFindOrCreateThread(customerPhone) {
+  const existing = db.prepare("SELECT * FROM comm_threads WHERE customer_phone=? AND status != 'blocked' ORDER BY created_at DESC LIMIT 1").get(customerPhone);
+  if (existing) return existing;
+  db.prepare(`INSERT INTO comm_threads (customer_phone, status, last_message_at, created_at, updated_at) VALUES (?,?,datetime('now'),datetime('now'),datetime('now'))`)
+    .run(customerPhone, 'open');
+  return db.prepare('SELECT * FROM comm_threads WHERE customer_phone=? ORDER BY id DESC LIMIT 1').get(customerPhone);
+}
+
+function ctmCheckRateLimit(phoneNumber) {
+  const tenMinAgo = new Date(Date.now() - CTM_RATE_LIMIT_MINUTES * 60 * 1000).toISOString();
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const recentSent = db.prepare("SELECT COUNT(*) as cnt FROM comm_messages WHERE to_number=? AND direction='auto_outbound' AND created_at > ?").get(phoneNumber, tenMinAgo);
+  const dailySent = db.prepare("SELECT COUNT(*) as cnt FROM comm_messages WHERE to_number=? AND direction='auto_outbound' AND created_at > ?").get(phoneNumber, dayAgo);
+  if (recentSent.cnt >= 1) return { allowed: false, reason: '10min_limit' };
+  if (dailySent.cnt >= CTM_RATE_LIMIT_24H) return { allowed: false, reason: '24h_limit' };
+  return { allowed: true };
+}
+
+function ctmAddEvent(threadId, eventType, body = '', metadata = {}) {
+  db.prepare(`INSERT INTO comm_events (thread_id, event_type, body, metadata) VALUES (?,?,?,?)`)
+    .run(threadId, eventType, body, JSON.stringify(metadata));
+}
+
+async function ctmSendSms({ to, body, relatedCallSid = null, threadId = null, direction = 'outbound' }) {
+  if (!twilioClient) return { ok: false, error: 'Twilio not configured' };
+  const formatted = formatPhoneE164(to);
+  if (!formatted) return { ok: false, error: 'Invalid phone number' };
+  try {
+    const opts = { to: formatted, body };
+    if (TWILIO_MESSAGING_SID) opts.messagingServiceSid = TWILIO_MESSAGING_SID;
+    else opts.from = TWILIO_FROM;
+    const msg = await twilioClient.messages.create(opts);
+    db.prepare(`INSERT INTO comm_messages (message_sid, from_number, to_number, body, direction, status, related_call_sid, thread_id) VALUES (?,?,?,?,?,?,?,?)`)
+      .run(msg.sid, TWILIO_FROM, formatted, body, direction, msg.status || 'queued', relatedCallSid, threadId);
+    return { ok: true, messageSid: msg.sid, status: msg.status };
+  } catch(e) {
+    db.prepare(`INSERT INTO comm_messages (message_sid, from_number, to_number, body, direction, status, error_code, error_message, related_call_sid, thread_id) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(null, TWILIO_FROM, formatted, body, direction, 'failed', e.code ? String(e.code) : null, e.message, relatedCallSid, threadId);
+    console.error('[CTM sendSms] Error:', e.message);
+    return { ok: false, error: e.message, errorCode: e.code };
+  }
+}
+
+// --- Voice Webhook ---
+app.post('/api/twilio/voice/incoming', express.urlencoded({ extended: false }), validateTwilioWebhook, async (req, res) => {
+  res.type('text/xml');
+  try {
+    const { From, To, CallSid, CallStatus, Direction, CallerName } = req.body;
+
+    const BLOCKED_TWIML = `<Response><Say voice="alice" language="en-US">We are unable to take your call. Goodbye.</Say><Hangup/></Response>`;
+    const VOICE_TWIML = `<Response>
+  <Say voice="alice" language="en-US">Thank you for calling ${CTM_COMPANY}. We are unable to take phone calls at this moment. We just sent you a text message. Please reply to that message with your name, company, and what you need help with. Thank you.</Say>
+  <Pause length="1"/>
+  <Say voice="Polly.Mia" language="es-MX">Gracias por llamar a ${CTM_COMPANY}. En este momento no podemos contestar llamadas. Le acabamos de enviar un mensaje de texto. Por favor responda a ese mensaje con su nombre, compañía y en qué necesita ayuda. Gracias.</Say>
+  <Hangup/>
+</Response>`;
+
+    if (!From || ['anonymous', 'restricted', 'unknown', '+266696687'].includes((From || '').toLowerCase())) {
+      if (CallSid) {
+        try { db.prepare(`INSERT OR IGNORE INTO phone_calls (call_sid, from_number, to_number, call_status, direction, caller_name) VALUES (?,?,?,?,?,?)`)
+          .run(CallSid, From || 'unknown', To || '', CallStatus || '', Direction || 'inbound', CallerName || ''); } catch(e) {}
+      }
+      return res.send(VOICE_TWIML);
+    }
+
+    const customerPhone = formatPhoneE164(From);
+    const contact = ctmUpsertContact(customerPhone, { source: 'inbound_call', callerName: CallerName || '' });
+
+    try {
+      db.prepare(`INSERT OR IGNORE INTO phone_calls (call_sid, from_number, to_number, call_status, direction, caller_name) VALUES (?,?,?,?,?,?)`)
+        .run(CallSid || '', customerPhone, To || '', CallStatus || '', Direction || 'inbound', CallerName || '');
+    } catch(e) { console.error('[CTM Voice] Save call error:', e.message); }
+
+    if (contact.is_blocked) {
+      ctmAddEvent(
+        ctmFindOrCreateThread(customerPhone).id,
+        'call_inbound', '', { call_sid: CallSid, blocked: true }
+      );
+      return res.send(BLOCKED_TWIML);
+    }
+
+    const thread = ctmFindOrCreateThread(customerPhone);
+    ctmAddEvent(thread.id, 'call_inbound', '', { call_sid: CallSid, from: customerPhone, to: To });
+
+    if (contact.sms_opted_out) {
+      return res.send(VOICE_TWIML);
+    }
+
+    const rateCheck = ctmCheckRateLimit(customerPhone);
+    if (!rateCheck.allowed) {
+      ctmAddEvent(thread.id, 'system', 'Auto SMS rate limited', { reason: rateCheck.reason });
+      return res.send(VOICE_TWIML);
+    }
+
+    const autoSmsBody = `Hi, this is ${CTM_COMPANY}. We are unable to take phone calls at this moment. Please reply to this text with your name, company, and what you need help with. We will respond by text as soon as possible. Reply STOP to opt out.\n\nHola, somos ${CTM_COMPANY}. En este momento no podemos contestar llamadas. Por favor responda a este mensaje con su nombre, compañía y en qué necesita ayuda. Le responderemos por texto lo antes posible. Responda STOP para cancelar.`;
+
+    setImmediate(async () => {
+      try {
+        const smsResult = await ctmSendSms({ to: customerPhone, body: autoSmsBody, relatedCallSid: CallSid, threadId: thread.id, direction: 'auto_outbound' });
+        if (smsResult.ok) {
+          ctmAddEvent(thread.id, 'auto_sms_sent', autoSmsBody, { message_sid: smsResult.messageSid, call_sid: CallSid });
+          db.prepare(`UPDATE phone_calls SET sms_sent=1, sms_message_sid=? WHERE call_sid=?`).run(smsResult.messageSid, CallSid || '');
+        } else {
+          ctmAddEvent(thread.id, 'system', 'Auto SMS failed', { error: smsResult.error, error_code: smsResult.errorCode, call_sid: CallSid });
+          db.prepare(`UPDATE phone_calls SET sms_error_code=?, sms_error_message=? WHERE call_sid=?`).run(String(smsResult.errorCode || ''), smsResult.error || '', CallSid || '');
+        }
+      } catch(e) { console.error('[CTM Voice] Async SMS error:', e.message); }
+    });
+
+    db.prepare(`UPDATE comm_threads SET last_message_at=datetime('now'), updated_at=datetime('now'), status='open' WHERE id=?`).run(thread.id);
+
+    return res.send(VOICE_TWIML);
+  } catch(e) {
+    console.error('[CTM Voice] Error:', e.message);
+    return res.send(`<Response><Say voice="alice" language="en-US">Thank you for calling ${CTM_COMPANY}. Please try again later.</Say><Hangup/></Response>`);
+  }
+});
+
+// --- Voice Status Callback ---
+app.post('/api/twilio/voice/status', express.urlencoded({ extended: false }), validateTwilioWebhook, (req, res) => {
+  try {
+    const { CallSid, CallStatus } = req.body;
+    if (CallSid && CallStatus) {
+      db.prepare(`UPDATE phone_calls SET call_status=? WHERE call_sid=?`).run(CallStatus, CallSid);
+    }
+  } catch(e) { console.error('[CTM Voice Status]', e.message); }
+  res.type('text/xml').send('<Response/>');
+});
+
+// --- SMS Inbound Webhook ---
+app.post('/api/twilio/sms/incoming', express.urlencoded({ extended: false }), validateTwilioWebhook, async (req, res) => {
+  res.type('text/xml');
+  try {
+    const { From, To, Body, MessageSid } = req.body;
+    if (!From) return res.send('<Response/>');
+
+    const customerPhone = formatPhoneE164(From);
+    const bodyTrimmed = (Body || '').trim();
+    const bodyUpper = bodyTrimmed.toUpperCase();
+
+    if (customerPhone === formatPhoneE164(TWILIO_FROM || '') ||
+        (CTM_ADMIN_NOTIFY_PHONE && customerPhone === formatPhoneE164(CTM_ADMIN_NOTIFY_PHONE))) {
+      return res.send('<Response/>');
+    }
+
+    const contact = ctmUpsertContact(customerPhone, { source: 'inbound_sms' });
+
+    if (bodyUpper === 'STOP' || bodyUpper === 'STOPALL' || bodyUpper === 'UNSUBSCRIBE' || bodyUpper === 'CANCEL' || bodyUpper === 'END' || bodyUpper === 'QUIT') {
+      db.prepare("UPDATE phone_contacts SET sms_opted_out=1, updated_at=datetime('now') WHERE phone_number=?").run(customerPhone);
+      try { db.prepare(`INSERT OR IGNORE INTO comm_messages (message_sid, from_number, to_number, body, direction, status) VALUES (?,?,?,?,?,?)`)
+        .run(MessageSid || null, customerPhone, To || '', bodyTrimmed, 'inbound', 'received'); } catch(e) {}
+      const thread = ctmFindOrCreateThread(customerPhone);
+      ctmAddEvent(thread.id, 'sms_inbound', bodyTrimmed, { message_sid: MessageSid, opt_out: true });
+      db.prepare(`UPDATE comm_threads SET last_message_at=datetime('now'), updated_at=datetime('now'), last_message_preview=? WHERE id=?`).run(bodyTrimmed.substring(0, 120), thread.id);
+      return res.send('<Response/>');
+    }
+
+    if (bodyUpper === 'START' || bodyUpper === 'YES' || bodyUpper === 'UNSTOP') {
+      db.prepare("UPDATE phone_contacts SET sms_opted_out=0, updated_at=datetime('now') WHERE phone_number=?").run(customerPhone);
+      try { db.prepare(`INSERT OR IGNORE INTO comm_messages (message_sid, from_number, to_number, body, direction, status) VALUES (?,?,?,?,?,?)`)
+        .run(MessageSid || null, customerPhone, To || '', bodyTrimmed, 'inbound', 'received'); } catch(e) {}
+      const thread = ctmFindOrCreateThread(customerPhone);
+      ctmAddEvent(thread.id, 'sms_inbound', bodyTrimmed, { message_sid: MessageSid, opt_in: true });
+      db.prepare(`UPDATE comm_threads SET last_message_at=datetime('now'), updated_at=datetime('now'), last_message_preview=? WHERE id=?`).run(bodyTrimmed.substring(0, 120), thread.id);
+      return res.send('<Response/>');
+    }
+
+    let msgId = null;
+    try {
+      const r = db.prepare(`INSERT OR IGNORE INTO comm_messages (message_sid, from_number, to_number, body, direction, status) VALUES (?,?,?,?,?,?)`)
+        .run(MessageSid || null, customerPhone, To || '', bodyTrimmed, 'inbound', 'received');
+      msgId = r.lastInsertRowid;
+    } catch(e) { console.error('[CTM SMS] Save msg error:', e.message); }
+
+    const thread = ctmFindOrCreateThread(customerPhone);
+
+    if (msgId) db.prepare(`UPDATE comm_messages SET thread_id=? WHERE id=?`).run(thread.id, msgId);
+
+    ctmAddEvent(thread.id, 'sms_inbound', bodyTrimmed, { message_sid: MessageSid, from: customerPhone });
+    db.prepare(`UPDATE comm_threads SET last_message_at=datetime('now'), updated_at=datetime('now'), last_message_preview=?, unread_count=unread_count+1, status='open' WHERE id=?`)
+      .run(bodyTrimmed.substring(0, 120), thread.id);
+
+    if (bodyUpper === 'HELP') {
+      const helpBody = `${CTM_COMPANY}: Please reply with your name, company, and what you need help with. We will respond by text as soon as possible. Reply STOP to opt out.\n\n${CTM_COMPANY}: Por favor responda con su nombre, compañía y en qué necesita ayuda. Le responderemos por texto lo antes posible. Responda STOP para cancelar.`;
+      setImmediate(async () => {
+        try {
+          const r = await ctmSendSms({ to: customerPhone, body: helpBody, threadId: thread.id, direction: 'system' });
+          ctmAddEvent(thread.id, 'sms_outbound', helpBody, { auto: true, type: 'help_reply', message_sid: r.messageSid });
+        } catch(e) { console.error('[CTM HELP]', e.message); }
+      });
+      return res.send('<Response/>');
+    }
+
+    if (CTM_ADMIN_NOTIFY_PHONE && twilioClient) {
+      setImmediate(async () => {
+        try {
+          const baseUrl = process.env.PUBLIC_BASE_URL || BASE_URL || '';
+          const link = baseUrl ? `${baseUrl}/communications?phone=${encodeURIComponent(customerPhone)}` : '';
+          const notifyBody = `${CTM_COMPANY} - New customer message\n\nFrom: ${customerPhone}\nMessage:\n${bodyTrimmed.substring(0, 160)}${link ? `\n\nOpen: ${link}` : ''}`;
+          await ctmSendSms({ to: CTM_ADMIN_NOTIFY_PHONE, body: notifyBody, direction: 'system' });
+        } catch(e) { console.error('[CTM Admin Notify]', e.message); }
+      });
+    }
+
+    return res.send('<Response/>');
+  } catch(e) {
+    console.error('[CTM SMS Inbound] Error:', e.message);
+    return res.send('<Response/>');
+  }
+});
+
+// --- Admin API Routes ---
+
+// GET /api/admin/communications/threads
+app.get('/api/admin/communications/threads', requireAdmin, (req, res) => {
+  try {
+    const { status, search, unread, page = 1, limit = 30 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let where = [];
+    let params = [];
+    if (status) { where.push('t.status=?'); params.push(status); }
+    if (search) { where.push('(t.customer_phone LIKE ? OR t.customer_name LIKE ? OR t.company_name LIKE ?)'); params.push(`%${search}%`, `%${search}%`, `%${search}%`); }
+    if (unread === '1') { where.push('t.unread_count > 0'); }
+    const whereStr = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const threads = db.prepare(`SELECT t.*, pc.display_name as contact_name, pc.company_name as contact_company, pc.sms_opted_out, pc.is_blocked
+      FROM comm_threads t LEFT JOIN phone_contacts pc ON pc.phone_number = t.customer_phone
+      ${whereStr} ORDER BY t.last_message_at DESC LIMIT ? OFFSET ?`).all(...params, parseInt(limit), offset);
+    const total = db.prepare(`SELECT COUNT(*) as cnt FROM comm_threads t ${whereStr}`).get(...params);
+    res.json({ threads, total: total.cnt, page: parseInt(page), limit: parseInt(limit) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/communications/threads/:id
+app.get('/api/admin/communications/threads/:id', requireAdmin, (req, res) => {
+  try {
+    const thread = db.prepare(`SELECT t.*, pc.display_name as contact_name, pc.company_name as contact_company, pc.sms_opted_out, pc.is_blocked, pc.language_preference, pc.source as contact_source
+      FROM comm_threads t LEFT JOIN phone_contacts pc ON pc.phone_number = t.customer_phone WHERE t.id=?`).get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    const events = db.prepare('SELECT * FROM comm_events WHERE thread_id=? ORDER BY created_at ASC').all(req.params.id);
+    const messages = db.prepare('SELECT * FROM comm_messages WHERE thread_id=? ORDER BY created_at ASC').all(req.params.id);
+    const calls = db.prepare('SELECT * FROM phone_calls WHERE from_number=? ORDER BY created_at DESC LIMIT 20').all(thread.customer_phone);
+    db.prepare('UPDATE comm_threads SET unread_count=0 WHERE id=?').run(req.params.id);
+    res.json({ thread, events, messages, calls });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/communications/threads/:id/reply
+app.post('/api/admin/communications/threads/:id/reply', requireAdmin, async (req, res) => {
+  try {
+    const { body } = req.body;
+    if (!body || !body.trim()) return res.status(400).json({ error: 'Message body required' });
+    const thread = db.prepare('SELECT * FROM comm_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    const contact = db.prepare('SELECT * FROM phone_contacts WHERE phone_number=?').get(thread.customer_phone);
+    if (contact && contact.sms_opted_out) return res.status(400).json({ error: 'Customer has opted out of SMS' });
+    if (contact && contact.is_blocked) return res.status(400).json({ error: 'Customer is blocked' });
+    const result = await ctmSendSms({ to: thread.customer_phone, body: body.trim(), threadId: thread.id, direction: 'admin_outbound' });
+    if (!result.ok) return res.status(500).json({ error: result.error });
+    ctmAddEvent(thread.id, 'admin_reply', body.trim(), { message_sid: result.messageSid, admin: req.session?.adminUser });
+    db.prepare(`UPDATE comm_threads SET last_message_at=datetime('now'), updated_at=datetime('now'), last_message_preview=? WHERE id=?`).run(body.trim().substring(0, 120), thread.id);
+    res.json({ ok: true, messageSid: result.messageSid });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/communications/threads/:id/note
+app.post('/api/admin/communications/threads/:id/note', requireAdmin, (req, res) => {
+  try {
+    const { body } = req.body;
+    if (!body || !body.trim()) return res.status(400).json({ error: 'Note body required' });
+    const thread = db.prepare('SELECT id FROM comm_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    ctmAddEvent(thread.id, 'note', body.trim(), { admin: req.session?.adminUser });
+    db.prepare(`UPDATE comm_threads SET updated_at=datetime('now') WHERE id=?`).run(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/admin/communications/threads/:id/status
+app.patch('/api/admin/communications/threads/:id/status', requireAdmin, (req, res) => {
+  try {
+    const { status } = req.body;
+    const valid = ['open', 'pending', 'closed', 'spam', 'blocked'];
+    if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const thread = db.prepare('SELECT id FROM comm_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    db.prepare(`UPDATE comm_threads SET status=?, updated_at=datetime('now') WHERE id=?`).run(status, req.params.id);
+    ctmAddEvent(thread.id, 'status_change', status, { admin: req.session?.adminUser });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/communications/threads/:id/block
+app.post('/api/admin/communications/threads/:id/block', requireAdmin, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM comm_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    db.prepare("UPDATE phone_contacts SET is_blocked=1, updated_at=datetime('now') WHERE phone_number=?").run(thread.customer_phone);
+    db.prepare(`UPDATE comm_threads SET status='blocked', updated_at=datetime('now') WHERE id=?`).run(req.params.id);
+    ctmAddEvent(thread.id, 'blocked', '', { admin: req.session?.adminUser });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/communications/threads/:id/unblock
+app.post('/api/admin/communications/threads/:id/unblock', requireAdmin, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT * FROM comm_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    db.prepare("UPDATE phone_contacts SET is_blocked=0, updated_at=datetime('now') WHERE phone_number=?").run(thread.customer_phone);
+    db.prepare(`UPDATE comm_threads SET status='open', updated_at=datetime('now') WHERE id=?`).run(req.params.id);
+    ctmAddEvent(thread.id, 'status_change', 'unblocked', { admin: req.session?.adminUser });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Serve the Communications Inbox page
+app.get('/communications', requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 'public', 'communications.html')));
+
+// ============================================================
+// END COMMUNICATIONS INBOX
+// ============================================================
+
 app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
