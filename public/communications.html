@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prime Anchor Workforce — Communications Inbox</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;
+  --white:#fff;--off-white:#fffbeb;--gray-100:#f9fafb;--gray-200:#e2e5ea;
+  --gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;
+  --red:#E63946;--green:#2D9D78;--yellow:#f59e0b;--radius:8px;
+  --navy:#1e3a5f;--navy-dark:#152c47;--navy-light:#2d5282;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gray-800);height:100vh;overflow:hidden}
+
+/* Auth check overlay */
+#authCheck{position:fixed;inset:0;background:var(--off-white);display:flex;align-items:center;justify-content:center;z-index:9999}
+#authCheck p{color:var(--gray-400);font-size:.95rem}
+
+/* Layout */
+.app{display:none;height:100vh;flex-direction:column}
+.app.show{display:flex}
+
+/* Header */
+.header{background:linear-gradient(135deg,#1e3a5f 0%,#2d5282 100%);color:#fff;padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.header h1{font-size:1.1rem;font-weight:700;letter-spacing:.02em}
+.header .header-sub{font-size:.75rem;opacity:.7;margin-top:1px}
+.header-right{display:flex;align-items:center;gap:.75rem}
+.header-right a{color:rgba(255,255,255,.75);font-size:.8rem;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.2);transition:all .2s}
+.header-right a:hover{color:#fff;border-color:rgba(255,255,255,.5)}
+
+/* Main content area */
+.content{display:flex;flex:1;overflow:hidden}
+
+/* Thread List Panel */
+.thread-panel{width:360px;flex-shrink:0;background:#fff;border-right:1.5px solid var(--gray-200);display:flex;flex-direction:column;overflow:hidden}
+.thread-panel-header{padding:.85rem 1rem;border-bottom:1px solid var(--gray-200);flex-shrink:0}
+.thread-panel-header h2{font-size:.9rem;font-weight:700;color:var(--navy);margin-bottom:.65rem}
+
+/* Filter buttons */
+.filter-tabs{display:flex;gap:.25rem;flex-wrap:wrap;margin-bottom:.65rem}
+.filter-tab{padding:4px 10px;border-radius:20px;border:1px solid var(--gray-200);background:transparent;color:var(--gray-600);font-size:.72rem;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit}
+.filter-tab:hover{border-color:var(--sky);color:var(--sky)}
+.filter-tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+
+/* Search */
+.search-row{display:flex;gap:.4rem}
+.search-row input{flex:1;padding:7px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.82rem;outline:none;font-family:inherit;background:var(--gray-100)}
+.search-row input:focus{border-color:var(--sky);background:#fff}
+.search-row button{padding:7px 12px;border-radius:var(--radius);border:none;background:var(--sky);color:#fff;font-size:.78rem;cursor:pointer;font-weight:600}
+
+/* Thread list */
+.thread-list{flex:1;overflow-y:auto}
+.thread-item{padding:.85rem 1rem;border-bottom:1px solid var(--gray-200);cursor:pointer;transition:background .12s;display:flex;flex-direction:column;gap:.2rem;position:relative}
+.thread-item:hover{background:var(--sky-light)}
+.thread-item.active{background:#e0eeff;border-left:3px solid var(--navy)}
+.thread-item.active{padding-left:calc(1rem - 3px)}
+.thread-item-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.thread-phone{font-size:.85rem;font-weight:700;color:var(--navy)}
+.thread-time{font-size:.7rem;color:var(--gray-400);flex-shrink:0}
+.thread-name{font-size:.78rem;color:var(--gray-600);font-style:italic}
+.thread-preview{font-size:.78rem;color:var(--gray-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+.thread-meta{display:flex;align-items:center;gap:.4rem;margin-top:.1rem}
+.status-badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.65rem;font-weight:700;text-transform:uppercase}
+.status-open{background:#D1FAE5;color:#065F46}
+.status-pending{background:#FEF9C3;color:#92400E}
+.status-closed{background:#F3F4F6;color:#6B7280}
+.status-blocked{background:#FEE2E2;color:#991B1B}
+.status-spam{background:#FFF3E0;color:#b45309}
+.unread-badge{background:#1e3a5f;color:#fff;border-radius:50%;width:18px;height:18px;font-size:.65rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* Thread empty state */
+.thread-empty{padding:3rem 1rem;text-align:center;color:var(--gray-400);font-size:.85rem}
+
+/* Detail panel */
+.detail-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--off-white)}
+.detail-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:.95rem;flex-direction:column;gap:.5rem}
+.detail-empty svg{opacity:.3}
+
+/* Thread detail header */
+.detail-header{background:#fff;padding:.85rem 1.25rem;border-bottom:1px solid var(--gray-200);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.detail-header-left h3{font-size:1rem;font-weight:700;color:var(--navy)}
+.detail-header-left .dh-meta{font-size:.78rem;color:var(--gray-500);margin-top:.15rem}
+.detail-actions{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+
+/* Buttons */
+.btn{padding:7px 14px;border-radius:var(--radius);border:none;font-weight:600;cursor:pointer;font-size:.78rem;transition:all .18s;font-family:inherit}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:var(--navy);color:#fff}.btn-primary:hover:not(:disabled){background:var(--navy-dark)}
+.btn-yellow{background:#f59e0b;color:#fff}.btn-yellow:hover:not(:disabled){background:#d97706}
+.btn-pending{background:#fef3c7;color:#92400e;border:1px solid #fde68a}.btn-pending:hover{background:#fde68a}
+.btn-closed{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}.btn-closed:hover{background:#e5e7eb;color:#374151}
+.btn-red{background:var(--red);color:#fff}.btn-red:hover:not(:disabled){background:#c5303c}
+.btn-green{background:var(--green);color:#fff}.btn-green:hover:not(:disabled){background:#1e7a5c}
+.btn-sm{padding:5px 10px;font-size:.72rem}
+.btn-outline{background:transparent;border:1px solid var(--gray-200);color:var(--gray-600)}.btn-outline:hover{background:var(--gray-200);color:var(--gray-800)}
+
+/* Timeline */
+.timeline{flex:1;overflow-y:auto;padding:1rem 1.25rem;display:flex;flex-direction:column;gap:.65rem}
+
+/* Event cards */
+.event-card{display:flex;gap:.65rem;max-width:680px}
+.event-card.right{flex-direction:row-reverse;margin-left:auto}
+.event-icon{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0;margin-top:.1rem}
+.event-bubble{border-radius:10px;padding:.6rem .85rem;max-width:520px;font-size:.83rem;line-height:1.55}
+.event-meta{font-size:.68rem;color:var(--gray-400);margin-top:.25rem}
+
+/* Event types */
+.ev-call_inbound .event-icon{background:#e2e8f0;color:#475569}
+.ev-call_inbound .event-bubble{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
+.ev-auto_sms_sent .event-icon{background:#dbeafe;color:#1e40af}
+.ev-auto_sms_sent .event-bubble{background:#eff6ff;color:#1e3a5f;border:1px solid #bfdbfe}
+.ev-sms_inbound .event-icon{background:#f0fdf4;color:#166534}
+.ev-sms_inbound .event-bubble{background:#fff;color:#1f2937;border:1px solid var(--gray-200);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.ev-admin_reply .event-icon{background:#1e3a5f;color:#fff}
+.ev-admin_reply .event-bubble{background:#1e3a5f;color:#fff;border:1px solid #2d5282}
+.ev-admin_reply .event-meta{color:rgba(255,255,255,.55)}
+.ev-note .event-icon{background:#fef9c3;color:#92400e}
+.ev-note .event-bubble{background:#fef9c3;color:#78350f;border:1px solid #fde68a;font-style:italic}
+.ev-status_change .event-icon{background:#f3f4f6;color:#6b7280}
+.ev-status_change .event-bubble{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;font-size:.75rem}
+.ev-blocked .event-icon{background:#fee2e2;color:#991b1b}
+.ev-blocked .event-bubble{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.ev-system .event-icon{background:#f3f4f6;color:#9ca3af}
+.ev-system .event-bubble{background:#f9fafb;color:#9ca3af;border:1px solid #e5e7eb;font-size:.75rem;font-style:italic}
+
+/* Reply area */
+.reply-area{background:#fff;border-top:1.5px solid var(--gray-200);padding:.85rem 1.25rem;flex-shrink:0}
+.reply-area textarea{width:100%;padding:.65rem .85rem;border:1px solid var(--gray-200);border-radius:var(--radius);font-family:inherit;font-size:.85rem;resize:vertical;min-height:80px;outline:none;transition:border-color .15s;color:var(--gray-800)}
+.reply-area textarea:focus{border-color:var(--navy)}
+.reply-buttons{display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap;align-items:center}
+.reply-char{margin-left:auto;font-size:.72rem;color:var(--gray-400)}
+.reply-char.warn{color:#f59e0b}
+.reply-char.over{color:var(--red)}
+
+/* Contact info sidebar — shown in detail header area */
+.contact-pills{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin-top:.3rem}
+.contact-pill{display:inline-flex;align-items:center;gap:.25rem;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:20px;padding:2px 8px;font-size:.7rem;color:var(--gray-600)}
+
+/* Loading spinner */
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--gray-200);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Toast */
+#toastContainer{position:fixed;top:1rem;right:1rem;z-index:9999;display:flex;flex-direction:column;gap:.4rem;pointer-events:none}
+.toast{display:flex;align-items:center;gap:.6rem;padding:.65rem 1rem;border-radius:10px;font-size:.85rem;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.12);pointer-events:auto;animation:toastIn .22s ease both}
+.toast-success{background:#fff;border:1.5px solid #bbf7d0;color:#166534}
+.toast-error{background:#fff;border:1.5px solid #fecaca;color:#991b1b}
+.toast-info{background:#fff;border:1.5px solid #bfdbfe;color:#1e40af}
+.toast.hide{animation:toastOut .18s ease forwards}
+@keyframes toastIn{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateY(-6px) scale(.97)}}
+
+/* Unread indicator dot */
+.live-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:.3rem;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--gray-200);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:var(--gray-400)}
+
+/* Responsive adjustments */
+@media(max-width:768px){
+  .thread-panel{width:100%;border-right:none}
+  .detail-panel{display:none}
+  .content.detail-open .thread-panel{display:none}
+  .content.detail-open .detail-panel{display:flex}
+}
+</style>
+</head>
+<body>
+
+<div id="authCheck"><p>Checking authentication...</p></div>
+
+<div class="app" id="app">
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="header h1" style="font-size:1.1rem;font-weight:700;letter-spacing:.02em">
+        <span class="live-dot"></span>Prime Anchor Workforce Communications Inbox
+      </div>
+      <div style="font-size:.72rem;opacity:.65;margin-top:2px">Call-to-Text Routing System</div>
+    </div>
+    <div class="header-right">
+      <a href="/admin">Back to Admin</a>
+      <span id="headerStatus" style="font-size:.72rem;opacity:.6"></span>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="content" id="mainContent">
+    <!-- Thread list panel -->
+    <div class="thread-panel">
+      <div class="thread-panel-header">
+        <h2>Conversations</h2>
+        <div class="filter-tabs" id="filterTabs">
+          <button class="filter-tab active" data-status="">All</button>
+          <button class="filter-tab" data-status="open">Open</button>
+          <button class="filter-tab" data-status="pending">Pending</button>
+          <button class="filter-tab" data-status="closed">Closed</button>
+          <button class="filter-tab" data-unread="1">Unread</button>
+          <button class="filter-tab" data-status="blocked">Blocked</button>
+        </div>
+        <div class="search-row">
+          <input type="text" id="searchInput" placeholder="Search phone or name..." autocomplete="off">
+          <button onclick="loadThreads()">Search</button>
+        </div>
+      </div>
+      <div class="thread-list" id="threadList">
+        <div class="thread-empty">Loading conversations...</div>
+      </div>
+    </div>
+
+    <!-- Detail panel -->
+    <div class="detail-panel" id="detailPanel">
+      <div class="detail-empty" id="detailEmpty">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        <span>Select a conversation</span>
+      </div>
+      <div id="detailContent" style="display:none;flex:1;display:none;flex-direction:column;overflow:hidden">
+        <!-- detail header -->
+        <div class="detail-header">
+          <div class="detail-header-left">
+            <h3 id="dh-phone">—</h3>
+            <div class="dh-meta" id="dh-meta"></div>
+            <div class="contact-pills" id="dh-pills"></div>
+          </div>
+          <div class="detail-actions" id="dh-actions"></div>
+        </div>
+        <!-- timeline -->
+        <div class="timeline" id="timeline"></div>
+        <!-- reply area -->
+        <div class="reply-area" id="replyArea">
+          <textarea id="replyText" placeholder="Type a reply..." maxlength="1600" oninput="updateCharCount()"></textarea>
+          <div class="reply-buttons">
+            <button class="btn btn-primary" onclick="sendReply()">Send SMS</button>
+            <button class="btn btn-yellow" onclick="addNote()">Add Note</button>
+            <button class="btn btn-pending" onclick="setStatus('pending')">Mark Pending</button>
+            <button class="btn btn-closed" onclick="setStatus('closed')">Mark Closed</button>
+            <button class="btn btn-red btn-sm" id="blockBtn" onclick="blockThread()">Block Number</button>
+            <span class="reply-char" id="charCount">0 / 160</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastContainer"></div>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+let currentFilter = { status: '', unread: '', search: '' };
+let currentPage = 1;
+let currentThreadId = null;
+let currentThread = null;
+let autoRefreshTimer = null;
+
+// ============================================================
+// Auth check
+// ============================================================
+async function checkAuth() {
+  try {
+    const r = await fetch('/api/admin/me');
+    if (r.status === 401) {
+      window.location.href = '/admin';
+      return;
+    }
+    if (!r.ok) throw new Error('Auth check failed');
+    document.getElementById('authCheck').style.display = 'none';
+    document.getElementById('app').classList.add('show');
+    loadThreads();
+    startAutoRefresh();
+  } catch(e) {
+    document.getElementById('authCheck').innerHTML = '<p style="color:#E63946">Authentication failed. <a href="/admin">Go to login</a></p>';
+  }
+}
+
+// ============================================================
+// Auto-refresh
+// ============================================================
+function startAutoRefresh() {
+  autoRefreshTimer = setInterval(async () => {
+    await loadThreads(true);
+    if (currentThreadId) await loadThread(currentThreadId, true);
+  }, 15000);
+}
+
+// ============================================================
+// Thread list
+// ============================================================
+async function loadThreads(silent = false) {
+  const params = new URLSearchParams();
+  if (currentFilter.status) params.set('status', currentFilter.status);
+  if (currentFilter.unread) params.set('unread', currentFilter.unread);
+  if (currentFilter.search) params.set('search', currentFilter.search);
+  params.set('limit', '40');
+  params.set('page', currentPage);
+
+  try {
+    const r = await fetch('/api/admin/communications/threads?' + params);
+    if (!r.ok) throw new Error('Failed to load');
+    const data = await r.json();
+    renderThreadList(data.threads || []);
+    if (!silent) {
+      const s = document.getElementById('headerStatus');
+      s.textContent = `${data.total || 0} conversations`;
+    }
+  } catch(e) {
+    if (!silent) {
+      document.getElementById('threadList').innerHTML = '<div class="thread-empty">Error loading conversations.</div>';
+    }
+  }
+}
+
+function renderThreadList(threads) {
+  const el = document.getElementById('threadList');
+  if (!threads.length) {
+    el.innerHTML = '<div class="thread-empty">No conversations found.</div>';
+    return;
+  }
+  el.innerHTML = threads.map(t => {
+    const phone = formatPhone(t.customer_phone);
+    const name = t.contact_name || t.customer_name || '';
+    const company = t.contact_company || t.company_name || '';
+    const preview = t.last_message_preview || '';
+    const timeStr = t.last_message_at ? timeAgo(t.last_message_at) : '';
+    const statusClass = 'status-' + (t.status || 'open');
+    const isActive = t.id === currentThreadId ? 'active' : '';
+    const unreadBadge = t.unread_count > 0 ? `<span class="unread-badge">${t.unread_count}</span>` : '';
+    const nameLine = name || company ? `<div class="thread-name">${esc(name)}${name && company ? ' · ' : ''}${esc(company)}</div>` : '';
+    return `<div class="thread-item ${isActive}" data-id="${t.id}" onclick="openThread(${t.id})">
+      <div class="thread-item-top">
+        <span class="thread-phone">${phone}</span>
+        <span class="thread-time">${timeStr}</span>
+      </div>
+      ${nameLine}
+      <div style="display:flex;align-items:center;gap:.4rem">
+        <div class="thread-preview">${esc(preview)}</div>
+      </div>
+      <div class="thread-meta">
+        <span class="status-badge ${statusClass}">${t.status || 'open'}</span>
+        ${unreadBadge}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// Thread detail
+// ============================================================
+async function openThread(id) {
+  currentThreadId = id;
+  // mark active
+  document.querySelectorAll('.thread-item').forEach(el => el.classList.remove('active'));
+  const el = document.querySelector(`.thread-item[data-id="${id}"]`);
+  if (el) el.classList.add('active');
+
+  document.getElementById('detailEmpty').style.display = 'none';
+  const dc = document.getElementById('detailContent');
+  dc.style.display = 'flex';
+  dc.style.flexDirection = 'column';
+  dc.style.overflow = 'hidden';
+  dc.style.flex = '1';
+
+  document.getElementById('timeline').innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)"><span class="spinner"></span></div>';
+
+  await loadThread(id, false);
+}
+
+async function loadThread(id, silent = false) {
+  try {
+    const r = await fetch(`/api/admin/communications/threads/${id}`);
+    if (!r.ok) throw new Error('Not found');
+    const data = await r.json();
+    currentThread = data.thread;
+    renderDetailHeader(data.thread);
+    renderTimeline(data.events || [], data.messages || [], data.calls || []);
+    // refresh unread count in list
+    await loadThreads(true);
+  } catch(e) {
+    if (!silent) {
+      document.getElementById('timeline').innerHTML = '<div style="text-align:center;padding:2rem;color:var(--red)">Error loading conversation.</div>';
+    }
+  }
+}
+
+function renderDetailHeader(thread) {
+  document.getElementById('dh-phone').textContent = formatPhone(thread.customer_phone);
+
+  const meta = [];
+  if (thread.contact_name) meta.push(esc(thread.contact_name));
+  if (thread.contact_company) meta.push(esc(thread.contact_company));
+  document.getElementById('dh-meta').innerHTML = meta.join(' &middot; ') || '<span style="color:var(--gray-400)">No contact info yet</span>';
+
+  const pills = [];
+  if (thread.sms_opted_out) pills.push('<span class="contact-pill" style="background:#fee2e2;color:#991b1b">Opted Out</span>');
+  if (thread.is_blocked) pills.push('<span class="contact-pill" style="background:#fee2e2;color:#991b1b">Blocked</span>');
+  if (thread.contact_source) pills.push(`<span class="contact-pill">Source: ${esc(thread.contact_source)}</span>`);
+  if (thread.language_preference && thread.language_preference !== 'unknown') pills.push(`<span class="contact-pill">Lang: ${esc(thread.language_preference)}</span>`);
+  const statusClass = 'status-' + (thread.status || 'open');
+  pills.push(`<span class="status-badge ${statusClass}" style="font-size:.68rem">${thread.status || 'open'}</span>`);
+  document.getElementById('dh-pills').innerHTML = pills.join('');
+
+  // Actions
+  const isBlocked = thread.is_blocked || thread.status === 'blocked';
+  const actions = [];
+  if (isBlocked) {
+    actions.push(`<button class="btn btn-green btn-sm" onclick="unblockThread()">Unblock</button>`);
+  }
+  if (thread.status !== 'open') {
+    actions.push(`<button class="btn btn-outline btn-sm" onclick="setStatus('open')">Reopen</button>`);
+  }
+  document.getElementById('dh-actions').innerHTML = actions.join('');
+
+  // Block btn text
+  const blockBtn = document.getElementById('blockBtn');
+  if (isBlocked) {
+    blockBtn.textContent = 'Unblock';
+    blockBtn.onclick = unblockThread;
+    blockBtn.className = 'btn btn-green btn-sm';
+  } else {
+    blockBtn.textContent = 'Block Number';
+    blockBtn.onclick = blockThread;
+    blockBtn.className = 'btn btn-red btn-sm';
+  }
+
+  // Disable reply if opted out or blocked
+  const replyText = document.getElementById('replyText');
+  const sendBtn = document.querySelector('.btn-primary');
+  if (thread.sms_opted_out || isBlocked) {
+    replyText.disabled = true;
+    replyText.placeholder = isBlocked ? 'Cannot send: number is blocked.' : 'Cannot send: customer opted out.';
+    if (sendBtn) sendBtn.disabled = true;
+  } else {
+    replyText.disabled = false;
+    replyText.placeholder = 'Type a reply...';
+    if (sendBtn) sendBtn.disabled = false;
+  }
+}
+
+function renderTimeline(events, messages, calls) {
+  const tl = document.getElementById('timeline');
+  if (!events.length && !calls.length) {
+    tl.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">No activity yet.</div>';
+    return;
+  }
+
+  const html = events.map(ev => {
+    const isRight = ev.event_type === 'admin_reply';
+    const icon = eventIcon(ev.event_type);
+    const label = eventLabel(ev.event_type);
+    let bodyHtml = '';
+    if (ev.body) bodyHtml = `<div>${esc(ev.body).replace(/\n/g, '<br>')}</div>`;
+    let metaHtml = `<div class="event-meta">${label} &middot; ${formatDateTime(ev.created_at)}`;
+    try {
+      const meta = JSON.parse(ev.metadata || '{}');
+      if (meta.call_sid) metaHtml += ` &middot; Call: ${meta.call_sid.substring(0,12)}...`;
+      if (meta.message_sid) metaHtml += ` &middot; SID: ${meta.message_sid.substring(0,12)}...`;
+      if (meta.admin) metaHtml += ` &middot; by ${esc(String(meta.admin))}`;
+    } catch(e) {}
+    metaHtml += '</div>';
+
+    return `<div class="event-card ev-${ev.event_type} ${isRight ? 'right' : ''}">
+      <div class="event-icon">${icon}</div>
+      <div>
+        <div class="event-bubble">${bodyHtml || `<span style="opacity:.6;font-size:.78rem">${label}</span>`}</div>
+        ${metaHtml}
+      </div>
+    </div>`;
+  }).join('');
+
+  tl.innerHTML = html;
+  tl.scrollTop = tl.scrollHeight;
+}
+
+// ============================================================
+// Actions
+// ============================================================
+async function sendReply() {
+  const body = document.getElementById('replyText').value.trim();
+  if (!body) { toast('Please enter a message', 'error'); return; }
+  if (!currentThreadId) return;
+
+  const btn = document.querySelector('.btn-primary');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    const r = await fetch(`/api/admin/communications/threads/${currentThreadId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed to send');
+    document.getElementById('replyText').value = '';
+    updateCharCount();
+    toast('Message sent', 'success');
+    await loadThread(currentThreadId);
+  } catch(e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Send SMS';
+  }
+}
+
+async function addNote() {
+  const body = document.getElementById('replyText').value.trim();
+  if (!body) { toast('Please enter a note', 'error'); return; }
+  if (!currentThreadId) return;
+
+  try {
+    const r = await fetch(`/api/admin/communications/threads/${currentThreadId}/note`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed to save note');
+    document.getElementById('replyText').value = '';
+    updateCharCount();
+    toast('Note added', 'success');
+    await loadThread(currentThreadId);
+  } catch(e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function setStatus(status) {
+  if (!currentThreadId) return;
+  try {
+    const r = await fetch(`/api/admin/communications/threads/${currentThreadId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed');
+    toast(`Status set to ${status}`, 'success');
+    await loadThread(currentThreadId);
+    await loadThreads(true);
+  } catch(e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function blockThread() {
+  if (!currentThreadId) return;
+  if (!confirm('Block this number? They will not be able to receive texts.')) return;
+  try {
+    const r = await fetch(`/api/admin/communications/threads/${currentThreadId}/block`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed');
+    toast('Number blocked', 'success');
+    await loadThread(currentThreadId);
+    await loadThreads(true);
+  } catch(e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function unblockThread() {
+  if (!currentThreadId) return;
+  try {
+    const r = await fetch(`/api/admin/communications/threads/${currentThreadId}/unblock`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed');
+    toast('Number unblocked', 'success');
+    await loadThread(currentThreadId);
+    await loadThreads(true);
+  } catch(e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ============================================================
+// Filter tabs
+// ============================================================
+document.getElementById('filterTabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.filter-tab');
+  if (!tab) return;
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  currentFilter.status = tab.dataset.status || '';
+  currentFilter.unread = tab.dataset.unread || '';
+  currentPage = 1;
+  loadThreads();
+});
+
+document.getElementById('searchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    currentFilter.search = e.target.value.trim();
+    loadThreads();
+  }
+});
+
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  if (!e.target.value.trim()) {
+    currentFilter.search = '';
+    loadThreads();
+  }
+});
+
+// ============================================================
+// Char count
+// ============================================================
+function updateCharCount() {
+  const len = document.getElementById('replyText').value.length;
+  const el = document.getElementById('charCount');
+  const segments = Math.ceil(len / 160) || 1;
+  el.textContent = `${len} / ${segments * 160}${segments > 1 ? ` (${segments} msgs)` : ''}`;
+  el.className = 'reply-char' + (len > 1440 ? ' over' : len > 1000 ? ' warn' : '');
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+function formatPhone(p) {
+  if (!p) return '—';
+  const d = p.replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '1') return `+1 (${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  return p;
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const d = new Date(ts + (ts.endsWith('Z') ? '' : 'Z'));
+  const now = Date.now();
+  const diff = now - d.getTime();
+  if (diff < 60000) return 'Just now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  if (diff < 604800000) return Math.floor(diff/86400000) + 'd ago';
+  return d.toLocaleDateString();
+}
+
+function formatDateTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts + (ts.endsWith('Z') ? '' : 'Z'));
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function eventIcon(type) {
+  const icons = {
+    call_inbound: '&#128222;',
+    auto_sms_sent: '&#129302;',
+    sms_inbound: '&#8592;',
+    admin_reply: '&#8594;',
+    note: '&#128203;',
+    status_change: '&#8505;',
+    blocked: '&#128683;',
+    system: '&#9881;',
+  };
+  return icons[type] || '&#8226;';
+}
+
+function eventLabel(type) {
+  const labels = {
+    call_inbound: 'Inbound call',
+    auto_sms_sent: 'Auto SMS sent',
+    sms_inbound: 'Customer message',
+    admin_reply: 'Admin reply',
+    note: 'Internal note',
+    status_change: 'Status changed',
+    blocked: 'Number blocked',
+    system: 'System',
+  };
+  return labels[type] || type;
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => { el.classList.add('hide'); setTimeout(() => el.remove(), 200); }, 3500);
+}
+
+// ============================================================
+// URL param: auto-open thread by phone
+// ============================================================
+async function checkUrlParam() {
+  const params = new URLSearchParams(window.location.search);
+  const phone = params.get('phone');
+  if (!phone) return;
+  // find thread by phone
+  try {
+    const r = await fetch('/api/admin/communications/threads?search=' + encodeURIComponent(phone) + '&limit=5');
+    const data = await r.json();
+    if (data.threads && data.threads.length > 0) {
+      openThread(data.threads[0].id);
+    }
+  } catch(e) {}
+}
+
+// ============================================================
+// Init
+// ============================================================
+checkAuth().then(() => checkUrlParam());
+</script>
+</body>
+</html>
