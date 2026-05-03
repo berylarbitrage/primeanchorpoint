@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Prime Anchor Point</title>
+<title>Prime Anchor Workforce</title>
 <link rel="icon" type="image/svg+xml" href="/logo.svg">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -220,7 +220,7 @@ function googleTranslateElementInit() {
       <button class="login-lang-btn" id="lbEn" onclick="setPortalLang('en')">English</button>
       <button class="login-lang-btn" id="lbEs" onclick="setPortalLang('es')">Español</button>
     </div>
-    <img src="/logo.svg" alt="Prime Anchor Point">
+    <img src="/logo.svg" alt="Prime Anchor Workforce">
     <h1 id="loginTitle">合作中心</h1>
     <p id="loginSubtitle">Worker Self-Service Portal</p>
     <input type="text" id="wLogin" data-i18n-placeholder="loginPlaceholderUser" placeholder="邮箱或手机号 / Email or Phone" autocomplete="username">
@@ -485,9 +485,9 @@ function googleTranslateElementInit() {
   <!-- Left sidebar -->
   <div class="sidebar" id="sidebar">
     <div class="sidebar-top" style="display:flex;align-items:center;gap:.75rem">
-      <img src="/logo.svg" alt="Prime Anchor Point" style="width:36px;height:36px;object-fit:contain;flex-shrink:0">
+      <img src="/logo.svg" alt="Prime Anchor Workforce" style="width:36px;height:36px;object-fit:contain;flex-shrink:0">
       <div>
-        <h2>Prime Anchor Point</h2>
+        <h2>Prime Anchor Workforce</h2>
         <div class="sub" id="portalSubtitle">合作中心</div>
       </div>
     </div>
@@ -783,7 +783,7 @@ function googleTranslateElementInit() {
           <div id="invPrefillSummary" style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.82rem;color:var(--gray-700)">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .8rem">
               <div><span style="color:var(--gray-400)">Contractor 承包商:</span> <b id="invPfName">—</b></div>
-              <div><span style="color:var(--gray-400)">Bill To 付款方:</span> <b>Prime Anchor Point LLC</b></div>
+              <div><span style="color:var(--gray-400)">Bill To 付款方:</span> <b>Prime Anchor Workforce LLC</b></div>
               <div><span style="color:var(--gray-400)">Payment Terms 付款条件:</span> <b id="invPfTerms">—</b></div>
               <div><span style="color:var(--gray-400)">Invoice Date 发票日期:</span> <b id="invPfDate">—</b></div>
               <div><span style="color:var(--gray-400)">Due Date 到期日:</span> <b id="invPfDue">—</b></div>
@@ -897,7 +897,7 @@ function googleTranslateElementInit() {
             <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;margin-bottom:.8rem;font-size:.82rem">
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem .8rem">
                 <div><span style="color:var(--gray-400)">Contractor 承包商:</span> <b id="sumContractor">—</b></div>
-                <div><span style="color:var(--gray-400)">Bill To 付款方:</span> <b>Prime Anchor Point LLC</b></div>
+                <div><span style="color:var(--gray-400)">Bill To 付款方:</span> <b>Prime Anchor Workforce LLC</b></div>
                 <div><span style="color:var(--gray-400)">Payment Terms:</span> <b id="sumTerms">—</b></div>
                 <div><span style="color:var(--gray-400)">Invoice Date:</span> <b id="sumInvDate">—</b></div>
                 <div><span style="color:var(--gray-400)">Due Date 到期日:</span> <b id="sumDueDate">—</b></div>
@@ -1229,7 +1229,7 @@ function googleTranslateElementInit() {
 // ── Portal i18n ──────────────────────────────────────────────────
 const PORTAL_I18N = {
   zh: {
-    loginTitle: 'Prime Anchor Point',
+    loginTitle: 'Prime Anchor Workforce',
     loginSubtitle: '员工自助服务平台',
     loginPlaceholderUser: '邮箱或手机号',
     loginPlaceholderPw: '密码',
@@ -1387,7 +1387,7 @@ const PORTAL_I18N = {
     forgotResetBtn: '重置密码', forgotSuccess: '密码重置成功！', forgotClose: '关闭'
   },
   en: {
-    loginTitle: 'Prime Anchor Point',
+    loginTitle: 'Prime Anchor Workforce',
     loginSubtitle: 'Employee Self-Service Portal',
     loginPlaceholderUser: 'Email or Phone',
     loginPlaceholderPw: 'Password',
@@ -1545,7 +1545,7 @@ const PORTAL_I18N = {
     forgotResetBtn: 'Reset Password', forgotSuccess: 'Password reset successful!', forgotClose: 'Close'
   },
   es: {
-    loginTitle: 'Prime Anchor Point',
+    loginTitle: 'Prime Anchor Workforce',
     loginSubtitle: 'Portal de Autoservicio del Empleado',
     loginPlaceholderUser: 'Correo o Teléfono',
     loginPlaceholderPw: 'Contraseña',
@@ -4395,9 +4395,9 @@ function _generateReferralQR(url) {
 function shareReferral(platform) {
   const link = document.getElementById('referralLinkInput').value;
   if (!link || link.includes('尚未')) { showToast('账号未激活，暂无邀请链接', 'error'); return; }
-  const text = `我在Prime Anchor Point找到工作了！扫码或点击链接注册，一起来工作吧 👇\n${link}`;
+  const text = `我在Prime Anchor Workforce找到工作了！扫码或点击链接注册，一起来工作吧 👇\n${link}`;
   if (platform === 'native') {
-    navigator.share({ title: 'Prime Anchor Point 招工', text, url: link }).catch(() => {});
+    navigator.share({ title: 'Prime Anchor Workforce 招工', text, url: link }).catch(() => {});
     return;
   }
   if (platform === 'sms') { window.open(`sms:?&body=${encodeURIComponent(text)}`); return; }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>客户门户 — Prime Anchor Point</title>
+<title>客户门户 — Prime Anchor Workforce</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -110,9 +110,9 @@ tr:last-child td{border-bottom:none}
 <!-- Login -->
 <div class="login-wrap" id="loginWrap">
   <div class="login-box">
-    <img src="/logo.svg" alt="Prime Anchor Point">
+    <img src="/logo.svg" alt="Prime Anchor Workforce">
     <h1>客户门户</h1>
-    <p>Customer Portal — Prime Anchor Point</p>
+    <p>Customer Portal — Prime Anchor Workforce</p>
     <input type="text" id="cLogin" placeholder="邮箱或电话 / Email or Phone" autocomplete="email">
     <div class="pw-wrap">
       <input type="password" id="cPassword" placeholder="密码 / Password" autocomplete="current-password">
@@ -171,7 +171,7 @@ tr:last-child td{border-bottom:none}
   <!-- Left sidebar -->
   <div class="sidebar" id="sidebar">
     <div class="sidebar-top">
-      <h2>Prime Anchor Point</h2>
+      <h2>Prime Anchor Workforce</h2>
       <div class="sub">客户门户</div>
     </div>
     <nav class="sidebar-nav">
@@ -251,7 +251,7 @@ tr:last-child td{border-bottom:none}
     <div id="tabWorkers" style="display:none">
       <div class="card">
         <h2>派遣工人列表</h2>
-        <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">显示由 Prime Anchor Point 派遣至贵公司的工人信息</p>
+        <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">显示由 Prime Anchor Workforce 派遣至贵公司的工人信息</p>
         <table>
           <thead><tr><th>姓名</th><th>职位</th><th>联系电话</th><th>工作岗位</th><th>工作地点</th><th>派工状态</th></tr></thead>
           <tbody id="workersTable"></tbody>
@@ -518,7 +518,7 @@ async function loadProfile() {
       <div><span style="color:var(--gray-400)">联系邮箱</span><br>${esc(me.email)}</div>
       <div><span style="color:var(--gray-400)">电话</span><br>${esc(me.phone||'—')}</div>
     </div>
-    <p style="margin-top:1.25rem;font-size:.82rem;color:var(--gray-400)">如需修改公司信息，请联系 Prime Anchor Point 客服</p>`;
+    <p style="margin-top:1.25rem;font-size:.82rem;color:var(--gray-400)">如需修改公司信息，请联系 Prime Anchor Workforce 客服</p>`;
 }
 
 if (C_TOKEN) showApp().catch(() => customerLogout());
