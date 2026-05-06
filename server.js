@@ -14270,6 +14270,10 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), req.params.id);
     if (d.email && d.email.trim()) db.prepare('UPDATE employees SET email=? WHERE email=? AND id!=?').run('', d.email.trim(), req.params.id);
   }
+  // Sync new contact info to linked worker_account so onboarding modals (W-9, Zelle, etc.) use the latest values
+  try {
+    db.prepare('UPDATE worker_accounts SET email=?, phone=? WHERE employee_id=?').run(d.email || '', d.phone || '', req.params.id);
+  } catch(e) { console.error('[employees PUT] worker_accounts sync error:', e.message); }
   res.json({ success: true });
 });
 
@@ -14284,6 +14288,10 @@ app.put('/api/admin/employees/:id/contacts', requireAdmin, (req, res) => {
     JSON.stringify(extra_emails || []),
     req.params.id
   );
+  // Sync to linked worker_account
+  try {
+    db.prepare('UPDATE worker_accounts SET email=?, phone=? WHERE employee_id=?').run(email || '', phone || '', req.params.id);
+  } catch(e) { console.error('[employees contacts] worker_accounts sync error:', e.message); }
   res.json({ success: true });
 });
 

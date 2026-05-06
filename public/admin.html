@@ -19209,8 +19209,8 @@ async function openW9SendModal() {
     if (fresh && fresh.id) { w = Object.assign({}, w || {}, fresh); _onboardingWorkerData = Object.assign({}, _onboardingWorkerData || {}, fresh); }
   } catch(e) {}
   document.getElementById('w9WorkerName').textContent = w ? (w.name || w.username || '') : '';
-  document.getElementById('w9WorkerEmail').value = (w && (w.email || w.emp_email)) || '';
-  document.getElementById('w9WorkerPhone').value = (w && (w.phone || w.emp_phone)) || '';
+  document.getElementById('w9WorkerEmail').value = (w && (w.emp_email || w.email)) || '';
+  document.getElementById('w9WorkerPhone').value = (w && (w.emp_phone || w.phone)) || '';
   document.getElementById('w9DsStatus').style.display = 'none';
   document.getElementById('w9AddressBox').style.display = 'none';
   document.getElementById('w9AddrMismatchPanel').style.display = 'none';
@@ -19732,8 +19732,8 @@ async function openPaymentAuthModal() {
   if (sel) sel.value = pm;
   _updatePayAuthDesc();
   sel.onchange = _updatePayAuthDesc;
-  document.getElementById('payAuthEmail').value = (w && (w.email || w.emp_email)) || '';
-  document.getElementById('payAuthPhone').value = (w && w.phone) || '';
+  document.getElementById('payAuthEmail').value = (w && (w.emp_email || w.email)) || '';
+  document.getElementById('payAuthPhone').value = (w && (w.emp_phone || w.phone)) || '';
   document.getElementById('payAuthLang').value = 'zh';
   document.getElementById('payAuthStatusBox').style.display = 'none';
   document.getElementById('payAuthSignLink').style.display = 'none';
