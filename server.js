@@ -10306,6 +10306,55 @@ app.get('/api/admin/worker-accounts/:id/ssn-cards/:docId/file', requireAdmin, (r
 });
 
 // ─── TaxBandits TIN Verification ───
+
+// Preview what will be sent — returns masked TIN + name without calling TaxBandits
+app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+  if (!w) return res.status(404).json({ error: 'Worker not found' });
+
+  let tin = '', tinName = w.name || w.username || '';
+  let tinType = 'INDIVIDUAL', tinSource = '';
+
+  const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
+  if (w9doc) {
+    const fd = JSON.parse(w9doc.form_data || '{}');
+    if (fd.ssn_or_ein_encrypted) {
+      const enc = fd.ssn_or_ein_encrypted;
+      const encStr = typeof enc === 'object' ? enc.encrypted : enc;
+      const ivStr  = typeof enc === 'object' ? enc.iv : (fd.ssn_or_ein_iv || '');
+      const dec = decryptSSN(encStr, ivStr);
+      if (dec) { tin = dec; tinSource = 'W-9'; }
+    }
+    if (fd.name) tinName = fd.name;
+    if (fd.tin_type === 'EIN') tinType = 'BUSINESS';
+  }
+
+  if (!tin) {
+    const trRow = db.prepare(`SELECT ind_ssn_encrypted, ind_ssn_iv FROM tax_residency_questionnaire WHERE worker_account_id=?`).get(workerId);
+    if (trRow?.ind_ssn_encrypted) {
+      const dec = decryptSSN(trRow.ind_ssn_encrypted, trRow.ind_ssn_iv || '');
+      if (dec) { tin = dec; tinSource = '税务居民判定'; }
+    }
+  }
+
+  if (!tin) return res.status(400).json({ error: '未找到工人税号（TIN/SSN），请先确保工人已提交 W-9 或税号信息' });
+
+  const tinMasked = tin.replace(/\D/g, '').replace(/^(\d*)(\d{4})$/, (_, p, last) => '*'.repeat(p.length) + last);
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='taxbandits'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  const sandbox = cfg.sandbox !== undefined ? cfg.sandbox : (process.env.TAXBANDITS_SANDBOX !== 'false');
+
+  res.json({
+    name: tinName,
+    tin_masked: tinMasked,
+    tin_type: tinType,
+    tin_source: tinSource,
+    sandbox,
+    oauth_url: `${sandbox ? 'https://testoauth.expressauth.net' : 'https://oauth.expressauth.net'}/v2/OAuthAccessToken`,
+    api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}/v1.7.2/ValidateTIN`,
+  });
+});
 async function taxBanditsGetToken(cfg) {
   const baseOauth = cfg.sandbox ? 'https://testoauth.expressauth.net' : 'https://oauth.expressauth.net';
   const params = new URLSearchParams({

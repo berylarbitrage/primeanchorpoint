@@ -19491,16 +19491,50 @@ let _taxBanditsVerifying = false;
 async function verifyTinTaxbandits(workerId) {
   if (!workerId || _taxBanditsVerifying) return;
   _taxBanditsVerifying = true;
-  // Disable all TaxBandits buttons while in flight
   document.querySelectorAll('button').forEach(b => { if (b.textContent.includes('TaxBandits')) b.disabled = true; });
+
+  try {
+    // Step 1: fetch preview (masked TIN + name) so user can confirm before sending
+    const preview = await api(`/admin/worker-accounts/${workerId}/tin-preview`);
+    if (!preview || preview.error) {
+      showToast('❌ ' + (preview?.error || '无法读取工人税号'), 'error', 8000);
+      return;
+    }
+
+    const envLabel = preview.sandbox ? '🧪 沙盒 (Sandbox)' : '🚀 正式环境';
+    const confirmHtml = `
+      <div style="font-size:.85rem;color:#475569;margin-bottom:.75rem">请确认以下信息将被发送至 TaxBandits 进行核对：</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:.75rem">
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b;white-space:nowrap">姓名</td><td style="padding:.4rem .5rem;font-weight:600">${preview.name}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">税号（掩码）</td><td style="padding:.4rem .5rem;font-weight:600;font-family:monospace">${preview.tin_masked}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">类型</td><td style="padding:.4rem .5rem">${preview.tin_type}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">来源</td><td style="padding:.4rem .5rem">${preview.tin_source}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">环境</td><td style="padding:.4rem .5rem">${envLabel}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">OAuth URL</td><td style="padding:.4rem .5rem;font-size:.78rem;font-family:monospace;word-break:break-all">${preview.oauth_url}</td></tr>
+        <tr><td style="padding:.4rem .5rem;color:#64748b">API URL</td><td style="padding:.4rem .5rem;font-size:.78rem;font-family:monospace;word-break:break-all">${preview.api_url}</td></tr>
+      </table>`;
+
+    showConfirmModal('确认发送 TaxBandits 核对', confirmHtml, '✅ 确认发送', 'btn-green', async () => {
+      await _doTaxBanditsVerify(workerId);
+    }, 'green');
+
+  } catch (e) {
+    showToast('❌ ' + (e.message || '读取工人税号失败'), 'error', 8000);
+  } finally {
+    _taxBanditsVerifying = false;
+    document.querySelectorAll('button').forEach(b => { if (b.textContent.includes('TaxBandits')) b.disabled = false; });
+  }
+}
+
+async function _doTaxBanditsVerify(workerId) {
   const statusMap = {
-    MATCH:       { label: '✅ 匹配 (MATCH)',        color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
-    MISMATCH:    { label: '❌ 不匹配 (MISMATCH)',    color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
-    INVALID_TIN: { label: '⚠️ 无效税号 (INVALID)',  color: '#92400e', bg: '#fffbeb', border: '#fde68a' },
-    NO_DATA:     { label: '❓ 暂无数据 (NO_DATA)',   color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
-    UNKNOWN:     { label: '❓ 未知 (UNKNOWN)',        color: '#475569', bg: '#f8fafc', border: '#e2e8f0' },
+    MATCH:       { label: '✅ 匹配 (MATCH)',       color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
+    MISMATCH:    { label: '❌ 不匹配 (MISMATCH)',   color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
+    INVALID_TIN: { label: '⚠️ 无效税号 (INVALID)', color: '#92400e', bg: '#fffbeb', border: '#fde68a' },
+    NO_DATA:     { label: '❓ 暂无数据 (NO_DATA)',  color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+    UNKNOWN:     { label: '❓ 未知 (UNKNOWN)',       color: '#475569', bg: '#f8fafc', border: '#e2e8f0' },
   };
-  showToast('正在调用 TaxBandits 核对税号…', 'info', 3000);
+  showToast('正在调用 TaxBandits 核对税号…', 'info', 5000);
   try {
     const r = await api(`/admin/worker-accounts/${workerId}/verify-tin-taxbandits`, { method: 'POST', body: '{}' });
     if (r && r.success) {
@@ -19519,9 +19553,6 @@ async function verifyTinTaxbandits(workerId) {
     }
   } catch (e) {
     showToast('❌ ' + (e.message || 'TaxBandits 核对请求失败'), 'error', 8000);
-  } finally {
-    _taxBanditsVerifying = false;
-    document.querySelectorAll('button').forEach(b => { if (b.textContent.includes('TaxBandits')) b.disabled = false; });
   }
 }
 
