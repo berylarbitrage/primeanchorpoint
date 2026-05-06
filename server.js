@@ -18786,15 +18786,20 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
             // Extract and save address from DocuSeal submission before verifying
             saveW9AddressFromDocuSeal(wid, submitters);
             const addrCheck = verifyW9Address(wid);
+            const curW9 = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(wid);
+            const alreadyApproved = !!(curW9 && curW9.status === 'completed');
             if (addrCheck.match) {
               db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
                 .run(workerSignedAt, addrCheck.note, wid);
-            } else {
+            } else if (!alreadyApproved) {
               db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='submitted', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
                 .run(workerSignedAt, addrCheck.note, wid);
+            } else {
+              db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+                .run(workerSignedAt, wid);
             }
             syncOnboardedStatus(wid);
-            console.log(`[DocuSeal W-9 webhook] W-9 signed for worker ${wid}, address match: ${addrCheck.match}`);
+            console.log(`[DocuSeal W-9 webhook] W-9 signed for worker ${wid}, address match: ${addrCheck.match}, alreadyApproved: ${alreadyApproved}`);
           } else {
             db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
               .run(workerSignedAt, `W-9 已填写提交，等待最终确认 (${new Date().toLocaleString('zh-CN')})`, wid);
@@ -18982,17 +18987,22 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
           if (status === 'completed') {
             if (w9Raw && w9Raw.submitters) saveW9AddressFromDocuSeal(w9wid, w9Raw.submitters);
             const addrCheck = verifyW9Address(w9wid);
+            const curW9 = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(w9wid);
+            const alreadyApproved = !!(curW9 && curW9.status === 'completed');
             if (addrCheck.match) {
               db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
                 .run(addrCheck.note, w9wid);
-            } else {
+            } else if (!alreadyApproved) {
               db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
                 .run(addrCheck.note, w9wid);
             }
-            db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-              .run(w9wid, 'system', 'w9', '签署中', addrCheck.match ? '已签署' : '地址待核对', `W-9 签署完成: ${workerSigned || new Date().toISOString()}, 地址${addrCheck.match ? '匹配' : '不匹配'}`);
+            // If alreadyApproved and addresses still don't match, keep admin's prior approval (no status change)
+            if (!alreadyApproved) {
+              db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+                .run(w9wid, 'system', 'w9', '签署中', addrCheck.match ? '已签署' : '地址待核对', `W-9 签署完成: ${workerSigned || new Date().toISOString()}, 地址${addrCheck.match ? '匹配' : '不匹配'}`);
+            }
             syncOnboardedStatus(w9wid);
-            console.log(`[DocuSeal] Worker W-9 completed for worker ${w9wid}, address match: ${addrCheck.match}`);
+            console.log(`[DocuSeal] Worker W-9 completed for worker ${w9wid}, address match: ${addrCheck.match}, alreadyApproved: ${alreadyApproved}`);
           }
         } catch (e) { console.error('[DocuSeal webhook] W-9 completion error:', e.message); }
       } else if (isDeclined) {
