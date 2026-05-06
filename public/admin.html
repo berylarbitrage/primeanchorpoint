@@ -23702,11 +23702,13 @@ async function saveWorkerPortalMode() {
 
 // ─── Integration Settings ───
 const INT_LABELS = {
-  workbright: { name: 'WorkBright', desc: 'I-9 / Onboarding 平台', icon: '📋' },
-  checkr: { name: 'Checkr', desc: '背景调查 Background Check', icon: '🔍' },
-  gusto: { name: 'Gusto', desc: 'Payroll / 税务 / W-2 / 1099', icon: '💰' },
-  twilio: { name: 'Twilio', desc: '短信通知 + Verify', icon: '📱' },
-  docuseal: { name: 'DocuSeal', desc: '电子签名模板 (API Key + config.url)', icon: '📄' }
+  workbright:   { name: 'WorkBright',   desc: 'I-9 / Onboarding 平台', icon: '📋' },
+  checkr:       { name: 'Checkr',       desc: '背景调查 Background Check', icon: '🔍' },
+  gusto:        { name: 'Gusto',        desc: 'Payroll / 税务 / W-2 / 1099', icon: '💰' },
+  twilio:       { name: 'Twilio',       desc: '短信通知 + Verify', icon: '📱' },
+  docuseal:     { name: 'DocuSeal',     desc: '电子签名模板 (API Key + config.url)', icon: '📄' },
+  taxbandits:   { name: 'TaxBandits',   desc: 'TIN 税号核对 / 1099 & W-2 报税', icon: '🔢',
+    configHint: '{\n  "client_id": "your_client_id",\n  "client_secret": "your_client_secret",\n  "user_token": "your_user_token",\n  "sandbox": true\n}' },
 };
 
 async function loadIntegrations() {
@@ -23753,8 +23755,10 @@ async function editIntegration(provider) {
       if (row.api_key) document.getElementById('intApiKey').placeholder = `当前: ${row.api_key}（留空保持不变）`;
       try {
         const cfg = typeof row.config === 'string' ? JSON.parse(row.config || '{}') : (row.config || {});
-        document.getElementById('intConfig').value = JSON.stringify(cfg, null, 2);
-      } catch(e) { document.getElementById('intConfig').value = '{}'; }
+        const hint = info.configHint;
+        document.getElementById('intConfig').value =
+          (Object.keys(cfg).length === 0 && hint) ? hint : JSON.stringify(cfg, null, 2);
+      } catch(e) { document.getElementById('intConfig').value = info.configHint || '{}'; }
     }
   } catch(e) { /* fallback to empty */ }
   document.getElementById('integrationModal').classList.add('show');

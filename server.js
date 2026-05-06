@@ -1840,7 +1840,7 @@ try {
 } catch(e) { /* ignore */ }
 
 // Seed default integration rows if not present
-const intProviders = ['workbright','checkr','gusto','twilio','docuseal'];
+const intProviders = ['workbright','checkr','gusto','twilio','docuseal','taxbandits'];
 intProviders.forEach(p => {
   const ex = db.prepare('SELECT id FROM integration_settings WHERE provider=?').get(p);
   if (!ex) db.prepare('INSERT INTO integration_settings (provider) VALUES (?)').run(p);
