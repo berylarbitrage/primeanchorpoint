@@ -8728,6 +8728,14 @@ app.patch('/api/admin/worker-accounts/:id/identity-reverify-date', requireAdmin,
 // ─── Reverify Schedule (list of future dates) ───
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN identity_reverify_dates TEXT DEFAULT '[]'"); } catch {}
 
+app.get('/api/admin/worker-accounts/:id/basic', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const w = db.prepare(`SELECT w.id, w.name, w.phone, w.email, w.payment_method, w.payment_details,
+    e.email as emp_email, e.phone as emp_phone, e.first_name, e.last_name
+    FROM worker_accounts w LEFT JOIN employees e ON w.employee_id=e.id WHERE w.id=?`).get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  res.json(w);
+});
+
 app.get('/api/admin/worker-accounts/:id/reverify-schedule', requireAdmin, (req, res) => {
   const w = db.prepare('SELECT identity_reverify_dates FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
