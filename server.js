@@ -10466,6 +10466,41 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
   }
 });
 
+// TaxBandits TIN Matching webhook — TaxBandits POSTs here when match status changes.
+// Configure in TaxBandits Developer Console → Webhook Notifications →
+//   Event: "TIN Matching Status Change"
+//   Callback URL: https://<your-domain>/api/webhooks/taxbandits
+app.post('/api/webhooks/taxbandits', express.json({ limit: '2mb' }), (req, res) => {
+  try {
+    const body = req.body || {};
+    console.log('[TaxBandits Webhook]', JSON.stringify(body).slice(0, 500));
+
+    // Payload may contain: EventType, RequestId, TINMatchStatus, Name, TIN, etc.
+    // RequestId we sent was `pa-<workerId>-<timestamp>`
+    const list = body.TINMatchStatusList || body.TINMatchList || (body.RequestId ? [body] : []);
+    list.forEach(item => {
+      const reqId = item.RequestId || item.SubmissionId || '';
+      const m = String(reqId).match(/^pa-(\d+)-/);
+      if (!m) return;
+      const workerId = parseInt(m[1]);
+      const status = item.TINMatchStatus || item.Status || 'UNKNOWN';
+      const note = `TaxBandits Webhook: TIN 核对结果 = ${status}（${new Date().toLocaleString('zh-CN')}）`;
+      db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, updated_at)
+        VALUES (?,'tin_verify',?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(worker_account_id,task_key) DO UPDATE SET admin_note=excluded.admin_note,
+          status=CASE WHEN excluded.admin_note LIKE '%MATCH%' AND excluded.admin_note NOT LIKE '%MISMATCH%' THEN 'completed' ELSE worker_onboarding.status END,
+          updated_at=CURRENT_TIMESTAMP`)
+        .run(workerId, status === 'MATCH' ? 'completed' : 'pending', note);
+      db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+        .run(workerId, 'taxbandits-webhook', 'taxbandits_tin_webhook', '', status, note);
+    });
+    res.status(200).json({ received: true });
+  } catch (e) {
+    console.error('[TaxBandits Webhook] error:', e.message);
+    res.status(200).json({ received: false, error: e.message });
+  }
+});
+
 // Save all per-doc metadata in batch for a worker's work permit docs
 app.put('/api/admin/worker-accounts/:id/work-permit-docs-meta', requireAdmin, (req, res) => {
   const docs = req.body.docs;
