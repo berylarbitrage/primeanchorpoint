@@ -19503,20 +19503,21 @@ async function verifyTinTaxbandits(workerId) {
 
     const envLabel = preview.sandbox ? '🧪 沙盒 (Sandbox)' : '🚀 正式环境';
     const confirmHtml = `
-      <div style="font-size:.85rem;color:#475569;margin-bottom:.75rem">请确认以下信息将被发送至 TaxBandits 进行核对：</div>
-      <table style="width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:.75rem">
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b;white-space:nowrap">姓名</td><td style="padding:.4rem .5rem;font-weight:600">${preview.name}</td></tr>
+      <div style="font-size:.85rem;color:#475569;margin-bottom:.6rem">请确认以下信息将被发送至 TaxBandits 进行核对：</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:.5rem">
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b;white-space:nowrap;width:90px">姓名</td><td style="padding:.4rem .5rem;font-weight:600">${preview.name}</td></tr>
         <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">税号（掩码）</td><td style="padding:.4rem .5rem;font-weight:600;font-family:monospace">${preview.tin_masked}</td></tr>
         <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">类型</td><td style="padding:.4rem .5rem">${preview.tin_type}</td></tr>
         <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">来源</td><td style="padding:.4rem .5rem">${preview.tin_source}</td></tr>
         <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">环境</td><td style="padding:.4rem .5rem">${envLabel}</td></tr>
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">OAuth URL</td><td style="padding:.4rem .5rem;font-size:.78rem;font-family:monospace;word-break:break-all">${preview.oauth_url}</td></tr>
-        <tr><td style="padding:.4rem .5rem;color:#64748b">API URL</td><td style="padding:.4rem .5rem;font-size:.78rem;font-family:monospace;word-break:break-all">${preview.api_url}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">OAuth URL</td><td style="padding:.4rem .5rem;font-size:.75rem;font-family:monospace;word-break:break-all">${preview.oauth_url}</td></tr>
+        <tr><td style="padding:.4rem .5rem;color:#64748b">API URL</td><td style="padding:.4rem .5rem;font-size:.75rem;font-family:monospace;word-break:break-all">${preview.api_url}</td></tr>
       </table>`;
 
-    showConfirmModal('确认发送 TaxBandits 核对', confirmHtml, '✅ 确认发送', 'btn-green', async () => {
+    showConfirmModal('确认发送 TaxBandits 核对', '', '✅ 确认发送', 'btn-green', async () => {
       await _doTaxBanditsVerify(workerId);
     }, 'green');
+    document.getElementById('gcmDesc').innerHTML = confirmHtml;
 
   } catch (e) {
     showToast('❌ ' + (e.message || '读取工人税号失败'), 'error', 8000);
@@ -19539,14 +19540,15 @@ async function _doTaxBanditsVerify(workerId) {
     const r = await api(`/admin/worker-accounts/${workerId}/verify-tin-taxbandits`, { method: 'POST', body: '{}' });
     if (r && r.success) {
       const s = statusMap[r.status] || statusMap.UNKNOWN;
-      showConfirmModal('TaxBandits 核对结果', `
+      const resultHtml = `
         <div style="padding:.75rem 1rem;border-radius:8px;background:${s.bg};border:1px solid ${s.border};margin-bottom:.75rem">
           <div style="font-size:1.1rem;font-weight:700;color:${s.color}">${s.label}</div>
           <div style="margin-top:.4rem;font-size:.85rem;color:#475569">姓名：${r.name || '-'}</div>
           <div style="font-size:.85rem;color:#475569">税号（掩码）：${r.tin_masked || '-'}</div>
         </div>
-        <div style="font-size:.8rem;color:#94a3b8">核对结果已自动保存至工人备注</div>
-      `, '关闭', 'btn-blue', () => {}, 'info');
+        <div style="font-size:.8rem;color:#94a3b8">核对结果已自动保存至工人备注</div>`;
+      showConfirmModal('TaxBandits 核对结果', '', '关闭', 'btn-blue', () => {}, 'blue');
+      document.getElementById('gcmDesc').innerHTML = resultHtml;
       refreshOnboardingModal();
     } else {
       showToast('❌ ' + (r?.error || 'TaxBandits 核对失败'), 'error', 8000);
