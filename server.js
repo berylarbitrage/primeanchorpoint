@@ -10352,7 +10352,7 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
     tin_source: tinSource,
     sandbox,
     auth: 'JWT (HS256, 本地签名)',
-    api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}${cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.2/TINMatching/RequestByUrl'}`,
+    api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}${cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.2/TINMatching/Request'}`,
   });
 });
 // TaxBandits uses local JWT (HS256) signed with client_secret — NOT a network OAuth call.
@@ -10425,7 +10425,7 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
     const jwt = taxBanditsGenerateJWT(cfg);
 
     const baseApi  = cfg.sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com';
-    const apiPath  = cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.2/TINMatching/RequestByUrl';
+    const apiPath  = (req.body && req.body.api_path) || cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.2/TINMatching/Request';
     const apiUrl   = `${baseApi}${apiPath}`;
     const requestId = `pa-${workerId}-${Date.now()}`;
 
