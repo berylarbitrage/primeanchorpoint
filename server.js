@@ -10308,21 +10308,23 @@ app.get('/api/admin/worker-accounts/:id/ssn-cards/:docId/file', requireAdmin, (r
 // ─── TaxBandits TIN Verification ───
 async function taxBanditsGetToken(cfg) {
   const baseOauth = cfg.sandbox ? 'https://testoauth.expressauth.net' : 'https://oauth.expressauth.net';
+  const params = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: cfg.client_id,
+    client_secret: cfg.client_secret,
+    user_token: cfg.user_token,
+  });
   const resp = await fetch(`${baseOauth}/v2/OAuthAccessToken`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_id: cfg.client_id,
-      client_secret: cfg.client_secret,
-      user_token: cfg.user_token,
-    }),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
   });
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`TaxBandits OAuth ${resp.status}: ${text}`);
   }
   const data = await resp.json();
-  if (!data.access_token) throw new Error(`TaxBandits OAuth: no access_token in response`);
+  if (!data.access_token) throw new Error(`TaxBandits OAuth: no access_token in response (${JSON.stringify(data)})`);
   return data.access_token;
 }
 
