@@ -15818,7 +15818,7 @@ function renderOnboardingTasks(tasks) {
             : t.key==='work_permit'
             ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openWorkPermitModal()">🛂 ${s==='completed'?'查看/修改验证':'开始工作许可验证'}</button>`
             : t.key==='tin_verify'
-            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button> <button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openSsnCardModal()">📎 上传 SSN 卡</button>`
+            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button> <button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openSsnCardModal()">📎 上传 SSN 卡</button> <button class="btn btn-sm" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;font-weight:600" onclick="verifyTinTaxbandits(${_onboardingWorkerId})">🔍 TaxBandits 核对</button>`
             : t.key==='payment_method'
             ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;font-weight:700" onclick="openPaymentAuthModal()">💳 ${t.ds_status==='completed'?'✅ 已签署':t.ds_status==='sent'?'⏳ 等待签署':'发送付款授权'}</button>${t.ds_envelope_id?` <button class="btn btn-sm" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;font-weight:700" onclick="paymentAuthAddCompany()">✍️ 公司签字</button>`:''} ${(t.ds_status==='completed'&&s==='completed')?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/payment-auth-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('payment_method')">🔗 绑定已签文件</button>`:''}`
             : (t.key==='i9'||t.key==='ead_upload')
@@ -19485,6 +19485,38 @@ async function deleteSsnCard(docId) {
 async function ssnCardMarkComplete() {
   closeModal('ssnCardModal');
   await confirmOnboardingComplete('tin_verify', '核对税号');
+}
+
+async function verifyTinTaxbandits(workerId) {
+  if (!workerId) return;
+  const statusMap = {
+    MATCH:       { label: '✅ 匹配 (MATCH)',        color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
+    MISMATCH:    { label: '❌ 不匹配 (MISMATCH)',    color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
+    INVALID_TIN: { label: '⚠️ 无效税号 (INVALID)',  color: '#92400e', bg: '#fffbeb', border: '#fde68a' },
+    NO_DATA:     { label: '❓ 暂无数据 (NO_DATA)',   color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+    UNKNOWN:     { label: '❓ 未知 (UNKNOWN)',        color: '#475569', bg: '#f8fafc', border: '#e2e8f0' },
+  };
+  showToast('正在调用 TaxBandits 核对税号…', 'info', 3000);
+  try {
+    const r = await api(`/admin/worker-accounts/${workerId}/verify-tin-taxbandits`, { method: 'POST', body: '{}' });
+    if (r && r.success) {
+      const s = statusMap[r.status] || statusMap.UNKNOWN;
+      const msg = `TaxBandits TIN 核对完成\n\n姓名：${r.name || '-'}\n税号（掩码）：${r.tin_masked || '-'}\n结果：${s.label}`;
+      showConfirmModal('TaxBandits 核对结果', `
+        <div style="padding:.75rem 1rem;border-radius:8px;background:${s.bg};border:1px solid ${s.border};margin-bottom:.75rem">
+          <div style="font-size:1.1rem;font-weight:700;color:${s.color}">${s.label}</div>
+          <div style="margin-top:.4rem;font-size:.85rem;color:#475569">姓名：${r.name || '-'}</div>
+          <div style="font-size:.85rem;color:#475569">税号（掩码）：${r.tin_masked || '-'}</div>
+        </div>
+        <div style="font-size:.8rem;color:#94a3b8">核对结果已自动保存至工人备注</div>
+      `, '关闭', 'btn-blue', () => {}, 'info');
+      refreshOnboardingModal();
+    } else {
+      showToast('❌ ' + (r?.error || 'TaxBandits 核对失败'), 'error', 6000);
+    }
+  } catch (e) {
+    showToast('❌ ' + (e.message || 'TaxBandits 核对请求失败'), 'error', 6000);
+  }
 }
 
 async function refreshW9Status() {
