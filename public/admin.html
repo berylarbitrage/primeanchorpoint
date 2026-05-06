@@ -19487,8 +19487,12 @@ async function ssnCardMarkComplete() {
   await confirmOnboardingComplete('tin_verify', '核对税号');
 }
 
+let _taxBanditsVerifying = false;
 async function verifyTinTaxbandits(workerId) {
-  if (!workerId) return;
+  if (!workerId || _taxBanditsVerifying) return;
+  _taxBanditsVerifying = true;
+  // Disable all TaxBandits buttons while in flight
+  document.querySelectorAll('button').forEach(b => { if (b.textContent.includes('TaxBandits')) b.disabled = true; });
   const statusMap = {
     MATCH:       { label: '✅ 匹配 (MATCH)',        color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
     MISMATCH:    { label: '❌ 不匹配 (MISMATCH)',    color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
@@ -19501,7 +19505,6 @@ async function verifyTinTaxbandits(workerId) {
     const r = await api(`/admin/worker-accounts/${workerId}/verify-tin-taxbandits`, { method: 'POST', body: '{}' });
     if (r && r.success) {
       const s = statusMap[r.status] || statusMap.UNKNOWN;
-      const msg = `TaxBandits TIN 核对完成\n\n姓名：${r.name || '-'}\n税号（掩码）：${r.tin_masked || '-'}\n结果：${s.label}`;
       showConfirmModal('TaxBandits 核对结果', `
         <div style="padding:.75rem 1rem;border-radius:8px;background:${s.bg};border:1px solid ${s.border};margin-bottom:.75rem">
           <div style="font-size:1.1rem;font-weight:700;color:${s.color}">${s.label}</div>
@@ -19512,10 +19515,13 @@ async function verifyTinTaxbandits(workerId) {
       `, '关闭', 'btn-blue', () => {}, 'info');
       refreshOnboardingModal();
     } else {
-      showToast('❌ ' + (r?.error || 'TaxBandits 核对失败'), 'error', 6000);
+      showToast('❌ ' + (r?.error || 'TaxBandits 核对失败'), 'error', 8000);
     }
   } catch (e) {
-    showToast('❌ ' + (e.message || 'TaxBandits 核对请求失败'), 'error', 6000);
+    showToast('❌ ' + (e.message || 'TaxBandits 核对请求失败'), 'error', 8000);
+  } finally {
+    _taxBanditsVerifying = false;
+    document.querySelectorAll('button').forEach(b => { if (b.textContent.includes('TaxBandits')) b.disabled = false; });
   }
 }
 
@@ -23702,11 +23708,13 @@ async function saveWorkerPortalMode() {
 
 // ─── Integration Settings ───
 const INT_LABELS = {
-  workbright: { name: 'WorkBright', desc: 'I-9 / Onboarding 平台', icon: '📋' },
-  checkr: { name: 'Checkr', desc: '背景调查 Background Check', icon: '🔍' },
-  gusto: { name: 'Gusto', desc: 'Payroll / 税务 / W-2 / 1099', icon: '💰' },
-  twilio: { name: 'Twilio', desc: '短信通知 + Verify', icon: '📱' },
-  docuseal: { name: 'DocuSeal', desc: '电子签名模板 (API Key + config.url)', icon: '📄' }
+  workbright:   { name: 'WorkBright',   desc: 'I-9 / Onboarding 平台', icon: '📋' },
+  checkr:       { name: 'Checkr',       desc: '背景调查 Background Check', icon: '🔍' },
+  gusto:        { name: 'Gusto',        desc: 'Payroll / 税务 / W-2 / 1099', icon: '💰' },
+  twilio:       { name: 'Twilio',       desc: '短信通知 + Verify', icon: '📱' },
+  docuseal:     { name: 'DocuSeal',     desc: '电子签名模板 (API Key + config.url)', icon: '📄' },
+  taxbandits:   { name: 'TaxBandits',   desc: 'TIN 税号核对 / 1099 & W-2 报税', icon: '🔢',
+    configHint: '{\n  "client_id": "your_client_id",\n  "client_secret": "your_client_secret",\n  "user_token": "your_user_token",\n  "sandbox": true\n}' },
 };
 
 async function loadIntegrations() {
@@ -23753,8 +23761,10 @@ async function editIntegration(provider) {
       if (row.api_key) document.getElementById('intApiKey').placeholder = `当前: ${row.api_key}（留空保持不变）`;
       try {
         const cfg = typeof row.config === 'string' ? JSON.parse(row.config || '{}') : (row.config || {});
-        document.getElementById('intConfig').value = JSON.stringify(cfg, null, 2);
-      } catch(e) { document.getElementById('intConfig').value = '{}'; }
+        const hint = info.configHint;
+        document.getElementById('intConfig').value =
+          (Object.keys(cfg).length === 0 && hint) ? hint : JSON.stringify(cfg, null, 2);
+      } catch(e) { document.getElementById('intConfig').value = info.configHint || '{}'; }
     }
   } catch(e) { /* fallback to empty */ }
   document.getElementById('integrationModal').classList.add('show');
