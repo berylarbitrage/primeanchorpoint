@@ -10355,26 +10355,20 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
     api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}/v1.7.2/ValidateTIN`,
   });
 });
-async function taxBanditsGetToken(cfg) {
-  const baseOauth = cfg.sandbox ? 'https://testoauth.expressauth.net' : 'https://oauth.expressauth.net';
-  const params = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: cfg.client_id,
-    client_secret: cfg.client_secret,
-    user_token: cfg.user_token,
-  });
-  const resp = await fetch(`${baseOauth}/v2/OAuthAccessToken`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`TaxBandits OAuth ${resp.status}: ${text}`);
-  }
-  const data = await resp.json();
-  if (!data.access_token) throw new Error(`TaxBandits OAuth: no access_token in response (${JSON.stringify(data)})`);
-  return data.access_token;
+// TaxBandits uses local JWT (HS256) signed with client_secret — NOT a network OAuth call.
+// JWT payload: { iss: client_id, sub: user_token, iat, exp }
+function taxBanditsGenerateJWT(cfg) {
+  const b64url = (buf) => Buffer.from(buf).toString('base64')
+    .replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const payload = { iss: cfg.client_id, sub: cfg.user_token, iat: now, exp: now + 1800 };
+  const headerB64  = b64url(JSON.stringify(header));
+  const payloadB64 = b64url(JSON.stringify(payload));
+  const data = `${headerB64}.${payloadB64}`;
+  const sig = crypto.createHmac('sha256', cfg.client_secret).update(data).digest();
+  const sigB64 = b64url(sig);
+  return `${data}.${sigB64}`;
 }
 
 app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, async (req, res) => {
@@ -10427,15 +10421,16 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
 
     if (!tin) return res.status(400).json({ error: '未找到工人税号（TIN/SSN），请先确保工人已提交 W-9 或税号信息' });
 
-    // Get OAuth token
-    const token = await taxBanditsGetToken(cfg);
+    // Generate JWT locally (TaxBandits uses HS256 JWT, not OAuth network call)
+    const jwt = taxBanditsGenerateJWT(cfg);
 
     const baseApi = cfg.sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com';
     const requestId = `pa-${workerId}-${Date.now()}`;
 
+    console.log(`[TaxBandits] Calling ValidateTIN for worker ${workerId} (${tinType}, sandbox=${cfg.sandbox})`);
     const tinResp = await fetch(`${baseApi}/v1.7.2/ValidateTIN`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
       body: JSON.stringify({
         TINMatchList: [{ RequestId: requestId, TINMatchType: tinType, TIN: tin.replace(/\D/g, ''), Name: tinName }],
       }),
@@ -10443,7 +10438,7 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
 
     if (!tinResp.ok) {
       const text = await tinResp.text();
-      throw new Error(`TaxBandits TIN API ${tinResp.status}: ${text}`);
+      throw new Error(`TaxBandits TIN API ${tinResp.status}: ${text.slice(0, 500)}`);
     }
 
     const tinData = await tinResp.json();
