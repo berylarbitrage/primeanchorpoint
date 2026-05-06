@@ -19535,26 +19535,67 @@ async function _doTaxBanditsVerify(workerId) {
     NO_DATA:     { label: '❓ 暂无数据 (NO_DATA)',  color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
     UNKNOWN:     { label: '❓ 未知 (UNKNOWN)',       color: '#475569', bg: '#f8fafc', border: '#e2e8f0' },
   };
-  showToast('正在调用 TaxBandits 核对税号…', 'info', 5000);
+
+  // Step-by-step progress modal
+  const renderSteps = (steps) => {
+    return steps.map(s => {
+      const icon = s.state === 'done' ? '✅' : s.state === 'error' ? '❌' : s.state === 'active' ? '⏳' : '⚪';
+      const color = s.state === 'done' ? '#15803d' : s.state === 'error' ? '#b91c1c' : s.state === 'active' ? '#1d4ed8' : '#94a3b8';
+      const wt    = s.state === 'pending' ? '400' : '600';
+      return `<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem .5rem;font-size:.88rem;color:${color};font-weight:${wt}"><span>${icon}</span><span>${s.label}</span>${s.detail ? `<span style="margin-left:auto;font-size:.78rem;color:#64748b;font-family:monospace">${s.detail}</span>` : ''}</div>`;
+    }).join('');
+  };
+
+  const steps = [
+    { label: '准备工人税号数据',     state: 'active', detail: '' },
+    { label: '生成 JWT 签名',         state: 'pending', detail: '' },
+    { label: '调用 TaxBandits API',  state: 'pending', detail: '' },
+    { label: '解析返回结果',         state: 'pending', detail: '' },
+  ];
+
+  showConfirmModal('TaxBandits 核对进行中…', '', '关闭', 'btn', () => {}, 'blue');
+  const descEl = document.getElementById('gcmDesc');
+  descEl.innerHTML = renderSteps(steps);
+
   try {
     const r = await api(`/admin/worker-accounts/${workerId}/verify-tin-taxbandits`, { method: 'POST', body: '{}' });
+
     if (r && r.success) {
+      steps.forEach(s => s.state = 'done');
+      steps[0].detail = r.name || '';
+      steps[1].detail = 'HS256';
+      steps[2].detail = `HTTP 200`;
+      steps[3].detail = r.status || '';
+      descEl.innerHTML = renderSteps(steps);
+
       const s = statusMap[r.status] || statusMap.UNKNOWN;
-      const resultHtml = `
-        <div style="padding:.75rem 1rem;border-radius:8px;background:${s.bg};border:1px solid ${s.border};margin-bottom:.75rem">
+      const resultHtml = renderSteps(steps) + `
+        <div style="margin-top:.75rem;padding:.75rem 1rem;border-radius:8px;background:${s.bg};border:1px solid ${s.border}">
           <div style="font-size:1.1rem;font-weight:700;color:${s.color}">${s.label}</div>
           <div style="margin-top:.4rem;font-size:.85rem;color:#475569">姓名：${r.name || '-'}</div>
           <div style="font-size:.85rem;color:#475569">税号（掩码）：${r.tin_masked || '-'}</div>
         </div>
-        <div style="font-size:.8rem;color:#94a3b8">核对结果已自动保存至工人备注</div>`;
-      showConfirmModal('TaxBandits 核对结果', '', '关闭', 'btn-blue', () => {}, 'blue');
-      document.getElementById('gcmDesc').innerHTML = resultHtml;
+        <div style="margin-top:.5rem;font-size:.8rem;color:#94a3b8">核对结果已自动保存至工人备注</div>`;
+      document.getElementById('gcmTitle').textContent = 'TaxBandits 核对完成';
+      descEl.innerHTML = resultHtml;
       refreshOnboardingModal();
     } else {
-      showToast('❌ ' + (r?.error || 'TaxBandits 核对失败'), 'error', 8000);
+      // Mark which step failed based on error content
+      const err = r?.error || 'TaxBandits 核对失败';
+      let failIdx = 2;
+      if (err.includes('未找到工人税号') || err.includes('未配置')) failIdx = 0;
+      else if (err.includes('JWT') || err.includes('签名')) failIdx = 1;
+      for (let i = 0; i < failIdx; i++) steps[i].state = 'done';
+      steps[failIdx].state = 'error';
+      steps[failIdx].detail = err.length > 80 ? err.slice(0, 80) + '…' : err;
+      document.getElementById('gcmTitle').textContent = 'TaxBandits 核对失败';
+      descEl.innerHTML = renderSteps(steps) + `<div style="margin-top:.75rem;padding:.6rem .8rem;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;font-size:.82rem;color:#b91c1c;word-break:break-all">${err}</div>`;
     }
   } catch (e) {
-    showToast('❌ ' + (e.message || 'TaxBandits 核对请求失败'), 'error', 8000);
+    steps[2].state = 'error';
+    steps[2].detail = e.message || '';
+    document.getElementById('gcmTitle').textContent = 'TaxBandits 核对失败';
+    descEl.innerHTML = renderSteps(steps) + `<div style="margin-top:.75rem;padding:.6rem .8rem;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;font-size:.82rem;color:#b91c1c;word-break:break-all">${e.message || '请求失败'}</div>`;
   }
 }
 
