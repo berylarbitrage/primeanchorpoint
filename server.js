@@ -10332,17 +10332,19 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
     if (!w) return res.status(404).json({ error: 'Worker not found' });
 
-    // Load TaxBandits integration settings
+    // Load TaxBandits integration settings (DB config takes priority; env vars as fallback)
     const row = db.prepare("SELECT * FROM integration_settings WHERE provider='taxbandits'").get();
     const cfg = JSON.parse(row?.config || '{}');
-    const clientId = cfg.client_id || '';
-    const clientSecret = cfg.client_secret || row?.api_key || '';
-    const userToken = cfg.user_token || '';
+    const clientId     = cfg.client_id     || process.env.TAXBANDITS_CLIENT_ID     || '';
+    const clientSecret = cfg.client_secret || process.env.TAXBANDITS_CLIENT_SECRET || row?.api_key || '';
+    const userToken    = cfg.user_token    || process.env.TAXBANDITS_USER_TOKEN    || '';
+    const sandbox      = cfg.sandbox !== undefined ? cfg.sandbox : (process.env.TAXBANDITS_SANDBOX !== 'false');
     if (!clientId || !clientSecret || !userToken) {
-      return res.status(503).json({ error: 'TaxBandits 未配置，请先在集成设置中配置 Client ID / Client Secret / User Token' });
+      return res.status(503).json({ error: 'TaxBandits 未配置，请设置 TAXBANDITS_CLIENT_ID / TAXBANDITS_CLIENT_SECRET / TAXBANDITS_USER_TOKEN 或在集成设置中配置' });
     }
     cfg.client_id = clientId;
     cfg.client_secret = clientSecret;
+    cfg.sandbox = sandbox;
 
     // Get TIN from W-9 or tax_residency data
     let tin = '', tinName = w.name || w.username || '';
