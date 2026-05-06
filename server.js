@@ -10305,6 +10305,115 @@ app.get('/api/admin/worker-accounts/:id/ssn-cards/:docId/file', requireAdmin, (r
   }
 });
 
+// ─── TaxBandits TIN Verification ───
+async function taxBanditsGetToken(cfg) {
+  const baseOauth = cfg.sandbox ? 'https://testoauth.expressauth.net' : 'https://oauth.expressauth.net';
+  const resp = await fetch(`${baseOauth}/v2/OAuthAccessToken`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: cfg.client_id,
+      client_secret: cfg.client_secret,
+      user_token: cfg.user_token,
+    }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`TaxBandits OAuth ${resp.status}: ${text}`);
+  }
+  const data = await resp.json();
+  if (!data.access_token) throw new Error(`TaxBandits OAuth: no access_token in response`);
+  return data.access_token;
+}
+
+app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+
+    // Load TaxBandits integration settings
+    const row = db.prepare("SELECT * FROM integration_settings WHERE provider='taxbandits'").get();
+    const cfg = JSON.parse(row?.config || '{}');
+    const clientId = cfg.client_id || '';
+    const clientSecret = cfg.client_secret || row?.api_key || '';
+    const userToken = cfg.user_token || '';
+    if (!clientId || !clientSecret || !userToken) {
+      return res.status(503).json({ error: 'TaxBandits 未配置，请先在集成设置中配置 Client ID / Client Secret / User Token' });
+    }
+    cfg.client_id = clientId;
+    cfg.client_secret = clientSecret;
+
+    // Get TIN from W-9 or tax_residency data
+    let tin = '', tinName = w.name || w.username || '';
+    let tinType = 'INDIVIDUAL';
+
+    const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
+    if (w9doc) {
+      const fd = JSON.parse(w9doc.form_data || '{}');
+      if (fd.ssn_or_ein_encrypted) {
+        // ssn_or_ein_encrypted is stored as { encrypted, iv } object from encryptSSN()
+        const enc = fd.ssn_or_ein_encrypted;
+        const encStr = typeof enc === 'object' ? enc.encrypted : enc;
+        const ivStr  = typeof enc === 'object' ? enc.iv       : (fd.ssn_or_ein_iv || '');
+        const dec = decryptSSN(encStr, ivStr);
+        if (dec) tin = dec;
+      }
+      if (fd.name) tinName = fd.name;
+      if (fd.tin_type === 'EIN') tinType = 'BUSINESS';
+    }
+
+    // Fallback: tax_residency SSN
+    if (!tin) {
+      const trRow = db.prepare(`SELECT ind_ssn_encrypted, ind_ssn_iv, ind_ssn_masked FROM tax_residency_questionnaire WHERE worker_account_id=?`).get(workerId);
+      if (trRow?.ind_ssn_encrypted) {
+        const dec = decryptSSN(trRow.ind_ssn_encrypted, trRow.ind_ssn_iv || '');
+        if (dec) tin = dec;
+      }
+    }
+
+    if (!tin) return res.status(400).json({ error: '未找到工人税号（TIN/SSN），请先确保工人已提交 W-9 或税号信息' });
+
+    // Get OAuth token
+    const token = await taxBanditsGetToken(cfg);
+
+    const baseApi = cfg.sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com';
+    const requestId = `pa-${workerId}-${Date.now()}`;
+
+    const tinResp = await fetch(`${baseApi}/v1.7.2/ValidateTIN`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        TINMatchList: [{ RequestId: requestId, TINMatchType: tinType, TIN: tin.replace(/\D/g, ''), Name: tinName }],
+      }),
+    });
+
+    if (!tinResp.ok) {
+      const text = await tinResp.text();
+      throw new Error(`TaxBandits TIN API ${tinResp.status}: ${text}`);
+    }
+
+    const tinData = await tinResp.json();
+    const matchResult = tinData?.Response?.TINMatchStatusList?.[0] || tinData?.TINMatchStatusList?.[0] || {};
+    const status = matchResult.TINMatchStatus || matchResult.Status || 'UNKNOWN';
+
+    // Save result as admin note on onboarding task
+    const adminUser = (req.session && req.session.username) || 'admin';
+    const note = `TaxBandits TIN 核对结果：${status}（${new Date().toLocaleString('zh-CN')}）`;
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, updated_at)
+      VALUES (?,'tin_verify','pending',?,CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, note);
+
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, adminUser, 'taxbandits_tin_verify', '', status, note);
+
+    res.json({ success: true, status, name: matchResult.Name || tinName, tin_masked: matchResult.TIN || tin.replace(/\d(?=\d{4})/g, '*'), raw: matchResult });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Save all per-doc metadata in batch for a worker's work permit docs
 app.put('/api/admin/worker-accounts/:id/work-permit-docs-meta', requireAdmin, (req, res) => {
   const docs = req.body.docs;
