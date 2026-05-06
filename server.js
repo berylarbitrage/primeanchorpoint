@@ -10351,8 +10351,8 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
     tin_type: tinType,
     tin_source: tinSource,
     sandbox,
-    oauth_url: `${sandbox ? 'https://testoauth.expressauth.net' : 'https://oauth.expressauth.net'}/v2/OAuthAccessToken`,
-    api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}/v1.7.2/ValidateTIN`,
+    auth: 'JWT (HS256, 本地签名)',
+    api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}${cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.2/TINMatching/RequestByUrl'}`,
   });
 });
 // TaxBandits uses local JWT (HS256) signed with client_secret — NOT a network OAuth call.
@@ -10424,21 +10424,25 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
     // Generate JWT locally (TaxBandits uses HS256 JWT, not OAuth network call)
     const jwt = taxBanditsGenerateJWT(cfg);
 
-    const baseApi = cfg.sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com';
+    const baseApi  = cfg.sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com';
+    const apiPath  = cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.2/TINMatching/RequestByUrl';
+    const apiUrl   = `${baseApi}${apiPath}`;
     const requestId = `pa-${workerId}-${Date.now()}`;
 
-    console.log(`[TaxBandits] Calling ValidateTIN for worker ${workerId} (${tinType}, sandbox=${cfg.sandbox})`);
-    const tinResp = await fetch(`${baseApi}/v1.7.2/ValidateTIN`, {
+    const reqBody = {
+      TINMatchList: [{ RequestId: requestId, TINMatchType: tinType, TIN: tin.replace(/\D/g, ''), Name: tinName }],
+    };
+
+    console.log(`[TaxBandits] POST ${apiUrl} (worker ${workerId}, ${tinType}, sandbox=${cfg.sandbox})`);
+    const tinResp = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
-      body: JSON.stringify({
-        TINMatchList: [{ RequestId: requestId, TINMatchType: tinType, TIN: tin.replace(/\D/g, ''), Name: tinName }],
-      }),
+      body: JSON.stringify(reqBody),
     });
 
     if (!tinResp.ok) {
       const text = await tinResp.text();
-      throw new Error(`TaxBandits TIN API ${tinResp.status}: ${text.slice(0, 500)}`);
+      throw new Error(`TaxBandits API ${tinResp.status} at ${apiPath}: ${text.slice(0, 400) || '(empty body)'}`);
     }
 
     const tinData = await tinResp.json();
