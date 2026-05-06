@@ -8882,11 +8882,9 @@ function initWorkerOnboarding(workerId) {
 // Extract W-9 address from DocuSeal submission fields and save to worker_compliance_docs if missing
 function saveW9AddressFromDocuSeal(workerId, submitters) {
   try {
-    // Check if form_data already exists
+    // Read existing row (we'll always overwrite with the latest DocuSeal-extracted values
+    // — DocuSeal submission is the source of truth, especially after admin "打回 W-9 重填")
     const existing = db.prepare("SELECT id, form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1").get(workerId);
-    if (existing && existing.form_data) {
-      try { const d = JSON.parse(existing.form_data); if (d.address) return; } catch {}
-    }
     // Extract address fields from DocuSeal submitter values
     const workerSub = Array.isArray(submitters) ? (submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0]) : null;
     if (!workerSub) return;
