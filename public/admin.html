@@ -19203,7 +19203,11 @@ async function openW9SendModal() {
   if (!_onboardingWorkerId) return;
   _w9SelectedTemplateId = '';
   document.getElementById('w9SendModal').classList.add('show');
-  const w = _onboardingWorkerData;
+  let w = _onboardingWorkerData;
+  try {
+    const fresh = await api(`/admin/worker-accounts/${_onboardingWorkerId}/basic`);
+    if (fresh && fresh.id) { w = Object.assign({}, w || {}, fresh); _onboardingWorkerData = Object.assign({}, _onboardingWorkerData || {}, fresh); }
+  } catch(e) {}
   document.getElementById('w9WorkerName').textContent = w ? (w.name || w.username || '') : '';
   document.getElementById('w9WorkerEmail').value = (w && (w.email || w.emp_email)) || '';
   document.getElementById('w9WorkerPhone').value = (w && (w.phone || w.emp_phone)) || '';
@@ -19718,7 +19722,11 @@ async function paymentAuthAddCompany() {
 let _payAuthCompanyInfo = null;
 async function openPaymentAuthModal() {
   if (!_onboardingWorkerId) return;
-  const w = _onboardingWorkerData;
+  let w = _onboardingWorkerData;
+  try {
+    const fresh = await api(`/admin/worker-accounts/${_onboardingWorkerId}/basic`);
+    if (fresh && fresh.id) { w = Object.assign({}, w || {}, fresh); _onboardingWorkerData = Object.assign({}, _onboardingWorkerData || {}, fresh); }
+  } catch(e) {}
   const sel = document.getElementById('payAuthMethodSelect');
   const pm = (w && w.payment_method) || 'cash';
   if (sel) sel.value = pm;
