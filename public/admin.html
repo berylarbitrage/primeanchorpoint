@@ -27668,17 +27668,21 @@ async function generateInvpPreview() {
     </tr>`;
   }).join('');
 
-  const bankParts = [
-    profile.bank_account_name ? `Payable To: <strong>${esc(profile.bank_account_name)}</strong>` : '',
-    profile.bank_name         ? `Bank: ${esc(profile.bank_name)}` : '',
-    profile.bank_routing_no   ? `Routing No: ${esc(profile.bank_routing_no)}` : '',
-    profile.bank_account_no   ? `Account No: ${esc(profile.bank_account_no)}` : '',
+  const bankRows = [
+    profile.bank_account_name ? ['Payable To', `<strong>${esc(profile.bank_account_name)}</strong>`] : null,
+    profile.bank_name         ? ['Bank',       esc(profile.bank_name)]                                : null,
+    profile.bank_routing_no   ? ['Routing No', esc(profile.bank_routing_no)]                          : null,
+    profile.bank_account_no   ? ['Account No', esc(profile.bank_account_no)]                          : null,
   ].filter(Boolean);
-  const bankBlock = bankParts.length ? `
-    <div style="margin-bottom:.7rem;padding:.55rem .85rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem;color:#1e293b;line-height:1.5">
-      <span style="font-weight:700;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;color:#29AAE1;margin-right:.5rem">PAYMENT INFORMATION:</span>
-      ${bankParts.join(' &nbsp;|&nbsp; ')}
-      <span style="color:#64748b;margin-left:.5rem">· Payment due upon receipt.</span>
+  const bankBlock = bankRows.length ? `
+    <div style="margin-bottom:.7rem;padding:.6rem .9rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem;color:#1e293b">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:.4rem;border-bottom:1px solid #e2e8f0;padding-bottom:.3rem">
+        <span style="font-weight:700;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;color:#29AAE1">Payment Information</span>
+        <span style="font-size:.72rem;color:#64748b">Payment due upon receipt</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.25rem 1.25rem;line-height:1.55">
+        ${bankRows.map(([k,v]) => `<div style="display:flex;gap:.5rem"><span style="color:#64748b;min-width:78px">${k}:</span><span>${v}</span></div>`).join('')}
+      </div>
     </div>` : '';
 
   const contactBlock = (profile.contact_phone||profile.contact_email) ? `
@@ -27752,14 +27756,14 @@ async function generateInvpPreview() {
       <!-- Table (simplified, sky header, alternating row stripes) -->
       <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
         <thead>
-          <tr style="background:#29AAE1;color:#fff;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">
-            <th style="padding:7px 7px;font-weight:700;text-align:left">Worker</th>
-            ${hasPosition ? `<th style="padding:7px 7px;font-weight:700;text-align:left">Position</th>` : ''}
-            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
-            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>
-            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">Reg Rate</th>
-            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">OT Rate</th>
-            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
+          <tr style="background:#0E7BB8;color:#fff;font-size:.74rem;text-transform:uppercase;letter-spacing:.05em">
+            <th style="padding:8px 7px;font-weight:800;text-align:left">Worker</th>
+            ${hasPosition ? `<th style="padding:8px 7px;font-weight:800;text-align:left">Position</th>` : ''}
+            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">Reg Hours</th>
+            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">OT Hours</th>
+            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">Reg Rate</th>
+            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">OT Rate</th>
+            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">Total</th>
           </tr>
         </thead>
         <tbody>
