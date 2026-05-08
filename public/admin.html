@@ -27552,7 +27552,7 @@ async function generateInvpPreview() {
   ].filter(Boolean);
   const bankBlock = bankParts.length ? `
     <div style="margin-bottom:1.25rem;padding:.7rem 1rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.86rem;color:#1e293b;line-height:1.55">
-      <span style="font-weight:700;text-transform:uppercase;font-size:.75rem;letter-spacing:.08em;color:#0D2D5B;margin-right:.6rem">PAYMENT INFORMATION:</span>
+      <span style="font-weight:700;text-transform:uppercase;font-size:.75rem;letter-spacing:.08em;color:#29AAE1;margin-right:.6rem">PAYMENT INFORMATION:</span>
       ${bankParts.join(' &nbsp;|&nbsp; ')}
       <span style="color:#64748b;margin-left:.6rem">· Payment due upon receipt.</span>
     </div>` : '';
@@ -27574,7 +27574,7 @@ async function generateInvpPreview() {
         <div style="display:flex;align-items:center;gap:1rem;flex:1;min-width:0">
           <img src="/logo.svg" style="height:88px;width:auto;flex-shrink:0" alt="Logo">
           <div style="line-height:1.7;font-size:.9rem;color:#1e293b">
-            ${profile.sender_name ? `<div style="font-size:1.25rem;font-weight:800;color:#0D2D5B;letter-spacing:.02em;margin-bottom:.25rem">${esc(profile.sender_name)}</div>` : ''}
+            ${profile.sender_name ? `<div style="font-size:1.25rem;font-weight:800;color:#29AAE1;letter-spacing:.02em;margin-bottom:.25rem">${esc(profile.sender_name)}</div>` : ''}
             ${profile.sender_address ? `<div>${esc(profile.sender_address)}</div>` : ''}
             ${profile.sender_phone   ? `<div>Phone:&nbsp; ${esc(profile.sender_phone)}</div>` : ''}
             ${profile.sender_email   ? `<div>Email:&nbsp; ${esc(profile.sender_email)}</div>` : ''}
@@ -27583,18 +27583,18 @@ async function generateInvpPreview() {
         </div>
         <!-- Right: INVOICE title + info box -->
         <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:2.4rem;font-weight:900;letter-spacing:5px;color:#0D2D5B;line-height:1;margin-bottom:.7rem">INVOICE</div>
+          <div style="font-size:2.4rem;font-weight:900;letter-spacing:5px;color:#29AAE1;line-height:1;margin-bottom:.7rem">INVOICE</div>
           <table style="border-collapse:collapse;margin-left:auto;font-size:.85rem;border:1px solid #cbd5e1;border-radius:3px;overflow:hidden;background:#f8fafc">
             <tr style="border-bottom:1px solid #e2e8f0">
-              <td style="padding:6px 14px 6px 12px;color:#64748b;text-align:left;white-space:nowrap;background:#eef2f7;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em">Invoice No.</td>
+              <td style="padding:6px 14px 6px 12px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em">Invoice No.</td>
               <td style="padding:6px 14px;font-weight:700;text-align:right;white-space:nowrap">${esc(invNum||'—')}</td>
             </tr>
             <tr style="border-bottom:1px solid #e2e8f0">
-              <td style="padding:6px 14px 6px 12px;color:#64748b;text-align:left;white-space:nowrap;background:#eef2f7;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em">Invoice Date</td>
+              <td style="padding:6px 14px 6px 12px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em">Invoice Date</td>
               <td style="padding:6px 14px;font-weight:600;text-align:right;white-space:nowrap">${fmtNice(invDate)}</td>
             </tr>
             <tr>
-              <td style="padding:6px 14px 6px 12px;color:#64748b;text-align:left;white-space:nowrap;background:#eef2f7;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em">Service Period</td>
+              <td style="padding:6px 14px 6px 12px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em">Service Period</td>
               <td style="padding:6px 14px;font-weight:600;text-align:right;white-space:nowrap">${servicePeriodLabel}</td>
             </tr>
           </table>
@@ -27602,13 +27602,13 @@ async function generateInvpPreview() {
       </div>
 
       <!-- Brand divider -->
-      <div style="border-top:3px solid #0D2D5B;margin-bottom:1.5rem"></div>
+      <div style="border-top:3px solid #29AAE1;margin-bottom:1.5rem"></div>
 
       <!-- Bill To (labeled rows) -->
       <table style="border-collapse:collapse;margin-bottom:1.25rem;font-size:.9rem;line-height:1.7">
         <tr>
           <td style="padding:3px 14px 3px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.75rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">BILL TO:</td>
-          <td style="padding:3px 0;font-weight:700;color:#0D2D5B;font-size:1rem">${esc(billName)}</td>
+          <td style="padding:3px 0;font-weight:700;color:#29AAE1;font-size:1rem">${esc(billName)}</td>
         </tr>
         ${billAddr ? `<tr>
           <td style="padding:3px 14px 3px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.75rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">ADDRESS:</td>
@@ -27621,14 +27621,14 @@ async function generateInvpPreview() {
       </table>
 
       <!-- Service Period banner -->
-      <div style="background:#eef2f7;border-left:4px solid #0D2D5B;padding:.55rem .9rem;margin-bottom:1.25rem;font-size:.85rem;color:#0D2D5B;font-weight:600;letter-spacing:.02em">
+      <div style="background:#e8f5fb;border-left:4px solid #29AAE1;padding:.55rem .9rem;margin-bottom:1.25rem;font-size:.85rem;color:#29AAE1;font-weight:600;letter-spacing:.02em">
         Services rendered for the period ${servicePeriodLabel}
       </div>
 
       <!-- Table (simplified, navy header, alternating row stripes) -->
-      <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:.88rem;border:1px solid #0D2D5B">
+      <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:.88rem;border:1px solid #29AAE1">
         <thead>
-          <tr style="background:#0D2D5B;color:#fff;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em">
+          <tr style="background:#29AAE1;color:#fff;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em">
             <th style="padding:10px 8px;font-weight:700;text-align:left">Worker</th>
             ${hasPosition ? `<th style="padding:10px 8px;font-weight:700;text-align:left">Position</th>` : ''}
             <th style="padding:10px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
@@ -27640,11 +27640,11 @@ async function generateInvpPreview() {
         </thead>
         <tbody>
           ${tableRows}
-          <tr style="background:#eef2f7;font-weight:700;color:#0D2D5B;border-top:2px solid #0D2D5B">
-            <td style="padding:10px 8px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${totalRowColspan}">Total Hours</td>
-            <td style="padding:10px 8px;text-align:right">${totalRegHrs.toFixed(2)}</td>
-            <td style="padding:10px 8px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) : '—'}</td>
-            <td style="padding:10px 8px;text-align:right" colspan="2"></td>
+          <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
+            <td style="padding:10px 8px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.78rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:10px 8px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
+            <td style="padding:10px 8px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
+            <td style="padding:10px 8px;text-align:right" colspan="2">$${billedAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
@@ -27654,12 +27654,13 @@ async function generateInvpPreview() {
         <table style="border-collapse:collapse;font-size:.92rem;min-width:300px">
           ${hasMarkup ? `
           <tr>
-            <td style="padding:6px 16px 6px 0;color:#64748b;text-align:right;white-space:nowrap">Subtotal:</td>
-            <td style="padding:6px 0;text-align:right;white-space:nowrap;color:#1e293b">$${baseAmt.toFixed(2)}</td>
+            <td colspan="2" style="padding:0 0 .5rem 0;text-align:right;font-size:.82rem;color:#64748b;white-space:nowrap">
+              Wage Subtotal $${baseAmt.toFixed(2)} &nbsp;×&nbsp; Markup ${markupRate.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
+            </td>
           </tr>` : ''}
           <tr>
-            <td style="padding:10px 16px 10px 0;border-top:2px solid #0D2D5B;border-bottom:2px solid #0D2D5B;color:#0D2D5B;font-weight:700;text-align:right;font-size:.95rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>
-            <td style="padding:10px 0;border-top:2px solid #0D2D5B;border-bottom:2px solid #0D2D5B;color:#0D2D5B;font-weight:800;text-align:right;font-size:1.3rem;white-space:nowrap">$${billedAmt.toFixed(2)}</td>
+            <td style="padding:10px 16px 10px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;font-size:.95rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>
+            <td style="padding:10px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:800;text-align:right;font-size:1.3rem;white-space:nowrap">$${billedAmt.toFixed(2)}</td>
           </tr>
         </table>
       </div>
@@ -27668,7 +27669,7 @@ async function generateInvpPreview() {
       ${contactBlock}
 
       <!-- Footer -->
-      <div style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:.5rem;text-align:center;font-size:.85rem;color:#0D2D5B;font-weight:700;letter-spacing:.06em">
+      <div style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:.5rem;text-align:center;font-size:.85rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">
         THANK YOU FOR YOUR BUSINESS!
       </div>
     </div>`;
