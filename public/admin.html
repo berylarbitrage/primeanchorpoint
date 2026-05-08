@@ -27479,18 +27479,22 @@ function invpDistQuickPick(kind) {
 function invpApplyDistribute() {
   const uid = parseInt(document.getElementById('invpDistUid').value, 10) || 0;
   const totalHrs = parseFloat(document.getElementById('invpDistTotalHrs').value);
-  if (!isFinite(totalHrs) || totalHrs < 0) { alert('请输入有效的总工时'); return; }
+  if (!isFinite(totalHrs) || totalHrs < 0) { showToast('请输入有效的总工时', 'error'); return; }
   const checked = [...document.querySelectorAll('.invp-dist-day:checked')].map(b => b.value);
-  if (!checked.length) { alert('请至少勾选一天'); return; }
+  if (!checked.length) { showToast('请至少勾选一天', 'error'); return; }
   const overwrite = document.getElementById('invpDistOverwrite').checked;
   const applyAll = !uid || document.getElementById('invpDistApplyAll').checked;
 
+  // Save current DOM inputs into emp.days BEFORE we mutate, so other dates don't get lost.
+  _invpSaveTableState();
+
+  const dates = _invpGetDates();
   const perDay = Math.round((totalHrs / checked.length) * 100) / 100;
   const distribute = (emp) => {
     emp.days = emp.days || {};
     let acc = 0;
     checked.forEach((d, idx) => {
-      const cur = parseFloat(emp.days[d] || 0);
+      const cur = parseFloat(emp.days[d] || 0) || 0;
       let value;
       if (idx === checked.length - 1) {
         value = Math.round((totalHrs - acc) * 100) / 100;
@@ -27502,17 +27506,25 @@ function invpApplyDistribute() {
         emp.days[d] = value.toFixed(2);
       }
     });
+    // Clear unchecked days within the period when overwriting (otherwise stale
+    // values from a previous distribution add to OT and confuse the total).
+    if (overwrite) {
+      dates.forEach(d => {
+        if (!checked.includes(d)) emp.days[d] = '';
+      });
+    }
   };
 
-  _invpSaveTableState();
+  let n = 0;
   if (applyAll) {
-    (window._invpManualEmps||[]).forEach(distribute);
+    (window._invpManualEmps||[]).forEach(e => { distribute(e); n++; });
   } else {
     const emp = (window._invpManualEmps||[]).find(e => e.uid === uid);
-    if (emp) distribute(emp);
+    if (emp) { distribute(emp); n = 1; }
   }
   document.getElementById('invpDistModal').style.display = 'none';
   renderInvpManualTable();
+  showToast(`已分配 ${totalHrs.toFixed(2)}h 到 ${checked.length} 天 ${n > 1 ? `× ${n} 名员工` : ''}`, 'success');
 }
 
 function invpCloseDistribute() { document.getElementById('invpDistModal').style.display = 'none'; }
@@ -27756,14 +27768,14 @@ async function generateInvpPreview() {
       <!-- Table (simplified, sky header, alternating row stripes) -->
       <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
         <thead>
-          <tr style="background:#0E7BB8;color:#fff;font-size:.74rem;text-transform:uppercase;letter-spacing:.05em">
-            <th style="padding:8px 7px;font-weight:800;text-align:left">Worker</th>
-            ${hasPosition ? `<th style="padding:8px 7px;font-weight:800;text-align:left">Position</th>` : ''}
-            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">Reg Hours</th>
-            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">OT Hours</th>
-            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">Reg Rate</th>
-            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">OT Rate</th>
-            <th style="padding:8px 7px;font-weight:800;text-align:right;white-space:nowrap">Total</th>
+          <tr style="background:#f0f9ff;color:#075985;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
+            <th style="padding:8px 8px;font-weight:700;text-align:left">Worker</th>
+            ${hasPosition ? `<th style="padding:8px 8px;font-weight:700;text-align:left">Position</th>` : ''}
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Rate</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Rate</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
           </tr>
         </thead>
         <tbody>
