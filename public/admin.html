@@ -27536,6 +27536,24 @@ function invpApplyDistribute() {
   showToast(`已分配 ${totalHrs.toFixed(2)}h 到 ${checkedDays.length} 天 × ${n} 名员工`, 'success');
 }
 
+function invpClearDistribute() {
+  const checkedDays = [...document.querySelectorAll('.invp-dist-day:checked')].map(b => b.value);
+  if (!checkedDays.length) { showToast('请至少勾选一天', 'error'); return; }
+  const checkedEmpUids = [...document.querySelectorAll('.invp-dist-emp:checked')].map(b => parseInt(b.value, 10));
+  if (!checkedEmpUids.length) { showToast('请至少勾选一名员工', 'error'); return; }
+  _invpSaveTableState();
+  let n = 0;
+  (window._invpManualEmps||[]).forEach(emp => {
+    if (!checkedEmpUids.includes(emp.uid)) return;
+    emp.days = emp.days || {};
+    checkedDays.forEach(d => { emp.days[d] = ''; });
+    n++;
+  });
+  document.getElementById('invpDistModal').style.display = 'none';
+  renderInvpManualTable();
+  showToast(`已清空 ${checkedDays.length} 天 × ${n} 名员工的工时`, 'success');
+}
+
 function invpCloseDistribute() { document.getElementById('invpDistModal').style.display = 'none'; }
 
 function invpRemoveEmp(uid) {
@@ -28207,9 +28225,12 @@ function printInvoice() {
     <div style="background:#f0f9ff;border-left:3px solid var(--sky);padding:.5rem .75rem;font-size:.78rem;color:#0c4a6e;margin-bottom:1rem">
       工时会按勾选的天数平均分配，最后一天补余数以保证总和精确等于输入的总工时（避免出现 5.71×7 = 39.97 这种情况）。
     </div>
-    <div style="display:flex;gap:.5rem;justify-content:flex-end">
-      <button class="btn btn-outline" onclick="invpCloseDistribute()">取消</button>
-      <button class="btn btn-green" onclick="invpApplyDistribute()">⇆ 应用</button>
+    <div style="display:flex;gap:.5rem;justify-content:space-between;align-items:center">
+      <button class="btn btn-outline" style="color:#dc2626;border-color:#fca5a5" onclick="invpClearDistribute()" title="清空所选员工的所选日期工时">🗑 清空所选</button>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-outline" onclick="invpCloseDistribute()">取消</button>
+        <button class="btn btn-green" onclick="invpApplyDistribute()">⇆ 应用</button>
+      </div>
     </div>
   </div>
 </div>
