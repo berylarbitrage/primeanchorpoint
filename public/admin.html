@@ -27283,8 +27283,8 @@ function _invpSaveTableState() {
   });
 }
 
-function renderInvpManualTable() {
-  _invpSaveTableState();
+function renderInvpManualTable(skipSave) {
+  if (!skipSave) _invpSaveTableState();
   const dates = _invpGetDates();
   const wrap = document.getElementById('invPageEmpWrap');
   if (!dates.length) {
@@ -27429,7 +27429,7 @@ function invpClearAllHours() {
   }
   _invpSaveTableState();
   emps.forEach(e => { e.days = {}; });
-  renderInvpManualTable();
+  renderInvpManualTable(true);
   showToast(`已清空 ${emps.length} 名员工的全部工时`, 'success');
 }
 
@@ -27565,7 +27565,7 @@ function invpApplyDistribute() {
     if (checkedEmpUids.includes(emp.uid)) { distribute(emp); n++; }
   });
   document.getElementById('invpDistModal').style.display = 'none';
-  renderInvpManualTable();
+  renderInvpManualTable(true);
   showToast(`已分配 ${totalHrs.toFixed(2)}h 到 ${checkedDays.length} 天 × ${n} 名员工`, 'success');
 }
 
@@ -27583,7 +27583,7 @@ function invpClearDistribute() {
     n++;
   });
   document.getElementById('invpDistModal').style.display = 'none';
-  renderInvpManualTable();
+  renderInvpManualTable(true);
   showToast(`已清空 ${checkedDays.length} 天 × ${n} 名员工的工时`, 'success');
 }
 
