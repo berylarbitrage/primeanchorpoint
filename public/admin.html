@@ -26529,7 +26529,19 @@ function populateInvpDropdown(section) {
   if (!sel) return;
   const items = _invpPresets.filter(p => p.section === section);
   const saved = getInvpProfile();
-  const selectedId = saved[section + '_preset_id'] || '';
+  // Prefer a server-marked default; fall back to localStorage selection
+  const serverDefault = items.find(p => Number(p.is_default) === 1);
+  let selectedId = saved[section + '_preset_id'] || (serverDefault ? String(serverDefault.id) : '');
+  // If server has a default and localStorage is stale/empty, sync the local profile from it
+  if (serverDefault && !saved[section + '_preset_id']) {
+    onInvpPresetSelect._suppressApi = true;
+    sel.innerHTML = '<option value="">-- 选择预设 --</option>'
+      + items.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+    sel.value = String(serverDefault.id);
+    onInvpPresetSelect(section);
+    onInvpPresetSelect._suppressApi = false;
+    return;
+  }
   sel.innerHTML = '<option value="">-- 选择预设 --</option>'
     + items.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
 }
@@ -26556,6 +26568,16 @@ function onInvpPresetSelect(section) {
   saveInvpProfileData(saved);
   renderInvpProfilePreview();
   renderInvpSettingsLists();
+  // Persist the choice on the server so it survives browser/localStorage clears
+  if (!onInvpPresetSelect._suppressApi) {
+    if (id) {
+      api(`/admin/invoice-profiles/${id}/default`, { method: 'POST' }).catch(() => {});
+    } else {
+      api('/admin/invoice-profiles/clear-default', { method: 'POST', body: JSON.stringify({ section }), headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+    }
+    // Refresh in-memory presets so is_default flag stays in sync (don't repopulate UI)
+    _invpPresets.forEach(p => { if (p.section === section) p.is_default = (String(p.id) === String(id)) ? 1 : 0; });
+  }
 }
 
 let _invpPresetSnapshot = '';

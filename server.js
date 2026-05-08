@@ -1692,6 +1692,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_profiles (
   data TEXT DEFAULT '{}',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+try { db.exec(`ALTER TABLE invoice_profiles ADD COLUMN is_default INTEGER DEFAULT 0`); } catch(e) {}
 
 // ─── Integration Settings (WorkBright, Checkr, Gusto, Twilio) ───
 db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
@@ -15045,6 +15046,26 @@ app.put('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
 
 app.delete('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM invoice_profiles WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Mark a preset as the default for its section (clears default on others in the section)
+app.post('/api/admin/invoice-profiles/:id/default', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT section FROM invoice_profiles WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE invoice_profiles SET is_default=0 WHERE section=?').run(row.section);
+    db.prepare('UPDATE invoice_profiles SET is_default=1 WHERE id=?').run(req.params.id);
+  });
+  tx();
+  res.json({ success: true });
+});
+
+// Clear the default for a given section
+app.post('/api/admin/invoice-profiles/clear-default', requireAdmin, (req, res) => {
+  const { section } = req.body;
+  if (!section) return res.status(400).json({ error: 'section required' });
+  db.prepare('UPDATE invoice_profiles SET is_default=0 WHERE section=?').run(section);
   res.json({ success: true });
 });
 
