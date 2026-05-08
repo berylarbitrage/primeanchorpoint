@@ -14352,8 +14352,16 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
     ORDER BY CASE ej.status WHEN 'active' THEN 0 ELSE 1 END, ej.start_date DESC, ej.assigned_at DESC
     LIMIT 10
   `).all(req.params.id);
-  const ssn_full = emp.ssn_encrypted && emp.ssn_iv ? decryptSSN(emp.ssn_encrypted, emp.ssn_iv) : null;
-  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory, voucher_history: voucherHistory, current_jobs: currentJobs });
+  let ssn_full = null;
+  let ssn_status = 'not_stored';
+  if (emp.ssn_encrypted && emp.ssn_iv) {
+    const dec = decryptSSN(emp.ssn_encrypted, emp.ssn_iv);
+    if (dec) { ssn_full = dec; ssn_status = 'available'; }
+    else     { ssn_status = 'decrypt_failed'; }
+  } else if (emp.ssn_last4) {
+    ssn_status = 'last4_only';
+  }
+  res.json({ ...safeEmp(emp), ssn_full, ssn_status, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory, voucher_history: voucherHistory, current_jobs: currentJobs });
 });
 
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {

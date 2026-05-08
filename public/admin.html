@@ -11983,7 +11983,18 @@ function toggleSSNVisibility() {
   if (inp.dataset.ssnMasked === '1') {
     // Reveal
     const full = inp.dataset.ssnFull;
-    if (!full) { showToast('SSN 数据加载中，请稍候...', 'error'); return; }
+    if (!full) {
+      const status = inp.dataset.ssnStatus || 'loading';
+      const msgMap = {
+        loading:        'SSN 数据加载中，请稍候...',
+        decrypt_failed: 'SSN 解密失败：服务器密钥（SSN_SECRET）可能与加密时不一致，请联系系统管理员',
+        not_stored:     '该员工没有存储完整 SSN（仅有后四位）',
+        last4_only:     '该员工只存了 SSN 后四位，无完整号码可显示',
+        forbidden:      '权限不足，无法查看完整 SSN'
+      };
+      showToast(msgMap[status] || msgMap.loading, 'error');
+      return;
+    }
     inp.value = full;
     delete inp.dataset.ssnMasked;
     eye.textContent = '🙈';
@@ -12230,16 +12241,32 @@ function openEmpModal(id) {
     document.getElementById('ePin').value      = '';
     // Show masked SSN and reveal button if SSN is stored
     if (e.ssn_last4) {
-      document.getElementById('eSSN').value = `•••-••-${e.ssn_last4}`;
-      document.getElementById('eSSN').dataset.ssnMasked = '1';
-      document.getElementById('eSSNEye').style.display = '';
+      const ssnInp = document.getElementById('eSSN');
+      const ssnEye = document.getElementById('eSSNEye');
+      ssnInp.value = `•••-••-${e.ssn_last4}`;
+      ssnInp.dataset.ssnMasked = '1';
+      ssnInp.dataset.ssnStatus = 'loading';
+      ssnEye.style.display = '';
+      ssnEye.style.opacity = '0.45';
+      ssnEye.title = '加载中...';
       api(`/admin/employees/${id}`).then(full => {
-        if (full && full.ssn_full) {
-          document.getElementById('eSSN').dataset.ssnFull = full.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3');
+        if (!full || full.error) {
+          ssnInp.dataset.ssnStatus = full && full.error && /权限|denied/i.test(full.error) ? 'forbidden' : 'decrypt_failed';
+        } else if (full.ssn_full) {
+          ssnInp.dataset.ssnFull = full.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3');
+          ssnInp.dataset.ssnStatus = 'available';
+        } else {
+          ssnInp.dataset.ssnStatus = full.ssn_status || 'not_stored';
         }
+        ssnEye.style.opacity = '';
+        ssnEye.title = ssnInp.dataset.ssnStatus === 'available' ? '点击显示 SSN' : '点击查看状态';
+      }).catch(() => {
+        ssnInp.dataset.ssnStatus = 'decrypt_failed';
+        ssnEye.style.opacity = '';
       });
     } else {
       delete document.getElementById('eSSN').dataset.ssnMasked;
+      delete document.getElementById('eSSN').dataset.ssnStatus;
     }
     // Extra phones/emails
     let ep=[]; try{ep=JSON.parse(e.extra_phones||'[]');}catch{}
@@ -12256,7 +12283,7 @@ function openEmpModal(id) {
     setDobValue('');
     ['eFirst','eMiddle','eLast','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
      'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin',
-     'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';delete el.dataset.ssnMasked;delete el.dataset.ssnFull;}});
+     'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';delete el.dataset.ssnMasked;delete el.dataset.ssnFull;delete el.dataset.ssnStatus;}});
     document.getElementById('eSSNEye').style.display = 'none';
     document.getElementById('eHire').value = new Date().toLocaleDateString('en-CA');
     fillStateSelect(document.getElementById('eState'), '');
