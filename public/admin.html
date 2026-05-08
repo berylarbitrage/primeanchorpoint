@@ -27158,13 +27158,24 @@ async function invpRefreshInvoiceNumber() {
 
 // Track whether current preview invoice has been saved
 window._invpPreviewSaved = false;
+window._invpHideOtCols = false;
+window._invpAllOtZero = false;
+
+function toggleInvpOtCols() {
+  window._invpHideOtCols = !window._invpHideOtCols;
+  generateInvpPreview();
+}
 
 function updateInvpPreviewBtns() {
   const wrap = document.getElementById('invpPreviewBtns');
   if (!wrap) return;
   const editId = document.getElementById('invPageEditId').value;
   const isSaved = window._invpPreviewSaved || !!editId;
+  const otToggle = window._invpAllOtZero
+    ? `<button class="btn btn-outline" onclick="toggleInvpOtCols()" style="color:#0369a1;border-color:#7dd3fc;background:${window._invpHideOtCols ? '#e0f2fe' : '#fff'}">${window._invpHideOtCols ? '显示 OT 列' : '隐藏 OT 列'}</button>`
+    : '';
   wrap.innerHTML = `
+    ${otToggle}
     <button class="btn btn-green" onclick="saveInvpInvoice('saved')">${isSaved ? '💾 更新保存' : '💾 保存 Invoice'}</button>
     <button class="btn btn-outline" style="${isSaved ? '' : 'opacity:.45;pointer-events:none;'}" onclick="printInvpInvoice()" ${isSaved ? '' : 'disabled'}>🖨️ 打印 / 另存为 PDF</button>
     <button class="btn btn-outline" onclick="saveInvpInvoice('draft')" style="color:#92400e;border-color:#d97706">📝 保存草稿</button>
@@ -27976,6 +27987,8 @@ async function generateInvpPreview() {
     totalOtHrs  = items.reduce((s,i) => s+(i.otHours||0), 0);
     billedAmt   = Math.round(baseAmt * markupRate * 100) / 100;
     hasPosition = items.some(i => i.category);
+    window._invpAllOtZero = (totalOtHrs === 0);
+    const hideOt = window._invpAllOtZero && window._invpHideOtCols;
     totalRowColspan = hasPosition ? 4 : 3;
     const tableRows = items.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
@@ -27986,9 +27999,9 @@ async function generateInvpPreview() {
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}</td>
         ${posCell}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${(i.regHours||0).toFixed(2)}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>
+        ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>
+        ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>`}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
       </tr>`;
     }).join('');
@@ -27999,19 +28012,19 @@ async function generateInvpPreview() {
             <th style="padding:8px 8px;font-weight:700;text-align:left">Worker</th>
             ${hasPosition ? `<th style="padding:8px 8px;font-weight:700;text-align:left">Position</th>` : ''}
             <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
-            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>
+            ${hideOt ? '' : `<th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>`}
             <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Rate</th>
-            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Rate</th>
+            ${hideOt ? '' : `<th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Rate</th>`}
             <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
           </tr>
         </thead>
         <tbody>
           ${tableRows}
           <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
-            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
             <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
-            <td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
-            <td style="padding:7px 7px;text-align:right" colspan="2">$${billedAmt.toFixed(2)}</td>
+            ${hideOt ? '' : `<td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>`}
+            <td style="padding:7px 7px;text-align:right" colspan="${hideOt ? 1 : 2}">$${billedAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>`;
@@ -28130,7 +28143,7 @@ async function generateInvpPreview() {
     </div>`;
 
   document.getElementById('invpPreviewContent').innerHTML = html;
-  // Reset saved state for new previews (unless editing existing)
+  // Reset saved/OT-toggle state for new previews (unless editing existing)
   const editId = document.getElementById('invPageEditId').value;
   window._invpPreviewSaved = !!editId;
   document.getElementById('invpPreviewModal').style.display = 'flex';
@@ -28144,7 +28157,10 @@ async function generateInvpPreview() {
   }
 }
 
-function closeInvpPreview() { document.getElementById('invpPreviewModal').style.display = 'none'; }
+function closeInvpPreview() {
+  document.getElementById('invpPreviewModal').style.display = 'none';
+  window._invpHideOtCols = false;
+}
 
 function printInvpInvoice() {
   const content = document.getElementById('invpPrintArea').outerHTML;
