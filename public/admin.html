@@ -26836,10 +26836,22 @@ async function openInvpForEdit(id) {
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
       const emp = { uid: _invpManualUidSeq++, name: item.name || '', rate: String(item.rate || ''), days: {} };
-      // Distribute hours evenly across dates for display (exact total preserved)
+      // Distribute hours evenly across dates, with the last day absorbing the
+      // rounding remainder so the per-day cells still sum to the exact total
+      // (avoids 40h appearing as 5.71 × 7 = 39.97).
       if (dates.length && item.hours) {
-        const perDay = item.hours / dates.length;
-        dates.forEach(d => { emp.days[d] = perDay.toFixed(2); });
+        const totalHrs = item.hours;
+        const perDay = Math.round((totalHrs / dates.length) * 100) / 100;
+        let acc = 0;
+        dates.forEach((d, idx) => {
+          if (idx === dates.length - 1) {
+            const last = Math.round((totalHrs - acc) * 100) / 100;
+            emp.days[d] = last.toFixed(2);
+          } else {
+            emp.days[d] = perDay.toFixed(2);
+            acc += perDay;
+          }
+        });
       }
       return emp;
     });
