@@ -28032,8 +28032,6 @@ async function generateInvpPreview() {
       For questions regarding this invoice, please contact: <strong>${[profile.contact_name,profile.contact_phone,profile.contact_email].filter(Boolean).map(s=>esc(s)).join('&nbsp; | &nbsp;')}</strong>
     </div>` : '';
 
-  const totalRowColspan = hasPosition ? 4 : 3;
-
   const html = `
     <div id="invpPaper" style="background:#fff;width:8.5in;min-height:11in;padding:0.5in;box-shadow:0 4px 18px rgba(0,0,0,.12);box-sizing:border-box">
     <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b">
