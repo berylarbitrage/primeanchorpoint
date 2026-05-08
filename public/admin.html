@@ -1483,7 +1483,7 @@ tr:hover td{background:var(--sky-light)}
 
       <!-- Bill To -->
       <h3 style="margin:0 0 .75rem">账单发往（Bill To）</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
         <div class="field" style="grid-column:1/-1;position:relative">
           <label>搜索客户公司</label>
           <input type="text" id="invPageCompanySearch" placeholder="输入公司名搜索..." autocomplete="off"
@@ -1510,6 +1510,21 @@ tr:hover td{background:var(--sky-light)}
         </div>
       </div>
 
+      <!-- Billing mode selector -->
+      <div style="margin-bottom:1rem;padding:.65rem .85rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+        <span style="font-weight:700;font-size:.88rem;color:#075985">计费方式：</span>
+        <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.88rem">
+          <input type="radio" name="invpMode" value="hourly" checked onchange="invpSwitchMode('hourly')">
+          <span>👷 工时计费</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.88rem">
+          <input type="radio" name="invpMode" value="container" onchange="invpSwitchMode('container')">
+          <span>📦 Container 计费</span>
+        </label>
+      </div>
+
+      <!-- ─── HOURLY MODE ─── -->
+      <div id="invpHourlyMode">
       <!-- Employee list -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem">
         <h3 style="margin:0">员工工时明细</h3>
@@ -1533,6 +1548,18 @@ tr:hover td{background:var(--sky-light)}
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 手动添加员工</button>
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpToggleEmpImport()">📥 从系统导入员工</button>
+      </div>
+      </div>
+
+      <!-- ─── CONTAINER MODE ─── -->
+      <div id="invpContainerMode" style="display:none">
+        <h3 style="margin:0 0 .5rem">Container 明细</h3>
+        <div id="invpContainerWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
+          <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">点下方按钮添加 container 行</div>
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddContainer()">＋ 添加 Container</button>
+        </div>
       </div>
 
     </div>
@@ -26782,6 +26809,11 @@ function openInvpBuilderModal() {
   // Reset form state
   window._invpManualEmps = [];
   _invpManualUidSeq = 1;
+  window._invpContainerItems = [];
+  _invpContainerUidSeq = 1;
+  window._invpMode = 'hourly';
+  document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === 'hourly'); });
+  invpSwitchMode('hourly');
   window._invpSelectedPartnerState = null;
   window._invpCurrentSavedId = null;
   const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageEditId'];
@@ -26825,6 +26857,24 @@ async function openInvpForEdit(id) {
   if (inv.profile && Object.keys(inv.profile).length) {
     saveInvpProfileData(inv.profile);
   }
+
+  // Restore billing mode (container vs hourly)
+  const mode = (inv.profile && inv.profile.invoice_mode) === 'container' ? 'container' : 'hourly';
+  window._invpMode = mode;
+  document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === mode); });
+  window._invpContainerItems = [];
+  _invpContainerUidSeq = 1;
+  if (mode === 'container' && inv.profile && Array.isArray(inv.profile.container_items)) {
+    window._invpContainerItems = inv.profile.container_items.map(c => ({
+      uid: _invpContainerUidSeq++,
+      container_no: c.container_no || '',
+      week: c.week || '',
+      staffing: c.staffing || '',
+      qty: String(c.qty || ''),
+      unit_price: String(c.unit_price || ''),
+    }));
+  }
+  invpSwitchMode(mode);
 
   // Restore employee items into manual table
   const dates = [];
@@ -27133,13 +27183,25 @@ async function saveInvpInvoice(status) {
   const editId  = document.getElementById('invPageEditId').value;
   if (!invNum || !billName) { alert('请填写 Invoice 编号和客户公司名称'); return; }
 
-  const items = getInvpManualItems();
-  const employeeTotal = items.reduce((s,i) => s+i.total, 0);
+  const mode = window._invpMode || 'hourly';
   const markupRate = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
-  const subtotal = Math.round(employeeTotal * markupRate * 100) / 100;
+  let items, baseTotal, subtotal, containerItems;
+  if (mode === 'container') {
+    containerItems = getInvpContainerItems();
+    if (!containerItems.length) { alert('请至少添加一个 container 行'); return; }
+    items = []; // hourly items empty in container mode
+    baseTotal = containerItems.reduce((s,i) => s+i.total, 0);
+  } else {
+    items = getInvpManualItems();
+    if (!items.length) { alert('请至少添加一名员工'); return; }
+    baseTotal = items.reduce((s,i) => s+i.total, 0);
+    containerItems = [];
+  }
+  subtotal = Math.round(baseTotal * markupRate * 100) / 100;
+  const profileWithMode = { ...getInvpProfile(), invoice_mode: mode, container_items: containerItems };
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
-    period_start: ps, period_end: pe, subtotal, items, markup_rate: markupRate, profile: getInvpProfile(), status
+    period_start: ps, period_end: pe, subtotal, items, markup_rate: markupRate, profile: profileWithMode, status
   };
 
   let res;
@@ -27464,6 +27526,139 @@ function invpAddEmp() {
   if (rows.length) rows[rows.length - 1].querySelector('.invp-man-name').focus();
 }
 
+// ── Container mode ──
+window._invpContainerItems = window._invpContainerItems || [];
+let _invpContainerUidSeq = 1;
+window._invpMode = window._invpMode || 'hourly';
+
+function invpSwitchMode(mode) {
+  window._invpMode = mode;
+  document.getElementById('invpHourlyMode').style.display    = (mode === 'hourly')    ? '' : 'none';
+  document.getElementById('invpContainerMode').style.display = (mode === 'container') ? '' : 'none';
+  if (mode === 'container') renderInvpContainerTable();
+}
+
+function _invpFmtPeriodForContainer() {
+  const ps = document.getElementById('invPageStart').value;
+  const pe = document.getElementById('invPageEnd').value;
+  if (!ps || !pe) return '';
+  const fmt = d => { const [y,m,day] = d.split('-'); return `${m}.${day}.${y.slice(2)}`; };
+  return `${fmt(ps)} - ${fmt(pe)}`;
+}
+
+function _invpDefaultStaffing() {
+  return (getInvpProfile().sender_name || '').trim();
+}
+
+function _invpSaveContainerState() {
+  document.querySelectorAll('.invp-cont-row').forEach(row => {
+    const uid = parseInt(row.dataset.uid, 10);
+    const item = window._invpContainerItems.find(i => i.uid === uid);
+    if (!item) return;
+    item.container_no  = row.querySelector('.invp-cont-no').value;
+    item.week          = row.querySelector('.invp-cont-week').value;
+    item.staffing      = row.querySelector('.invp-cont-staffing').value;
+    item.qty           = row.querySelector('.invp-cont-qty').value;
+    item.unit_price    = row.querySelector('.invp-cont-price').value;
+  });
+}
+
+function renderInvpContainerTable(skipSave) {
+  if (!skipSave) _invpSaveContainerState();
+  const wrap = document.getElementById('invpContainerWrap');
+  if (!wrap) return;
+  const items = window._invpContainerItems || [];
+  if (!items.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">点下方按钮添加 container 行</div>';
+    return;
+  }
+  const defaultWeek = _invpFmtPeriodForContainer();
+  const defaultStaffing = _invpDefaultStaffing();
+  const rows = items.map((it, idx) => {
+    const qty = parseFloat(it.qty) || 0;
+    const price = parseFloat(it.unit_price) || 0;
+    const total = qty * price;
+    return `<tr class="invp-cont-row" data-uid="${it.uid}">
+      <td style="padding:4px 6px;text-align:center;color:var(--gray-500);font-size:.85rem">${idx + 1}</td>
+      <td style="padding:3px 4px"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase"></td>
+      <td style="padding:3px 4px"><input type="text" class="invp-cont-week" value="${esc(it.week || '')}" placeholder="${esc(defaultWeek || 'MM.DD.YY - MM.DD.YY')}" style="width:140px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
+      <td style="padding:3px 4px"><input type="text" class="invp-cont-staffing" value="${esc(it.staffing || '')}" placeholder="${esc(defaultStaffing || '装卸公司')}" style="width:170px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
+      <td style="padding:3px 4px"><input type="number" class="invp-cont-qty" value="${esc(String(it.qty || ''))}" min="0" step="1" placeholder="1" style="width:60px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
+      <td style="padding:3px 4px"><input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
+      <td class="invp-cont-total" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap">$${total.toFixed(2)}</td>
+      <td style="padding:3px 4px"><button onclick="invpRemoveContainer(${it.uid})" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.85rem;padding:0 4px" title="删除">✕</button></td>
+    </tr>`;
+  }).join('');
+  const grandTotal = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0), 0);
+  wrap.innerHTML = `<table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
+    <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
+      <th style="padding:5px 6px;text-align:center">N.</th>
+      <th style="padding:5px 6px;text-align:left">Container Number</th>
+      <th style="padding:5px 6px;text-align:left">Unloading Week</th>
+      <th style="padding:5px 6px;text-align:left">Unloading Staffing</th>
+      <th style="padding:5px 6px;text-align:center">Qty</th>
+      <th style="padding:5px 6px;text-align:right">Unit Price</th>
+      <th style="padding:5px 6px;text-align:right">Total</th>
+      <th style="padding:5px 6px"></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr style="border-top:2px solid var(--gray-200);font-weight:700;color:#075985">
+      <td colspan="6" style="padding:6px 6px;text-align:right">合计</td>
+      <td style="padding:6px 6px;text-align:right">$${grandTotal.toFixed(2)}</td>
+      <td></td>
+    </tr></tfoot>
+  </table>`;
+}
+
+function invpUpdateContainerRowTotal(row) {
+  const qty = parseFloat(row.querySelector('.invp-cont-qty').value) || 0;
+  const price = parseFloat(row.querySelector('.invp-cont-price').value) || 0;
+  const cell = row.querySelector('.invp-cont-total');
+  if (cell) cell.textContent = '$' + (qty * price).toFixed(2);
+  // Update grand total too
+  _invpSaveContainerState();
+  const items = window._invpContainerItems || [];
+  const grand = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0), 0);
+  const tfootCell = document.querySelector('#invpContainerWrap tfoot td:nth-child(2)');
+  if (tfootCell) tfootCell.textContent = '$' + grand.toFixed(2);
+}
+
+function invpAddContainer() {
+  _invpSaveContainerState();
+  window._invpContainerItems.push({
+    uid: _invpContainerUidSeq++,
+    container_no: '',
+    week: _invpFmtPeriodForContainer(),
+    staffing: _invpDefaultStaffing(),
+    qty: '1',
+    unit_price: '',
+  });
+  renderInvpContainerTable(true);
+  // Focus new container number input
+  const rows = document.querySelectorAll('.invp-cont-row');
+  if (rows.length) rows[rows.length - 1].querySelector('.invp-cont-no').focus();
+}
+
+function invpRemoveContainer(uid) {
+  _invpSaveContainerState();
+  window._invpContainerItems = window._invpContainerItems.filter(i => i.uid !== uid);
+  renderInvpContainerTable(true);
+}
+
+function getInvpContainerItems() {
+  _invpSaveContainerState();
+  return (window._invpContainerItems||[])
+    .filter(i => (i.container_no || '').trim() || parseFloat(i.unit_price) > 0)
+    .map(i => ({
+      container_no: (i.container_no || '').trim(),
+      week: (i.week || '').trim(),
+      staffing: (i.staffing || '').trim(),
+      qty: parseFloat(i.qty) || 0,
+      unit_price: parseFloat(i.unit_price) || 0,
+      total: (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0),
+    }));
+}
+
 // ── Distribute hours across selected days ──
 const _DOW_ZH = ['日','一','二','三','四','五','六'];
 function invpOpenDistribute(uid) {
@@ -27686,8 +27881,15 @@ async function generateInvpPreview() {
   if (!document.getElementById('invPageNumber').value) await invpRefreshInvoiceNumber();
   const invNum = document.getElementById('invPageNumber').value;
 
-  const items = getInvpManualItems();
-  if (!items.length) { alert('请至少添加一名员工并填写姓名'); return; }
+  const mode = window._invpMode || 'hourly';
+  let items = [], containerItems = [];
+  if (mode === 'container') {
+    containerItems = getInvpContainerItems();
+    if (!containerItems.length) { alert('请至少添加一个 container 行（填写 Container 号或单价）'); return; }
+  } else {
+    items = getInvpManualItems();
+    if (!items.length) { alert('请至少添加一名员工并填写姓名'); return; }
+  }
 
   const profile = getInvpProfile();
 
@@ -27712,33 +27914,101 @@ async function generateInvpPreview() {
     }
     return `${left}, ${ay} – ${_MONTHS[parseInt(bm)-1]} ${parseInt(bd)}, ${by}`;
   };
-  const totalHours  = items.reduce((s,i) => s+i.hours, 0);
-  const baseAmt     = items.reduce((s,i) => s+i.total, 0);
-  const totalRegHrs = items.reduce((s,i) => s+(i.regHours||0), 0);
-  const totalOtHrs  = items.reduce((s,i) => s+(i.otHours||0), 0);
   const markupRate  = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
   const hasMarkup   = markupRate > 1;
-  const billedAmt   = Math.round(baseAmt * markupRate * 100) / 100;
   const servicePeriodLabel = fmtNiceRange(ps, pe);
 
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
-  const hasPosition = items.some(i => i.category);
-  const colCount = hasPosition ? 7 : 6;
-  const tableRows = items.map((i, idx) => {
-    const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
-    const posCell = hasPosition
-      ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
-      : '';
-    return `<tr style="background:${stripe}">
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}</td>
-      ${posCell}
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${(i.regHours||0).toFixed(2)}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
-    </tr>`;
-  }).join('');
+
+  // Mode-specific aggregations
+  let baseAmt, billedAmt, totalRegHrs = 0, totalOtHrs = 0, hasPosition = false, totalRowColspan = 3;
+  let lineItemTableHtml = '';
+
+  if (mode === 'container') {
+    baseAmt   = containerItems.reduce((s,i) => s + (i.total || 0), 0);
+    billedAmt = Math.round(baseAmt * markupRate * 100) / 100;
+    const containerRows = containerItems.map((i, idx) => {
+      const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
+      return `<tr style="background:${stripe}">
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b">${idx + 1}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600">${esc(i.container_no || '—')}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.unit_price||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+    const totalQty = containerItems.reduce((s,i) => s + (i.qty || 0), 0);
+    lineItemTableHtml = `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
+        <thead>
+          <tr style="background:#f0f9ff;color:#075985;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
+            <th style="padding:8px 8px;font-weight:700;text-align:center">N.</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:left">Container Number</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Week</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Staffing</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:center">Qty</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Unit Price</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${containerRows}
+          <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
+            <td colspan="4" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:7px 7px;text-align:center">${totalQty}</td>
+            <td style="padding:7px 7px;text-align:right" colspan="2">$${billedAmt.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+  } else {
+    const totalHours  = items.reduce((s,i) => s+i.hours, 0);
+    baseAmt     = items.reduce((s,i) => s+i.total, 0);
+    totalRegHrs = items.reduce((s,i) => s+(i.regHours||0), 0);
+    totalOtHrs  = items.reduce((s,i) => s+(i.otHours||0), 0);
+    billedAmt   = Math.round(baseAmt * markupRate * 100) / 100;
+    hasPosition = items.some(i => i.category);
+    totalRowColspan = hasPosition ? 4 : 3;
+    const tableRows = items.map((i, idx) => {
+      const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
+      const posCell = hasPosition
+        ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
+        : '';
+      return `<tr style="background:${stripe}">
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}</td>
+        ${posCell}
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${(i.regHours||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+    lineItemTableHtml = `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
+        <thead>
+          <tr style="background:#f0f9ff;color:#075985;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
+            <th style="padding:8px 8px;font-weight:700;text-align:left">Worker</th>
+            ${hasPosition ? `<th style="padding:8px 8px;font-weight:700;text-align:left">Position</th>` : ''}
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Rate</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Rate</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+          <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
+            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
+            <td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
+            <td style="padding:7px 7px;text-align:right" colspan="2">$${billedAmt.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+  }
 
   const bankRows = [
     profile.bank_account_name ? ['Payable To', `<strong>${esc(profile.bank_account_name)}</strong>`] : null,
@@ -27825,29 +28095,8 @@ async function generateInvpPreview() {
         Services rendered for the period ${servicePeriodLabel}
       </div>
 
-      <!-- Table (simplified, sky header, alternating row stripes) -->
-      <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
-        <thead>
-          <tr style="background:#f0f9ff;color:#075985;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
-            <th style="padding:8px 8px;font-weight:700;text-align:left">Worker</th>
-            ${hasPosition ? `<th style="padding:8px 8px;font-weight:700;text-align:left">Position</th>` : ''}
-            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
-            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>
-            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Rate</th>
-            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Rate</th>
-            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${tableRows}
-          <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
-            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
-            <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
-            <td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
-            <td style="padding:7px 7px;text-align:right" colspan="2">$${billedAmt.toFixed(2)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- Line items table (hourly OR container) -->
+      ${lineItemTableHtml}
 
       <!-- Amount summary (right-aligned) -->
       <div style="display:flex;justify-content:flex-end;margin-bottom:.85rem">
@@ -27855,7 +28104,7 @@ async function generateInvpPreview() {
           ${hasMarkup ? `
           <tr>
             <td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">
-              Wage Subtotal $${baseAmt.toFixed(2)} &nbsp;×&nbsp; Markup ${markupRate.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
+              ${mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} $${baseAmt.toFixed(2)} &nbsp;×&nbsp; Markup ${markupRate.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
             </td>
           </tr>` : ''}
           <tr>
