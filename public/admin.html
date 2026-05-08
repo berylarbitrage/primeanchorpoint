@@ -1501,7 +1501,7 @@ tr:hover td{background:var(--sky-light)}
           <label>地址</label>
           <input type="text" id="invPageBillAddr" placeholder="客户地址">
         </div>
-        <div class="field">
+        <div class="field" id="invPageMarkupRateWrap">
           <label style="color:#92400e;font-weight:600">Markup Rate（加价系数）</label>
           <div style="display:flex;align-items:center;gap:.5rem">
             <input type="number" id="invPageMarkupRate" placeholder="如 1.15" min="0" step="0.01" style="width:110px;border:1px solid #d97706;border-radius:6px;padding:5px 8px;font-size:.88rem;font-weight:600;color:#92400e">
@@ -27535,7 +27535,14 @@ function invpSwitchMode(mode) {
   window._invpMode = mode;
   document.getElementById('invpHourlyMode').style.display    = (mode === 'hourly')    ? '' : 'none';
   document.getElementById('invpContainerMode').style.display = (mode === 'container') ? '' : 'none';
-  if (mode === 'container') renderInvpContainerTable();
+  // Container invoices don't use markup — hide that input and clear it
+  const mkWrap = document.getElementById('invPageMarkupRateWrap');
+  if (mkWrap) mkWrap.style.display = (mode === 'container') ? 'none' : '';
+  if (mode === 'container') {
+    const mk = document.getElementById('invPageMarkupRate');
+    if (mk) mk.value = '';
+    renderInvpContainerTable();
+  }
 }
 
 function _invpFmtPeriodForContainer() {
@@ -27581,8 +27588,8 @@ function renderInvpContainerTable(skipSave) {
     return `<tr class="invp-cont-row" data-uid="${it.uid}">
       <td style="padding:4px 6px;text-align:center;color:var(--gray-500);font-size:.85rem">${idx + 1}</td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase"></td>
-      <td style="padding:3px 4px"><input type="text" class="invp-cont-week" value="${esc(it.week || '')}" placeholder="${esc(defaultWeek || 'MM.DD.YY - MM.DD.YY')}" style="width:140px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
-      <td style="padding:3px 4px"><input type="text" class="invp-cont-staffing" value="${esc(it.staffing || '')}" placeholder="${esc(defaultStaffing || '装卸公司')}" style="width:170px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
+      <td style="padding:3px 4px"><input type="text" class="invp-cont-week" value="${esc(it.week || defaultWeek || '')}" placeholder="MM.DD.YY - MM.DD.YY" style="width:140px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
+      <td style="padding:3px 4px"><input type="text" class="invp-cont-staffing" value="${esc(it.staffing || defaultStaffing || '')}" placeholder="装卸公司" style="width:170px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-qty" value="${esc(String(it.qty || ''))}" min="0" step="1" placeholder="1" style="width:60px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td class="invp-cont-total" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap">$${total.toFixed(2)}</td>
