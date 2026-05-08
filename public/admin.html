@@ -26529,21 +26529,21 @@ function populateInvpDropdown(section) {
   if (!sel) return;
   const items = _invpPresets.filter(p => p.section === section);
   const saved = getInvpProfile();
-  // Prefer a server-marked default; fall back to localStorage selection
+  const localId = saved[section + '_preset_id'] || '';
+  const localExists = localId && items.some(p => String(p.id) === String(localId));
   const serverDefault = items.find(p => Number(p.is_default) === 1);
-  let selectedId = saved[section + '_preset_id'] || (serverDefault ? String(serverDefault.id) : '');
-  // If server has a default and localStorage is stale/empty, sync the local profile from it
-  if (serverDefault && !saved[section + '_preset_id']) {
-    onInvpPresetSelect._suppressApi = true;
-    sel.innerHTML = '<option value="">-- 选择预设 --</option>'
-      + items.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
-    sel.value = String(serverDefault.id);
-    onInvpPresetSelect(section);
-    onInvpPresetSelect._suppressApi = false;
-    return;
-  }
+  // Prefer a still-valid local choice; otherwise fall back to the server-marked default
+  const effectiveId = localExists ? String(localId) : (serverDefault ? String(serverDefault.id) : '');
+
   sel.innerHTML = '<option value="">-- 选择预设 --</option>'
-    + items.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+    + items.map(p => `<option value="${p.id}" ${String(p.id) === effectiveId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+
+  // If we fell back to a server default (or local was stale), seed localStorage and re-render the preview
+  if (effectiveId && !localExists) {
+    sel.value = effectiveId;
+    onInvpPresetSelect._suppressApi = true;
+    try { onInvpPresetSelect(section); } finally { onInvpPresetSelect._suppressApi = false; }
+  }
 }
 
 function onInvpPresetSelect(section) {
