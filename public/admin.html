@@ -27397,7 +27397,40 @@ function renderInvpManualTable() {
     <div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap">
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 添加员工</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpOpenDistribute(0)" title="一次给所有员工分配工时">⇆ 批量分配工时</button>
+      <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#dc2626;border-color:#fca5a5" onclick="invpClearAllHours()" title="一键清空所有员工的所有工时格子">🗑 清空全部工时</button>
     </div>`;
+}
+
+function invpClearAllHours() {
+  const emps = window._invpManualEmps || [];
+  if (!emps.length) { showToast('暂无员工', 'error'); return; }
+  // Two-step confirm via the button itself
+  const btns = document.querySelectorAll('button[onclick="invpClearAllHours()"]');
+  const btn = btns[btns.length - 1];
+  if (btn && !btn.dataset.confirming) {
+    const orig = btn.innerHTML;
+    btn.dataset.confirming = '1';
+    btn.dataset.orig = orig;
+    btn.innerHTML = '⚠ 再点一次确认';
+    btn.style.background = '#fee2e2';
+    btn.style.color = '#b91c1c';
+    btn.style.borderColor = '#b91c1c';
+    setTimeout(() => {
+      if (btn.dataset.confirming) {
+        btn.innerHTML = btn.dataset.orig;
+        btn.style.background = '';
+        btn.style.color = '#dc2626';
+        btn.style.borderColor = '#fca5a5';
+        delete btn.dataset.confirming;
+        delete btn.dataset.orig;
+      }
+    }, 3000);
+    return;
+  }
+  _invpSaveTableState();
+  emps.forEach(e => { e.days = {}; });
+  renderInvpManualTable();
+  showToast(`已清空 ${emps.length} 名员工的全部工时`, 'success');
 }
 
 function invpUpdateRowTotal(row) {
