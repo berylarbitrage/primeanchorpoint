@@ -27551,30 +27551,30 @@ async function generateInvpPreview() {
     profile.bank_account_no   ? `Account No: ${esc(profile.bank_account_no)}` : '',
   ].filter(Boolean);
   const bankBlock = bankParts.length ? `
-    <div style="margin-bottom:1.25rem;padding:.7rem 1rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.86rem;color:#1e293b;line-height:1.55">
-      <span style="font-weight:700;text-transform:uppercase;font-size:.75rem;letter-spacing:.08em;color:#29AAE1;margin-right:.6rem">PAYMENT INFORMATION:</span>
+    <div style="margin-bottom:.7rem;padding:.55rem .85rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem;color:#1e293b;line-height:1.5">
+      <span style="font-weight:700;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;color:#29AAE1;margin-right:.5rem">PAYMENT INFORMATION:</span>
       ${bankParts.join(' &nbsp;|&nbsp; ')}
-      <span style="color:#64748b;margin-left:.6rem">· Payment due upon receipt.</span>
+      <span style="color:#64748b;margin-left:.5rem">· Payment due upon receipt.</span>
     </div>` : '';
 
-  const contactBlock = (profile.contact_name||profile.contact_phone||profile.contact_email) ? `
-    <div style="font-size:.84rem;color:#475569;line-height:1.75;margin-bottom:.75rem">
-      For questions regarding this invoice, please contact:<br>
-      <strong>${[profile.contact_name,profile.contact_phone,profile.contact_email].filter(Boolean).map(s=>esc(s)).join('&nbsp; | &nbsp;')}</strong>
+  const contactBlock = (profile.contact_phone||profile.contact_email) ? `
+    <div style="font-size:.78rem;color:#475569;line-height:1.55;margin-bottom:.4rem">
+      For questions regarding this invoice, please contact: <strong>${[profile.contact_name,profile.contact_phone,profile.contact_email].filter(Boolean).map(s=>esc(s)).join('&nbsp; | &nbsp;')}</strong>
     </div>` : '';
 
   const totalRowColspan = hasPosition ? 4 : 3;
 
   const html = `
-    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;max-width:860px;margin:0 auto;padding:1.25rem .25rem">
+    <div id="invpPaper" style="background:#fff;width:8.5in;min-height:11in;padding:0.5in;box-shadow:0 4px 18px rgba(0,0,0,.12);box-sizing:border-box">
+    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b">
 
       <!-- ── HEADER ── -->
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:1.5rem;margin-bottom:1.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem">
         <!-- Left: Logo + Sender info -->
-        <div style="display:flex;align-items:center;gap:1rem;flex:1;min-width:0">
-          <img src="/logo.svg" style="height:88px;width:auto;flex-shrink:0" alt="Logo">
-          <div style="line-height:1.7;font-size:.9rem;color:#1e293b">
-            ${profile.sender_name ? `<div style="font-size:1.25rem;font-weight:800;color:#29AAE1;letter-spacing:.02em;margin-bottom:.25rem">${esc(profile.sender_name)}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:.85rem;flex:1;min-width:0">
+          <img src="/logo.svg" style="height:72px;width:auto;flex-shrink:0" alt="Logo">
+          <div style="line-height:1.55;font-size:.85rem;color:#1e293b">
+            ${profile.sender_name ? `<div style="font-size:1.1rem;font-weight:800;color:#29AAE1;letter-spacing:.02em;margin-bottom:.15rem">${esc(profile.sender_name)}</div>` : ''}
             ${profile.sender_address ? `<div>${esc(profile.sender_address)}</div>` : ''}
             ${profile.sender_phone   ? `<div>Phone:&nbsp; ${esc(profile.sender_phone)}</div>` : ''}
             ${profile.sender_email   ? `<div>Email:&nbsp; ${esc(profile.sender_email)}</div>` : ''}
@@ -27583,84 +27583,84 @@ async function generateInvpPreview() {
         </div>
         <!-- Right: INVOICE title + info box -->
         <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:2.4rem;font-weight:900;letter-spacing:5px;color:#29AAE1;line-height:1;margin-bottom:.7rem">INVOICE</div>
-          <table style="border-collapse:collapse;margin-left:auto;font-size:.85rem;border:1px solid #cbd5e1;border-radius:3px;overflow:hidden;background:#f8fafc">
+          <div style="font-size:2.1rem;font-weight:900;letter-spacing:4px;color:#29AAE1;line-height:1;margin-bottom:.55rem">INVOICE</div>
+          <table style="border-collapse:collapse;margin-left:auto;font-size:.8rem;border:1px solid #cbd5e1;border-radius:3px;overflow:hidden;background:#f8fafc">
             <tr style="border-bottom:1px solid #e2e8f0">
-              <td style="padding:6px 14px 6px 12px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em">Invoice No.</td>
-              <td style="padding:6px 14px;font-weight:700;text-align:right;white-space:nowrap">${esc(invNum||'—')}</td>
+              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Invoice No.</td>
+              <td style="padding:5px 12px;font-weight:700;text-align:right;white-space:nowrap">${esc(invNum||'—')}</td>
             </tr>
             <tr style="border-bottom:1px solid #e2e8f0">
-              <td style="padding:6px 14px 6px 12px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em">Invoice Date</td>
-              <td style="padding:6px 14px;font-weight:600;text-align:right;white-space:nowrap">${fmtNice(invDate)}</td>
+              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Invoice Date</td>
+              <td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${fmtNice(invDate)}</td>
             </tr>
             <tr>
-              <td style="padding:6px 14px 6px 12px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em">Service Period</td>
-              <td style="padding:6px 14px;font-weight:600;text-align:right;white-space:nowrap">${servicePeriodLabel}</td>
+              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Service Period</td>
+              <td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${servicePeriodLabel}</td>
             </tr>
           </table>
         </div>
       </div>
 
       <!-- Brand divider -->
-      <div style="border-top:3px solid #29AAE1;margin-bottom:1.5rem"></div>
+      <div style="border-top:2.5px solid #29AAE1;margin-bottom:.9rem"></div>
 
       <!-- Bill To (labeled rows) -->
-      <table style="border-collapse:collapse;margin-bottom:1.25rem;font-size:.9rem;line-height:1.7">
+      <table style="border-collapse:collapse;margin-bottom:.8rem;font-size:.85rem;line-height:1.55">
         <tr>
-          <td style="padding:3px 14px 3px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.75rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">BILL TO:</td>
-          <td style="padding:3px 0;font-weight:700;color:#29AAE1;font-size:1rem">${esc(billName)}</td>
+          <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">BILL TO:</td>
+          <td style="padding:2px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(billName)}</td>
         </tr>
         ${billAddr ? `<tr>
-          <td style="padding:3px 14px 3px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.75rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">ADDRESS:</td>
-          <td style="padding:3px 0;color:#1e293b">${esc(billAddr)}</td>
+          <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">ADDRESS:</td>
+          <td style="padding:2px 0;color:#1e293b">${esc(billAddr)}</td>
         </tr>` : ''}
         <tr>
-          <td style="padding:3px 14px 3px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.75rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">SERVICE PERIOD:</td>
-          <td style="padding:3px 0;color:#1e293b;font-weight:600">${servicePeriodLabel}</td>
+          <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">SERVICE PERIOD:</td>
+          <td style="padding:2px 0;color:#1e293b;font-weight:600">${servicePeriodLabel}</td>
         </tr>
       </table>
 
       <!-- Service Period banner -->
-      <div style="background:#e8f5fb;border-left:4px solid #29AAE1;padding:.55rem .9rem;margin-bottom:1.25rem;font-size:.85rem;color:#29AAE1;font-weight:600;letter-spacing:.02em">
+      <div style="background:#e8f5fb;border-left:4px solid #29AAE1;padding:.4rem .8rem;margin-bottom:.75rem;font-size:.8rem;color:#29AAE1;font-weight:600;letter-spacing:.02em">
         Services rendered for the period ${servicePeriodLabel}
       </div>
 
-      <!-- Table (simplified, navy header, alternating row stripes) -->
-      <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:.88rem;border:1px solid #29AAE1">
+      <!-- Table (simplified, sky header, alternating row stripes) -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
         <thead>
-          <tr style="background:#29AAE1;color:#fff;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em">
-            <th style="padding:10px 8px;font-weight:700;text-align:left">Worker</th>
-            ${hasPosition ? `<th style="padding:10px 8px;font-weight:700;text-align:left">Position</th>` : ''}
-            <th style="padding:10px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
-            <th style="padding:10px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>
-            <th style="padding:10px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Rate</th>
-            <th style="padding:10px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Rate</th>
-            <th style="padding:10px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
+          <tr style="background:#29AAE1;color:#fff;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">
+            <th style="padding:7px 7px;font-weight:700;text-align:left">Worker</th>
+            ${hasPosition ? `<th style="padding:7px 7px;font-weight:700;text-align:left">Position</th>` : ''}
+            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
+            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>
+            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">Reg Rate</th>
+            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">OT Rate</th>
+            <th style="padding:7px 7px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
           </tr>
         </thead>
         <tbody>
           ${tableRows}
           <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
-            <td style="padding:10px 8px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.78rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
-            <td style="padding:10px 8px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
-            <td style="padding:10px 8px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
-            <td style="padding:10px 8px;text-align:right" colspan="2">$${billedAmt.toFixed(2)}</td>
+            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
+            <td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
+            <td style="padding:7px 7px;text-align:right" colspan="2">$${billedAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
 
       <!-- Amount summary (right-aligned) -->
-      <div style="display:flex;justify-content:flex-end;margin-bottom:1.5rem">
-        <table style="border-collapse:collapse;font-size:.92rem;min-width:300px">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:.85rem">
+        <table style="border-collapse:collapse;font-size:.86rem;min-width:280px">
           ${hasMarkup ? `
           <tr>
-            <td colspan="2" style="padding:0 0 .5rem 0;text-align:right;font-size:.82rem;color:#64748b;white-space:nowrap">
+            <td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">
               Wage Subtotal $${baseAmt.toFixed(2)} &nbsp;×&nbsp; Markup ${markupRate.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
             </td>
           </tr>` : ''}
           <tr>
-            <td style="padding:10px 16px 10px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;font-size:.95rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>
-            <td style="padding:10px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:800;text-align:right;font-size:1.3rem;white-space:nowrap">$${billedAmt.toFixed(2)}</td>
+            <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;font-size:.9rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>
+            <td style="padding:7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:800;text-align:right;font-size:1.2rem;white-space:nowrap">$${billedAmt.toFixed(2)}</td>
           </tr>
         </table>
       </div>
@@ -27669,9 +27669,10 @@ async function generateInvpPreview() {
       ${contactBlock}
 
       <!-- Footer -->
-      <div style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:.5rem;text-align:center;font-size:.85rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">
+      <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;text-align:center;font-size:.78rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">
         THANK YOU FOR YOUR BUSINESS!
       </div>
+    </div>
     </div>`;
 
   document.getElementById('invpPreviewContent').innerHTML = html;
@@ -27693,14 +27694,20 @@ function closeInvpPreview() { document.getElementById('invpPreviewModal').style.
 
 function printInvpInvoice() {
   const content = document.getElementById('invpPrintArea').outerHTML;
+  const invNum = (document.getElementById('invPageNumber')||{}).value || 'Invoice';
   const w = window.open('', '_blank');
-  w.document.write(`<!DOCTYPE html><html><head><title>Invoice</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>${invNum}</title>
     <style>
-      body { margin: 1.5cm; font-family: 'Helvetica Neue', Arial, sans-serif; }
-      @media print { body { margin: 1cm; } }
+      @page { size: letter; margin: 0; }
+      html, body { margin: 0; padding: 0; }
+      body { font-family: 'Helvetica Neue', Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .sheet { width: 8.5in; min-height: 11in; padding: 0.5in; box-sizing: border-box; }
       table { page-break-inside: avoid; }
+      @media print {
+        .sheet { page-break-after: avoid; }
+      }
     </style>
-    </head><body>${content}</body></html>`);
+    </head><body><div class="sheet">${content}</div></body></html>`);
   w.document.close();
   w.focus();
   setTimeout(() => w.print(), 300);
@@ -28015,7 +28022,7 @@ function printInvoice() {
         <!-- buttons rendered dynamically by updateInvpPreviewBtns() -->
       </div>
     </div>
-    <div id="invpPreviewContent" style="background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:2.5rem"></div>
+    <div id="invpPreviewContent" style="background:#e5e7eb;border:1px solid var(--gray-200);border-radius:8px;padding:1.25rem;display:flex;justify-content:center;overflow-x:auto"></div>
   </div>
 </div>
 
