@@ -27436,13 +27436,11 @@ const _DOW_ZH = ['日','一','二','三','四','五','六'];
 function invpOpenDistribute(uid) {
   _invpSaveTableState();
   const dates = _invpGetDates();
-  if (!dates.length) { alert('请先设置服务周期开始和结束日期'); return; }
-  // uid === 0 means "apply to all employees"
-  const emp = uid ? (window._invpManualEmps||[]).find(e => e.uid === uid) : null;
+  if (!dates.length) { showToast('请先设置服务周期开始和结束日期', 'error'); return; }
+  const emps = window._invpManualEmps || [];
+  if (!emps.length) { showToast('请先添加员工', 'error'); return; }
   document.getElementById('invpDistUid').value = uid || '0';
-  document.getElementById('invpDistTitle').textContent = uid
-    ? `分配工时到所选日期 — ${emp && emp.name ? emp.name : '(未命名员工)'}`
-    : '分配工时到所选日期 — 应用到所有员工';
+  document.getElementById('invpDistTitle').textContent = '分配工时到所选日期';
   document.getElementById('invpDistTotalHrs').value = '';
   // Default: weekdays checked (Mon-Fri), weekends unchecked
   const dayBoxes = dates.map(d => {
@@ -27457,9 +27455,18 @@ function invpOpenDistribute(uid) {
     </label>`;
   }).join('');
   document.getElementById('invpDistDays').innerHTML = dayBoxes;
+  // Default emp selection: just the one row if opened from a row's button; all if global button
+  const empBoxes = emps.map((e, idx) => {
+    const isThis = uid && e.uid === uid;
+    const checked = uid ? (isThis ? 'checked' : '') : 'checked';
+    const label = (e.name || '').trim() || `(未命名 #${idx + 1})`;
+    return `<label style="display:inline-flex;align-items:center;gap:.35rem;padding:.35rem .55rem;border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;font-size:.83rem;background:#f8fafc">
+      <input type="checkbox" class="invp-dist-emp" value="${e.uid}" ${checked} style="margin:0">
+      <span>${esc(label)}</span>
+    </label>`;
+  }).join('');
+  document.getElementById('invpDistEmps').innerHTML = empBoxes;
   document.getElementById('invpDistOverwrite').checked = true;
-  document.getElementById('invpDistApplyAll').checked = !uid;
-  document.getElementById('invpDistApplyAllRow').style.display = uid ? 'flex' : 'none';
   document.getElementById('invpDistModal').style.display = 'flex';
   setTimeout(() => document.getElementById('invpDistTotalHrs').focus(), 50);
 }
@@ -27476,27 +27483,32 @@ function invpDistQuickPick(kind) {
   });
 }
 
+function invpDistEmpQuickPick(kind) {
+  const boxes = [...document.querySelectorAll('.invp-dist-emp')];
+  boxes.forEach(b => { b.checked = (kind === 'all'); });
+}
+
 function invpApplyDistribute() {
-  const uid = parseInt(document.getElementById('invpDistUid').value, 10) || 0;
   const totalHrs = parseFloat(document.getElementById('invpDistTotalHrs').value);
   if (!isFinite(totalHrs) || totalHrs < 0) { showToast('请输入有效的总工时', 'error'); return; }
-  const checked = [...document.querySelectorAll('.invp-dist-day:checked')].map(b => b.value);
-  if (!checked.length) { showToast('请至少勾选一天', 'error'); return; }
+  const checkedDays = [...document.querySelectorAll('.invp-dist-day:checked')].map(b => b.value);
+  if (!checkedDays.length) { showToast('请至少勾选一天', 'error'); return; }
+  const checkedEmpUids = [...document.querySelectorAll('.invp-dist-emp:checked')].map(b => parseInt(b.value, 10));
+  if (!checkedEmpUids.length) { showToast('请至少勾选一名员工', 'error'); return; }
   const overwrite = document.getElementById('invpDistOverwrite').checked;
-  const applyAll = !uid || document.getElementById('invpDistApplyAll').checked;
 
   // Save current DOM inputs into emp.days BEFORE we mutate, so other dates don't get lost.
   _invpSaveTableState();
 
   const dates = _invpGetDates();
-  const perDay = Math.round((totalHrs / checked.length) * 100) / 100;
+  const perDay = Math.round((totalHrs / checkedDays.length) * 100) / 100;
   const distribute = (emp) => {
     emp.days = emp.days || {};
     let acc = 0;
-    checked.forEach((d, idx) => {
+    checkedDays.forEach((d, idx) => {
       const cur = parseFloat(emp.days[d] || 0) || 0;
       let value;
-      if (idx === checked.length - 1) {
+      if (idx === checkedDays.length - 1) {
         value = Math.round((totalHrs - acc) * 100) / 100;
       } else {
         value = perDay;
@@ -27510,21 +27522,18 @@ function invpApplyDistribute() {
     // values from a previous distribution add to OT and confuse the total).
     if (overwrite) {
       dates.forEach(d => {
-        if (!checked.includes(d)) emp.days[d] = '';
+        if (!checkedDays.includes(d)) emp.days[d] = '';
       });
     }
   };
 
   let n = 0;
-  if (applyAll) {
-    (window._invpManualEmps||[]).forEach(e => { distribute(e); n++; });
-  } else {
-    const emp = (window._invpManualEmps||[]).find(e => e.uid === uid);
-    if (emp) { distribute(emp); n = 1; }
-  }
+  (window._invpManualEmps||[]).forEach(emp => {
+    if (checkedEmpUids.includes(emp.uid)) { distribute(emp); n++; }
+  });
   document.getElementById('invpDistModal').style.display = 'none';
   renderInvpManualTable();
-  showToast(`已分配 ${totalHrs.toFixed(2)}h 到 ${checked.length} 天 ${n > 1 ? `× ${n} 名员工` : ''}`, 'success');
+  showToast(`已分配 ${totalHrs.toFixed(2)}h 到 ${checkedDays.length} 天 × ${n} 名员工`, 'success');
 }
 
 function invpCloseDistribute() { document.getElementById('invpDistModal').style.display = 'none'; }
@@ -28179,16 +28188,20 @@ function printInvoice() {
       </div>
       <div id="invpDistDays" style="display:flex;flex-wrap:wrap;gap:.4rem"></div>
     </div>
-    <div style="margin-bottom:.6rem">
+    <div style="margin-bottom:.85rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+        <label style="font-weight:600;font-size:.85rem">应用到以下员工</label>
+        <div style="display:flex;gap:.3rem">
+          <button type="button" class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .5rem" onclick="invpDistEmpQuickPick('all')">全选</button>
+          <button type="button" class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .5rem" onclick="invpDistEmpQuickPick('none')">清空</button>
+        </div>
+      </div>
+      <div id="invpDistEmps" style="display:flex;flex-wrap:wrap;gap:.4rem;max-height:140px;overflow-y:auto"></div>
+    </div>
+    <div style="margin-bottom:1rem">
       <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer">
         <input type="checkbox" id="invpDistOverwrite" checked>
         <span>覆盖已有的工时（不勾选只填空白格）</span>
-      </label>
-    </div>
-    <div id="invpDistApplyAllRow" style="margin-bottom:1rem;display:none;align-items:center">
-      <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer">
-        <input type="checkbox" id="invpDistApplyAll">
-        <span>同时应用到<strong>所有员工</strong></span>
       </label>
     </div>
     <div style="background:#f0f9ff;border-left:3px solid var(--sky);padding:.5rem .75rem;font-size:.78rem;color:#0c4a6e;margin-bottom:1rem">
