@@ -9056,7 +9056,7 @@ function verifyW9Address(workerId) {
 // Onboarding tasks auto-assigned per employment type (must match frontend W2_TASKS / C1099_TASKS / CASH_TASKS)
 const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
 const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
-const CASH_TASKS = ['contract', 'w9', 'work_permit', 'persona_verify', 'payment_method'];
+const CASH_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
 
 // Check if all assigned onboarding tasks are done; update onboarded flag accordingly
 function syncOnboardedStatus(workerId) {
