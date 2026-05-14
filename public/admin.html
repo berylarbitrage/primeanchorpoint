@@ -18438,6 +18438,14 @@ function wpRenderUploadZones(category, trData) {
   container.innerHTML = '';
   let docs = [];
 
+  // Cash workers: only need a single ID upload, regardless of category/timeline
+  const empType = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
+  if (empType === 'cash') {
+    const zoneId = 'wpUploadZone_0';
+    container.insertAdjacentHTML('beforeend', _wpZoneHtml(zoneId, '身份证件 ID Document', 0));
+    return;
+  }
+
   // For NRA / complex cases: build per-period upload list from timeline
   if (trData && trData.entry_exit_records && (category === 'nra_visa' || category === 'work_visa' || category === 'opt' || category === 'cpt' || category === 'j1' || category === 'ead')) {
     try {
