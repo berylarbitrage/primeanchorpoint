@@ -15819,7 +15819,8 @@ function renderOnboardingTasks(tasks) {
     const empType = _onboardingWorkerData.employment_type;
     const typeTasks = tasksForEmpType(empType);
     if (typeTasks.length) {
-      const dbTaxDocKeys = dbAssignedTasks.filter(k => k.startsWith('tax_doc_'));
+      // Cash workers only file W-9; skip W-8BEN / 8233 / treaty tax_doc_* tasks entirely
+      const dbTaxDocKeys = empType === 'cash' ? [] : dbAssignedTasks.filter(k => k.startsWith('tax_doc_'));
       // Insert tax_doc tasks just before tin_verify so they appear in the right order
       const tinIdx = typeTasks.indexOf('tin_verify');
       if (dbTaxDocKeys.length && tinIdx >= 0) {
@@ -15838,11 +15839,14 @@ function renderOnboardingTasks(tasks) {
   const taxDocKeys = ['tax_doc_w8ben', 'tax_doc_w8bene', 'tax_doc_8233', 'tax_doc_passport', 'tax_doc_visa', 'tax_doc_i94', 'tax_doc_work_auth', 'tax_doc_w7_itin', 'tax_doc_8833', 'tax_doc_corp_cert', 'tax_doc_sign_auth', 'tax_doc_treaty_docs', 'tax_doc_treaty_stmt'];
   const taxGatedKeys = ['w9', 'tin_verify', ...(taxResTask ? ['work_permit'] : []), ...taxDocKeys];
 
+  const isCashWorker = _onboardingWorkerData && _onboardingWorkerData.employment_type === 'cash';
   document.getElementById('onboardingTaskList').innerHTML = tasks.filter((t, idx) => {
     // Always show pre-interview steps
     if (preInterviewKeys.includes(t.key)) return true;
     // After interview: hide if interview not done
     if (!interviewDone) return false;
+    // Cash workers: hide all treaty / W-8 / 8233 / tax_doc_* tasks (they only file W-9)
+    if (isCashWorker && taxDocKeys.includes(t.key)) return false;
     // Tax form/doc tasks: hide until tax residency questionnaire is done
     if (taxGatedKeys.includes(t.key) && !taxResDone) return false;
     // Once tax residency is done, show only the relevant tax form
