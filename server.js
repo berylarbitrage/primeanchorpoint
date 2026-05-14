@@ -10433,23 +10433,35 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
   if (!w) return res.status(404).json({ error: 'Worker not found' });
 
-  let tin = '', tinName = w.name || w.username || '';
+  // Name: prefer first/last from profile, fall back to full name / username
+  const profileName = [w.first_name, w.last_name].filter(Boolean).join(' ').trim();
+  let tin = '', tinName = profileName || w.name || w.username || '';
   let tinType = 'INDIVIDUAL', tinSource = '';
 
-  const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
-  if (w9doc) {
-    const fd = JSON.parse(w9doc.form_data || '{}');
-    if (fd.ssn_or_ein_encrypted) {
-      const enc = fd.ssn_or_ein_encrypted;
-      const encStr = typeof enc === 'object' ? enc.encrypted : enc;
-      const ivStr  = typeof enc === 'object' ? enc.iv : (fd.ssn_or_ein_iv || '');
-      const dec = decryptSSN(encStr, ivStr);
-      if (dec) { tin = dec; tinSource = 'W-9'; }
+  // 1) Admin-uploaded SSN card with doc_number filled in
+  const ssnCard = db.prepare(`SELECT doc_number FROM worker_compliance_docs
+    WHERE worker_account_id=? AND doc_type='ssn_card' AND doc_number IS NOT NULL AND doc_number != ''
+    ORDER BY created_at DESC LIMIT 1`).get(workerId);
+  if (ssnCard?.doc_number) { tin = ssnCard.doc_number; tinSource = 'SSN 卡'; }
+
+  // 2) W-9 form data (encrypted)
+  if (!tin) {
+    const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
+    if (w9doc) {
+      const fd = JSON.parse(w9doc.form_data || '{}');
+      if (fd.ssn_or_ein_encrypted) {
+        const enc = fd.ssn_or_ein_encrypted;
+        const encStr = typeof enc === 'object' ? enc.encrypted : enc;
+        const ivStr  = typeof enc === 'object' ? enc.iv : (fd.ssn_or_ein_iv || '');
+        const dec = decryptSSN(encStr, ivStr);
+        if (dec) { tin = dec; tinSource = 'W-9'; }
+      }
+      if (!profileName && fd.name) tinName = fd.name;
+      if (fd.tin_type === 'EIN') tinType = 'BUSINESS';
     }
-    if (fd.name) tinName = fd.name;
-    if (fd.tin_type === 'EIN') tinType = 'BUSINESS';
   }
 
+  // 3) Tax residency questionnaire (encrypted)
   if (!tin) {
     const trRow = db.prepare(`SELECT ind_ssn_encrypted, ind_ssn_iv FROM tax_residency_questionnaire WHERE worker_account_id=?`).get(workerId);
     if (trRow?.ind_ssn_encrypted) {
@@ -10458,18 +10470,23 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
     }
   }
 
-  if (!tin) return res.status(400).json({ error: '未找到工人税号（TIN/SSN），请先确保工人已提交 W-9 或税号信息' });
+  if (!tin) return res.status(400).json({ error: '未找到工人税号（TIN/SSN）。请先在 SSN 卡上传时填写号码、或让工人提交 W-9。' });
 
   const tinMasked = tin.replace(/\D/g, '').replace(/^(\d*)(\d{4})$/, (_, p, last) => '*'.repeat(p.length) + last);
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='taxbandits'").get();
   const cfg = JSON.parse(row?.config || '{}');
   const sandbox = cfg.sandbox !== undefined ? cfg.sandbox : (process.env.TAXBANDITS_SANDBOX !== 'false');
 
+  const address = [w.city, w.state].filter(Boolean).join(', ') || '— 未填写 —';
+
   res.json({
     name: tinName,
+    first_name: w.first_name || '',
+    last_name: w.last_name || '',
     tin_masked: tinMasked,
     tin_type: tinType,
     tin_source: tinSource,
+    address,
     sandbox,
     auth: 'JWT (HS256, 本地签名)',
     api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}${cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.2/TINMatching/Request'}`,
@@ -10511,26 +10528,35 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
     cfg.client_secret = clientSecret;
     cfg.sandbox = sandbox;
 
-    // Get TIN from W-9 or tax_residency data
-    let tin = '', tinName = w.name || w.username || '';
+    // Get TIN + name with same priority as tin-preview: profile → SSN card → W-9 → tax_residency
+    const profileName = [w.first_name, w.last_name].filter(Boolean).join(' ').trim();
+    let tin = '', tinName = profileName || w.name || w.username || '';
     let tinType = 'INDIVIDUAL';
 
-    const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
-    if (w9doc) {
-      const fd = JSON.parse(w9doc.form_data || '{}');
-      if (fd.ssn_or_ein_encrypted) {
-        // ssn_or_ein_encrypted is stored as { encrypted, iv } object from encryptSSN()
-        const enc = fd.ssn_or_ein_encrypted;
-        const encStr = typeof enc === 'object' ? enc.encrypted : enc;
-        const ivStr  = typeof enc === 'object' ? enc.iv       : (fd.ssn_or_ein_iv || '');
-        const dec = decryptSSN(encStr, ivStr);
-        if (dec) tin = dec;
+    // 1) SSN card upload
+    const ssnCard = db.prepare(`SELECT doc_number FROM worker_compliance_docs
+      WHERE worker_account_id=? AND doc_type='ssn_card' AND doc_number IS NOT NULL AND doc_number != ''
+      ORDER BY created_at DESC LIMIT 1`).get(workerId);
+    if (ssnCard?.doc_number) tin = ssnCard.doc_number;
+
+    // 2) W-9 form data
+    if (!tin) {
+      const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
+      if (w9doc) {
+        const fd = JSON.parse(w9doc.form_data || '{}');
+        if (fd.ssn_or_ein_encrypted) {
+          const enc = fd.ssn_or_ein_encrypted;
+          const encStr = typeof enc === 'object' ? enc.encrypted : enc;
+          const ivStr  = typeof enc === 'object' ? enc.iv       : (fd.ssn_or_ein_iv || '');
+          const dec = decryptSSN(encStr, ivStr);
+          if (dec) tin = dec;
+        }
+        if (!profileName && fd.name) tinName = fd.name;
+        if (fd.tin_type === 'EIN') tinType = 'BUSINESS';
       }
-      if (fd.name) tinName = fd.name;
-      if (fd.tin_type === 'EIN') tinType = 'BUSINESS';
     }
 
-    // Fallback: tax_residency SSN
+    // 3) Tax residency questionnaire
     if (!tin) {
       const trRow = db.prepare(`SELECT ind_ssn_encrypted, ind_ssn_iv, ind_ssn_masked FROM tax_residency_questionnaire WHERE worker_account_id=?`).get(workerId);
       if (trRow?.ind_ssn_encrypted) {
@@ -10539,7 +10565,7 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
       }
     }
 
-    if (!tin) return res.status(400).json({ error: '未找到工人税号（TIN/SSN），请先确保工人已提交 W-9 或税号信息' });
+    if (!tin) return res.status(400).json({ error: '未找到工人税号（TIN/SSN）。请先在 SSN 卡上传时填写号码、或让工人提交 W-9。' });
 
     // Generate JWT locally (TaxBandits uses HS256 JWT, not OAuth network call)
     const jwt = taxBanditsGenerateJWT(cfg);
