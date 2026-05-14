@@ -10438,13 +10438,24 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
   let tin = '', tinName = profileName || w.name || w.username || '';
   let tinType = 'INDIVIDUAL', tinSource = '';
 
-  // 1) Admin-uploaded SSN card with doc_number filled in
-  const ssnCard = db.prepare(`SELECT doc_number FROM worker_compliance_docs
-    WHERE worker_account_id=? AND doc_type='ssn_card' AND doc_number IS NOT NULL AND doc_number != ''
-    ORDER BY created_at DESC LIMIT 1`).get(workerId);
-  if (ssnCard?.doc_number) { tin = ssnCard.doc_number; tinSource = 'SSN 卡'; }
+  // 1) Encrypted SSN on the linked employee record (admin-entered in 编辑员工)
+  if (w.employee_id) {
+    const emp = db.prepare('SELECT ssn_encrypted, ssn_iv FROM employees WHERE id=?').get(w.employee_id);
+    if (emp?.ssn_encrypted) {
+      const dec = decryptSSN(emp.ssn_encrypted, emp.ssn_iv || '');
+      if (dec) { tin = dec; tinSource = '员工档案 SSN'; }
+    }
+  }
 
-  // 2) W-9 form data (encrypted)
+  // 2) Admin-uploaded SSN card with doc_number filled in
+  if (!tin) {
+    const ssnCard = db.prepare(`SELECT doc_number FROM worker_compliance_docs
+      WHERE worker_account_id=? AND doc_type='ssn_card' AND doc_number IS NOT NULL AND doc_number != ''
+      ORDER BY created_at DESC LIMIT 1`).get(workerId);
+    if (ssnCard?.doc_number) { tin = ssnCard.doc_number; tinSource = 'SSN 卡'; }
+  }
+
+  // 3) W-9 form data (encrypted)
   if (!tin) {
     const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
     if (w9doc) {
@@ -10528,18 +10539,29 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
     cfg.client_secret = clientSecret;
     cfg.sandbox = sandbox;
 
-    // Get TIN + name with same priority as tin-preview: profile → SSN card → W-9 → tax_residency
+    // Get TIN + name with priority: employee SSN → SSN card → W-9 → tax_residency
     const profileName = [w.first_name, w.last_name].filter(Boolean).join(' ').trim();
     let tin = '', tinName = profileName || w.name || w.username || '';
     let tinType = 'INDIVIDUAL';
 
-    // 1) SSN card upload
-    const ssnCard = db.prepare(`SELECT doc_number FROM worker_compliance_docs
-      WHERE worker_account_id=? AND doc_type='ssn_card' AND doc_number IS NOT NULL AND doc_number != ''
-      ORDER BY created_at DESC LIMIT 1`).get(workerId);
-    if (ssnCard?.doc_number) tin = ssnCard.doc_number;
+    // 1) Encrypted SSN on the linked employee record
+    if (w.employee_id) {
+      const emp = db.prepare('SELECT ssn_encrypted, ssn_iv FROM employees WHERE id=?').get(w.employee_id);
+      if (emp?.ssn_encrypted) {
+        const dec = decryptSSN(emp.ssn_encrypted, emp.ssn_iv || '');
+        if (dec) tin = dec;
+      }
+    }
 
-    // 2) W-9 form data
+    // 2) SSN card upload
+    if (!tin) {
+      const ssnCard = db.prepare(`SELECT doc_number FROM worker_compliance_docs
+        WHERE worker_account_id=? AND doc_type='ssn_card' AND doc_number IS NOT NULL AND doc_number != ''
+        ORDER BY created_at DESC LIMIT 1`).get(workerId);
+      if (ssnCard?.doc_number) tin = ssnCard.doc_number;
+    }
+
+    // 3) W-9 form data
     if (!tin) {
       const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
       if (w9doc) {
