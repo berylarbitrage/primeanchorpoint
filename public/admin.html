@@ -19955,7 +19955,7 @@ async function _doTaxBanditsVerify(workerId, overridePath) {
 
   const steps = [
     { label: '准备工人税号数据',     state: 'active', detail: '' },
-    { label: '生成 JWT 签名',         state: 'pending', detail: '' },
+    { label: '换取 OAuth AccessToken', state: 'pending', detail: '' },
     { label: '调用 TaxBandits API',  state: 'pending', detail: '' },
     { label: '解析返回结果',         state: 'pending', detail: '' },
   ];
@@ -19992,7 +19992,7 @@ async function _doTaxBanditsVerify(workerId, overridePath) {
       const err = r?.error || 'TaxBandits 核对失败';
       let failIdx = 2;
       if (err.includes('未找到工人税号') || err.includes('未配置')) failIdx = 0;
-      else if (err.includes('JWT') || err.includes('签名')) failIdx = 1;
+      else if (err.includes('JWT') || err.includes('签名') || err.includes('OAuth') || err.includes('AccessToken')) failIdx = 1;
       for (let i = 0; i < failIdx; i++) steps[i].state = 'done';
       steps[failIdx].state = 'error';
       steps[failIdx].detail = err.length > 80 ? err.slice(0, 80) + '…' : err;
