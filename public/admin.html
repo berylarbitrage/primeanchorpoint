@@ -18530,6 +18530,21 @@ function _wpZoneHtml(zoneId, label, idx) {
             onchange="wpSaveDocMeta('${zoneId}')">
         </div>
       </div>
+      <div style="margin-top:.55rem;padding-top:.55rem;border-top:1px dashed #e5e7eb;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <div style="font-size:.72rem;color:#6b7280;font-weight:600">证件真伪 Authenticity:</div>
+        <label style="display:inline-flex;align-items:center;gap:.25rem;font-size:.78rem;cursor:pointer">
+          <input type="radio" name="${zoneId}_auth" value="real" id="${zoneId}_auth_real" style="accent-color:#059669" onchange="wpSaveDocMeta('${zoneId}')">
+          <span style="color:#065f46;font-weight:600">✅ 真实 Real</span>
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:.25rem;font-size:.78rem;cursor:pointer">
+          <input type="radio" name="${zoneId}_auth" value="fake" id="${zoneId}_auth_fake" style="accent-color:#dc2626" onchange="wpSaveDocMeta('${zoneId}')">
+          <span style="color:#991b1b;font-weight:600">🚩 伪造 Fake</span>
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:.25rem;font-size:.78rem;cursor:pointer">
+          <input type="radio" name="${zoneId}_auth" value="" id="${zoneId}_auth_unset" style="accent-color:#6b7280" onchange="wpSaveDocMeta('${zoneId}')" checked>
+          <span style="color:#6b7280">— 未判定 —</span>
+        </label>
+      </div>
     </div>
   `;
 }
@@ -18621,10 +18636,25 @@ async function wpSaveDocMeta(zoneId) {
   const docNumber = (document.getElementById(`${zoneId}_number`) || {}).value || '';
   const startVal = (document.getElementById(`${zoneId}_start`) || {}).value || '';
   const expiryVal = (document.getElementById(`${zoneId}_expiry`) || {}).value || '';
+  const authChecked = document.querySelector(`input[name="${zoneId}_auth"]:checked`);
+  const authenticity = authChecked ? authChecked.value : '';
+  // Visual feedback: red border when marked fake
+  if (zoneEl) {
+    if (authenticity === 'fake') {
+      zoneEl.style.borderColor = '#dc2626';
+      zoneEl.style.background = '#fef2f2';
+    } else if (authenticity === 'real') {
+      zoneEl.style.borderColor = '#059669';
+      zoneEl.style.background = '#f0fdf4';
+    } else {
+      zoneEl.style.borderColor = '#e5e7eb';
+      zoneEl.style.background = '#fff';
+    }
+  }
   try {
     await api(`/admin/work-permit-docs/${docId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: startVal, expiry_date: expiryVal })
+      body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: startVal, expiry_date: expiryVal, authenticity })
     });
   } catch(e) { /* silent */ }
 }
@@ -18688,6 +18718,23 @@ async function wpLoadExistingDocs(category) {
         if (startEl && doc.issue_date) startEl.value = doc.issue_date;
         const expiryEl = document.getElementById(`${zoneId}_expiry`);
         if (expiryEl && doc.expiry_date) expiryEl.value = doc.expiry_date;
+        // Restore authenticity selection
+        const auth = doc.authenticity || '';
+        const authRealEl = document.getElementById(`${zoneId}_auth_real`);
+        const authFakeEl = document.getElementById(`${zoneId}_auth_fake`);
+        const authUnsetEl = document.getElementById(`${zoneId}_auth_unset`);
+        if (authRealEl) authRealEl.checked = auth === 'real';
+        if (authFakeEl) authFakeEl.checked = auth === 'fake';
+        if (authUnsetEl) authUnsetEl.checked = auth !== 'real' && auth !== 'fake';
+        if (zoneEl) {
+          if (auth === 'fake') {
+            zoneEl.style.borderColor = '#dc2626';
+            zoneEl.style.background = '#fef2f2';
+          } else if (auth === 'real') {
+            zoneEl.style.borderColor = '#059669';
+            zoneEl.style.background = '#f0fdf4';
+          }
+        }
       }
     });
   } catch(e) { /* no existing docs */ }
