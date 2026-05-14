@@ -15847,8 +15847,9 @@ function renderOnboardingTasks(tasks) {
     if (!interviewDone) return false;
     // Cash workers: hide all treaty / W-8 / 8233 / tax_doc_* tasks (they only file W-9)
     if (isCashWorker && taxDocKeys.includes(t.key)) return false;
-    // Tax form/doc tasks: hide until tax residency questionnaire is done
-    if (taxGatedKeys.includes(t.key) && !taxResDone) return false;
+    // Tax form/doc tasks: hide until tax residency questionnaire is done.
+    // Cash workers skip tax_residency entirely, so W-9 / tin_verify / work_permit are not gated for them.
+    if (!isCashWorker && taxGatedKeys.includes(t.key) && !taxResDone) return false;
     // Once tax residency is done, show only the relevant tax form
     if (taxResDone && _onboardingRecommendedForm) {
       if (t.key === 'w9' && _onboardingRecommendedForm !== 'W-9') return false;
