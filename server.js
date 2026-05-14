@@ -9053,9 +9053,10 @@ function verifyW9Address(workerId) {
   }
 }
 
-// Onboarding tasks auto-assigned per employment type (must match frontend W2_TASKS / C1099_TASKS)
+// Onboarding tasks auto-assigned per employment type (must match frontend W2_TASKS / C1099_TASKS / CASH_TASKS)
 const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
 const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
+const CASH_TASKS = ['work_permit', 'persona_verify', 'payment_method'];
 
 // Check if all assigned onboarding tasks are done; update onboarded flag accordingly
 function syncOnboardedStatus(workerId) {
@@ -9065,7 +9066,7 @@ function syncOnboardedStatus(workerId) {
   try { assigned = JSON.parse(w.assigned_tasks || '[]'); } catch {}
   // Override with employment_type task list if available (matches frontend logic)
   if (w.employment_type) {
-    const typeTasks = w.employment_type === 'w2' ? W2_TASKS : w.employment_type === '1099' ? C1099_TASKS : [];
+    const typeTasks = w.employment_type === 'w2' ? W2_TASKS : w.employment_type === '1099' ? C1099_TASKS : w.employment_type === 'cash' ? CASH_TASKS : [];
     if (typeTasks.length) assigned = [...typeTasks];
   }
   if (!assigned.length) return; // no tasks assigned — don't auto-mark

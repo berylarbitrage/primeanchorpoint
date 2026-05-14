@@ -4150,19 +4150,26 @@ tr:hover td{background:var(--sky-light)}
   <!-- Section 0: Employment type selection -->
   <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
     <div style="font-size:.78rem;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #bfdbfe">雇佣类型 Employment Type *</div>
-    <div style="display:flex;gap:.75rem">
-      <label style="flex:1;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpTypeW2Label" onclick="selectEmploymentType('w2')">
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+      <label style="flex:1;min-width:160px;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpTypeW2Label" onclick="selectEmploymentType('w2')">
         <input type="radio" name="icEmploymentType" id="icEmpTypeW2" value="w2" style="accent-color:#1d4ed8;width:18px;height:18px">
         <div>
           <div style="font-weight:700;font-size:.9rem;color:var(--blue)">W-2 员工</div>
           <div style="font-size:.75rem;color:var(--gray-400)">I-9 · E-Verify · 背调 · Gusto</div>
         </div>
       </label>
-      <label style="flex:1;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpType1099Label" onclick="selectEmploymentType('1099')">
+      <label style="flex:1;min-width:160px;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpType1099Label" onclick="selectEmploymentType('1099')">
         <input type="radio" name="icEmploymentType" id="icEmpType1099" value="1099" style="accent-color:#1d4ed8;width:18px;height:18px">
         <div>
           <div style="font-weight:700;font-size:.9rem;color:var(--blue)">1099 承包商</div>
           <div style="font-size:.75rem;color:var(--gray-400)">W-9 · 合同 · 背调(如需)</div>
+        </div>
+      </label>
+      <label style="flex:1;min-width:160px;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpTypeCashLabel" onclick="selectEmploymentType('cash')">
+        <input type="radio" name="icEmploymentType" id="icEmpTypeCash" value="cash" style="accent-color:#059669;width:18px;height:18px">
+        <div>
+          <div style="font-weight:700;font-size:.9rem;color:#065f46">💵 现金 Cash</div>
+          <div style="font-size:.75rem;color:var(--gray-400)">现金签收 · 身份核验</div>
         </div>
       </label>
     </div>
@@ -15888,8 +15895,14 @@ function renderOnboardingTasks(tasks) {
     const empType = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
     const entType = (_onboardingWorkerData && _onboardingWorkerData.entity_type) || '';
     const entLabel = entType === 'company' ? '公司' : entType === 'individual' ? '个体' : '';
-    const empLabel = empType === 'w2' ? 'W-2 员工' : empType === '1099' ? ('1099 承包商' + (entLabel ? ' · ' + entLabel : '')) : '';
-    const empColor = empType === 'w2' ? 'color:#1d4ed8;background:#dbeafe;border:1px solid #bfdbfe' : empType === '1099' ? 'color:#9a3412;background:#fff7ed;border:1px solid #fed7aa' : '';
+    const empLabel = empType === 'w2' ? 'W-2 员工'
+      : empType === '1099' ? ('1099 承包商' + (entLabel ? ' · ' + entLabel : ''))
+      : empType === 'cash' ? '💵 现金'
+      : '';
+    const empColor = empType === 'w2' ? 'color:#1d4ed8;background:#dbeafe;border:1px solid #bfdbfe'
+      : empType === '1099' ? 'color:#9a3412;background:#fff7ed;border:1px solid #fed7aa'
+      : empType === 'cash' ? 'color:#065f46;background:#ecfdf5;border:1px solid #a7f3d0'
+      : '';
     if (empLabel) {
       // Find interview row and insert after it
       const taskList = document.getElementById('onboardingTaskList');
@@ -15910,46 +15923,50 @@ function renderOnboardingTasks(tasks) {
 
 function confirmChangeEmploymentType() {
   const cur = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
-  const curLabel = cur === 'w2' ? 'W-2 员工' : cur === '1099' ? '1099 承包商' : '';
-  const newType = cur === 'w2' ? '1099' : 'w2';
-  const newLabel = newType === 'w2' ? 'W-2 员工' : '1099 承包商';
+  const curLabel = empTypeLabel(cur) || '未设置';
+  const choices = ['w2', '1099', 'cash'].filter(t => t !== cur);
+  const buttons = choices.map(t => `<button class="btn btn-green" style="margin:.3rem" onclick="doChangeEmploymentType('${t}');closeModal('confirmModal')">✅ 更改为 ${empTypeLabel(t)}</button>`).join('');
   showConfirmModal(
     '更改雇佣类型',
-    `当前为 <b>${curLabel}</b>，确认要更改为 <b>${newLabel}</b> 吗？<br><br>更改后将自动调整入职任务：不适用的任务会被豁免，新增适用的任务会被重置为待处理。`,
-    `✅ 确认更改为 ${newLabel}`,
-    'btn-green',
-    () => doChangeEmploymentType(newType),
+    `当前为 <b>${curLabel}</b>。请选择新的雇佣类型：<br><br><div style="display:flex;flex-wrap:wrap;justify-content:center">${buttons}</div><br>更改后将自动调整入职任务：不适用的任务会被豁免，新增适用的任务会被重置为待处理。`,
+    '取消',
+    'btn',
+    () => {},
     'amber'
   );
 }
 
 async function doChangeEmploymentType(newType) {
   if (!_onboardingWorkerId) return;
-  const assignedTasks = newType === 'w2' ? W2_TASKS : C1099_TASKS;
+  const oldType = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
+  const oldAssigned = new Set(tasksForEmpType(oldType));
+  const newAssigned = tasksForEmpType(newType);
+  const newAssignedSet = new Set(newAssigned);
+  const label = empTypeLabel(newType);
 
   // Save new employment type + assigned tasks
   await api(`/admin/worker-accounts/${_onboardingWorkerId}`, {
     method: 'PUT',
-    body: JSON.stringify({ employment_type: newType, assigned_tasks: assignedTasks })
+    body: JSON.stringify({ employment_type: newType, assigned_tasks: newAssigned })
   });
 
-  // Waive tasks not applicable to new type
-  const tasksToWaive = newType === 'w2' ? ['w9', 'tax_residency'] : ['i9', 'ead_upload', 'gusto'];
+  // Waive tasks that no longer apply
+  const tasksToWaive = ALL_EMP_TASKS.filter(k => !newAssignedSet.has(k));
   for (const key of tasksToWaive) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
-      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
+      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${label}不适用）` })
     });
   }
 
-  // Reset previously waived tasks that now apply
-  const tasksToReset = newType === 'w2' ? ['i9', 'ead_upload', 'work_permit', 'gusto'] : ['w9', 'tax_residency', 'work_permit'];
+  // Reset tasks that now apply but didn't previously (so they show up as pending again)
+  const tasksToReset = newAssigned.filter(k => !oldAssigned.has(k));
   for (const key of tasksToReset) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
     });
   }
 
-  showToast(`✅ 已更改为 ${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}`, 'success');
+  showToast(`✅ 已更改为 ${label}`, 'success');
   await refreshOnboardingModal();
 }
 
@@ -15983,14 +16000,19 @@ let _icSkills = [];
 function selectEmploymentType(type) {
   const w2Label = document.getElementById('icEmpTypeW2Label');
   const c1099Label = document.getElementById('icEmpType1099Label');
+  const cashLabel = document.getElementById('icEmpTypeCashLabel');
   const w2Radio = document.getElementById('icEmpTypeW2');
   const c1099Radio = document.getElementById('icEmpType1099');
+  const cashRadio = document.getElementById('icEmpTypeCash');
   w2Label.style.borderColor = type === 'w2' ? '#1d4ed8' : 'var(--gray-200)';
   w2Label.style.background = type === 'w2' ? '#eff6ff' : '#fff';
   c1099Label.style.borderColor = type === '1099' ? '#1d4ed8' : 'var(--gray-200)';
   c1099Label.style.background = type === '1099' ? '#eff6ff' : '#fff';
+  cashLabel.style.borderColor = type === 'cash' ? '#059669' : 'var(--gray-200)';
+  cashLabel.style.background = type === 'cash' ? '#ecfdf5' : '#fff';
   w2Radio.checked = type === 'w2';
   c1099Radio.checked = type === '1099';
+  cashRadio.checked = type === 'cash';
   document.getElementById('ic1099IdentitySection').style.display = type === '1099' ? '' : 'none';
   if (type !== '1099') {
     document.getElementById('icIdentityRes').checked = false;
@@ -16037,6 +16059,10 @@ function selectEntityType(type) {
 // Onboarding tasks auto-assigned per employment type
 const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
 const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
+const CASH_TASKS = ['work_permit', 'persona_verify', 'payment_method'];
+const ALL_EMP_TASKS = ['contract', 'i9', 'ead_upload', 'gusto', 'w9', 'tax_residency', 'tin_verify', 'background_check', 'work_permit', 'persona_verify', 'payment_method'];
+function tasksForEmpType(t) { return t === 'w2' ? W2_TASKS : t === '1099' ? C1099_TASKS : t === 'cash' ? CASH_TASKS : []; }
+function empTypeLabel(t) { return t === 'w2' ? 'W-2 员工' : t === '1099' ? '1099 承包商' : t === 'cash' ? '💵 现金' : ''; }
 
 
 // ─── Tax Wizard (standalone modal, opens from onboarding task list) ───
@@ -18010,15 +18036,18 @@ async function openInterviewCompleteModal() {
   }
 
   const empType = (w && w.employment_type) || '';
-  if (empType === 'w2' || empType === '1099') {
+  if (empType === 'w2' || empType === '1099' || empType === 'cash') {
     selectEmploymentType(empType);
   } else {
     document.getElementById('icEmpTypeW2').checked = false;
     document.getElementById('icEmpType1099').checked = false;
+    document.getElementById('icEmpTypeCash').checked = false;
     document.getElementById('icEmpTypeW2Label').style.borderColor = 'var(--gray-200)';
     document.getElementById('icEmpTypeW2Label').style.background = '#fff';
     document.getElementById('icEmpType1099Label').style.borderColor = 'var(--gray-200)';
     document.getElementById('icEmpType1099Label').style.background = '#fff';
+    document.getElementById('icEmpTypeCashLabel').style.borderColor = 'var(--gray-200)';
+    document.getElementById('icEmpTypeCashLabel').style.background = '#fff';
     document.getElementById('ic1099IdentitySection').style.display = 'none';
   }
 
@@ -18157,8 +18186,10 @@ async function addIcSkill() {
 
 async function saveInterviewComplete() {
   if (!_onboardingWorkerId) return;
-  const employmentType = document.getElementById('icEmpTypeW2').checked ? 'w2' : document.getElementById('icEmpType1099').checked ? '1099' : '';
-  if (!employmentType) return showToast('❌ 请选择雇佣类型（W-2 或 1099）', 'error');
+  const employmentType = document.getElementById('icEmpTypeW2').checked ? 'w2'
+    : document.getElementById('icEmpType1099').checked ? '1099'
+    : document.getElementById('icEmpTypeCash').checked ? 'cash' : '';
+  if (!employmentType) return showToast('❌ 请选择雇佣类型（W-2、1099 或 现金）', 'error');
 
   let workStatus = '';
   let entityType = '';
@@ -18172,10 +18203,10 @@ async function saveInterviewComplete() {
   const preferredLang = document.getElementById('icLangZh').checked ? 'zh' : document.getElementById('icLangEn').checked ? 'en' : document.getElementById('icLangEs').checked ? 'es' : '';
   if (!preferredLang) return showToast('❌ 请选择员工的语言偏好 / Please select language preference', 'error');
 
-  const paymentMethod = document.getElementById('icPaymentMethod').value;
+  const paymentMethod = employmentType === 'cash' ? 'cash' : document.getElementById('icPaymentMethod').value;
   const positionInterests = Array.from(document.querySelectorAll('#icPositionInterests input[type="checkbox"]:checked')).map(cb => cb.value);
   const skills = _icSkills.filter(s => s.skill_name.trim());
-  const assignedTasks = employmentType === 'w2' ? W2_TASKS : C1099_TASKS;
+  const assignedTasks = tasksForEmpType(employmentType);
 
   const updateBody = { payment_method: paymentMethod, position_interests: positionInterests, employment_type: employmentType, assigned_tasks: assignedTasks, preferred_lang: preferredLang };
   if (workStatus) updateBody.work_status = workStatus;
@@ -18187,19 +18218,19 @@ async function saveInterviewComplete() {
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/skills`, { method: 'PUT', body: JSON.stringify({ skills }) });
 
   // Auto-waive tasks not applicable to this employment type
-  const tasksToWaive = employmentType === 'w2'
-    ? ['w9', 'tax_residency']
-    : ['i9', 'ead_upload', 'gusto'];
+  const assignedSet = new Set(assignedTasks);
+  const tasksToWaive = ALL_EMP_TASKS.filter(k => !assignedSet.has(k));
+  const label = empTypeLabel(employmentType);
   for (const key of tasksToWaive) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
-      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
+      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${label}不适用）` })
     });
   }
 
   await updateOnboardingTask('interview', 'completed');
   closeModal('interviewCompleteModal');
   const langLabel = preferredLang === 'zh' ? '中文' : preferredLang === 'en' ? 'English' : 'Español';
-  showToast(`✅ 面试已完成 · ${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'} · 语言: ${langLabel}`, 'success', 5000);
+  showToast(`✅ 面试已完成 · ${label} · 语言: ${langLabel}`, 'success', 5000);
 }
 
 function confirmOnboardingWaive(key, title) {
