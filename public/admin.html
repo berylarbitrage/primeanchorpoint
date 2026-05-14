@@ -3518,6 +3518,36 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- 纸质合同上传 Modal (cash workers) -->
+<div class="modal-bg" id="paperContractModal"><div class="modal" style="max-width:640px">
+  <h2>📎 上传纸质合同 — <span id="paperContractWorkerName" style="color:var(--sky)"></span></h2>
+  <div style="margin:.5rem 0 1rem;font-size:.85rem;color:var(--gray-500)">现金工人的合同采用线下签署，请上传纸质合同照片或扫描件（支持 JPG / PNG / PDF / DOC）</div>
+
+  <div id="paperContractDropZone"
+       ondragover="event.preventDefault();this.style.background='#eff6ff';this.style.borderColor='#0ea5e9'"
+       ondragleave="this.style.background='#f8fafc';this.style.borderColor='#cbd5e1'"
+       ondrop="paperContractHandleDrop(event)"
+       onclick="document.getElementById('paperContractFileInput').click()"
+       style="border:2px dashed #cbd5e1;border-radius:10px;padding:1.5rem;text-align:center;background:#f8fafc;cursor:pointer;transition:all .15s;margin-bottom:1rem">
+    <div style="font-size:2rem;margin-bottom:.4rem">📎</div>
+    <div style="font-weight:600;color:#0f2b5b;margin-bottom:.2rem">拖拽文件到此处或点击选择</div>
+    <div style="font-size:.78rem;color:#64748b">支持 JPG / PNG / PDF / DOC，最大 20MB</div>
+    <input type="file" id="paperContractFileInput" accept=".jpg,.jpeg,.png,.pdf,.gif,.doc,.docx" style="display:none" onchange="paperContractHandleFiles(this.files)">
+  </div>
+
+  <div id="paperContractUploadStatus" style="display:none;margin-bottom:.75rem;padding:.5rem .75rem;border-radius:6px;font-size:.85rem"></div>
+
+  <div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem;color:#0f2b5b">已上传文件</div>
+  <div id="paperContractList" style="border:1px solid #e2e8f0;border-radius:8px;max-height:240px;overflow-y:auto;background:#fff">
+    <div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.83rem">加载中…</div>
+  </div>
+
+  <div class="modal-actions" style="margin-top:1rem">
+    <button class="btn btn-green" onclick="paperContractMarkComplete()">✅ 标记合同已签</button>
+    <button class="btn" onclick="closeModal('paperContractModal')">关闭</button>
+  </div>
+</div></div>
+
 <!-- 承包商发票 Send Modal -->
 <div class="modal-bg" id="invSendModal"><div class="modal" style="max-width:720px">
   <h2>📄 发送承包商发票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
@@ -15787,7 +15817,7 @@ function renderOnboardingTasks(tasks) {
   // Use employment-type task list as base, but preserve tax_doc_* keys the server set for this worker
   if (_onboardingWorkerData && _onboardingWorkerData.employment_type) {
     const empType = _onboardingWorkerData.employment_type;
-    const typeTasks = empType === 'w2' ? W2_TASKS : empType === '1099' ? C1099_TASKS : [];
+    const typeTasks = tasksForEmpType(empType);
     if (typeTasks.length) {
       const dbTaxDocKeys = dbAssignedTasks.filter(k => k.startsWith('tax_doc_'));
       // Insert tax_doc tasks just before tin_verify so they appear in the right order
@@ -15863,7 +15893,9 @@ function renderOnboardingTasks(tasks) {
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${_TASK_TEMPLATE_MAP[t.key]?`<button class="btn btn-sm" style="background:#fdf4ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="${t.key==='payment_method'?'openPaymentAuthModal()':`openOnboardingTaskPreview('${t.key}',${tt})`}">🔍 预览表格</button>`:''}
           ${t.key==='contract'
-            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>${(t.ds_status==='completed'&&s==='completed')?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('contract')">🔗 绑定已签文件</button>`:''}`
+            ? ((_onboardingWorkerData && _onboardingWorkerData.employment_type === 'cash')
+                ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openPaperContractModal()">📎 ${s==='completed'?'查看/管理纸质合同':'上传纸质合同'}</button>`
+                : `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>${(t.ds_status==='completed'&&s==='completed')?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('contract')">🔗 绑定已签文件</button>`:''}`)
             : t.key==='persona_verify'
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
@@ -19543,6 +19575,112 @@ async function deleteSsnCard(docId) {
 async function ssnCardMarkComplete() {
   closeModal('ssnCardModal');
   await confirmOnboardingComplete('tin_verify', '核对税号');
+}
+
+// ─── Paper Contract Upload (cash workers) ───
+async function openPaperContractModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  document.getElementById('paperContractWorkerName').textContent = w ? (w.name || w.username || '') : '';
+  document.getElementById('paperContractModal').classList.add('show');
+  document.getElementById('paperContractUploadStatus').style.display = 'none';
+  document.getElementById('paperContractFileInput').value = '';
+  await loadPaperContractList();
+}
+
+async function loadPaperContractList() {
+  const wrap = document.getElementById('paperContractList');
+  if (!wrap) return;
+  try {
+    const docs = await api(`/admin/worker-accounts/${_onboardingWorkerId}/paper-contracts`);
+    if (!docs || !docs.length) {
+      wrap.innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.83rem">暂无已上传的纸质合同</div>';
+      return;
+    }
+    wrap.innerHTML = docs.map(d => {
+      const dt = d.created_at ? new Date(d.created_at).toLocaleString('zh-CN') : '';
+      const fileUrl = `/api/admin/worker-accounts/${_onboardingWorkerId}/paper-contracts/${d.id}/file`;
+      return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;border-bottom:1px solid #f1f5f9">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.85rem;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.file_name || '未命名文件')}</div>
+          <div style="font-size:.72rem;color:#94a3b8">${dt}</div>
+        </div>
+        <a href="${fileUrl}?inline=1" target="_blank" class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;text-decoration:none">查看</a>
+        <a href="${fileUrl}" class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;text-decoration:none">下载</a>
+        <button class="btn btn-sm" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="deletePaperContract(${d.id})">删除</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    wrap.innerHTML = `<div style="padding:1rem;text-align:center;color:#ef4444;font-size:.83rem">加载失败：${esc(e.message || '')}</div>`;
+  }
+}
+
+function paperContractHandleDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('paperContractDropZone');
+  if (dz) { dz.style.background = '#f8fafc'; dz.style.borderColor = '#cbd5e1'; }
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+    paperContractHandleFiles(e.dataTransfer.files);
+  }
+}
+
+async function paperContractHandleFiles(files) {
+  if (!files || !files.length) return;
+  const allowed = /\.(jpe?g|png|pdf|gif|docx?)$/i;
+  const status = document.getElementById('paperContractUploadStatus');
+  for (const f of files) {
+    if (!allowed.test(f.name)) {
+      status.style.display = '';
+      status.style.background = '#fef2f2'; status.style.color = '#dc2626';
+      status.textContent = `❌ ${f.name} 格式不支持`;
+      continue;
+    }
+    if (f.size > 20 * 1024 * 1024) {
+      status.style.display = '';
+      status.style.background = '#fef2f2'; status.style.color = '#dc2626';
+      status.textContent = `❌ ${f.name} 超过 20MB 限制`;
+      continue;
+    }
+    status.style.display = '';
+    status.style.background = '#dbeafe'; status.style.color = '#1d4ed8';
+    status.textContent = `⬆️ 上传中：${f.name}`;
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const r = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/paper-contracts`, {
+        method: 'POST', body: fd, headers: { 'Authorization': 'Bearer ' + TOKEN }
+      });
+      const data = await r.json();
+      if (!r.ok || !data.success) throw new Error(data.error || '上传失败');
+      status.style.background = '#dcfce7'; status.style.color = '#15803d';
+      status.textContent = `✅ ${f.name} 上传成功`;
+    } catch(e) {
+      status.style.background = '#fef2f2'; status.style.color = '#dc2626';
+      status.textContent = `❌ 上传失败：${e.message || ''}`;
+    }
+  }
+  document.getElementById('paperContractFileInput').value = '';
+  await loadPaperContractList();
+}
+
+async function deletePaperContract(docId) {
+  if (!await showConfirm('确认删除这份纸质合同？此操作不可撤销。')) return;
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/paper-contracts/${docId}`, { method: 'DELETE' });
+    if (r && r.success) {
+      showToast('✅ 已删除', 'success');
+      await loadPaperContractList();
+    } else {
+      showToast('❌ ' + (r?.error || '删除失败'), 'error');
+    }
+  } catch(e) {
+    showToast('❌ ' + (e.message || '删除失败'), 'error');
+  }
+}
+
+async function paperContractMarkComplete() {
+  closeModal('paperContractModal');
+  await updateOnboardingTask('contract', 'completed');
 }
 
 let _taxBanditsVerifying = false;
