@@ -4169,7 +4169,7 @@ tr:hover td{background:var(--sky-light)}
         <input type="radio" name="icEmploymentType" id="icEmpTypeCash" value="cash" style="accent-color:#059669;width:18px;height:18px">
         <div>
           <div style="font-weight:700;font-size:.9rem;color:#065f46">💵 现金 Cash</div>
-          <div style="font-size:.75rem;color:var(--gray-400)">现金签收 · 身份核验</div>
+          <div style="font-size:.75rem;color:var(--gray-400)">合同 · W-9 · 现金签收</div>
         </div>
       </label>
     </div>
@@ -16059,7 +16059,7 @@ function selectEntityType(type) {
 // Onboarding tasks auto-assigned per employment type
 const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
 const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
-const CASH_TASKS = ['work_permit', 'persona_verify', 'payment_method'];
+const CASH_TASKS = ['contract', 'w9', 'work_permit', 'persona_verify', 'payment_method'];
 const ALL_EMP_TASKS = ['contract', 'i9', 'ead_upload', 'gusto', 'w9', 'tax_residency', 'tin_verify', 'background_check', 'work_permit', 'persona_verify', 'payment_method'];
 function tasksForEmpType(t) { return t === 'w2' ? W2_TASKS : t === '1099' ? C1099_TASKS : t === 'cash' ? CASH_TASKS : []; }
 function empTypeLabel(t) { return t === 'w2' ? 'W-2 员工' : t === '1099' ? '1099 承包商' : t === 'cash' ? '💵 现金' : ''; }
