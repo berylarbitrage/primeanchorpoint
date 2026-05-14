@@ -10500,7 +10500,7 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
     address,
     sandbox,
     auth: 'JWT (HS256, 本地签名)',
-    api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}${cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.2/TINMatching/Request'}`,
+    api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}${cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.3/InstantTINMatch/Request'}`,
   });
 });
 // TaxBandits uses local JWT (HS256) signed with client_secret — NOT a network OAuth call.
@@ -10593,13 +10593,40 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
     const jwt = taxBanditsGenerateJWT(cfg);
 
     const baseApi  = cfg.sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com';
-    const apiPath  = (req.body && req.body.api_path) || cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.2/TINMatching/Request';
+    const apiPath  = (req.body && req.body.api_path) || cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.3/InstantTINMatch/Request';
     const apiUrl   = `${baseApi}${apiPath}`;
     const requestId = `pa-${workerId}-${Date.now()}`;
+    const tinDigits = tin.replace(/\D/g, '');
+    const isBusiness = tinType === 'BUSINESS' || tinType === 'EIN';
+    const apiTinType = isBusiness ? 'EIN' : 'SSN';
 
-    const reqBody = {
-      TINMatchList: [{ RequestId: requestId, TINMatchType: tinType, TIN: tin.replace(/\D/g, ''), Name: tinName }],
-    };
+    let reqBody;
+    if (/TINMatchingRecipients/i.test(apiPath)) {
+      // Standard (async, 24h via webhook) schema
+      const recipient = {
+        SequenceId: requestId,
+        Name: tinName,
+        TINType: apiTinType,
+        TIN: tinDigits,
+      };
+      reqBody = { TINMatchingDetails: { Recipients: [recipient] } };
+    } else {
+      // Instant TIN Matching (synchronous) schema — default
+      reqBody = {
+        RefId: requestId,
+        TINType: apiTinType,
+        TIN: tinDigits,
+        IsForced: true,
+      };
+      if (isBusiness) {
+        reqBody.BusinessNm = tinName.slice(0, 75);
+      } else {
+        const firstNm = (w.first_name || tinName.split(/\s+/)[0] || '').slice(0, 20);
+        const lastNm  = (w.last_name  || tinName.split(/\s+/).slice(1).join(' ') || '').slice(0, 20);
+        reqBody.FirstNm = firstNm;
+        reqBody.LastNm  = lastNm;
+      }
+    }
 
     console.log(`[TaxBandits] POST ${apiUrl} (worker ${workerId}, ${tinType}, sandbox=${cfg.sandbox})`);
     const tinResp = await fetch(apiUrl, {
@@ -10614,8 +10641,20 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
     }
 
     const tinData = await tinResp.json();
-    const matchResult = tinData?.Response?.TINMatchStatusList?.[0] || tinData?.TINMatchStatusList?.[0] || {};
-    const status = matchResult.TINMatchStatus || matchResult.Status || 'UNKNOWN';
+    // Response shapes vary by endpoint:
+    //   InstantTINMatch/Request → { TINMatchingStatus, Name, TIN, ... } (flat)
+    //   TINMatchingRecipients/Request → async ack, status delivered via webhook
+    const recipientResult = tinData?.Recipients?.[0]
+                         || tinData?.Response?.TINMatchStatusList?.[0]
+                         || tinData?.TINMatchStatusList?.[0]
+                         || {};
+    const matchResult = Object.keys(recipientResult).length ? recipientResult : tinData || {};
+    const status = matchResult.TINMatchingStatus
+                || matchResult.TINMatchStatus
+                || matchResult.Status
+                || tinData?.StatusName
+                || tinData?.SubmissionStatus
+                || 'PENDING';
 
     // Save result as admin note on onboarding task
     const adminUser = (req.session && req.session.username) || 'admin';
