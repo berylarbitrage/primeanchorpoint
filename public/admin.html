@@ -3518,6 +3518,36 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- 纸质 W-9 上传 Modal (cash workers) -->
+<div class="modal-bg" id="paperW9Modal"><div class="modal" style="max-width:640px">
+  <h2>📎 上传纸质 W-9 — <span id="paperW9WorkerName" style="color:var(--sky)"></span></h2>
+  <div style="margin:.5rem 0 1rem;font-size:.85rem;color:var(--gray-500)">现金工人的 W-9 采用线下手填，请上传 W-9 表格照片或扫描件（支持 JPG / PNG / PDF / DOC）</div>
+
+  <div id="paperW9DropZone"
+       ondragover="event.preventDefault();this.style.background='#eff6ff';this.style.borderColor='#0ea5e9'"
+       ondragleave="this.style.background='#f8fafc';this.style.borderColor='#cbd5e1'"
+       ondrop="paperW9HandleDrop(event)"
+       onclick="document.getElementById('paperW9FileInput').click()"
+       style="border:2px dashed #cbd5e1;border-radius:10px;padding:1.5rem;text-align:center;background:#f8fafc;cursor:pointer;transition:all .15s;margin-bottom:1rem">
+    <div style="font-size:2rem;margin-bottom:.4rem">📎</div>
+    <div style="font-weight:600;color:#0f2b5b;margin-bottom:.2rem">拖拽文件到此处或点击选择</div>
+    <div style="font-size:.78rem;color:#64748b">支持 JPG / PNG / PDF / DOC，最大 20MB</div>
+    <input type="file" id="paperW9FileInput" accept=".jpg,.jpeg,.png,.pdf,.gif,.doc,.docx" style="display:none" onchange="paperW9HandleFiles(this.files)">
+  </div>
+
+  <div id="paperW9UploadStatus" style="display:none;margin-bottom:.75rem;padding:.5rem .75rem;border-radius:6px;font-size:.85rem"></div>
+
+  <div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem;color:#0f2b5b">已上传文件</div>
+  <div id="paperW9List" style="border:1px solid #e2e8f0;border-radius:8px;max-height:240px;overflow-y:auto;background:#fff">
+    <div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.83rem">加载中…</div>
+  </div>
+
+  <div class="modal-actions" style="margin-top:1rem">
+    <button class="btn btn-green" onclick="paperW9MarkComplete()">✅ 标记 W-9 已收</button>
+    <button class="btn" onclick="closeModal('paperW9Modal')">关闭</button>
+  </div>
+</div></div>
+
 <!-- 纸质合同上传 Modal (cash workers) -->
 <div class="modal-bg" id="paperContractModal"><div class="modal" style="max-width:640px">
   <h2>📎 上传纸质合同 — <span id="paperContractWorkerName" style="color:var(--sky)"></span></h2>
@@ -15906,7 +15936,9 @@ function renderOnboardingTasks(tasks) {
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : t.key==='w9'
-            ? `<button class="btn btn-sm" style="background:${s==='submitted'&&t.ds_status==='completed'?'#fef2f2':'#fefce8'};color:${s==='submitted'&&t.ds_status==='completed'?'#dc2626':'#854d0e'};border:1px solid ${s==='submitted'&&t.ds_status==='completed'?'#fecaca':'#fde68a'};font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'&&s==='completed'?'✅ W-9 已签署':t.ds_status==='completed'&&s==='submitted'?'⚠️ 地址待核对':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>${(t.ds_status==='completed'&&(s==='completed'||s==='submitted'))?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/w9-signed-pdf','_blank')">📥 查看已签文件</button>`:''} <button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('w9')">🔗 绑定已签文件</button>`
+            ? ((_onboardingWorkerData && _onboardingWorkerData.employment_type === 'cash')
+                ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openPaperW9Modal()">📎 ${s==='completed'?'查看/管理纸质 W-9':'上传纸质 W-9'}</button>`
+                : `<button class="btn btn-sm" style="background:${s==='submitted'&&t.ds_status==='completed'?'#fef2f2':'#fefce8'};color:${s==='submitted'&&t.ds_status==='completed'?'#dc2626':'#854d0e'};border:1px solid ${s==='submitted'&&t.ds_status==='completed'?'#fecaca':'#fde68a'};font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'&&s==='completed'?'✅ W-9 已签署':t.ds_status==='completed'&&s==='submitted'?'⚠️ 地址待核对':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>${(t.ds_status==='completed'&&(s==='completed'||s==='submitted'))?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/w9-signed-pdf','_blank')">📥 查看已签文件</button>`:''} <button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('w9')">🔗 绑定已签文件</button>`)
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : t.key==='work_auth'
@@ -19752,6 +19784,112 @@ async function deletePaperContract(docId) {
 async function paperContractMarkComplete() {
   closeModal('paperContractModal');
   await updateOnboardingTask('contract', 'completed');
+}
+
+// ─── Paper W-9 Upload (cash workers) ───
+async function openPaperW9Modal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  document.getElementById('paperW9WorkerName').textContent = w ? (w.name || w.username || '') : '';
+  document.getElementById('paperW9Modal').classList.add('show');
+  document.getElementById('paperW9UploadStatus').style.display = 'none';
+  document.getElementById('paperW9FileInput').value = '';
+  await loadPaperW9List();
+}
+
+async function loadPaperW9List() {
+  const wrap = document.getElementById('paperW9List');
+  if (!wrap) return;
+  try {
+    const docs = await api(`/admin/worker-accounts/${_onboardingWorkerId}/paper-w9s`);
+    if (!docs || !docs.length) {
+      wrap.innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.83rem">暂无已上传的纸质 W-9</div>';
+      return;
+    }
+    wrap.innerHTML = docs.map(d => {
+      const dt = d.created_at ? new Date(d.created_at).toLocaleString('zh-CN') : '';
+      const fileUrl = `/api/admin/worker-accounts/${_onboardingWorkerId}/paper-w9s/${d.id}/file`;
+      return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;border-bottom:1px solid #f1f5f9">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.85rem;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.file_name || '未命名文件')}</div>
+          <div style="font-size:.72rem;color:#94a3b8">${dt}</div>
+        </div>
+        <a href="${fileUrl}?inline=1" target="_blank" class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;text-decoration:none">查看</a>
+        <a href="${fileUrl}" class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;text-decoration:none">下载</a>
+        <button class="btn btn-sm" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="deletePaperW9(${d.id})">删除</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    wrap.innerHTML = `<div style="padding:1rem;text-align:center;color:#ef4444;font-size:.83rem">加载失败：${esc(e.message || '')}</div>`;
+  }
+}
+
+function paperW9HandleDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('paperW9DropZone');
+  if (dz) { dz.style.background = '#f8fafc'; dz.style.borderColor = '#cbd5e1'; }
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+    paperW9HandleFiles(e.dataTransfer.files);
+  }
+}
+
+async function paperW9HandleFiles(files) {
+  if (!files || !files.length) return;
+  const allowed = /\.(jpe?g|png|pdf|gif|docx?)$/i;
+  const status = document.getElementById('paperW9UploadStatus');
+  for (const f of files) {
+    if (!allowed.test(f.name)) {
+      status.style.display = '';
+      status.style.background = '#fef2f2'; status.style.color = '#dc2626';
+      status.textContent = `❌ ${f.name} 格式不支持`;
+      continue;
+    }
+    if (f.size > 20 * 1024 * 1024) {
+      status.style.display = '';
+      status.style.background = '#fef2f2'; status.style.color = '#dc2626';
+      status.textContent = `❌ ${f.name} 超过 20MB 限制`;
+      continue;
+    }
+    status.style.display = '';
+    status.style.background = '#dbeafe'; status.style.color = '#1d4ed8';
+    status.textContent = `⬆️ 上传中：${f.name}`;
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const r = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/paper-w9s`, {
+        method: 'POST', body: fd, headers: { 'Authorization': 'Bearer ' + TOKEN }
+      });
+      const data = await r.json();
+      if (!r.ok || !data.success) throw new Error(data.error || '上传失败');
+      status.style.background = '#dcfce7'; status.style.color = '#15803d';
+      status.textContent = `✅ ${f.name} 上传成功`;
+    } catch(e) {
+      status.style.background = '#fef2f2'; status.style.color = '#dc2626';
+      status.textContent = `❌ 上传失败：${e.message || ''}`;
+    }
+  }
+  document.getElementById('paperW9FileInput').value = '';
+  await loadPaperW9List();
+}
+
+async function deletePaperW9(docId) {
+  if (!await showConfirm('确认删除这份纸质 W-9？此操作不可撤销。')) return;
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/paper-w9s/${docId}`, { method: 'DELETE' });
+    if (r && r.success) {
+      showToast('✅ 已删除', 'success');
+      await loadPaperW9List();
+    } else {
+      showToast('❌ ' + (r?.error || '删除失败'), 'error');
+    }
+  } catch(e) {
+    showToast('❌ ' + (e.message || '删除失败'), 'error');
+  }
+}
+
+async function paperW9MarkComplete() {
+  closeModal('paperW9Modal');
+  await updateOnboardingTask('w9', 'completed');
 }
 
 let _taxBanditsVerifying = false;
