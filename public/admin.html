@@ -18835,9 +18835,17 @@ async function openWorkPermitModal() {
     }
   } catch(e) { /* no questionnaire data */ }
 
+  // Cash workers: simplify the entire modal — only an ID upload, no category hints or NRA timeline
+  const isCash = (_onboardingWorkerData && _onboardingWorkerData.employment_type === 'cash');
+  if (isCash) {
+    wpCategory = 'cash_id';
+    document.getElementById('wpQuestionnaireHint').textContent = '现金工人：仅需上传一份有效身份证件（驾照 / 护照 / 州 ID 等），并标记是否真伪。';
+    document.getElementById('wpRequiredDocs').style.display = 'none';
+  }
+
   // Populate dropdown and show required docs
   wpPopulateDocType(wpCategory);
-  wpShowRequiredDocs(wpCategory);
+  if (!isCash) wpShowRequiredDocs(wpCategory);
   wpRenderUploadZones(wpCategory, _wpTrData);
   wpLoadExistingDocs(wpCategory);
 
