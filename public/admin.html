@@ -15922,52 +15922,9 @@ function renderOnboardingTasks(tasks) {
 }
 
 function confirmChangeEmploymentType() {
-  const cur = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
-  const curLabel = empTypeLabel(cur) || '未设置';
-  const choices = ['w2', '1099', 'cash'].filter(t => t !== cur);
-  const buttons = choices.map(t => `<button class="btn btn-green" style="margin:.3rem" onclick="doChangeEmploymentType('${t}');closeModal('confirmModal')">✅ 更改为 ${empTypeLabel(t)}</button>`).join('');
-  showConfirmModal(
-    '更改雇佣类型',
-    `当前为 <b>${curLabel}</b>。请选择新的雇佣类型：<br><br><div style="display:flex;flex-wrap:wrap;justify-content:center">${buttons}</div><br>更改后将自动调整入职任务：不适用的任务会被豁免，新增适用的任务会被重置为待处理。`,
-    '取消',
-    'btn',
-    () => {},
-    'amber'
-  );
-}
-
-async function doChangeEmploymentType(newType) {
-  if (!_onboardingWorkerId) return;
-  const oldType = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
-  const oldAssigned = new Set(tasksForEmpType(oldType));
-  const newAssigned = tasksForEmpType(newType);
-  const newAssignedSet = new Set(newAssigned);
-  const label = empTypeLabel(newType);
-
-  // Save new employment type + assigned tasks
-  await api(`/admin/worker-accounts/${_onboardingWorkerId}`, {
-    method: 'PUT',
-    body: JSON.stringify({ employment_type: newType, assigned_tasks: newAssigned })
-  });
-
-  // Waive tasks that no longer apply
-  const tasksToWaive = ALL_EMP_TASKS.filter(k => !newAssignedSet.has(k));
-  for (const key of tasksToWaive) {
-    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
-      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${label}不适用）` })
-    });
-  }
-
-  // Reset tasks that now apply but didn't previously (so they show up as pending again)
-  const tasksToReset = newAssigned.filter(k => !oldAssigned.has(k));
-  for (const key of tasksToReset) {
-    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
-      method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
-    });
-  }
-
-  showToast(`✅ 已更改为 ${label}`, 'success');
-  await refreshOnboardingModal();
+  // Reopen the interview-complete modal so admin can pick from W-2 / 1099 / 现金
+  // saveInterviewComplete will handle re-assigning tasks and waiving non-applicable ones.
+  openInterviewCompleteModal();
 }
 
 async function initOnboarding() {
@@ -18228,6 +18185,19 @@ async function saveInterviewComplete() {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${label}不适用）` })
     });
+  }
+
+  // If switching type (re-pick after previous interview), reactivate previously-waived tasks
+  // that are now applicable. Leave completed tasks alone.
+  const prevType = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
+  if (prevType && prevType !== employmentType) {
+    const prevSet = new Set(tasksForEmpType(prevType));
+    const newlyApplicable = assignedTasks.filter(k => !prevSet.has(k));
+    for (const key of newlyApplicable) {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
+        method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
+      });
+    }
   }
 
   await updateOnboardingTask('interview', 'completed');
