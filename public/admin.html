@@ -15907,7 +15907,9 @@ function renderOnboardingTasks(tasks) {
             : t.key==='work_auth'
             ? `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;font-weight:700" onclick="openWorkAuthModal()">${t.status==='completed'?'📑 Work Auth 已完成':isVisible?'📑 查看/重发认证任务':'📑 发送 Work Auth 认证'}</button>`
             : t.key==='tax_residency'
-            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openTaxResidencyModal()">🏛️ ${(s==='completed'||s==='submitted')?'查看/修改判定结果':'开始 Resident Test'}</button>`
+            ? ((_onboardingWorkerData && _onboardingWorkerData.employment_type === 'cash')
+                ? ''
+                : `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openTaxResidencyModal()">🏛️ ${(s==='completed'||s==='submitted')?'查看/修改判定结果':'开始 Resident Test'}</button>`)
             : t.key==='work_permit'
             ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openWorkPermitModal()">🛂 ${s==='completed'?'查看/修改验证':'开始工作许可验证'}</button>`
             : t.key==='tin_verify'
@@ -16050,7 +16052,7 @@ function selectEntityType(type) {
 // Onboarding tasks auto-assigned per employment type
 const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
 const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
-const CASH_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
+const CASH_TASKS = ['contract', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
 const ALL_EMP_TASKS = ['contract', 'i9', 'ead_upload', 'gusto', 'w9', 'tax_residency', 'tin_verify', 'background_check', 'work_permit', 'persona_verify', 'payment_method'];
 function tasksForEmpType(t) { return t === 'w2' ? W2_TASKS : t === '1099' ? C1099_TASKS : t === 'cash' ? CASH_TASKS : []; }
 function empTypeLabel(t) { return t === 'w2' ? 'W-2 员工' : t === '1099' ? '1099 承包商' : t === 'cash' ? '💵 现金' : ''; }
