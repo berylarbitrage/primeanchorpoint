@@ -18219,18 +18219,19 @@ async function saveInterviewComplete() {
     });
   }
 
-  // If switching type (re-pick after previous interview), reactivate previously-waived tasks
-  // that are now applicable. Leave completed tasks alone.
-  const prevType = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
-  if (prevType && prevType !== employmentType) {
-    const prevSet = new Set(tasksForEmpType(prevType));
-    const newlyApplicable = assignedTasks.filter(k => !prevSet.has(k));
-    for (const key of newlyApplicable) {
-      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
-        method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
-      });
+  // Any task that is now applicable but is currently 'waived' should be reactivated.
+  // This covers both type switches and historical waives left over from older task sets.
+  try {
+    const currentTasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
+    if (Array.isArray(currentTasks)) {
+      const waivedNowApplicable = currentTasks.filter(t => assignedSet.has(t.key) && t.status === 'waived');
+      for (const t of waivedNowApplicable) {
+        await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${t.key}`, {
+          method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
+        });
+      }
     }
-  }
+  } catch (e) { console.warn('[saveInterviewComplete] reactivate waived error:', e.message); }
 
   await updateOnboardingTask('interview', 'completed');
   closeModal('interviewCompleteModal');
