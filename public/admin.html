@@ -19910,10 +19910,12 @@ async function verifyTinTaxbandits(workerId) {
     const confirmHtml = `
       <div style="font-size:.85rem;color:#475569;margin-bottom:.6rem">请确认以下信息将被发送至 TaxBandits 进行核对：</div>
       <table style="width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:.5rem">
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b;white-space:nowrap;width:90px">姓名</td><td style="padding:.4rem .5rem;font-weight:600">${preview.name}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b;white-space:nowrap;width:90px">名 First</td><td style="padding:.4rem .5rem;font-weight:600">${preview.first_name || '—'}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">姓 Last</td><td style="padding:.4rem .5rem;font-weight:600">${preview.last_name || '—'}</td></tr>
         <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">税号（掩码）</td><td style="padding:.4rem .5rem;font-weight:600;font-family:monospace">${preview.tin_masked}</td></tr>
         <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">类型</td><td style="padding:.4rem .5rem">${preview.tin_type}</td></tr>
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">来源</td><td style="padding:.4rem .5rem">${preview.tin_source}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">税号来源</td><td style="padding:.4rem .5rem">${preview.tin_source}</td></tr>
+        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">地址</td><td style="padding:.4rem .5rem;font-size:.82rem">${preview.address || '— 未填写 —'}</td></tr>
         <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">环境</td><td style="padding:.4rem .5rem">${envLabel}</td></tr>
         <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">认证方式</td><td style="padding:.4rem .5rem;font-size:.82rem">${preview.auth}</td></tr>
         <tr><td style="padding:.4rem .5rem;color:#64748b">API URL</td><td style="padding:.4rem .5rem;font-size:.75rem;font-family:monospace;word-break:break-all">${preview.api_url}</td></tr>
