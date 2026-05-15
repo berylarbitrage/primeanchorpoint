@@ -28017,6 +28017,7 @@ function renderInvpContainerTable(skipSave) {
       <td style="padding:3px 4px"><input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td class="invp-cont-total" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap">$${total.toFixed(2)}</td>
       <td style="padding:3px 2px"><button onclick="invpToggleContainerHighlight(${it.uid})" style="background:none;border:none;cursor:pointer;color:${starColor};font-size:1rem;padding:0 4px;line-height:1" title="${starTitle}">${starChar}</button></td>
+      <td style="padding:3px 2px"><button onclick="invpOpenReceiptDialog(${it.uid})" style="background:none;border:none;cursor:pointer;color:#0E7BB8;font-size:.95rem;padding:0 4px;line-height:1" title="生成现金回执 PDF（给工人签字）">🧾</button></td>
       <td style="padding:3px 4px"><button onclick="invpRemoveContainer(${it.uid})" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.85rem;padding:0 4px" title="删除">✕</button></td>
     </tr>`;
   }).join('');
@@ -28031,13 +28032,14 @@ function renderInvpContainerTable(skipSave) {
       <th style="padding:5px 6px;text-align:right">Unit Price</th>
       <th style="padding:5px 6px;text-align:right">Total</th>
       <th style="padding:5px 4px;text-align:center" title="点击星标可标记一行做特殊处理">★</th>
+      <th style="padding:5px 4px;text-align:center" title="生成现金回执 PDF">🧾</th>
       <th style="padding:5px 6px"></th>
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr style="border-top:2px solid var(--gray-200);font-weight:700;color:#075985">
       <td colspan="6" style="padding:6px 6px;text-align:right">合计</td>
       <td style="padding:6px 6px;text-align:right">$${grandTotal.toFixed(2)}</td>
-      <td colspan="2"></td>
+      <td colspan="3"></td>
     </tr></tfoot>
   </table>`;
 }
@@ -28076,6 +28078,80 @@ function invpRemoveContainer(uid) {
   _invpSaveContainerState();
   window._invpContainerItems = window._invpContainerItems.filter(i => i.uid !== uid);
   renderInvpContainerTable(true);
+}
+
+// ── Cash payment receipt PDF for a single container row ──
+function invpOpenReceiptDialog(uid) {
+  _invpSaveContainerState();
+  const item = (window._invpContainerItems || []).find(i => i.uid === uid);
+  if (!item) return;
+  const invIdEl = document.getElementById('invPageEditId');
+  const invId = invIdEl && invIdEl.value;
+  if (!invId) {
+    showToast('请先保存这张 invoice，再生成回执', 'error');
+    return;
+  }
+  const cno = (item.container_no || '').trim();
+  const wk = (item.week || '').trim();
+  document.getElementById('invpRcptUid').value = String(uid);
+  document.getElementById('invpRcptContainerNo').textContent = cno || '(未填)';
+  document.getElementById('invpRcptPaidFor').value =
+    `Container unloading services for ${cno || ''}${wk ? ' — week ' + wk : ''}`.trim();
+  document.getElementById('invpRcptRecipient').value = '';
+  document.getElementById('invpRcptSsn').value = '';
+  document.getElementById('invpReceiptModal').style.display = 'flex';
+  setTimeout(() => { const el = document.getElementById('invpRcptRecipient'); if (el) el.focus(); }, 60);
+}
+
+function invpCloseReceiptDialog() {
+  document.getElementById('invpReceiptModal').style.display = 'none';
+}
+
+async function invpGenerateReceipt() {
+  const invIdEl = document.getElementById('invPageEditId');
+  const invId = invIdEl && invIdEl.value;
+  if (!invId) { showToast('请先保存这张 invoice', 'error'); return; }
+  const uid = parseInt(document.getElementById('invpRcptUid').value, 10);
+  const item = (window._invpContainerItems || []).find(i => i.uid === uid);
+  if (!item) { invpCloseReceiptDialog(); return; }
+  const recipient = document.getElementById('invpRcptRecipient').value.trim();
+  if (!recipient) {
+    showToast('请填写工人姓名', 'error');
+    document.getElementById('invpRcptRecipient').focus();
+    return;
+  }
+  const body = {
+    container_no: (item.container_no || '').trim(),
+    paid_for: document.getElementById('invpRcptPaidFor').value.trim(),
+    recipient_name: recipient,
+    ssn_last4: document.getElementById('invpRcptSsn').value.trim(),
+  };
+  try {
+    const resp = await fetch(`/api/admin/invoices/${invId}/cash-receipt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      let msg = '生成失败';
+      try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeName = recipient.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30) || 'recipient';
+    a.download = `Cash_Receipt_${body.container_no || 'X'}_${safeName}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    invpCloseReceiptDialog();
+    showToast('回执已生成 ✓');
+  } catch (e) {
+    showToast('生成失败：' + (e.message || e), 'error');
+  }
 }
 
 function getInvpContainerItems() {
@@ -28904,6 +28980,42 @@ function printInvoice() {
 </div>
 
 <!-- ════════════════════ INVOICE PAGE: PREVIEW MODAL ════════════════════ -->
+<!-- ════════════════════ INVOICE — CASH RECEIPT MODAL ════════════════════ -->
+<div class="modal-bg" id="invpReceiptModal" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
+      <h2 style="margin:0;font-size:1.05rem">🧾 生成现金回执 PDF</h2>
+      <button class="btn btn-sm btn-outline" onclick="invpCloseReceiptDialog()">关闭</button>
+    </div>
+    <div style="background:#f0f9ff;border-left:3px solid var(--sky);padding:.5rem .75rem;font-size:.78rem;color:#0c4a6e;margin-bottom:.85rem">
+      生成的 PDF 上 USD 金额栏会**留空**，给你打印后当场手写；工人姓名 / SSN 后 4 位会嵌进文档。生成后会自动下载并在该 invoice 的「历史」里留痕。
+    </div>
+    <input type="hidden" id="invpRcptUid">
+    <div style="margin-bottom:.65rem;font-size:.82rem;color:var(--gray-600)">
+      Container：<span id="invpRcptContainerNo" style="font-family:monospace;font-weight:600;color:#0f172a">—</span>
+    </div>
+    <div class="field" style="margin-bottom:.7rem">
+      <label style="font-weight:600;font-size:.85rem">工人姓名 <span style="color:#dc2626">*</span></label>
+      <input type="text" id="invpRcptRecipient" placeholder="例如 Juan Pérez" autocomplete="off"
+        style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.95rem">
+    </div>
+    <div class="field" style="margin-bottom:.7rem">
+      <label style="font-weight:600;font-size:.85rem">SSN / ITIN 后 4 位 <span style="color:var(--gray-400);font-weight:400">（可选）</span></label>
+      <input type="text" id="invpRcptSsn" inputmode="numeric" maxlength="4" placeholder="例如 1234" autocomplete="off"
+        style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.95rem;font-family:monospace">
+    </div>
+    <div class="field" style="margin-bottom:1rem">
+      <label style="font-weight:600;font-size:.85rem">Paid For / 付款用途</label>
+      <textarea id="invpRcptPaidFor" rows="2"
+        style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;resize:vertical"></textarea>
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="invpCloseReceiptDialog()">取消</button>
+      <button class="btn btn-green" onclick="invpGenerateReceipt()">⬇ 生成并下载 PDF</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════ INVOICE — DISTRIBUTE HOURS MODAL ════════════════════ -->
 <div class="modal-bg" id="invpDistModal" style="display:none">
   <div class="modal" style="max-width:560px">
