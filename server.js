@@ -15541,6 +15541,20 @@ async function drawCashReceiptPage(doc, opts) {
     .text('Recibo de Pago en Efectivo', L, doc.y, { align: 'center', width: W });
   doc.moveDown(1.6);
 
+  // ── BIG CONTAINER NUMBER block — primary identifier, hard to miss ──
+  if (containerNo) {
+    const boxY = doc.y;
+    const boxH = 56;
+    const boxW = W * 0.72;
+    const boxX = L + (W - boxW) / 2;
+    doc.rect(boxX, boxY, boxW, boxH).fillAndStroke('#f0f9ff', '#29AAE1');
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#0c4a6e')
+      .text('CONTAINER NO. / N.º de Contenedor', boxX, boxY + 6, { width: boxW, align: 'center', characterSpacing: 1.2 });
+    doc.fontSize(24).font('Helvetica-Bold').fillColor('#0c4a6e')
+      .text(containerNo, boxX, boxY + 20, { width: boxW, align: 'center', characterSpacing: 2 });
+    doc.y = boxY + boxH + 12;
+  }
+
   // Receipt info row (No. + Date)
   let rowY = doc.y;
   doc.fontSize(8).font('Helvetica-Bold').fillColor('#64748b')
