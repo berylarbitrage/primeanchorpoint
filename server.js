@@ -1004,6 +1004,46 @@ try {
   }
 } catch(e) { console.error('[migration] Fix XX invoices error:', e.message); }
 
+// ─── Backfill mode letter (C / L) into legacy invoice numbers ───
+// Old format: INV-{state}-{companyAbbr}-{MMDDYY}-{seq}
+// New format: INV-{C|L}-{state}-{companyAbbr}-{MMDDYY}-{seq}
+// Decide the letter from profile.invoice_mode; default to L (工时计费),
+// since that was the only mode before Container 计费 was added.
+// This block runs after the XX-state fix above, then exits cleanly.
+try {
+  // The invoice_history table is created later in the file. Ensure it exists
+  // here so the audit insert below works on a cold DB.
+  db.exec(`CREATE TABLE IF NOT EXISTS invoice_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    detail TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  )`);
+  const candidates = db.prepare(
+    "SELECT id, invoice_number, profile_json FROM invoices " +
+    "WHERE invoice_number LIKE 'INV-%' " +
+    "AND invoice_number NOT LIKE 'INV-C-%' " +
+    "AND invoice_number NOT LIKE 'INV-L-%'"
+  ).all();
+  const upd = db.prepare("UPDATE invoices SET invoice_number = ? WHERE id = ?");
+  const insH = db.prepare("INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)");
+  for (const inv of candidates) {
+    let mode = 'hourly';
+    try {
+      const p = JSON.parse(inv.profile_json || '{}');
+      if (p && p.invoice_mode === 'container') mode = 'container';
+    } catch {}
+    const letter = mode === 'container' ? 'C' : 'L';
+    const newNum = inv.invoice_number.replace(/^INV-/, `INV-${letter}-`);
+    if (newNum !== inv.invoice_number) {
+      upd.run(newNum, inv.id);
+      insH.run(inv.id, '编号迁移', `${inv.invoice_number} → ${newNum} (mode=${mode})`);
+      console.log(`[migration] Letter backfill: ${inv.invoice_number} → ${newNum}`);
+    }
+  }
+} catch(e) { console.error('[migration] Letter backfill error:', e.message); }
+
 // ─── New tables for worker / customer / job-application portals ───
 db.exec(`
   CREATE TABLE IF NOT EXISTS worker_accounts (
