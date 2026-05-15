@@ -26939,13 +26939,20 @@ function populateInvpDropdown(section) {
   const localId = saved[section + '_preset_id'] || '';
   const localExists = localId && items.some(p => String(p.id) === String(localId));
   const serverDefault = items.find(p => Number(p.is_default) === 1);
-  // Prefer a still-valid local choice; otherwise fall back to the server-marked default
-  const effectiveId = localExists ? String(localId) : (serverDefault ? String(serverDefault.id) : '');
+  // Prefer a still-valid local choice, then the server-marked default;
+  // if neither exists but there's exactly one preset in this section,
+  // auto-select it (matches user expectation that a sole preset is "the" default).
+  const soleItem = items.length === 1 ? items[0] : null;
+  const effectiveId = localExists
+    ? String(localId)
+    : (serverDefault ? String(serverDefault.id)
+      : (soleItem ? String(soleItem.id) : ''));
 
   sel.innerHTML = '<option value="">-- 选择预设 --</option>'
     + items.map(p => `<option value="${p.id}" ${String(p.id) === effectiveId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
 
-  // If we fell back to a server default (or local was stale), seed localStorage and re-render the preview
+  // If we fell back to a server default / sole preset (or local was stale),
+  // seed localStorage and re-render the preview.
   if (effectiveId && !localExists) {
     sel.value = effectiveId;
     onInvpPresetSelect._suppressApi = true;
