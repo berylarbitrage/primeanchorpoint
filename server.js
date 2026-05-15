@@ -15501,7 +15501,7 @@ app.get('/api/admin/invoices/:id/history', requireAdmin, (req, res) => {
 // page is auto-created by PDFDocument; for subsequent receipts the caller
 // passes isFirstPage:false and we call addPage() ourselves.
 async function drawCashReceiptPage(doc, opts) {
-  const { invoiceNumber, containerNo, recipient, ssn4, paidFor, attachUrl, isFirstPage } = opts;
+  const { invoiceNumber, containerNo, recipient, ssn4, paidFor, attachUrl, isFirstPage, pageNum, totalPages } = opts;
   if (!isFirstPage) doc.addPage();
 
   const today = new Date();
@@ -15647,15 +15647,27 @@ async function drawCashReceiptPage(doc, opts) {
   doc.text('PRINTED NAME / Nombre', col2, pnY);
   doc.moveTo(col2, pnY + 24).lineTo(col2 + colW, pnY + 24).stroke();
 
+  const footerY = doc.page.height - 60;
   doc.fontSize(7).font('Helvetica-Oblique').fillColor('#94a3b8')
     .text('Prime Anchor Point LLC  ·  For record-keeping only / Únicamente para fines de archivo',
-      L, doc.page.height - 60, { align: 'center', width: W });
+      L, footerY, { align: 'center', width: W });
+  if (totalPages && totalPages > 1) {
+    doc.fontSize(7).font('Helvetica').fillColor('#94a3b8')
+      .text(`Page ${pageNum} / ${totalPages}`, L, footerY + 12, { align: 'center', width: W });
+  }
 }
 
 function _cashReceiptAttachUrl(req, invoiceId, containerNo) {
   const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim();
   const host = req.get('host');
-  return `${proto}://${host}/api/admin/invoices/${invoiceId}/cash-receipt-attach?c=${encodeURIComponent(containerNo)}`;
+  // Generate a token so the QR code works on any phone without admin session
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  try {
+    db.prepare('INSERT OR REPLACE INTO invoice_cash_receipt_tokens (token, invoice_id, container_no, expires_at) VALUES (?,?,?,?)')
+      .run(token, invoiceId, containerNo || '', expiresAt);
+  } catch (e) { console.error('[cash-receipt] token insert failed:', e.message); }
+  return `${proto}://${host}/api/cash-receipt-upload?t=${token}`;
 }
 
 // Generates a bilingual EN/ES cash receipt PDF. Amount line is intentionally
@@ -15691,6 +15703,8 @@ app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, async (req, res) 
     containerNo, recipient, ssn4, paidFor,
     attachUrl: _cashReceiptAttachUrl(req, inv.id, containerNo),
     isFirstPage: true,
+    pageNum: 1,
+    totalPages: 1,
   });
   doc.end();
 });
@@ -15737,6 +15751,8 @@ app.post('/api/admin/invoices/:id/cash-receipts-bulk', requireAdmin, async (req,
       paidFor: it.paidFor,
       attachUrl: _cashReceiptAttachUrl(req, inv.id, it.containerNo),
       isFirstPage: i === 0,
+      pageNum: i + 1,
+      totalPages: items.length,
     });
   }
   doc.end();
@@ -15750,6 +15766,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_cash_receipts (
   file_path TEXT NOT NULL,
   uploaded_at TEXT DEFAULT (datetime('now'))
 )`);
+
+// Tokens allow phone-based upload without admin session (QR scan workflow)
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_cash_receipt_tokens (
+  token TEXT PRIMARY KEY,
+  invoice_id INTEGER NOT NULL,
+  container_no TEXT,
+  expires_at TEXT NOT NULL
+)`);
+// Clean up expired tokens on startup
+try { db.prepare("DELETE FROM invoice_cash_receipt_tokens WHERE expires_at < datetime('now')").run(); } catch(e) {}
 
 const cashReceiptUpload = multer({
   storage: multer.diskStorage({
@@ -15767,23 +15793,14 @@ const cashReceiptUpload = multer({
   },
 });
 
-// GET: HTML upload page that the QR code links to. Phone-friendly. Requires the
-// admin to be logged in (session cookie set on the phone) — the easiest path is
-// for the admin to scan the QR with their own phone where they're already
-// signed in on /admin.
-app.get('/api/admin/invoices/:id/cash-receipt-attach', requireAdmin, (req, res) => {
-  const inv = db.prepare('SELECT id, invoice_number, company_name FROM invoices WHERE id=?').get(req.params.id);
-  if (!inv) return res.status(404).send('Invoice not found');
-  const containerNo = String(req.query.c || '').trim();
-  const prior = db.prepare('SELECT id, file_path, uploaded_at FROM invoice_cash_receipts WHERE invoice_id=? AND container_no=? ORDER BY uploaded_at DESC')
-    .all(inv.id, containerNo);
+// Helper: render phone-friendly upload HTML page
+function _cashReceiptAttachHtml(inv, containerNo, prior, postUrl) {
   const priorList = prior.map(p => {
     const base = path.basename(p.file_path);
     return `<li><a href="/uploads/${encodeURIComponent(base)}" target="_blank">${base}</a> <span style="color:#64748b;font-size:.78rem">(${p.uploaded_at})</span></li>`;
   }).join('') || '<li style="color:#94a3b8;font-style:italic">还没有附件</li>';
   const esc = (s) => String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(`<!doctype html>
+  return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>上传签字凭证 · ${esc(inv.invoice_number)}</title>
@@ -15821,6 +15838,7 @@ app.get('/api/admin/invoices/:id/cash-receipt-attach', requireAdmin, (req, res) 
   <ul id="prior">${priorList}</ul>
 </div>
 <script>
+  const POST_URL = ${JSON.stringify(postUrl)};
   const fileEl = document.getElementById('file');
   const fnameEl = document.getElementById('fname');
   const form = document.getElementById('f');
@@ -15838,7 +15856,7 @@ app.get('/api/admin/invoices/:id/cash-receipt-attach', requireAdmin, (req, res) 
     const fd = new FormData();
     fd.append('file', fileEl.files[0]);
     try {
-      const resp = await fetch(location.pathname.replace('-attach','-attachment') + location.search, { method: 'POST', body: fd, credentials: 'include' });
+      const resp = await fetch(POST_URL, { method: 'POST', body: fd });
       if (!resp.ok) throw new Error((await resp.json().catch(()=>({}))).error || '上传失败');
       okEl.style.display = 'block';
       btn.textContent = '✓ 已上传';
@@ -15850,7 +15868,59 @@ app.get('/api/admin/invoices/:id/cash-receipt-attach', requireAdmin, (req, res) 
     }
   });
 </script>
-</body></html>`);
+</body></html>`;
+}
+
+// Public token-based upload page (for QR code scans — no admin session needed)
+app.get('/api/cash-receipt-upload', (req, res) => {
+  const token = String(req.query.t || '').trim();
+  if (!token) return res.status(400).send('Missing token');
+  const row = db.prepare("SELECT * FROM invoice_cash_receipt_tokens WHERE token=? AND expires_at > datetime('now')").get(token);
+  if (!row) return res.status(410).send('<h2>此链接已过期或无效。请重新打印现金回执以获取新链接。<br>This link has expired or is invalid. Please reprint the cash receipt for a new link.</h2>');
+  const inv = db.prepare('SELECT id, invoice_number, company_name FROM invoices WHERE id=?').get(row.invoice_id);
+  if (!inv) return res.status(404).send('Invoice not found');
+  const containerNo = row.container_no || '';
+  const prior = db.prepare('SELECT id, file_path, uploaded_at FROM invoice_cash_receipts WHERE invoice_id=? AND container_no=? ORDER BY uploaded_at DESC')
+    .all(inv.id, containerNo);
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim();
+  const host = req.get('host');
+  const postUrl = `${proto}://${host}/api/cash-receipt-upload?t=${encodeURIComponent(token)}`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(_cashReceiptAttachHtml(inv, containerNo, prior, postUrl));
+});
+
+// Public token-based file upload (POST)
+app.post('/api/cash-receipt-upload', cashReceiptUpload.single('file'), (req, res) => {
+  const token = String(req.query.t || req.body.t || '').trim();
+  if (!token) return res.status(400).json({ error: 'Missing token' });
+  const row = db.prepare("SELECT * FROM invoice_cash_receipt_tokens WHERE token=? AND expires_at > datetime('now')").get(token);
+  if (!row) return res.status(410).json({ error: '链接已过期，请重新生成现金回执' });
+  const inv = db.prepare('SELECT id, invoice_number FROM invoices WHERE id=?').get(row.invoice_id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const containerNo = row.container_no || '';
+  const filePath = `/uploads/${req.file.filename}`;
+  db.prepare('INSERT INTO invoice_cash_receipts (invoice_id, container_no, file_path) VALUES (?,?,?)')
+    .run(inv.id, containerNo, filePath);
+  try {
+    db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)')
+      .run(inv.id, '签字回执已附', `Container ${containerNo || '—'} · ${req.file.originalname}`);
+  } catch (e) { console.error('[cash-receipt-attach] history insert failed:', e.message); }
+  res.json({ success: true, file_path: filePath });
+});
+
+// Admin: direct attach page (still available for admins on desktop)
+app.get('/api/admin/invoices/:id/cash-receipt-attach', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT id, invoice_number, company_name FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).send('Invoice not found');
+  const containerNo = String(req.query.c || '').trim();
+  const prior = db.prepare('SELECT id, file_path, uploaded_at FROM invoice_cash_receipts WHERE invoice_id=? AND container_no=? ORDER BY uploaded_at DESC')
+    .all(inv.id, containerNo);
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim();
+  const host = req.get('host');
+  const postUrl = `${proto}://${host}/api/admin/invoices/${inv.id}/cash-receipt-attachment?c=${encodeURIComponent(containerNo)}`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(_cashReceiptAttachHtml(inv, containerNo, prior, postUrl));
 });
 
 // POST: receives the uploaded signed copy and links it to the invoice + container.
