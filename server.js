@@ -10566,6 +10566,7 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
     }
     cfg.client_id = clientId;
     cfg.client_secret = clientSecret;
+    cfg.user_token = userToken;
     cfg.sandbox = sandbox;
 
     // Get TIN + name with priority: employee SSN → SSN card → W-9 → tax_residency
