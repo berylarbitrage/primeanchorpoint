@@ -15495,6 +15495,153 @@ app.get('/api/admin/invoices/:id/history', requireAdmin, (req, res) => {
   res.json(rows);
 });
 
+// ─── CASH PAYMENT RECEIPT (for a single container row on an invoice) ───
+// Generates a bilingual EN/ES cash receipt PDF. Amount line is intentionally
+// left blank to be hand-written on the printout when the contractor is paid
+// in person. Worker identity is captured per-request and NOT persisted; we
+// only log an entry to invoice_history for audit.
+app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT id, invoice_number FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+  const recipient = String(req.body.recipient_name || '').trim();
+  const ssn4 = String(req.body.ssn_last4 || '').replace(/\D/g, '').slice(-4);
+  const paidFor = String(req.body.paid_for || '').trim();
+  const containerNo = String(req.body.container_no || '').trim();
+
+  const today = new Date();
+  const dateStr = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
+  const receiptNo = `${inv.invoice_number}-RCP${containerNo ? '-' + containerNo : ''}`;
+
+  try {
+    db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)')
+      .run(inv.id, '生成现金回执',
+        `Container ${containerNo || '—'} → ${recipient || '(未填)'}${ssn4 ? ' (SSN ****' + ssn4 + ')' : ''}`);
+  } catch (e) { console.error('[cash-receipt] history insert failed:', e.message); }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  const safeRecipient = (recipient || 'recipient').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+  res.setHeader('Content-Disposition',
+    `attachment; filename="Cash_Receipt_${inv.invoice_number}_${containerNo || 'X'}_${safeRecipient}.pdf"`);
+
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 50, left: 60, right: 60 } });
+  doc.pipe(res);
+
+  const L = 60;
+  const W = doc.page.width - 120;
+
+  doc.fontSize(8).font('Helvetica').fillColor('#64748b')
+    .text('INDEPENDENT  CONTRACTOR  SERVICES', L, 50, { align: 'center', width: W, characterSpacing: 2 });
+  doc.moveDown(0.5);
+  doc.fontSize(13).font('Helvetica-Bold').fillColor('#0E7BB8')
+    .text('Prime Anchor Point LLC', L, doc.y, { align: 'center', width: W });
+  doc.moveDown(0.7);
+  doc.fontSize(22).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('CASH PAYMENT RECEIPT', L, doc.y, { align: 'center', width: W, characterSpacing: 3 });
+  doc.moveDown(0.2);
+  doc.fontSize(11).font('Helvetica-Oblique').fillColor('#475569')
+    .text('Recibo de Pago en Efectivo', L, doc.y, { align: 'center', width: W });
+  doc.moveDown(1.6);
+
+  // Receipt info row (No. + Date)
+  let rowY = doc.y;
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#64748b')
+    .text('RECEIPT NO. / Recibo N.º', L, rowY);
+  doc.fontSize(10).font('Helvetica').fillColor('#0f172a').text(receiptNo, L, rowY + 12);
+  doc.moveTo(L, rowY + 28).lineTo(L + W / 2 - 10, rowY + 28).strokeColor('#cbd5e1').lineWidth(0.8).stroke();
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#64748b')
+    .text('PAYMENT DATE / Fecha', L + W / 2 + 10, rowY);
+  doc.fontSize(10).font('Helvetica').fillColor('#0f172a').text(dateStr, L + W / 2 + 10, rowY + 12);
+  doc.moveTo(L + W / 2 + 10, rowY + 28).lineTo(L + W, rowY + 28).stroke();
+  doc.y = rowY + 48;
+
+  // Cash amount box (blank)
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#64748b')
+    .text('CASH AMOUNT PAID   ·   Monto Pagado', L, doc.y, { align: 'center', width: W, characterSpacing: 1 });
+  doc.moveDown(0.5);
+  const amtY = doc.y;
+  const amtW = W / 2;
+  const amtX = L + (W - amtW) / 2;
+  doc.rect(amtX, amtY, amtW, 50).strokeColor('#29AAE1').lineWidth(1.2).stroke();
+  doc.fontSize(14).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('USD   $', amtX + 14, amtY + 18);
+  doc.y = amtY + 70;
+
+  // Received by + SSN row
+  rowY = doc.y;
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#64748b')
+    .text('RECEIVED BY / Recibido Por', L, rowY);
+  doc.fontSize(11).font('Helvetica').fillColor('#0f172a')
+    .text(recipient || ' ', L, rowY + 12, { width: W * 0.6 - 10 });
+  doc.moveTo(L, rowY + 32).lineTo(L + W * 0.6 - 10, rowY + 32).strokeColor('#cbd5e1').stroke();
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#64748b')
+    .text('SSN/ITIN (last 4 / últimos 4)', L + W * 0.6 + 10, rowY);
+  doc.fontSize(11).font('Helvetica').fillColor('#0f172a')
+    .text(ssn4 ? '****' + ssn4 : ' ', L + W * 0.6 + 10, rowY + 12);
+  doc.moveTo(L + W * 0.6 + 10, rowY + 32).lineTo(L + W, rowY + 32).stroke();
+  doc.y = rowY + 50;
+
+  // Paid for
+  rowY = doc.y;
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#64748b')
+    .text('PAID FOR / Concepto del Pago', L, rowY);
+  doc.fontSize(10).font('Helvetica').fillColor('#0f172a')
+    .text(paidFor || ' ', L, rowY + 12, { width: W });
+  doc.moveTo(L, rowY + 42).lineTo(L + W, rowY + 42).strokeColor('#cbd5e1').stroke();
+  doc.y = rowY + 56;
+
+  // Confirmation clauses (bilingual)
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('BY SIGNING, THE RECIPIENT CONFIRMS  /  Al firmar, el destinatario confirma:', L, doc.y, { width: W });
+  doc.moveDown(0.5);
+  const clauses = [
+    ['I.   I personally received the cash amount above, directly from the Company, in full satisfaction of the services described.',
+      'Recibí personalmente el monto en efectivo indicado, directamente de la Empresa, en pago total de los servicios descritos.'],
+    ['II.  I am an independent contractor — not an employee — and am responsible for my own federal, state, and self-employment taxes.',
+      'Soy contratista independiente — no empleado — y soy responsable de mis propios impuestos federales, estatales y de trabajo por cuenta propia.'],
+    ['III. I understand the Company will report payments to the IRS on Form 1099-NEC if annual totals reach the applicable threshold.',
+      'Entiendo que la Empresa reportará los pagos al IRS mediante el Formulario 1099-NEC si el total anual alcanza el umbral aplicable.'],
+    ['IV.  The identifying information I have provided is true and correct.',
+      'La información de identificación que he proporcionado es verdadera y correcta.'],
+  ];
+  for (const [en, es] of clauses) {
+    doc.fontSize(8).font('Helvetica').fillColor('#0f172a').text(en, L, doc.y, { width: W });
+    doc.fontSize(8).font('Helvetica-Oblique').fillColor('#475569').text(es, L, doc.y, { width: W });
+    doc.moveDown(0.4);
+  }
+  doc.moveDown(1.2);
+
+  // Signature blocks
+  const sigY = doc.y;
+  const col1 = L;
+  const col2 = L + W / 2 + 20;
+  const colW = W / 2 - 30;
+  doc.moveTo(col1, sigY).lineTo(col1 + colW, sigY).strokeColor('#0f172a').lineWidth(0.8).stroke();
+  doc.moveTo(col2, sigY).lineTo(col2 + colW, sigY).stroke();
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('RECIPIENT SIGNATURE', col1, sigY + 4, { width: colW, align: 'center' });
+  doc.fontSize(7).font('Helvetica-Oblique').fillColor('#64748b')
+    .text('Firma del Destinatario', col1, sigY + 16, { width: colW, align: 'center' });
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('COMPANY REPRESENTATIVE', col2, sigY + 4, { width: colW, align: 'center' });
+  doc.fontSize(7).font('Helvetica-Oblique').fillColor('#64748b')
+    .text('Representante de la Empresa', col2, sigY + 16, { width: colW, align: 'center' });
+
+  // Printed name lines
+  const pnY = sigY + 50;
+  doc.fontSize(7).font('Helvetica-Bold').fillColor('#64748b')
+    .text('PRINTED NAME / Nombre', col1, pnY);
+  doc.moveTo(col1, pnY + 24).lineTo(col1 + colW, pnY + 24).strokeColor('#cbd5e1').lineWidth(0.8).stroke();
+  doc.text('PRINTED NAME / Nombre', col2, pnY);
+  doc.moveTo(col2, pnY + 24).lineTo(col2 + colW, pnY + 24).stroke();
+
+  doc.fontSize(7).font('Helvetica-Oblique').fillColor('#94a3b8')
+    .text('Prime Anchor Point LLC  ·  For record-keeping only / Únicamente para fines de archivo',
+      L, doc.page.height - 60, { align: 'center', width: W });
+
+  doc.end();
+});
+
 // ─── INVOICE GENERATION ───
 
 // Get employees (and their hours) for a given company + period (for invoice builder)
