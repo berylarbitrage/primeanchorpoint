@@ -28099,12 +28099,12 @@ function invpOpenReceiptDialog(uid) {
     `Container unloading services for ${cno || ''}${wk ? ' — week ' + wk : ''}`.trim();
   document.getElementById('invpRcptRecipient').value = '';
   document.getElementById('invpRcptSsn').value = '';
-  document.getElementById('invpReceiptModal').style.display = 'flex';
+  document.getElementById('invpCashReceiptModal').style.display = 'flex';
   setTimeout(() => { const el = document.getElementById('invpRcptRecipient'); if (el) el.focus(); }, 60);
 }
 
 function invpCloseReceiptDialog() {
-  document.getElementById('invpReceiptModal').style.display = 'none';
+  document.getElementById('invpCashReceiptModal').style.display = 'none';
 }
 
 async function invpGenerateReceipt() {
@@ -28981,7 +28981,7 @@ function printInvoice() {
 
 <!-- ════════════════════ INVOICE PAGE: PREVIEW MODAL ════════════════════ -->
 <!-- ════════════════════ INVOICE — CASH RECEIPT MODAL ════════════════════ -->
-<div class="modal-bg" id="invpReceiptModal" style="display:none;z-index:2000">
+<div class="modal-bg" id="invpCashReceiptModal" style="display:none;z-index:2000">
   <div class="modal" style="max-width:480px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
       <h2 style="margin:0;font-size:1.05rem">🧾 生成现金回执 PDF</h2>
