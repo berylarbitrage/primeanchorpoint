@@ -28115,11 +28115,6 @@ async function invpGenerateReceipt() {
   const item = (window._invpContainerItems || []).find(i => i.uid === uid);
   if (!item) { invpCloseReceiptDialog(); return; }
   const recipient = document.getElementById('invpRcptRecipient').value.trim();
-  if (!recipient) {
-    showToast('请填写工人姓名', 'error');
-    document.getElementById('invpRcptRecipient').focus();
-    return;
-  }
   const body = {
     container_no: (item.container_no || '').trim(),
     paid_for: document.getElementById('invpRcptPaidFor').value.trim(),
@@ -28995,8 +28990,8 @@ function printInvoice() {
       Container：<span id="invpRcptContainerNo" style="font-family:monospace;font-weight:600;color:#0f172a">—</span>
     </div>
     <div class="field" style="margin-bottom:.7rem">
-      <label style="font-weight:600;font-size:.85rem">工人姓名 <span style="color:#dc2626">*</span></label>
-      <input type="text" id="invpRcptRecipient" placeholder="例如 Juan Pérez" autocomplete="off"
+      <label style="font-weight:600;font-size:.85rem">工人姓名 <span style="color:var(--gray-400);font-weight:400">（可选 — 留空可打印空白件给现场手写）</span></label>
+      <input type="text" id="invpRcptRecipient" placeholder="例如 Juan Pérez（可留空）" autocomplete="off"
         style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.95rem">
     </div>
     <div class="field" style="margin-bottom:.7rem">

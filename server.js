@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const Database = require('better-sqlite3');
 const multer = require('multer');
+const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
@@ -15500,7 +15501,7 @@ app.get('/api/admin/invoices/:id/history', requireAdmin, (req, res) => {
 // left blank to be hand-written on the printout when the contractor is paid
 // in person. Worker identity is captured per-request and NOT persisted; we
 // only log an entry to invoice_history for audit.
-app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, (req, res) => {
+app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, async (req, res) => {
   const inv = db.prepare('SELECT id, invoice_number FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
 
@@ -15519,6 +15520,17 @@ app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, (req, res) => {
         `Container ${containerNo || '—'} → ${recipient || '(未填)'}${ssn4 ? ' (SSN ****' + ssn4 + ')' : ''}`);
   } catch (e) { console.error('[cash-receipt] history insert failed:', e.message); }
 
+  // QR code in the top-right: scanning it opens an authenticated upload page
+  // where the admin can attach a photo of the signed printout back to this
+  // invoice + container row.
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim();
+  const host = req.get('host');
+  const attachUrl = `${proto}://${host}/api/admin/invoices/${inv.id}/cash-receipt-attach?c=${encodeURIComponent(containerNo)}`;
+  let qrBuf = null;
+  try {
+    qrBuf = await QRCode.toBuffer(attachUrl, { type: 'png', errorCorrectionLevel: 'M', margin: 1, width: 220 });
+  } catch (e) { console.error('[cash-receipt] QR generation failed:', e.message); }
+
   res.setHeader('Content-Type', 'application/pdf');
   const safeRecipient = (recipient || 'recipient').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
   res.setHeader('Content-Disposition',
@@ -15529,6 +15541,16 @@ app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, (req, res) => {
 
   const L = 60;
   const W = doc.page.width - 120;
+
+  if (qrBuf) {
+    const qrSize = 68;
+    const qrX = L + W - qrSize;
+    const qrY = 42;
+    doc.image(qrBuf, qrX, qrY, { width: qrSize, height: qrSize });
+    doc.fontSize(6).font('Helvetica').fillColor('#64748b')
+      .text('SCAN TO ATTACH SIGNED COPY\nEscanear para adjuntar el firmado',
+        qrX - 8, qrY + qrSize + 2, { width: qrSize + 16, align: 'center', characterSpacing: 0.3 });
+  }
 
   doc.fontSize(8).font('Helvetica').fillColor('#64748b')
     .text('INDEPENDENT  CONTRACTOR  SERVICES', L, 50, { align: 'center', width: W, characterSpacing: 2 });
@@ -15640,6 +15662,141 @@ app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, (req, res) => {
       L, doc.page.height - 60, { align: 'center', width: W });
 
   doc.end();
+});
+
+// ─── CASH RECEIPT — SIGNED-COPY ATTACHMENTS ───
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_cash_receipts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL,
+  container_no TEXT,
+  file_path TEXT NOT NULL,
+  uploaded_at TEXT DEFAULT (datetime('now'))
+)`);
+
+const cashReceiptUpload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      cb(null, `cashreceipt-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/jpeg|image\/png|image\/heic|image\/webp|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|webp|pdf)$/i.test(file.originalname);
+    cb(null, ok);
+  },
+});
+
+// GET: HTML upload page that the QR code links to. Phone-friendly. Requires the
+// admin to be logged in (session cookie set on the phone) — the easiest path is
+// for the admin to scan the QR with their own phone where they're already
+// signed in on /admin.
+app.get('/api/admin/invoices/:id/cash-receipt-attach', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT id, invoice_number, company_name FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).send('Invoice not found');
+  const containerNo = String(req.query.c || '').trim();
+  const prior = db.prepare('SELECT id, file_path, uploaded_at FROM invoice_cash_receipts WHERE invoice_id=? AND container_no=? ORDER BY uploaded_at DESC')
+    .all(inv.id, containerNo);
+  const priorList = prior.map(p => {
+    const base = path.basename(p.file_path);
+    return `<li><a href="/uploads/${encodeURIComponent(base)}" target="_blank">${base}</a> <span style="color:#64748b;font-size:.78rem">(${p.uploaded_at})</span></li>`;
+  }).join('') || '<li style="color:#94a3b8;font-style:italic">还没有附件</li>';
+  const esc = (s) => String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>上传签字凭证 · ${esc(inv.invoice_number)}</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;margin:0;padding:1.25rem;color:#0f172a}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.25rem;max-width:520px;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  h1{font-size:1.1rem;margin:0 0 .75rem 0}
+  .row{display:flex;gap:.5rem;font-size:.88rem;color:#475569;margin:.25rem 0}
+  .row b{color:#0f172a;font-weight:600}
+  .drop{border:2px dashed #29AAE1;border-radius:10px;padding:1.5rem;text-align:center;color:#0E7BB8;background:#f0f9ff;margin:1rem 0 .5rem;cursor:pointer}
+  .drop input{display:none}
+  .btn{display:block;width:100%;padding:.75rem;border:0;border-radius:8px;background:#0E7BB8;color:#fff;font-size:1rem;font-weight:600;cursor:pointer;margin-top:.75rem}
+  .btn:disabled{background:#94a3b8}
+  .ok{background:#dcfce7;color:#166534;padding:.5rem .75rem;border-radius:6px;margin-top:.75rem;display:none}
+  .err{background:#fee2e2;color:#991b1b;padding:.5rem .75rem;border-radius:6px;margin-top:.75rem;display:none}
+  ul{padding-left:1.2rem;font-size:.85rem;color:#0f172a}
+  ul a{color:#0E7BB8}
+</style></head><body>
+<div class="card">
+  <h1>📎 上传签字凭证</h1>
+  <div class="row"><span>Invoice：</span><b>${esc(inv.invoice_number)}</b></div>
+  <div class="row"><span>客户：</span><b>${esc(inv.company_name || '')}</b></div>
+  <div class="row"><span>Container：</span><b style="font-family:monospace">${esc(containerNo || '—')}</b></div>
+  <form id="f" enctype="multipart/form-data">
+    <label class="drop" id="dropLbl" for="file">
+      📷 点击拍照 / 选择图片或 PDF
+      <div style="font-size:.78rem;color:#64748b;margin-top:.35rem">已选：<span id="fname">无</span></div>
+      <input id="file" name="file" type="file" accept="image/*,application/pdf" capture="environment">
+    </label>
+    <button class="btn" type="submit" id="btn">上传</button>
+    <div class="ok" id="ok">✓ 已上传，可以关闭此页</div>
+    <div class="err" id="err"></div>
+  </form>
+  <h3 style="font-size:.92rem;margin:1.25rem 0 .5rem">已上传 (${prior.length})</h3>
+  <ul id="prior">${priorList}</ul>
+</div>
+<script>
+  const fileEl = document.getElementById('file');
+  const fnameEl = document.getElementById('fname');
+  const form = document.getElementById('f');
+  const okEl = document.getElementById('ok');
+  const errEl = document.getElementById('err');
+  const btn = document.getElementById('btn');
+  fileEl.addEventListener('change', () => {
+    fnameEl.textContent = fileEl.files[0] ? fileEl.files[0].name : '无';
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!fileEl.files[0]) { errEl.textContent = '请选择文件'; errEl.style.display = 'block'; return; }
+    errEl.style.display = 'none'; okEl.style.display = 'none';
+    btn.disabled = true; btn.textContent = '上传中…';
+    const fd = new FormData();
+    fd.append('file', fileEl.files[0]);
+    try {
+      const resp = await fetch(location.pathname.replace('-attach','-attachment') + location.search, { method: 'POST', body: fd, credentials: 'include' });
+      if (!resp.ok) throw new Error((await resp.json().catch(()=>({}))).error || '上传失败');
+      okEl.style.display = 'block';
+      btn.textContent = '✓ 已上传';
+      setTimeout(() => location.reload(), 800);
+    } catch (e) {
+      errEl.textContent = '上传失败：' + e.message;
+      errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = '上传';
+    }
+  });
+</script>
+</body></html>`);
+});
+
+// POST: receives the uploaded signed copy and links it to the invoice + container.
+app.post('/api/admin/invoices/:id/cash-receipt-attachment', requireAdmin, cashReceiptUpload.single('file'), (req, res) => {
+  const inv = db.prepare('SELECT id, invoice_number FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const containerNo = String(req.query.c || req.body.c || '').trim();
+  const filePath = `/uploads/${req.file.filename}`;
+  db.prepare('INSERT INTO invoice_cash_receipts (invoice_id, container_no, file_path) VALUES (?,?,?)')
+    .run(inv.id, containerNo, filePath);
+  try {
+    db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)')
+      .run(inv.id, '签字回执已附', `Container ${containerNo || '—'} · ${req.file.originalname}`);
+  } catch (e) { console.error('[cash-receipt-attach] history insert failed:', e.message); }
+  res.json({ success: true, file_path: filePath });
+});
+
+// List signed-copy attachments for an invoice (optionally filtered by container).
+app.get('/api/admin/invoices/:id/cash-receipts', requireAdmin, (req, res) => {
+  const rows = db.prepare(
+    'SELECT id, container_no, file_path, uploaded_at FROM invoice_cash_receipts WHERE invoice_id=? ORDER BY uploaded_at DESC'
+  ).all(req.params.id);
+  res.json(rows);
 });
 
 // ─── INVOICE GENERATION ───
