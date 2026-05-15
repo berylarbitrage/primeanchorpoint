@@ -969,8 +969,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
 )`);
 
 // ─── Fix existing invoices with XX state placeholder ───
+// Handles both legacy format (INV-XX-...) and mode-letter format (INV-C-XX-..., INV-L-XX-...).
 try {
-  const xxInvoices = db.prepare("SELECT id, invoice_number, company_name FROM invoices WHERE invoice_number LIKE 'INV-XX-%'").all();
+  const xxInvoices = db.prepare(
+    "SELECT id, invoice_number, company_name FROM invoices " +
+    "WHERE invoice_number LIKE 'INV-XX-%' OR invoice_number LIKE 'INV-C-XX-%' OR invoice_number LIKE 'INV-L-XX-%'"
+  ).all();
   for (const inv of xxInvoices) {
     const partner = db.prepare("SELECT addresses, address FROM partners WHERE name = ?").get(inv.company_name);
     if (!partner) continue;
@@ -990,7 +994,10 @@ try {
       if (m) state = m[1];
     }
     if (state && state !== 'XX') {
-      const newNum = inv.invoice_number.replace('INV-XX-', `INV-${state}-`);
+      const newNum = inv.invoice_number
+        .replace('INV-C-XX-', `INV-C-${state}-`)
+        .replace('INV-L-XX-', `INV-L-${state}-`)
+        .replace('INV-XX-', `INV-${state}-`);
       db.prepare("UPDATE invoices SET invoice_number = ? WHERE id = ?").run(newNum, inv.id);
       console.log(`[migration] Fixed invoice ${inv.invoice_number} → ${newNum}`);
     }
