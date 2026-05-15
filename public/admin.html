@@ -27252,6 +27252,7 @@ async function openInvpForEdit(id) {
       staffing: c.staffing || '',
       qty: String(c.qty || ''),
       unit_price: String(c.unit_price || ''),
+      highlighted: !!c.highlighted,
     }));
   }
   invpSwitchMode(mode);
@@ -27526,7 +27527,9 @@ async function invpRefreshInvoiceNumber() {
   const dd = String(today.getDate()).padStart(2,'0');
   const yy = String(today.getFullYear()).slice(2);
   const datePart = mm + dd + yy;
-  const prefix = `INV-${state}-${companyAbbr}-${datePart}-`;
+  // C = Container 计费, L = Labor 工时计费
+  const modeLetter = (window._invpMode === 'container') ? 'C' : 'L';
+  const prefix = `INV-${modeLetter}-${state}-${companyAbbr}-${datePart}-`;
   const existing = await api('/admin/invoices').catch(() => []);
   const nums = (Array.isArray(existing) ? existing : [])
     .map(r => r.invoice_number || '')
@@ -27934,6 +27937,15 @@ function invpSwitchMode(mode) {
     if (mk) mk.value = '';
     renderInvpContainerTable();
   }
+  // Refresh invoice number to reflect the mode letter (C / L),
+  // but only when we're creating a new invoice (no editId yet) and the
+  // current number was auto-generated.
+  const editIdEl = document.getElementById('invPageEditId');
+  const numEl    = document.getElementById('invPageNumber');
+  if (numEl && editIdEl && !editIdEl.value && /^INV-[CL]-/.test(numEl.value || '')) {
+    numEl.value = '';
+    invpRefreshInvoiceNumber();
+  }
 }
 
 function _invpFmtPeriodForContainer() {
@@ -27961,6 +27973,14 @@ function _invpSaveContainerState() {
   });
 }
 
+function invpToggleContainerHighlight(uid) {
+  _invpSaveContainerState();
+  const item = (window._invpContainerItems || []).find(i => i.uid === uid);
+  if (!item) return;
+  item.highlighted = !item.highlighted;
+  renderInvpContainerTable(true);
+}
+
 function renderInvpContainerTable(skipSave) {
   if (!skipSave) _invpSaveContainerState();
   const wrap = document.getElementById('invpContainerWrap');
@@ -27976,7 +27996,12 @@ function renderInvpContainerTable(skipSave) {
     const qty = parseFloat(it.qty) || 0;
     const price = parseFloat(it.unit_price) || 0;
     const total = qty * price;
-    return `<tr class="invp-cont-row" data-uid="${it.uid}">
+    const hl = !!it.highlighted;
+    const rowStyle = hl ? 'background:#fef3c7;box-shadow:inset 3px 0 0 #d97706' : '';
+    const starColor = hl ? '#d97706' : 'var(--gray-300)';
+    const starChar = hl ? '★' : '☆';
+    const starTitle = hl ? '取消标记此行' : '标记此行（特殊处理）';
+    return `<tr class="invp-cont-row" data-uid="${it.uid}" style="${rowStyle}">
       <td style="padding:4px 6px;text-align:center;color:var(--gray-500);font-size:.85rem">${idx + 1}</td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase"></td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-week" value="${esc(it.week || defaultWeek || '')}" placeholder="MM.DD.YY - MM.DD.YY" style="width:140px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
@@ -27984,6 +28009,7 @@ function renderInvpContainerTable(skipSave) {
       <td style="padding:3px 4px"><input type="number" class="invp-cont-qty" value="${esc(String(it.qty || ''))}" min="0" step="1" placeholder="1" style="width:60px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td class="invp-cont-total" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap">$${total.toFixed(2)}</td>
+      <td style="padding:3px 2px"><button onclick="invpToggleContainerHighlight(${it.uid})" style="background:none;border:none;cursor:pointer;color:${starColor};font-size:1rem;padding:0 4px;line-height:1" title="${starTitle}">${starChar}</button></td>
       <td style="padding:3px 4px"><button onclick="invpRemoveContainer(${it.uid})" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.85rem;padding:0 4px" title="删除">✕</button></td>
     </tr>`;
   }).join('');
@@ -27997,13 +28023,14 @@ function renderInvpContainerTable(skipSave) {
       <th style="padding:5px 6px;text-align:center">Qty</th>
       <th style="padding:5px 6px;text-align:right">Unit Price</th>
       <th style="padding:5px 6px;text-align:right">Total</th>
+      <th style="padding:5px 4px;text-align:center" title="点击星标可标记一行做特殊处理">★</th>
       <th style="padding:5px 6px"></th>
     </tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr style="border-top:2px solid var(--gray-200);font-weight:700;color:#075985">
       <td colspan="6" style="padding:6px 6px;text-align:right">合计</td>
       <td style="padding:6px 6px;text-align:right">$${grandTotal.toFixed(2)}</td>
-      <td></td>
+      <td colspan="2"></td>
     </tr></tfoot>
   </table>`;
 }
@@ -28030,6 +28057,7 @@ function invpAddContainer() {
     staffing: _invpDefaultStaffing(),
     qty: '1',
     unit_price: '',
+    highlighted: false,
   });
   renderInvpContainerTable(true);
   // Focus new container number input
@@ -28054,6 +28082,7 @@ function getInvpContainerItems() {
       qty: parseFloat(i.qty) || 0,
       unit_price: parseFloat(i.unit_price) || 0,
       total: (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0),
+      highlighted: !!i.highlighted,
     }));
 }
 
@@ -28327,9 +28356,13 @@ async function generateInvpPreview() {
     billedAmt = Math.round(baseAmt * markupRate * 100) / 100;
     const containerRows = containerItems.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
-      return `<tr style="background:${stripe}">
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b">${idx + 1}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600">${esc(i.container_no || '—')}</td>
+      const hl = !!i.highlighted;
+      const rowBg = hl ? '#fef3c7' : stripe;
+      const rowExtra = hl ? 'box-shadow:inset 4px 0 0 #d97706;' : '';
+      const noColor = hl ? '#92400e' : '#0f172a';
+      return `<tr style="background:${rowBg};${rowExtra}">
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${hl ? '#92400e' : '#64748b'}">${idx + 1}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;color:${noColor}">${esc(i.container_no || '—')}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
