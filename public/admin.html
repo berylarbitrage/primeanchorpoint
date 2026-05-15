@@ -28013,7 +28013,7 @@ function renderInvpContainerTable(skipSave) {
     const starTitle = hl ? '取消标记此行' : '标记此行（特殊处理）';
     return `<tr class="invp-cont-row" data-uid="${it.uid}" style="${rowStyle}">
       <td style="padding:4px 6px;text-align:center;color:var(--gray-500);font-size:.85rem">${idx + 1}</td>
-      <td style="padding:3px 4px"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:170px;border:1px solid var(--gray-200);border-radius:4px;padding:4px 8px;font-size:1.02rem;font-weight:700;letter-spacing:.3px;color:#0f172a;font-family:monospace;text-transform:uppercase"></td>
+      <td style="padding:3px 4px"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:240px;border:2px solid #29AAE1;background:#f0f9ff;border-radius:6px;padding:8px 12px;font-size:1.5rem;font-weight:800;letter-spacing:1.2px;color:#0c4a6e;font-family:monospace;text-transform:uppercase;line-height:1.1"></td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-week" value="${esc(it.week || defaultWeek || '')}" placeholder="MM.DD.YY - MM.DD.YY" style="width:140px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-staffing" value="${esc(it.staffing || defaultStaffing || '')}" placeholder="装卸公司" style="width:170px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-qty" value="${esc(String(it.qty || ''))}" min="0" step="1" placeholder="1" style="width:60px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
@@ -28028,7 +28028,7 @@ function renderInvpContainerTable(skipSave) {
   wrap.innerHTML = `<table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
     <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
       <th style="padding:5px 6px;text-align:center">N.</th>
-      <th style="padding:5px 6px;text-align:left">Container Number</th>
+      <th style="padding:5px 6px;text-align:left;color:#0c4a6e;font-weight:700">Container Number</th>
       <th style="padding:5px 6px;text-align:left">Unloading Week</th>
       <th style="padding:5px 6px;text-align:left">Unloading Staffing</th>
       <th style="padding:5px 6px;text-align:center">Qty</th>
