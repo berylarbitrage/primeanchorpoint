@@ -10468,6 +10468,8 @@ function renderPartners(partners) {
           : (p.contract_file_count||0)>0
             ? `<button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A" onclick="event.stopPropagation();showPartnerById(${p.id})">📋 签署中</button><button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">🔄 重新发送</button>`
             : `<button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">✍ 发送合同</button>`}
+        <button class="btn btn-sm" style="background:#EFF6FF;color:#0E7BB8;border:1px solid #BFDBFE" onclick='event.stopPropagation();openBlankWorksheetPrint(${p.id}, ${JSON.stringify(p.name||"")})'>📋 空白表</button>
+        <button class="btn btn-sm" style="background:#F0FDF4;color:#047857;border:1px solid #BBF7D0" onclick='event.stopPropagation();openBlankWorksheetList(${p.id}, ${JSON.stringify(p.name||"")})'>📥 回传</button>
         ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>`:''}
       </td>
     </tr>`;
@@ -29479,6 +29481,252 @@ function printInvoice() {
     input.value = '';
   };
 })();
+</script>
+
+<!-- ════════════════════ PARTNER BLANK WORKSHEET — PRINT MODAL ════════════════════ -->
+<div class="modal-bg" id="blankWorksheetPrintModal" style="display:none;z-index:2000" onclick="if(event.target===this)closeBlankWorksheetPrint()">
+  <div class="modal" style="max-width:480px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
+      <h2 style="margin:0;font-size:1.05rem">📋 打印空白卸柜工作单</h2>
+      <button class="btn btn-sm btn-outline" onclick="closeBlankWorksheetPrint()">关闭</button>
+    </div>
+    <div style="background:#f0f9ff;border-left:3px solid var(--sky);padding:.5rem .75rem;font-size:.78rem;color:#0c4a6e;margin-bottom:.85rem;line-height:1.5">
+      每张表右上角有独立二维码 — 卸货公司填好、签字后用手机扫码即可上传：照片、集装箱图片、工作日期。
+    </div>
+    <div style="margin-bottom:.65rem;font-size:.82rem;color:var(--gray-600)">
+      公司：<b id="bwPrintPartnerName" style="color:#0f172a">—</b>
+    </div>
+    <input type="hidden" id="bwPrintPartnerId">
+    <div class="field" style="margin-bottom:.7rem">
+      <label style="font-weight:600;font-size:.85rem">打印份数 <span style="color:#dc2626">*</span></label>
+      <input type="number" id="bwPrintCount" min="1" max="50" value="10" style="width:100%;padding:.5rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:1rem">
+    </div>
+    <div class="field" style="margin-bottom:1rem">
+      <label style="font-weight:600;font-size:.85rem">批次标签 <span style="color:var(--gray-400);font-weight:400">（可选 — 例如 2026-05 / Truck A）</span></label>
+      <input type="text" id="bwPrintBatch" maxlength="80" placeholder="例：2026-05" style="width:100%;padding:.5rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.95rem">
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-outline" onclick="closeBlankWorksheetPrint()">取消</button>
+      <button class="btn btn-outline" style="color:#0E7BB8;border-color:#0E7BB8" onclick="generateBlankWorksheets('preview')">👁 预览</button>
+      <button class="btn btn-green" onclick="generateBlankWorksheets('download')">⬇ 生成并下载 PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ PARTNER BLANK WORKSHEET — LIST / RETURNS MODAL ════════════════════ -->
+<div class="modal-bg" id="blankWorksheetListModal" style="display:none;z-index:2000" onclick="if(event.target===this)closeBlankWorksheetList()">
+  <div class="modal" style="max-width:880px;width:96vw;max-height:92vh;display:flex;flex-direction:column;padding:0">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.85rem 1rem;border-bottom:1px solid var(--gray-200)">
+      <h2 style="margin:0;font-size:1.05rem">📥 工作单回传 — <span id="bwListPartnerName">—</span></h2>
+      <button class="btn btn-sm btn-outline" onclick="closeBlankWorksheetList()">关闭</button>
+    </div>
+    <div style="padding:.85rem 1rem;overflow:auto;flex:1">
+      <div id="bwListEmpty" style="display:none;color:var(--gray-400);text-align:center;padding:2rem;font-size:.9rem">
+        还没有打印过空白表。点「📋 空白表」开始。
+      </div>
+      <div id="bwListWrap"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ PARTNER BLANK WORKSHEET — DETAIL MODAL ════════════════════ -->
+<div class="modal-bg" id="blankWorksheetDetailModal" style="display:none;z-index:2100" onclick="if(event.target===this)closeBlankWorksheetDetail()">
+  <div class="modal" style="max-width:720px;width:96vw;max-height:92vh;display:flex;flex-direction:column;padding:0">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.85rem 1rem;border-bottom:1px solid var(--gray-200)">
+      <h2 style="margin:0;font-size:1.02rem" id="bwDetailTitle">工作单详情</h2>
+      <button class="btn btn-sm btn-outline" onclick="closeBlankWorksheetDetail()">关闭</button>
+    </div>
+    <div id="bwDetailBody" style="padding:1rem;overflow:auto;flex:1"></div>
+  </div>
+</div>
+
+<script>
+// ── Partner blank-worksheet print + returns viewer ──
+function openBlankWorksheetPrint(partnerId, partnerName) {
+  document.getElementById('bwPrintPartnerId').value = partnerId;
+  document.getElementById('bwPrintPartnerName').textContent = partnerName || '—';
+  document.getElementById('bwPrintCount').value = '10';
+  document.getElementById('bwPrintBatch').value = '';
+  document.getElementById('blankWorksheetPrintModal').style.display = 'flex';
+}
+function closeBlankWorksheetPrint() {
+  document.getElementById('blankWorksheetPrintModal').style.display = 'none';
+}
+
+async function generateBlankWorksheets(mode) {
+  mode = mode === 'preview' ? 'preview' : 'download';
+  const partnerId = document.getElementById('bwPrintPartnerId').value;
+  const count = parseInt(document.getElementById('bwPrintCount').value, 10) || 0;
+  const batchLabel = document.getElementById('bwPrintBatch').value.trim();
+  if (!partnerId) return;
+  if (!count || count < 1 || count > 50) { showToast('份数必须是 1 到 50', 'error'); return; }
+
+  const url = `/api/admin/partners/${partnerId}/blank-worksheets${mode === 'preview' ? '?inline=1' : ''}`;
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count, batch_label: batchLabel }),
+    });
+    if (!resp.ok) {
+      let msg = '生成失败';
+      try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await resp.blob();
+    const filename = `Worksheets_x${count}.pdf`;
+    if (mode === 'preview' && typeof invpShowPdfPreview === 'function') {
+      invpShowPdfPreview(blob, filename, `📋 空白工作单预览 — ${count} 份`);
+    } else {
+      const dlUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = dlUrl; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(dlUrl), 1000);
+    }
+    closeBlankWorksheetPrint();
+    showToast(`已生成 ${count} 张空白表 ✓`);
+  } catch (e) {
+    showToast('生成失败：' + (e.message || e), 'error');
+  }
+}
+
+let _bwListPartnerId = null;
+async function openBlankWorksheetList(partnerId, partnerName) {
+  _bwListPartnerId = partnerId;
+  document.getElementById('bwListPartnerName').textContent = partnerName || '—';
+  document.getElementById('bwListWrap').innerHTML = '<div style="color:var(--gray-400);padding:1rem">加载中…</div>';
+  document.getElementById('bwListEmpty').style.display = 'none';
+  document.getElementById('blankWorksheetListModal').style.display = 'flex';
+  try {
+    const r = await fetch(`/api/admin/partners/${partnerId}/blank-worksheets`);
+    if (!r.ok) throw new Error('加载失败');
+    const rows = await r.json();
+    renderBlankWorksheetList(rows);
+  } catch (e) {
+    document.getElementById('bwListWrap').innerHTML = `<div style="color:#b91c1c;padding:1rem">加载失败：${esc(e.message || e)}</div>`;
+  }
+}
+function closeBlankWorksheetList() {
+  document.getElementById('blankWorksheetListModal').style.display = 'none';
+  _bwListPartnerId = null;
+}
+
+function renderBlankWorksheetList(rows) {
+  const wrap = document.getElementById('bwListWrap');
+  if (!rows.length) {
+    wrap.innerHTML = '';
+    document.getElementById('bwListEmpty').style.display = 'block';
+    return;
+  }
+  document.getElementById('bwListEmpty').style.display = 'none';
+  const pending = rows.filter(r => r.status !== 'uploaded').length;
+  const uploaded = rows.filter(r => r.status === 'uploaded').length;
+  wrap.innerHTML = `
+    <div style="display:flex;gap:.75rem;margin-bottom:.85rem;flex-wrap:wrap">
+      <span style="background:#FEF3C7;color:#92400E;padding:.25rem .65rem;border-radius:12px;font-size:.82rem">待上传 ${pending}</span>
+      <span style="background:#dcfce7;color:#166534;padding:.25rem .65rem;border-radius:12px;font-size:.82rem">已上传 ${uploaded}</span>
+      <span style="color:var(--gray-400);font-size:.82rem;align-self:center">共 ${rows.length} 张</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:.86rem">
+      <thead><tr style="background:var(--gray-50);color:var(--gray-600);text-align:left">
+        <th style="padding:6px 8px">Sheet ID</th>
+        <th style="padding:6px 8px">批次</th>
+        <th style="padding:6px 8px">工作日期</th>
+        <th style="padding:6px 8px">状态</th>
+        <th style="padding:6px 8px">文件</th>
+        <th style="padding:6px 8px">打印时间</th>
+        <th style="padding:6px 8px">操作</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr style="border-top:1px solid var(--gray-100)">
+            <td style="padding:6px 8px;font-family:monospace;font-weight:600;color:#0c4a6e">${esc((r.token||'').toUpperCase())}</td>
+            <td style="padding:6px 8px">${esc(r.batch_label || '—')}</td>
+            <td style="padding:6px 8px">${esc(r.work_date || '—')}</td>
+            <td style="padding:6px 8px">${r.status === 'uploaded'
+              ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:.75rem">已上传</span>'
+              : '<span style="background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:10px;font-size:.75rem">待上传</span>'}</td>
+            <td style="padding:6px 8px">${r.file_count || 0}</td>
+            <td style="padding:6px 8px;color:var(--gray-500);font-size:.78rem">${esc(r.created_at || '')}</td>
+            <td style="padding:6px 8px;white-space:nowrap">
+              ${r.status === 'uploaded'
+                ? `<button class="btn btn-sm" style="background:#EFF6FF;color:#0E7BB8;border:1px solid #BFDBFE" onclick="openBlankWorksheetDetail(${r.id})">查看</button>`
+                : `<button class="btn btn-sm btn-outline" onclick="copyBlankWorksheetLink('${esc(r.token)}')" title="复制上传链接给卸货公司">🔗 链接</button>`}
+              <button class="btn btn-sm btn-red" onclick="deleteBlankWorksheet(${r.id})">删除</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function openBlankWorksheetDetail(id) {
+  document.getElementById('bwDetailBody').innerHTML = '<div style="color:var(--gray-400)">加载中…</div>';
+  document.getElementById('blankWorksheetDetailModal').style.display = 'flex';
+  try {
+    const r = await fetch(`/api/admin/blank-worksheets/${id}`);
+    if (!r.ok) throw new Error('加载失败');
+    const w = await r.json();
+    document.getElementById('bwDetailTitle').textContent = `工作单 ${(w.token||'').toUpperCase()}`;
+    const files = w.files || [];
+    const sheetFiles = files.filter(f => f.kind === 'sheet');
+    const contFiles = files.filter(f => f.kind === 'container');
+    const otherFiles = files.filter(f => f.kind !== 'sheet' && f.kind !== 'container');
+    const photoGrid = (arr) => arr.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">${arr.map(f => {
+          const isImg = /\.(jpe?g|png|heic|webp|gif)$/i.test(f.file_path);
+          return `<a href="${esc(f.file_path)}" target="_blank" style="display:block;text-decoration:none;color:inherit;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden">
+            ${isImg ? `<img src="${esc(f.file_path)}" style="width:100%;height:120px;object-fit:cover;display:block">`
+              : `<div style="height:120px;background:#f8fafc;display:flex;align-items:center;justify-content:center;color:#0E7BB8;font-size:1.8rem">📄</div>`}
+            <div style="font-size:.72rem;color:var(--gray-500);padding:.3rem .4rem;border-top:1px solid var(--gray-100);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(f.original_name || f.file_path.split('/').pop())}</div>
+          </a>`;
+        }).join('')}</div>`
+      : '<div style="color:var(--gray-400);font-style:italic;font-size:.85rem">无</div>';
+    document.getElementById('bwDetailBody').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem 1rem;margin-bottom:1rem;font-size:.88rem">
+        <div><b style="color:var(--gray-500)">公司：</b>${esc(w.partner_name || '—')}</div>
+        <div><b style="color:var(--gray-500)">状态：</b>${w.status === 'uploaded' ? '✓ 已上传' : '待上传'}</div>
+        <div><b style="color:var(--gray-500)">批次：</b>${esc(w.batch_label || '—')}</div>
+        <div><b style="color:var(--gray-500)">工作日期：</b>${esc(w.work_date || '—')}</div>
+        <div><b style="color:var(--gray-500)">打印时间：</b>${esc(w.created_at || '—')}</div>
+        <div><b style="color:var(--gray-500)">上传时间：</b>${esc(w.uploaded_at || '—')}</div>
+      </div>
+      ${w.notes ? `<div style="background:#f8fafc;border-left:3px solid var(--sky);padding:.5rem .75rem;margin-bottom:1rem;font-size:.85rem;white-space:pre-wrap"><b style="color:var(--gray-500);font-size:.78rem">备注：</b><br>${esc(w.notes)}</div>` : ''}
+      <h3 style="font-size:.9rem;margin:.5rem 0">📋 工作单照片 (${sheetFiles.length})</h3>
+      ${photoGrid(sheetFiles)}
+      <h3 style="font-size:.9rem;margin:1rem 0 .5rem">📦 集装箱照片 (${contFiles.length})</h3>
+      ${photoGrid(contFiles)}
+      ${otherFiles.length ? `<h3 style="font-size:.9rem;margin:1rem 0 .5rem">其它 (${otherFiles.length})</h3>${photoGrid(otherFiles)}` : ''}`;
+  } catch (e) {
+    document.getElementById('bwDetailBody').innerHTML = `<div style="color:#b91c1c">加载失败：${esc(e.message || e)}</div>`;
+  }
+}
+function closeBlankWorksheetDetail() {
+  document.getElementById('blankWorksheetDetailModal').style.display = 'none';
+}
+
+function copyBlankWorksheetLink(token) {
+  const url = `${location.origin}/partner-worksheet/${token}`;
+  navigator.clipboard.writeText(url).then(
+    () => showToast('已复制上传链接 ✓'),
+    () => showToast('复制失败，请手动复制：' + url, 'error')
+  );
+}
+
+async function deleteBlankWorksheet(id) {
+  if (!confirm('确认删除这张工作单（及其所有照片）？此操作不可撤销。')) return;
+  try {
+    const r = await fetch(`/api/admin/blank-worksheets/${id}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error('删除失败');
+    showToast('已删除 ✓');
+    if (_bwListPartnerId) {
+      const rr = await fetch(`/api/admin/partners/${_bwListPartnerId}/blank-worksheets`);
+      if (rr.ok) renderBlankWorksheetList(await rr.json());
+    }
+  } catch (e) {
+    showToast('删除失败：' + (e.message || e), 'error');
+  }
+}
 </script>
 
 </body>

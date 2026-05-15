@@ -15877,6 +15877,436 @@ app.get('/api/admin/invoices/:id/cash-receipts', requireAdmin, (req, res) => {
   res.json(rows);
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// ─── PARTNER BLANK CONTAINER WORKSHEETS ───
+// Printable blank tables a partner company fills in by hand (which
+// containers they unloaded, prices, dates, signatures). Top-right QR on
+// each sheet links to a token-authorized upload page where they snap a
+// photo of the signed sheet + container photos.
+// ════════════════════════════════════════════════════════════════════════
+db.exec(`CREATE TABLE IF NOT EXISTS partner_blank_worksheets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  token TEXT UNIQUE NOT NULL,
+  batch_label TEXT DEFAULT '',
+  work_date TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  status TEXT DEFAULT 'pending',
+  created_at TEXT DEFAULT (datetime('now')),
+  uploaded_at TEXT
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS partner_blank_worksheet_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worksheet_id INTEGER NOT NULL,
+  kind TEXT DEFAULT 'photo',
+  file_path TEXT NOT NULL,
+  original_name TEXT DEFAULT '',
+  uploaded_at TEXT DEFAULT (datetime('now'))
+)`);
+
+const partnerWorksheetUpload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      cb(null, `worksheet-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 15 * 1024 * 1024, files: 20 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/jpeg|image\/png|image\/heic|image\/webp|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|webp|pdf)$/i.test(file.originalname);
+    cb(null, ok);
+  },
+});
+
+// Draw one blank worksheet page (with QR + ruled rows for handwriting).
+async function drawBlankWorksheetPage(doc, opts) {
+  const { partnerName, batchLabel, token, scanUrl, isFirstPage } = opts;
+  if (!isFirstPage) doc.addPage();
+
+  const L = 50;
+  const W = doc.page.width - 100;
+
+  // Header band: brand + title + QR top-right
+  let qrBuf = null;
+  try {
+    qrBuf = await QRCode.toBuffer(scanUrl, { type: 'png', errorCorrectionLevel: 'M', margin: 1, width: 240 });
+  } catch (e) { console.error('[blank-worksheet] QR generation failed:', e.message); }
+
+  const qrSize = 92;
+  if (qrBuf) {
+    const qrX = L + W - qrSize;
+    const qrY = 40;
+    doc.image(qrBuf, qrX, qrY, { width: qrSize, height: qrSize });
+    doc.fontSize(6.5).font('Helvetica-Bold').fillColor('#0c4a6e')
+      .text('SCAN TO UPLOAD\n扫码上传 / Escanear', qrX - 4, qrY + qrSize + 2,
+        { width: qrSize + 8, align: 'center', characterSpacing: 0.3 });
+  }
+
+  doc.fontSize(8).font('Helvetica').fillColor('#64748b')
+    .text('INDEPENDENT  CONTRACTOR  SERVICES', L, 50, { width: W - qrSize - 10, characterSpacing: 2 });
+  doc.fontSize(13).font('Helvetica-Bold').fillColor('#0E7BB8')
+    .text('Prime Anchor Point LLC', L, 64, { width: W - qrSize - 10 });
+  doc.fontSize(20).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('CONTAINER UNLOADING WORKSHEET', L, 92, { width: W - qrSize - 10, characterSpacing: 1.5 });
+  doc.fontSize(10).font('Helvetica-Oblique').fillColor('#475569')
+    .text('卸柜工作单  ·  Hoja de Trabajo de Descarga', L, 116, { width: W - qrSize - 10 });
+
+  doc.fontSize(7).font('Helvetica-Bold').fillColor('#64748b')
+    .text('SHEET ID', L, 140);
+  doc.fontSize(11).font('Helvetica-Bold').fillColor('#0c4a6e')
+    .text(token.toUpperCase(), L, 152, { characterSpacing: 1.2 });
+
+  let topY = 180;
+  doc.fontSize(7).font('Helvetica-Bold').fillColor('#64748b')
+    .text('UNLOADING COMPANY / 卸货公司', L, topY);
+  doc.fontSize(11).font('Helvetica-Bold').fillColor('#0f172a')
+    .text(partnerName || ' ', L, topY + 11, { width: W * 0.6 - 10 });
+  doc.moveTo(L, topY + 30).lineTo(L + W * 0.6 - 10, topY + 30).strokeColor('#0f172a').lineWidth(0.6).stroke();
+
+  doc.fontSize(7).font('Helvetica-Bold').fillColor('#64748b')
+    .text('WORK DATE / 工作日期', L + W * 0.6 + 10, topY);
+  doc.moveTo(L + W * 0.6 + 10, topY + 30).lineTo(L + W, topY + 30).stroke();
+
+  if (batchLabel) {
+    doc.fontSize(7).font('Helvetica-Oblique').fillColor('#94a3b8')
+      .text(`Batch: ${batchLabel}`, L, topY + 33);
+  }
+
+  // Container detail table (handwritten rows)
+  const tableY = topY + 50;
+  const rowH = 30;
+  const rows = 11;
+  const cols = [
+    { key: '#',                w: 24,           align: 'center' },
+    { key: 'CONTAINER NO. / 集装箱号', w: 130,   align: 'left' },
+    { key: 'DATE / 日期',      w: 70,           align: 'center' },
+    { key: 'QTY',              w: 36,           align: 'center' },
+    { key: 'UNIT PRICE',       w: 60,           align: 'center' },
+    { key: 'TOTAL',            w: 64,           align: 'center' },
+    { key: 'SIGNATURE / 签字', w: W - 24 - 130 - 70 - 36 - 60 - 64, align: 'center' },
+  ];
+
+  let cx = L;
+  doc.rect(L, tableY, W, 22).fillAndStroke('#f0f9ff', '#29AAE1');
+  for (const c of cols) {
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#0c4a6e')
+      .text(c.key, cx + 3, tableY + 7, { width: c.w - 6, align: c.align, characterSpacing: 0.4 });
+    cx += c.w;
+  }
+
+  doc.lineWidth(0.5).strokeColor('#94a3b8');
+  for (let r = 0; r < rows; r++) {
+    const y = tableY + 22 + r * rowH;
+    doc.rect(L, y, W, rowH).stroke();
+    doc.fontSize(9).font('Helvetica').fillColor('#94a3b8')
+      .text(String(r + 1), L + 3, y + (rowH / 2) - 5, { width: cols[0].w - 6, align: 'center' });
+    let dx = L;
+    for (let i = 0; i < cols.length - 1; i++) {
+      dx += cols[i].w;
+      doc.moveTo(dx, y).lineTo(dx, y + rowH).stroke();
+    }
+  }
+
+  const totY = tableY + 22 + rows * rowH;
+  doc.rect(L, totY, W, 26).fillAndStroke('#f8fafc', '#94a3b8');
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('TOTAL / 合计', L + 3, totY + 9, { width: W - cols[cols.length-1].w - 64 - 6, align: 'right' });
+  const totBoxX = L + W - cols[cols.length-1].w - 64;
+  doc.fontSize(11).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('$', totBoxX + 6, totY + 9);
+
+  const sigY = totY + 50;
+  const colW = (W - 30) / 2;
+  doc.moveTo(L, sigY).lineTo(L + colW, sigY).strokeColor('#0f172a').lineWidth(0.8).stroke();
+  doc.moveTo(L + colW + 30, sigY).lineTo(L + W, sigY).stroke();
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('CREW LEAD SIGNATURE', L, sigY + 4, { width: colW, align: 'center' });
+  doc.fontSize(7).font('Helvetica-Oblique').fillColor('#64748b')
+    .text('Firma del Encargado / 工头签字', L, sigY + 16, { width: colW, align: 'center' });
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('COMPANY REPRESENTATIVE', L + colW + 30, sigY + 4, { width: colW, align: 'center' });
+  doc.fontSize(7).font('Helvetica-Oblique').fillColor('#64748b')
+    .text('Representante de la Empresa', L + colW + 30, sigY + 16, { width: colW, align: 'center' });
+
+  doc.fontSize(7).font('Helvetica-Oblique').fillColor('#94a3b8')
+    .text('Prime Anchor Point LLC  ·  Scan the QR with any phone camera to upload a photo of the signed sheet and container photos.',
+      L, doc.page.height - 55, { align: 'center', width: W });
+  doc.fontSize(6.5).font('Helvetica-Oblique').fillColor('#94a3b8')
+    .text('扫描右上角二维码上传已签字的工作单照片和集装箱照片',
+      L, doc.page.height - 42, { align: 'center', width: W });
+}
+
+function _partnerWorksheetScanUrl(req, token) {
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim();
+  const host = req.get('host');
+  return `${proto}://${host}/partner-worksheet/${encodeURIComponent(token)}`;
+}
+
+// Admin: create N blank worksheet rows and return a multi-page PDF.
+app.post('/api/admin/partners/:id/blank-worksheets', requireAdmin, async (req, res) => {
+  const partner = db.prepare('SELECT id, name FROM partners WHERE id=?').get(req.params.id);
+  if (!partner) return res.status(404).json({ error: 'Partner not found' });
+
+  const count = Math.max(1, Math.min(50, parseInt(req.body.count, 10) || 1));
+  const batchLabel = String(req.body.batch_label || '').trim().slice(0, 80);
+  const inline = String(req.query.inline || '') === '1';
+
+  const insert = db.prepare(
+    'INSERT INTO partner_blank_worksheets (partner_id, token, batch_label) VALUES (?, ?, ?)'
+  );
+  const tokens = [];
+  for (let i = 0; i < count; i++) {
+    let token;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      token = crypto.randomBytes(6).toString('hex');
+      try { insert.run(partner.id, token, batchLabel); tokens.push(token); break; }
+      catch (e) { if (attempt === 4) throw e; }
+    }
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  const disposition = inline ? 'inline' : 'attachment';
+  const safeName = (partner.name || 'partner').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40);
+  res.setHeader('Content-Disposition',
+    `${disposition}; filename="Worksheets_${safeName}_x${count}.pdf"`);
+
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 40, bottom: 40, left: 50, right: 50 } });
+  doc.pipe(res);
+  for (let i = 0; i < tokens.length; i++) {
+    await drawBlankWorksheetPage(doc, {
+      partnerName: partner.name,
+      batchLabel,
+      token: tokens[i],
+      scanUrl: _partnerWorksheetScanUrl(req, tokens[i]),
+      isFirstPage: i === 0,
+    });
+  }
+  doc.end();
+});
+
+// Admin: list worksheets for a partner.
+app.get('/api/admin/partners/:id/blank-worksheets', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT w.id, w.token, w.batch_label, w.work_date, w.notes, w.status,
+      w.created_at, w.uploaded_at,
+      (SELECT COUNT(*) FROM partner_blank_worksheet_files f WHERE f.worksheet_id=w.id) AS file_count
+    FROM partner_blank_worksheets w
+    WHERE w.partner_id=?
+    ORDER BY w.created_at DESC
+  `).all(req.params.id);
+  res.json(rows);
+});
+
+// Admin: full details for one worksheet (with files).
+app.get('/api/admin/blank-worksheets/:id', requireAdmin, (req, res) => {
+  const w = db.prepare(`
+    SELECT w.*, p.name AS partner_name
+    FROM partner_blank_worksheets w
+    LEFT JOIN partners p ON w.partner_id=p.id
+    WHERE w.id=?
+  `).get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  const files = db.prepare(
+    'SELECT id, kind, file_path, original_name, uploaded_at FROM partner_blank_worksheet_files WHERE worksheet_id=? ORDER BY uploaded_at'
+  ).all(w.id);
+  res.json({ ...w, files });
+});
+
+// Admin: delete a worksheet (and its uploaded files on disk).
+app.delete('/api/admin/blank-worksheets/:id', requireAdmin, (req, res) => {
+  const files = db.prepare(
+    'SELECT file_path FROM partner_blank_worksheet_files WHERE worksheet_id=?'
+  ).all(req.params.id);
+  for (const f of files) {
+    try {
+      const abs = path.join(uploadsDir, path.basename(f.file_path));
+      if (fs.existsSync(abs)) fs.unlinkSync(abs);
+    } catch (e) { console.error('[blank-worksheet] delete file failed:', e.message); }
+  }
+  db.prepare('DELETE FROM partner_blank_worksheet_files WHERE worksheet_id=?').run(req.params.id);
+  db.prepare('DELETE FROM partner_blank_worksheets WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Public: token-authorized HTML upload page (mobile-friendly).
+app.get('/partner-worksheet/:token', (req, res) => {
+  const w = db.prepare(`
+    SELECT w.id, w.token, w.work_date, w.notes, w.status, w.uploaded_at,
+      p.name AS partner_name
+    FROM partner_blank_worksheets w
+    LEFT JOIN partners p ON w.partner_id=p.id
+    WHERE w.token=?
+  `).get(req.params.token);
+  const esc = (s) => String(s == null ? '' : s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+  if (!w) {
+    res.status(404).setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send('<html><body style="font-family:sans-serif;padding:2rem;text-align:center"><h2>未找到工作单 / Worksheet not found</h2><p>请检查二维码或联系管理员。</p></body></html>');
+  }
+  const files = db.prepare(
+    'SELECT id, kind, file_path, original_name, uploaded_at FROM partner_blank_worksheet_files WHERE worksheet_id=? ORDER BY uploaded_at'
+  ).all(w.id);
+  const filesList = files.map(f => {
+    const base = path.basename(f.file_path);
+    const kindZh = f.kind === 'sheet' ? '工作单' : f.kind === 'container' ? '集装箱' : '照片';
+    return `<li><a href="/uploads/${encodeURIComponent(base)}" target="_blank">${esc(f.original_name || base)}</a> <span style="color:#64748b;font-size:.78rem">(${esc(kindZh)} · ${esc(f.uploaded_at)})</span></li>`;
+  }).join('') || '<li style="color:#94a3b8;font-style:italic">还没有上传</li>';
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>上传工作单 · ${esc(w.partner_name || '')}</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;margin:0;padding:1.25rem;color:#0f172a}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.25rem;max-width:560px;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  h1{font-size:1.15rem;margin:0 0 .75rem 0}
+  .row{display:flex;gap:.5rem;font-size:.88rem;color:#475569;margin:.25rem 0}
+  .row b{color:#0f172a;font-weight:600}
+  label.field{display:block;font-size:.85rem;font-weight:600;margin:.8rem 0 .3rem;color:#0f172a}
+  input[type=date], input[type=text], textarea {
+    width:100%;padding:.6rem .7rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;box-sizing:border-box
+  }
+  textarea{min-height:60px;resize:vertical;font-family:inherit}
+  .drop{border:2px dashed #29AAE1;border-radius:10px;padding:1rem;text-align:center;color:#0E7BB8;background:#f0f9ff;margin:.4rem 0;cursor:pointer}
+  .drop input{display:none}
+  .files{font-size:.78rem;color:#64748b;margin-top:.4rem;text-align:left}
+  .files .pill{display:inline-block;background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:2px 8px;margin:2px 4px 2px 0}
+  .btn{display:block;width:100%;padding:.85rem;border:0;border-radius:8px;background:#0E7BB8;color:#fff;font-size:1rem;font-weight:600;cursor:pointer;margin-top:1rem}
+  .btn:disabled{background:#94a3b8}
+  .ok{background:#dcfce7;color:#166534;padding:.6rem .75rem;border-radius:6px;margin-top:.75rem;display:none}
+  .err{background:#fee2e2;color:#991b1b;padding:.6rem .75rem;border-radius:6px;margin-top:.75rem;display:none}
+  ul{padding-left:1.2rem;font-size:.85rem;color:#0f172a;margin:.4rem 0 0}
+  ul a{color:#0E7BB8}
+  .status{padding:.3rem .7rem;border-radius:12px;font-size:.78rem;font-weight:600;display:inline-block}
+  .status.pending{background:#FEF3C7;color:#92400E}
+  .status.uploaded{background:#dcfce7;color:#166534}
+</style></head><body>
+<div class="card">
+  <h1>📋 上传卸柜工作单 / Upload Worksheet</h1>
+  <div class="row"><span>公司 / Company：</span><b>${esc(w.partner_name || '—')}</b></div>
+  <div class="row"><span>Sheet ID：</span><b style="font-family:monospace">${esc(w.token.toUpperCase())}</b></div>
+  <div class="row"><span>状态：</span><span class="status ${esc(w.status)}">${w.status === 'uploaded' ? '已上传' : '待上传'}</span></div>
+  ${w.work_date ? `<div class="row"><span>工作日期：</span><b>${esc(w.work_date)}</b></div>` : ''}
+
+  <form id="f" enctype="multipart/form-data">
+    <label class="field" for="work_date">工作日期 / Work Date *</label>
+    <input id="work_date" name="work_date" type="date" required value="${esc(w.work_date || '')}">
+
+    <label class="field" for="notes">备注 / Notes（可选）</label>
+    <textarea id="notes" name="notes" placeholder="例：今天卸了 4 个柜子...">${esc(w.notes || '')}</textarea>
+
+    <label class="field">📋 签字工作单照片 / Signed Sheet Photo</label>
+    <label class="drop" for="sheet_file">
+      📷 点击拍照 / 选择图片
+      <input id="sheet_file" name="sheet_file" type="file" accept="image/*,application/pdf" capture="environment">
+    </label>
+    <div class="files" id="sheet_files"></div>
+
+    <label class="field">📦 集装箱照片 / Container Photos（可多选）</label>
+    <label class="drop" for="container_files">
+      📷 添加集装箱照片（可多选）
+      <input id="container_files" name="container_files" type="file" accept="image/*" multiple capture="environment">
+    </label>
+    <div class="files" id="container_files_list"></div>
+
+    <button class="btn" type="submit" id="btn">⬆ 上传 / Upload</button>
+    <div class="ok" id="ok">✓ 已上传，可以关闭此页 / Uploaded — you may close this page</div>
+    <div class="err" id="err"></div>
+  </form>
+
+  <h3 style="font-size:.92rem;margin:1.25rem 0 .5rem">已上传 (${files.length})</h3>
+  <ul id="prior">${filesList}</ul>
+</div>
+<script>
+  const sheetEl = document.getElementById('sheet_file');
+  const contEl = document.getElementById('container_files');
+  const sheetList = document.getElementById('sheet_files');
+  const contList = document.getElementById('container_files_list');
+  function renderFiles(el, listEl) {
+    listEl.innerHTML = el.files && el.files.length
+      ? Array.from(el.files).map(f => '<span class="pill">' + f.name + '</span>').join('')
+      : '';
+  }
+  sheetEl.addEventListener('change', () => renderFiles(sheetEl, sheetList));
+  contEl.addEventListener('change', () => renderFiles(contEl, contList));
+
+  const form = document.getElementById('f');
+  const okEl = document.getElementById('ok');
+  const errEl = document.getElementById('err');
+  const btn = document.getElementById('btn');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!sheetEl.files[0] && (!contEl.files || !contEl.files.length)) {
+      errEl.textContent = '请至少选择一张照片 / Please pick at least one photo';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none'; okEl.style.display = 'none';
+    btn.disabled = true; btn.textContent = '上传中… / Uploading…';
+    const fd = new FormData();
+    fd.append('work_date', document.getElementById('work_date').value);
+    fd.append('notes', document.getElementById('notes').value);
+    if (sheetEl.files[0]) fd.append('sheet', sheetEl.files[0]);
+    if (contEl.files) for (const f of contEl.files) fd.append('containers', f);
+    try {
+      const resp = await fetch(location.pathname + '/upload', { method: 'POST', body: fd });
+      if (!resp.ok) {
+        let msg = '上传失败 / Upload failed';
+        try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
+        throw new Error(msg);
+      }
+      okEl.style.display = 'block';
+      btn.textContent = '✓ 已上传';
+      setTimeout(() => location.reload(), 900);
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = '⬆ 上传 / Upload';
+    }
+  });
+</script>
+</body></html>`);
+});
+
+// Public: token-authorized file upload.
+app.post('/partner-worksheet/:token/upload',
+  partnerWorksheetUpload.fields([{ name: 'sheet', maxCount: 1 }, { name: 'containers', maxCount: 15 }]),
+  (req, res) => {
+    const w = db.prepare('SELECT id FROM partner_blank_worksheets WHERE token=?').get(req.params.token);
+    if (!w) return res.status(404).json({ error: '未找到工作单 / Worksheet not found' });
+
+    const workDate = String(req.body.work_date || '').trim().slice(0, 20);
+    const notes = String(req.body.notes || '').trim().slice(0, 1000);
+
+    const filesIn = [];
+    if (req.files && req.files.sheet && req.files.sheet[0]) {
+      filesIn.push({ kind: 'sheet', f: req.files.sheet[0] });
+    }
+    if (req.files && req.files.containers) {
+      for (const f of req.files.containers) filesIn.push({ kind: 'container', f });
+    }
+    if (!filesIn.length) return res.status(400).json({ error: '没有上传文件 / No files received' });
+
+    const insertFile = db.prepare(
+      'INSERT INTO partner_blank_worksheet_files (worksheet_id, kind, file_path, original_name) VALUES (?,?,?,?)'
+    );
+    for (const item of filesIn) {
+      insertFile.run(w.id, item.kind, `/uploads/${item.f.filename}`, item.f.originalname || '');
+    }
+    db.prepare(
+      `UPDATE partner_blank_worksheets
+       SET status='uploaded', work_date=COALESCE(NULLIF(?, ''), work_date),
+           notes=COALESCE(NULLIF(?, ''), notes),
+           uploaded_at=COALESCE(uploaded_at, datetime('now'))
+       WHERE id=?`
+    ).run(workDate, notes, w.id);
+    res.json({ success: true, count: filesIn.length });
+  }
+);
+
 // ─── INVOICE GENERATION ───
 
 // Get employees (and their hours) for a given company + period (for invoice builder)
