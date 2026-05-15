@@ -15497,47 +15497,23 @@ app.get('/api/admin/invoices/:id/history', requireAdmin, (req, res) => {
 });
 
 // ─── CASH PAYMENT RECEIPT (for a single container row on an invoice) ───
-// Generates a bilingual EN/ES cash receipt PDF. Amount line is intentionally
-// left blank to be hand-written on the printout when the contractor is paid
-// in person. Worker identity is captured per-request and NOT persisted; we
-// only log an entry to invoice_history for audit.
-app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, async (req, res) => {
-  const inv = db.prepare('SELECT id, invoice_number FROM invoices WHERE id=?').get(req.params.id);
-  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-
-  const recipient = String(req.body.recipient_name || '').trim();
-  const ssn4 = String(req.body.ssn_last4 || '').replace(/\D/g, '').slice(-4);
-  const paidFor = String(req.body.paid_for || '').trim();
-  const containerNo = String(req.body.container_no || '').trim();
+// Draw one cash-receipt page onto an existing PDFDocument. The doc's first
+// page is auto-created by PDFDocument; for subsequent receipts the caller
+// passes isFirstPage:false and we call addPage() ourselves.
+async function drawCashReceiptPage(doc, opts) {
+  const { invoiceNumber, containerNo, recipient, ssn4, paidFor, attachUrl, isFirstPage } = opts;
+  if (!isFirstPage) doc.addPage();
 
   const today = new Date();
   const dateStr = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
-  const receiptNo = `${inv.invoice_number}-RCP${containerNo ? '-' + containerNo : ''}`;
+  const receiptNo = `${invoiceNumber}-RCP${containerNo ? '-' + containerNo : ''}`;
 
-  try {
-    db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)')
-      .run(inv.id, '生成现金回执',
-        `Container ${containerNo || '—'} → ${recipient || '(未填)'}${ssn4 ? ' (SSN ****' + ssn4 + ')' : ''}`);
-  } catch (e) { console.error('[cash-receipt] history insert failed:', e.message); }
-
-  // QR code in the top-right: scanning it opens an authenticated upload page
-  // where the admin can attach a photo of the signed printout back to this
-  // invoice + container row.
-  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim();
-  const host = req.get('host');
-  const attachUrl = `${proto}://${host}/api/admin/invoices/${inv.id}/cash-receipt-attach?c=${encodeURIComponent(containerNo)}`;
   let qrBuf = null;
-  try {
-    qrBuf = await QRCode.toBuffer(attachUrl, { type: 'png', errorCorrectionLevel: 'M', margin: 1, width: 220 });
-  } catch (e) { console.error('[cash-receipt] QR generation failed:', e.message); }
-
-  res.setHeader('Content-Type', 'application/pdf');
-  const safeRecipient = (recipient || 'recipient').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
-  res.setHeader('Content-Disposition',
-    `attachment; filename="Cash_Receipt_${inv.invoice_number}_${containerNo || 'X'}_${safeRecipient}.pdf"`);
-
-  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 50, left: 60, right: 60 } });
-  doc.pipe(res);
+  if (attachUrl) {
+    try {
+      qrBuf = await QRCode.toBuffer(attachUrl, { type: 'png', errorCorrectionLevel: 'M', margin: 1, width: 220 });
+    } catch (e) { console.error('[cash-receipt] QR generation failed:', e.message); }
+  }
 
   const L = 60;
   const W = doc.page.width - 120;
@@ -15660,7 +15636,95 @@ app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, async (req, res) 
   doc.fontSize(7).font('Helvetica-Oblique').fillColor('#94a3b8')
     .text('Prime Anchor Point LLC  ·  For record-keeping only / Únicamente para fines de archivo',
       L, doc.page.height - 60, { align: 'center', width: W });
+}
 
+function _cashReceiptAttachUrl(req, invoiceId, containerNo) {
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim();
+  const host = req.get('host');
+  return `${proto}://${host}/api/admin/invoices/${invoiceId}/cash-receipt-attach?c=${encodeURIComponent(containerNo)}`;
+}
+
+// Generates a bilingual EN/ES cash receipt PDF. Amount line is intentionally
+// left blank to be hand-written on the printout when the contractor is paid
+// in person. Worker identity is captured per-request and NOT persisted; we
+// only log an entry to invoice_history for audit.
+app.post('/api/admin/invoices/:id/cash-receipt', requireAdmin, async (req, res) => {
+  const inv = db.prepare('SELECT id, invoice_number FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+  const recipient = String(req.body.recipient_name || '').trim();
+  const ssn4 = String(req.body.ssn_last4 || '').replace(/\D/g, '').slice(-4);
+  const paidFor = String(req.body.paid_for || '').trim();
+  const containerNo = String(req.body.container_no || '').trim();
+  const inline = String(req.query.inline || '') === '1';
+
+  try {
+    db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)')
+      .run(inv.id, inline ? '预览现金回执' : '生成现金回执',
+        `Container ${containerNo || '—'} → ${recipient || '(未填)'}${ssn4 ? ' (SSN ****' + ssn4 + ')' : ''}`);
+  } catch (e) { console.error('[cash-receipt] history insert failed:', e.message); }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  const safeRecipient = (recipient || 'recipient').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+  const disposition = inline ? 'inline' : 'attachment';
+  res.setHeader('Content-Disposition',
+    `${disposition}; filename="Cash_Receipt_${inv.invoice_number}_${containerNo || 'X'}_${safeRecipient}.pdf"`);
+
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 50, left: 60, right: 60 } });
+  doc.pipe(res);
+  await drawCashReceiptPage(doc, {
+    invoiceNumber: inv.invoice_number,
+    containerNo, recipient, ssn4, paidFor,
+    attachUrl: _cashReceiptAttachUrl(req, inv.id, containerNo),
+    isFirstPage: true,
+  });
+  doc.end();
+});
+
+// Bulk variant: combines cash receipts for many containers in a single
+// multi-page PDF. Body: { items: [{ container_no, paid_for, recipient_name, ssn_last4 }, ...] }
+// Query: ?inline=1 to display in the browser instead of forcing download.
+app.post('/api/admin/invoices/:id/cash-receipts-bulk', requireAdmin, async (req, res) => {
+  const inv = db.prepare('SELECT id, invoice_number FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+  const rawItems = Array.isArray(req.body.items) ? req.body.items : [];
+  const items = rawItems.map(it => ({
+    containerNo: String(it.container_no || '').trim(),
+    recipient: String(it.recipient_name || '').trim(),
+    ssn4: String(it.ssn_last4 || '').replace(/\D/g, '').slice(-4),
+    paidFor: String(it.paid_for || '').trim(),
+  })).filter(it => it.containerNo || it.paidFor);
+  if (!items.length) return res.status(400).json({ error: 'No items to render' });
+
+  const inline = String(req.query.inline || '') === '1';
+
+  try {
+    const containerList = items.map(it => it.containerNo || '—').join(', ');
+    db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)')
+      .run(inv.id, inline ? '批量预览现金回执' : '批量生成现金回执',
+        `${items.length} 个 container：${containerList}`);
+  } catch (e) { console.error('[cash-receipt-bulk] history insert failed:', e.message); }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  const disposition = inline ? 'inline' : 'attachment';
+  res.setHeader('Content-Disposition',
+    `${disposition}; filename="Cash_Receipts_${inv.invoice_number}_x${items.length}.pdf"`);
+
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 50, left: 60, right: 60 } });
+  doc.pipe(res);
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    await drawCashReceiptPage(doc, {
+      invoiceNumber: inv.invoice_number,
+      containerNo: it.containerNo,
+      recipient: it.recipient,
+      ssn4: it.ssn4,
+      paidFor: it.paidFor,
+      attachUrl: _cashReceiptAttachUrl(req, inv.id, it.containerNo),
+      isFirstPage: i === 0,
+    });
+  }
   doc.end();
 });
 

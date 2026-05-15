@@ -1557,8 +1557,11 @@ tr:hover td{background:var(--sky-light)}
         <div id="invpContainerWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
           <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">点下方按钮添加 container 行</div>
         </div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddContainer()">＋ 添加 Container</button>
+          <span style="color:var(--gray-300);font-size:.85rem">|</span>
+          <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0E7BB8;border-color:#0E7BB8" onclick="invpBulkReceipts('preview')" title="一次预览所有 container 的现金回执 PDF">👁 批量预览回执</button>
+          <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="invpBulkReceipts('download')" title="一次下载所有 container 的现金回执 PDF（合并为一个文件）">⬇ 批量下载回执</button>
         </div>
       </div>
 
@@ -28107,7 +28110,8 @@ function invpCloseReceiptDialog() {
   document.getElementById('invpCashReceiptModal').style.display = 'none';
 }
 
-async function invpGenerateReceipt() {
+async function invpGenerateReceipt(mode) {
+  mode = mode === 'preview' ? 'preview' : 'download';
   const invIdEl = document.getElementById('invPageEditId');
   const invId = invIdEl && invIdEl.value;
   if (!invId) { showToast('请先保存这张 invoice', 'error'); return; }
@@ -28121,8 +28125,9 @@ async function invpGenerateReceipt() {
     recipient_name: recipient,
     ssn_last4: document.getElementById('invpRcptSsn').value.trim(),
   };
+  const url = `/api/admin/invoices/${invId}/cash-receipt${mode === 'preview' ? '?inline=1' : ''}`;
   try {
-    const resp = await fetch(`/api/admin/invoices/${invId}/cash-receipt`, {
+    const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -28133,20 +28138,112 @@ async function invpGenerateReceipt() {
       throw new Error(msg);
     }
     const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const safeName = recipient.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30) || 'recipient';
-    a.download = `Cash_Receipt_${body.container_no || 'X'}_${safeName}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    invpCloseReceiptDialog();
-    showToast('回执已生成 ✓');
+    const filename = `Cash_Receipt_${body.container_no || 'X'}_${safeName}.pdf`;
+    if (mode === 'preview') {
+      invpShowPdfPreview(blob, filename, `🧾 现金回执预览 — ${body.container_no || '(未填)'}`);
+      invpCloseReceiptDialog();
+    } else {
+      _invpTriggerDownload(blob, filename);
+      invpCloseReceiptDialog();
+      showToast('回执已生成 ✓');
+    }
   } catch (e) {
-    showToast('生成失败：' + (e.message || e), 'error');
+    showToast(mode === 'preview' ? ('预览失败：' + (e.message || e)) : ('生成失败：' + (e.message || e)), 'error');
   }
+}
+
+// ── Batch cash receipt PDF (one combined multi-page PDF) ──
+async function invpBulkReceipts(mode) {
+  mode = mode === 'preview' ? 'preview' : 'download';
+  const invIdEl = document.getElementById('invPageEditId');
+  const invId = invIdEl && invIdEl.value;
+  if (!invId) { showToast('请先保存这张 invoice，再批量生成回执', 'error'); return; }
+  _invpSaveContainerState();
+  const items = (window._invpContainerItems || [])
+    .filter(i => (i.container_no || '').trim())
+    .map(i => {
+      const cno = (i.container_no || '').trim();
+      const wk = (i.week || '').trim();
+      return {
+        container_no: cno,
+        paid_for: `Container unloading services for ${cno}${wk ? ' — week ' + wk : ''}`.trim(),
+        recipient_name: '',
+        ssn_last4: '',
+      };
+    });
+  if (!items.length) { showToast('没有可用的 container（请先填写 Container Number）', 'error'); return; }
+  const verb = mode === 'preview' ? '预览' : '下载';
+  if (mode === 'download' && !confirm(`将为 ${items.length} 个 container 生成合并的现金回执 PDF 并${verb}。\n（工人姓名 / SSN 留空给现场手写）\n继续？`)) return;
+
+  const url = `/api/admin/invoices/${invId}/cash-receipts-bulk${mode === 'preview' ? '?inline=1' : ''}`;
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    if (!resp.ok) {
+      let msg = '生成失败';
+      try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await resp.blob();
+    const filename = `Cash_Receipts_x${items.length}.pdf`;
+    if (mode === 'preview') {
+      invpShowPdfPreview(blob, filename, `🧾 批量现金回执预览 — ${items.length} 张`);
+    } else {
+      _invpTriggerDownload(blob, filename);
+      showToast(`已生成 ${items.length} 张回执 ✓`);
+    }
+  } catch (e) {
+    showToast(`批量${verb}失败：` + (e.message || e), 'error');
+  }
+}
+
+function _invpTriggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── In-browser PDF preview (used by single + bulk receipt preview) ──
+let _invpPreviewBlobUrl = null;
+let _invpPreviewBlob = null;
+let _invpPreviewFilename = '';
+
+function invpShowPdfPreview(blob, filename, title) {
+  if (_invpPreviewBlobUrl) { try { URL.revokeObjectURL(_invpPreviewBlobUrl); } catch {} }
+  _invpPreviewBlob = blob;
+  _invpPreviewFilename = filename || 'preview.pdf';
+  _invpPreviewBlobUrl = URL.createObjectURL(blob);
+  const titleEl = document.getElementById('invpRcptPreviewTitle');
+  if (titleEl) titleEl.textContent = title || '🧾 现金回执预览';
+  const frame = document.getElementById('invpRcptPreviewFrame');
+  if (frame) frame.src = _invpPreviewBlobUrl;
+  document.getElementById('invpRcptPreviewModal').style.display = 'flex';
+}
+
+function invpCloseRcptPreview() {
+  document.getElementById('invpRcptPreviewModal').style.display = 'none';
+  const frame = document.getElementById('invpRcptPreviewFrame');
+  if (frame) frame.src = 'about:blank';
+  if (_invpPreviewBlobUrl) {
+    try { URL.revokeObjectURL(_invpPreviewBlobUrl); } catch {}
+    _invpPreviewBlobUrl = null;
+  }
+  _invpPreviewBlob = null;
+  _invpPreviewFilename = '';
+}
+
+function invpDownloadCurrentPreview() {
+  if (!_invpPreviewBlob) return;
+  _invpTriggerDownload(_invpPreviewBlob, _invpPreviewFilename || 'Cash_Receipt.pdf');
 }
 
 function getInvpContainerItems() {
@@ -29004,9 +29101,26 @@ function printInvoice() {
       <textarea id="invpRcptPaidFor" rows="2"
         style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;resize:vertical"></textarea>
     </div>
-    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn btn-outline" onclick="invpCloseReceiptDialog()">取消</button>
-      <button class="btn btn-green" onclick="invpGenerateReceipt()">⬇ 生成并下载 PDF</button>
+      <button class="btn btn-outline" style="color:#0E7BB8;border-color:#0E7BB8" onclick="invpGenerateReceipt('preview')">👁 预览</button>
+      <button class="btn btn-green" onclick="invpGenerateReceipt('download')">⬇ 生成并下载 PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE — CASH RECEIPT PDF PREVIEW MODAL ════════════════════ -->
+<div class="modal-bg" id="invpRcptPreviewModal" style="display:none;z-index:2100" onclick="if(event.target===this)invpCloseRcptPreview()">
+  <div class="modal" style="max-width:920px;width:96vw;padding:0;display:flex;flex-direction:column;max-height:92vh">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.7rem 1rem;border-bottom:1px solid var(--gray-200)">
+      <h2 style="margin:0;font-size:1rem" id="invpRcptPreviewTitle">🧾 现金回执预览</h2>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-green" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpDownloadCurrentPreview()">⬇ 下载</button>
+        <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpCloseRcptPreview()">关闭</button>
+      </div>
+    </div>
+    <div style="flex:1;min-height:60vh;background:#525659">
+      <iframe id="invpRcptPreviewFrame" style="width:100%;height:78vh;border:0;background:#525659"></iframe>
     </div>
   </div>
 </div>
