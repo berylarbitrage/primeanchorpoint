@@ -15919,7 +15919,7 @@ function renderOnboardingTasks(tasks) {
     const s = (t.key === 'contract' && t.ds_status && t.ds_status !== 'completed' && t.status === 'completed') ? 'submitted' : t.status;
     // For contract tasks: prevent manual completion unless both parties have signed
     const contractNotFullySigned = t.key === 'contract' && t.ds_status && t.ds_status !== 'completed';
-    const canComplete = (s === 'pending' || s === 'submitted' || s === 'locked') && !contractNotFullySigned;
+    const canComplete = (s === 'pending' || s === 'submitted' || s === 'locked') && !contractNotFullySigned && t.key !== 'tin_verify';
     const canWaive = s !== 'completed' && s !== 'waived';
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
@@ -15976,7 +15976,7 @@ function renderOnboardingTasks(tasks) {
             : t.key==='work_permit'
             ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openWorkPermitModal()">🛂 ${s==='completed'?'查看/修改验证':'开始工作许可验证'}</button>`
             : t.key==='tin_verify'
-            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button> <button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openSsnCardModal()">📎 上传 SSN 卡</button> <button class="btn btn-sm" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;font-weight:600" onclick="verifyTinTaxbandits(${_onboardingWorkerId})">🔍 TaxBandits 核对</button>`
+            ? `<button class="btn btn-sm" style="${t.tin_verify_result==='verified'?'background:#d1fae5;color:#065f46;border:2px solid #34d399;font-weight:700':'background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0'}" onclick="setTinVerifyResult(${_onboardingWorkerId},'verified')">✅ 已核对</button> <button class="btn btn-sm" style="${t.tin_verify_result==='unverified'?'background:#fee2e2;color:#991b1b;border:2px solid #f87171;font-weight:700':'background:#fff1f2;color:#be123c;border:1px solid #fda4af'}" onclick="setTinVerifyResult(${_onboardingWorkerId},'unverified')">❌ 未核对</button> <button class="btn btn-sm" style="${t.tin_verify_result==='no_conclusion'?'background:#fef3c7;color:#92400e;border:2px solid #fbbf24;font-weight:700':'background:#fffbeb;color:#b45309;border:1px solid #fde68a'}" onclick="setTinVerifyResult(${_onboardingWorkerId},'no_conclusion')">❓ 没有结论</button> <button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openSsnCardModal()">📎 上传 SSN 卡</button> <button class="btn btn-sm" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;font-weight:600" onclick="verifyTinTaxbandits(${_onboardingWorkerId})">🔍 TaxBandits 核对</button>`
             : t.key==='payment_method'
             ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;font-weight:700" onclick="openPaymentAuthModal()">💳 ${t.ds_status==='completed'?'✅ 已签署':t.ds_status==='sent'?'⏳ 等待签署':'发送付款授权'}</button>${t.ds_envelope_id?` <button class="btn btn-sm" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;font-weight:700" onclick="paymentAuthAddCompany()">✍️ 公司签字</button>`:''} ${(t.ds_status==='completed'&&s==='completed')?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/payment-auth-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('payment_method')">🔗 绑定已签文件</button>`:''}`
             : (t.key==='i9'||t.key==='ead_upload')
@@ -19916,6 +19916,17 @@ async function deletePaperW9(docId) {
 async function paperW9MarkComplete() {
   closeModal('paperW9Modal');
   await updateOnboardingTask('w9', 'completed');
+}
+
+async function setTinVerifyResult(workerId, result) {
+  const labels = { verified: '已核对', unverified: '未核对', no_conclusion: '没有结论' };
+  try {
+    await api(`/admin/worker-accounts/${workerId}/tin-verify-result`, { method: 'PUT', body: JSON.stringify({ result }) });
+    showToast(`税号核对结果已标记：${labels[result]}`, 'success');
+    refreshOnboardingModal();
+  } catch (e) {
+    showToast('标记失败：' + (e.message || '未知错误'), 'error');
+  }
 }
 
 let _taxBanditsVerifying = false;
