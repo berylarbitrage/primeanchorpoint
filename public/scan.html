@@ -233,6 +233,9 @@
       $('readyTitle').textContent = '拍摄' + docLabel;
       refreshHeader();
       show('Ready');
+      // Kick off OpenCV preload so by the time the user takes a photo
+      // the AI detector is usually ready. Failures are silently ignored.
+      loadOpenCV().catch(() => {});
     } catch (e) {
       $('errMsg').textContent = '网络异常，请稍后重试。';
       show('Error');
@@ -273,10 +276,14 @@
       c.getContext('2d').drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
       capturedBitmap = c;
-      cornersImg = autoDetectCorners(c);
+      // First-photo loader budget is larger because OpenCV may still be downloading.
+      const cvReady = !!(window.cv && window.cv.Mat);
+      setLoader(true, cvReady ? '✨ AI 识别边缘…' : '✨ AI 模型加载中…');
+      const det = await detectCorners(c, cvReady ? 4000 : 12000);
+      cornersImg = det.corners;
       show('Crop');
-      // Layout after the stage is visible so we know wrap size
       requestAnimationFrame(layoutCropCanvas);
+      if (det.engine === 'opencv') toast('✨ AI 已识别文件边缘', 1800);
     } catch (e) {
       toast('读取图片失败');
     } finally {
@@ -513,6 +520,131 @@
         px[i4] = px[i4 + 1] = px[i4 + 2] = v;
       }
     }
+  }
+
+  // ── OpenCV.js lazy loader ────────────────────────────────────────
+  // Loaded on demand; cached after first load. We tolerate failures
+  // (offline / blocked CDN) and fall back to the pure-JS detector.
+  const CV_SRC = 'https://docs.opencv.org/4.5.0/opencv.js';
+  let _cvPromise = null;
+  function loadOpenCV() {
+    if (_cvPromise) return _cvPromise;
+    if (window.cv && window.cv.Mat) return Promise.resolve();
+    _cvPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = CV_SRC;
+      script.async = true;
+      script.onload = () => {
+        const ready = () => window.cv && window.cv.Mat;
+        if (ready()) return resolve();
+        if (window.cv && typeof window.cv === 'object') {
+          window.cv.onRuntimeInitialized = () => ready() ? resolve() : reject(new Error('cv init incomplete'));
+        }
+        // Safety poll in case onRuntimeInitialized never fires
+        let waited = 0;
+        const it = setInterval(() => {
+          waited += 200;
+          if (ready()) { clearInterval(it); resolve(); }
+          else if (waited > 30000) { clearInterval(it); reject(new Error('cv timeout')); }
+        }, 200);
+      };
+      script.onerror = () => { _cvPromise = null; reject(new Error('cv load failed')); };
+      document.head.appendChild(script);
+    });
+    return _cvPromise;
+  }
+
+  // ── OpenCV document corner detection ─────────────────────────────
+  // Canny → dilate → contours → approxPolyDP, pick largest 4-vertex
+  // convex polygon. Returns 4 ordered corners (TL, TR, BR, BL) in the
+  // original image's coordinate space, or null if no good quad found.
+  function detectCornersOpenCV(srcCanvas) {
+    if (!window.cv || !cv.Mat) return null;
+    const TARGET = 900;
+    const k = Math.min(1, TARGET / Math.max(srcCanvas.width, srcCanvas.height));
+    const sw = Math.round(srcCanvas.width * k);
+    const sh = Math.round(srcCanvas.height * k);
+    const small = document.createElement('canvas');
+    small.width = sw; small.height = sh;
+    small.getContext('2d').drawImage(srcCanvas, 0, 0, sw, sh);
+    const src = cv.imread(small);
+    const gray = new cv.Mat();
+    const blurred = new cv.Mat();
+    const edges = new cv.Mat();
+    const dilated = new cv.Mat();
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    let bestPts = null;
+    try {
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+      cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+      // Try a few Canny threshold pairs and keep the best quad
+      const thresholdSets = [[50, 150], [30, 100], [75, 200]];
+      const imgArea = sw * sh;
+      let bestArea = imgArea * 0.18; // require at least 18% of image
+      for (const [lo, hi] of thresholdSets) {
+        cv.Canny(blurred, edges, lo, hi);
+        const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+        cv.dilate(edges, dilated, kernel);
+        kernel.delete();
+        cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        for (let i = 0; i < contours.size(); i++) {
+          const cnt = contours.get(i);
+          const peri = cv.arcLength(cnt, true);
+          const approx = new cv.Mat();
+          cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+          if (approx.rows === 4 && cv.isContourConvex(approx)) {
+            const area = Math.abs(cv.contourArea(approx));
+            if (area > bestArea) {
+              bestArea = area;
+              const pts = [];
+              for (let j = 0; j < 4; j++) {
+                pts.push({ x: approx.data32S[j * 2] / k, y: approx.data32S[j * 2 + 1] / k });
+              }
+              bestPts = orderQuadCorners(pts);
+            }
+          }
+          approx.delete();
+          cnt.delete();
+        }
+      }
+    } catch (e) {
+      bestPts = null;
+    } finally {
+      src.delete(); gray.delete(); blurred.delete();
+      edges.delete(); dilated.delete();
+      contours.delete(); hierarchy.delete();
+    }
+    return bestPts;
+  }
+
+  function orderQuadCorners(pts) {
+    // TL = argmin(x+y), BR = argmax(x+y), TR = argmax(x-y), BL = argmin(x-y)
+    let tl = pts[0], tr = pts[0], br = pts[0], bl = pts[0];
+    let tlS = Infinity, trS = -Infinity, brS = -Infinity, blS = Infinity;
+    for (const p of pts) {
+      const s1 = p.x + p.y, s2 = p.x - p.y;
+      if (s1 < tlS) { tlS = s1; tl = p; }
+      if (s1 > brS) { brS = s1; br = p; }
+      if (s2 > trS) { trS = s2; tr = p; }
+      if (s2 < blS) { blS = s2; bl = p; }
+    }
+    return [tl, tr, br, bl];
+  }
+
+  // Composite detector: prefer OpenCV, fall back to pure-JS heuristic.
+  // `cvBudgetMs` is the max time we'll wait for OpenCV to finish loading
+  // on its very first invocation (subsequent calls resolve instantly).
+  async function detectCorners(canvas, cvBudgetMs = 10000) {
+    try {
+      await Promise.race([
+        loadOpenCV(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('cv budget exhausted')), cvBudgetMs))
+      ]);
+      const cvCorners = detectCornersOpenCV(canvas);
+      if (cvCorners) return { corners: cvCorners, engine: 'opencv' };
+    } catch (e) { /* fall through */ }
+    return { corners: autoDetectCorners(canvas), engine: 'js' };
   }
 
   // ── Auto-detect document corners ─────────────────────────────────
