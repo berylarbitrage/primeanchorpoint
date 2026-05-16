@@ -13547,7 +13547,7 @@ app.delete('/api/admin/labor-companies/:id', requireAdmin, requireRole('admin'),
   const id = parseInt(req.params.id);
   const usage = db.prepare('SELECT COUNT(*) AS n FROM worker_accounts WHERE payment_labor_company_id=?').get(id);
   if (usage && usage.n > 0) {
-    return res.status(400).json({ error: `该劳务公司已被 ${usage.n} 名工人使用，无法删除。可改为停用。` });
+    return res.status(400).json({ error: `该分包商已被 ${usage.n} 名工人使用，无法删除。可改为停用。` });
   }
   db.prepare('DELETE FROM labor_companies WHERE id=?').run(id);
   res.json({ success: true });
@@ -13562,21 +13562,23 @@ app.put('/api/admin/worker-accounts/:id/payment-labor-company', requireAdmin, (r
     const lc = db.prepare('SELECT id, name FROM labor_companies WHERE id=?').get(parseInt(labor_company_id));
     if (!lc) return res.status(400).json({ error: 'Labor company not found' });
     db.prepare(`UPDATE worker_accounts SET payment_labor_company_id=?, payment_method='labor_company' WHERE id=?`).run(lc.id, workerId);
-    const note = `通过劳务公司支付：${lc.name}`;
+    const note = `通过分包商支付：${lc.name}`;
     db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, completed_at, updated_at)
       VALUES (?, 'payment_method', 'completed', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       ON CONFLICT(worker_account_id, task_key) DO UPDATE SET status='completed', admin_note=excluded.admin_note,
         completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP`)
       .run(workerId, note);
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(workerId, changedBy, 'payment_labor_company', '', lc.name, note);
+      .run(workerId, changedBy, 'payment_subcontractor', '', lc.name, note);
   } else {
-    const prev = db.prepare(`SELECT lc.name FROM worker_accounts wa LEFT JOIN labor_companies lc ON lc.id=wa.payment_labor_company_id WHERE wa.id=?`).get(workerId);
+    const wa = db.prepare(`SELECT wa.payment_labor_company_id AS lc_id, lc.name AS lc_name FROM worker_accounts wa LEFT JOIN labor_companies lc ON lc.id=wa.payment_labor_company_id WHERE wa.id=?`).get(workerId);
     db.prepare(`UPDATE worker_accounts SET payment_labor_company_id=NULL WHERE id=?`).run(workerId);
-    db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='已取消劳务公司分配', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method' AND admin_note LIKE '通过劳务公司支付%'`)
-      .run(workerId);
+    if (wa && wa.lc_id) {
+      db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='已取消分包商分配', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method'`)
+        .run(workerId);
+    }
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(workerId, changedBy, 'payment_labor_company', prev?.name||'', '', '取消劳务公司分配');
+      .run(workerId, changedBy, 'payment_subcontractor', wa?.lc_name||'', '', '取消分包商分配');
   }
   syncOnboardedStatus(workerId);
   res.json({ success: true, tasks: getOnboardingTasks(workerId) });
