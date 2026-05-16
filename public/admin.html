@@ -1054,6 +1054,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="top-actions">
       <button class="btn btn-outline" onclick="exportEmployeeCSV()">导出 CSV</button>
       <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
+      <button class="btn btn-outline" onclick="openNewEmployeeSop()" title="新增员工标准操作流程 PDF">📖 SOP</button>
       <button class="btn btn-green" onclick="openEmpModal()">+ 新增员工</button>
     </div>
   </div>
@@ -29711,6 +29712,28 @@ function copyBlankWorksheetLink(token) {
     () => showToast('已复制上传链接 ✓'),
     () => showToast('复制失败，请手动复制：' + url, 'error')
   );
+}
+
+// ── Open the "New Employee SOP" PDF (preview if browser supports, otherwise download) ──
+async function openNewEmployeeSop() {
+  try {
+    const resp = await fetch('/api/admin/docs/new-employee-sop?inline=1');
+    if (!resp.ok) {
+      let msg = '生成失败';
+      try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await resp.blob();
+    if (typeof invpShowPdfPreview === 'function') {
+      invpShowPdfPreview(blob, 'New_Employee_SOP.pdf', '📖 新增员工 SOP');
+    } else {
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+  } catch (e) {
+    showToast('打开 SOP 失败：' + (e.message || e), 'error');
+  }
 }
 
 async function deleteBlankWorksheet(id) {
