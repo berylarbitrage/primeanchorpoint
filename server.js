@@ -10514,6 +10514,79 @@ app.get('/api/admin/worker-accounts/:id/paper-contracts/:docId/file', requireAdm
   }
 });
 
+// ─── Mobile Scan Upload (tokenized public URL → phone camera scanner) ───
+
+const MOBILE_SCAN_DOC_TYPES = {
+  paper_contract: { label: '纸质合同', allowedExts: ['jpg','jpeg','png','pdf'] }
+};
+
+app.post('/api/admin/worker-accounts/:id/mobile-upload-link', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const docType = String((req.body && req.body.doc_type) || 'paper_contract');
+  if (!MOBILE_SCAN_DOC_TYPES[docType]) return res.status(400).json({ error: 'Unsupported doc_type' });
+  const w = db.prepare('SELECT id, name, username FROM worker_accounts WHERE id=?').get(workerId);
+  if (!w) return res.status(404).json({ error: 'Worker not found' });
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const createdBy = (req.session && req.session.username) || 'admin';
+  db.prepare(`INSERT INTO mobile_upload_tokens (token, worker_account_id, doc_type, expires_at, created_by) VALUES (?,?,?,?,?)`)
+    .run(token, workerId, docType, expiresAt, createdBy);
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const url = `${proto}://${host}/scan/${token}`;
+  res.json({ success: true, url, token, expires_at: expiresAt, worker_name: w.name || w.username || '', doc_type: docType });
+});
+
+function loadMobileScanToken(token) {
+  const row = db.prepare('SELECT * FROM mobile_upload_tokens WHERE token=?').get(token);
+  if (!row) return { error: 'Token not found', status: 404 };
+  if (new Date(row.expires_at).getTime() < Date.now()) return { error: 'Token expired', status: 410 };
+  if (!MOBILE_SCAN_DOC_TYPES[row.doc_type]) return { error: 'Unsupported doc_type', status: 400 };
+  return { row };
+}
+
+// Public HTML page — mobile camera scanner UI
+app.get('/scan/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'scan.html'));
+});
+
+// Public: validate token & return display context
+app.get('/api/scan/:token', (req, res) => {
+  const { error, status, row } = loadMobileScanToken(req.params.token);
+  if (error) return res.status(status).json({ error });
+  const w = db.prepare('SELECT name, username FROM worker_accounts WHERE id=?').get(row.worker_account_id);
+  res.json({
+    worker_name: (w && (w.name || w.username)) || '',
+    doc_type: row.doc_type,
+    doc_label: MOBILE_SCAN_DOC_TYPES[row.doc_type].label,
+    upload_count: row.upload_count,
+    expires_at: row.expires_at
+  });
+});
+
+// Public: receive the scanned image (no admin auth — token is the credential)
+app.post('/api/scan/:token/upload', docUpload.single('file'), (req, res) => {
+  const { error, status, row } = loadMobileScanToken(req.params.token);
+  if (error) {
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) try { fs.unlinkSync(req.file.path); } catch {}
+    return res.status(status).json({ error });
+  }
+  if (!req.file) return res.status(400).json({ error: 'File required' });
+  const workerId = row.worker_account_id;
+  const docType = row.doc_type;
+  const fileName = req.file.originalname || `mobile-scan-${Date.now()}.jpg`;
+  const notes = `通过手机扫描链接上传（token: ${row.token.slice(0, 8)}…）`;
+  db.prepare(`INSERT INTO worker_compliance_docs
+    (worker_account_id, doc_type, file_path, file_name, form_data, status, reviewer_notes, reviewed_at)
+    VALUES (?, ?, ?, ?, ?, 'approved', ?, CURRENT_TIMESTAMP)`)
+    .run(workerId, docType, req.file.path, fileName,
+         JSON.stringify({ notes, uploaded_by: 'mobile-scan', token_id: row.id }), notes);
+  db.prepare('UPDATE mobile_upload_tokens SET upload_count=upload_count+1 WHERE id=?').run(row.id);
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, 'mobile-scan', `${docType}_upload`, '', docType, `手机扫描上传：${fileName}`);
+  res.json({ success: true, file_name: fileName });
+});
+
 // ─── TaxBandits TIN Verification ───
 
 // Returns the full set of TIN-matching fields (full TIN, name, address, DOB)
@@ -19603,6 +19676,17 @@ function checkExpiringDocs() {
 
 // Add last_expiry_notified column
 try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN last_expiry_notified DATETIME DEFAULT NULL"); } catch {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS mobile_upload_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL UNIQUE,
+  worker_account_id INTEGER NOT NULL,
+  doc_type TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  upload_count INTEGER DEFAULT 0,
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 
 // Run daily at 9 AM
 setInterval(checkExpiringDocs, 24 * 60 * 60 * 1000);
