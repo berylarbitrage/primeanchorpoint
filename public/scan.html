@@ -33,7 +33,7 @@
   .actions .btn { flex: 1; }
   .hint { font-size: .82rem; color: #94a3b8; line-height: 1.5; max-width: 320px; margin: 0 auto; }
   .stage h2 { margin: 0 0 .4rem; font-size: 1.05rem; }
-  #capInput { display: none; }
+  #capInput, #capPick { position: absolute; left: -9999px; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
 
   /* Crop stage */
   .crop-wrap { flex: 1; position: relative; overflow: hidden; background: #000; touch-action: none; }
@@ -96,10 +96,10 @@
         </div>
       </div>
       <div class="actions">
-        <label class="btn btn-primary" for="capInput">📷 拍照</label>
-        <label class="btn btn-outline" for="capPick">🖼️ 相册</label>
+        <button class="btn btn-primary" id="capBtn">📷 拍照</button>
+        <button class="btn btn-outline" id="pickBtn">🖼️ 相册</button>
         <input id="capInput" type="file" accept="image/*" capture="environment">
-        <input id="capPick" type="file" accept="image/*" style="display:none">
+        <input id="capPick" type="file" accept="image/*">
       </div>
     </section>
 
@@ -197,7 +197,8 @@
 
   $('capInput').addEventListener('change', e => onPicked(e.target.files));
   $('capPick').addEventListener('change', e => onPicked(e.target.files));
-  document.querySelector('label[for="capPick"]').addEventListener('click', () => $('capPick').click());
+  $('capBtn').addEventListener('click', () => $('capInput').click());
+  $('pickBtn').addEventListener('click', () => $('capPick').click());
 
   async function onPicked(files) {
     const file = files && files[0];
@@ -222,14 +223,7 @@
       c.getContext('2d').drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
       capturedBitmap = c;
-      // Initialize corners at ~6% inset from each edge
-      const ix = w * 0.06, iy = h * 0.06;
-      cornersImg = [
-        { x: ix,     y: iy },       // tl
-        { x: w - ix, y: iy },       // tr
-        { x: w - ix, y: h - iy },   // br
-        { x: ix,     y: h - iy }    // bl
-      ];
+      cornersImg = autoDetectCorners(c);
       show('Crop');
       // Layout after the stage is visible so we know wrap size
       requestAnimationFrame(layoutCropCanvas);
@@ -339,6 +333,86 @@
       }
     }, 30);
   });
+
+  // ── Auto-detect document bounds ──────────────────────────────────
+  // Heuristic: downscale, sample the four image corners as "background"
+  // colour, threshold pixels that differ from background, then find the
+  // tight bounding box of the foreground mask. This handles documents
+  // photographed on a contrasting surface but is not a true perspective
+  // detector — the user can still drag the corners.
+  function autoDetectCorners(srcCanvas) {
+    const W = srcCanvas.width, H = srcCanvas.height;
+    const fallback = () => {
+      const ix = W * 0.06, iy = H * 0.06;
+      return [{x:ix,y:iy},{x:W-ix,y:iy},{x:W-ix,y:H-iy},{x:ix,y:H-iy}];
+    };
+    try {
+      const TARGET = 240;
+      const k = Math.min(1, TARGET / Math.max(W, H));
+      const sw = Math.max(20, Math.round(W * k));
+      const sh = Math.max(20, Math.round(H * k));
+      const small = document.createElement('canvas');
+      small.width = sw; small.height = sh;
+      small.getContext('2d').drawImage(srcCanvas, 0, 0, sw, sh);
+      const data = small.getContext('2d').getImageData(0, 0, sw, sh).data;
+      // Sample background from 1px strip along each edge
+      let bgR = 0, bgG = 0, bgB = 0, n = 0;
+      const sample = (x, y) => {
+        const i = (y * sw + x) * 4;
+        bgR += data[i]; bgG += data[i+1]; bgB += data[i+2]; n++;
+      };
+      for (let x = 0; x < sw; x++) { sample(x, 0); sample(x, sh - 1); }
+      for (let y = 0; y < sh; y++) { sample(0, y); sample(sw - 1, y); }
+      bgR /= n; bgG /= n; bgB /= n;
+      // Compute mean colour distance from background; use 2x mean as threshold
+      let sumD = 0;
+      const dists = new Float32Array(sw * sh);
+      for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+          const i = (y * sw + x) * 4;
+          const dr = data[i] - bgR, dg = data[i+1] - bgG, db = data[i+2] - bgB;
+          const d = Math.sqrt(dr*dr + dg*dg + db*db);
+          dists[y * sw + x] = d;
+          sumD += d;
+        }
+      }
+      const meanD = sumD / (sw * sh);
+      const thresh = Math.max(28, meanD * 1.4);
+      // Row/column foreground counts
+      const rowCount = new Int32Array(sh);
+      const colCount = new Int32Array(sw);
+      let totalFg = 0;
+      for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+          if (dists[y * sw + x] > thresh) { rowCount[y]++; colCount[x]++; totalFg++; }
+        }
+      }
+      if (totalFg < sw * sh * 0.05) return fallback(); // not enough contrast
+      // Find tightest bounding box requiring at least 8% of dim as foreground
+      const minRow = Math.max(1, Math.round(sw * 0.08));
+      const minCol = Math.max(1, Math.round(sh * 0.08));
+      let top = 0, bot = sh - 1, lef = 0, rig = sw - 1;
+      while (top < sh && rowCount[top] < minRow) top++;
+      while (bot > top && rowCount[bot] < minRow) bot--;
+      while (lef < sw && colCount[lef] < minCol) lef++;
+      while (rig > lef && colCount[rig] < minCol) rig--;
+      if (bot - top < sh * 0.2 || rig - lef < sw * 0.2) return fallback();
+      // Pad a few pixels back out so we keep document edges intact
+      const padX = Math.round(sw * 0.01), padY = Math.round(sh * 0.01);
+      lef = Math.max(0, lef - padX); rig = Math.min(sw - 1, rig + padX);
+      top = Math.max(0, top - padY); bot = Math.min(sh - 1, bot + padY);
+      // Project back to original image coordinates
+      const sx = W / sw, sy = H / sh;
+      return [
+        { x: lef * sx, y: top * sy },
+        { x: rig * sx, y: top * sy },
+        { x: rig * sx, y: bot * sy },
+        { x: lef * sx, y: bot * sy }
+      ];
+    } catch (e) {
+      return fallback();
+    }
+  }
 
   // ── Perspective warp ─────────────────────────────────────────────
   function solve8(A, b) {
