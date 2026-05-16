@@ -76,6 +76,14 @@
   .thumb .idx { position: absolute; left: 4px; top: 4px; background: rgba(15,23,42,.85); color: #fff;
     font-size: .68rem; padding: 1px 6px; border-radius: 999px; font-weight: 700; }
   .thumbs-title { font-size: .78rem; color: #94a3b8; margin-bottom: .3rem; }
+
+  .filter-bar { display: flex; gap: .4rem; overflow-x: auto; padding: .55rem .85rem;
+    background: #0b1220; border-top: 1px solid #1e293b; flex-shrink: 0; -webkit-overflow-scrolling: touch; }
+  .filter-chip { flex: 0 0 auto; padding: .45rem .75rem; border-radius: 999px; border: 1px solid #334155;
+    background: #1e293b; color: #cbd5e1; font-size: .82rem; font-weight: 600; cursor: pointer; min-height: 36px;
+    touch-action: manipulation; }
+  .filter-chip:active { background: #334155; }
+  .filter-chip.active { background: #2563eb; border-color: #60a5fa; color: #fff; }
 </style>
 </head>
 <body>
@@ -133,6 +141,12 @@
     <!-- Stage: preview -->
     <section class="stage" id="stagePreview">
       <div id="previewWrap"><img id="previewImg" alt="预览"></div>
+      <div class="filter-bar">
+        <button class="filter-chip" data-filter="magic">✨ 增强</button>
+        <button class="filter-chip" data-filter="bw">📄 黑白</button>
+        <button class="filter-chip" data-filter="gray">🌫️ 灰度</button>
+        <button class="filter-chip" data-filter="original">🖼️ 原图</button>
+      </div>
       <div class="actions">
         <button class="btn btn-outline" id="prevBackBtn">↩ 重新调整</button>
         <button class="btn btn-green" id="uploadBtn">⬆️ 上传</button>
@@ -351,24 +365,155 @@
 
   // ── Crop buttons ─────────────────────────────────────────────────
   $('cropReshootBtn').addEventListener('click', () => { capturedBitmap = null; show('Ready'); });
+
+  let rawWarpedCanvas = null;  // perspective-corrected, pre-filter
+  let currentFilter = 'magic';
   $('cropConfirmBtn').addEventListener('click', () => {
     setLoader(true, '裁剪中…');
-    // Defer so loader renders before heavy work
     setTimeout(() => {
       try {
         const out = warpToRect(capturedBitmap, cornersImg);
-        out.canvas.toBlob(blob => {
-          outputBlob = blob;
-          $('previewImg').src = URL.createObjectURL(blob);
-          show('Preview');
-          setLoader(false);
-        }, 'image/jpeg', 0.9);
+        rawWarpedCanvas = out.canvas;
+        currentFilter = 'magic';
+        applyFilterAndPreview();
+        show('Preview');
+        setLoader(false);
       } catch (e) {
         setLoader(false);
         toast('裁剪失败');
       }
     }, 30);
   });
+
+  // ── Image filters (scanner-style enhancement) ────────────────────
+  document.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentFilter = btn.dataset.filter;
+      applyFilterAndPreview();
+    });
+  });
+
+  function applyFilterAndPreview() {
+    if (!rawWarpedCanvas) return;
+    setLoader(true, '处理中…');
+    setTimeout(() => {
+      try {
+        document.querySelectorAll('.filter-chip').forEach(b => b.classList.toggle('active', b.dataset.filter === currentFilter));
+        const out = applyFilter(rawWarpedCanvas, currentFilter);
+        // B&W filter uses higher quality JPEG (sharper edges)
+        const q = currentFilter === 'bw' ? 0.95 : 0.9;
+        out.toBlob(blob => {
+          outputBlob = blob;
+          const old = $('previewImg').src;
+          $('previewImg').src = URL.createObjectURL(blob);
+          if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
+          setLoader(false);
+        }, 'image/jpeg', q);
+      } catch (e) {
+        setLoader(false);
+        toast('滤镜处理失败');
+      }
+    }, 20);
+  }
+
+  function applyFilter(src, mode) {
+    if (mode === 'original') return src;
+    const w = src.width, h = src.height;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(src, 0, 0);
+    const img = ctx.getImageData(0, 0, w, h);
+    const px = img.data;
+    if (mode === 'gray') {
+      for (let i = 0; i < px.length; i += 4) {
+        const g = px[i] * 0.299 + px[i+1] * 0.587 + px[i+2] * 0.114;
+        px[i] = px[i+1] = px[i+2] = g;
+      }
+    } else if (mode === 'bw') {
+      // Adaptive threshold (Bradley) — strong scanner look
+      adaptiveThresholdBradley(px, w, h, 0.15, Math.max(16, Math.min(w, h) >> 5));
+    } else {
+      // 'magic' — auto-levels per channel + gentle contrast + brightness lift
+      autoLevels(px, w, h);
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
+
+  // Per-channel histogram stretch using 1% / 99% percentiles, then mild S-curve.
+  function autoLevels(px, w, h) {
+    const N = w * h;
+    const histR = new Uint32Array(256), histG = new Uint32Array(256), histB = new Uint32Array(256);
+    for (let i = 0; i < px.length; i += 4) {
+      histR[px[i]]++; histG[px[i+1]]++; histB[px[i+2]]++;
+    }
+    const lowCount = Math.max(1, Math.round(N * 0.01));
+    const findLow = (h) => { let c=0; for (let v=0; v<256; v++) { c+=h[v]; if (c>=lowCount) return v; } return 0; };
+    const findHigh = (h) => { let c=0; for (let v=255; v>=0; v--) { c+=h[v]; if (c>=lowCount) return v; } return 255; };
+    const rLo = findLow(histR), rHi = findHigh(histR);
+    const gLo = findLow(histG), gHi = findHigh(histG);
+    const bLo = findLow(histB), bHi = findHigh(histB);
+    const scaleR = rHi > rLo ? 255 / (rHi - rLo) : 1;
+    const scaleG = gHi > gLo ? 255 / (gHi - gLo) : 1;
+    const scaleB = bHi > bLo ? 255 / (bHi - bLo) : 1;
+    // Lookup tables: stretch then mild S-curve for paper-white whites and crisp blacks
+    const sCurve = (v) => {
+      const x = v / 255;
+      // Smooth S: increases contrast around mid, brightens lights slightly
+      const y = x < 0.5 ? 2 * x * x : 1 - 2 * (1 - x) * (1 - x);
+      // Blend 65% S-curve, 35% linear, plus +6 brightness
+      return Math.max(0, Math.min(255, (y * 0.65 + x * 0.35) * 255 + 6));
+    };
+    const lutR = new Uint8ClampedArray(256), lutG = new Uint8ClampedArray(256), lutB = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) {
+      lutR[v] = sCurve(Math.max(0, Math.min(255, (v - rLo) * scaleR)));
+      lutG[v] = sCurve(Math.max(0, Math.min(255, (v - gLo) * scaleG)));
+      lutB[v] = sCurve(Math.max(0, Math.min(255, (v - bLo) * scaleB)));
+    }
+    for (let i = 0; i < px.length; i += 4) {
+      px[i]   = lutR[px[i]];
+      px[i+1] = lutG[px[i+1]];
+      px[i+2] = lutB[px[i+2]];
+    }
+  }
+
+  // Bradley adaptive threshold using integral image.
+  // T = mean(window) * (1 - sensitivity). Window radius ≈ image_dim / 32.
+  function adaptiveThresholdBradley(px, w, h, sensitivity, radius) {
+    const N = w * h;
+    const gray = new Float32Array(N);
+    for (let i = 0, j = 0; j < N; i += 4, j++) {
+      gray[j] = px[i] * 0.299 + px[i+1] * 0.587 + px[i+2] * 0.114;
+    }
+    // Integral image
+    const integ = new Float64Array(N);
+    for (let y = 0; y < h; y++) {
+      let rowSum = 0;
+      for (let x = 0; x < w; x++) {
+        rowSum += gray[y * w + x];
+        integ[y * w + x] = rowSum + (y > 0 ? integ[(y - 1) * w + x] : 0);
+      }
+    }
+    const r = Math.max(8, radius | 0);
+    const factor = 1 - sensitivity;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const x1 = Math.max(0, x - r), y1 = Math.max(0, y - r);
+        const x2 = Math.min(w - 1, x + r), y2 = Math.min(h - 1, y + r);
+        const count = (x2 - x1) * (y2 - y1);
+        const A = (x1 > 0 && y1 > 0) ? integ[(y1 - 1) * w + (x1 - 1)] : 0;
+        const B = (y1 > 0) ? integ[(y1 - 1) * w + x2] : 0;
+        const C = (x1 > 0) ? integ[y2 * w + (x1 - 1)] : 0;
+        const D = integ[y2 * w + x2];
+        const sum = D - B - C + A;
+        const t = (sum / count) * factor;
+        const v = gray[y * w + x] < t ? 0 : 255;
+        const i4 = (y * w + x) * 4;
+        px[i4] = px[i4 + 1] = px[i4 + 2] = v;
+      }
+    }
+  }
 
   // ── Auto-detect document corners ─────────────────────────────────
   // Pipeline:
@@ -638,9 +783,10 @@
     }
   });
   $('anotherBtn').addEventListener('click', () => {
-    if ($('previewImg').src) URL.revokeObjectURL($('previewImg').src);
+    if ($('previewImg').src && $('previewImg').src.startsWith('blob:')) URL.revokeObjectURL($('previewImg').src);
     outputBlob = null;
     capturedBitmap = null;
+    rawWarpedCanvas = null;
     refreshReadyStrip();
     show('Ready');
   });
