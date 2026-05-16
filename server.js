@@ -1561,6 +1561,7 @@ try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_status TEXT DEFAULT '
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_worker_signed_at DATETIME"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_company_signed_at DATETIME"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN contract_content TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN tin_verify_result TEXT DEFAULT ''"); } catch {}
 
 // Contract version history — stores every contract that was sent, signed, or voided
 db.exec(`CREATE TABLE IF NOT EXISTS worker_contract_versions (
@@ -10827,6 +10828,25 @@ app.post('/api/webhooks/taxbandits', express.json({ limit: '2mb' }), (req, res) 
     console.error('[TaxBandits Webhook] error:', e.message);
     res.status(200).json({ received: false, error: e.message });
   }
+});
+
+// ─── TIN Verify Result ───
+app.put('/api/admin/worker-accounts/:id/tin-verify-result', requireAdmin, (req, res) => {
+  const { result } = req.body;
+  const valid = ['verified', 'unverified', 'no_conclusion'];
+  if (!valid.includes(result)) return res.status(400).json({ error: 'Invalid result' });
+  const workerId = parseInt(req.params.id);
+  const resultLabel = { verified: '已核对', unverified: '未核对', no_conclusion: '没有结论' };
+  const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+  db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, tin_verify_result, completed_at, updated_at)
+    VALUES (?, 'tin_verify', 'completed', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT(worker_account_id, task_key) DO UPDATE SET tin_verify_result=excluded.tin_verify_result, status='completed',
+      completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP`)
+    .run(workerId, result);
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, changedBy, 'tin_verify_result', '', resultLabel[result], `税号核对结果：${resultLabel[result]}`);
+  syncOnboardedStatus(workerId);
+  res.json({ success: true, tasks: getOnboardingTasks(workerId) });
 });
 
 // Save all per-doc metadata in batch for a worker's work permit docs
