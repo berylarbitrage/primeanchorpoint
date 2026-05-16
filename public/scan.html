@@ -66,6 +66,16 @@
 
   .err { color: #fecaca; }
   .ok { color: #bbf7d0; }
+  .count-pill { display: inline-block; background: #16a34a; color: #fff; font-size: .72rem; font-weight: 700;
+    padding: .15rem .55rem; border-radius: 999px; margin-left: .4rem; vertical-align: middle; }
+  .thumbs { display: flex; gap: .4rem; overflow-x: auto; padding: .4rem .2rem .2rem; -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory; }
+  .thumb { flex: 0 0 auto; width: 64px; height: 84px; border-radius: 6px; background: #1e293b; overflow: hidden;
+    border: 1px solid #334155; position: relative; scroll-snap-align: start; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .idx { position: absolute; left: 4px; top: 4px; background: rgba(15,23,42,.85); color: #fff;
+    font-size: .68rem; padding: 1px 6px; border-radius: 999px; font-weight: 700; }
+  .thumbs-title { font-size: .78rem; color: #94a3b8; margin-bottom: .3rem; }
 </style>
 </head>
 <body>
@@ -89,10 +99,11 @@
     <!-- Stage: ready (waiting for camera) -->
     <section class="stage" id="stageReady">
       <div class="center">
-        <div>
+        <div style="width:100%">
           <div style="font-size:2.6rem;margin-bottom:.6rem">📄</div>
           <h2 id="readyTitle">点击下方按钮拍照</h2>
-          <p class="hint">将文件平铺，拍摄完整页面。下一步可以拖动四角调整裁剪框。</p>
+          <p class="hint" id="readyHint">将文件平铺，拍摄完整页面。可拍多张连续上传。</p>
+          <div id="uploadedStrip" style="display:none;margin-top:1rem"></div>
         </div>
       </div>
       <div class="actions">
@@ -135,10 +146,11 @@
           <div style="font-size:2.6rem;margin-bottom:.6rem">✅</div>
           <h2 class="ok">上传成功</h2>
           <p class="hint" id="doneMsg">文件已发送给管理员。</p>
+          <p class="hint" id="doneCount" style="margin-top:.4rem;color:#bbf7d0"></p>
         </div>
       </div>
       <div class="actions">
-        <button class="btn btn-primary" id="anotherBtn">📷 再拍一张</button>
+        <button class="btn btn-primary" id="anotherBtn">📷 继续拍下一张</button>
       </div>
     </section>
   </main>
@@ -168,6 +180,28 @@
     if (msg) $('loaderMsg').textContent = msg;
   }
 
+  // ── Session state ────────────────────────────────────────────────
+  let docLabel = '文件';
+  let sessionUploads = 0;           // count uploaded this session
+  let serverInitialCount = 0;       // already-uploaded count when page opened
+  const sessionThumbs = [];         // {url: blobURL} per local upload
+
+  function totalCount() { return serverInitialCount + sessionUploads; }
+  function refreshHeader() {
+    $('headerTitle').innerHTML = '📎 上传 ' + esc(docLabel) +
+      (totalCount() > 0 ? `<span class="count-pill">已上传 ${totalCount()}</span>` : '');
+  }
+  function refreshReadyStrip() {
+    const wrap = $('uploadedStrip');
+    if (!sessionThumbs.length) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+    wrap.style.display = '';
+    wrap.innerHTML = '<div class="thumbs-title">本次已上传 ' + sessionThumbs.length + ' 张</div>' +
+      '<div class="thumbs">' + sessionThumbs.map((t, i) =>
+        `<div class="thumb"><img src="${t.url}"><span class="idx">${i + 1}</span></div>`
+      ).join('') + '</div>';
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
   // ── Validate token & display context ─────────────────────────────
   async function init() {
     try {
@@ -179,9 +213,11 @@
         return;
       }
       const info = await r.json();
-      $('headerTitle').textContent = '📎 上传 ' + (info.doc_label || '文件');
+      docLabel = info.doc_label || '文件';
+      serverInitialCount = info.upload_count || 0;
       $('headerSub').textContent = '工人：' + (info.worker_name || '—');
-      $('readyTitle').textContent = '拍摄' + (info.doc_label || '文件');
+      $('readyTitle').textContent = '拍摄' + docLabel;
+      refreshHeader();
       show('Ready');
     } catch (e) {
       $('errMsg').textContent = '网络异常，请稍后重试。';
@@ -513,7 +549,8 @@
     setLoader(true, '上传中…');
     const fd = new FormData();
     const fileName = `scan-${Date.now()}.jpg`;
-    fd.append('file', outputBlob, fileName);
+    const uploadedBlob = outputBlob;
+    fd.append('file', uploadedBlob, fileName);
     try {
       const r = await fetch('/api/scan/' + encodeURIComponent(TOKEN) + '/upload', { method: 'POST', body: fd });
       const j = await r.json().catch(() => ({}));
@@ -521,7 +558,11 @@
         toast(j.error || '上传失败');
         return;
       }
+      sessionUploads++;
+      sessionThumbs.push({ url: URL.createObjectURL(uploadedBlob) });
+      refreshHeader();
       $('doneMsg').textContent = '已发送给管理员（' + (j.file_name || fileName) + '）。';
+      $('doneCount').textContent = `本次共上传 ${sessionUploads} 张，可继续拍下一张。`;
       show('Done');
     } catch (e) {
       toast('网络异常');
@@ -533,6 +574,7 @@
     if ($('previewImg').src) URL.revokeObjectURL($('previewImg').src);
     outputBlob = null;
     capturedBitmap = null;
+    refreshReadyStrip();
     show('Ready');
   });
 
