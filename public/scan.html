@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f2b5b">
+<title>手机扫描上传</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #0f172a; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    overflow: hidden; touch-action: none; }
+  .app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  header { padding: .85rem 1rem; background: #0f2b5b; box-shadow: 0 1px 4px rgba(0,0,0,.3); flex-shrink: 0; }
+  header h1 { margin: 0 0 .15rem; font-size: 1.02rem; font-weight: 700; letter-spacing: .02em; }
+  header .sub { font-size: .78rem; color: #94a3b8; }
+  main { flex: 1; min-height: 0; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .stage { position: absolute; inset: 0; display: none; flex-direction: column; }
+  .stage.active { display: flex; }
+  .center { flex: 1; display: flex; align-items: center; justify-content: center; padding: 1.2rem; text-align: center; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    padding: .8rem 1.1rem; border-radius: 10px; font-size: 1rem; font-weight: 700; border: 0;
+    cursor: pointer; touch-action: manipulation; min-height: 48px; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:active { background: #1d4ed8; }
+  .btn-green { background: #16a34a; color: #fff; }
+  .btn-green:active { background: #15803d; }
+  .btn-outline { background: transparent; color: #e2e8f0; border: 1px solid #475569; }
+  .btn-outline:active { background: #1e293b; }
+  .btn-danger { background: #dc2626; color: #fff; }
+  .actions { display: flex; gap: .6rem; padding: .85rem 1rem calc(.85rem + env(safe-area-inset-bottom)); background: #0f172a;
+    border-top: 1px solid #1e293b; flex-shrink: 0; }
+  .actions .btn { flex: 1; }
+  .hint { font-size: .82rem; color: #94a3b8; line-height: 1.5; max-width: 320px; margin: 0 auto; }
+  .stage h2 { margin: 0 0 .4rem; font-size: 1.05rem; }
+  #capInput { display: none; }
+
+  /* Crop stage */
+  .crop-wrap { flex: 1; position: relative; overflow: hidden; background: #000; touch-action: none; }
+  #cropCanvas { position: absolute; left: 0; top: 0; touch-action: none; }
+  #cropOverlay { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .handle { position: absolute; width: 32px; height: 32px; margin: -16px 0 0 -16px;
+    border-radius: 50%; background: rgba(37,99,235,.18); border: 2px solid #60a5fa;
+    box-shadow: 0 0 0 2px rgba(0,0,0,.4); touch-action: none; cursor: grab; }
+  .handle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px;
+    margin: -4px 0 0 -4px; background: #60a5fa; border-radius: 50%; }
+  .handle:active { background: rgba(96,165,250,.35); }
+
+  /* Preview stage */
+  #previewWrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #1e293b; padding: 1rem; overflow: auto; }
+  #previewImg { max-width: 100%; max-height: 100%; box-shadow: 0 4px 16px rgba(0,0,0,.5); border-radius: 4px; background: #fff; }
+
+  /* Toast & status */
+  .toast { position: fixed; left: 50%; bottom: calc(120px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: rgba(15,23,42,.95); color: #fff; padding: .65rem 1rem; border-radius: 8px; font-size: .88rem;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4); z-index: 100; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid #94a3b8; border-top-color: #fff;
+    border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .full-loader { position: fixed; inset: 0; background: rgba(15,23,42,.7); display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: .6rem; z-index: 200; }
+  .full-loader.show { display: flex; }
+  .full-loader .spinner { width: 40px; height: 40px; border-width: 3px; }
+  .full-loader .msg { color: #e2e8f0; font-size: .9rem; }
+
+  .err { color: #fecaca; }
+  .ok { color: #bbf7d0; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="headerTitle">手机扫描上传</h1>
+    <div class="sub" id="headerSub">正在加载…</div>
+  </header>
+  <main>
+    <!-- Stage: error -->
+    <section class="stage" id="stageError">
+      <div class="center">
+        <div>
+          <div style="font-size:2.4rem;margin-bottom:.6rem">⚠️</div>
+          <h2 class="err">链接无效</h2>
+          <p class="hint" id="errMsg">该链接可能已过期或被吊销。请联系管理员重新生成。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stage: ready (waiting for camera) -->
+    <section class="stage" id="stageReady">
+      <div class="center">
+        <div>
+          <div style="font-size:2.6rem;margin-bottom:.6rem">📄</div>
+          <h2 id="readyTitle">点击下方按钮拍照</h2>
+          <p class="hint">将文件平铺，拍摄完整页面。下一步可以拖动四角调整裁剪框。</p>
+        </div>
+      </div>
+      <div class="actions">
+        <label class="btn btn-primary" for="capInput">📷 拍照</label>
+        <label class="btn btn-outline" for="capPick">🖼️ 相册</label>
+        <input id="capInput" type="file" accept="image/*" capture="environment">
+        <input id="capPick" type="file" accept="image/*" style="display:none">
+      </div>
+    </section>
+
+    <!-- Stage: crop -->
+    <section class="stage" id="stageCrop">
+      <div class="crop-wrap" id="cropWrap">
+        <canvas id="cropCanvas"></canvas>
+        <svg id="cropOverlay" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="handle" data-corner="tl"></div>
+        <div class="handle" data-corner="tr"></div>
+        <div class="handle" data-corner="br"></div>
+        <div class="handle" data-corner="bl"></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-outline" id="cropReshootBtn">↩ 重拍</button>
+        <button class="btn btn-green" id="cropConfirmBtn">✂️ 裁剪</button>
+      </div>
+    </section>
+
+    <!-- Stage: preview -->
+    <section class="stage" id="stagePreview">
+      <div id="previewWrap"><img id="previewImg" alt="预览"></div>
+      <div class="actions">
+        <button class="btn btn-outline" id="prevBackBtn">↩ 重新调整</button>
+        <button class="btn btn-green" id="uploadBtn">⬆️ 上传</button>
+      </div>
+    </section>
+
+    <!-- Stage: done -->
+    <section class="stage" id="stageDone">
+      <div class="center">
+        <div>
+          <div style="font-size:2.6rem;margin-bottom:.6rem">✅</div>
+          <h2 class="ok">上传成功</h2>
+          <p class="hint" id="doneMsg">文件已发送给管理员。</p>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="anotherBtn">📷 再拍一张</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="full-loader" id="loader"><div class="spinner"></div><div class="msg" id="loaderMsg">处理中…</div></div>
+
+<script>
+(function() {
+  const TOKEN = location.pathname.replace(/^\/scan\//, '').replace(/\/$/, '');
+  const $ = (id) => document.getElementById(id);
+  const stages = ['Error', 'Ready', 'Crop', 'Preview', 'Done'];
+  function show(stage) {
+    stages.forEach(s => $('stage' + s).classList.toggle('active', s === stage));
+  }
+  let toastTimer = null;
+  function toast(msg, ms = 2400) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+  function setLoader(on, msg) {
+    $('loader').classList.toggle('show', !!on);
+    if (msg) $('loaderMsg').textContent = msg;
+  }
+
+  // ── Validate token & display context ─────────────────────────────
+  async function init() {
+    try {
+      const r = await fetch('/api/scan/' + encodeURIComponent(TOKEN));
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        $('errMsg').textContent = (j && j.error === 'Token expired') ? '链接已过期，请联系管理员重新生成。' : '链接无效。';
+        show('Error');
+        return;
+      }
+      const info = await r.json();
+      $('headerTitle').textContent = '📎 上传 ' + (info.doc_label || '文件');
+      $('headerSub').textContent = '工人：' + (info.worker_name || '—');
+      $('readyTitle').textContent = '拍摄' + (info.doc_label || '文件');
+      show('Ready');
+    } catch (e) {
+      $('errMsg').textContent = '网络异常，请稍后重试。';
+      show('Error');
+    }
+  }
+
+  // ── Capture / pick ───────────────────────────────────────────────
+  let capturedBitmap = null;     // ImageBitmap of captured photo
+  let displayScale = 1;          // canvas display scale vs bitmap pixels
+  let cornersImg = [];           // 4 corners in image (bitmap) coords: [{x,y}]
+  let outputBlob = null;
+
+  $('capInput').addEventListener('change', e => onPicked(e.target.files));
+  $('capPick').addEventListener('change', e => onPicked(e.target.files));
+  document.querySelector('label[for="capPick"]').addEventListener('click', () => $('capPick').click());
+
+  async function onPicked(files) {
+    const file = files && files[0];
+    $('capInput').value = '';
+    $('capPick').value = '';
+    if (!file) return;
+    setLoader(true, '读取图片…');
+    try {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.decoding = 'async';
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+      // Downscale very large images for performance
+      const MAX_DIM = 2400;
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (Math.max(w, h) > MAX_DIM) {
+        const k = MAX_DIM / Math.max(w, h);
+        w = Math.round(w * k); h = Math.round(h * k);
+      }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      capturedBitmap = c;
+      // Initialize corners at ~6% inset from each edge
+      const ix = w * 0.06, iy = h * 0.06;
+      cornersImg = [
+        { x: ix,     y: iy },       // tl
+        { x: w - ix, y: iy },       // tr
+        { x: w - ix, y: h - iy },   // br
+        { x: ix,     y: h - iy }    // bl
+      ];
+      show('Crop');
+      // Layout after the stage is visible so we know wrap size
+      requestAnimationFrame(layoutCropCanvas);
+    } catch (e) {
+      toast('读取图片失败');
+    } finally {
+      setLoader(false);
+    }
+  }
+
+  // ── Crop stage layout & handle dragging ──────────────────────────
+  function layoutCropCanvas() {
+    const wrap = $('cropWrap');
+    const cw = wrap.clientWidth, wh = wrap.clientHeight;
+    const iw = capturedBitmap.width, ih = capturedBitmap.height;
+    const s = Math.min(cw / iw, wh / ih);
+    displayScale = s;
+    const dw = Math.round(iw * s), dh = Math.round(ih * s);
+    const offX = Math.round((cw - dw) / 2), offY = Math.round((wh - dh) / 2);
+    const cv = $('cropCanvas');
+    cv.width = iw; cv.height = ih;
+    cv.style.width = dw + 'px';
+    cv.style.height = dh + 'px';
+    cv.style.left = offX + 'px';
+    cv.style.top = offY + 'px';
+    cv.getContext('2d').drawImage(capturedBitmap, 0, 0);
+    // Overlay svg
+    const svg = $('cropOverlay');
+    svg.setAttribute('width', dw); svg.setAttribute('height', dh);
+    svg.style.left = offX + 'px';
+    svg.style.top = offY + 'px';
+    redrawOverlay();
+    placeHandles();
+  }
+
+  function corner2screen(p) {
+    return { x: p.x * displayScale, y: p.y * displayScale };
+  }
+  function placeHandles() {
+    const wrap = $('cropWrap');
+    const cv = $('cropCanvas');
+    const offX = cv.offsetLeft, offY = cv.offsetTop;
+    document.querySelectorAll('.handle').forEach((h, i) => {
+      const p = corner2screen(cornersImg[i]);
+      h.style.left = (offX + p.x) + 'px';
+      h.style.top = (offY + p.y) + 'px';
+    });
+  }
+  function redrawOverlay() {
+    const svg = $('cropOverlay');
+    const pts = cornersImg.map(corner2screen).map(p => `${p.x},${p.y}`).join(' ');
+    svg.innerHTML = `
+      <polygon points="${pts}" fill="rgba(96,165,250,0.16)" stroke="#60a5fa" stroke-width="2"/>
+    `;
+  }
+
+  let dragIdx = -1;
+  const CORNER_KEYS = ['tl', 'tr', 'br', 'bl'];
+  document.querySelectorAll('.handle').forEach((h, i) => {
+    const start = (e) => {
+      e.preventDefault();
+      dragIdx = i;
+    };
+    h.addEventListener('touchstart', start, { passive: false });
+    h.addEventListener('mousedown', start);
+  });
+  function pointerMove(clientX, clientY) {
+    if (dragIdx < 0) return;
+    const cv = $('cropCanvas');
+    const r = cv.getBoundingClientRect();
+    let x = (clientX - r.left) / r.width * capturedBitmap.width;
+    let y = (clientY - r.top) / r.height * capturedBitmap.height;
+    x = Math.max(0, Math.min(capturedBitmap.width, x));
+    y = Math.max(0, Math.min(capturedBitmap.height, y));
+    cornersImg[dragIdx] = { x, y };
+    redrawOverlay();
+    placeHandles();
+  }
+  window.addEventListener('touchmove', (e) => {
+    if (dragIdx < 0) return;
+    e.preventDefault();
+    const t = e.touches[0]; pointerMove(t.clientX, t.clientY);
+  }, { passive: false });
+  window.addEventListener('mousemove', (e) => { if (dragIdx >= 0) pointerMove(e.clientX, e.clientY); });
+  const endDrag = () => { dragIdx = -1; };
+  window.addEventListener('touchend', endDrag);
+  window.addEventListener('mouseup', endDrag);
+  window.addEventListener('resize', () => { if ($('stageCrop').classList.contains('active')) layoutCropCanvas(); });
+
+  // ── Crop buttons ─────────────────────────────────────────────────
+  $('cropReshootBtn').addEventListener('click', () => { capturedBitmap = null; show('Ready'); });
+  $('cropConfirmBtn').addEventListener('click', () => {
+    setLoader(true, '裁剪中…');
+    // Defer so loader renders before heavy work
+    setTimeout(() => {
+      try {
+        const out = warpToRect(capturedBitmap, cornersImg);
+        out.canvas.toBlob(blob => {
+          outputBlob = blob;
+          $('previewImg').src = URL.createObjectURL(blob);
+          show('Preview');
+          setLoader(false);
+        }, 'image/jpeg', 0.9);
+      } catch (e) {
+        setLoader(false);
+        toast('裁剪失败');
+      }
+    }, 30);
+  });
+
+  // ── Perspective warp ─────────────────────────────────────────────
+  function solve8(A, b) {
+    // Gaussian elimination with partial pivot
+    const n = 8;
+    const M = A.map((r, i) => [...r, b[i]]);
+    for (let i = 0; i < n; i++) {
+      let maxR = i;
+      for (let k = i + 1; k < n; k++) if (Math.abs(M[k][i]) > Math.abs(M[maxR][i])) maxR = k;
+      if (maxR !== i) { const tmp = M[i]; M[i] = M[maxR]; M[maxR] = tmp; }
+      const piv = M[i][i] || 1e-12;
+      for (let k = i + 1; k < n; k++) {
+        const f = M[k][i] / piv;
+        for (let j = i; j <= n; j++) M[k][j] -= f * M[i][j];
+      }
+    }
+    const x = new Array(n);
+    for (let i = n - 1; i >= 0; i--) {
+      let s = M[i][n];
+      for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j];
+      x[i] = s / (M[i][i] || 1e-12);
+    }
+    return x;
+  }
+  function homography(src, dst) {
+    const A = [], b = [];
+    for (let i = 0; i < 4; i++) {
+      const sx = src[i].x, sy = src[i].y, dx = dst[i].x, dy = dst[i].y;
+      A.push([sx, sy, 1, 0, 0, 0, -dx * sx, -dx * sy]);
+      A.push([0, 0, 0, sx, sy, 1, -dy * sx, -dy * sy]);
+      b.push(dx); b.push(dy);
+    }
+    const h = solve8(A, b);
+    return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+  }
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function warpToRect(srcCanvas, srcQuad) {
+    // Estimate output rectangle size
+    const wTop = dist(srcQuad[0], srcQuad[1]);
+    const wBot = dist(srcQuad[3], srcQuad[2]);
+    const hLft = dist(srcQuad[0], srcQuad[3]);
+    const hRgt = dist(srcQuad[1], srcQuad[2]);
+    let outW = Math.round(Math.max(wTop, wBot));
+    let outH = Math.round(Math.max(hLft, hRgt));
+    // Cap output size
+    const MAX = 1800;
+    if (Math.max(outW, outH) > MAX) {
+      const k = MAX / Math.max(outW, outH);
+      outW = Math.round(outW * k);
+      outH = Math.round(outH * k);
+    }
+    outW = Math.max(64, outW); outH = Math.max(64, outH);
+    // Map dst rect → src quad (inverse for sampling)
+    const dstRect = [{x:0,y:0},{x:outW,y:0},{x:outW,y:outH},{x:0,y:outH}];
+    const H = homography(dstRect, srcQuad);
+    const srcCtx = srcCanvas.getContext('2d');
+    const sw = srcCanvas.width, sh = srcCanvas.height;
+    const srcImg = srcCtx.getImageData(0, 0, sw, sh);
+    const srcPx = srcImg.data;
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = outW; outCanvas.height = outH;
+    const outCtx = outCanvas.getContext('2d');
+    const outImg = outCtx.createImageData(outW, outH);
+    const outPx = outImg.data;
+    const h0=H[0],h1=H[1],h2=H[2],h3=H[3],h4=H[4],h5=H[5],h6=H[6],h7=H[7];
+    for (let y = 0; y < outH; y++) {
+      for (let x = 0; x < outW; x++) {
+        const denom = h6*x + h7*y + 1;
+        const sx = (h0*x + h1*y + h2) / denom;
+        const sy = (h3*x + h4*y + h5) / denom;
+        const x0 = Math.floor(sx), y0 = Math.floor(sy);
+        const idx = (y*outW + x) * 4;
+        if (x0 >= 0 && x0 < sw-1 && y0 >= 0 && y0 < sh-1) {
+          const dx = sx - x0, dy = sy - y0;
+          const w00 = (1-dx)*(1-dy), w10 = dx*(1-dy), w01 = (1-dx)*dy, w11 = dx*dy;
+          const i00 = (y0*sw + x0)*4, i10 = i00 + 4, i01 = ((y0+1)*sw + x0)*4, i11 = i01 + 4;
+          outPx[idx]   = srcPx[i00]*w00 + srcPx[i10]*w10 + srcPx[i01]*w01 + srcPx[i11]*w11;
+          outPx[idx+1] = srcPx[i00+1]*w00 + srcPx[i10+1]*w10 + srcPx[i01+1]*w01 + srcPx[i11+1]*w11;
+          outPx[idx+2] = srcPx[i00+2]*w00 + srcPx[i10+2]*w10 + srcPx[i01+2]*w01 + srcPx[i11+2]*w11;
+          outPx[idx+3] = 255;
+        } else {
+          outPx[idx]=255; outPx[idx+1]=255; outPx[idx+2]=255; outPx[idx+3]=255;
+        }
+      }
+    }
+    outCtx.putImageData(outImg, 0, 0);
+    return { canvas: outCanvas, width: outW, height: outH };
+  }
+
+  // ── Preview & upload ─────────────────────────────────────────────
+  $('prevBackBtn').addEventListener('click', () => {
+    if ($('previewImg').src) URL.revokeObjectURL($('previewImg').src);
+    show('Crop');
+    requestAnimationFrame(layoutCropCanvas);
+  });
+  $('uploadBtn').addEventListener('click', async () => {
+    if (!outputBlob) return;
+    setLoader(true, '上传中…');
+    const fd = new FormData();
+    const fileName = `scan-${Date.now()}.jpg`;
+    fd.append('file', outputBlob, fileName);
+    try {
+      const r = await fetch('/api/scan/' + encodeURIComponent(TOKEN) + '/upload', { method: 'POST', body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast(j.error || '上传失败');
+        return;
+      }
+      $('doneMsg').textContent = '已发送给管理员（' + (j.file_name || fileName) + '）。';
+      show('Done');
+    } catch (e) {
+      toast('网络异常');
+    } finally {
+      setLoader(false);
+    }
+  });
+  $('anotherBtn').addEventListener('click', () => {
+    if ($('previewImg').src) URL.revokeObjectURL($('previewImg').src);
+    outputBlob = null;
+    capturedBitmap = null;
+    show('Ready');
+  });
+
+  init();
+})();
+</script>
+</body>
+</html>
