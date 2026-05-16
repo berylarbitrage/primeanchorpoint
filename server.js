@@ -2521,7 +2521,7 @@ app.use(express.static('public', {
   }
 }));
 // Serve uploaded files only to authenticated admin/staff users
-app.get('/uploads/:filename', (req, res) => {
+app.get('/uploads/:filename', async (req, res) => {
   // Authenticate via Bearer token or cookie only (no query param to avoid token leaks in logs/referrers)
   const auth = req.headers.authorization;
   let session = null;
@@ -2534,22 +2534,40 @@ app.get('/uploads/:filename', (req, res) => {
 
   // Prevent path traversal
   const safeName = path.basename(req.params.filename);
-  const filePath = path.join(uploadsDir, safeName);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+  const key = `uploads/${safeName}`;
 
   // No caching for sensitive files
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
 
-  res.sendFile(filePath);
+  // R2: redirect to short-lived presigned URL so file bytes don't traverse Render.
+  // Local: stream from disk via the storage abstraction.
+  if (storage.isR2()) {
+    try {
+      const url = await storage.getDownloadUrl(key);
+      return res.redirect(302, url);
+    } catch (e) {
+      console.error('[uploads] presign failed:', e.message);
+      return res.status(404).json({ error: 'File not found' });
+    }
+  }
+  try {
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    const stream = await storage.getStream(key);
+    stream.on('error', () => { try { res.status(500).end(); } catch {} });
+    stream.pipe(res);
+  } catch (e) {
+    res.status(404).json({ error: 'File not found' });
+  }
 });
 
 // Resume upload
+const r2Storage = require('./multer-r2').createStorage;
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: uploadsDir,
-    filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
   }),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
@@ -2560,8 +2578,8 @@ const upload = multer({
 
 // HR document upload (PDF, images, Word) — stored in docsDir, never served statically
 const docUpload = multer({
-  storage: multer.diskStorage({
-    destination: docsDir,
+  storage: r2Storage({
+    subdir: 'employee_docs',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
       cb(null, `doc-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
@@ -2575,8 +2593,8 @@ const docUpload = multer({
 });
 
 const punchPhotoUpload = multer({
-  storage: multer.diskStorage({
-    destination: punchPhotosDir,
+  storage: r2Storage({
+    subdir: 'punch_photos',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
       cb(null, `punch-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
@@ -12083,8 +12101,8 @@ app.post('/api/admin/contractor-invoices/create-voucher', requireAdmin, requireR
 
 /// Admin: upload voucher receipt photos (multiple)
 const voucherReceiptUpload = multer({
-  storage: multer.diskStorage({
-    destination: uploadsDir,
+  storage: r2Storage({
+    subdir: 'uploads',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
       cb(null, `vr-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
@@ -13230,8 +13248,8 @@ app.put('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager,
 
 // Multer for onboarding doc uploads (reuse docsDir)
 const onboardUpload = multer({
-  storage: multer.diskStorage({
-    destination: docsDir,
+  storage: r2Storage({
+    subdir: 'employee_docs',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
       cb(null, `onboard-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
@@ -14374,8 +14392,8 @@ app.get('/api/emp-docs/:token', (req, res) => {
 
 // Public: submit documents
 const empDocReqUpload = multer({
-  storage: multer.diskStorage({
-    destination: docsDir,
+  storage: r2Storage({
+    subdir: 'employee_docs',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
       cb(null, `empdoc-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
@@ -15438,8 +15456,8 @@ app.delete('/api/admin/invoices/:id', requireAdmin, (req, res) => {
 
 // Upload payment receipt and mark invoice as paid
 const receiptUpload = multer({
-  storage: multer.diskStorage({
-    destination: uploadsDir,
+  storage: r2Storage({
+    subdir: 'uploads',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
       cb(null, `receipt-${req.params.id}-${Date.now()}${ext}`);
@@ -15756,8 +15774,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_cash_receipts (
 )`);
 
 const cashReceiptUpload = multer({
-  storage: multer.diskStorage({
-    destination: uploadsDir,
+  storage: r2Storage({
+    subdir: 'uploads',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
       cb(null, `cashreceipt-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
@@ -15909,8 +15927,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS partner_blank_worksheet_files (
 )`);
 
 const partnerWorksheetUpload = multer({
-  storage: multer.diskStorage({
-    destination: uploadsDir,
+  storage: r2Storage({
+    subdir: 'uploads',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
       cb(null, `worksheet-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
@@ -17422,7 +17440,7 @@ app.post('/api/worker/punch/:entryId/photo', requireWorker, punchPhotoUpload.sin
 
 // Serve punch photos — accepts Bearer header, pa_token cookie, or ?token= query param
 // (img tags can't send Authorization headers, so query-param auth is needed)
-app.get('/api/admin/punch-photo/:filename', (req, res) => {
+app.get('/api/admin/punch-photo/:filename', async (req, res) => {
   const auth = req.headers.authorization;
   let session = null;
   if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
@@ -17432,15 +17450,26 @@ app.get('/api/admin/punch-photo/:filename', (req, res) => {
   }
   if (!session && req.query.token) session = getSession(req.query.token);
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
-  // Check both punch_photos and checkin_photos directories
-  let fp = path.join(punchPhotosDir, path.basename(req.params.filename));
-  if (!fs.existsSync(fp)) fp = path.join(checkinPhotosDir, path.basename(req.params.filename));
-  if (!fs.existsSync(fp)) return res.status(404).send('Not found');
-  // Explicitly set Content-Type for formats that mime may not know
-  const ext = path.extname(fp).toLowerCase();
+
+  const safeName = path.basename(req.params.filename);
+  // Check both punch_photos and checkin_photos subtrees (legacy: same file
+  // could be in either depending on which flow created it)
+  let key = `punch_photos/${safeName}`;
+  if (!(await storage.exists(key))) key = `checkin_photos/${safeName}`;
+  if (!(await storage.exists(key))) return res.status(404).send('Not found');
+
+  if (storage.isR2()) {
+    try { return res.redirect(302, await storage.getDownloadUrl(key)); }
+    catch (e) { console.error('[punch-photo] presign failed:', e.message); return res.status(404).send('Not found'); }
+  }
+  const ext = path.extname(safeName).toLowerCase();
   const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' };
   if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
-  res.sendFile(fp);
+  try {
+    const s = await storage.getStream(key);
+    s.on('error', () => { try { res.status(500).end(); } catch {} });
+    s.pipe(res);
+  } catch (e) { res.status(404).send('Not found'); }
 });
 
 // Admin upload photo/video to a time entry
@@ -18118,8 +18147,8 @@ app.post('/api/worker/reset-password', async (req, res) => {
 
 // ─── Worker Compliance Documents API ───
 const complianceUpload = multer({
-  storage: multer.diskStorage({
-    destination: docsDir,
+  storage: r2Storage({
+    subdir: 'employee_docs',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
       cb(null, `compliance-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
@@ -18955,7 +18984,8 @@ app.post('/api/checkin/punch', async (req, res) => {
       const base64Data = photo.replace(/^data:(image|video)\/[A-Za-z0-9.+-]+;base64,/, '');
       const buf = Buffer.from(base64Data, 'base64');
       photoFilename = `checkin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-      fs.writeFileSync(path.join(checkinPhotosDir, photoFilename), buf);
+      const contentType = `${kind}/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}`;
+      await storage.putObject(`checkin_photos/${photoFilename}`, buf, { contentType });
     } catch (e) {
       console.error('[Checkin] Photo save error:', e.message);
     }
@@ -19460,8 +19490,8 @@ setTimeout(checkExpiringDocs, 60 * 1000); // First check 1 minute after startup
 
 // ─── Worker Identity Docs API (I-9 / EAD admin-side verification records) ───
 const idDocUpload = multer({
-  storage: multer.diskStorage({
-    destination: docsDir,
+  storage: r2Storage({
+    subdir: 'employee_docs',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
       cb(null, `id-doc-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);

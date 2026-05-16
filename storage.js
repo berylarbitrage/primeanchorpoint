@@ -63,11 +63,37 @@ function normalizeKey(keyOrPath) {
   return k;
 }
 
+// Convert a DB-stored file_path into a canonical R2 key.
+// Examples:
+//   keyFrom('/uploads/foo.jpg',  'uploads')         -> 'uploads/foo.jpg'
+//   keyFrom('doc-xyz.pdf',       'employee_docs')   -> 'employee_docs/doc-xyz.pdf'
+//   keyFrom('uploads/foo.jpg',   'uploads')         -> 'uploads/foo.jpg'
+//   keyFrom('employee_docs/xy',  'employee_docs')   -> 'employee_docs/xy'
+function keyFrom(filePath, defaultSubdir) {
+  if (!filePath) return '';
+  const subdir = String(defaultSubdir || '').replace(/^\/+|\/+$/g, '');
+  let k = String(filePath).replace(/\\/g, '/').replace(/^\/+/, '').trim();
+  if (!k) return '';
+  if (!subdir) return k;
+  // If already starts with the subdir, keep as-is
+  if (k === subdir || k.startsWith(subdir + '/')) return k;
+  // If contains any subdir prefix it's already a full key
+  if (k.includes('/')) return k;
+  return `${subdir}/${k}`;
+}
+
 function localPathForKey(key) {
   if (!_dataDir) throw new Error('storage.init({dataDir}) was not called');
   // Keys live under the same dataDir layout that already exists on disk.
   // First segment maps directly: uploads/..., employee_docs/..., etc.
   return path.join(_dataDir, key);
+}
+
+// Public: build an absolute on-disk path for a key (local mode only).
+// Returns null when running in R2 mode or before init().
+function localAbsPath(key) {
+  if (!_dataDir) return null;
+  return path.join(_dataDir, normalizeKey(key));
 }
 
 // ─── Put a Buffer / Readable as an object ───
@@ -175,6 +201,8 @@ module.exports = {
   deleteObject,
   getDownloadUrl,
   normalizeKey,
+  keyFrom,
+  localAbsPath,
   backendName,
   R2_BUCKET,
   isR2: () => !!s3Client,
