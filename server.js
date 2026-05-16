@@ -396,6 +396,18 @@ db.exec(`
     company_number TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS labor_companies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    contact_person TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    address TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
   CREATE TABLE IF NOT EXISTS partner_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     partner_id INTEGER NOT NULL,
@@ -8582,6 +8594,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_details TEXT DEFAULT '{}'"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_labor_company_id INTEGER DEFAULT NULL"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN has_ssn INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent INTEGER DEFAULT 0"); } catch {}
@@ -9158,8 +9171,13 @@ function getOnboardingTasks(workerId) {
   const rows = db.prepare('SELECT * FROM worker_onboarding WHERE worker_account_id=? ORDER BY id ASC').all(workerId);
   const rowMap = {};
   rows.forEach(r => { rowMap[r.task_key] = r; });
+  const laborCo = db.prepare(`SELECT lc.id, lc.name FROM worker_accounts wa LEFT JOIN labor_companies lc ON lc.id=wa.payment_labor_company_id WHERE wa.id=?`).get(workerId);
   return ONBOARDING_STEPS.map((s, idx) => {
     const row = rowMap[s.key] || { status: 'not_initialized', admin_note: '', action_url: '', completed_at: null, visible_to_worker: 0 };
+    if (s.key === 'payment_method' && laborCo && laborCo.id) {
+      row.labor_company_id = laborCo.id;
+      row.labor_company_name = laborCo.name;
+    }
     // compute locked: previous REQUIRED step must be completed/waived
     let locked = false;
     if (idx > 0) {
@@ -13428,6 +13446,67 @@ app.delete('/api/admin/partners/:id', requireAdmin, requireRole('admin'), (req, 
   db.prepare('DELETE FROM partner_files WHERE partner_id=?').run(req.params.id);
   db.prepare('DELETE FROM partners WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Labor Companies (劳务公司管理) ───
+app.get('/api/admin/labor-companies', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT lc.*, (SELECT COUNT(*) FROM worker_accounts wa WHERE wa.payment_labor_company_id=lc.id) AS worker_count FROM labor_companies lc ORDER BY lc.active DESC, lc.name ASC`).all();
+  res.json(rows);
+});
+
+app.post('/api/admin/labor-companies', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  if (!d.name || !String(d.name).trim()) return res.status(400).json({ error: 'Name required' });
+  const r = db.prepare(`INSERT INTO labor_companies (name, contact_person, phone, email, address, notes, active) VALUES (?,?,?,?,?,?,?)`)
+    .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/labor-companies/:id', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  if (!d.name || !String(d.name).trim()) return res.status(400).json({ error: 'Name required' });
+  db.prepare(`UPDATE labor_companies SET name=?, contact_person=?, phone=?, email=?, address=?, notes=?, active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/labor-companies/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const id = parseInt(req.params.id);
+  const usage = db.prepare('SELECT COUNT(*) AS n FROM worker_accounts WHERE payment_labor_company_id=?').get(id);
+  if (usage && usage.n > 0) {
+    return res.status(400).json({ error: `该劳务公司已被 ${usage.n} 名工人使用，无法删除。可改为停用。` });
+  }
+  db.prepare('DELETE FROM labor_companies WHERE id=?').run(id);
+  res.json({ success: true });
+});
+
+// Assign / clear labor company for a worker's payment_method task
+app.put('/api/admin/worker-accounts/:id/payment-labor-company', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const { labor_company_id } = req.body || {};
+  const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+  if (labor_company_id) {
+    const lc = db.prepare('SELECT id, name FROM labor_companies WHERE id=?').get(parseInt(labor_company_id));
+    if (!lc) return res.status(400).json({ error: 'Labor company not found' });
+    db.prepare(`UPDATE worker_accounts SET payment_labor_company_id=?, payment_method='labor_company' WHERE id=?`).run(lc.id, workerId);
+    const note = `通过劳务公司支付：${lc.name}`;
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, completed_at, updated_at)
+      VALUES (?, 'payment_method', 'completed', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id, task_key) DO UPDATE SET status='completed', admin_note=excluded.admin_note,
+        completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, note);
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, changedBy, 'payment_labor_company', '', lc.name, note);
+  } else {
+    const prev = db.prepare(`SELECT lc.name FROM worker_accounts wa LEFT JOIN labor_companies lc ON lc.id=wa.payment_labor_company_id WHERE wa.id=?`).get(workerId);
+    db.prepare(`UPDATE worker_accounts SET payment_labor_company_id=NULL WHERE id=?`).run(workerId);
+    db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='已取消劳务公司分配', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='payment_method' AND admin_note LIKE '通过劳务公司支付%'`)
+      .run(workerId);
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, changedBy, 'payment_labor_company', prev?.name||'', '', '取消劳务公司分配');
+  }
+  syncOnboardedStatus(workerId);
+  res.json({ success: true, tasks: getOnboardingTasks(workerId) });
 });
 
 // ─── Minimal PDF builder (no external deps) ───────────────────────────────────
