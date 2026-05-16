@@ -3663,12 +3663,18 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-sm" style="background:#0ea5e9;color:#fff;border:0;font-weight:600" onclick="generateMobileScanLink('paper_contract')">🔗 生成扫描链接</button>
     </div>
     <div style="font-size:.78rem;color:#64748b;margin-top:.35rem">把链接复制到手机打开，可用相机拍照并裁边后直接上传到此工人档案。</div>
-    <div id="mobileScanLinkBox" style="display:none;margin-top:.6rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.55rem .65rem">
-      <div style="display:flex;gap:.4rem;align-items:center">
-        <input id="mobileScanLinkInput" readonly style="flex:1;border:1px solid #cbd5e1;border-radius:6px;padding:.4rem .55rem;font-size:.78rem;font-family:monospace;color:#0f2b5b;background:#f8fafc">
-        <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:0" onclick="copyMobileScanLink()">📋 复制</button>
+    <div id="mobileScanLinkBox" style="display:none;margin-top:.6rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.65rem .75rem">
+      <div style="display:flex;gap:.85rem;align-items:flex-start;flex-wrap:wrap">
+        <div id="mobileScanQR" style="flex:0 0 auto;padding:6px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;width:148px;height:148px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:.72rem">二维码生成中…</div>
+        <div style="flex:1 1 220px;min-width:200px;display:flex;flex-direction:column;gap:.4rem">
+          <div style="font-size:.78rem;color:#0369a1;font-weight:600">📱 用手机相机扫码或复制下方链接</div>
+          <div style="display:flex;gap:.4rem;align-items:center">
+            <input id="mobileScanLinkInput" readonly style="flex:1;min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:.4rem .55rem;font-size:.76rem;font-family:monospace;color:#0f2b5b;background:#f8fafc">
+            <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:0;white-space:nowrap" onclick="copyMobileScanLink()">📋 复制</button>
+          </div>
+          <div id="mobileScanLinkMeta" style="font-size:.74rem;color:#64748b"></div>
+        </div>
       </div>
-      <div id="mobileScanLinkMeta" style="font-size:.74rem;color:#64748b;margin-top:.3rem"></div>
     </div>
   </div>
 
@@ -19932,10 +19938,24 @@ async function generateMobileScanLink(docType) {
     if (!r || r.error) { showToast('生成失败：' + (r?.error || '未知错误'), 'error'); return; }
     document.getElementById('mobileScanLinkInput').value = r.url;
     const exp = r.expires_at ? new Date(r.expires_at).toLocaleString('zh-CN') : '';
-    document.getElementById('mobileScanLinkMeta').textContent = exp ? `链接有效期至：${exp}（24 小时内可多次上传）` : '链接 24 小时内有效';
+    document.getElementById('mobileScanLinkMeta').textContent = exp ? `有效期至 ${exp} · 期间可上传多张` : '链接 24 小时内有效，可多次上传';
     document.getElementById('mobileScanLinkBox').style.display = '';
+    renderMobileScanQR(r.url);
   } catch (e) {
     showToast('生成失败：' + (e.message || '未知错误'), 'error');
+  }
+}
+
+async function renderMobileScanQR(url) {
+  const box = document.getElementById('mobileScanQR');
+  if (!box) return;
+  box.innerHTML = '<span style="font-size:.72rem;color:#94a3b8">二维码生成中…</span>';
+  try {
+    await _loadQRLib();
+    box.innerHTML = '';
+    new QRCode(box, { text: url, width: 136, height: 136, colorDark: '#0f2b5b', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  } catch (e) {
+    box.innerHTML = '<span style="font-size:.72rem;color:#dc2626">二维码加载失败</span>';
   }
 }
 
