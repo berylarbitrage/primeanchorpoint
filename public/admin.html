@@ -20014,6 +20014,7 @@ async function loadPaperContractList() {
       const dt = d.created_at ? new Date(d.created_at).toLocaleString('zh-CN') : '';
       const fileUrl = `/api/admin/worker-accounts/${_onboardingWorkerId}/paper-contracts/${d.id}/file`;
       return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;border-bottom:1px solid #f1f5f9">
+        ${paperDocThumb(fileUrl, d.file_name)}
         <div style="flex:1;min-width:0">
           <div style="font-size:.85rem;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.file_name || '未命名文件')}</div>
           <div style="font-size:.72rem;color:#94a3b8">${dt}</div>
@@ -20026,6 +20027,20 @@ async function loadPaperContractList() {
   } catch(e) {
     wrap.innerHTML = `<div style="padding:1rem;text-align:center;color:#ef4444;font-size:.83rem">加载失败：${esc(e.message || '')}</div>`;
   }
+}
+
+function paperDocThumb(fileUrl, fileName) {
+  const name = String(fileName || '').toLowerCase();
+  const ext = (name.match(/\.([a-z0-9]+)$/) || [])[1] || '';
+  const isImg = ['jpg','jpeg','png','gif','webp','bmp'].includes(ext);
+  const boxStyle = 'flex:0 0 auto;width:56px;height:56px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden';
+  if (isImg) {
+    return `<a href="${fileUrl}?inline=1" target="_blank" style="${boxStyle};text-decoration:none">
+      <img src="${fileUrl}?inline=1" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.innerHTML='<span style=\\'font-size:1.4rem\\'>🖼️</span>'">
+    </a>`;
+  }
+  const icon = ext === 'pdf' ? '📄' : (ext === 'doc' || ext === 'docx') ? '📝' : '📎';
+  return `<a href="${fileUrl}?inline=1" target="_blank" style="${boxStyle};text-decoration:none;font-size:1.6rem;color:#64748b">${icon}</a>`;
 }
 
 function paperContractHandleDrop(e) {
@@ -20121,6 +20136,7 @@ async function loadPaperW9List() {
       const dt = d.created_at ? new Date(d.created_at).toLocaleString('zh-CN') : '';
       const fileUrl = `/api/admin/worker-accounts/${_onboardingWorkerId}/paper-w9s/${d.id}/file`;
       return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;border-bottom:1px solid #f1f5f9">
+        ${paperDocThumb(fileUrl, d.file_name)}
         <div style="flex:1;min-width:0">
           <div style="font-size:.85rem;font-weight:600;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.file_name || '未命名文件')}</div>
           <div style="font-size:.72rem;color:#94a3b8">${dt}</div>
