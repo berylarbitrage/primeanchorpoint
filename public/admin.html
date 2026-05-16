@@ -3626,6 +3626,28 @@ tr:hover td{background:var(--sky-light)}
 
   <div id="paperW9UploadStatus" style="display:none;margin-bottom:.75rem;padding:.5rem .75rem;border-radius:6px;font-size:.85rem"></div>
 
+  <!-- 手机扫描链接 -->
+  <div style="border:1px dashed #bae6fd;background:#f0f9ff;border-radius:10px;padding:.75rem .85rem;margin-bottom:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap">
+      <div style="font-weight:700;color:#0369a1;font-size:.88rem">📱 用手机扫描上传</div>
+      <button class="btn btn-sm" style="background:#0ea5e9;color:#fff;border:0;font-weight:600" onclick="generateMobileScanLink('paper_w9','mobileScanW9')">🔗 生成扫描链接</button>
+    </div>
+    <div style="font-size:.78rem;color:#64748b;margin-top:.35rem">扫码或把链接复制到手机打开，可用相机拍照并自动裁边后直接上传到此工人档案。</div>
+    <div id="mobileScanW9LinkBox" style="display:none;margin-top:.6rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.65rem .75rem">
+      <div style="display:flex;gap:.85rem;align-items:flex-start;flex-wrap:wrap">
+        <div id="mobileScanW9QR" style="flex:0 0 auto;padding:6px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;width:148px;height:148px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:.72rem">二维码生成中…</div>
+        <div style="flex:1 1 220px;min-width:200px;display:flex;flex-direction:column;gap:.4rem">
+          <div style="font-size:.78rem;color:#0369a1;font-weight:600">📱 用手机相机扫码或复制下方链接</div>
+          <div style="display:flex;gap:.4rem;align-items:center">
+            <input id="mobileScanW9LinkInput" readonly style="flex:1;min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:.4rem .55rem;font-size:.76rem;font-family:monospace;color:#0f2b5b;background:#f8fafc">
+            <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:0;white-space:nowrap" onclick="copyMobileScanLink('mobileScanW9')">📋 复制</button>
+          </div>
+          <div id="mobileScanW9LinkMeta" style="font-size:.74rem;color:#64748b"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem;color:#0f2b5b">已上传文件</div>
   <div id="paperW9List" style="border:1px solid #e2e8f0;border-radius:8px;max-height:240px;overflow-y:auto;background:#fff">
     <div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.83rem">加载中…</div>
@@ -3660,19 +3682,19 @@ tr:hover td{background:var(--sky-light)}
   <div style="border:1px dashed #bae6fd;background:#f0f9ff;border-radius:10px;padding:.75rem .85rem;margin-bottom:1rem">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap">
       <div style="font-weight:700;color:#0369a1;font-size:.88rem">📱 用手机扫描上传</div>
-      <button class="btn btn-sm" style="background:#0ea5e9;color:#fff;border:0;font-weight:600" onclick="generateMobileScanLink('paper_contract')">🔗 生成扫描链接</button>
+      <button class="btn btn-sm" style="background:#0ea5e9;color:#fff;border:0;font-weight:600" onclick="generateMobileScanLink('paper_contract','mobileScanContract')">🔗 生成扫描链接</button>
     </div>
-    <div style="font-size:.78rem;color:#64748b;margin-top:.35rem">把链接复制到手机打开，可用相机拍照并裁边后直接上传到此工人档案。</div>
-    <div id="mobileScanLinkBox" style="display:none;margin-top:.6rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.65rem .75rem">
+    <div style="font-size:.78rem;color:#64748b;margin-top:.35rem">扫码或把链接复制到手机打开，可用相机拍照并自动裁边后直接上传到此工人档案。</div>
+    <div id="mobileScanContractLinkBox" style="display:none;margin-top:.6rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.65rem .75rem">
       <div style="display:flex;gap:.85rem;align-items:flex-start;flex-wrap:wrap">
-        <div id="mobileScanQR" style="flex:0 0 auto;padding:6px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;width:148px;height:148px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:.72rem">二维码生成中…</div>
+        <div id="mobileScanContractQR" style="flex:0 0 auto;padding:6px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;width:148px;height:148px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:.72rem">二维码生成中…</div>
         <div style="flex:1 1 220px;min-width:200px;display:flex;flex-direction:column;gap:.4rem">
           <div style="font-size:.78rem;color:#0369a1;font-weight:600">📱 用手机相机扫码或复制下方链接</div>
           <div style="display:flex;gap:.4rem;align-items:center">
-            <input id="mobileScanLinkInput" readonly style="flex:1;min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:.4rem .55rem;font-size:.76rem;font-family:monospace;color:#0f2b5b;background:#f8fafc">
-            <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:0;white-space:nowrap" onclick="copyMobileScanLink()">📋 复制</button>
+            <input id="mobileScanContractLinkInput" readonly style="flex:1;min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:.4rem .55rem;font-size:.76rem;font-family:monospace;color:#0f2b5b;background:#f8fafc">
+            <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:0;white-space:nowrap" onclick="copyMobileScanLink('mobileScanContract')">📋 复制</button>
           </div>
-          <div id="mobileScanLinkMeta" style="font-size:.74rem;color:#64748b"></div>
+          <div id="mobileScanContractLinkMeta" style="font-size:.74rem;color:#64748b"></div>
         </div>
       </div>
     </div>
@@ -19925,29 +19947,32 @@ async function openPaperContractModal() {
   document.getElementById('paperContractModal').classList.add('show');
   document.getElementById('paperContractUploadStatus').style.display = 'none';
   document.getElementById('paperContractFileInput').value = '';
-  document.getElementById('mobileScanLinkBox').style.display = 'none';
+  document.getElementById('mobileScanContractLinkBox').style.display = 'none';
   await loadPaperContractList();
 }
 
-async function generateMobileScanLink(docType) {
+// Render a "📱 mobile scan link + QR" block. `prefix` is the element-id prefix
+// used by that modal — e.g. "mobileScanContract" or "mobileScanW9".
+async function generateMobileScanLink(docType, prefix) {
   if (!_onboardingWorkerId) return;
+  prefix = prefix || 'mobileScanContract';
   try {
     const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/mobile-upload-link`, {
       method: 'POST', body: JSON.stringify({ doc_type: docType })
     });
     if (!r || r.error) { showToast('生成失败：' + (r?.error || '未知错误'), 'error'); return; }
-    document.getElementById('mobileScanLinkInput').value = r.url;
+    document.getElementById(prefix + 'LinkInput').value = r.url;
     const exp = r.expires_at ? new Date(r.expires_at).toLocaleString('zh-CN') : '';
-    document.getElementById('mobileScanLinkMeta').textContent = exp ? `有效期至 ${exp} · 期间可上传多张` : '链接 24 小时内有效，可多次上传';
-    document.getElementById('mobileScanLinkBox').style.display = '';
-    renderMobileScanQR(r.url);
+    document.getElementById(prefix + 'LinkMeta').textContent = exp ? `有效期至 ${exp} · 期间可上传多张` : '链接 24 小时内有效，可多次上传';
+    document.getElementById(prefix + 'LinkBox').style.display = '';
+    renderMobileScanQR(r.url, prefix + 'QR');
   } catch (e) {
     showToast('生成失败：' + (e.message || '未知错误'), 'error');
   }
 }
 
-async function renderMobileScanQR(url) {
-  const box = document.getElementById('mobileScanQR');
+async function renderMobileScanQR(url, boxId) {
+  const box = document.getElementById(boxId);
   if (!box) return;
   box.innerHTML = '<span style="font-size:.72rem;color:#94a3b8">二维码生成中…</span>';
   try {
@@ -19959,8 +19984,9 @@ async function renderMobileScanQR(url) {
   }
 }
 
-async function copyMobileScanLink() {
-  const inp = document.getElementById('mobileScanLinkInput');
+async function copyMobileScanLink(prefix) {
+  prefix = prefix || 'mobileScanContract';
+  const inp = document.getElementById(prefix + 'LinkInput');
   if (!inp || !inp.value) return;
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -20078,6 +20104,7 @@ async function openPaperW9Modal() {
   document.getElementById('paperW9Modal').classList.add('show');
   document.getElementById('paperW9UploadStatus').style.display = 'none';
   document.getElementById('paperW9FileInput').value = '';
+  document.getElementById('mobileScanW9LinkBox').style.display = 'none';
   await loadPaperW9List();
 }
 
