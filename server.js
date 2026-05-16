@@ -309,6 +309,10 @@ async function sendEmailWithAttachment(to, subject, text, pdfBuffer, pdfFileName
 const dataDir = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
+// ─── Storage abstraction (local FS / Cloudflare R2) ───
+const storage = require('./storage');
+storage.init({ dataDir });
+
 const uploadsDir = path.join(dataDir, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
