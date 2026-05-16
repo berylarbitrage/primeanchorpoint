@@ -10517,7 +10517,8 @@ app.get('/api/admin/worker-accounts/:id/paper-contracts/:docId/file', requireAdm
 // ─── Mobile Scan Upload (tokenized public URL → phone camera scanner) ───
 
 const MOBILE_SCAN_DOC_TYPES = {
-  paper_contract: { label: '纸质合同', allowedExts: ['jpg','jpeg','png','pdf'] }
+  paper_contract: { label: '纸质合同', allowedExts: ['jpg','jpeg','png','pdf'] },
+  paper_w9:       { label: '纸质 W-9',  allowedExts: ['jpg','jpeg','png','pdf'] }
 };
 
 app.post('/api/admin/worker-accounts/:id/mobile-upload-link', requireAdmin, (req, res) => {
