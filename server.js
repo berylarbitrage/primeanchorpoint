@@ -10497,18 +10497,19 @@ app.get('/api/admin/worker-accounts/:id/paper-contracts/:docId/file', requireAdm
 
 // ─── TaxBandits TIN Verification ───
 
-// Preview what will be sent — returns masked TIN + name without calling TaxBandits
+// Returns the full set of TIN-matching fields (full TIN, name, address, DOB)
+// so the admin can copy them into the TaxBandits portal manually.
 app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) => {
   const workerId = parseInt(req.params.id);
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
   if (!w) return res.status(404).json({ error: 'Worker not found' });
 
-  // Name: prefer first/last from profile, fall back to full name / username
   const profileName = [w.first_name, w.last_name].filter(Boolean).join(' ').trim();
   let tin = '', tinName = profileName || w.name || w.username || '';
   let tinType = 'INDIVIDUAL', tinSource = '';
+  let businessName = '';
+  let w9Fields = null;
 
-  // 1) Encrypted SSN on the linked employee record (admin-entered in 编辑员工)
   if (w.employee_id) {
     const emp = db.prepare('SELECT ssn_encrypted, ssn_iv FROM employees WHERE id=?').get(w.employee_id);
     if (emp?.ssn_encrypted) {
@@ -10517,7 +10518,6 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
     }
   }
 
-  // 2) Admin-uploaded SSN card with doc_number filled in
   if (!tin) {
     const ssnCard = db.prepare(`SELECT doc_number FROM worker_compliance_docs
       WHERE worker_account_id=? AND doc_type='ssn_card' AND doc_number IS NOT NULL AND doc_number != ''
@@ -10525,52 +10525,73 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
     if (ssnCard?.doc_number) { tin = ssnCard.doc_number; tinSource = 'SSN 卡'; }
   }
 
-  // 3) W-9 form data (encrypted)
-  if (!tin) {
-    const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
-    if (w9doc) {
-      const fd = JSON.parse(w9doc.form_data || '{}');
-      if (fd.ssn_or_ein_encrypted) {
-        const enc = fd.ssn_or_ein_encrypted;
+  // Always read W-9 form_data for address/business name even if SSN came from elsewhere
+  const w9doc = db.prepare(`SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' ORDER BY updated_at DESC LIMIT 1`).get(workerId);
+  if (w9doc) {
+    try {
+      w9Fields = JSON.parse(w9doc.form_data || '{}');
+      if (!tin && w9Fields.ssn_or_ein_encrypted) {
+        const enc = w9Fields.ssn_or_ein_encrypted;
         const encStr = typeof enc === 'object' ? enc.encrypted : enc;
-        const ivStr  = typeof enc === 'object' ? enc.iv : (fd.ssn_or_ein_iv || '');
+        const ivStr  = typeof enc === 'object' ? enc.iv : (w9Fields.ssn_or_ein_iv || '');
         const dec = decryptSSN(encStr, ivStr);
         if (dec) { tin = dec; tinSource = 'W-9'; }
       }
-      if (!profileName && fd.name) tinName = fd.name;
-      if (fd.tin_type === 'EIN') tinType = 'BUSINESS';
-    }
+      if (!profileName && w9Fields.name) tinName = w9Fields.name;
+      if (w9Fields.tin_type === 'EIN') tinType = 'BUSINESS';
+      if (w9Fields.business_name) businessName = w9Fields.business_name;
+    } catch {}
   }
 
-  // 3) Tax residency questionnaire (encrypted)
-  if (!tin) {
-    const trRow = db.prepare(`SELECT ind_ssn_encrypted, ind_ssn_iv FROM tax_residency_questionnaire WHERE worker_account_id=?`).get(workerId);
-    if (trRow?.ind_ssn_encrypted) {
-      const dec = decryptSSN(trRow.ind_ssn_encrypted, trRow.ind_ssn_iv || '');
-      if (dec) { tin = dec; tinSource = '税务居民判定'; }
-    }
+  const trRow = db.prepare(`SELECT ind_ssn_encrypted, ind_ssn_iv, addr_street, addr_street2, addr_city, addr_state, addr_zip FROM tax_residency_questionnaire WHERE worker_account_id=?`).get(workerId);
+  if (!tin && trRow?.ind_ssn_encrypted) {
+    const dec = decryptSSN(trRow.ind_ssn_encrypted, trRow.ind_ssn_iv || '');
+    if (dec) { tin = dec; tinSource = '税务居民判定'; }
   }
 
   if (!tin) return res.status(400).json({ error: '未找到工人税号（TIN/SSN）。请先在 SSN 卡上传时填写号码、或让工人提交 W-9。' });
 
-  const tinMasked = tin.replace(/\D/g, '').replace(/^(\d*)(\d{4})$/, (_, p, last) => '*'.repeat(p.length) + last);
-  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='taxbandits'").get();
-  const cfg = JSON.parse(row?.config || '{}');
-  const sandbox = cfg.sandbox !== undefined ? cfg.sandbox : (process.env.TAXBANDITS_SANDBOX !== 'false');
+  // Address: W-9 takes priority, fall back to tax-residency questionnaire, then worker profile city/state
+  let addrStreet = '', addrStreet2 = '', addrCity = '', addrState = '', addrZip = '', addrSource = '';
+  if (w9Fields && (w9Fields.address || w9Fields.city || w9Fields.zip)) {
+    addrStreet = w9Fields.address || '';
+    addrCity   = w9Fields.city    || '';
+    addrState  = w9Fields.state   || '';
+    addrZip    = w9Fields.zip     || '';
+    addrSource = 'W-9';
+  } else if (trRow && (trRow.addr_street || trRow.addr_city || trRow.addr_zip)) {
+    addrStreet  = trRow.addr_street  || '';
+    addrStreet2 = trRow.addr_street2 || '';
+    addrCity    = trRow.addr_city    || '';
+    addrState   = trRow.addr_state   || '';
+    addrZip     = trRow.addr_zip     || '';
+    addrSource  = '税务居民判定';
+  } else if (w.city || w.state) {
+    addrCity   = w.city  || '';
+    addrState  = w.state || '';
+    addrSource = '工人档案';
+  }
 
-  const address = [w.city, w.state].filter(Boolean).join(', ') || '— 未填写 —';
+  const tinDigits = tin.replace(/\D/g, '');
+  const tinMasked = tinDigits.replace(/^(\d*)(\d{4})$/, (_, p, last) => '*'.repeat(p.length) + last);
 
   res.json({
     name: tinName,
     first_name: w.first_name || '',
+    middle_name: w.middle_name || '',
     last_name: w.last_name || '',
+    business_name: businessName,
+    tin: tinDigits,
     tin_masked: tinMasked,
     tin_type: tinType,
     tin_source: tinSource,
-    address,
-    sandbox,
-    auth: 'OAuth 2.0 (JWS → AccessToken via expressauth.net)',
-    api_url: `${sandbox ? 'https://testapi.taxbandits.com' : 'https://api.taxbandits.com'}${cfg.api_path || process.env.TAXBANDITS_API_PATH || '/v1.7.3/InstantTINMatch/Request'}`,
+    dob: w.dob || '',
+    addr_street: addrStreet,
+    addr_street2: addrStreet2,
+    addr_city: addrCity,
+    addr_state: addrState,
+    addr_zip: addrZip,
+    addr_source: addrSource,
   });
 });
 // TaxBandits uses OAuth 2.0:

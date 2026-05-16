@@ -3521,6 +3521,27 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- TaxBandits 手动核对信息 Modal (列出字段 + 一键复制) -->
+<div class="modal-bg" id="taxBanditsManualModal"><div class="modal" style="max-width:640px">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:.75rem">
+    <div>
+      <h2 style="margin:0;color:#0f2b5b;font-size:1.1rem">🔢 TaxBandits 核对信息 — <span id="tbmWorkerName" style="color:var(--sky)"></span></h2>
+      <div style="margin-top:.3rem;font-size:.82rem;color:#64748b">复制下方字段到 <a href="https://www.taxbandits.com" target="_blank" rel="noopener" style="color:#1d4ed8;text-decoration:underline">TaxBandits 网站</a>的 TIN Matching 页面进行核对。</div>
+      <div id="tbmSourceBadge" style="margin-top:.2rem;font-size:.72rem;color:#94a3b8"></div>
+    </div>
+    <button onclick="closeTaxBanditsManualModal()" style="background:none;border:none;font-size:1.25rem;color:var(--gray-400);cursor:pointer;line-height:1">✕</button>
+  </div>
+
+  <table style="width:100%;border-collapse:collapse;font-size:.88rem;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+    <tbody id="tbmRows"></tbody>
+  </table>
+
+  <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;flex-wrap:wrap">
+    <button class="btn btn-outline" onclick="closeTaxBanditsManualModal()">关闭</button>
+    <button class="btn btn-blue" id="tbmCopyAllBtn" data-text="" onclick="tbmCopyAll(this)">📋 复制全部</button>
+  </div>
+</div></div>
+
 <!-- 纸质 W-9 上传 Modal (cash workers) -->
 <div class="modal-bg" id="paperW9Modal"><div class="modal" style="max-width:640px">
   <h2>📎 上传纸质 W-9 — <span id="paperW9WorkerName" style="color:var(--sky)"></span></h2>
@@ -19901,130 +19922,125 @@ let _taxBanditsVerifying = false;
 async function verifyTinTaxbandits(workerId) {
   if (!workerId || _taxBanditsVerifying) return;
   _taxBanditsVerifying = true;
-  document.querySelectorAll('button').forEach(b => { if (b.textContent.includes('TaxBandits')) b.disabled = true; });
-
   try {
-    // Step 1: fetch preview (masked TIN + name) so user can confirm before sending
     const preview = await api(`/admin/worker-accounts/${workerId}/tin-preview`);
     if (!preview || preview.error) {
       showToast('❌ ' + (preview?.error || '无法读取工人税号'), 'error', 8000);
       return;
     }
-
-    const envLabel = preview.sandbox ? '🧪 沙盒 (Sandbox)' : '🚀 正式环境';
-    const confirmHtml = `
-      <div style="font-size:.85rem;color:#475569;margin-bottom:.6rem">请确认以下信息将被发送至 TaxBandits 进行核对：</div>
-      <table style="width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:.5rem">
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b;white-space:nowrap;width:90px">名 First</td><td style="padding:.4rem .5rem;font-weight:600">${preview.first_name || '—'}</td></tr>
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">姓 Last</td><td style="padding:.4rem .5rem;font-weight:600">${preview.last_name || '—'}</td></tr>
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">税号（掩码）</td><td style="padding:.4rem .5rem;font-weight:600;font-family:monospace">${preview.tin_masked}</td></tr>
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">类型</td><td style="padding:.4rem .5rem">${preview.tin_type}</td></tr>
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">税号来源</td><td style="padding:.4rem .5rem">${preview.tin_source}</td></tr>
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">地址</td><td style="padding:.4rem .5rem;font-size:.82rem">${preview.address || '— 未填写 —'}</td></tr>
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">环境</td><td style="padding:.4rem .5rem">${envLabel}</td></tr>
-        <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.4rem .5rem;color:#64748b">认证方式</td><td style="padding:.4rem .5rem;font-size:.82rem">${preview.auth}</td></tr>
-        <tr><td style="padding:.4rem .5rem;color:#64748b">API URL</td><td style="padding:.4rem .5rem;font-size:.75rem;font-family:monospace;word-break:break-all">${preview.api_url}</td></tr>
-      </table>`;
-
-    showConfirmModal('确认发送 TaxBandits 核对', '', '✅ 确认发送', 'btn-green', async () => {
-      await _doTaxBanditsVerify(workerId);
-    }, 'green');
-    document.getElementById('gcmDesc').innerHTML = confirmHtml;
-
+    openTaxBanditsManualModal(workerId, preview);
   } catch (e) {
     showToast('❌ ' + (e.message || '读取工人税号失败'), 'error', 8000);
   } finally {
     _taxBanditsVerifying = false;
-    document.querySelectorAll('button').forEach(b => { if (b.textContent.includes('TaxBandits')) b.disabled = false; });
   }
 }
 
-async function _doTaxBanditsVerify(workerId, overridePath) {
-  const statusMap = {
-    MATCH:       { label: '✅ 匹配 (MATCH)',       color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
-    MISMATCH:    { label: '❌ 不匹配 (MISMATCH)',   color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
-    INVALID_TIN: { label: '⚠️ 无效税号 (INVALID)', color: '#92400e', bg: '#fffbeb', border: '#fde68a' },
-    NO_DATA:     { label: '❓ 暂无数据 (NO_DATA)',  color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
-    UNKNOWN:     { label: '❓ 未知 (UNKNOWN)',       color: '#475569', bg: '#f8fafc', border: '#e2e8f0' },
-  };
+let _tbmTinShown = false;
+let _tbmPayload = null; // holds full preview object for handlers (avoids inline-quoting issues)
+function openTaxBanditsManualModal(workerId, p) {
+  _tbmTinShown = false;
+  _tbmPayload = p;
+  const escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const isBiz = p.tin_type === 'BUSINESS';
+  const cityStateZip = [p.addr_city, [p.addr_state, p.addr_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const fullName = [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' ') || p.name || '';
 
-  // Step-by-step progress modal
-  const renderSteps = (steps) => {
-    return steps.map(s => {
-      const icon = s.state === 'done' ? '✅' : s.state === 'error' ? '❌' : s.state === 'active' ? '⏳' : '⚪';
-      const color = s.state === 'done' ? '#15803d' : s.state === 'error' ? '#b91c1c' : s.state === 'active' ? '#1d4ed8' : '#94a3b8';
-      const wt    = s.state === 'pending' ? '400' : '600';
-      return `<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem .5rem;font-size:.88rem;color:${color};font-weight:${wt}"><span>${icon}</span><span>${s.label}</span>${s.detail ? `<span style="margin-left:auto;font-size:.78rem;color:#64748b;font-family:monospace">${s.detail}</span>` : ''}</div>`;
-    }).join('');
-  };
+  // [label, displayValue, copyKey] — copyKey is looked up on _tbmPayload at click time
+  const rows = [];
+  if (isBiz && p.business_name) rows.push(['企业名 Business Name', p.business_name, 'business_name']);
+  rows.push(['名 First Name', p.first_name || '—', 'first_name']);
+  if (p.middle_name) rows.push(['中间名 Middle', p.middle_name, 'middle_name']);
+  rows.push(['姓 Last Name', p.last_name || '—', 'last_name']);
+  if (fullName && (p.first_name || p.last_name)) rows.push(['完整姓名 Full Name', fullName, '__full_name__']);
+  rows.push([isBiz ? 'EIN' : 'SSN', '__tin_display__', 'tin']);
+  if (p.dob) rows.push(['出生日期 DOB', p.dob, 'dob']);
+  if (p.addr_street) rows.push(['街道 Street', p.addr_street, 'addr_street']);
+  if (p.addr_street2) rows.push(['地址 2 Apt/Suite', p.addr_street2, 'addr_street2']);
+  if (p.addr_city) rows.push(['城市 City', p.addr_city, 'addr_city']);
+  if (p.addr_state) rows.push(['州 State', p.addr_state, 'addr_state']);
+  if (p.addr_zip) rows.push(['邮编 ZIP', p.addr_zip, 'addr_zip']);
+  if (cityStateZip) rows.push(['City, State ZIP', cityStateZip, '__city_state_zip__']);
 
-  const steps = [
-    { label: '准备工人税号数据',     state: 'active', detail: '' },
-    { label: '换取 OAuth AccessToken', state: 'pending', detail: '' },
-    { label: '调用 TaxBandits API',  state: 'pending', detail: '' },
-    { label: '解析返回结果',         state: 'pending', detail: '' },
-  ];
+  const tinDisplayHtml = `<span id="tbmTinDisplay" style="font-family:monospace">${escHtml(p.tin_masked)}</span>
+    <button type="button" class="btn btn-sm" style="margin-left:.4rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;padding:1px 8px;font-size:.72rem" onclick="tbmToggleTin(this)">👁 显示</button>
+    <div style="font-size:.72rem;color:#94a3b8;margin-top:.15rem">来源：${escHtml(p.tin_source)}</div>`;
 
-  showConfirmModal('TaxBandits 核对进行中…', '', '关闭', 'btn', () => {}, 'blue');
-  const descEl = document.getElementById('gcmDesc');
-  descEl.innerHTML = renderSteps(steps);
+  const rowHtml = rows.map(([label, displayValue, copyKey]) => {
+    const valueHtml = displayValue === '__tin_display__' ? tinDisplayHtml : escHtml(displayValue);
+    const hasVal = copyKey === 'tin' || copyKey === '__full_name__' || copyKey === '__city_state_zip__'
+      ? !!displayValue
+      : !!p[copyKey];
+    return `<tr style="border-bottom:1px solid #e2e8f0">
+      <td style="padding:.55rem .6rem;color:#64748b;white-space:nowrap;font-size:.82rem;vertical-align:top">${escHtml(label)}</td>
+      <td style="padding:.55rem .6rem;font-weight:600;word-break:break-word">${valueHtml || '—'}</td>
+      <td style="padding:.55rem .6rem;text-align:right;white-space:nowrap;vertical-align:top">
+        <button type="button" class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:2px 10px;font-size:.76rem" onclick="tbmCopyField(this, '${copyKey}')" ${hasVal ? '' : 'disabled'}>📋 复制</button>
+      </td>
+    </tr>`;
+  }).join('');
 
-  try {
-    const reqBody = overridePath ? JSON.stringify({ api_path: overridePath }) : '{}';
-    const r = await api(`/admin/worker-accounts/${workerId}/verify-tin-taxbandits`, { method: 'POST', body: reqBody });
+  document.getElementById('tbmWorkerName').textContent = fullName || ('Worker #' + workerId);
+  document.getElementById('tbmSourceBadge').textContent = p.addr_source ? `地址来源：${p.addr_source}` : '';
+  document.getElementById('tbmRows').innerHTML = rowHtml;
+  document.getElementById('taxBanditsManualModal').classList.add('show');
+}
 
-    if (r && r.success) {
-      steps.forEach(s => s.state = 'done');
-      steps[0].detail = r.name || '';
-      steps[1].detail = 'HS256';
-      steps[2].detail = `HTTP 200`;
-      steps[3].detail = r.status || '';
-      descEl.innerHTML = renderSteps(steps);
+function tbmValueForKey(key) {
+  const p = _tbmPayload || {};
+  if (key === '__full_name__') return [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' ') || p.name || '';
+  if (key === '__city_state_zip__') return [p.addr_city, [p.addr_state, p.addr_zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  return p[key] || '';
+}
 
-      const s = statusMap[r.status] || statusMap.UNKNOWN;
-      const resultHtml = renderSteps(steps) + `
-        <div style="margin-top:.75rem;padding:.75rem 1rem;border-radius:8px;background:${s.bg};border:1px solid ${s.border}">
-          <div style="font-size:1.1rem;font-weight:700;color:${s.color}">${s.label}</div>
-          <div style="margin-top:.4rem;font-size:.85rem;color:#475569">姓名：${r.name || '-'}</div>
-          <div style="font-size:.85rem;color:#475569">税号（掩码）：${r.tin_masked || '-'}</div>
-        </div>
-        <div style="margin-top:.5rem;font-size:.8rem;color:#94a3b8">核对结果已自动保存至工人备注</div>`;
-      document.getElementById('gcmTitle').textContent = 'TaxBandits 核对完成';
-      descEl.innerHTML = resultHtml;
-      refreshOnboardingModal();
-    } else {
-      // Mark which step failed based on error content
-      const err = r?.error || 'TaxBandits 核对失败';
-      let failIdx = 2;
-      if (err.includes('未找到工人税号') || err.includes('未配置')) failIdx = 0;
-      else if (err.includes('JWT') || err.includes('签名') || err.includes('OAuth') || err.includes('AccessToken')) failIdx = 1;
-      for (let i = 0; i < failIdx; i++) steps[i].state = 'done';
-      steps[failIdx].state = 'error';
-      steps[failIdx].detail = err.length > 80 ? err.slice(0, 80) + '…' : err;
-      document.getElementById('gcmTitle').textContent = 'TaxBandits 核对失败';
-      const showPathRetry = failIdx === 2 && /404|API/i.test(err);
-      const retryHtml = showPathRetry ? `
-        <div style="margin-top:.75rem;padding:.6rem .8rem;border-radius:6px;background:#fffbeb;border:1px solid #fde68a;font-size:.82rem">
-          <div style="font-weight:600;margin-bottom:.4rem;color:#92400e">尝试其他 API 路径（不用重新部署）：</div>
-          <input id="tbPathOverride" placeholder="/v1.7.3/InstantTINMatch/Request" style="width:100%;padding:.4rem .5rem;border:1px solid #fde68a;border-radius:4px;font-family:monospace;font-size:.78rem;margin-bottom:.4rem" />
-          <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-            <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="document.getElementById('tbPathOverride').value='/v1.7.3/InstantTINMatch/Request'">/v1.7.3/InstantTINMatch/Request</button>
-            <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="document.getElementById('tbPathOverride').value='/v1.7.3/TINMatchingRecipients/Request'">/v1.7.3/TINMatchingRecipients/Request</button>
-            <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="document.getElementById('tbPathOverride').value='/v1.7.1/InstantTINMatch/Request'">/v1.7.1/InstantTINMatch/Request</button>
-            <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="document.getElementById('tbPathOverride').value='/v1.7.1/TINMatchingRecipients/Request'">/v1.7.1/TINMatchingRecipients/Request</button>
-          </div>
-          <button class="btn btn-blue btn-sm" style="margin-top:.5rem" onclick="closeGenericConfirm();_doTaxBanditsVerify(${workerId}, document.getElementById('tbPathOverride').value.trim())">🔁 用此路径重试</button>
-        </div>` : '';
-      descEl.innerHTML = renderSteps(steps) +
-        `<div style="margin-top:.75rem;padding:.6rem .8rem;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;font-size:.82rem;color:#b91c1c;word-break:break-all">${err}</div>` +
-        retryHtml;
-    }
-  } catch (e) {
-    steps[2].state = 'error';
-    steps[2].detail = e.message || '';
-    document.getElementById('gcmTitle').textContent = 'TaxBandits 核对失败';
-    descEl.innerHTML = renderSteps(steps) + `<div style="margin-top:.75rem;padding:.6rem .8rem;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;font-size:.82rem;color:#b91c1c;word-break:break-all">${e.message || '请求失败'}</div>`;
-  }
+function tbmCopyField(btn, key) {
+  tbmCopy(btn, tbmValueForKey(key));
+}
+
+function tbmCopy(btn, value) {
+  if (!value) return;
+  navigator.clipboard.writeText(value).then(() => {
+    const orig = btn.innerHTML;
+    const origBg = btn.style.background, origColor = btn.style.color, origBorder = btn.style.borderColor;
+    btn.innerHTML = '✓ 已复制';
+    btn.style.background = '#dcfce7';
+    btn.style.color = '#166534';
+    btn.style.borderColor = '#86efac';
+    setTimeout(() => {
+      btn.innerHTML = orig;
+      btn.style.background = origBg;
+      btn.style.color = origColor;
+      btn.style.borderColor = origBorder;
+    }, 1500);
+  }).catch(() => showToast('❌ 复制失败，请手动选中', 'error'));
+}
+
+function tbmCopyAll(btn) {
+  const p = _tbmPayload || {};
+  const isBiz = p.tin_type === 'BUSINESS';
+  const fullName = tbmValueForKey('__full_name__');
+  const cityStateZip = tbmValueForKey('__city_state_zip__');
+  const lines = [];
+  if (isBiz && p.business_name) lines.push(`Business Name: ${p.business_name}`);
+  if (fullName) lines.push(`Name: ${fullName}`);
+  lines.push(`${isBiz ? 'EIN' : 'SSN'}: ${p.tin || ''}`);
+  if (p.dob) lines.push(`DOB: ${p.dob}`);
+  if (p.addr_street) lines.push(`Address: ${p.addr_street}${p.addr_street2 ? ' ' + p.addr_street2 : ''}`);
+  if (cityStateZip) lines.push(`City/State/ZIP: ${cityStateZip}`);
+  tbmCopy(btn, lines.join('\n'));
+}
+
+function tbmToggleTin(btn) {
+  if (!_tbmPayload) return;
+  _tbmTinShown = !_tbmTinShown;
+  const el = document.getElementById('tbmTinDisplay');
+  el.textContent = _tbmTinShown ? _tbmPayload.tin : _tbmPayload.tin_masked;
+  btn.textContent = _tbmTinShown ? '🙈 隐藏' : '👁 显示';
+}
+
+function closeTaxBanditsManualModal() {
+  document.getElementById('taxBanditsManualModal').classList.remove('show');
+  _tbmPayload = null;
 }
 
 async function refreshW9Status() {
