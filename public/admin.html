@@ -493,9 +493,10 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('client-inquiries')" data-tab="client-inquiries" data-role="admin,staff">🏢 客户问卷</a>
       <a onclick="showTab('quotes')" data-tab="quotes" data-role="admin,staff">📋 报价请求</a>
       <a onclick="showTab('partners')" data-tab="partners" data-role="admin,staff">🤝 合作公司</a>
-      <a onclick="showTab('labor-companies')" data-tab="labor-companies" data-role="admin,staff">🏢 劳务公司</a>
     </div>
   </div>
+
+  <a onclick="showTab('labor-companies')" data-tab="labor-companies" data-role="admin,staff">🏢 劳务公司 Subcontractor</a>
 
   <!-- 员工管理 -->
   <div class="nav-group open" id="sec-worker" data-role="admin,staff">
@@ -1030,7 +1031,7 @@ tr:hover td{background:var(--sky-light)}
 <!-- Labor Companies -->
 <div id="tab-labor-companies" style="display:none">
   <div class="top">
-    <h1>🏢 劳务公司管理</h1>
+    <h1>🏢 劳务公司 Subcontractor</h1>
     <div class="top-actions">
       <button class="btn" onclick="openLaborCompanyModal()">+ 新增劳务公司</button>
     </div>
@@ -7158,7 +7159,7 @@ function logout() {
 
 // ─── Tabs ───
 const _TAB_TO_SEC = {
-  inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer', 'labor-companies':'sec-customer',
+  inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker', scheduling:'sec-worker', warehouses:'sec-worker', 'warehouse-checkins':'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
