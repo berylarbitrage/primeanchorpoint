@@ -1037,13 +1037,16 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <p style="color:var(--gray-500);font-size:.85rem;margin:.5rem 0 1rem">用于"付款方式确认"任务中，将工人工资支付外包给指定的分包商。</p>
-  <div class="card"><table><thead><tr><th>公司名称</th><th>联系人</th><th>电话</th><th>邮箱</th><th>使用工人数</th><th>状态</th><th>操作</th></tr></thead><tbody id="laborCompaniesTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>公司名称</th><th>联系人</th><th>电话</th><th>EIN</th><th>W-9</th><th>协议</th><th>付款方式</th><th>使用工人数</th><th>状态</th><th>操作</th></tr></thead><tbody id="laborCompaniesTable"></tbody></table></div>
 </div>
 
 <!-- Subcontractor Edit Modal -->
-<div class="modal-bg" id="laborCompanyModal"><div class="modal" style="max-width:560px">
+<div class="modal-bg" id="laborCompanyModal"><div class="modal" style="max-width:600px">
   <h2 id="laborCompanyModalTitle">新增分包商</h2>
   <input type="hidden" id="lcId">
+
+  <!-- Section: 基本信息 -->
+  <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin:.4rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--gray-200)">基本信息</div>
   <div class="field"><label>公司名称 *</label><input type="text" id="lcName" placeholder="例如：XX 劳务派遣有限公司"></div>
   <div class="field"><label>联系人</label><input type="text" id="lcContactPerson"></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
@@ -1051,9 +1054,66 @@ tr:hover td{background:var(--sky-light)}
     <div class="field"><label>邮箱</label><input type="text" id="lcEmail"></div>
   </div>
   <div class="field"><label>地址</label><input type="text" id="lcAddress"></div>
-  <div class="field"><label>备注</label><textarea id="lcNotes" rows="3"></textarea></div>
+  <div class="field"><label>备注</label><textarea id="lcNotes" rows="2"></textarea></div>
   <div class="field"><label><input type="checkbox" id="lcActive" checked> 启用</label></div>
-  <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.8rem">
+
+  <!-- Section: 税务信息 -->
+  <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin:1rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--gray-200)">税务信息</div>
+  <div style="display:grid;grid-template-columns:1fr auto;gap:.6rem;align-items:flex-end">
+    <div class="field" style="margin-bottom:0">
+      <label>EIN（雇主税号）</label>
+      <input type="text" id="lcEin" placeholder="XX-XXXXXXX" maxlength="10" oninput="formatEin(this)">
+    </div>
+    <div>
+      <button class="btn btn-sm" id="lcVerifyEinBtn" onclick="verifyLaborCompanyEin()" style="white-space:nowrap">✓ 标记已验证</button>
+    </div>
+  </div>
+  <div id="lcEinVerifiedBadge" style="display:none;margin-top:.4rem;font-size:.8rem;color:#16a34a">✅ 税号已验证</div>
+
+  <!-- W9 上传 -->
+  <div style="margin-top:.8rem">
+    <label style="font-size:.85rem;font-weight:500;color:var(--gray-700)">W-9 文件</label>
+    <div id="lcW9Current" style="display:none;margin-top:.3rem;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:6px;padding:.5rem .7rem;font-size:.83rem;display:flex;align-items:center;gap:.6rem">
+      <span>📄 <a id="lcW9Link" href="#" target="_blank" style="color:var(--sky)">已上传 W-9</a></span>
+      <button class="btn btn-sm" style="background:#fff1f2;color:#be123c;border:1px solid #fda4af;margin-left:auto" onclick="deleteLaborCompanyW9()">删除</button>
+    </div>
+    <div id="lcW9Upload" style="margin-top:.4rem">
+      <input type="file" id="lcW9File" accept=".pdf,.jpg,.jpeg,.png" style="font-size:.83rem">
+      <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">支持 PDF / 图片（≤20MB）</div>
+    </div>
+  </div>
+
+  <!-- Section: 协议 -->
+  <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin:1rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--gray-200)">协议</div>
+  <div class="field">
+    <label><input type="checkbox" id="lcAgreementSigned"> 协议已签署</label>
+  </div>
+  <div id="lcAgreementSignedAtRow" style="display:none;font-size:.8rem;color:var(--gray-500);margin-top:-.4rem;margin-bottom:.5rem" id="lcAgreementSignedAt"></div>
+  <div class="field"><label>协议备注</label><textarea id="lcAgreementNotes" rows="2" placeholder="例如：合同编号、签署日期等"></textarea></div>
+
+  <!-- Section: 付款方式 -->
+  <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin:1rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--gray-200)">付款方式</div>
+  <div class="field">
+    <label>付款类型</label>
+    <select id="lcPaymentMethodType" style="width:100%">
+      <option value="">— 未设置 —</option>
+      <option value="check">支票 (Check)</option>
+      <option value="ach">银行转账 ACH</option>
+      <option value="wire">电汇 Wire Transfer</option>
+      <option value="zelle">Zelle</option>
+      <option value="other">其他</option>
+    </select>
+  </div>
+  <div id="lcBankSection">
+    <div class="field"><label>银行名称</label><input type="text" id="lcBankName" placeholder="例如：Chase Bank"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="field"><label>路由号 (Routing #)</label><input type="text" id="lcRoutingNumber" placeholder="9位数字" maxlength="9"></div>
+      <div class="field"><label>账户号 (Account #)</label><input type="text" id="lcAccountNumber" placeholder="账户号码"></div>
+    </div>
+  </div>
+  <div class="field"><label>付款备注</label><textarea id="lcPaymentNotes" rows="2" placeholder="其他付款说明"></textarea></div>
+
+  <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
     <button class="btn btn-outline" onclick="closeLaborCompanyModal()">取消</button>
     <button class="btn btn-green" onclick="saveLaborCompany()">保存</button>
   </div>
@@ -10564,12 +10624,16 @@ async function loadLaborCompanies() {
 function renderLaborCompanies() {
   const tbody = document.getElementById('laborCompaniesTable');
   if (!tbody) return;
-  tbody.innerHTML = !_allLaborCompanies.length ? '<tr><td colspan="7" class="empty">暂无分包商，点击 "+ 新增分包商" 添加</td></tr>' : _allLaborCompanies.map(c => `
+  const pmLabel = {check:'支票',ach:'ACH',wire:'电汇',zelle:'Zelle',other:'其他'};
+  tbody.innerHTML = !_allLaborCompanies.length ? '<tr><td colspan="10" class="empty">暂无分包商，点击 "+ 新增分包商" 添加</td></tr>' : _allLaborCompanies.map(c => `
     <tr>
       <td><strong>${esc(c.name)}</strong></td>
       <td>${esc(c.contact_person||'')}</td>
       <td>${esc(c.phone||'')}</td>
-      <td>${esc(c.email||'')}</td>
+      <td style="font-family:monospace;font-size:.83rem">${c.ein?`${esc(c.ein)} ${c.ein_verified?'<span title="已验证" style="color:#16a34a">✔</span>':''}`:'-'}</td>
+      <td>${c.w9_file_name?`<a href="/api/admin/labor-companies/${c.id}/w9" target="_blank" style="color:var(--sky);font-size:.8rem">📄 W-9</a>`:'<span style="color:var(--gray-300);font-size:.8rem">—</span>'}</td>
+      <td>${c.agreement_signed?'<span class="badge badge-completed" style="font-size:.75rem">已签</span>':'<span style="color:var(--gray-300);font-size:.8rem">—</span>'}</td>
+      <td style="font-size:.83rem">${c.payment_method_type?(pmLabel[c.payment_method_type]||c.payment_method_type):'—'}</td>
       <td>${c.worker_count||0}</td>
       <td>${c.active?'<span class="badge badge-completed">启用</span>':'<span class="badge badge-cancelled">已停用</span>'}</td>
       <td>
@@ -10577,6 +10641,11 @@ function renderLaborCompanies() {
         ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="deleteLaborCompany(${c.id})">删除</button>`:''}
       </td>
     </tr>`).join('');
+}
+function formatEin(input) {
+  let v = input.value.replace(/[^0-9]/g, '');
+  if (v.length > 2) v = v.slice(0,2) + '-' + v.slice(2,9);
+  input.value = v;
 }
 function openLaborCompanyModal(c) {
   document.getElementById('laborCompanyModalTitle').textContent = c ? '编辑分包商' : '新增分包商';
@@ -10588,6 +10657,38 @@ function openLaborCompanyModal(c) {
   document.getElementById('lcAddress').value = c?.address || '';
   document.getElementById('lcNotes').value = c?.notes || '';
   document.getElementById('lcActive').checked = c ? c.active!==0 : true;
+  // Tax
+  document.getElementById('lcEin').value = c?.ein || '';
+  const einVerified = c?.ein_verified;
+  document.getElementById('lcEinVerifiedBadge').style.display = einVerified ? '' : 'none';
+  document.getElementById('lcVerifyEinBtn').textContent = einVerified ? '✓ 已验证（点击撤销）' : '✓ 标记已验证';
+  document.getElementById('lcVerifyEinBtn').style.display = c?.id ? '' : 'none';
+  // W9
+  const w9Wrap = document.getElementById('lcW9Current');
+  if (c?.w9_file_name) {
+    w9Wrap.style.display = 'flex';
+    document.getElementById('lcW9Link').href = `/api/admin/labor-companies/${c.id}/w9`;
+    document.getElementById('lcW9Link').textContent = '📄 ' + c.w9_file_name;
+    document.getElementById('lcW9Upload').style.display = 'none';
+  } else {
+    w9Wrap.style.display = 'none';
+    document.getElementById('lcW9Upload').style.display = '';
+  }
+  document.getElementById('lcW9File').value = '';
+  // Agreement
+  document.getElementById('lcAgreementSigned').checked = !!(c?.agreement_signed);
+  document.getElementById('lcAgreementNotes').value = c?.agreement_notes || '';
+  const sigAtRow = document.getElementById('lcAgreementSignedAtRow');
+  if (c?.agreement_signed && c?.agreement_signed_at) {
+    sigAtRow.style.display = '';
+    sigAtRow.textContent = '签署时间：' + new Date(c.agreement_signed_at).toLocaleDateString('zh-CN');
+  } else { sigAtRow.style.display = 'none'; }
+  // Payment
+  document.getElementById('lcPaymentMethodType').value = c?.payment_method_type || '';
+  document.getElementById('lcBankName').value = c?.bank_name || '';
+  document.getElementById('lcRoutingNumber').value = c?.routing_number || '';
+  document.getElementById('lcAccountNumber').value = c?.account_number || '';
+  document.getElementById('lcPaymentNotes').value = c?.payment_notes || '';
   document.getElementById('laborCompanyModal').classList.add('show');
 }
 function closeLaborCompanyModal() { document.getElementById('laborCompanyModal').classList.remove('show'); }
@@ -10604,14 +10705,33 @@ async function saveLaborCompany() {
     email: document.getElementById('lcEmail').value.trim(),
     address: document.getElementById('lcAddress').value.trim(),
     notes: document.getElementById('lcNotes').value.trim(),
-    active: document.getElementById('lcActive').checked ? 1 : 0
+    active: document.getElementById('lcActive').checked ? 1 : 0,
+    ein: document.getElementById('lcEin').value.trim(),
+    agreement_signed: document.getElementById('lcAgreementSigned').checked ? 1 : 0,
+    agreement_notes: document.getElementById('lcAgreementNotes').value.trim(),
+    payment_method_type: document.getElementById('lcPaymentMethodType').value,
+    bank_name: document.getElementById('lcBankName').value.trim(),
+    routing_number: document.getElementById('lcRoutingNumber').value.trim(),
+    account_number: document.getElementById('lcAccountNumber').value.trim(),
+    payment_notes: document.getElementById('lcPaymentNotes').value.trim()
   };
   if (!payload.name) { showToast('请填写公司名称', 'error'); return; }
+  const einVal = payload.ein;
+  if (einVal && !/^\d{2}-\d{7}$/.test(einVal)) { showToast('EIN 格式不正确，应为 XX-XXXXXXX', 'error'); return; }
   try {
+    let savedId = id;
     if (id) {
       await api(`/admin/labor-companies/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
     } else {
-      await api('/admin/labor-companies', { method: 'POST', body: JSON.stringify(payload) });
+      const r = await api('/admin/labor-companies', { method: 'POST', body: JSON.stringify(payload) });
+      savedId = r.id;
+    }
+    // Upload W9 if a file was selected
+    const w9File = document.getElementById('lcW9File').files[0];
+    if (w9File && savedId) {
+      const fd = new FormData();
+      fd.append('file', w9File);
+      await fetch(`/api/admin/labor-companies/${savedId}/w9`, { method: 'POST', body: fd, credentials: 'include' });
     }
     closeLaborCompanyModal();
     await loadLaborCompanies();
@@ -10619,6 +10739,31 @@ async function saveLaborCompany() {
   } catch (e) {
     showToast('保存失败：' + (e.message || '未知错误'), 'error');
   }
+}
+async function verifyLaborCompanyEin() {
+  const id = document.getElementById('lcId').value;
+  if (!id) { showToast('请先保存分包商再验证 EIN', 'error'); return; }
+  const c = _allLaborCompanies.find(x => x.id === parseInt(id));
+  const newVerified = !(c?.ein_verified);
+  try {
+    await api(`/admin/labor-companies/${id}/verify-ein`, { method: 'PUT', body: JSON.stringify({ verified: newVerified }) });
+    await loadLaborCompanies();
+    const updated = _allLaborCompanies.find(x => x.id === parseInt(id));
+    document.getElementById('lcEinVerifiedBadge').style.display = updated?.ein_verified ? '' : 'none';
+    document.getElementById('lcVerifyEinBtn').textContent = updated?.ein_verified ? '✓ 已验证（点击撤销）' : '✓ 标记已验证';
+    showToast(updated?.ein_verified ? 'EIN 已标记为已验证' : '已撤销 EIN 验证', 'success');
+  } catch(e) { showToast('操作失败', 'error'); }
+}
+async function deleteLaborCompanyW9() {
+  const id = document.getElementById('lcId').value;
+  if (!id || !confirm('确认删除 W-9 文件？')) return;
+  try {
+    await api(`/admin/labor-companies/${id}/w9`, { method: 'DELETE' });
+    await loadLaborCompanies();
+    document.getElementById('lcW9Current').style.display = 'none';
+    document.getElementById('lcW9Upload').style.display = '';
+    showToast('W-9 已删除', 'success');
+  } catch(e) { showToast('删除失败', 'error'); }
 }
 async function deleteLaborCompany(id) {
   if (!confirm('确认删除此分包商？此操作不可撤销。')) return;
@@ -27614,7 +27759,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', rate: String(item.rate || ''), days: {} };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
@@ -28143,10 +28288,16 @@ function renderInvpManualTable(skipSave) {
     const regHrs = Math.min(totalHrs, 40);
     const otHrs  = Math.max(totalHrs - 40, 0);
     const subtotal = regHrs * rate + otHrs * otRateVal;
+    const linkBadge = emp.linked_employee_id
+      ? `<span title="已链接到系统员工 ${esc(emp.linked_employee_code||'')} — 点击解除" style="display:inline-flex;align-items:center;gap:3px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:10px;padding:1px 7px;font-size:.7rem;line-height:1.3;cursor:pointer;width:fit-content" onclick="invpUnlinkEmp(${emp.uid})">🔗 ${esc(emp.linked_employee_code || emp.linked_employee_name || '已链接')} ✕</span>`
+      : `<button type="button" onclick="invpOpenLinkModal(${emp.uid})" title="链接到系统员工" style="background:none;border:1px dashed var(--gray-300);border-radius:10px;color:var(--gray-500);font-size:.7rem;padding:1px 7px;cursor:pointer;line-height:1.3;width:fit-content">🔗 链接员工</button>`;
     return `<tr class="invp-manual-row" data-uid="${emp.uid}">
       <td style="padding:3px 6px">
-        <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
-          placeholder="员工姓名" style="width:100px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
+            placeholder="员工姓名" style="width:120px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
+          ${linkBadge}
+        </div>
       </td>
       <td style="padding:3px 4px">
         <select class="invp-man-cat" data-uid="${emp.uid}"
@@ -28261,7 +28412,7 @@ function invpUpdateRowTotal(row) {
 
 function invpAddEmp() {
   _invpSaveTableState();
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', rate: '', days: {} });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', rate: '', days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' });
   renderInvpManualTable();
   // Focus the new name input
   const rows = document.querySelectorAll('.invp-manual-row');
@@ -28759,26 +28910,105 @@ async function onInvpEmpImportSearch(val) {
   const addedNames = new Set((window._invpManualEmps||[]).map(e => e.name.trim().toLowerCase()));
   sugg.innerHTML = matches.map(e => {
     const fullName = `${e.first_name||''} ${e.last_name||''}`.trim();
+    const code = e.employee_id || '';
     const already = addedNames.has(fullName.toLowerCase());
     return `<div style="padding:7px 12px;cursor:${already?'default':'pointer'};border-bottom:1px solid var(--gray-100);font-size:.88rem;opacity:${already?'.5':'1'}"
-      ${already?'':'onmousedown="invpImportEmpById('+e.id+',\''+fullName.replace(/'/g,"\\'")+'\')"'}
+      ${already?'':'onmousedown="invpImportEmpById('+e.id+',\''+fullName.replace(/'/g,"\\'")+'\',\''+String(code).replace(/'/g,"\\'")+'\')"'}
       onmouseover="if(!${already})this.style.background='var(--gray-50)'" onmouseout="this.style.background=''">
       <span style="font-weight:600">${esc(fullName)}</span>
+      ${code ? ` <span style="font-size:.72rem;color:var(--gray-400)">${esc(code)}</span>` : ''}
       ${already ? ' <span style="font-size:.75rem;color:var(--gray-400)">(已添加)</span>' : ''}
     </div>`;
   }).join('');
 }
 
-function invpImportEmpById(id, fullName) {
+function invpImportEmpById(id, fullName, code) {
   _invpSaveTableState();
   const already = (window._invpManualEmps||[]).some(e => e.name.trim().toLowerCase() === fullName.trim().toLowerCase());
   if (already) return;
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', rate: '', days: {} });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', rate: '', days: {}, linked_employee_id: id || null, linked_employee_code: code || '', linked_employee_name: fullName });
   renderInvpManualTable();
   const inp = document.getElementById('invpEmpImportInput');
   if (inp) { inp.value = ''; }
   const sugg = document.getElementById('invpEmpImportSugg');
   if (sugg) sugg.style.display = 'none';
+}
+
+// ── Per-row "link to system employee" feature ──
+function invpOpenLinkModal(uid) {
+  _invpSaveTableState();
+  window._invpLinkTargetUid = uid;
+  const emp = (window._invpManualEmps||[]).find(e => e.uid === uid);
+  const modal = document.getElementById('invpLinkModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  const hint = document.getElementById('invpLinkRowName');
+  if (hint) hint.textContent = emp && emp.name ? `当前行: ${emp.name}` : '当前行: (未填写姓名)';
+  const inp = document.getElementById('invpLinkInput');
+  if (inp) { inp.value = emp && emp.name ? emp.name : ''; setTimeout(() => inp.focus(), 30); }
+  onInvpLinkSearch(inp ? inp.value : '');
+}
+
+function invpCloseLinkModal() {
+  const modal = document.getElementById('invpLinkModal');
+  if (modal) modal.style.display = 'none';
+  window._invpLinkTargetUid = null;
+}
+
+async function onInvpLinkSearch(val) {
+  const sugg = document.getElementById('invpLinkSugg');
+  if (!sugg) return;
+  if (!window._invpSysEmps) {
+    const res = await api('/admin/employees').catch(() => []);
+    window._invpSysEmps = Array.isArray(res) ? res : (res?.employees || []);
+  }
+  const q = (val||'').trim().toLowerCase();
+  const matches = q
+    ? window._invpSysEmps.filter(e =>
+        (`${e.first_name||''} ${e.last_name||''}`).toLowerCase().includes(q) ||
+        (e.last_name||'').toLowerCase().includes(q) ||
+        String(e.employee_id||'').toLowerCase().includes(q))
+    : window._invpSysEmps.slice(0, 30);
+  if (!matches.length) {
+    sugg.innerHTML = '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">未找到匹配的员工</div>';
+    return;
+  }
+  sugg.innerHTML = matches.map(e => {
+    const fullName = `${e.first_name||''} ${e.last_name||''}`.trim();
+    const code = e.employee_id || '';
+    return `<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.9rem;display:flex;justify-content:space-between;align-items:center"
+      onmousedown="invpDoLink(${e.id}, '${fullName.replace(/'/g,"\\'")}', '${String(code).replace(/'/g,"\\'")}')"
+      onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background=''">
+      <span><span style="font-weight:600">${esc(fullName)}</span>${code ? ` <span style="font-size:.75rem;color:var(--gray-400);margin-left:.4rem">${esc(code)}</span>` : ''}</span>
+      <span style="font-size:.72rem;color:var(--sky)">链接 →</span>
+    </div>`;
+  }).join('');
+}
+
+function invpDoLink(empId, fullName, code) {
+  const uid = window._invpLinkTargetUid;
+  if (!uid) { invpCloseLinkModal(); return; }
+  _invpSaveTableState();
+  const emp = (window._invpManualEmps||[]).find(e => e.uid === uid);
+  if (!emp) { invpCloseLinkModal(); return; }
+  emp.linked_employee_id = empId || null;
+  emp.linked_employee_code = code || '';
+  emp.linked_employee_name = fullName || '';
+  // If the name cell was empty, fill it from the linked employee
+  if (!emp.name || !emp.name.trim()) emp.name = fullName || '';
+  invpCloseLinkModal();
+  renderInvpManualTable(true);
+  if (typeof showToast === 'function') showToast(`已链接到 ${fullName}${code ? ' ('+code+')' : ''}`, 'success');
+}
+
+function invpUnlinkEmp(uid) {
+  _invpSaveTableState();
+  const emp = (window._invpManualEmps||[]).find(e => e.uid === uid);
+  if (!emp) return;
+  emp.linked_employee_id = null;
+  emp.linked_employee_code = '';
+  emp.linked_employee_name = '';
+  renderInvpManualTable(true);
 }
 
 function applyInvUniformRate(val) {
@@ -28803,7 +29033,7 @@ function getInvpManualItems() {
       const regHours = Math.min(totalHours, 40);
       const otHours  = Math.max(totalHours - 40, 0);
       const total = regHours * rate + otHours * otRate;
-      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total };
+      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
@@ -29513,6 +29743,25 @@ function printInvoice() {
         <button class="btn btn-outline" onclick="invpCloseDistribute()">取消</button>
         <button class="btn btn-green" onclick="invpApplyDistribute()">⇆ 应用</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="invpLinkModal" style="display:none">
+  <div class="modal" style="max-width:520px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+      <h2 style="margin:0;font-size:1.05rem">🔗 链接到系统员工</h2>
+      <button class="btn btn-sm btn-outline" onclick="invpCloseLinkModal()">关闭</button>
+    </div>
+    <div id="invpLinkRowName" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.6rem"></div>
+    <div class="field" style="margin-bottom:.6rem">
+      <input type="text" id="invpLinkInput" placeholder="搜索员工姓名 / 员工编号..."
+        style="width:100%;padding:.45rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.92rem"
+        oninput="onInvpLinkSearch(this.value)">
+    </div>
+    <div id="invpLinkSugg" style="max-height:340px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:6px"></div>
+    <div style="background:#f0f9ff;border-left:3px solid var(--sky);padding:.5rem .75rem;font-size:.76rem;color:#0c4a6e;margin-top:.7rem">
+      链接后，Invoice 保存时会记录该行对应的系统员工 ID。已保存的 Invoice 再次打开时仍可看到链接状态。
     </div>
   </div>
 </div>

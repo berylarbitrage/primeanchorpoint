@@ -1944,6 +1944,21 @@ try { db.exec("ALTER TABLE time_entries ADD COLUMN site_timezone TEXT DEFAULT NU
 try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_latitude REAL DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_longitude REAL DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN manager_confirmed INTEGER DEFAULT 0"); } catch {}
+// Migrate: labor_companies — EIN, W9, agreement, payment method
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein_verified INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein_verified_at DATETIME DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN w9_file_path TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN w9_file_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN w9_uploaded_at DATETIME DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN agreement_signed INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN agreement_signed_at DATETIME DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN agreement_notes TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN payment_method_type TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN bank_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN routing_number TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN account_number TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN payment_notes TEXT DEFAULT ''"); } catch {}
 
 // Worker payments ledger
 db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
@@ -13531,16 +13546,26 @@ app.get('/api/admin/labor-companies', requireAdmin, (req, res) => {
 app.post('/api/admin/labor-companies', requireAdmin, (req, res) => {
   const d = req.body || {};
   if (!d.name || !String(d.name).trim()) return res.status(400).json({ error: 'Name required' });
-  const r = db.prepare(`INSERT INTO labor_companies (name, contact_person, phone, email, address, notes, active) VALUES (?,?,?,?,?,?,?)`)
-    .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1);
+  const r = db.prepare(`INSERT INTO labor_companies (name, contact_person, phone, email, address, notes, active, ein, payment_method_type, bank_name, routing_number, account_number, payment_notes, agreement_signed, agreement_notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1,
+         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.payment_notes||'',
+         d.agreement_signed?1:0, d.agreement_notes||'');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/labor-companies/:id', requireAdmin, (req, res) => {
   const d = req.body || {};
   if (!d.name || !String(d.name).trim()) return res.status(400).json({ error: 'Name required' });
-  db.prepare(`UPDATE labor_companies SET name=?, contact_person=?, phone=?, email=?, address=?, notes=?, active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1, req.params.id);
+  const current = db.prepare('SELECT agreement_signed, agreement_signed_at FROM labor_companies WHERE id=?').get(req.params.id);
+  const newAgreementSigned = d.agreement_signed ? 1 : 0;
+  const agreementSignedAt = newAgreementSigned && current && !current.agreement_signed ? 'CURRENT_TIMESTAMP' : (current && current.agreement_signed_at ? current.agreement_signed_at : null);
+  db.prepare(`UPDATE labor_companies SET name=?, contact_person=?, phone=?, email=?, address=?, notes=?, active=?,
+    ein=?, payment_method_type=?, bank_name=?, routing_number=?, account_number=?, payment_notes=?,
+    agreement_signed=?, agreement_signed_at=CASE WHEN ?=1 AND (agreement_signed=0 OR agreement_signed IS NULL) THEN CURRENT_TIMESTAMP ELSE agreement_signed_at END,
+    agreement_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1,
+         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.payment_notes||'',
+         newAgreementSigned, newAgreementSigned, d.agreement_notes||'', req.params.id);
   res.json({ success: true });
 });
 
@@ -13551,6 +13576,54 @@ app.delete('/api/admin/labor-companies/:id', requireAdmin, requireRole('admin'),
     return res.status(400).json({ error: `该分包商已被 ${usage.n} 名工人使用，无法删除。可改为停用。` });
   }
   db.prepare('DELETE FROM labor_companies WHERE id=?').run(id);
+  res.json({ success: true });
+});
+
+// W9 upload for labor company
+app.post('/api/admin/labor-companies/:id/w9', requireAdmin, docUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'File required' });
+  const id = parseInt(req.params.id);
+  const lc = db.prepare('SELECT id, w9_file_path FROM labor_companies WHERE id=?').get(id);
+  if (!lc) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE labor_companies SET w9_file_path=?, w9_file_name=?, w9_uploaded_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(req.file.path, req.file.originalname, id);
+  res.json({ success: true, file_name: req.file.originalname });
+});
+
+// W9 download for labor company
+app.get('/api/admin/labor-companies/:id/w9', requireAdmin, async (req, res) => {
+  const lc = db.prepare('SELECT w9_file_path, w9_file_name FROM labor_companies WHERE id=?').get(req.params.id);
+  if (!lc || !lc.w9_file_path) return res.status(404).json({ error: 'No W9 on file' });
+  const filePath = lc.w9_file_path;
+  const fileName = lc.w9_file_name || 'W9.pdf';
+  if (storage && storage.isR2 && storage.isR2()) {
+    try {
+      const url = await storage.getDownloadUrl(filePath);
+      return res.redirect(302, url);
+    } catch (e) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+  }
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
+  res.download(filePath, fileName);
+});
+
+// W9 delete for labor company
+app.delete('/api/admin/labor-companies/:id/w9', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  db.prepare(`UPDATE labor_companies SET w9_file_path='', w9_file_name='', w9_uploaded_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id);
+  res.json({ success: true });
+});
+
+// EIN verify / unverify
+app.put('/api/admin/labor-companies/:id/verify-ein', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { verified } = req.body || {};
+  if (verified) {
+    db.prepare(`UPDATE labor_companies SET ein_verified=1, ein_verified_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id);
+  } else {
+    db.prepare(`UPDATE labor_companies SET ein_verified=0, ein_verified_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id);
+  }
   res.json({ success: true });
 });
 
