@@ -27759,7 +27759,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', rate: String(item.rate || ''), days: {} };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
@@ -28288,10 +28288,16 @@ function renderInvpManualTable(skipSave) {
     const regHrs = Math.min(totalHrs, 40);
     const otHrs  = Math.max(totalHrs - 40, 0);
     const subtotal = regHrs * rate + otHrs * otRateVal;
+    const linkBadge = emp.linked_employee_id
+      ? `<span title="已链接到系统员工 ${esc(emp.linked_employee_code||'')} — 点击解除" style="display:inline-flex;align-items:center;gap:3px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:10px;padding:1px 7px;font-size:.7rem;line-height:1.3;cursor:pointer;width:fit-content" onclick="invpUnlinkEmp(${emp.uid})">🔗 ${esc(emp.linked_employee_code || emp.linked_employee_name || '已链接')} ✕</span>`
+      : `<button type="button" onclick="invpOpenLinkModal(${emp.uid})" title="链接到系统员工" style="background:none;border:1px dashed var(--gray-300);border-radius:10px;color:var(--gray-500);font-size:.7rem;padding:1px 7px;cursor:pointer;line-height:1.3;width:fit-content">🔗 链接员工</button>`;
     return `<tr class="invp-manual-row" data-uid="${emp.uid}">
       <td style="padding:3px 6px">
-        <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
-          placeholder="员工姓名" style="width:100px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
+            placeholder="员工姓名" style="width:120px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
+          ${linkBadge}
+        </div>
       </td>
       <td style="padding:3px 4px">
         <select class="invp-man-cat" data-uid="${emp.uid}"
@@ -28406,7 +28412,7 @@ function invpUpdateRowTotal(row) {
 
 function invpAddEmp() {
   _invpSaveTableState();
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', rate: '', days: {} });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', rate: '', days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' });
   renderInvpManualTable();
   // Focus the new name input
   const rows = document.querySelectorAll('.invp-manual-row');
@@ -28904,26 +28910,105 @@ async function onInvpEmpImportSearch(val) {
   const addedNames = new Set((window._invpManualEmps||[]).map(e => e.name.trim().toLowerCase()));
   sugg.innerHTML = matches.map(e => {
     const fullName = `${e.first_name||''} ${e.last_name||''}`.trim();
+    const code = e.employee_id || '';
     const already = addedNames.has(fullName.toLowerCase());
     return `<div style="padding:7px 12px;cursor:${already?'default':'pointer'};border-bottom:1px solid var(--gray-100);font-size:.88rem;opacity:${already?'.5':'1'}"
-      ${already?'':'onmousedown="invpImportEmpById('+e.id+',\''+fullName.replace(/'/g,"\\'")+'\')"'}
+      ${already?'':'onmousedown="invpImportEmpById('+e.id+',\''+fullName.replace(/'/g,"\\'")+'\',\''+String(code).replace(/'/g,"\\'")+'\')"'}
       onmouseover="if(!${already})this.style.background='var(--gray-50)'" onmouseout="this.style.background=''">
       <span style="font-weight:600">${esc(fullName)}</span>
+      ${code ? ` <span style="font-size:.72rem;color:var(--gray-400)">${esc(code)}</span>` : ''}
       ${already ? ' <span style="font-size:.75rem;color:var(--gray-400)">(已添加)</span>' : ''}
     </div>`;
   }).join('');
 }
 
-function invpImportEmpById(id, fullName) {
+function invpImportEmpById(id, fullName, code) {
   _invpSaveTableState();
   const already = (window._invpManualEmps||[]).some(e => e.name.trim().toLowerCase() === fullName.trim().toLowerCase());
   if (already) return;
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', rate: '', days: {} });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', rate: '', days: {}, linked_employee_id: id || null, linked_employee_code: code || '', linked_employee_name: fullName });
   renderInvpManualTable();
   const inp = document.getElementById('invpEmpImportInput');
   if (inp) { inp.value = ''; }
   const sugg = document.getElementById('invpEmpImportSugg');
   if (sugg) sugg.style.display = 'none';
+}
+
+// ── Per-row "link to system employee" feature ──
+function invpOpenLinkModal(uid) {
+  _invpSaveTableState();
+  window._invpLinkTargetUid = uid;
+  const emp = (window._invpManualEmps||[]).find(e => e.uid === uid);
+  const modal = document.getElementById('invpLinkModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  const hint = document.getElementById('invpLinkRowName');
+  if (hint) hint.textContent = emp && emp.name ? `当前行: ${emp.name}` : '当前行: (未填写姓名)';
+  const inp = document.getElementById('invpLinkInput');
+  if (inp) { inp.value = emp && emp.name ? emp.name : ''; setTimeout(() => inp.focus(), 30); }
+  onInvpLinkSearch(inp ? inp.value : '');
+}
+
+function invpCloseLinkModal() {
+  const modal = document.getElementById('invpLinkModal');
+  if (modal) modal.style.display = 'none';
+  window._invpLinkTargetUid = null;
+}
+
+async function onInvpLinkSearch(val) {
+  const sugg = document.getElementById('invpLinkSugg');
+  if (!sugg) return;
+  if (!window._invpSysEmps) {
+    const res = await api('/admin/employees').catch(() => []);
+    window._invpSysEmps = Array.isArray(res) ? res : (res?.employees || []);
+  }
+  const q = (val||'').trim().toLowerCase();
+  const matches = q
+    ? window._invpSysEmps.filter(e =>
+        (`${e.first_name||''} ${e.last_name||''}`).toLowerCase().includes(q) ||
+        (e.last_name||'').toLowerCase().includes(q) ||
+        String(e.employee_id||'').toLowerCase().includes(q))
+    : window._invpSysEmps.slice(0, 30);
+  if (!matches.length) {
+    sugg.innerHTML = '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">未找到匹配的员工</div>';
+    return;
+  }
+  sugg.innerHTML = matches.map(e => {
+    const fullName = `${e.first_name||''} ${e.last_name||''}`.trim();
+    const code = e.employee_id || '';
+    return `<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.9rem;display:flex;justify-content:space-between;align-items:center"
+      onmousedown="invpDoLink(${e.id}, '${fullName.replace(/'/g,"\\'")}', '${String(code).replace(/'/g,"\\'")}')"
+      onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background=''">
+      <span><span style="font-weight:600">${esc(fullName)}</span>${code ? ` <span style="font-size:.75rem;color:var(--gray-400);margin-left:.4rem">${esc(code)}</span>` : ''}</span>
+      <span style="font-size:.72rem;color:var(--sky)">链接 →</span>
+    </div>`;
+  }).join('');
+}
+
+function invpDoLink(empId, fullName, code) {
+  const uid = window._invpLinkTargetUid;
+  if (!uid) { invpCloseLinkModal(); return; }
+  _invpSaveTableState();
+  const emp = (window._invpManualEmps||[]).find(e => e.uid === uid);
+  if (!emp) { invpCloseLinkModal(); return; }
+  emp.linked_employee_id = empId || null;
+  emp.linked_employee_code = code || '';
+  emp.linked_employee_name = fullName || '';
+  // If the name cell was empty, fill it from the linked employee
+  if (!emp.name || !emp.name.trim()) emp.name = fullName || '';
+  invpCloseLinkModal();
+  renderInvpManualTable(true);
+  if (typeof showToast === 'function') showToast(`已链接到 ${fullName}${code ? ' ('+code+')' : ''}`, 'success');
+}
+
+function invpUnlinkEmp(uid) {
+  _invpSaveTableState();
+  const emp = (window._invpManualEmps||[]).find(e => e.uid === uid);
+  if (!emp) return;
+  emp.linked_employee_id = null;
+  emp.linked_employee_code = '';
+  emp.linked_employee_name = '';
+  renderInvpManualTable(true);
 }
 
 function applyInvUniformRate(val) {
@@ -28948,7 +29033,7 @@ function getInvpManualItems() {
       const regHours = Math.min(totalHours, 40);
       const otHours  = Math.max(totalHours - 40, 0);
       const total = regHours * rate + otHours * otRate;
-      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total };
+      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
@@ -29658,6 +29743,25 @@ function printInvoice() {
         <button class="btn btn-outline" onclick="invpCloseDistribute()">取消</button>
         <button class="btn btn-green" onclick="invpApplyDistribute()">⇆ 应用</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="invpLinkModal" style="display:none">
+  <div class="modal" style="max-width:520px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+      <h2 style="margin:0;font-size:1.05rem">🔗 链接到系统员工</h2>
+      <button class="btn btn-sm btn-outline" onclick="invpCloseLinkModal()">关闭</button>
+    </div>
+    <div id="invpLinkRowName" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.6rem"></div>
+    <div class="field" style="margin-bottom:.6rem">
+      <input type="text" id="invpLinkInput" placeholder="搜索员工姓名 / 员工编号..."
+        style="width:100%;padding:.45rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.92rem"
+        oninput="onInvpLinkSearch(this.value)">
+    </div>
+    <div id="invpLinkSugg" style="max-height:340px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:6px"></div>
+    <div style="background:#f0f9ff;border-left:3px solid var(--sky);padding:.5rem .75rem;font-size:.76rem;color:#0c4a6e;margin-top:.7rem">
+      链接后，Invoice 保存时会记录该行对应的系统员工 ID。已保存的 Invoice 再次打开时仍可看到链接状态。
     </div>
   </div>
 </div>
