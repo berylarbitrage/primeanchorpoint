@@ -28289,13 +28289,13 @@ function renderInvpManualTable(skipSave) {
     const otHrs  = Math.max(totalHrs - 40, 0);
     const subtotal = regHrs * rate + otHrs * otRateVal;
     const linkBadge = emp.linked_employee_id
-      ? `<span title="已链接到系统员工 ${esc(emp.linked_employee_code||'')} — 点击解除" style="display:inline-flex;align-items:center;gap:3px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:10px;padding:1px 7px;font-size:.7rem;line-height:1.3;cursor:pointer;width:fit-content" onclick="invpUnlinkEmp(${emp.uid})">🔗 ${esc(emp.linked_employee_code || emp.linked_employee_name || '已链接')} ✕</span>`
-      : `<button type="button" onclick="invpOpenLinkModal(${emp.uid})" title="链接到系统员工" style="background:none;border:1px dashed var(--gray-300);border-radius:10px;color:var(--gray-500);font-size:.7rem;padding:1px 7px;cursor:pointer;line-height:1.3;width:fit-content">🔗 链接员工</button>`;
+      ? `<span title="已链接到系统员工 ${esc(emp.linked_employee_code||'')} — 点击解除" style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:10px;padding:0 6px;font-size:.7rem;line-height:1.5;cursor:pointer;white-space:nowrap;flex-shrink:0" onclick="invpUnlinkEmp(${emp.uid})">🔗${emp.linked_employee_code ? ' '+esc(emp.linked_employee_code) : ''} ✕</span>`
+      : `<button type="button" onclick="invpOpenLinkModal(${emp.uid})" title="链接到系统员工" style="background:none;border:1px dashed var(--gray-300);border-radius:10px;color:var(--gray-500);font-size:.75rem;padding:0 5px;cursor:pointer;line-height:1.5;flex-shrink:0">🔗</button>`;
     return `<tr class="invp-manual-row" data-uid="${emp.uid}">
       <td style="padding:3px 6px">
-        <div style="display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;align-items:center;gap:4px">
           <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
-            placeholder="员工姓名" style="width:120px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
+            placeholder="员工姓名" style="width:110px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
           ${linkBadge}
         </div>
       </td>
@@ -28938,6 +28938,8 @@ function invpImportEmpById(id, fullName, code) {
 function invpOpenLinkModal(uid) {
   _invpSaveTableState();
   window._invpLinkTargetUid = uid;
+  // Invalidate cache so we always fetch the freshest onboarded / current_jobs
+  window._invpSysEmps = null;
   const emp = (window._invpManualEmps||[]).find(e => e.uid === uid);
   const modal = document.getElementById('invpLinkModal');
   if (!modal) return;
@@ -28955,22 +28957,53 @@ function invpCloseLinkModal() {
   window._invpLinkTargetUid = null;
 }
 
+function _invpGetInvoiceCompanyName() {
+  const el = document.getElementById('invPageBillName');
+  return el ? (el.value||'').trim() : '';
+}
+
+function _invpEmpBelongsToCompany(emp, companyName) {
+  if (!companyName) return false;
+  const target = companyName.trim().toLowerCase();
+  if (!target) return false;
+  const jobs = Array.isArray(emp.current_jobs) ? emp.current_jobs : [];
+  return jobs.some(j => String(j.company_name||'').trim().toLowerCase() === target);
+}
+
 async function onInvpLinkSearch(val) {
   const sugg = document.getElementById('invpLinkSugg');
+  const hint = document.getElementById('invpLinkFilterHint');
   if (!sugg) return;
   if (!window._invpSysEmps) {
     const res = await api('/admin/employees').catch(() => []);
     window._invpSysEmps = Array.isArray(res) ? res : (res?.employees || []);
   }
+  const companyName = _invpGetInvoiceCompanyName();
+  if (hint) {
+    if (!companyName) {
+      hint.innerHTML = '<span style="color:#b91c1c">⚠ 请先在 Invoice 页面填写"客户公司名称"，才能筛选可链接的员工。</span>';
+    } else {
+      hint.innerHTML = `仅显示 <b>已入职</b> 且归属于 <b>${esc(companyName)}</b> 的系统员工`;
+    }
+  }
+  if (!companyName) {
+    sugg.innerHTML = '<div style="padding:14px;color:var(--gray-400);font-size:.85rem;text-align:center">没有公司名称，无法筛选</div>';
+    return;
+  }
+  // Filter: onboarded AND belongs to this invoice's company
+  const pool = window._invpSysEmps.filter(e => Number(e.onboarded) === 1 && _invpEmpBelongsToCompany(e, companyName));
   const q = (val||'').trim().toLowerCase();
   const matches = q
-    ? window._invpSysEmps.filter(e =>
+    ? pool.filter(e =>
         (`${e.first_name||''} ${e.last_name||''}`).toLowerCase().includes(q) ||
         (e.last_name||'').toLowerCase().includes(q) ||
         String(e.employee_id||'').toLowerCase().includes(q))
-    : window._invpSysEmps.slice(0, 30);
+    : pool.slice(0, 50);
   if (!matches.length) {
-    sugg.innerHTML = '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">未找到匹配的员工</div>';
+    const msg = pool.length === 0
+      ? `没有 <b>${esc(companyName)}</b> 的已入职员工可链接`
+      : '没有匹配该关键字的员工';
+    sugg.innerHTML = `<div style="padding:14px;color:var(--gray-400);font-size:.85rem;text-align:center">${msg}</div>`;
     return;
   }
   sugg.innerHTML = matches.map(e => {
@@ -29753,7 +29786,8 @@ function printInvoice() {
       <h2 style="margin:0;font-size:1.05rem">🔗 链接到系统员工</h2>
       <button class="btn btn-sm btn-outline" onclick="invpCloseLinkModal()">关闭</button>
     </div>
-    <div id="invpLinkRowName" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.6rem"></div>
+    <div id="invpLinkRowName" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.35rem"></div>
+    <div id="invpLinkFilterHint" style="font-size:.76rem;color:var(--gray-500);margin-bottom:.55rem"></div>
     <div class="field" style="margin-bottom:.6rem">
       <input type="text" id="invpLinkInput" placeholder="搜索员工姓名 / 员工编号..."
         style="width:100%;padding:.45rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.92rem"
@@ -29761,7 +29795,7 @@ function printInvoice() {
     </div>
     <div id="invpLinkSugg" style="max-height:340px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:6px"></div>
     <div style="background:#f0f9ff;border-left:3px solid var(--sky);padding:.5rem .75rem;font-size:.76rem;color:#0c4a6e;margin-top:.7rem">
-      链接后，Invoice 保存时会记录该行对应的系统员工 ID。已保存的 Invoice 再次打开时仍可看到链接状态。
+      仅显示已入职且属于该 Invoice 客户公司的员工。链接信息会随 Invoice 一起保存。
     </div>
   </div>
 </div>
