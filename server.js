@@ -10628,18 +10628,42 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
   if (!w) return res.status(404).json({ error: 'Worker not found' });
 
-  const profileName = [w.first_name, w.last_name].filter(Boolean).join(' ').trim();
+  // Name fallbacks: worker_accounts → employees → split worker_accounts.name
+  let firstName = w.first_name || '';
+  let middleName = w.middle_name || '';
+  let lastName = w.last_name || '';
+
+  // Load linked employee record once (for name and address fallbacks)
+  let emp = null;
+  if (w.employee_id) {
+    emp = db.prepare('SELECT first_name, middle_name, last_name, ssn_encrypted, ssn_iv, address, street2, city, state, zip FROM employees WHERE id=?').get(w.employee_id);
+  }
+
+  if (!firstName && !lastName && emp) {
+    firstName = emp.first_name || '';
+    middleName = middleName || emp.middle_name || '';
+    lastName = emp.last_name || '';
+  }
+  if (!firstName && !lastName && w.name) {
+    const parts = String(w.name).trim().split(/\s+/);
+    if (parts.length >= 2) {
+      firstName = parts[0];
+      lastName = parts.slice(-1)[0];
+      if (parts.length > 2 && !middleName) middleName = parts.slice(1, -1).join(' ');
+    } else if (parts.length === 1) {
+      firstName = parts[0];
+    }
+  }
+
+  const profileName = [firstName, lastName].filter(Boolean).join(' ').trim();
   let tin = '', tinName = profileName || w.name || w.username || '';
   let tinType = 'INDIVIDUAL', tinSource = '';
   let businessName = '';
   let w9Fields = null;
 
-  if (w.employee_id) {
-    const emp = db.prepare('SELECT ssn_encrypted, ssn_iv FROM employees WHERE id=?').get(w.employee_id);
-    if (emp?.ssn_encrypted) {
-      const dec = decryptSSN(emp.ssn_encrypted, emp.ssn_iv || '');
-      if (dec) { tin = dec; tinSource = '员工档案 SSN'; }
-    }
+  if (emp?.ssn_encrypted) {
+    const dec = decryptSSN(emp.ssn_encrypted, emp.ssn_iv || '');
+    if (dec) { tin = dec; tinSource = '员工档案 SSN'; }
   }
 
   if (!tin) {
@@ -10675,7 +10699,7 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
 
   if (!tin) return res.status(400).json({ error: '未找到工人税号（TIN/SSN）。请先在 SSN 卡上传时填写号码、或让工人提交 W-9。' });
 
-  // Address: W-9 takes priority, fall back to tax-residency questionnaire, then worker profile city/state
+  // Address: W-9 takes priority, fall back to tax-residency questionnaire, then linked employee record, then worker profile city/state
   let addrStreet = '', addrStreet2 = '', addrCity = '', addrState = '', addrZip = '', addrSource = '';
   if (w9Fields && (w9Fields.address || w9Fields.city || w9Fields.zip)) {
     addrStreet = w9Fields.address || '';
@@ -10690,6 +10714,13 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
     addrState   = trRow.addr_state   || '';
     addrZip     = trRow.addr_zip     || '';
     addrSource  = '税务居民判定';
+  } else if (emp && (emp.address || emp.city || emp.zip)) {
+    addrStreet  = emp.address || '';
+    addrStreet2 = emp.street2 || '';
+    addrCity    = emp.city    || '';
+    addrState   = emp.state   || '';
+    addrZip     = emp.zip     || '';
+    addrSource  = '员工档案';
   } else if (w.city || w.state) {
     addrCity   = w.city  || '';
     addrState  = w.state || '';
@@ -10701,9 +10732,9 @@ app.get('/api/admin/worker-accounts/:id/tin-preview', requireAdmin, (req, res) =
 
   res.json({
     name: tinName,
-    first_name: w.first_name || '',
-    middle_name: w.middle_name || '',
-    last_name: w.last_name || '',
+    first_name: firstName,
+    middle_name: middleName,
+    last_name: lastName,
     business_name: businessName,
     tin: tinDigits,
     tin_masked: tinMasked,
