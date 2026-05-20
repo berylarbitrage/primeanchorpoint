@@ -16493,7 +16493,8 @@ function selectEntityType(type) {
 // Onboarding tasks auto-assigned per employment type
 const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
 const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
-const CASH_TASKS = ['contract', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
+// 现金工：background_check / persona_verify / payment_method 自动豁免
+const CASH_TASKS = ['contract', 'w9', 'tin_verify', 'work_permit'];
 const ALL_EMP_TASKS = ['contract', 'i9', 'ead_upload', 'gusto', 'w9', 'tax_residency', 'tin_verify', 'background_check', 'work_permit', 'persona_verify', 'payment_method'];
 function tasksForEmpType(t) { return t === 'w2' ? W2_TASKS : t === '1099' ? C1099_TASKS : t === 'cash' ? CASH_TASKS : []; }
 function empTypeLabel(t) { return t === 'w2' ? 'W-2 员工' : t === '1099' ? '1099 承包商' : t === 'cash' ? '💵 现金' : ''; }
