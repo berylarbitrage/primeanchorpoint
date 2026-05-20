@@ -1575,6 +1575,21 @@ try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_company_signed_at DAT
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN contract_content TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN tin_verify_result TEXT DEFAULT ''"); } catch {}
 
+// One-time backfill: 现金工自动豁免 background_check / persona_verify / payment_method
+try {
+  const cashWaiveResult = db.prepare(`
+    UPDATE worker_onboarding
+    SET status='waived',
+        completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP),
+        admin_note=CASE WHEN admin_note IS NULL OR admin_note='' THEN '已自动豁免（💵 现金不适用）' ELSE admin_note END,
+        updated_at=CURRENT_TIMESTAMP
+    WHERE task_key IN ('background_check','persona_verify','payment_method')
+      AND status='pending'
+      AND worker_account_id IN (SELECT id FROM worker_accounts WHERE employment_type='cash')
+  `).run();
+  if (cashWaiveResult.changes > 0) console.log(`[migration] Auto-waived ${cashWaiveResult.changes} cash-worker onboarding tasks (background_check/persona_verify/payment_method)`);
+} catch (e) { console.error('[migration] Cash worker auto-waive error:', e.message); }
+
 // Contract version history — stores every contract that was sent, signed, or voided
 db.exec(`CREATE TABLE IF NOT EXISTS worker_contract_versions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -9156,7 +9171,8 @@ function verifyW9Address(workerId) {
 // Onboarding tasks auto-assigned per employment type (must match frontend W2_TASKS / C1099_TASKS / CASH_TASKS)
 const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'tin_verify', 'payment_method', 'gusto'];
 const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
-const CASH_TASKS = ['contract', 'w9', 'tin_verify', 'work_permit', 'background_check', 'persona_verify', 'payment_method'];
+// 现金工：background_check / persona_verify / payment_method 自动豁免
+const CASH_TASKS = ['contract', 'w9', 'tin_verify', 'work_permit'];
 
 // Check if all assigned onboarding tasks are done; update onboarded flag accordingly
 function syncOnboardedStatus(workerId) {
