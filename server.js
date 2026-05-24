@@ -2026,6 +2026,9 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_cwp_employee ON company_worker_pay
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN hours REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN hourly_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN week_start TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN clock_in_time TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN clock_out_time TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_minutes INTEGER DEFAULT 0`); } catch(e) {}
 
 // ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
 db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
@@ -23846,7 +23849,8 @@ app.post('/api/admin/company-payments', requireAdmin, blockManager, (req, res) =
 });
 
 // GET /api/admin/partners/:id/weekly-hours?week_start=YYYY-MM-DD
-// Returns { [employee_id]: { 'YYYY-MM-DD': hours } } for the 7 days starting week_start
+// Returns { [employee_id]: { 'YYYY-MM-DD': { start_time, end_time, hours } } } for the 7 days starting week_start
+// Start/end are derived from earliest clock_in and latest clock_out of that day; hours = sum of total_hours.
 app.get('/api/admin/partners/:id/weekly-hours', requireAdmin, blockManager, (req, res) => {
   try {
     const partnerId = parseInt(req.params.id);
@@ -23854,12 +23858,15 @@ app.get('/api/admin/partners/:id/weekly-hours', requireAdmin, blockManager, (req
     if (!partnerId || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
       return res.status(400).json({ error: 'partner id and week_start (YYYY-MM-DD) required' });
     }
-    // Compute end date (week_start + 6 days inclusive)
     const start = new Date(weekStart + 'T00:00:00');
     const end = new Date(start.getTime() + 7 * 86400000);
-    const endStr = end.toISOString().slice(0, 10); // exclusive
+    const endStr = end.toISOString().slice(0, 10);
     const rows = db.prepare(`
-      SELECT te.employee_id, substr(te.clock_in, 1, 10) AS d, COALESCE(SUM(te.total_hours), 0) AS hours
+      SELECT te.employee_id,
+             substr(te.clock_in, 1, 10) AS d,
+             MIN(te.clock_in) AS first_in,
+             MAX(te.clock_out) AS last_out,
+             COALESCE(SUM(te.total_hours), 0) AS hours
       FROM time_entries te
       JOIN jobs j ON j.id = te.job_id
       WHERE j.partner_id = ?
@@ -23867,19 +23874,45 @@ app.get('/api/admin/partners/:id/weekly-hours', requireAdmin, blockManager, (req
         AND te.total_hours > 0
       GROUP BY te.employee_id, substr(te.clock_in, 1, 10)
     `).all(partnerId, weekStart + ' 00:00:00', endStr + ' 00:00:00');
+    const hhmm = (dt) => {
+      if (!dt) return '';
+      // Accept "YYYY-MM-DD HH:MM:SS" or ISO "YYYY-MM-DDTHH:MM:SS..."
+      const m = String(dt).match(/(\d{2}):(\d{2})/);
+      return m ? `${m[1]}:${m[2]}` : '';
+    };
     const out = {};
     for (const r of rows) {
       if (!out[r.employee_id]) out[r.employee_id] = {};
-      out[r.employee_id][r.d] = Math.round((r.hours + Number.EPSILON) * 100) / 100;
+      out[r.employee_id][r.d] = {
+        start_time: hhmm(r.first_in),
+        end_time: hhmm(r.last_out),
+        hours: Math.round((r.hours + Number.EPSILON) * 100) / 100
+      };
     }
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Compute hours from "HH:MM" start/end, handling midnight rollover.
+// Optionally subtracts break_minutes. Returns float hours (never negative).
+function _cwpHoursFromTimes(start, end, breakMin = 0) {
+  if (!start || !end) return 0;
+  const ms = start.match(/^(\d{1,2}):(\d{2})$/);
+  const me = end.match(/^(\d{1,2}):(\d{2})$/);
+  if (!ms || !me) return 0;
+  let mins = (parseInt(me[1]) * 60 + parseInt(me[2])) - (parseInt(ms[1]) * 60 + parseInt(ms[2]));
+  if (mins < 0) mins += 24 * 60;
+  mins -= Math.max(0, Number(breakMin) || 0);
+  if (mins < 0) mins = 0;
+  return Math.round((mins / 60) * 100) / 100;
+}
+
 // POST /api/admin/company-payments/batch-weekly
 //  body: { partner_id, partner_name, week_start, payment_date?, payment_method?,
-//          items: [{ employee_id?, worker_name, notes?, days: [{date, hours, rate}] }] }
+//          items: [{ employee_id?, worker_name, notes?,
+//                    days: [{date, start_time, end_time, hours?, rate}] }] }
 //  Creates one record per worker per day with hours>0 and rate>0.
+//  hours = explicit hours, else derived from start_time/end_time.
 app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager, (req, res) => {
   try {
     const d = req.body || {};
@@ -23896,17 +23929,25 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
     const defaultMethod = d.payment_method || 'cash';
     const ins = db.prepare(`INSERT INTO company_worker_payments
       (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month,
-       payment_method, notes, batch_id, created_by, hours, hourly_rate, week_start)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+       payment_method, notes, batch_id, created_by, hours, hourly_rate, week_start,
+       clock_in_time, clock_out_time, break_minutes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const ids = [];
     const tx = db.transaction(() => {
       for (const it of items) {
         const name = (it.worker_name || '').toString().trim();
         if (!name) continue;
+        const rowBreak = Math.max(0, Number(it.break_minutes) || 0);
         const days = Array.isArray(it.days) ? it.days : [];
         for (const day of days) {
           const date = (day.date || '').toString();
-          const hours = Number(day.hours) || 0;
+          const startT = (day.start_time || '').toString();
+          const endT = (day.end_time || '').toString();
+          const dayBreak = day.break_minutes != null
+            ? Math.max(0, Number(day.break_minutes) || 0)
+            : rowBreak;
+          let hours = Number(day.hours) || 0;
+          if (!(hours > 0) && startT && endT) hours = _cwpHoursFromTimes(startT, endT, dayBreak);
           const rate = Number(day.rate) || 0;
           if (!date || !(hours > 0) || !(rate > 0)) continue;
           const amount = +(hours * rate).toFixed(2);
@@ -23925,7 +23966,10 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
             req.userName || '',
             hours,
             rate,
-            d.week_start
+            d.week_start,
+            startT,
+            endT,
+            dayBreak
           );
           ids.push(r.lastInsertRowid);
         }
@@ -24043,6 +24087,7 @@ app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (r
     if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
     if (year_month) { where.push('year_month = ?'); params.push(String(year_month)); }
     const sql = `SELECT id, partner_name, worker_name, amount, hours, hourly_rate,
+                        clock_in_time, clock_out_time, break_minutes,
                         payment_date, week_start, year_month,
                         payment_method, notes, batch_id, created_by, created_at
                  FROM company_worker_payments
@@ -24054,11 +24099,12 @@ app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (r
       const s = String(v).replace(/"/g, '""');
       return /[",\n]/.test(s) ? `"${s}"` : s;
     };
-    const headers = ['ID', '公司', '工人姓名', '金额', '工时', '时薪', '付款日期', '周起始日', '月份', '付款方式', '备注', '批次号', '操作人', '创建时间'];
+    const headers = ['ID', '公司', '工人姓名', '金额', '工时', '时薪', '上班', '下班', '午休(分)', '付款日期', '周起始日', '月份', '付款方式', '备注', '批次号', '操作人', '创建时间'];
     const lines = [headers.join(',')];
     for (const r of rows) {
       lines.push([
         r.id, r.partner_name, r.worker_name, r.amount, r.hours, r.hourly_rate,
+        r.clock_in_time, r.clock_out_time, r.break_minutes,
         r.payment_date, r.week_start, r.year_month,
         r.payment_method, r.notes, r.batch_id, r.created_by, r.created_at
       ].map(esc).join(','));
