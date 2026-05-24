@@ -1468,13 +1468,14 @@ tr:hover td{background:var(--sky-light)}
   <div class="top">
     <h1>💵 工人付款记录（按月）</h1>
     <div class="top-actions">
-      <button class="btn btn-green" onclick="openCpyBatchModal()">+ 新建批量付款</button>
+      <button class="btn btn-green" onclick="openCpyWeeklyModal()">+ 按周批量（工时×时薪）</button>
+      <button class="btn btn-outline" onclick="openCpyBatchModal()">+ 按月批量</button>
       <button class="btn btn-outline" onclick="openCpySingleModal()">+ 单条录入</button>
       <button class="btn btn-outline" onclick="exportCpyCsv()">⬇ 导出 CSV</button>
       <button class="btn btn-outline" onclick="loadCpyList()">刷新</button>
     </div>
   </div>
-  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">记录公司每月给工人的付款。支持批量录入（一次给该公司多名工人发钱）和单条录入。可按公司、月份筛选并导出 CSV。</p>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">记录公司每月给工人的付款。按周批量：选周后每天工时×时薪自动算，每人每天生成一条记录。按月批量：直接给该公司多名工人填总金额。还支持单条录入。可按公司、月份筛选并导出 CSV。</p>
 
   <!-- Sub-tabs -->
   <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:1rem">
@@ -1519,6 +1520,7 @@ tr:hover td{background:var(--sky-light)}
             <th>公司</th>
             <th>工人姓名</th>
             <th>金额</th>
+            <th>工时×时薪</th>
             <th>付款日期</th>
             <th>月份</th>
             <th>付款方式</th>
@@ -1529,7 +1531,7 @@ tr:hover td{background:var(--sky-light)}
           </tr>
         </thead>
         <tbody id="cpyListBody">
-          <tr><td colspan="10" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
+          <tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
         </tbody>
       </table>
     </div>
@@ -1622,6 +1624,78 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════════ Company Payment: Weekly Modal (按周，每天工时 × 时薪) ════════ -->
+<div class="modal-bg" id="cpyWeeklyModal"><div class="modal" style="max-width:1280px">
+  <h2 style="margin-bottom:.75rem">📅 按周批量付款（每天 工时 × 时薪）</h2>
+  <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:.6rem;margin-bottom:.75rem">
+    <div class="field" style="margin:0">
+      <label>公司 *</label>
+      <select id="cpyWkPartner" onchange="loadCpyWeeklyWorkers()">
+        <option value="">— 选择公司 —</option>
+      </select>
+    </div>
+    <div class="field" style="margin:0">
+      <label>周起始日（任意日期）*</label>
+      <input type="date" id="cpyWkStart" onchange="onCpyWeekStartChange()">
+    </div>
+    <div class="field" style="margin:0">
+      <label>默认时薪 ($/h)</label>
+      <input type="number" id="cpyWkDefaultRate" step="0.01" min="0" placeholder="例 25.00" oninput="applyCpyWkDefaultRate()">
+    </div>
+    <div class="field" style="margin:0">
+      <label>默认付款方式</label>
+      <select id="cpyWkMethod">
+        <option value="cash">现金</option>
+        <option value="transfer">转账</option>
+        <option value="check">支票</option>
+        <option value="other">其他</option>
+      </select>
+    </div>
+    <div class="field" style="margin:0;align-self:end">
+      <button class="btn btn-sm btn-outline" onclick="pullCpyWeeklyHours()" style="width:100%">📥 拉取打卡工时</button>
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:.5rem 0">
+    <div style="font-size:.85rem;font-weight:600">工人 × 7 天</div>
+    <div style="display:flex;gap:.4rem">
+      <button class="btn btn-sm btn-outline" onclick="clearCpyWeeklyHours()">🧹 一键清空工时</button>
+      <button class="btn btn-sm btn-outline" onclick="addCpyWkAdHocRow()">+ 添加自定义工人</button>
+      <button class="btn btn-sm btn-outline" onclick="loadCpyWeeklyWorkers()">重新加载员工</button>
+    </div>
+  </div>
+
+  <div style="max-height:55vh;overflow:auto;border:1px solid var(--gray-200);border-radius:8px">
+    <table style="margin:0;font-size:.82rem">
+      <thead style="position:sticky;top:0;background:#f8fafc;z-index:1">
+        <tr id="cpyWkHeadRow">
+          <th style="width:32px;background:#f8fafc"></th>
+          <th style="min-width:140px;background:#f8fafc">工人</th>
+          <!-- 7 day headers inserted dynamically -->
+          <th style="min-width:110px;background:#f8fafc">周合计</th>
+          <th style="min-width:160px;background:#f8fafc">备注</th>
+          <th style="width:32px;background:#f8fafc"></th>
+        </tr>
+      </thead>
+      <tbody id="cpyWkRows">
+        <tr><td colspan="12" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">请先选择公司和周起始日</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;font-size:.9rem">
+    <div style="color:var(--gray-500)">
+      每个工人每天填工时和时薪，金额=工时×时薪。工时或时薪为 0 的天将被跳过。提交后每人每天生成一条记录。
+    </div>
+    <div><strong>合计：</strong><span id="cpyWkTotal">$0.00</span> · <span id="cpyWkRecCount">0</span> 条</div>
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+    <button class="btn btn-outline" onclick="closeCpyWeeklyModal()">取消</button>
+    <button class="btn btn-green" onclick="submitCpyWeekly()">提交按周付款</button>
+  </div>
+</div></div>
+
 <!-- ════════ Company Payment: Single Modal ════════ -->
 <div class="modal-bg" id="cpySingleModal"><div class="modal" style="max-width:520px">
   <h2 id="cpySingleTitle" style="margin-bottom:.75rem">💵 单条付款录入</h2>
@@ -1634,10 +1708,13 @@ tr:hover td{background:var(--sky-light)}
     <datalist id="cpySingleWorkerList"></datalist>
     <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">提示：可在列表中选择该公司的系统员工，也可直接输入散工姓名。</div>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem">
+    <div class="field"><label>工时（可选）</label><input type="number" id="cpySingleHours" step="0.01" min="0" placeholder="如 40" oninput="recalcCpySingleAmount()"></div>
+    <div class="field"><label>时薪 ($/h)（可选）</label><input type="number" id="cpySingleRate" step="0.01" min="0" placeholder="如 25" oninput="recalcCpySingleAmount()"></div>
     <div class="field"><label>金额 ($) *</label><input type="number" id="cpySingleAmount" step="0.01" min="0"></div>
-    <div class="field"><label>付款日期 *</label><input type="date" id="cpySingleDate"></div>
   </div>
+  <div style="font-size:.72rem;color:var(--gray-400);margin-top:-.4rem;margin-bottom:.4rem">填了工时和时薪会自动算金额，也可以直接覆盖金额</div>
+  <div class="field"><label>付款日期 *</label><input type="date" id="cpySingleDate"></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
     <div class="field"><label>月份 *</label><input type="month" id="cpySingleMonth"></div>
     <div class="field"><label>付款方式</label>
@@ -30553,8 +30630,10 @@ async function loadCpyPartners() {
       .concat(_cpyPartners.map(p => `<option value="${p.id}">${_cpyEscape(p.name)}</option>`));
     const batchSel = document.getElementById('cpyBatchPartner');
     const singleSel = document.getElementById('cpySinglePartner');
+    const wkSel = document.getElementById('cpyWkPartner');
     if (batchSel) batchSel.innerHTML = modalOpts.join('');
     if (singleSel) singleSel.innerHTML = modalOpts.join('');
+    if (wkSel) wkSel.innerHTML = modalOpts.join('');
   } catch (e) {
     console.error('loadCpyPartners failed', e);
   }
@@ -30615,17 +30694,24 @@ async function loadCpyList() {
   try {
     const rows = await api('/admin/company-payments' + (params.toString() ? '?' + params : ''));
     if (!Array.isArray(rows) || !rows.length) {
-      tbody.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
       document.getElementById('cpyFilterTotal').textContent = '';
       return;
     }
     const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     document.getElementById('cpyFilterTotal').textContent = `共 ${rows.length} 条 · 总额 ${_cpyFmtMoney(total)}`;
-    tbody.innerHTML = rows.map(r => `
+    tbody.innerHTML = rows.map(r => {
+      const hrs = Number(r.hours) || 0;
+      const rate = Number(r.hourly_rate) || 0;
+      const hrCell = (hrs > 0 && rate > 0)
+        ? `<span style="font-size:.78rem">${hrs}h × ${_cpyFmtMoney(rate)}/h</span>`
+        : `<span style="color:var(--gray-300)">—</span>`;
+      return `
       <tr>
         <td>${_cpyEscape(r.partner_name || '—')}</td>
         <td>${_cpyEscape(r.worker_name)}</td>
         <td style="font-weight:600">${_cpyFmtMoney(r.amount)}</td>
+        <td>${hrCell}</td>
         <td>${_cpyEscape(r.payment_date)}</td>
         <td>${_cpyEscape(r.year_month)}</td>
         <td>${_cpyEscape(_CPY_METHOD_LABEL[r.payment_method] || r.payment_method || '—')}</td>
@@ -30636,10 +30722,10 @@ async function loadCpyList() {
           <button class="btn btn-sm btn-outline" onclick="openCpyEdit(${r.id})">编辑</button>
           <button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
         </td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="10" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
   }
 }
 
@@ -30851,6 +30937,13 @@ async function submitCpyBatch() {
 }
 
 // ── Single record modal ──
+function recalcCpySingleAmount() {
+  const h = Number(document.getElementById('cpySingleHours').value) || 0;
+  const r = Number(document.getElementById('cpySingleRate').value) || 0;
+  if (h > 0 && r > 0) {
+    document.getElementById('cpySingleAmount').value = (h * r).toFixed(2);
+  }
+}
 function openCpySingleModal() {
   document.getElementById('cpySingleTitle').textContent = '💵 单条付款录入';
   document.getElementById('cpySingleId').value = '';
@@ -30858,6 +30951,8 @@ function openCpySingleModal() {
   document.getElementById('cpySingleWorker').value = '';
   document.getElementById('cpySingleWorkerList').innerHTML = '';
   document.getElementById('cpySingleAmount').value = '';
+  document.getElementById('cpySingleHours').value = '';
+  document.getElementById('cpySingleRate').value = '';
   const today = new Date();
   document.getElementById('cpySingleDate').value = today.toISOString().slice(0, 10);
   document.getElementById('cpySingleMonth').value = today.toISOString().slice(0, 7);
@@ -30898,6 +30993,8 @@ async function openCpyEdit(id) {
     await refreshCpySingleWorkerSuggestions();
     document.getElementById('cpySingleWorker').value = r.worker_name || '';
     document.getElementById('cpySingleAmount').value = r.amount;
+    document.getElementById('cpySingleHours').value = r.hours || '';
+    document.getElementById('cpySingleRate').value = r.hourly_rate || '';
     document.getElementById('cpySingleDate').value = r.payment_date || '';
     document.getElementById('cpySingleMonth').value = r.year_month || (r.payment_date || '').slice(0, 7);
     document.getElementById('cpySingleMethod').value = r.payment_method || 'cash';
@@ -30925,12 +31022,16 @@ async function submitCpySingle() {
     if (opt.value === worker) { empId = opt.getAttribute('data-emp-id') || null; break; }
   }
   const partnerName = _cpyPartners.find(p => String(p.id) === String(partnerId))?.name || '';
+  const hours = Number(document.getElementById('cpySingleHours').value) || 0;
+  const rate = Number(document.getElementById('cpySingleRate').value) || 0;
   const body = {
     partner_id: parseInt(partnerId),
     partner_name: partnerName,
     employee_id: empId ? parseInt(empId) : null,
     worker_name: worker,
     amount,
+    hours,
+    hourly_rate: rate,
     payment_date: date,
     year_month: month,
     payment_method: method,
@@ -30958,6 +31059,342 @@ async function deleteCpy(id) {
     showToast('已删除', 'success');
     loadCpyList();
   } catch (e) { alert('删除失败：' + (e.message || e)); }
+}
+
+// ════════════════════════════════════════════════════════════
+// COMPANY WORKER PAYMENTS — WEEKLY BATCH (每天 工时 × 时薪)
+// ════════════════════════════════════════════════════════════
+let _cpyWkWorkers = [];      // workers shown in modal (system + ad-hoc)
+let _cpyWkDays = [];         // ['2026-05-19', ...]  7 dates
+let _cpyWkDayLabels = [];    // ['周一 5/19', ...]
+
+const _CPY_WK_DAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+function _cpyToISODate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function openCpyWeeklyModal() {
+  document.getElementById('cpyWkPartner').value = '';
+  // Default week_start = most recent Monday
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun..6=Sat
+  const diff = (dow === 0 ? -6 : 1 - dow);
+  const monday = new Date(today.getTime() + diff * 86400000);
+  document.getElementById('cpyWkStart').value = _cpyToISODate(monday);
+  document.getElementById('cpyWkDefaultRate').value = '';
+  document.getElementById('cpyWkMethod').value = 'cash';
+  _cpyWkWorkers = [];
+  rebuildCpyWeekDays();
+  document.getElementById('cpyWkRows').innerHTML =
+    '<tr><td colspan="' + (4 + _cpyWkDays.length) + '" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">请先选择公司</td></tr>';
+  updateCpyWkTotal();
+  document.getElementById('cpyWeeklyModal').classList.add('show');
+}
+
+function closeCpyWeeklyModal() {
+  document.getElementById('cpyWeeklyModal').classList.remove('show');
+}
+
+function rebuildCpyWeekDays() {
+  const ws = document.getElementById('cpyWkStart').value;
+  _cpyWkDays = [];
+  _cpyWkDayLabels = [];
+  if (!ws) return;
+  const start = new Date(ws + 'T00:00:00');
+  if (isNaN(start.getTime())) return;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start.getTime() + i * 86400000);
+    _cpyWkDays.push(_cpyToISODate(d));
+    _cpyWkDayLabels.push(`${_CPY_WK_DAY_NAMES[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`);
+  }
+  // Rebuild header row's day columns
+  const headRow = document.getElementById('cpyWkHeadRow');
+  // Remove existing day <th> (those between cell 1 and the last 3)
+  const ths = headRow.querySelectorAll('th');
+  // Keep: [0]=checkbox, [1]=工人, ..., [-3]=周合计, [-2]=备注, [-1]=remove btn
+  // Strategy: rebuild entirely
+  headRow.innerHTML = '';
+  const blankTh = (style) => { const th = document.createElement('th'); if (style) th.style.cssText = style; return th; };
+  headRow.appendChild(blankTh('width:32px;background:#f8fafc'));
+  const nameTh = blankTh('min-width:140px;background:#f8fafc');
+  nameTh.textContent = '工人';
+  headRow.appendChild(nameTh);
+  _cpyWkDayLabels.forEach(label => {
+    const th = blankTh('min-width:96px;background:#f8fafc;text-align:center;font-weight:600');
+    th.innerHTML = label;
+    headRow.appendChild(th);
+  });
+  const totalTh = blankTh('min-width:110px;background:#f8fafc;text-align:right');
+  totalTh.textContent = '周合计';
+  headRow.appendChild(totalTh);
+  const notesTh = blankTh('min-width:160px;background:#f8fafc');
+  notesTh.textContent = '备注';
+  headRow.appendChild(notesTh);
+  headRow.appendChild(blankTh('width:32px;background:#f8fafc'));
+}
+
+async function onCpyWeekStartChange() {
+  rebuildCpyWeekDays();
+  if (document.getElementById('cpyWkPartner').value) {
+    renderCpyWeeklyRows();
+    await pullCpyWeeklyHours({ silent: true });
+  }
+}
+
+async function loadCpyWeeklyWorkers() {
+  const partnerId = document.getElementById('cpyWkPartner').value;
+  const tbody = document.getElementById('cpyWkRows');
+  if (!partnerId) {
+    _cpyWkWorkers = [];
+    tbody.innerHTML = `<tr><td colspan="${4 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">请先选择公司</td></tr>`;
+    updateCpyWkTotal();
+    return;
+  }
+  rebuildCpyWeekDays();
+  tbody.innerHTML = `<tr><td colspan="${4 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">加载该公司员工…</td></tr>`;
+  try {
+    const list = await api(`/admin/partners/${partnerId}/payment-workers`);
+    _cpyWkWorkers = (Array.isArray(list) ? list : []).map(w => ({
+      id: w.id, name: w.name, position: w.position, phone: w.phone,
+      _adHoc: false, _selected: false, _notes: '',
+      _hours: new Array(7).fill(''),
+      _rates: new Array(7).fill('')
+    }));
+    renderCpyWeeklyRows();
+    await pullCpyWeeklyHours({ silent: true });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="${4 + _cpyWkDays.length}" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+  }
+}
+
+function renderCpyWeeklyRows() {
+  const tbody = document.getElementById('cpyWkRows');
+  if (!_cpyWkWorkers.length) {
+    tbody.innerHTML = `<tr><td colspan="${4 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">该公司暂无在职员工。点击右上「+ 添加自定义工人」手动添加。</td></tr>`;
+    updateCpyWkTotal();
+    return;
+  }
+  tbody.innerHTML = _cpyWkWorkers.map((w, i) => {
+    const dayCells = _cpyWkDays.map((d, j) => `
+      <td style="text-align:center;padding:.3rem .25rem;background:#fff" data-day-idx="${j}">
+        <input type="number" class="cpyWkHours" data-row="${i}" data-day="${j}" step="0.01" min="0"
+          value="${_cpyEscape(w._hours[j] || '')}" placeholder="h"
+          style="width:62px;padding:.2rem .3rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.78rem;text-align:right"
+          oninput="onCpyWkCellChange()">
+        <div style="height:2px"></div>
+        <input type="number" class="cpyWkRate" data-row="${i}" data-day="${j}" step="0.01" min="0"
+          value="${_cpyEscape(w._rates[j] || '')}" placeholder="$/h"
+          style="width:62px;padding:.2rem .3rem;border:1px solid #fde68a;border-radius:4px;font-size:.78rem;text-align:right;background:#fffbeb"
+          oninput="onCpyWkCellChange()">
+        <div class="cpyWkSubtotal" data-row="${i}" data-day="${j}" style="font-size:.7rem;color:var(--gray-500);margin-top:2px">—</div>
+      </td>
+    `).join('');
+    return `
+      <tr data-cpy-wk-row="${i}">
+        <td style="vertical-align:middle"><input type="checkbox" class="cpyWkChk" ${w._selected ? 'checked' : ''} onchange="onCpyWkCellChange()"></td>
+        <td style="vertical-align:middle">
+          ${w._adHoc
+            ? `<input type="text" class="cpyWkName" value="${_cpyEscape(w.name)}" placeholder="工人姓名" style="width:130px;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem">`
+            : `<div style="font-weight:500;font-size:.85rem">${_cpyEscape(w.name)}</div>
+               <div style="font-size:.7rem;color:var(--gray-500)">${_cpyEscape(w.position || '')}${w.phone ? ' · ' + _cpyEscape(w.phone) : ''}</div>
+               <input type="hidden" class="cpyWkName" value="${_cpyEscape(w.name)}">
+               <input type="hidden" class="cpyWkEmpId" value="${w.id}">`
+          }
+        </td>
+        ${dayCells}
+        <td style="text-align:right;vertical-align:middle;font-weight:600;color:#15803d" class="cpyWkRowTotal" data-row="${i}">$0.00</td>
+        <td style="vertical-align:middle"><input type="text" class="cpyWkNotes" value="${_cpyEscape(w._notes || '')}" placeholder="备注（可选）" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.78rem"></td>
+        <td style="vertical-align:middle">${w._adHoc ? `<button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:.15rem .45rem" onclick="removeCpyWkRow(${i})">×</button>` : ''}</td>
+      </tr>
+    `;
+  }).join('');
+  updateCpyWkTotal();
+}
+
+function _readCpyWkRowState() {
+  // Read the DOM inputs back into _cpyWkWorkers so render-loops don't lose typed data
+  const rows = document.querySelectorAll('#cpyWkRows tr[data-cpy-wk-row]');
+  rows.forEach(tr => {
+    const i = parseInt(tr.getAttribute('data-cpy-wk-row'));
+    const w = _cpyWkWorkers[i];
+    if (!w) return;
+    w._selected = tr.querySelector('.cpyWkChk')?.checked || false;
+    w._notes = tr.querySelector('.cpyWkNotes')?.value || '';
+    if (w._adHoc) w.name = tr.querySelector('.cpyWkName')?.value || w.name;
+    tr.querySelectorAll('.cpyWkHours').forEach(inp => {
+      const j = parseInt(inp.getAttribute('data-day'));
+      w._hours[j] = inp.value;
+    });
+    tr.querySelectorAll('.cpyWkRate').forEach(inp => {
+      const j = parseInt(inp.getAttribute('data-day'));
+      w._rates[j] = inp.value;
+    });
+  });
+}
+
+function onCpyWkCellChange() {
+  _readCpyWkRowState();
+  updateCpyWkTotal();
+}
+
+function applyCpyWkDefaultRate() {
+  const def = Number(document.getElementById('cpyWkDefaultRate').value) || 0;
+  if (def <= 0) return;
+  _readCpyWkRowState();
+  document.querySelectorAll('#cpyWkRows .cpyWkRate').forEach(inp => {
+    if (!inp.value || Number(inp.value) === 0) {
+      inp.value = def;
+      const i = parseInt(inp.getAttribute('data-row'));
+      const j = parseInt(inp.getAttribute('data-day'));
+      if (_cpyWkWorkers[i]) _cpyWkWorkers[i]._rates[j] = String(def);
+    }
+  });
+  updateCpyWkTotal();
+}
+
+function updateCpyWkTotal() {
+  let grand = 0;
+  let recCount = 0;
+  const rows = document.querySelectorAll('#cpyWkRows tr[data-cpy-wk-row]');
+  rows.forEach(tr => {
+    const i = parseInt(tr.getAttribute('data-cpy-wk-row'));
+    const selected = tr.querySelector('.cpyWkChk')?.checked || false;
+    let rowTotal = 0;
+    for (let j = 0; j < _cpyWkDays.length; j++) {
+      const h = Number(tr.querySelector(`.cpyWkHours[data-day="${j}"]`)?.value || 0);
+      const r = Number(tr.querySelector(`.cpyWkRate[data-day="${j}"]`)?.value || 0);
+      const sub = (h > 0 && r > 0) ? h * r : 0;
+      const cell = tr.querySelector(`.cpyWkSubtotal[data-day="${j}"]`);
+      if (cell) {
+        cell.textContent = sub > 0 ? _cpyFmtMoney(sub) : '—';
+        cell.style.color = sub > 0 ? '#15803d' : 'var(--gray-400)';
+      }
+      rowTotal += sub;
+      if (selected && sub > 0) recCount++;
+    }
+    const totalCell = tr.querySelector('.cpyWkRowTotal');
+    if (totalCell) totalCell.textContent = _cpyFmtMoney(rowTotal);
+    if (selected) grand += rowTotal;
+  });
+  document.getElementById('cpyWkTotal').textContent = _cpyFmtMoney(grand);
+  document.getElementById('cpyWkRecCount').textContent = String(recCount);
+}
+
+function addCpyWkAdHocRow() {
+  _readCpyWkRowState();
+  _cpyWkWorkers.push({
+    id: null, name: '', position: '', phone: '',
+    _adHoc: true, _selected: true, _notes: '',
+    _hours: new Array(7).fill(''),
+    _rates: new Array(7).fill('')
+  });
+  renderCpyWeeklyRows();
+}
+
+function removeCpyWkRow(idx) {
+  _readCpyWkRowState();
+  _cpyWkWorkers.splice(idx, 1);
+  renderCpyWeeklyRows();
+}
+
+async function pullCpyWeeklyHours(opts = {}) {
+  const partnerId = document.getElementById('cpyWkPartner').value;
+  const ws = document.getElementById('cpyWkStart').value;
+  if (!partnerId || !ws || !_cpyWkWorkers.length) {
+    if (!opts.silent) showToast('请先选择公司和周起始日', 'toast-error');
+    return;
+  }
+  try {
+    const data = await api(`/admin/partners/${partnerId}/weekly-hours?week_start=${ws}`);
+    if (!data || typeof data !== 'object') return;
+    _readCpyWkRowState();
+    let pulled = 0;
+    _cpyWkWorkers.forEach(w => {
+      if (!w.id) return;
+      const empData = data[w.id];
+      if (!empData) return;
+      for (let j = 0; j < _cpyWkDays.length; j++) {
+        const date = _cpyWkDays[j];
+        if (empData[date] != null && empData[date] > 0) {
+          w._hours[j] = String(empData[date]);
+          if (!w._selected) w._selected = true;
+          pulled++;
+        }
+      }
+    });
+    renderCpyWeeklyRows();
+    if (!opts.silent) showToast(pulled ? `已拉取 ${pulled} 天的打卡工时` : '该周无打卡数据', pulled ? 'success' : 'toast-error');
+  } catch (e) {
+    if (!opts.silent) showToast('拉取失败：' + (e.message || e), 'toast-error');
+  }
+}
+
+function clearCpyWeeklyHours() {
+  if (!confirm('确认清空所有工时（保留时薪）？')) return;
+  _readCpyWkRowState();
+  _cpyWkWorkers.forEach(w => { w._hours = new Array(7).fill(''); });
+  renderCpyWeeklyRows();
+}
+
+async function submitCpyWeekly() {
+  _readCpyWkRowState();
+  const partnerId = document.getElementById('cpyWkPartner').value;
+  const ws = document.getElementById('cpyWkStart').value;
+  const defaultMethod = document.getElementById('cpyWkMethod').value || 'cash';
+  if (!partnerId) { alert('请选择公司'); return; }
+  if (!ws || _cpyWkDays.length !== 7) { alert('请选择周起始日'); return; }
+  const partnerName = _cpyPartners.find(p => String(p.id) === String(partnerId))?.name || '';
+
+  const items = [];
+  let totalAmount = 0, totalRecords = 0;
+  for (const w of _cpyWkWorkers) {
+    if (!w._selected) continue;
+    const name = (w.name || '').trim();
+    if (!name) continue;
+    const days = [];
+    for (let j = 0; j < 7; j++) {
+      const h = Number(w._hours[j]) || 0;
+      const r = Number(w._rates[j]) || 0;
+      if (h > 0 && r > 0) {
+        days.push({ date: _cpyWkDays[j], hours: h, rate: r });
+        totalAmount += h * r;
+        totalRecords++;
+      }
+    }
+    if (!days.length) continue;
+    items.push({
+      employee_id: w.id || null,
+      worker_name: name,
+      notes: w._notes || '',
+      days
+    });
+  }
+  if (!items.length) { alert('请勾选工人并填入工时和时薪（每天工时>0 且时薪>0 才会被记录）'); return; }
+  if (!confirm(`确认给 ${partnerName} 的 ${items.length} 名工人生成 ${totalRecords} 条按日付款记录，合计 ${_cpyFmtMoney(totalAmount)}？`)) return;
+
+  try {
+    const r = await api('/admin/company-payments/batch-weekly', {
+      method: 'POST',
+      body: JSON.stringify({
+        partner_id: parseInt(partnerId),
+        partner_name: partnerName,
+        week_start: ws,
+        payment_method: defaultMethod,
+        items
+      })
+    });
+    if (r && r.error) { alert('提交失败：' + r.error); return; }
+    if (r && r.pending) { closeCpyWeeklyModal(); return; }
+    closeCpyWeeklyModal();
+    showToast(`已记录 ${r.inserted} 条付款`, 'success');
+    loadCpyList();
+  } catch (e) {
+    alert('提交失败：' + (e.message || e));
+  }
 }
 </script>
 
