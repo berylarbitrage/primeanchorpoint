@@ -574,6 +574,16 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
+  <!-- 工人付款记录 -->
+  <div class="nav-group open" id="sec-company-pay" data-role="admin,staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-company-pay')">
+      💵 工人付款<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('company-payments')" data-tab="company-payments" data-role="admin,staff">📒 月度付款记录</a>
+    </div>
+  </div>
+
   <!-- 分红管理 -->
   <div class="nav-group open" id="sec-dividend" data-role="staff">
     <div class="nav-group-header" onclick="toggleNav('sec-dividend')">
@@ -1452,6 +1462,200 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 </div>
+
+<!-- ════════ 工人付款记录 Tab ════════ -->
+<div id="tab-company-payments" style="display:none">
+  <div class="top">
+    <h1>💵 工人付款记录（按月）</h1>
+    <div class="top-actions">
+      <button class="btn btn-green" onclick="openCpyBatchModal()">+ 新建批量付款</button>
+      <button class="btn btn-outline" onclick="openCpySingleModal()">+ 单条录入</button>
+      <button class="btn btn-outline" onclick="exportCpyCsv()">⬇ 导出 CSV</button>
+      <button class="btn btn-outline" onclick="loadCpyList()">刷新</button>
+    </div>
+  </div>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">记录公司每月给工人的付款。支持批量录入（一次给该公司多名工人发钱）和单条录入。可按公司、月份筛选并导出 CSV。</p>
+
+  <!-- Sub-tabs -->
+  <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:1rem">
+    <button id="cpySubTabBtn-history" class="btn" onclick="switchCpySubTab('history')"
+      style="padding:.5rem 1.25rem;font-size:.9rem;border:none;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky);background:transparent;font-weight:600;cursor:pointer">
+      📋 付款明细
+    </button>
+    <button id="cpySubTabBtn-summary" class="btn" onclick="switchCpySubTab('summary')"
+      style="padding:.5rem 1.25rem;font-size:.9rem;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500);background:transparent;font-weight:500;cursor:pointer">
+      📊 按月汇总
+    </button>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="card" style="margin-bottom:1rem;padding:.75rem 1rem">
+    <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">🔍 筛选：</label>
+      <label style="font-size:.82rem;white-space:nowrap">公司</label>
+      <select id="cpyFilterPartner" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;min-width:180px" onchange="onCpyFilterChange()">
+        <option value="">全部公司</option>
+      </select>
+      <label style="font-size:.82rem;white-space:nowrap">月份</label>
+      <input type="month" id="cpyFilterMonth" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" onchange="onCpyFilterChange()">
+      <label id="cpyFilterYearLabel" style="font-size:.82rem;white-space:nowrap;display:none">年份</label>
+      <input type="number" id="cpyFilterYear" placeholder="年份" min="2020" max="2099" style="display:none;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;width:100px" onchange="onCpyFilterChange()">
+      <label style="font-size:.82rem;white-space:nowrap">搜索</label>
+      <input type="text" id="cpyFilterQ" placeholder="工人姓名 / 备注…" autocomplete="off"
+        style="min-width:200px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem"
+        oninput="onCpyFilterChange()">
+      <button class="btn btn-sm btn-outline" onclick="clearCpyFilter()" style="font-size:.78rem">清除筛选</button>
+      <span style="flex:1"></span>
+      <span id="cpyFilterTotal" style="font-size:.82rem;color:var(--gray-500)"></span>
+    </div>
+  </div>
+
+  <!-- Sub-tab: history -->
+  <div id="cpySubTab-history">
+    <div class="card" style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>公司</th>
+            <th>工人姓名</th>
+            <th>金额</th>
+            <th>付款日期</th>
+            <th>月份</th>
+            <th>付款方式</th>
+            <th>备注</th>
+            <th>批次号</th>
+            <th>操作人</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="cpyListBody">
+          <tr><td colspan="10" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Sub-tab: summary -->
+  <div id="cpySubTab-summary" style="display:none">
+    <div class="card" style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>月份</th>
+            <th>公司</th>
+            <th>付款总额</th>
+            <th>工人数</th>
+            <th>付款笔数</th>
+          </tr>
+        </thead>
+        <tbody id="cpySummaryBody">
+          <tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ Company Payment: Batch Modal ════════ -->
+<div class="modal-bg" id="cpyBatchModal"><div class="modal" style="max-width:900px">
+  <h2 style="margin-bottom:.75rem">💵 新建批量付款（按月）</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.6rem;margin-bottom:.75rem">
+    <div class="field" style="margin:0">
+      <label>公司 *</label>
+      <select id="cpyBatchPartner" onchange="loadCpyBatchWorkers()">
+        <option value="">— 选择公司 —</option>
+      </select>
+    </div>
+    <div class="field" style="margin:0">
+      <label>月份 *</label>
+      <input type="month" id="cpyBatchMonth">
+    </div>
+    <div class="field" style="margin:0">
+      <label>付款日期 *</label>
+      <input type="date" id="cpyBatchDate">
+    </div>
+    <div class="field" style="margin:0">
+      <label>默认付款方式</label>
+      <select id="cpyBatchMethod">
+        <option value="cash">现金</option>
+        <option value="transfer">转账</option>
+        <option value="check">支票</option>
+        <option value="other">其他</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:.5rem 0">
+    <div style="font-size:.85rem;font-weight:600">工人付款明细</div>
+    <div style="display:flex;gap:.4rem">
+      <button class="btn btn-sm btn-outline" onclick="addCpyBatchAdHocRow()">+ 添加自定义工人</button>
+      <button class="btn btn-sm btn-outline" onclick="loadCpyBatchWorkers()">重新加载该公司员工</button>
+    </div>
+  </div>
+
+  <div style="max-height:50vh;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px">
+    <table style="margin:0">
+      <thead style="position:sticky;top:0;background:#fff;z-index:1">
+        <tr>
+          <th style="width:36px"></th>
+          <th>工人</th>
+          <th style="width:140px">金额 ($)</th>
+          <th style="width:140px">付款方式</th>
+          <th>备注</th>
+          <th style="width:40px"></th>
+        </tr>
+      </thead>
+      <tbody id="cpyBatchRows">
+        <tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">请先选择公司</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;font-size:.9rem">
+    <div style="color:var(--gray-500)">勾选要付款的工人并填入金额。金额为 0 或未勾选的行会被跳过。</div>
+    <div><strong>合计：</strong><span id="cpyBatchTotal">$0.00</span> · <span id="cpyBatchCount">0</span> 人</div>
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+    <button class="btn btn-outline" onclick="closeCpyBatchModal()">取消</button>
+    <button class="btn btn-green" onclick="submitCpyBatch()">提交批量付款</button>
+  </div>
+</div></div>
+
+<!-- ════════ Company Payment: Single Modal ════════ -->
+<div class="modal-bg" id="cpySingleModal"><div class="modal" style="max-width:520px">
+  <h2 id="cpySingleTitle" style="margin-bottom:.75rem">💵 单条付款录入</h2>
+  <input type="hidden" id="cpySingleId">
+  <div class="field"><label>公司 *</label>
+    <select id="cpySinglePartner"><option value="">— 选择公司 —</option></select>
+  </div>
+  <div class="field"><label>工人姓名 *</label>
+    <input type="text" id="cpySingleWorker" placeholder="手动输入或选择系统员工" list="cpySingleWorkerList">
+    <datalist id="cpySingleWorkerList"></datalist>
+    <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">提示：可在列表中选择该公司的系统员工，也可直接输入散工姓名。</div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+    <div class="field"><label>金额 ($) *</label><input type="number" id="cpySingleAmount" step="0.01" min="0"></div>
+    <div class="field"><label>付款日期 *</label><input type="date" id="cpySingleDate"></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+    <div class="field"><label>月份 *</label><input type="month" id="cpySingleMonth"></div>
+    <div class="field"><label>付款方式</label>
+      <select id="cpySingleMethod">
+        <option value="cash">现金</option>
+        <option value="transfer">转账</option>
+        <option value="check">支票</option>
+        <option value="other">其他</option>
+      </select>
+    </div>
+  </div>
+  <div class="field"><label>备注</label><textarea id="cpySingleNotes" rows="2"></textarea></div>
+
+  <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+    <button class="btn btn-outline" onclick="closeCpySingleModal()">取消</button>
+    <button class="btn btn-green" onclick="submitCpySingle()">保存</button>
+  </div>
+</div></div>
 
 <!-- ════════ 承包商发票 Tab ════════ -->
 <div id="tab-ts-emp-invoice" style="display:none">
@@ -7263,6 +7467,7 @@ const _TAB_TO_SEC = {
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker', scheduling:'sec-worker', warehouses:'sec-worker', 'warehouse-checkins':'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
+  'company-payments':'sec-company-pay',
   'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
   approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
@@ -7303,6 +7508,7 @@ function showTab(t) {
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
   if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
   if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
+  if (t === 'company-payments') initCompanyPayPage();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -30299,6 +30505,459 @@ async function deleteBlankWorksheet(id) {
   } catch (e) {
     showToast('删除失败：' + (e.message || e), 'error');
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// COMPANY WORKER PAYMENTS (按月给公司工人付款) — admin tab JS
+// ════════════════════════════════════════════════════════════
+let _cpyPartners = [];
+let _cpySubTab = 'history';
+let _cpyInited = false;
+let _cpyBatchWorkers = []; // {id, name} for currently-selected partner in batch modal
+let _cpyAdHocSeq = 0;
+
+const _CPY_METHOD_LABEL = { cash: '现金', transfer: '转账', check: '支票', other: '其他' };
+
+function _cpyEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function _cpyFmtMoney(v) {
+  const n = Number(v) || 0;
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function initCompanyPayPage() {
+  if (!_cpyInited) {
+    _cpyInited = true;
+    // Default month filter = current month
+    const today = new Date();
+    const ym = today.toISOString().slice(0, 7);
+    document.getElementById('cpyFilterMonth').value = ym;
+    await loadCpyPartners();
+  }
+  loadCpyList();
+}
+
+async function loadCpyPartners() {
+  try {
+    const partners = await api('/admin/partners');
+    _cpyPartners = (partners || []).filter(p => p && p.name).sort((a, b) => a.name.localeCompare(b.name));
+    const opts = ['<option value="">全部公司</option>']
+      .concat(_cpyPartners.map(p => `<option value="${p.id}">${_cpyEscape(p.name)}</option>`));
+    document.getElementById('cpyFilterPartner').innerHTML = opts.join('');
+    // Modal selects (without "全部" option)
+    const modalOpts = ['<option value="">— 选择公司 —</option>']
+      .concat(_cpyPartners.map(p => `<option value="${p.id}">${_cpyEscape(p.name)}</option>`));
+    const batchSel = document.getElementById('cpyBatchPartner');
+    const singleSel = document.getElementById('cpySinglePartner');
+    if (batchSel) batchSel.innerHTML = modalOpts.join('');
+    if (singleSel) singleSel.innerHTML = modalOpts.join('');
+  } catch (e) {
+    console.error('loadCpyPartners failed', e);
+  }
+}
+
+function switchCpySubTab(name) {
+  _cpySubTab = name;
+  const btnH = document.getElementById('cpySubTabBtn-history');
+  const btnS = document.getElementById('cpySubTabBtn-summary');
+  const paneH = document.getElementById('cpySubTab-history');
+  const paneS = document.getElementById('cpySubTab-summary');
+  const monthInput = document.getElementById('cpyFilterMonth');
+  const yearInput = document.getElementById('cpyFilterYear');
+  const yearLabel = document.getElementById('cpyFilterYearLabel');
+  if (name === 'summary') {
+    paneH.style.display = 'none'; paneS.style.display = 'block';
+    btnH.style.color = 'var(--gray-500)'; btnH.style.borderBottomColor = 'transparent'; btnH.style.fontWeight = '500';
+    btnS.style.color = 'var(--sky)'; btnS.style.borderBottomColor = 'var(--sky)'; btnS.style.fontWeight = '600';
+    monthInput.style.display = 'none';
+    yearInput.style.display = 'inline-block';
+    yearLabel.style.display = 'inline';
+    if (!yearInput.value) yearInput.value = new Date().getFullYear();
+    loadCpySummary();
+  } else {
+    paneH.style.display = 'block'; paneS.style.display = 'none';
+    btnS.style.color = 'var(--gray-500)'; btnS.style.borderBottomColor = 'transparent'; btnS.style.fontWeight = '500';
+    btnH.style.color = 'var(--sky)'; btnH.style.borderBottomColor = 'var(--sky)'; btnH.style.fontWeight = '600';
+    monthInput.style.display = 'inline-block';
+    yearInput.style.display = 'none';
+    yearLabel.style.display = 'none';
+    loadCpyList();
+  }
+}
+
+function clearCpyFilter() {
+  document.getElementById('cpyFilterPartner').value = '';
+  document.getElementById('cpyFilterMonth').value = '';
+  document.getElementById('cpyFilterYear').value = '';
+  document.getElementById('cpyFilterQ').value = '';
+  onCpyFilterChange();
+}
+
+function onCpyFilterChange() {
+  if (_cpySubTab === 'summary') loadCpySummary();
+  else loadCpyList();
+}
+
+async function loadCpyList() {
+  const tbody = document.getElementById('cpyListBody');
+  tbody.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
+  const partnerId = document.getElementById('cpyFilterPartner').value;
+  const month = document.getElementById('cpyFilterMonth').value;
+  const q = document.getElementById('cpyFilterQ').value.trim();
+  const params = new URLSearchParams();
+  if (partnerId) params.set('partner_id', partnerId);
+  if (month) params.set('year_month', month);
+  if (q) params.set('q', q);
+  try {
+    const rows = await api('/admin/company-payments' + (params.toString() ? '?' + params : ''));
+    if (!Array.isArray(rows) || !rows.length) {
+      tbody.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
+      document.getElementById('cpyFilterTotal').textContent = '';
+      return;
+    }
+    const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    document.getElementById('cpyFilterTotal').textContent = `共 ${rows.length} 条 · 总额 ${_cpyFmtMoney(total)}`;
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${_cpyEscape(r.partner_name || '—')}</td>
+        <td>${_cpyEscape(r.worker_name)}</td>
+        <td style="font-weight:600">${_cpyFmtMoney(r.amount)}</td>
+        <td>${_cpyEscape(r.payment_date)}</td>
+        <td>${_cpyEscape(r.year_month)}</td>
+        <td>${_cpyEscape(_CPY_METHOD_LABEL[r.payment_method] || r.payment_method || '—')}</td>
+        <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${_cpyEscape(r.notes)}">${_cpyEscape(r.notes || '')}</td>
+        <td style="font-size:.75rem;color:var(--gray-500)">${_cpyEscape(r.batch_id || '')}</td>
+        <td style="font-size:.78rem;color:var(--gray-500)">${_cpyEscape(r.created_by || '')}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick="openCpyEdit(${r.id})">编辑</button>
+          <button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="10" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+  }
+}
+
+async function loadCpySummary() {
+  const tbody = document.getElementById('cpySummaryBody');
+  tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
+  const partnerId = document.getElementById('cpyFilterPartner').value;
+  const year = document.getElementById('cpyFilterYear').value;
+  const params = new URLSearchParams();
+  if (partnerId) params.set('partner_id', partnerId);
+  if (year) params.set('year', year);
+  try {
+    const rows = await api('/admin/company-payments/summary' + (params.toString() ? '?' + params : ''));
+    if (!Array.isArray(rows) || !rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无数据</td></tr>';
+      document.getElementById('cpyFilterTotal').textContent = '';
+      return;
+    }
+    const totalAmt = rows.reduce((s, r) => s + (Number(r.total_amount) || 0), 0);
+    document.getElementById('cpyFilterTotal').textContent = `合计 ${_cpyFmtMoney(totalAmt)}`;
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td><strong>${_cpyEscape(r.year_month)}</strong></td>
+        <td>${_cpyEscape(r.partner_name || '—')}</td>
+        <td style="font-weight:600;color:#15803d">${_cpyFmtMoney(r.total_amount)}</td>
+        <td>${r.worker_count}</td>
+        <td>${r.record_count}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+  }
+}
+
+function exportCpyCsv() {
+  const partnerId = document.getElementById('cpyFilterPartner').value;
+  const month = document.getElementById('cpyFilterMonth').value;
+  const params = new URLSearchParams();
+  if (partnerId) params.set('partner_id', partnerId);
+  if (month) params.set('year_month', month);
+  // CSV endpoint is non-JSON; use direct download with token
+  const url = `${API}/admin/company-payments/export.csv` + (params.toString() ? '?' + params : '');
+  fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } })
+    .then(r => { if (!r.ok) throw new Error('导出失败'); return r.blob(); })
+    .then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `worker_payments_${partnerId || 'all'}_${month || 'all'}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+    })
+    .catch(e => showToast('导出失败：' + (e.message || e), 'error'));
+}
+
+// ── Batch modal ──
+function openCpyBatchModal() {
+  // Reset
+  document.getElementById('cpyBatchPartner').value = '';
+  const today = new Date();
+  document.getElementById('cpyBatchMonth').value = today.toISOString().slice(0, 7);
+  document.getElementById('cpyBatchDate').value = today.toISOString().slice(0, 10);
+  document.getElementById('cpyBatchMethod').value = 'cash';
+  document.getElementById('cpyBatchRows').innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">请先选择公司</td></tr>';
+  _cpyBatchWorkers = [];
+  updateCpyBatchTotal();
+  document.getElementById('cpyBatchModal').classList.add('show');
+}
+function closeCpyBatchModal() {
+  document.getElementById('cpyBatchModal').classList.remove('show');
+}
+
+async function loadCpyBatchWorkers() {
+  const partnerId = document.getElementById('cpyBatchPartner').value;
+  const tbody = document.getElementById('cpyBatchRows');
+  if (!partnerId) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">请先选择公司</td></tr>';
+    _cpyBatchWorkers = [];
+    updateCpyBatchTotal();
+    return;
+  }
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">加载该公司员工…</td></tr>';
+  try {
+    const list = await api(`/admin/partners/${partnerId}/payment-workers`);
+    _cpyBatchWorkers = Array.isArray(list) ? list : [];
+    renderCpyBatchRows();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+  }
+}
+
+function renderCpyBatchRows() {
+  const tbody = document.getElementById('cpyBatchRows');
+  if (!_cpyBatchWorkers.length) {
+    tbody.innerHTML = `
+      <tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">该公司暂无在职员工。点击右上「+ 添加自定义工人」手动添加。</td></tr>
+    `;
+    return;
+  }
+  tbody.innerHTML = _cpyBatchWorkers.map((w, i) => {
+    const isAdHoc = w._adHoc === true;
+    const rowId = `cpyRow-${i}`;
+    return `
+      <tr data-cpy-idx="${i}" id="${rowId}">
+        <td><input type="checkbox" class="cpyBatchChk" onchange="updateCpyBatchTotal()"></td>
+        <td>
+          ${isAdHoc
+            ? `<input type="text" class="cpyBatchName" placeholder="工人姓名" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">`
+            : `<div style="font-weight:500">${_cpyEscape(w.name)}</div>
+               <div style="font-size:.72rem;color:var(--gray-500)">${_cpyEscape(w.position || '')} ${w.phone ? '· ' + _cpyEscape(w.phone) : ''}</div>
+               <input type="hidden" class="cpyBatchEmpId" value="${w.id || ''}">
+               <input type="hidden" class="cpyBatchName" value="${_cpyEscape(w.name)}">`
+          }
+        </td>
+        <td><input type="number" class="cpyBatchAmount" step="0.01" min="0" placeholder="0.00" oninput="updateCpyBatchTotal()" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem"></td>
+        <td>
+          <select class="cpyBatchMethod" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <option value="">（默认）</option>
+            <option value="cash">现金</option>
+            <option value="transfer">转账</option>
+            <option value="check">支票</option>
+            <option value="other">其他</option>
+          </select>
+        </td>
+        <td><input type="text" class="cpyBatchNotes" placeholder="备注（可选）" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem"></td>
+        <td>${isAdHoc ? `<button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="removeCpyBatchRow(${i})">×</button>` : ''}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function addCpyBatchAdHocRow() {
+  _cpyAdHocSeq++;
+  _cpyBatchWorkers.push({ _adHoc: true, id: null, name: '' });
+  renderCpyBatchRows();
+}
+
+function removeCpyBatchRow(idx) {
+  _cpyBatchWorkers.splice(idx, 1);
+  renderCpyBatchRows();
+  updateCpyBatchTotal();
+}
+
+function updateCpyBatchTotal() {
+  const tbody = document.getElementById('cpyBatchRows');
+  const rows = tbody.querySelectorAll('tr[data-cpy-idx]');
+  let total = 0, count = 0;
+  rows.forEach(tr => {
+    const chk = tr.querySelector('.cpyBatchChk');
+    const amt = Number(tr.querySelector('.cpyBatchAmount')?.value || 0);
+    if (chk && chk.checked && amt > 0) { total += amt; count++; }
+  });
+  document.getElementById('cpyBatchTotal').textContent = _cpyFmtMoney(total);
+  document.getElementById('cpyBatchCount').textContent = String(count);
+}
+
+async function submitCpyBatch() {
+  const partnerId = document.getElementById('cpyBatchPartner').value;
+  const month = document.getElementById('cpyBatchMonth').value;
+  const date = document.getElementById('cpyBatchDate').value;
+  const defaultMethod = document.getElementById('cpyBatchMethod').value || 'cash';
+  if (!partnerId) { alert('请选择公司'); return; }
+  if (!month) { alert('请选择月份'); return; }
+  if (!date) { alert('请选择付款日期'); return; }
+
+  const partnerName = _cpyPartners.find(p => String(p.id) === String(partnerId))?.name || '';
+  const items = [];
+  const rows = document.querySelectorAll('#cpyBatchRows tr[data-cpy-idx]');
+  for (const tr of rows) {
+    const chk = tr.querySelector('.cpyBatchChk');
+    if (!chk || !chk.checked) continue;
+    const amount = Number(tr.querySelector('.cpyBatchAmount')?.value || 0);
+    if (!(amount > 0)) continue;
+    const name = (tr.querySelector('.cpyBatchName')?.value || '').trim();
+    if (!name) continue;
+    const empId = tr.querySelector('.cpyBatchEmpId')?.value || null;
+    const method = tr.querySelector('.cpyBatchMethod')?.value || '';
+    const notes = tr.querySelector('.cpyBatchNotes')?.value || '';
+    items.push({
+      employee_id: empId ? parseInt(empId) : null,
+      worker_name: name,
+      amount,
+      payment_method: method || defaultMethod,
+      notes
+    });
+  }
+  if (!items.length) { alert('请勾选至少一名工人并填入金额'); return; }
+  if (!confirm(`确认给 ${partnerName} 的 ${items.length} 名工人付款，合计 ${_cpyFmtMoney(items.reduce((s, x) => s + x.amount, 0))}？`)) return;
+
+  try {
+    const r = await api('/admin/company-payments/batch', {
+      method: 'POST',
+      body: JSON.stringify({
+        partner_id: parseInt(partnerId),
+        partner_name: partnerName,
+        year_month: month,
+        payment_date: date,
+        payment_method: defaultMethod,
+        items
+      })
+    });
+    if (r && r.error) { alert('提交失败：' + r.error); return; }
+    if (r && r.pending) { closeCpyBatchModal(); return; }
+    closeCpyBatchModal();
+    showToast(`已记录 ${r.inserted} 条付款`, 'success');
+    loadCpyList();
+  } catch (e) {
+    alert('提交失败：' + (e.message || e));
+  }
+}
+
+// ── Single record modal ──
+function openCpySingleModal() {
+  document.getElementById('cpySingleTitle').textContent = '💵 单条付款录入';
+  document.getElementById('cpySingleId').value = '';
+  document.getElementById('cpySinglePartner').value = '';
+  document.getElementById('cpySingleWorker').value = '';
+  document.getElementById('cpySingleWorkerList').innerHTML = '';
+  document.getElementById('cpySingleAmount').value = '';
+  const today = new Date();
+  document.getElementById('cpySingleDate').value = today.toISOString().slice(0, 10);
+  document.getElementById('cpySingleMonth').value = today.toISOString().slice(0, 7);
+  document.getElementById('cpySingleMethod').value = 'cash';
+  document.getElementById('cpySingleNotes').value = '';
+  // When partner changes, refresh suggested workers
+  const sel = document.getElementById('cpySinglePartner');
+  sel.onchange = refreshCpySingleWorkerSuggestions;
+  document.getElementById('cpySingleModal').classList.add('show');
+}
+function closeCpySingleModal() {
+  document.getElementById('cpySingleModal').classList.remove('show');
+}
+
+async function refreshCpySingleWorkerSuggestions() {
+  const pid = document.getElementById('cpySinglePartner').value;
+  const dl = document.getElementById('cpySingleWorkerList');
+  dl.innerHTML = '';
+  if (!pid) return;
+  try {
+    const list = await api(`/admin/partners/${pid}/payment-workers`);
+    if (Array.isArray(list)) {
+      dl.innerHTML = list.map(w => `<option value="${_cpyEscape(w.name)}" data-emp-id="${w.id}">${_cpyEscape(w.position || '')}</option>`).join('');
+    }
+  } catch (e) { /* silent */ }
+}
+
+async function openCpyEdit(id) {
+  try {
+    // Fetch full row (filter to that id via list endpoint is fine)
+    const rows = await api('/admin/company-payments');
+    const r = (Array.isArray(rows) ? rows : []).find(x => x.id === id);
+    if (!r) { alert('记录不存在'); return; }
+    openCpySingleModal();
+    document.getElementById('cpySingleTitle').textContent = '✏️ 编辑付款记录';
+    document.getElementById('cpySingleId').value = r.id;
+    document.getElementById('cpySinglePartner').value = r.partner_id || '';
+    await refreshCpySingleWorkerSuggestions();
+    document.getElementById('cpySingleWorker').value = r.worker_name || '';
+    document.getElementById('cpySingleAmount').value = r.amount;
+    document.getElementById('cpySingleDate').value = r.payment_date || '';
+    document.getElementById('cpySingleMonth').value = r.year_month || (r.payment_date || '').slice(0, 7);
+    document.getElementById('cpySingleMethod').value = r.payment_method || 'cash';
+    document.getElementById('cpySingleNotes').value = r.notes || '';
+  } catch (e) { alert('加载失败：' + (e.message || e)); }
+}
+
+async function submitCpySingle() {
+  const id = document.getElementById('cpySingleId').value;
+  const partnerId = document.getElementById('cpySinglePartner').value;
+  const worker = document.getElementById('cpySingleWorker').value.trim();
+  const amount = Number(document.getElementById('cpySingleAmount').value);
+  const date = document.getElementById('cpySingleDate').value;
+  const month = document.getElementById('cpySingleMonth').value || (date ? date.slice(0, 7) : '');
+  const method = document.getElementById('cpySingleMethod').value;
+  const notes = document.getElementById('cpySingleNotes').value;
+  if (!partnerId) { alert('请选择公司'); return; }
+  if (!worker) { alert('请填写工人姓名'); return; }
+  if (!(amount > 0)) { alert('请填写有效金额'); return; }
+  if (!date) { alert('请选择付款日期'); return; }
+  // Try to match an employee from the datalist
+  const dl = document.getElementById('cpySingleWorkerList');
+  let empId = null;
+  for (const opt of dl.querySelectorAll('option')) {
+    if (opt.value === worker) { empId = opt.getAttribute('data-emp-id') || null; break; }
+  }
+  const partnerName = _cpyPartners.find(p => String(p.id) === String(partnerId))?.name || '';
+  const body = {
+    partner_id: parseInt(partnerId),
+    partner_name: partnerName,
+    employee_id: empId ? parseInt(empId) : null,
+    worker_name: worker,
+    amount,
+    payment_date: date,
+    year_month: month,
+    payment_method: method,
+    notes
+  };
+  try {
+    const r = await api(id ? `/admin/company-payments/${id}` : '/admin/company-payments', {
+      method: id ? 'PUT' : 'POST',
+      body: JSON.stringify(body)
+    });
+    if (r && r.error) { alert('保存失败：' + r.error); return; }
+    if (r && r.pending) { closeCpySingleModal(); return; }
+    closeCpySingleModal();
+    showToast(id ? '已更新' : '已保存', 'success');
+    loadCpyList();
+  } catch (e) { alert('保存失败：' + (e.message || e)); }
+}
+
+async function deleteCpy(id) {
+  if (!confirm('确认删除这条付款记录？')) return;
+  try {
+    const r = await api(`/admin/company-payments/${id}`, { method: 'DELETE' });
+    if (r && r.error) { alert('删除失败：' + r.error); return; }
+    if (r && r.pending) return;
+    showToast('已删除', 'success');
+    loadCpyList();
+  } catch (e) { alert('删除失败：' + (e.message || e)); }
 }
 </script>
 

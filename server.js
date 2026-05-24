@@ -2005,6 +2005,25 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// ─── Company Worker Payments (monthly cash/transfer payouts to workers per company) ───
+db.exec(`CREATE TABLE IF NOT EXISTS company_worker_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER DEFAULT NULL,
+  partner_name TEXT DEFAULT '',
+  employee_id INTEGER DEFAULT NULL,
+  worker_name TEXT NOT NULL,
+  amount REAL NOT NULL DEFAULT 0,
+  payment_date TEXT NOT NULL,
+  year_month TEXT NOT NULL,
+  payment_method TEXT DEFAULT 'cash',
+  notes TEXT DEFAULT '',
+  batch_id TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_cwp_partner_month ON company_worker_payments(partner_id, year_month)`); } catch(e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_cwp_employee ON company_worker_payments(employee_id)`); } catch(e) {}
+
 // ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
 db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23709,6 +23728,236 @@ app.post('/api/admin/communications/threads/:id/unblock', requireAdmin, (req, re
 
 // Serve the Communications Inbox page
 app.get('/communications', requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 'public', 'communications.html')));
+
+// ============================================================
+// COMPANY WORKER PAYMENTS — monthly payout tracking per company
+// ============================================================
+
+// GET /api/admin/company-payments
+//   Optional filters: partner_id, year_month (YYYY-MM), q (search)
+app.get('/api/admin/company-payments', requireAdmin, blockManager, (req, res) => {
+  try {
+    const { partner_id, year_month, q } = req.query;
+    const where = [];
+    const params = [];
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    if (year_month) { where.push('year_month = ?'); params.push(String(year_month)); }
+    if (q && q.trim()) {
+      where.push('(worker_name LIKE ? OR partner_name LIKE ? OR notes LIKE ?)');
+      const like = `%${q.trim()}%`;
+      params.push(like, like, like);
+    }
+    const sql = `SELECT * FROM company_worker_payments
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY payment_date DESC, id DESC`;
+    const rows = db.prepare(sql).all(...params);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/company-payments/summary?year=YYYY&partner_id=
+// Returns rows grouped by year_month (and optionally partner) with totals + worker counts
+app.get('/api/admin/company-payments/summary', requireAdmin, blockManager, (req, res) => {
+  try {
+    const { year, partner_id } = req.query;
+    const where = [];
+    const params = [];
+    if (year) { where.push("substr(year_month,1,4) = ?"); params.push(String(year)); }
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    const sql = `SELECT year_month, partner_id, partner_name,
+                   SUM(amount) AS total_amount,
+                   COUNT(*) AS record_count,
+                   COUNT(DISTINCT COALESCE(employee_id, worker_name)) AS worker_count
+                 FROM company_worker_payments
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 GROUP BY year_month, partner_id, partner_name
+                 ORDER BY year_month DESC, partner_name ASC`;
+    const rows = db.prepare(sql).all(...params);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/partners/:id/payment-workers
+// List employees linked to a partner via time_entries or assignments — for picking in payment batch
+app.get('/api/admin/partners/:id/payment-workers', requireAdmin, blockManager, (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    if (!partnerId) return res.json([]);
+    const rows = db.prepare(`
+      SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.email, e.position
+      FROM employees e
+      WHERE e.status = 'active' AND (
+        e.id IN (SELECT te.employee_id FROM time_entries te
+                 JOIN jobs j ON j.id = te.job_id WHERE j.partner_id = ?)
+        OR e.id IN (SELECT a.employee_id FROM assignments a
+                    JOIN jobs j2 ON j2.id = a.job_id WHERE j2.partner_id = ?)
+      )
+      ORDER BY e.first_name, e.last_name
+    `).all(partnerId, partnerId);
+    res.json(rows.map(r => ({
+      id: r.id,
+      name: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
+      first_name: r.first_name, last_name: r.last_name,
+      phone: r.phone, email: r.email, position: r.position
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/company-payments — single record
+app.post('/api/admin/company-payments', requireAdmin, blockManager, (req, res) => {
+  try {
+    const d = req.body || {};
+    const amount = Number(d.amount);
+    if (!d.worker_name || !d.payment_date || !(amount >= 0)) {
+      return res.status(400).json({ error: 'worker_name, payment_date and amount required' });
+    }
+    const ym = d.year_month || String(d.payment_date).slice(0, 7);
+    let partnerName = d.partner_name || '';
+    if (d.partner_id && !partnerName) {
+      const p = db.prepare('SELECT name FROM partners WHERE id=?').get(parseInt(d.partner_id));
+      if (p) partnerName = p.name;
+    }
+    const r = db.prepare(`INSERT INTO company_worker_payments
+      (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month, payment_method, notes, batch_id, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+        d.partner_id ? parseInt(d.partner_id) : null,
+        partnerName,
+        d.employee_id ? parseInt(d.employee_id) : null,
+        String(d.worker_name).trim(),
+        amount,
+        d.payment_date,
+        ym,
+        d.payment_method || 'cash',
+        d.notes || '',
+        d.batch_id || '',
+        req.userName || ''
+      );
+    res.json({ success: true, id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/company-payments/batch — bulk create a month's payments for one company
+//   body: { partner_id, partner_name, year_month, payment_date, items: [{employee_id?, worker_name, amount, payment_method?, notes?}] }
+app.post('/api/admin/company-payments/batch', requireAdmin, blockManager, (req, res) => {
+  try {
+    const d = req.body || {};
+    const items = Array.isArray(d.items) ? d.items : [];
+    if (!d.year_month || !d.payment_date) return res.status(400).json({ error: 'year_month and payment_date required' });
+    if (!items.length) return res.status(400).json({ error: 'items array required' });
+
+    let partnerName = d.partner_name || '';
+    if (d.partner_id && !partnerName) {
+      const p = db.prepare('SELECT name FROM partners WHERE id=?').get(parseInt(d.partner_id));
+      if (p) partnerName = p.name;
+    }
+    const batchId = `BATCH-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const ins = db.prepare(`INSERT INTO company_worker_payments
+      (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month, payment_method, notes, batch_id, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+    const ids = [];
+    const tx = db.transaction(() => {
+      for (const it of items) {
+        const amt = Number(it.amount);
+        const name = (it.worker_name || '').toString().trim();
+        if (!name || !(amt > 0)) continue; // skip empties
+        const r = ins.run(
+          d.partner_id ? parseInt(d.partner_id) : null,
+          partnerName,
+          it.employee_id ? parseInt(it.employee_id) : null,
+          name,
+          amt,
+          it.payment_date || d.payment_date,
+          d.year_month,
+          it.payment_method || d.payment_method || 'cash',
+          it.notes || '',
+          batchId,
+          req.userName || ''
+        );
+        ids.push(r.lastInsertRowid);
+      }
+    });
+    tx();
+    res.json({ success: true, batch_id: batchId, inserted: ids.length, ids });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/company-payments/:id
+app.put('/api/admin/company-payments/:id', requireAdmin, blockManager, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const cur = db.prepare('SELECT * FROM company_worker_payments WHERE id=?').get(id);
+    if (!cur) return res.status(404).json({ error: 'Not found' });
+    const d = req.body || {};
+    const amount = d.amount != null ? Number(d.amount) : cur.amount;
+    const paymentDate = d.payment_date || cur.payment_date;
+    const ym = d.year_month || (d.payment_date ? String(d.payment_date).slice(0, 7) : cur.year_month);
+    let partnerName = d.partner_name != null ? d.partner_name : cur.partner_name;
+    let partnerId = d.partner_id != null ? (d.partner_id ? parseInt(d.partner_id) : null) : cur.partner_id;
+    if (partnerId && (!partnerName || d.partner_id != null)) {
+      const p = db.prepare('SELECT name FROM partners WHERE id=?').get(partnerId);
+      if (p) partnerName = p.name;
+    }
+    db.prepare(`UPDATE company_worker_payments SET
+      partner_id=?, partner_name=?, employee_id=?, worker_name=?, amount=?,
+      payment_date=?, year_month=?, payment_method=?, notes=?
+      WHERE id=?`).run(
+        partnerId,
+        partnerName || '',
+        d.employee_id != null ? (d.employee_id ? parseInt(d.employee_id) : null) : cur.employee_id,
+        d.worker_name != null ? String(d.worker_name).trim() : cur.worker_name,
+        amount,
+        paymentDate,
+        ym,
+        d.payment_method || cur.payment_method,
+        d.notes != null ? d.notes : cur.notes,
+        id
+      );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/admin/company-payments/:id
+app.delete('/api/admin/company-payments/:id', requireAdmin, blockManager, (req, res) => {
+  try {
+    db.prepare('DELETE FROM company_worker_payments WHERE id=?').run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/company-payments/export.csv?partner_id=&year_month=
+app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (req, res) => {
+  try {
+    const { partner_id, year_month } = req.query;
+    const where = [];
+    const params = [];
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    if (year_month) { where.push('year_month = ?'); params.push(String(year_month)); }
+    const sql = `SELECT id, partner_name, worker_name, amount, payment_date, year_month,
+                        payment_method, notes, batch_id, created_by, created_at
+                 FROM company_worker_payments
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY year_month DESC, partner_name ASC, payment_date DESC, id DESC`;
+    const rows = db.prepare(sql).all(...params);
+    const esc = (v) => {
+      if (v == null) return '';
+      const s = String(v).replace(/"/g, '""');
+      return /[",\n]/.test(s) ? `"${s}"` : s;
+    };
+    const headers = ['ID', '公司', '工人姓名', '金额', '付款日期', '月份', '付款方式', '备注', '批次号', '操作人', '创建时间'];
+    const lines = [headers.join(',')];
+    for (const r of rows) {
+      lines.push([
+        r.id, r.partner_name, r.worker_name, r.amount, r.payment_date, r.year_month,
+        r.payment_method, r.notes, r.batch_id, r.created_by, r.created_at
+      ].map(esc).join(','));
+    }
+    const csv = '﻿' + lines.join('\n'); // BOM for Excel UTF-8
+    const fname = `worker_payments_${partner_id || 'all'}_${year_month || 'all'}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+    res.send(csv);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // ============================================================
 // END COMMUNICATIONS INBOX
