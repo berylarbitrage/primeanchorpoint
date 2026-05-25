@@ -26050,9 +26050,11 @@ async function dsReplaceDocumentConfirm() {
       method: 'PUT', body: JSON.stringify({ file: _dsReplaceFileData })
     });
     if (result?.error) throw new Error(result.error);
-    showToast('PDF 已成功替换', 'success');
+    const msg = result?.new_template_id && result?.old_template_id && result.new_template_id !== result.old_template_id
+      ? `PDF 已替换（新模板 ID: #${result.new_template_id}）` : 'PDF 已成功替换';
+    showToast(msg, 'success');
     document.getElementById('ds-replace-modal-overlay').remove();
-    await _dsLoadMyTemplates();
+    await Promise.all([_dsLoadConfig(), _dsLoadMyTemplates()]);
   } catch(e) {
     status.textContent = '✗ ' + e.message;
     showToast(e.message, 'error');

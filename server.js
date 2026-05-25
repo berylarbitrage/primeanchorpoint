@@ -22059,20 +22059,64 @@ app.put('/api/admin/docuseal/templates/:dsId/rename', requireAdmin, async (req, 
 });
 
 // PUT /api/admin/docuseal/templates/:dsId/replace-document — replace PDF document of an existing template
+// DocuSeal's PUT /api/templates/:id does not actually replace documents — it only updates name/folder/roles.
+// To truly replace the PDF, we: create a new template from the PDF, transfer name/category/languages/confirmed
+// to the new local DB row, update integration_settings config keys pointing to old → new ID, then delete old.
 app.put('/api/admin/docuseal/templates/:dsId/replace-document', requireAdmin, express.json({ limit: '30mb' }), async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   const { file, name } = req.body; // file = data:application/pdf;base64,...
   if (!file) return res.status(400).json({ error: '缺少 file (base64 PDF)' });
-  const dsId = parseInt(req.params.dsId, 10);
-  if (!dsId) return res.status(400).json({ error: '无效的模板 ID' });
+  const oldDsId = parseInt(req.params.dsId, 10);
+  if (!oldDsId) return res.status(400).json({ error: '无效的模板 ID' });
   try {
-    const local = db.prepare('SELECT * FROM docuseal_templates WHERE docuseal_template_id=?').get(dsId);
-    const docName = (name || local?.name || `template-${dsId}`) + '.pdf';
-    const r = await dsealApiCall('PUT', `/api/templates/${dsId}`, {
-      documents: [{ name: docName, file }]
+    const local = db.prepare('SELECT * FROM docuseal_templates WHERE docuseal_template_id=?').get(oldDsId);
+    const tmplName = name || local?.name || `template-${oldDsId}`;
+    // 1. Create new template from PDF
+    const r = await dsealApiCall('POST', '/api/templates/pdf', {
+      name: tmplName,
+      documents: [{ name: tmplName + '.pdf', file }]
     });
-    if (r.status >= 400) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
-    res.json({ success: true, data: r.data });
+    if (r.status !== 200 && r.status !== 201) {
+      return res.status(r.status).json({ error: `DocuSeal 创建新模板失败 ${r.status}`, detail: r.data });
+    }
+    const newDsId = r.data?.id || r.data?.template_id || r.data?.data?.id;
+    if (!newDsId) return res.status(502).json({ error: '上传成功但未能获取新模板 ID', detail: r.data });
+
+    // 2. Update local DB row to point to new DocuSeal ID, preserving name/category/languages/confirmed/hidden
+    if (local) {
+      db.prepare('UPDATE docuseal_templates SET docuseal_template_id=? WHERE id=?').run(String(newDsId), local.id);
+    } else {
+      db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplName, String(newDsId), '');
+    }
+
+    // 3. Update integration_settings: any config key that referenced old ID now references new ID
+    try {
+      const cfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+      if (cfgRow) {
+        const cfg = JSON.parse(cfgRow.config || '{}');
+        let changed = false;
+        for (const k of Object.keys(cfg)) {
+          if (!k.endsWith('_template_id')) continue;
+          const v = cfg[k];
+          if (Array.isArray(v)) {
+            const idx = v.map(Number).indexOf(oldDsId);
+            if (idx >= 0) { v[idx] = newDsId; cfg[k] = v; changed = true; }
+          } else if (Number(v) === oldDsId) {
+            cfg[k] = newDsId; changed = true;
+          }
+        }
+        if (changed) {
+          db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+        }
+      }
+    } catch (e) { console.warn('[replace-document] config update failed:', e.message); }
+
+    // 4. Delete old template from DocuSeal (best effort — don't fail the request if this errors)
+    try {
+      await dsealApiCall('DELETE', `/api/templates/${oldDsId}`, null);
+    } catch (e) { console.warn(`[replace-document] failed to delete old template ${oldDsId}:`, e.message); }
+
+    res.json({ success: true, old_template_id: oldDsId, new_template_id: newDsId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
