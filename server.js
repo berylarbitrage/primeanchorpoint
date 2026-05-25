@@ -3230,10 +3230,17 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
   // If a pre-built template is configured, use it directly
   if (templateId) {
     const todayDate = new Date().toISOString().slice(0, 10);
-    const submitter1 = { role: 'First Party', name: signer1.name, email: signer1.email,
-      fields: [{ name: 'date1', default_value: todayDate, readonly: true }] };
-    const submitter2 = { role: 'Second Party', name: signer2.name, email: signer2.email,
-      fields: [{ name: 'date2', default_value: todayDate, readonly: true }] };
+    // Fetch template field names to skip date1/date2 if they don't exist (e.g., after PDF replace
+    // with a new file that has no anchor strings) — sending unknown fields returns 422.
+    const templateFieldNames = await dsealGetTemplateFieldNames(templateId);
+    const submitter1 = { role: 'First Party', name: signer1.name, email: signer1.email };
+    const submitter2 = { role: 'Second Party', name: signer2.name, email: signer2.email };
+    if (!templateFieldNames || templateFieldNames.has('date1')) {
+      submitter1.fields = [{ name: 'date1', default_value: todayDate, readonly: true }];
+    }
+    if (!templateFieldNames || templateFieldNames.has('date2')) {
+      submitter2.fields = [{ name: 'date2', default_value: todayDate, readonly: true }];
+    }
     // Include phone numbers so DocuSeal can send its own SMS notifications (must be E.164)
     if (signer1.phone) submitter1.phone = formatPhoneE164(signer1.phone);
     if (signer2.phone) submitter2.phone = formatPhoneE164(signer2.phone);
