@@ -3241,9 +3241,9 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
     if (!templateFieldNames || templateFieldNames.has('date2')) {
       submitter2.fields = [{ name: 'date2', default_value: todayDate, readonly: true }];
     }
-    // Include phone numbers so DocuSeal can send its own SMS notifications
-    if (signer1.phone) submitter1.phone = signer1.phone;
-    if (signer2.phone) submitter2.phone = signer2.phone;
+    // Include phone numbers so DocuSeal can send its own SMS notifications (must be E.164)
+    if (signer1.phone) submitter1.phone = formatPhoneE164(signer1.phone);
+    if (signer2.phone) submitter2.phone = formatPhoneE164(signer2.phone);
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: false,
@@ -3294,9 +3294,9 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
     fields: [{ name: 'date1', default_value: todayDate, readonly: true }] };
   const submitter2 = { role: 'Second Party', name: signer2.name, email: signer2.email,
     fields: [{ name: 'date2', default_value: todayDate, readonly: true }] };
-  // Include phone numbers so DocuSeal can send its own SMS notifications
-  if (signer1.phone) submitter1.phone = signer1.phone;
-  if (signer2.phone) submitter2.phone = signer2.phone;
+  // Include phone numbers so DocuSeal can send its own SMS notifications (must be E.164)
+  if (signer1.phone) submitter1.phone = formatPhoneE164(signer1.phone);
+  if (signer2.phone) submitter2.phone = formatPhoneE164(signer2.phone);
   const subRes = await dsealApiCall('POST', '/api/submissions/html', {
     name: emailSubject || docName,
     documents: [{ name: docName, html, size: 'Letter' }],
@@ -9592,6 +9592,10 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
   const dateStr = new Date().toISOString().slice(0, 10);
   // If already has saved content, use that; otherwise generate default
   const content = (onb && onb.contract_content) || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
+  // Resolve the DocuSeal template that will actually be used when sending —
+  // when set, the send flow uses the PDF template directly via POST /api/submissions
+  // (the `content` field is only used as a legacy fallback when no template is configured).
+  const templateId = getDsealConfigTemplateId(empType === '1099' ? 'worker_1099' : 'worker_w2') || '';
   res.json({
     content,
     worker_name: workerName,
@@ -9602,7 +9606,8 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
     ds_status: onb?.ds_status || '',
     company_email: getCompanySignerEmail(),
     company_name: companyName,
-    docuseal_enabled: dsealEnabled()
+    docuseal_enabled: dsealEnabled(),
+    template_id: templateId ? String(templateId) : ''
   });
 });
 
@@ -9630,17 +9635,14 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
-    // Use provided content or generate default
+    // Use provided content or generate default — only matters when no DocuSeal template is configured
     const empType = w.employment_type || 'w2';
     const dateStr = new Date().toISOString().slice(0, 10);
-    const content = req.body.content || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
-    // Also build PDF for local preview/archive
-    const pdfBuf = buildContractPdf(content);
-    const filename = `worker-contract-${workerId}-${Date.now()}.pdf`;
-    const docPath = path.join(docsDir, filename);
-    fs.writeFileSync(docPath, pdfBuf);
-    // Send via DocuSeal — use configured template if available, otherwise generate HTML
+    // Send via DocuSeal — use configured PDF template if available, otherwise fall back to generated HTML
     const workerTemplateId = getDsealConfigTemplateId(empType === '1099' ? 'worker_1099' : 'worker_w2');
+    const content = workerTemplateId
+      ? '' // template PDF will be used directly; legacy content not needed
+      : (req.body.content || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' }));
     const workerPhone = w.phone || '';
     const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendContractHtml({
       contractText: content,
@@ -9670,8 +9672,6 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     // Worker will be notified after company signs (via webhook handler)
     const smsSent = false;
     const emailSent = false;
-    // Clean up temp PDF
-    try { fs.unlinkSync(docPath); } catch {}
     res.json({ success: true, submissionId, signUrl: companyEmbedSrc, smsSent, emailSent });
   } catch (e) {
     console.error('[Contract Send]', e.message);

@@ -3772,9 +3772,13 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="contractSendModal"><div class="modal" style="max-width:720px">
   <h2>✍️ 发送合同 — <span id="contractWorkerName" style="color:var(--sky)"></span></h2>
   <div id="contractSendInfo" style="margin:.5rem 0"></div>
-  <div style="margin:.5rem 0">
+  <div id="contractEditorWrap" style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">合同内容（可编辑）：</label>
     <textarea id="contractContentEditor" style="width:100%;height:300px;font-family:monospace;font-size:.82rem;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;resize:vertical;line-height:1.5"></textarea>
+  </div>
+  <div id="contractTemplatePreviewWrap" style="display:none;margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">DocuSeal 模板 PDF（发送时将直接使用此 PDF）：</label>
+    <iframe id="contractTemplatePreviewFrame" style="width:100%;height:480px;border:1px solid var(--gray-200);border-radius:8px;background:#fff" allow="clipboard-write"></iframe>
   </div>
   <div style="display:flex;gap:1rem;margin:.5rem 0;flex-wrap:wrap">
     <div style="flex:1;min-width:200px">
@@ -19706,6 +19710,8 @@ async function sendCheckrFromOnboarding() {
 }
 
 // ── Contract Send Modal Functions ──
+let _contractActiveTemplateId = '';
+
 async function openContractSendModal() {
   if (!_onboardingWorkerId) return;
   document.getElementById('contractSendModal').classList.add('show');
@@ -19727,8 +19733,26 @@ async function openContractSendModal() {
   document.getElementById('contractContentEditor').value = r.content || '';
   document.getElementById('contractWorkerEmail').value = r.worker_email || '';
   document.getElementById('contractWorkerPhone').value = r.worker_phone || '';
+  // If a DocuSeal PDF template is configured for this employment type, that PDF is what
+  // gets signed — hide the legacy editable textarea and show the actual template PDF inline.
+  _contractActiveTemplateId = r.template_id || '';
+  const editorWrap = document.getElementById('contractEditorWrap');
+  const tmplWrap = document.getElementById('contractTemplatePreviewWrap');
+  const tmplFrame = document.getElementById('contractTemplatePreviewFrame');
+  if (_contractActiveTemplateId) {
+    editorWrap.style.display = 'none';
+    tmplWrap.style.display = '';
+    tmplFrame.src = `/api/admin/docuseal/templates/${_contractActiveTemplateId}/preview-pdf`;
+  } else {
+    editorWrap.style.display = '';
+    tmplWrap.style.display = 'none';
+    tmplFrame.src = 'about:blank';
+  }
   const empLabel = r.employment_type === '1099' ? '1099 承包商' : 'W-2 员工';
   let infoHtml = `<span style="font-size:.82rem;padding:2px 8px;border-radius:12px;background:#dbeafe;color:#1d4ed8;font-weight:600">${empLabel}</span>`;
+  if (_contractActiveTemplateId) {
+    infoHtml += ` <span style="font-size:.82rem;padding:2px 8px;border-radius:12px;background:#dcfce7;color:#15803d;font-weight:600">DocuSeal 模板 #${_contractActiveTemplateId}</span>`;
+  }
   if (!r.docuseal_enabled) {
     infoHtml += ` <span style="font-size:.82rem;color:#dc2626;font-weight:600">⚠️ DocuSeal 未配置</span>`;
   }
@@ -19780,10 +19804,18 @@ function updateContractDsStatusUI(status) {
 }
 
 async function previewContractPdf() {
-  const content = document.getElementById('contractContentEditor').value.trim();
-  if (!content) { showToast('合同内容为空', 'error'); return; }
   const previewDiv = document.getElementById('contractPdfPreview');
   const frame = document.getElementById('contractPdfFrame');
+  // When a DocuSeal PDF template is configured, the inline preview at the top of the modal
+  // already shows it — so this button just scrolls/highlights that. For the legacy HTML path,
+  // generate the PDF from the textarea content.
+  if (_contractActiveTemplateId) {
+    frame.src = `/api/admin/docuseal/templates/${_contractActiveTemplateId}/preview-pdf`;
+    previewDiv.style.display = '';
+    return;
+  }
+  const content = document.getElementById('contractContentEditor').value.trim();
+  if (!content) { showToast('合同内容为空', 'error'); return; }
   try {
     const resp = await fetch('/api/admin/worker-accounts/contract-preview-pdf', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -19801,7 +19833,9 @@ async function doSendContract() {
   if (!_onboardingWorkerId) return;
   const content = document.getElementById('contractContentEditor').value.trim();
   const workerEmail = document.getElementById('contractWorkerEmail').value.trim();
-  if (!content) { showToast('合同内容不能为空', 'error'); return; }
+  // When a DocuSeal PDF template is configured, the template PDF is what gets signed and
+  // `content` is not used by the backend — so skip the empty-content check in that case.
+  if (!_contractActiveTemplateId && !content) { showToast('合同内容不能为空', 'error'); return; }
   if (!workerEmail) { showToast('请填写工人邮箱', 'error'); return; }
   if (!await showConfirm(`确认发送合同至 ${workerEmail}？\n\n公司方需先签署，之后工人方再完成签署。`)) return;
   const btn = document.getElementById('contractSendBtn');
