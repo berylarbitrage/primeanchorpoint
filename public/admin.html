@@ -31244,6 +31244,7 @@ function rebuildCpyWeekDays() {
 }
 
 async function onCpyWeekStartChange() {
+  _readCpyWkRowState();
   rebuildCpyWeekDays();
   if (document.getElementById('cpyWkPartner').value) {
     renderCpyWeeklyRows();
@@ -31641,7 +31642,8 @@ async function pullCpyWeeklyHours(opts = {}) {
       for (let j = 0; j < _cpyWkDays.length; j++) {
         const date = _cpyWkDays[j];
         const dayData = empData[date];
-        if (dayData && dayData.start_time) {
+        // silent = auto-pull: only fill blank fields to avoid overwriting user's manual input
+        if (dayData && dayData.start_time && (!opts.silent || !w._starts[j])) {
           w._starts[j] = dayData.start_time;
           w._ends[j] = dayData.end_time || '';
           if (dayData.break_start_time) w._breakStarts[j] = dayData.break_start_time;
