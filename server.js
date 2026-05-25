@@ -2029,6 +2029,8 @@ try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN week_start TEXT DE
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN clock_in_time TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN clock_out_time TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_minutes INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_start_time TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_end_time TEXT DEFAULT ''`); } catch(e) {}
 
 // ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
 db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
@@ -23861,7 +23863,9 @@ app.get('/api/admin/partners/:id/weekly-hours', requireAdmin, blockManager, (req
     const start = new Date(weekStart + 'T00:00:00');
     const end = new Date(start.getTime() + 7 * 86400000);
     const endStr = end.toISOString().slice(0, 10);
-    const rows = db.prepare(`
+    // Fetch all individual entries (to be able to pull lunch info from a representative row),
+    // plus grouped aggregates for first_in / last_out / hours
+    const agg = db.prepare(`
       SELECT te.employee_id,
              substr(te.clock_in, 1, 10) AS d,
              MIN(te.clock_in) AS first_in,
@@ -23874,18 +23878,43 @@ app.get('/api/admin/partners/:id/weekly-hours', requireAdmin, blockManager, (req
         AND te.total_hours > 0
       GROUP BY te.employee_id, substr(te.clock_in, 1, 10)
     `).all(partnerId, weekStart + ' 00:00:00', endStr + ' 00:00:00');
+    // For lunch_start/lunch_end, pick a non-empty value per employee-day
+    const lunch = db.prepare(`
+      SELECT te.employee_id,
+             substr(te.clock_in, 1, 10) AS d,
+             te.lunch_start, te.lunch_end, te.break_minutes
+      FROM time_entries te
+      JOIN jobs j ON j.id = te.job_id
+      WHERE j.partner_id = ?
+        AND te.clock_in >= ? AND te.clock_in < ?
+        AND te.total_hours > 0
+        AND (COALESCE(te.lunch_start,'') != '' OR COALESCE(te.break_minutes,0) > 0)
+    `).all(partnerId, weekStart + ' 00:00:00', endStr + ' 00:00:00');
     const hhmm = (dt) => {
       if (!dt) return '';
-      // Accept "YYYY-MM-DD HH:MM:SS" or ISO "YYYY-MM-DDTHH:MM:SS..."
       const m = String(dt).match(/(\d{2}):(\d{2})/);
       return m ? `${m[1]}:${m[2]}` : '';
     };
+    const lunchMap = {};
+    for (const l of lunch) {
+      const k = `${l.employee_id}|${l.d}`;
+      if (!lunchMap[k]) lunchMap[k] = {
+        break_start: hhmm(l.lunch_start),
+        break_end: hhmm(l.lunch_end),
+        break_minutes: parseInt(l.break_minutes) || 0
+      };
+    }
     const out = {};
-    for (const r of rows) {
+    for (const r of agg) {
       if (!out[r.employee_id]) out[r.employee_id] = {};
+      const lkey = `${r.employee_id}|${r.d}`;
+      const l = lunchMap[lkey] || { break_start: '', break_end: '', break_minutes: 0 };
       out[r.employee_id][r.d] = {
         start_time: hhmm(r.first_in),
         end_time: hhmm(r.last_out),
+        break_start_time: l.break_start,
+        break_end_time: l.break_end,
+        break_minutes: l.break_minutes,
         hours: Math.round((r.hours + Number.EPSILON) * 100) / 100
       };
     }
@@ -23930,8 +23959,8 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
     const ins = db.prepare(`INSERT INTO company_worker_payments
       (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month,
        payment_method, notes, batch_id, created_by, hours, hourly_rate, week_start,
-       clock_in_time, clock_out_time, break_minutes)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+       clock_in_time, clock_out_time, break_minutes, break_start_time, break_end_time)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const ids = [];
     const tx = db.transaction(() => {
       for (const it of items) {
@@ -23943,9 +23972,18 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
           const date = (day.date || '').toString();
           const startT = (day.start_time || '').toString();
           const endT = (day.end_time || '').toString();
-          const dayBreak = day.break_minutes != null
-            ? Math.max(0, Number(day.break_minutes) || 0)
-            : rowBreak;
+          const breakStartT = (day.break_start_time || '').toString();
+          const breakEndT = (day.break_end_time || '').toString();
+          // Resolve break minutes: prefer explicit break_start/end times, else day.break_minutes, else row default
+          let dayBreak;
+          if (breakStartT && breakEndT) {
+            dayBreak = _cwpHoursFromTimes(breakStartT, breakEndT, 0) * 60;
+            dayBreak = Math.max(0, Math.round(dayBreak));
+          } else if (day.break_minutes != null) {
+            dayBreak = Math.max(0, Number(day.break_minutes) || 0);
+          } else {
+            dayBreak = rowBreak;
+          }
           let hours = Number(day.hours) || 0;
           if (!(hours > 0) && startT && endT) hours = _cwpHoursFromTimes(startT, endT, dayBreak);
           const rate = Number(day.rate) || 0;
@@ -23969,7 +24007,9 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
             d.week_start,
             startT,
             endT,
-            dayBreak
+            dayBreak,
+            breakStartT,
+            breakEndT
           );
           ids.push(r.lastInsertRowid);
         }
@@ -24087,7 +24127,7 @@ app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (r
     if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
     if (year_month) { where.push('year_month = ?'); params.push(String(year_month)); }
     const sql = `SELECT id, partner_name, worker_name, amount, hours, hourly_rate,
-                        clock_in_time, clock_out_time, break_minutes,
+                        clock_in_time, clock_out_time, break_minutes, break_start_time, break_end_time,
                         payment_date, week_start, year_month,
                         payment_method, notes, batch_id, created_by, created_at
                  FROM company_worker_payments
@@ -24099,12 +24139,12 @@ app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (r
       const s = String(v).replace(/"/g, '""');
       return /[",\n]/.test(s) ? `"${s}"` : s;
     };
-    const headers = ['ID', '公司', '工人姓名', '金额', '工时', '时薪', '上班', '下班', '午休(分)', '付款日期', '周起始日', '月份', '付款方式', '备注', '批次号', '操作人', '创建时间'];
+    const headers = ['ID', '公司', '工人姓名', '金额', '工时', '时薪', '上班', '下班', '午休开始', '午休结束', '午休(分)', '付款日期', '周起始日', '月份', '付款方式', '备注', '批次号', '操作人', '创建时间'];
     const lines = [headers.join(',')];
     for (const r of rows) {
       lines.push([
         r.id, r.partner_name, r.worker_name, r.amount, r.hours, r.hourly_rate,
-        r.clock_in_time, r.clock_out_time, r.break_minutes,
+        r.clock_in_time, r.clock_out_time, r.break_start_time, r.break_end_time, r.break_minutes,
         r.payment_date, r.week_start, r.year_month,
         r.payment_method, r.notes, r.batch_id, r.created_by, r.created_at
       ].map(esc).join(','));
