@@ -31229,7 +31229,11 @@ function renderCpyWeeklyRows() {
   const breakMinStyle = 'width:44px;padding:.1rem .15rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.66rem;text-align:center;color:var(--gray-600)';
   tbody.innerHTML = _cpyWkWorkers.map((w, i) => {
     const dayCells = _cpyWkDays.map((d, j) => `
-      <td style="text-align:center;padding:.3rem .25rem;background:#fff;vertical-align:top" data-day-idx="${j}">
+      <td style="text-align:center;padding:.3rem .25rem;background:#fff;vertical-align:top;position:relative" data-day-idx="${j}">
+        <button type="button" onclick="copyCpyWkDay(${i},${j})" title="复制这天到本周其他天"
+          style="position:absolute;top:2px;right:3px;background:none;border:none;cursor:pointer;font-size:.78rem;padding:1px 4px;border-radius:3px;color:var(--gray-400);line-height:1"
+          onmouseover="this.style.background='#fef3c7';this.style.color='#92400e'"
+          onmouseout="this.style.background='none';this.style.color='var(--gray-400)'">📋</button>
         <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
           <div style="display:flex;align-items:center;gap:3px;font-size:.66rem;color:var(--gray-500);width:100%">
             <span style="width:18px;text-align:right">上</span>
@@ -31281,6 +31285,12 @@ function renderCpyWeeklyRows() {
                <input type="hidden" class="cpyWkName" value="${_cpyEscape(w.name)}">
                <input type="hidden" class="cpyWkEmpId" value="${w.id}">`
           }
+          <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:4px">
+            <button type="button" onclick="copyCpyWkFirstFilled(${i}, 'weekday')" title="把首个填好的天复制到本周工作日（周一~周五）"
+              style="font-size:.65rem;padding:1px 5px;border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:3px;cursor:pointer">→工作日</button>
+            <button type="button" onclick="copyCpyWkFirstFilled(${i}, 'all')" title="把首个填好的天复制到本周所有天"
+              style="font-size:.65rem;padding:1px 5px;border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:3px;cursor:pointer">→整周</button>
+          </div>
         </td>
         ${dayCells}
         <td style="text-align:right;vertical-align:middle;font-weight:600;color:#15803d" class="cpyWkRowTotal" data-row="${i}">$0.00</td>
@@ -31427,6 +31437,102 @@ function updateCpyWkTotal() {
   });
   document.getElementById('cpyWkTotal').textContent = _cpyFmtMoney(grand);
   document.getElementById('cpyWkRecCount').textContent = String(recCount);
+}
+
+// Copy a single day's values (start/end/breaks/rate) to all OTHER days in the same row.
+function copyCpyWkDay(rowIdx, srcDayIdx) {
+  _readCpyWkRowState();
+  const w = _cpyWkWorkers[rowIdx];
+  if (!w) return;
+  const src = {
+    start: w._starts[srcDayIdx] || '',
+    end: w._ends[srcDayIdx] || '',
+    breakStart: w._breakStarts[srcDayIdx] || '',
+    breakEnd: w._breakEnds[srcDayIdx] || '',
+    breakMin: w._breaks[srcDayIdx],
+    rate: w._rates[srcDayIdx] || ''
+  };
+  if (!src.start && !src.end && !src.rate && !src.breakStart && !src.breakEnd && !(src.breakMin > 0)) {
+    showToast('这天还没填任何时间或时薪', 'toast-error');
+    return;
+  }
+  // Check if other days have data; if so, ask confirm
+  let hasOther = false;
+  for (let j = 0; j < 7; j++) {
+    if (j === srcDayIdx) continue;
+    if ((w._starts[j] || '') || (w._ends[j] || '') || (w._rates[j] || '') ||
+        (w._breakStarts[j] || '') || (w._breakEnds[j] || '') || (w._breaks[j] > 0)) {
+      hasOther = true; break;
+    }
+  }
+  if (hasOther && !confirm('其他天已有数据，确认全部覆盖？')) return;
+  for (let j = 0; j < 7; j++) {
+    if (j === srcDayIdx) continue;
+    w._starts[j] = src.start;
+    w._ends[j] = src.end;
+    w._breakStarts[j] = src.breakStart;
+    w._breakEnds[j] = src.breakEnd;
+    w._breaks[j] = src.breakMin;
+    if (src.rate) w._rates[j] = src.rate;
+  }
+  if (src.start && src.end) w._selected = true;
+  renderCpyWeeklyRows();
+  showToast('已复制到本周其他 6 天', 'success');
+}
+
+// Copy the first-filled day's values to weekdays (Mon-Fri) or to the whole week.
+// scope: 'weekday' | 'all'
+function copyCpyWkFirstFilled(rowIdx, scope) {
+  _readCpyWkRowState();
+  const w = _cpyWkWorkers[rowIdx];
+  if (!w) return;
+  // Find first day with start time
+  let srcDayIdx = -1;
+  for (let j = 0; j < 7; j++) {
+    if ((w._starts[j] || '') && (w._ends[j] || '')) { srcDayIdx = j; break; }
+  }
+  if (srcDayIdx < 0) {
+    showToast('请先在任意一天填好上下班时间', 'toast-error');
+    return;
+  }
+  const src = {
+    start: w._starts[srcDayIdx],
+    end: w._ends[srcDayIdx],
+    breakStart: w._breakStarts[srcDayIdx] || '',
+    breakEnd: w._breakEnds[srcDayIdx] || '',
+    breakMin: w._breaks[srcDayIdx],
+    rate: w._rates[srcDayIdx] || ''
+  };
+  // Determine target days based on scope. Day-of-week from _cpyWkDays[j] string.
+  const targets = [];
+  for (let j = 0; j < 7; j++) {
+    if (j === srcDayIdx) continue;
+    const date = _cpyWkDays[j];
+    const dow = new Date(date + 'T00:00:00').getDay(); // 0=Sun..6=Sat
+    if (scope === 'weekday' && (dow === 0 || dow === 6)) continue;
+    targets.push(j);
+  }
+  if (!targets.length) { showToast('没有目标天', 'toast-error'); return; }
+  let hasOther = false;
+  for (const j of targets) {
+    if ((w._starts[j] || '') || (w._ends[j] || '') ||
+        (w._breakStarts[j] || '') || (w._breakEnds[j] || '') ||
+        (w._breaks[j] > 0) || (w._rates[j] || '')) {
+      hasOther = true; break;
+    }
+  }
+  if (hasOther && !confirm(`将覆盖 ${targets.length} 天的现有数据，确认？`)) return;
+  for (const j of targets) {
+    w._starts[j] = src.start;
+    w._ends[j] = src.end;
+    w._breakStarts[j] = src.breakStart;
+    w._breakEnds[j] = src.breakEnd;
+    w._breaks[j] = src.breakMin;
+    if (src.rate) w._rates[j] = src.rate;
+  }
+  w._selected = true;
+  renderCpyWeeklyRows();
+  showToast(`已复制到 ${targets.length} 天`, 'success');
 }
 
 function addCpyWkAdHocRow() {
