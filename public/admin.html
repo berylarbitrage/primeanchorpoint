@@ -31192,6 +31192,7 @@ async function deleteCpy(id) {
 let _cpyWkWorkers = [];      // workers shown in modal (system + ad-hoc)
 let _cpyWkDays = [];         // ['2026-05-19', ...]  7 dates
 let _cpyWkDayLabels = [];    // [{dow:'周一', md:'5/19'}]
+let _cpyWkLoadGen = 0;       // generation counter: discard stale loadCpyWeeklyWorkers results
 
 const _CPY_WK_DAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -31281,6 +31282,7 @@ function rebuildCpyWeekDays() {
 }
 
 async function onCpyWeekStartChange() {
+  _readCpyWkRowState();
   rebuildCpyWeekDays();
   if (document.getElementById('cpyWkPartner').value) {
     renderCpyWeeklyRows();
@@ -31308,22 +31310,50 @@ function _newCpyEmptyWorker(base, adHoc) {
 }
 
 async function loadCpyWeeklyWorkers() {
+  const gen = ++_cpyWkLoadGen;
   const partnerId = document.getElementById('cpyWkPartner').value;
   const tbody = document.getElementById('cpyWkRows');
+  // Save any user input (especially ad-hoc workers) before mutating state
+  _readCpyWkRowState();
+  const preservedAdHocs = _cpyWkWorkers.filter(w => w._adHoc);
   if (!partnerId) {
-    _cpyWkWorkers = [];
-    tbody.innerHTML = `<tr><td colspan="${3 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">请先选择公司</td></tr>`;
-    updateCpyWkTotal();
+    _cpyWkWorkers = preservedAdHocs;
+    if (preservedAdHocs.length) {
+      renderCpyWeeklyRows();
+    } else {
+      tbody.innerHTML = `<tr><td colspan="${3 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">请先选择公司</td></tr>`;
+      updateCpyWkTotal();
+    }
     return;
   }
   rebuildCpyWeekDays();
-  tbody.innerHTML = `<tr><td colspan="${3 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">加载该公司员工…</td></tr>`;
+  if (!_cpyWkWorkers.length) {
+    tbody.innerHTML = `<tr><td colspan="${3 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">加载该公司员工…</td></tr>`;
+  }
   try {
     const list = await api(`/admin/partners/${partnerId}/payment-workers`);
-    _cpyWkWorkers = (Array.isArray(list) ? list : []).map(w => _newCpyEmptyWorker(w, false));
+    // Bail out if a newer load (or company change) superseded us — don't clobber fresher state
+    if (gen !== _cpyWkLoadGen) return;
+    // Re-read DOM in case the user typed more during the await
+    _readCpyWkRowState();
+    const adHocs = _cpyWkWorkers.filter(w => w._adHoc);
+    // Preserve user-entered data on previously-loaded regular workers (by id)
+    const existingById = new Map(
+      _cpyWkWorkers.filter(w => !w._adHoc && w.id != null).map(w => [w.id, w])
+    );
+    _cpyWkWorkers = (Array.isArray(list) ? list : []).map(w => {
+      const prev = existingById.get(w.id);
+      if (prev) {
+        prev.name = w.name; prev.position = w.position; prev.phone = w.phone;
+        return prev;
+      }
+      return _newCpyEmptyWorker(w, false);
+    });
+    _cpyWkWorkers.push(...adHocs);
     renderCpyWeeklyRows();
     await pullCpyWeeklyHours({ silent: true });
   } catch (e) {
+    if (gen !== _cpyWkLoadGen) return;
     tbody.innerHTML = `<tr><td colspan="${3 + _cpyWkDays.length}" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
   }
 }
@@ -31741,7 +31771,8 @@ async function pullCpyWeeklyHours(opts = {}) {
       for (let j = 0; j < _cpyWkDays.length; j++) {
         const date = _cpyWkDays[j];
         const dayData = empData[date];
-        if (dayData && dayData.start_time) {
+        // silent = auto-pull: only fill blank fields to avoid overwriting user's manual input
+        if (dayData && dayData.start_time && (!opts.silent || !w._starts[j])) {
           w._starts[j] = dayData.start_time;
           w._ends[j] = dayData.end_time || '';
           if (dayData.break_start_time) w._breakStarts[j] = dayData.break_start_time;
