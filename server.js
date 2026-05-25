@@ -3234,9 +3234,9 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
       fields: [{ name: 'date1', default_value: todayDate, readonly: true }] };
     const submitter2 = { role: 'Second Party', name: signer2.name, email: signer2.email,
       fields: [{ name: 'date2', default_value: todayDate, readonly: true }] };
-    // Include phone numbers so DocuSeal can send its own SMS notifications
-    if (signer1.phone) submitter1.phone = signer1.phone;
-    if (signer2.phone) submitter2.phone = signer2.phone;
+    // Include phone numbers so DocuSeal can send its own SMS notifications (must be E.164)
+    if (signer1.phone) submitter1.phone = formatPhoneE164(signer1.phone);
+    if (signer2.phone) submitter2.phone = formatPhoneE164(signer2.phone);
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: false,
@@ -3287,9 +3287,9 @@ async function dsealSendContractHtml({ contractText, templateId, docName, emailS
     fields: [{ name: 'date1', default_value: todayDate, readonly: true }] };
   const submitter2 = { role: 'Second Party', name: signer2.name, email: signer2.email,
     fields: [{ name: 'date2', default_value: todayDate, readonly: true }] };
-  // Include phone numbers so DocuSeal can send its own SMS notifications
-  if (signer1.phone) submitter1.phone = signer1.phone;
-  if (signer2.phone) submitter2.phone = signer2.phone;
+  // Include phone numbers so DocuSeal can send its own SMS notifications (must be E.164)
+  if (signer1.phone) submitter1.phone = formatPhoneE164(signer1.phone);
+  if (signer2.phone) submitter2.phone = formatPhoneE164(signer2.phone);
   const subRes = await dsealApiCall('POST', '/api/submissions/html', {
     name: emailSubject || docName,
     documents: [{ name: docName, html, size: 'Letter' }],
