@@ -1672,6 +1672,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-sm btn-outline" onclick="pullCpyWeeklyHours()">📥 拉取打卡时间</button>
       <button class="btn btn-sm btn-outline" onclick="clearCpyWeeklyHours()">🧹 清空时间</button>
       <button class="btn btn-sm btn-outline" onclick="addCpyWkAdHocRow()">+ 添加自定义工人</button>
+      <button class="btn btn-sm btn-outline" onclick="runCpyWkSelfTest()" title="自动测试：填数据→加新行→检查旧行数据是否保留">🧪 自检</button>
       <button class="btn btn-sm btn-outline" onclick="loadCpyWeeklyWorkers()">重新加载员工</button>
     </div>
   </div>
@@ -31650,6 +31651,69 @@ function addCpyWkAdHocRow() {
   _readCpyWkRowState();
   _cpyWkWorkers.push(_newCpyEmptyWorker(null, true));
   renderCpyWeeklyRows();
+}
+
+// Self-test: programmatically fills row 0, adds a new row, checks if row 0 data is preserved.
+// Helpful for verifying state preservation in production browsers.
+function runCpyWkSelfTest() {
+  if (!_cpyWkDays.length) { alert('请先选择公司和周起始日'); return; }
+  // Snapshot current state so we can restore it
+  const snapshot = JSON.parse(JSON.stringify(_cpyWkWorkers));
+  try {
+    // Reset to a clean state: 1 ad-hoc row
+    _cpyWkWorkers = [_newCpyEmptyWorker(null, true)];
+    renderCpyWeeklyRows();
+
+    // Simulate user typing into row 0
+    const set = (sel, val) => {
+      const el = document.querySelector(`tr[data-cpy-wk-row="0"] ${sel}`);
+      if (el) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      return el ? el.value : '(no element)';
+    };
+    set('input.cpyWkName', '测试工人');
+    set('input.cpyWkStart[data-day="0"]', '09:00');
+    set('input.cpyWkEnd[data-day="0"]', '17:00');
+    set('input.cpyWkRate[data-day="0"]', '25');
+    set('input.cpyWkNotes', '测试备注');
+
+    // Record what's in the DOM right before the add
+    const before = {
+      name:  document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkName')?.value,
+      start: document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkStart[data-day="0"]')?.value,
+      end:   document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkEnd[data-day="0"]')?.value,
+      rate:  document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkRate[data-day="0"]')?.value,
+      notes: document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkNotes')?.value,
+    };
+
+    // Add a new row
+    addCpyWkAdHocRow();
+
+    // Read row 0 from DOM after the add
+    const after = {
+      name:  document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkName')?.value,
+      start: document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkStart[data-day="0"]')?.value,
+      end:   document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkEnd[data-day="0"]')?.value,
+      rate:  document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkRate[data-day="0"]')?.value,
+      notes: document.querySelector('tr[data-cpy-wk-row="0"] input.cpyWkNotes')?.value,
+    };
+
+    const lost = Object.keys(before).filter(k => before[k] !== after[k]);
+    const rowCount = document.querySelectorAll('#cpyWkRows tr[data-cpy-wk-row]').length;
+
+    const report =
+      `自检结果\n\n` +
+      `加新行前 row 0:\n  姓名=${before.name}  上班=${before.start}  下班=${before.end}  时薪=${before.rate}  备注=${before.notes}\n\n` +
+      `加新行后 row 0:\n  姓名=${after.name}  上班=${after.start}  下班=${after.end}  时薪=${after.rate}  备注=${after.notes}\n\n` +
+      `当前行数: ${rowCount}\n\n` +
+      (lost.length === 0
+        ? `✅ PASS — row 0 数据完整保留。\n\n如果你手动操作时丢数据，可能是浏览器缓存了旧 JS：请 ${navigator.platform.includes('Mac') ? 'Cmd+Shift+R' : 'Ctrl+Shift+R'} 强制刷新。`
+        : `❌ FAIL — 丢失字段：${lost.join(', ')}。请截图此弹窗并发给开发人员。\n浏览器: ${navigator.userAgent}`);
+    alert(report);
+  } finally {
+    // Restore the original state
+    _cpyWkWorkers = snapshot;
+    renderCpyWeeklyRows();
+  }
 }
 
 function removeCpyWkRow(idx) {
