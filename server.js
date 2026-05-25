@@ -22058,6 +22058,24 @@ app.put('/api/admin/docuseal/templates/:dsId/rename', requireAdmin, async (req, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// PUT /api/admin/docuseal/templates/:dsId/replace-document — replace PDF document of an existing template
+app.put('/api/admin/docuseal/templates/:dsId/replace-document', requireAdmin, express.json({ limit: '30mb' }), async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const { file, name } = req.body; // file = data:application/pdf;base64,...
+  if (!file) return res.status(400).json({ error: '缺少 file (base64 PDF)' });
+  const dsId = parseInt(req.params.dsId, 10);
+  if (!dsId) return res.status(400).json({ error: '无效的模板 ID' });
+  try {
+    const local = db.prepare('SELECT * FROM docuseal_templates WHERE docuseal_template_id=?').get(dsId);
+    const docName = (name || local?.name || `template-${dsId}`) + '.pdf';
+    const r = await dsealApiCall('PUT', `/api/templates/${dsId}`, {
+      documents: [{ name: docName, file }]
+    });
+    if (r.status >= 400) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
+    res.json({ success: true, data: r.data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/admin/docuseal/create-html-template — create a single template from HTML via DocuSeal API
 app.post('/api/admin/docuseal/create-html-template', requireAdmin, async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
