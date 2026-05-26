@@ -31709,14 +31709,44 @@ function addCpyWkAdHocRow() {
   renderCpyWeeklyRows();
 }
 
+// Show a 3-option modal: "上午 整点" / "下午 整点" / "继续输入分钟".
+// Returns Promise<'am' | 'pm' | 'minutes' | null>.
+function _cpyTimeAmbiguityPrompt(rawTyped, h, kind) {
+  const am = String(h).padStart(2, '0') + ':00';
+  const pm = String(h + 12).padStart(2, '0') + ':00';
+  const fieldLabel = ({start:'上班', end:'下班', breakStart:'午休开始', breakEnd:'午休结束'})[kind] || '时间';
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;display:flex;align-items:center;justify-content:center';
+    const pick = (val) => { overlay.remove(); resolve(val); };
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:14px;padding:1.5rem;width:420px;max-width:92vw;box-shadow:0 25px 70px rgba(0,0,0,.35)" onclick="event.stopPropagation()">
+        <div style="font-weight:800;font-size:1rem;color:#1e293b;margin-bottom:.4rem">⏰ ${fieldLabel}时间：${rawTyped}</div>
+        <div style="font-size:.85rem;color:#64748b;margin-bottom:1.1rem">你输入了「<b>${rawTyped}</b>」，请选择具体含义：</div>
+        <div style="display:flex;flex-direction:column;gap:.55rem">
+          <button data-v="am" style="padding:.7rem .9rem;border-radius:9px;border:2px solid #93c5fd;background:#eff6ff;color:#1d4ed8;font-weight:700;font-size:.92rem;cursor:pointer;text-align:left">☀️ 上午整点 <span style="font-family:monospace;font-size:1rem;margin-left:.4rem">${am}</span></button>
+          <button data-v="pm" style="padding:.7rem .9rem;border-radius:9px;border:2px solid #fcd34d;background:#fffbeb;color:#92400e;font-weight:700;font-size:.92rem;cursor:pointer;text-align:left">🌙 下午整点 <span style="font-family:monospace;font-size:1rem;margin-left:.4rem">${pm}</span></button>
+          <button data-v="minutes" style="padding:.7rem .9rem;border-radius:9px;border:2px solid #cbd5e1;background:#f8fafc;color:#334155;font-weight:600;font-size:.88rem;cursor:pointer;text-align:left">✏️ 继续输入分钟（不是整点）</button>
+          <button data-v="cancel" style="padding:.4rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#64748b;font-size:.78rem;cursor:pointer;margin-top:.3rem">取消（清空此字段）</button>
+        </div>
+      </div>`;
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) pick('cancel');
+      const v = e.target.closest('button')?.getAttribute('data-v');
+      if (v) pick(v);
+    });
+    document.body.appendChild(overlay);
+  });
+}
+
 // Format a partial time entry into HH:MM. Accepts: "9", "09", "900", "0900", "9:00", "9:5", etc.
-// kind is 'start' | 'end' | 'breakStart' | 'breakEnd' — used to decide default AM/PM behavior.
-// Returns the canonical "HH:MM" or '' if input is empty. Shows a confirm popup for single-digit hours.
-function _cpyParseTimeInput(raw, kind) {
-  if (!raw) return '';
-  // Strip non-digits / non-colon
+// kind is 'start' | 'end' | 'breakStart' | 'breakEnd' — used to suggest AM vs PM defaults.
+// Returns: { value: 'HH:MM' | '' } on success, { needMinutes: 'HH:' } when user wants to keep typing,
+// or { invalid: true } if the input is malformed.
+async function _cpyParseTimeInput(raw, kind) {
+  if (!raw) return { value: '' };
   const cleaned = String(raw).replace(/[^0-9:]/g, '');
-  if (!cleaned) return '';
+  if (!cleaned) return { value: '' };
   let h, m;
   if (cleaned.includes(':')) {
     const parts = cleaned.split(':');
@@ -31729,33 +31759,42 @@ function _cpyParseTimeInput(raw, kind) {
   }
   if (h > 23 || m > 59 || h < 0 || m < 0) {
     alert(`「${raw}」不是有效时间，请输入 HH:MM（24 小时制）`);
-    return null; // null = invalid, keep field as-is so user can fix
+    return { invalid: true };
   }
-  // Ambiguity: single-digit hour 1-9 typed without colon — ask AM/PM.
-  // For 上班 (start/breakStart) usually AM; for 下班 (end/breakEnd) usually PM.
-  if (!cleaned.includes(':') && cleaned.length <= 2 && h >= 1 && h <= 9) {
-    const isEndField = kind === 'end' || kind === 'breakEnd';
-    const defaultPm = isEndField; // suggest PM for end-of-day fields
-    const am = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-    const pm = String(h + 12).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-    const promptText = defaultPm
-      ? `「${raw}」是下午 ${h} 点（${pm}）吗？\n\n点【确定】= 下午 ${pm}\n点【取消】= 上午 ${am}`
-      : `「${raw}」是上午 ${h} 点（${am}）吗？\n\n点【确定】= 上午 ${am}\n点【取消】= 下午 ${pm}`;
-    const confirmed = confirm(promptText);
-    if (confirmed === defaultPm) {
-      h = h + 12;
+  // Ambiguity: single-digit hour 1-9 typed without colon AND no minutes given.
+  // User might mean integer hour AM/PM, or they might be mid-typing (minutes not done).
+  const isAmbiguous = !cleaned.includes(':') && cleaned.length <= 2 && h >= 1 && h <= 9 && m === 0;
+  if (isAmbiguous) {
+    const choice = await _cpyTimeAmbiguityPrompt(raw, h, kind);
+    if (choice === 'cancel' || choice == null) return { value: '' };
+    if (choice === 'minutes') {
+      // Build a "HH:" prefix so user can continue typing minutes
+      const isEndField = kind === 'end' || kind === 'breakEnd';
+      // Use 24-hour: for end fields > 1pm prefer PM by adding 12, but here ask separately
+      // To keep it simple, leave the AM hour (00-09); user can edit if they meant PM after.
+      return { needMinutes: String(h).padStart(2, '0') + ':' };
     }
+    if (choice === 'pm') h = h + 12;
+    // 'am' or default keep as-is
   }
-  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  return { value: String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') };
 }
 
-// Called on blur of any cpyWk time input. Parses the raw text, asks AM/PM if ambiguous,
-// writes the canonical HH:MM back to the input, and syncs internal state.
-function formatCpyWkTime(input, kind) {
+// onblur of any cpyWk time input. Async because the popup is promise-based.
+async function formatCpyWkTime(input, kind) {
   const raw = input.value.trim();
-  const parsed = _cpyParseTimeInput(raw, kind);
-  if (parsed === null) { input.focus(); return; } // invalid — keep cursor
-  input.value = parsed;
+  const result = await _cpyParseTimeInput(raw, kind);
+  if (result.invalid) { input.focus(); return; }
+  if (result.needMinutes != null) {
+    // Put user back into the field with "HH:" so they can finish the minutes
+    input.value = result.needMinutes;
+    input.focus();
+    // Move caret to end so the next keystroke types the minutes
+    const len = input.value.length;
+    try { input.setSelectionRange(len, len); } catch {}
+    return;
+  }
+  input.value = result.value;
   onCpyWkCellChange();
 }
 
