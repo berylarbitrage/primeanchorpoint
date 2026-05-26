@@ -31286,6 +31286,7 @@ async function onCpyWeekStartChange() {
   _readCpyWkRowState();
   rebuildCpyWeekDays();
   if (document.getElementById('cpyWkPartner').value) {
+    _cpyWkLastRenderCause = 'onCpyWeekStartChange';
     renderCpyWeeklyRows();
     await pullCpyWeeklyHours({ silent: true });
   }
@@ -31320,6 +31321,7 @@ async function loadCpyWeeklyWorkers() {
   if (!partnerId) {
     _cpyWkWorkers = preservedAdHocs;
     if (preservedAdHocs.length) {
+      _cpyWkLastRenderCause = 'loadCpyWeeklyWorkers(无公司,保留 ad-hoc)';
       renderCpyWeeklyRows();
     } else {
       tbody.innerHTML = `<tr><td colspan="${3 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">请先选择公司</td></tr>`;
@@ -31351,6 +31353,7 @@ async function loadCpyWeeklyWorkers() {
       return _newCpyEmptyWorker(w, false);
     });
     _cpyWkWorkers.push(...adHocs);
+    _cpyWkLastRenderCause = `loadCpyWeeklyWorkers(系统:${list?.length||0}+adhoc:${adHocs.length})`;
     renderCpyWeeklyRows();
     await pullCpyWeeklyHours({ silent: true });
   } catch (e) {
@@ -31359,7 +31362,20 @@ async function loadCpyWeeklyWorkers() {
   }
 }
 
+let _cpyWkLastRenderCause = '初始化';
+let _cpyWkLastWorkersLen = 0;
+
 function renderCpyWeeklyRows() {
+  if (_cpyWkMonitorOn) {
+    const prevLen = _cpyWkLastWorkersLen;
+    const newLen = _cpyWkWorkers.length;
+    const lenDelta = prevLen !== newLen ? ` 行数:${prevLen}→${newLen}` : '';
+    const row0Name = _cpyWkWorkers[0]?.name || '∅';
+    const t = new Date().toISOString().slice(11, 23);
+    _cpyWkMonitorLog.push(`${t} [渲染] cause=${_cpyWkLastRenderCause}${lenDelta} row0_array.name=${row0Name}`);
+    if (_cpyWkMonitorLog.length > 200) _cpyWkMonitorLog.shift();
+    _cpyWkLastWorkersLen = newLen;
+  }
   const tbody = document.getElementById('cpyWkRows');
   if (!_cpyWkWorkers.length) {
     tbody.innerHTML = `<tr><td colspan="${3 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">该公司暂无在职员工。点击「+ 添加自定义工人」手动添加。</td></tr>`;
@@ -31619,6 +31635,7 @@ function copyCpyWkDay(rowIdx, srcDayIdx) {
     if (src.rate) w._rates[j] = src.rate;
   }
   if (src.start && src.end) w._selected = true;
+  _cpyWkLastRenderCause = `copyCpyWkDay(row=${rowIdx},src=${srcDayIdx})`;
   renderCpyWeeklyRows();
   showToast('已复制到本周其他 6 天', 'success');
 }
@@ -31674,6 +31691,7 @@ function copyCpyWkFirstFilled(rowIdx, scope) {
     if (src.rate) w._rates[j] = src.rate;
   }
   w._selected = true;
+  _cpyWkLastRenderCause = `copyCpyWkFirstFilled(row=${rowIdx},scope=${scope})`;
   renderCpyWeeklyRows();
   showToast(`已复制到 ${targets.length} 天`, 'success');
 }
@@ -31681,6 +31699,7 @@ function copyCpyWkFirstFilled(rowIdx, scope) {
 function addCpyWkAdHocRow() {
   _readCpyWkRowState();
   _cpyWkWorkers.push(_newCpyEmptyWorker(null, true));
+  _cpyWkLastRenderCause = 'addCpyWkAdHocRow';
   renderCpyWeeklyRows();
 }
 
@@ -31776,6 +31795,7 @@ function runCpyWkSelfTest() {
   try {
     // Reset to 2 ad-hoc rows — matches the screenshot the user reported
     _cpyWkWorkers = [_newCpyEmptyWorker(null, true), _newCpyEmptyWorker(null, true)];
+    _cpyWkLastRenderCause = 'selfTest 重置';
     renderCpyWeeklyRows();
     log(`Step 1: reset to ${_cpyWkWorkers.length} ad-hoc rows; DOM rows = ${document.querySelectorAll('#cpyWkRows tr[data-cpy-wk-row]').length}`);
 
@@ -31834,6 +31854,7 @@ function runCpyWkSelfTest() {
     alert(report);
   } finally {
     _cpyWkWorkers = snapshot;
+    _cpyWkLastRenderCause = 'selfTest 恢复快照';
     renderCpyWeeklyRows();
   }
 }
@@ -31841,6 +31862,7 @@ function runCpyWkSelfTest() {
 function removeCpyWkRow(idx) {
   _readCpyWkRowState();
   _cpyWkWorkers.splice(idx, 1);
+  _cpyWkLastRenderCause = `removeCpyWkRow(idx=${idx})`;
   renderCpyWeeklyRows();
 }
 
@@ -31875,6 +31897,7 @@ async function pullCpyWeeklyHours(opts = {}) {
         }
       }
     });
+    _cpyWkLastRenderCause = `pullCpyWeeklyHours(pulled=${pulled},silent=${!!opts.silent})`;
     renderCpyWeeklyRows();
     if (!opts.silent) showToast(pulled ? `已拉取 ${pulled} 天的打卡时间` : '该周无打卡数据', pulled ? 'success' : 'toast-error');
   } catch (e) {
@@ -31891,6 +31914,7 @@ function clearCpyWeeklyHours() {
     w._breakStarts = new Array(7).fill('');
     w._breakEnds = new Array(7).fill('');
   });
+  _cpyWkLastRenderCause = 'clearCpyWeeklyHours';
   renderCpyWeeklyRows();
 }
 
