@@ -31720,7 +31720,7 @@ function _cpyTimeAmbiguityPrompt(rawTyped, h, kind) {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;display:flex;align-items:center;justify-content:center';
     const pick = (val) => { overlay.remove(); resolve(val); };
     overlay.innerHTML = `
-      <div style="background:#fff;border-radius:14px;padding:1.5rem;width:420px;max-width:92vw;box-shadow:0 25px 70px rgba(0,0,0,.35)" onclick="event.stopPropagation()">
+      <div style="background:#fff;border-radius:14px;padding:1.5rem;width:420px;max-width:92vw;box-shadow:0 25px 70px rgba(0,0,0,.35)">
         <div style="font-weight:800;font-size:1rem;color:#1e293b;margin-bottom:.4rem">⏰ ${fieldLabel}时间：${rawTyped}</div>
         <div style="font-size:.85rem;color:#64748b;margin-bottom:1.1rem">你输入了「<b>${rawTyped}</b>」，请选择具体含义：</div>
         <div style="display:flex;flex-direction:column;gap:.55rem">
@@ -31731,9 +31731,10 @@ function _cpyTimeAmbiguityPrompt(rawTyped, h, kind) {
         </div>
       </div>`;
     overlay.addEventListener('click', e => {
+      // Check button first — overlay click should only trigger cancel when clicked outside the inner modal
+      const btn = e.target.closest('button[data-v]');
+      if (btn) { pick(btn.getAttribute('data-v')); return; }
       if (e.target === overlay) pick('cancel');
-      const v = e.target.closest('button')?.getAttribute('data-v');
-      if (v) pick(v);
     });
     document.body.appendChild(overlay);
   });
