@@ -1673,6 +1673,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-sm btn-outline" onclick="clearCpyWeeklyHours()">🧹 清空时间</button>
       <button class="btn btn-sm btn-outline" onclick="addCpyWkAdHocRow()">+ 添加自定义工人</button>
       <button class="btn btn-sm btn-outline" onclick="runCpyWkSelfTest()" title="自动测试：填数据→加新行→检查旧行数据是否保留">🧪 自检</button>
+      <button class="btn btn-sm btn-outline" onclick="toggleCpyWkMonitor()" title="开启后会在 modal 顶部显示 row 0 数据的实时变化，等数据消失瞬间可以复制日志发给开发">📡 监控</button>
       <button class="btn btn-sm btn-outline" onclick="loadCpyWeeklyWorkers()">重新加载员工</button>
     </div>
   </div>
@@ -31681,6 +31682,87 @@ function addCpyWkAdHocRow() {
   _readCpyWkRowState();
   _cpyWkWorkers.push(_newCpyEmptyWorker(null, true));
   renderCpyWeeklyRows();
+}
+
+// ── Live monitor mode ──────────────────────────────────────────────
+// Adds a sticky status bar at the top of the modal showing row 0's current DOM values
+// in real time + a log of every state change. User can leave it on, normally type
+// into the form, and the bar will reveal exactly when/how data goes missing.
+let _cpyWkMonitorOn = false;
+let _cpyWkMonitorObserver = null;
+let _cpyWkMonitorLog = [];
+let _cpyWkMonitorUpdating = false;
+
+function _cpyWkMonitorSnapshot() {
+  const tr0 = document.querySelector('#cpyWkRows tr[data-cpy-wk-row="0"]');
+  if (!tr0) return null;
+  return {
+    name:  tr0.querySelector('input.cpyWkName')?.value,
+    s0:    tr0.querySelector('input.cpyWkStart[data-day="0"]')?.value,
+    e0:    tr0.querySelector('input.cpyWkEnd[data-day="0"]')?.value,
+    r0:    tr0.querySelector('input.cpyWkRate[data-day="0"]')?.value,
+    notes: tr0.querySelector('input.cpyWkNotes')?.value,
+  };
+}
+
+function _cpyWkMonitorRender() {
+  const bar = document.getElementById('cpyWkMonitorBar');
+  if (!bar) return;
+  const snap = _cpyWkMonitorSnapshot();
+  const arr = _cpyWkWorkers[0];
+  const fmtSnap = snap ? `姓名=${snap.name||'∅'} 上班=${snap.s0||'∅'} 下班=${snap.e0||'∅'} 时薪=${snap.r0||'∅'} 备注=${snap.notes||'∅'}` : '∅';
+  const fmtArr  = arr  ? `姓名=${arr.name||'∅'} 上班=${arr._starts[0]||'∅'} 下班=${arr._ends[0]||'∅'} 时薪=${arr._rates[0]||'∅'} 备注=${arr._notes||'∅'}` : '∅';
+  bar.querySelector('.mon-dom').textContent = fmtSnap;
+  bar.querySelector('.mon-arr').textContent = fmtArr;
+  bar.querySelector('.mon-log').textContent = _cpyWkMonitorLog.slice(-8).join('\n');
+}
+
+function _cpyWkMonitorLogChange(source) {
+  if (_cpyWkMonitorUpdating) return;
+  const snap = _cpyWkMonitorSnapshot();
+  if (!snap) return;
+  const last = _cpyWkMonitorLog[_cpyWkMonitorLog.length - 1];
+  const t = new Date().toISOString().slice(11, 23);
+  const line = `${t} [${source}] 姓名=${snap.name||'∅'} 上=${snap.s0||'∅'} 下=${snap.e0||'∅'} 时薪=${snap.r0||'∅'} 备注=${snap.notes||'∅'}`;
+  if (line.substring(13) !== (last||'').substring(13)) {
+    _cpyWkMonitorLog.push(line);
+    if (_cpyWkMonitorLog.length > 200) _cpyWkMonitorLog.shift();
+  }
+  _cpyWkMonitorUpdating = true;
+  try { _cpyWkMonitorRender(); } finally { _cpyWkMonitorUpdating = false; }
+}
+
+function toggleCpyWkMonitor() {
+  _cpyWkMonitorOn = !_cpyWkMonitorOn;
+  const existing = document.getElementById('cpyWkMonitorBar');
+  if (!_cpyWkMonitorOn) {
+    if (existing) existing.remove();
+    if (_cpyWkMonitorObserver) { _cpyWkMonitorObserver.disconnect(); _cpyWkMonitorObserver = null; }
+    _cpyWkMonitorLog = [];
+    return;
+  }
+  // Inject sticky bar
+  const modal = document.querySelector('#cpyWeeklyModal .modal');
+  if (!modal) return;
+  const bar = document.createElement('div');
+  bar.id = 'cpyWkMonitorBar';
+  bar.style.cssText = 'position:sticky;top:0;z-index:50;background:#0f172a;color:#e2e8f0;padding:.5rem .75rem;border-radius:8px;margin-bottom:.5rem;font-family:monospace;font-size:.72rem;line-height:1.4';
+  bar.innerHTML = `
+    <div style="font-weight:700;color:#fbbf24;margin-bottom:.25rem">📡 实时监控 — row 0</div>
+    <div>DOM:   <span class="mon-dom" style="color:#86efac">—</span></div>
+    <div>数组:  <span class="mon-arr" style="color:#93c5fd">—</span></div>
+    <div style="color:#fcd34d;margin-top:.35rem;font-weight:700">最近变化（最多8条）：</div>
+    <pre class="mon-log" style="white-space:pre-wrap;margin:0;color:#fde68a;max-height:10rem;overflow-y:auto"></pre>
+    <div style="margin-top:.3rem"><button onclick="navigator.clipboard.writeText(_cpyWkMonitorLog.join('\\n')).then(()=>showToast('已复制完整日志到剪贴板','success'))" style="font-size:.7rem;padding:2px 8px;border-radius:4px;border:1px solid #475569;background:#1e293b;color:#cbd5e1;cursor:pointer">📋 复制完整日志</button></div>
+  `;
+  modal.insertBefore(bar, modal.firstChild);
+  // Observe tbody for any DOM change
+  const tbody = document.getElementById('cpyWkRows');
+  _cpyWkMonitorObserver = new MutationObserver(() => _cpyWkMonitorLogChange('DOM突变'));
+  _cpyWkMonitorObserver.observe(tbody, { childList: true, subtree: true, attributes: true, attributeFilter: ['value'] });
+  // Also poll inputs periodically so user-typed values get captured
+  setInterval(() => { if (_cpyWkMonitorOn) _cpyWkMonitorLogChange('轮询'); }, 400);
+  _cpyWkMonitorLogChange('监控启动');
 }
 
 // Self-test: simulates the exact user scenario — 2 ad-hoc rows, fill row 0,
