@@ -31557,12 +31557,14 @@ function applyCpyWkDefaultBreak() {
 
 function updateCpyWkTotal() {
   let grand = 0;
+  let grandHours = 0;
   let recCount = 0;
   const rows = document.querySelectorAll('#cpyWkRows tr[data-cpy-wk-row]');
   rows.forEach(tr => {
     const i = parseInt(tr.getAttribute('data-cpy-wk-row'));
     const selected = tr.querySelector('.cpyWkChk')?.checked || false;
     let rowTotal = 0;
+    let rowHours = 0;
     for (let j = 0; j < _cpyWkDays.length; j++) {
       const s = tr.querySelector(`.cpyWkStart[data-day="${j}"]`)?.value || '';
       const e = tr.querySelector(`.cpyWkEnd[data-day="${j}"]`)?.value || '';
@@ -31594,13 +31596,19 @@ function updateCpyWkTotal() {
         cell.style.color = sub > 0 ? '#15803d' : 'var(--gray-300)';
       }
       rowTotal += sub;
+      rowHours += h > 0 ? h : 0;
       if (selected && sub > 0) recCount++;
     }
     const totalCell = tr.querySelector('.cpyWkRowTotal');
-    if (totalCell) totalCell.textContent = _cpyFmtMoney(rowTotal);
-    if (selected) grand += rowTotal;
+    if (totalCell) {
+      const hoursTxt = rowHours > 0 ? `<div style="font-size:.72rem;color:#0c4a6e;font-weight:600">${(+rowHours.toFixed(2))}h</div>` : '';
+      const moneyTxt = `<div>${_cpyFmtMoney(rowTotal)}</div>`;
+      totalCell.innerHTML = hoursTxt + moneyTxt;
+    }
+    if (selected) { grand += rowTotal; grandHours += rowHours; }
   });
-  document.getElementById('cpyWkTotal').textContent = _cpyFmtMoney(grand);
+  document.getElementById('cpyWkTotal').textContent =
+    (grandHours > 0 ? `${(+grandHours.toFixed(2))}h · ` : '') + _cpyFmtMoney(grand);
   document.getElementById('cpyWkRecCount').textContent = String(recCount);
 }
 
