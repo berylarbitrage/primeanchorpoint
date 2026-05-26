@@ -31396,31 +31396,31 @@ function renderCpyWeeklyRows() {
         <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
           <div style="display:flex;align-items:center;gap:3px;font-size:.66rem;color:var(--gray-500);width:100%">
             <span style="width:18px;text-align:right">上</span>
-            <input type="time" class="cpyWkStart" data-row="${i}" data-day="${j}"
+            <input type="text" inputmode="numeric" class="cpyWkStart" data-row="${i}" data-day="${j}"
               autocomplete="off"
-              value="${_cpyEscape(w._starts[j] || '')}"
-              style="${inputStyle}" oninput="onCpyWkCellChange()" title="上班时间">
+              value="${_cpyEscape(w._starts[j] || '')}" placeholder="HH:MM"
+              style="${inputStyle}" oninput="onCpyWkCellChange()" onblur="formatCpyWkTime(this,'start')" title="上班时间（24 小时制，如 09:00；输 9 会问 AM/PM）">
           </div>
           <div style="display:flex;align-items:center;gap:3px;font-size:.66rem;color:var(--gray-500);width:100%">
             <span style="width:18px;text-align:right">下</span>
-            <input type="time" class="cpyWkEnd" data-row="${i}" data-day="${j}"
+            <input type="text" inputmode="numeric" class="cpyWkEnd" data-row="${i}" data-day="${j}"
               autocomplete="off"
-              value="${_cpyEscape(w._ends[j] || '')}"
-              style="${inputStyle}" oninput="onCpyWkCellChange()" title="下班时间">
+              value="${_cpyEscape(w._ends[j] || '')}" placeholder="HH:MM"
+              style="${inputStyle}" oninput="onCpyWkCellChange()" onblur="formatCpyWkTime(this,'end')" title="下班时间（24 小时制，如 17:00；输 5 会问 AM/PM）">
           </div>
           <div style="display:flex;align-items:center;gap:2px;font-size:.64rem;color:var(--gray-500);width:100%;margin-top:1px">
             <span style="width:18px;text-align:right">休</span>
-            <input type="time" class="cpyWkBreakStart" data-row="${i}" data-day="${j}"
+            <input type="text" inputmode="numeric" class="cpyWkBreakStart" data-row="${i}" data-day="${j}"
               autocomplete="off"
-              value="${_cpyEscape(w._breakStarts[j] || '')}"
-              style="${breakTimeStyle}" oninput="onCpyWkCellChange()" title="午休开始时间">
+              value="${_cpyEscape(w._breakStarts[j] || '')}" placeholder="HH:MM"
+              style="${breakTimeStyle}" oninput="onCpyWkCellChange()" onblur="formatCpyWkTime(this,'breakStart')" title="午休开始时间（24 小时制）">
           </div>
           <div style="display:flex;align-items:center;gap:2px;font-size:.64rem;color:var(--gray-500);width:100%">
             <span style="width:18px;text-align:right">~</span>
-            <input type="time" class="cpyWkBreakEnd" data-row="${i}" data-day="${j}"
+            <input type="text" inputmode="numeric" class="cpyWkBreakEnd" data-row="${i}" data-day="${j}"
               autocomplete="off"
-              value="${_cpyEscape(w._breakEnds[j] || '')}"
-              style="${breakTimeStyle}" oninput="onCpyWkCellChange()" title="午休结束时间">
+              value="${_cpyEscape(w._breakEnds[j] || '')}" placeholder="HH:MM"
+              style="${breakTimeStyle}" oninput="onCpyWkCellChange()" onblur="formatCpyWkTime(this,'breakEnd')" title="午休结束时间（24 小时制）">
           </div>
           <div class="cpyWkBreakMinRow" data-row="${i}" data-day="${j}" style="display:flex;align-items:center;gap:3px;font-size:.62rem;color:var(--gray-400)">
             <span>或</span>
@@ -31707,6 +31707,56 @@ function addCpyWkAdHocRow() {
   _cpyWkWorkers.push(_newCpyEmptyWorker(null, true));
   _cpyWkLastRenderCause = 'addCpyWkAdHocRow';
   renderCpyWeeklyRows();
+}
+
+// Format a partial time entry into HH:MM. Accepts: "9", "09", "900", "0900", "9:00", "9:5", etc.
+// kind is 'start' | 'end' | 'breakStart' | 'breakEnd' — used to decide default AM/PM behavior.
+// Returns the canonical "HH:MM" or '' if input is empty. Shows a confirm popup for single-digit hours.
+function _cpyParseTimeInput(raw, kind) {
+  if (!raw) return '';
+  // Strip non-digits / non-colon
+  const cleaned = String(raw).replace(/[^0-9:]/g, '');
+  if (!cleaned) return '';
+  let h, m;
+  if (cleaned.includes(':')) {
+    const parts = cleaned.split(':');
+    h = parseInt(parts[0]) || 0;
+    m = parseInt(parts[1]) || 0;
+  } else {
+    if (cleaned.length <= 2) { h = parseInt(cleaned) || 0; m = 0; }
+    else if (cleaned.length === 3) { h = parseInt(cleaned[0]) || 0; m = parseInt(cleaned.slice(1)) || 0; }
+    else { h = parseInt(cleaned.slice(0, 2)) || 0; m = parseInt(cleaned.slice(2, 4)) || 0; }
+  }
+  if (h > 23 || m > 59 || h < 0 || m < 0) {
+    alert(`「${raw}」不是有效时间，请输入 HH:MM（24 小时制）`);
+    return null; // null = invalid, keep field as-is so user can fix
+  }
+  // Ambiguity: single-digit hour 1-9 typed without colon — ask AM/PM.
+  // For 上班 (start/breakStart) usually AM; for 下班 (end/breakEnd) usually PM.
+  if (!cleaned.includes(':') && cleaned.length <= 2 && h >= 1 && h <= 9) {
+    const isEndField = kind === 'end' || kind === 'breakEnd';
+    const defaultPm = isEndField; // suggest PM for end-of-day fields
+    const am = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    const pm = String(h + 12).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    const promptText = defaultPm
+      ? `「${raw}」是下午 ${h} 点（${pm}）吗？\n\n点【确定】= 下午 ${pm}\n点【取消】= 上午 ${am}`
+      : `「${raw}」是上午 ${h} 点（${am}）吗？\n\n点【确定】= 上午 ${am}\n点【取消】= 下午 ${pm}`;
+    const confirmed = confirm(promptText);
+    if (confirmed === defaultPm) {
+      h = h + 12;
+    }
+  }
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
+// Called on blur of any cpyWk time input. Parses the raw text, asks AM/PM if ambiguous,
+// writes the canonical HH:MM back to the input, and syncs internal state.
+function formatCpyWkTime(input, kind) {
+  const raw = input.value.trim();
+  const parsed = _cpyParseTimeInput(raw, kind);
+  if (parsed === null) { input.focus(); return; } // invalid — keep cursor
+  input.value = parsed;
+  onCpyWkCellChange();
 }
 
 // ── Live monitor mode ──────────────────────────────────────────────
