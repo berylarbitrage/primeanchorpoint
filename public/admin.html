@@ -31397,36 +31397,42 @@ function renderCpyWeeklyRows() {
           <div style="display:flex;align-items:center;gap:3px;font-size:.66rem;color:var(--gray-500);width:100%">
             <span style="width:18px;text-align:right">上</span>
             <input type="time" class="cpyWkStart" data-row="${i}" data-day="${j}"
+              autocomplete="off"
               value="${_cpyEscape(w._starts[j] || '')}"
               style="${inputStyle}" oninput="onCpyWkCellChange()" title="上班时间">
           </div>
           <div style="display:flex;align-items:center;gap:3px;font-size:.66rem;color:var(--gray-500);width:100%">
             <span style="width:18px;text-align:right">下</span>
             <input type="time" class="cpyWkEnd" data-row="${i}" data-day="${j}"
+              autocomplete="off"
               value="${_cpyEscape(w._ends[j] || '')}"
               style="${inputStyle}" oninput="onCpyWkCellChange()" title="下班时间">
           </div>
           <div style="display:flex;align-items:center;gap:2px;font-size:.64rem;color:var(--gray-500);width:100%;margin-top:1px">
             <span style="width:18px;text-align:right">休</span>
             <input type="time" class="cpyWkBreakStart" data-row="${i}" data-day="${j}"
+              autocomplete="off"
               value="${_cpyEscape(w._breakStarts[j] || '')}"
               style="${breakTimeStyle}" oninput="onCpyWkCellChange()" title="午休开始时间">
           </div>
           <div style="display:flex;align-items:center;gap:2px;font-size:.64rem;color:var(--gray-500);width:100%">
             <span style="width:18px;text-align:right">~</span>
             <input type="time" class="cpyWkBreakEnd" data-row="${i}" data-day="${j}"
+              autocomplete="off"
               value="${_cpyEscape(w._breakEnds[j] || '')}"
               style="${breakTimeStyle}" oninput="onCpyWkCellChange()" title="午休结束时间">
           </div>
           <div class="cpyWkBreakMinRow" data-row="${i}" data-day="${j}" style="display:flex;align-items:center;gap:3px;font-size:.62rem;color:var(--gray-400)">
             <span>或</span>
             <input type="number" class="cpyWkBreak" data-row="${i}" data-day="${j}" min="0" step="5"
+              autocomplete="off"
               value="${_cpyEscape(w._breaks[j] != null ? w._breaks[j] : '')}"
               style="${breakMinStyle}" oninput="onCpyWkCellChange()" title="午休（分钟）">
             <span>分</span>
           </div>
           <div class="cpyWkHrsDisp" data-row="${i}" data-day="${j}" style="font-size:.72rem;color:#0c4a6e;font-weight:600;margin-top:2px">—</div>
           <input type="number" class="cpyWkRate" data-row="${i}" data-day="${j}" step="0.01" min="0"
+            autocomplete="off"
             value="${_cpyEscape(w._rates[j] || '')}" placeholder="$/h"
             style="${rateStyle}" oninput="onCpyWkCellChange()" title="时薪">
           <div class="cpyWkSubtotal" data-row="${i}" data-day="${j}" style="font-size:.7rem;color:var(--gray-400)">—</div>
@@ -31438,7 +31444,7 @@ function renderCpyWeeklyRows() {
         <td style="vertical-align:top;padding-top:.6rem"><input type="checkbox" class="cpyWkChk" ${w._selected ? 'checked' : ''} onchange="onCpyWkCellChange()"></td>
         <td style="vertical-align:top;padding-top:.5rem">
           ${w._adHoc
-            ? `<input type="text" class="cpyWkName" value="${_cpyEscape(w.name)}" placeholder="工人姓名" style="width:140px;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem">`
+            ? `<input type="text" class="cpyWkName" autocomplete="off" value="${_cpyEscape(w.name)}" placeholder="工人姓名" style="width:140px;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem">`
             : `<div style="font-weight:500;font-size:.85rem">${_cpyEscape(w.name)}</div>
                <div style="font-size:.7rem;color:var(--gray-500)">${_cpyEscape(w.position || '')}${w.phone ? ' · ' + _cpyEscape(w.phone) : ''}</div>
                <input type="hidden" class="cpyWkName" value="${_cpyEscape(w.name)}">
@@ -31453,7 +31459,7 @@ function renderCpyWeeklyRows() {
         </td>
         ${dayCells}
         <td style="text-align:right;vertical-align:middle;font-weight:600;color:#15803d" class="cpyWkRowTotal" data-row="${i}">$0.00</td>
-        <td style="vertical-align:middle"><input type="text" class="cpyWkNotes" value="${_cpyEscape(w._notes || '')}" placeholder="备注（可选）" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.78rem"></td>
+        <td style="vertical-align:middle"><input type="text" class="cpyWkNotes" autocomplete="off" value="${_cpyEscape(w._notes || '')}" placeholder="备注（可选）" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.78rem"></td>
         <td style="vertical-align:middle">${w._adHoc ? `<button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:.15rem .45rem" onclick="removeCpyWkRow(${i})">×</button>` : ''}</td>
       </tr>
     `;
@@ -31760,6 +31766,8 @@ function toggleCpyWkMonitor() {
     _cpyWkMonitorLog = [];
     return;
   }
+  // Initialize the length tracker so the first render log delta is accurate
+  _cpyWkLastWorkersLen = _cpyWkWorkers.length;
   // Inject sticky bar
   const modal = document.querySelector('#cpyWeeklyModal .modal');
   if (!modal) return;
