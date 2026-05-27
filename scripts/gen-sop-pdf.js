@@ -7,354 +7,387 @@ const outputPath = path.join(__dirname, '../sop-job-management.pdf');
 
 const doc = new PDFDocument({
   size: 'A4',
-  margins: { top: 60, bottom: 60, left: 60, right: 60 },
+  margins: { top: 56, bottom: 56, left: 56, right: 56 },
   bufferPages: true,
-  info: {
-    Title: 'SOP — 职位创建、设为隐藏及关联员工操作手册',
-    Author: 'Prime Anchor Workforce',
-  }
 });
-
 doc.pipe(fs.createWriteStream(outputPath));
 doc.registerFont('CN', fontPath);
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-const W = doc.page.width - 120; // usable width
+const PW = doc.page.width;
+const PH = doc.page.height;
+const ML = 56, MR = 56, MT = 56, MB = 56;
+const CW = PW - ML - MR; // content width = 483
 
-function header() {
-  doc.font('CN').fontSize(9).fillColor('#b45309')
-    .text('Prime Anchor Workforce — 内部操作手册 (SOP)', 60, 20, { align: 'left', width: W });
-  doc.fontSize(9).fillColor('#b45309')
-    .text(`生成日期：${new Date().toLocaleDateString('zh-CN')}`, 60, 20, { align: 'right', width: W });
+// ── colour palette ──────────────────────────────────────────────────────────
+const C = {
+  amber:  '#b45309', amberDk: '#92400e', amberLt: '#fef3c7',
+  blue:   '#1d4ed8', blueLt:  '#eff6ff',
+  red:    '#dc2626', redLt:   '#fef2f2',
+  green:  '#065f46', greenLt: '#f0fdf4',
+  purple: '#5B21B6', purpleLt:'#f5f3ff',
+  gray:   '#9BA3B0', grayDk:  '#374151', grayLt:  '#f3f4f6',
+  text:   '#1a1a1a', sub:     '#6b7280',
+};
+
+// ── low-level helpers ────────────────────────────────────────────────────────
+function cx() { return doc.x; }
+function cy() { return doc.y; }
+function setCY(y) { doc.y = y; }
+function ensureSpace(needed) {
+  if (doc.y + needed > PH - MB) doc.addPage();
 }
 
-function sectionTitle(text, color = '#92400e') {
-  doc.moveDown(0.6);
-  doc.font('CN').fontSize(14).fillColor(color).text(text);
-  // underline
-  const y = doc.y;
-  doc.moveTo(60, y).lineTo(60 + W, y).lineWidth(1).strokeColor(color).stroke();
-  doc.moveDown(0.4);
+function hline(y, color = C.amberLt, lw = 0.8) {
+  doc.moveTo(ML, y).lineTo(ML + CW, y).lineWidth(lw).strokeColor(color).stroke();
 }
 
-function stepBox(num, title, lines, color = '#b45309') {
-  const boxX = 60, boxY = doc.y;
-  const circleR = 12;
+// ── page header/footer (added at end via bufferPages) ───────────────────────
+function drawRunningHeader() {
+  doc.font('CN').fontSize(7.5).fillColor(C.gray)
+    .text('Prime Anchor Workforce — 内部操作手册 (SOP)', ML, 22, { width: CW, align: 'left' });
+}
 
-  // number circle
-  doc.circle(boxX + circleR, boxY + circleR, circleR).fillColor(color).fill();
+// ── Section title bar ────────────────────────────────────────────────────────
+function sectionBar(label, secNum, color = C.amberDk) {
+  ensureSpace(36);
+  const y = doc.y + 6;
+  doc.rect(ML, y, CW, 26).fillColor(color).fill();
   doc.font('CN').fontSize(11).fillColor('#fff')
-    .text(String(num), boxX, boxY + 6, { width: circleR * 2, align: 'center' });
+    .text(`${secNum}  ${label}`, ML + 10, y + 7, { width: CW - 10 });
+  doc.y = y + 36;
+}
 
-  // title
-  doc.font('CN').fontSize(11).fillColor('#1a1a1a')
-    .text(title, boxX + circleR * 2 + 8, boxY + 4, { width: W - circleR * 2 - 8 });
+// ── Callout / note box ───────────────────────────────────────────────────────
+function callout(text, bg = C.amberLt, fg = C.amberDk) {
+  ensureSpace(34);
+  const y = doc.y + 2;
+  const linesApprox = Math.ceil(text.length / 70);
+  const h = Math.max(30, linesApprox * 13 + 14);
+  doc.rect(ML, y, CW, h).fillColor(bg).fill();
+  doc.rect(ML, y, 3, h).fillColor(fg).fill();
+  doc.font('CN').fontSize(8.5).fillColor(fg)
+    .text(text, ML + 10, y + 8, { width: CW - 14 });
+  doc.y = y + h + 6;
+}
 
-  // content lines
-  doc.font('CN').fontSize(9.5).fillColor('#444');
-  for (const line of lines) {
-    doc.text(line, boxX + circleR * 2 + 8, doc.y + 3, { width: W - circleR * 2 - 8 });
+// ── Numbered step ────────────────────────────────────────────────────────────
+function step(num, title, bullets = []) {
+  ensureSpace(40 + bullets.length * 14);
+  const y = doc.y + 4;
+  const circR = 9;
+  doc.circle(ML + circR, y + circR, circR).fillColor(C.amber).fill();
+  doc.font('CN').fontSize(9).fillColor('#fff')
+    .text(String(num), ML, y + 4, { width: circR * 2, align: 'center' });
+  doc.font('CN').fontSize(10).fillColor(C.text)
+    .text(title, ML + circR * 2 + 6, y + 2, { width: CW - circR * 2 - 6 });
+  if (bullets.length) {
+    for (const b of bullets) {
+      ensureSpace(16);
+      doc.font('CN').fontSize(8.5).fillColor(C.sub)
+        .text('• ' + b, ML + circR * 2 + 10, doc.y + 1, { width: CW - circR * 2 - 14 });
+    }
   }
-  doc.moveDown(0.6);
+  doc.y += 6;
 }
 
-function note(text, bgColor = '#fef3c7', textColor = '#92400e') {
-  const noteX = 60, noteY = doc.y;
-  const noteH = 36;
-  doc.roundedRect(noteX, noteY, W, noteH, 6).fillColor(bgColor).fill();
-  doc.font('CN').fontSize(9).fillColor(textColor)
-    .text(text, noteX + 12, noteY + 10, { width: W - 24 });
-  doc.y = noteY + noteH + 6;
-  doc.moveDown(0.3);
+// ── Two-column field list ────────────────────────────────────────────────────
+function fieldTable(rows) {
+  for (const [label, desc] of rows) {
+    ensureSpace(16);
+    const y = doc.y + 1;
+    doc.font('CN').fontSize(8.5).fillColor(C.amber)
+      .text(label, ML + 4, y, { width: 138, lineBreak: false });
+    doc.font('CN').fontSize(8.5).fillColor(C.grayDk)
+      .text(desc, ML + 148, y, { width: CW - 152 });
+    hline(doc.y + 1, '#e5e7eb', 0.4);
+    doc.y += 3;
+  }
 }
 
-function fieldRow(label, desc) {
-  doc.font('CN').fontSize(9.5).fillColor('#b45309').text(`• ${label}`, 80, doc.y, { continued: true, width: 160 });
-  doc.fillColor('#444').text(`  ${desc}`, { width: W - 80 });
-}
-
-function pageBreakIfNeeded(neededPx = 120) {
-  if (doc.y + neededPx > doc.page.height - 60) doc.addPage();
+// ── Simple table ─────────────────────────────────────────────────────────────
+function simpleTable(headers, rows, colWidths) {
+  ensureSpace(24 + rows.length * 20);
+  let y = doc.y + 4;
+  const totalW = colWidths.reduce((a, b) => a + b, 0);
+  // header
+  doc.rect(ML, y, totalW, 20).fillColor(C.amberLt).fill();
+  let x = ML + 6;
+  for (let i = 0; i < headers.length; i++) {
+    doc.font('CN').fontSize(8).fillColor(C.amberDk)
+      .text(headers[i], x, y + 5, { width: colWidths[i] - 8, lineBreak: false });
+    x += colWidths[i];
+  }
+  y += 20;
+  for (let r = 0; r < rows.length; r++) {
+    const rowH = 20;
+    doc.rect(ML, y, totalW, rowH).fillColor(r % 2 === 0 ? '#fff' : '#fafafa').fill();
+    x = ML + 6;
+    for (let i = 0; i < rows[r].length; i++) {
+      doc.font('CN').fontSize(8).fillColor(C.grayDk)
+        .text(rows[r][i], x, y + 5, { width: colWidths[i] - 8, lineBreak: false });
+      x += colWidths[i];
+    }
+    y += rowH;
+  }
+  doc.rect(ML, doc.y + 4, totalW, y - doc.y - 4).strokeColor('#e2e5ea').lineWidth(0.5).stroke();
+  doc.y = y + 6;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // PAGE 1 — Cover
 // ════════════════════════════════════════════════════════════════════════════
-header();
+// amber top bar
+doc.rect(0, 0, PW, 8).fillColor(C.amber).fill();
 
-// Logo area (text-based)
-doc.font('CN').fontSize(22).fillColor('#92400e')
-  .text('Prime Anchor Workforce', 60, 90, { align: 'center', width: W });
-doc.font('CN').fontSize(11).fillColor('#b45309')
-  .text('内部操作手册 (Standard Operating Procedure)', 60, 120, { align: 'center', width: W });
+// logo text
+doc.font('CN').fontSize(18).fillColor(C.amberDk)
+  .text('Prime Anchor Workforce', ML, 70, { align: 'center', width: CW });
+doc.font('CN').fontSize(9).fillColor(C.amber)
+  .text('Internal Standard Operating Procedure', ML, 96, { align: 'center', width: CW });
 
-// Divider
-doc.moveTo(60, 148).lineTo(60 + W, 148).lineWidth(2).strokeColor('#f59e0b').stroke();
+// main title box
+doc.rect(ML, 118, CW, 88).fillColor(C.amberLt).fill();
+doc.rect(ML, 118, 4, 88).fillColor(C.amber).fill();
+doc.font('CN').fontSize(22).fillColor(C.amberDk)
+  .text('职位管理操作手册', ML, 138, { align: 'center', width: CW });
+doc.font('CN').fontSize(10.5).fillColor(C.amber)
+  .text('创建职位 · 设置隐藏 · 关联可入职员工', ML, 172, { align: 'center', width: CW });
 
-// Title block
-doc.roundedRect(60, 165, W, 100, 10).fillColor('#fffbeb').fill();
-doc.font('CN').fontSize(20).fillColor('#92400e')
-  .text('职位管理操作手册', 60, 185, { align: 'center', width: W });
-doc.font('CN').fontSize(11).fillColor('#b45309')
-  .text('创建职位 · 设为隐藏 · 关联员工', 60, 215, { align: 'center', width: W });
-
-// Meta info box
-doc.y = 290;
-const metaData = [
+// meta grid
+doc.y = 228;
+const meta = [
   ['文档编号', 'PAW-SOP-003'],
-  ['版本',     'v1.0'],
-  ['适用系统', 'Prime Anchor Workforce 管理后台 (admin.html)'],
+  ['版本',     'v2.0'],
+  ['适用系统', 'Prime Anchor Workforce 管理后台'],
   ['适用角色', '管理员 (Admin) / 操作员 (Staff)'],
-  ['生成日期', new Date().toLocaleDateString('zh-CN')],
+  ['生效日期', new Date().toLocaleDateString('zh-CN')],
 ];
-for (const [k, v] of metaData) {
-  doc.font('CN').fontSize(9.5).fillColor('#92400e').text(`${k}：`, 80, doc.y, { continued: true, width: 100 });
-  doc.fillColor('#1a1a1a').text(v, { width: W - 100 });
+for (const [k, v] of meta) {
+  const y = doc.y;
+  doc.font('CN').fontSize(8.5).fillColor(C.amber)
+    .text(k + '：', ML + 8, y, { width: 80, lineBreak: false });
+  doc.font('CN').fontSize(8.5).fillColor(C.text)
+    .text(v, ML + 92, y, { width: CW - 100 });
 }
+
+// divider
+doc.y += 10;
+hline(doc.y, C.amberLt, 1);
+doc.y += 12;
 
 // TOC
-doc.y = 460;
-sectionTitle('目录 Table of Contents', '#92400e');
+doc.font('CN').fontSize(10).fillColor(C.amberDk).text('目  录', ML, doc.y);
+doc.y += 10;
 const toc = [
-  ['第一节', '创建职位（Create a Job Posting）',           '2'],
-  ['第二节', '设置职位为隐藏/私密（Set Private）',          '3'],
-  ['第三节', '将职位关联至员工（Link Job to Employee）',    '4'],
-  ['附录',   '常见问题与注意事项',                          '5'],
+  ['第一节', '创建职位（Create a Job Posting）',               '2'],
+  ['第二节', '设置职位为隐藏（Set to Private / Hidden）',       '3'],
+  ['第三节', '查找可入职员工并关联职位',                        '4'],
+  ['第四节', '从员工列表直接安排职位',                          '5'],
+  ['附　录', '常见问题（FAQ）',                                  '5'],
 ];
-for (const [num, title, pg] of toc) {
-  doc.font('CN').fontSize(10).fillColor('#b45309').text(`${num}  ${title}`, 80, doc.y, { continued: true, width: W - 60 });
-  doc.fillColor('#9BA3B0').text(`第 ${pg} 页`, { align: 'right' });
+for (const [sec, title, pg] of toc) {
+  const y = doc.y + 1;
+  doc.font('CN').fontSize(9).fillColor(C.amber)
+    .text(sec, ML + 4, y, { width: 52, lineBreak: false });
+  doc.font('CN').fontSize(9).fillColor(C.text)
+    .text(title, ML + 60, y, { width: CW - 100, lineBreak: false });
+  doc.font('CN').fontSize(9).fillColor(C.gray)
+    .text(`第 ${pg} 页`, ML, y, { width: CW, align: 'right' });
 }
+
+// bottom bar
+doc.rect(0, PH - 8, PW, 8).fillColor(C.amberLt).fill();
 
 // ════════════════════════════════════════════════════════════════════════════
 // PAGE 2 — Section 1: Create Job
 // ════════════════════════════════════════════════════════════════════════════
 doc.addPage();
-header();
+doc.y = MT;
 
-doc.font('CN').fontSize(9).fillColor('#9BA3B0').text('第一节', 60, 60);
-sectionTitle('创建职位 Create a Job Posting', '#1d4ed8');
+sectionBar('创建职位  Create a Job Posting', '第一节', C.blue);
+callout('前提：必须以管理员（Admin）或操作员（Staff）账号登录管理后台。', C.blueLt, C.blue);
 
-note('前提条件：必须以管理员（Admin）或操作员（Staff）账号登录管理后台。', '#eff6ff', '#1d4ed8');
+step(1, '进入职位管理', [
+  '在左侧导航栏展开"招聘管理"分组，点击"职位管理"进入职位列表。',
+]);
+step(2, '点击"+ 新增职位"按钮', [
+  '页面右上角橙色按钮，点击后弹出职位创建表单。',
+]);
+step(3, '填写职位表单', ['以下为主要填写项：']);
 
-stepBox(1, '进入职位管理页面', [
-  '登录管理后台后，在左侧导航栏找到"招聘管理"分组，',
-  '点击下方"职位管理"进入职位列表页面。',
+fieldTable([
+  ['合作公司 *',     '搜索框输入公司名称，从下拉列表中选择'],
+  ['工种类别',       '从下拉列表选择（也可选"其他"自定义）'],
+  ['职位类型',       '全职 / 兼职 / 临时工 / 临时转正'],
+  ['工作地点',       '填写街道、城市、州、邮编，点击"验证地址"确认'],
+  ['雇佣性质',       'W2 / Contract / 1099 / W2+Contract'],
+  ['薪资',           '固定或区间方式；填写金额并选择单位（/hr /day…）'],
+  ['语言',           '勾选语言后填写对应标题及职位介绍（中/英/西班牙文）'],
+  ['班次 *',         '勾选班次（早/中/晚/夜/弹性），系统会展开时间填写栏'],
+  ['福利待遇',       '点击标签多选（医疗保险、401k、带薪休假等）'],
+  ['招聘人数',       '填写招募人数；勾选"急聘"则在招聘板上显示标记'],
 ]);
 
-stepBox(2, '点击"新增职位"按钮', [
-  '页面右上角有橙色"+ 新增职位"按钮，点击后弹出职位创建表单。',
+step(4, '保存职位', [
+  '点击表单底部橙色"保存"按钮。',
+  '系统自动生成唯一职位编号（Job ID），默认状态为"在招（Open）"且公开可见。',
 ]);
 
-stepBox(3, '填写职位基本信息', [
-  '以下字段为必填或强烈建议填写：',
-]);
-
-// Field table
-const fields = [
-  ['合作公司 *',    '在搜索框输入公司名称，从下拉列表中选择对应合作公司'],
-  ['工种类别',      '从下拉列表选择（如：仓库分拣员、打包员等）；选"其他"可自定义'],
-  ['职位类型',      '全职 / 兼职 / 临时工 / 临时转正'],
-  ['工作地点',      '填写街道地址、城市、州、邮编；点击"验证地址"按钮确认地址有效'],
-  ['雇佣性质',      'W2 / Contract / 1099 / W2+Contract'],
-  ['薪资',          '选择固定或范围方式，填入金额并选择单位（/hr, /day 等）'],
-  ['语言',          '勾选职位描述语言（英文/中文/西班牙文），并填写对应标题和介绍'],
-  ['班次',          '勾选适用班次（早班/中班/晚班/夜班/弹性），系统会展开时间填写栏'],
-  ['福利待遇',      '点击对应标签选择（可多选）'],
-  ['招聘人数',      '填写需要招募的人数'],
-  ['急聘',          '勾选后在招聘板上会显示"急聘"标记'],
-];
-for (const [label, desc] of fields) {
-  fieldRow(label, desc);
-}
-
-doc.moveDown(0.5);
-stepBox(4, '保存职位', [
-  '填写完毕后，点击底部橙色"保存"按钮。',
-  '系统会自动生成唯一职位编号（Job ID）并保存至数据库。',
-  '保存成功后职位默认状态为"在招（Open）"，同时默认对外公开可见。',
-]);
-
-note('⚠ 注意：若要在网站招聘板上对求职者隐藏该职位，请参阅第二节"设置为隐藏"。', '#fef9c3', '#92400e');
+callout('提示：若不希望该职位出现在公开招聘板，请参阅第二节"设置隐藏"。', C.amberLt, C.amberDk);
 
 // ════════════════════════════════════════════════════════════════════════════
-// PAGE 3 — Section 2: Set Private
+// PAGE 3 — Section 2: Set Hidden
 // ════════════════════════════════════════════════════════════════════════════
 doc.addPage();
-header();
+doc.y = MT;
 
-doc.font('CN').fontSize(9).fillColor('#9BA3B0').text('第二节', 60, 60);
-sectionTitle('设置职位为隐藏（Private / Hidden）', '#dc2626');
-
-note(
-  '说明："隐藏"功能将职位从公开招聘板上移除，但不影响后台管理和员工关联操作。' +
-  '适用于内部专属职位、已满岗但暂未关闭的职位，或测试用职位。',
-  '#fef2f2', '#dc2626'
+sectionBar('设置职位为隐藏  Set to Private / Hidden', '第二节', C.red);
+callout(
+  '"隐藏"将职位从公开招聘板移除，后台管理与员工关联操作不受影响。' +
+  '适用于内部专属职位、已满岗暂未关闭的职位或测试职位。',
+  C.redLt, C.red
 );
 
-stepBox(1, '找到目标职位', [
-  '在"职位管理"页面，找到需要隐藏的职位所在行。',
-  '可使用搜索框按名称、公司或地点进行筛选。',
+step(1, '在职位列表找到目标职位', ['可用搜索框按名称、公司或地点筛选。']);
+step(2, '点击操作列中的"🚫 隐藏"按钮', [
+  '按钮为灰色样式，点击后立即生效，无需额外确认。',
+  '系统后台将该职位的 visible 字段设为 0。',
+]);
+step(3, '确认隐藏状态', [
+  '状态列新增红色"隐藏"标签。',
+  '"🚫 隐藏"按钮变为绿色"👁 显示"按钮。',
+]);
+step(4, '恢复公开（取消隐藏）', [
+  '点击绿色"👁 显示"按钮即可一键恢复，逻辑与隐藏完全对称。',
 ]);
 
-stepBox(2, '点击"🚫 隐藏"按钮', [
-  '每个职位行的操作列中有一个灰色的"🚫 隐藏"按钮。',
-  '点击后系统会立即将该职位的可见状态切换为隐藏（visible = 0）。',
-  '无需额外确认弹窗，操作即时生效。',
-]);
+doc.y += 4;
+simpleTable(
+  ['按钮显示', '当前可见状态', '求职者能否在招聘板看到'],
+  [
+    ['🚫 隐藏（灰色）', '公开（Visible = 1）', '✅ 可见'],
+    ['👁 显示（绿色）', '隐藏（Visible = 0）', '❌ 不可见'],
+  ],
+  [160, 160, CW - 320]
+);
 
-stepBox(3, '确认隐藏状态', [
-  '隐藏后，该职位行的状态列会新增一个红色"隐藏"标签。',
-  '原"🚫 隐藏"按钮会变为绿色的"👁 显示"按钮。',
-]);
-
-stepBox(4, '恢复公开（取消隐藏）', [
-  '若需要重新公开该职位，点击绿色"👁 显示"按钮即可恢复。',
-  '操作方式与隐藏完全相同，为一键切换。',
-]);
-
-// Status chart
-doc.moveDown(0.3);
-pageBreakIfNeeded(140);
-doc.font('CN').fontSize(10).fillColor('#1a1a1a').text('隐藏状态说明对照表：', 60, doc.y);
-doc.moveDown(0.3);
-
-const tableX = 60, colW = [120, 120, 200];
-const headers2 = ['按钮显示', '当前状态', '求职者是否可见'];
-const rows2 = [
-  ['🚫 隐藏（灰色）', '公开（Visible）', '✅ 可见（显示在招聘板）'],
-  ['👁 显示（绿色）', '隐藏（Hidden）',  '❌ 不可见（已从招聘板移除）'],
-];
-let ty = doc.y;
-// header row bg
-doc.rect(tableX, ty, W, 22).fillColor('#fef3c7').fill();
-let cx = tableX + 8;
-for (let i = 0; i < headers2.length; i++) {
-  doc.font('CN').fontSize(9).fillColor('#92400e').text(headers2[i], cx, ty + 6, { width: colW[i] });
-  cx += colW[i];
-}
-ty += 22;
-for (const row of rows2) {
-  doc.rect(tableX, ty, W, 22).fillColor(ty % 44 === 22 ? '#fffbeb' : '#fff').fill();
-  cx = tableX + 8;
-  for (let i = 0; i < row.length; i++) {
-    doc.font('CN').fontSize(9).fillColor('#444').text(row[i], cx, ty + 6, { width: colW[i] });
-    cx += colW[i];
-  }
-  ty += 22;
-}
-doc.rect(tableX, doc.y, W, ty - doc.y + 2).strokeColor('#e2e5ea').lineWidth(0.5).stroke();
-doc.y = ty + 10;
-
-note('此操作会记录在职位的操作历史（History）中，可通过"历史"按钮查询。', '#f0fdf4', '#065f46');
+callout('所有隐藏 / 显示操作均记录在该职位的操作历史中，可通过"历史"按钮随时查询。', C.greenLt, C.green);
 
 // ════════════════════════════════════════════════════════════════════════════
-// PAGE 4 — Section 3: Link Employee
+// PAGE 4 — Section 3: Find onboarded workers and link to job
 // ════════════════════════════════════════════════════════════════════════════
 doc.addPage();
-header();
+doc.y = MT;
 
-doc.font('CN').fontSize(9).fillColor('#9BA3B0').text('第三节', 60, 60);
-sectionTitle('将职位关联至员工 Link Job to Employee', '#065f46');
+sectionBar('查找可入职员工并关联职位', '第三节', C.purple);
+callout(
+  '"可入职（✅ 可入职）"状态：员工已在工人账户中完成全部入职任务（W9/合同/I-9 等），' +
+  '系统自动将其标记为 onboarded = 1。此类员工可直接派工或关联职位。',
+  C.purpleLt, C.purple
+);
 
-note('此操作记录员工在某一职位上的工作情况，包含起止日期、薪资数据和绩效评分，用于HR档案管理。', '#f0fdf4', '#065f46');
-
-stepBox(1, '进入员工管理页面', [
-  '在左侧导航栏点击"员工管理"，进入员工列表。',
+step(1, '进入"工人账户"页面', [
+  '左侧导航 → 招聘管理 → 工人账户（Worker Accounts）。',
+]);
+step(2, '识别"可入职"工人', [
+  '状态列显示紫色"✅ 可入职"标签的工人即已完成入职流程，随时可派工。',
+  '状态为"✅ 正常"表示账户已激活但入职任务尚未全部完成。',
+  '状态为"⏳ 待验证"表示账户尚未通过手机验证，无法派工。',
+]);
+step(3, '（首次使用）转为员工档案', [
+  '若该工人尚未绑定员工档案（姓名下方显示"未绑定员工"），需先点击入职进度弹窗中的"🔄 转员工"按钮。',
+  '系统会自动创建员工记录，并将工人账户与员工档案绑定。',
+  '绑定后员工姓名列会显示员工编号（如 EMP-001）。',
+]);
+step(4, '点击"📤 派工"按钮关联职位', [
+  '工人账户列表 → 找到目标工人 → 点击操作列中的"📤 派工"按钮。',
+  '在弹出的"派工"面板中选择目标职位、填写班次日期，保存后即完成关联。',
+  '"📤 派工"按钮仅在该工人已绑定员工档案时才显示。',
+]);
+step(5, '或通过入职弹窗操作', [
+  '点击"✅ 可入职"按钮打开入职进度弹窗，弹窗底部有"派工"快捷操作区，',
+  '可在同一界面完成查看入职状态与安排工作的操作。',
 ]);
 
-stepBox(2, '找到目标员工', [
-  '可通过搜索框输入员工姓名或员工编号快速定位。',
-]);
-
-stepBox(3, '打开员工操作菜单', [
-  '点击员工行右侧的操作按钮（或右键点击员工行），',
-  '在弹出的菜单中选择"📋 安排职位"选项。',
-]);
-
-stepBox(4, '在弹窗中配置工作记录', [
-  '弹出"工作记录"对话框后，按以下顺序填写：',
-]);
-
-const linkFields = [
-  ['选择职位',      '从下拉列表中搜索并选择目标职位，选中后会显示公司名称和地点'],
-  ['开始日期',      '填写员工在该职位的工作开始日期'],
-  ['结束日期',      '填写实际或预计结束日期（可留空）'],
-  ['员工薪资信息',  '填写员工时薪、总工时、总薪酬（用于薪资核算）'],
-  ['客户计费信息',  '填写向客户收取的时薪和总金额（用于利润核算）'],
-  ['绩效评分',      '对效率、质量、出勤、安全、团队合作、技能六项进行评分（1-5星）'],
-  ['备注',          '可填写员工工作表现、优缺点等补充说明'],
-];
-for (const [label, desc] of linkFields) {
-  fieldRow(label, desc);
-}
-
-doc.moveDown(0.5);
-stepBox(5, '保存关联记录', [
-  '填写完毕后点击"确认"按钮，系统将工作记录保存至数据库。',
-  '员工档案中的"当前职位"栏位会同步更新显示该职位名称。',
-]);
-
-stepBox(6, '查看或编辑已有记录', [
-  '再次打开"安排职位"弹窗时，顶部会列出该员工已有的工作记录（蓝色标签）。',
-  '点击对应标签即可载入历史数据进行修改。',
-]);
-
-note('⚠ 一名员工可以关联多个职位记录（历史或并行），系统不限制数量。', '#fffbeb', '#b45309');
+callout(
+  '工人状态速查：待验证 → 手动激活或重发验证 | 正常（未完成入职）→ 推动完成任务 | 可入职 → 可派工/关联职位 | 暂停 → 需恢复后方可派工',
+  C.amberLt, C.amberDk
+);
 
 // ════════════════════════════════════════════════════════════════════════════
-// PAGE 5 — Appendix
+// PAGE 5 — Section 4: Assign job from employee list + FAQ
 // ════════════════════════════════════════════════════════════════════════════
 doc.addPage();
-header();
+doc.y = MT;
 
-doc.font('CN').fontSize(9).fillColor('#9BA3B0').text('附录', 60, 60);
-sectionTitle('常见问题与注意事项 FAQ & Notes', '#5B21B6');
+sectionBar('从员工列表直接安排职位', '第四节', C.green);
+callout('此方法适用于员工档案已存在的情况，直接在员工管理页面创建工作记录（含薪资和绩效数据）。', C.greenLt, C.green);
+
+step(1, '进入"员工管理"页面', ['左侧导航 → 员工管理，进入员工列表。']);
+step(2, '找到目标员工并点击"📋 安排职位"', [
+  '每行操作区有橙色"📋 安排职位"按钮，点击弹出"工作记录"对话框。',
+  '也可点击行末"..."菜单 → 安排职位。',
+]);
+step(3, '填写工作记录', ['在弹窗中依次填写：']);
+
+fieldTable([
+  ['选择职位 *',    '从下拉列表中选择，选中后自动显示公司名称和工作地点'],
+  ['开始日期',      '员工在该职位的实际工作开始日期'],
+  ['结束日期',      '实际或预计结束日期（可暂时留空）'],
+  ['员工薪资',      '员工时薪、总工时、总薪酬（用于薪资核算）'],
+  ['客户计费',      '向客户收取的时薪和总金额（用于利润核算）'],
+  ['绩效评分',      '效率 / 质量 / 出勤 / 安全 / 团队合作 / 技能，各 1-5 星'],
+  ['备注',          '工作表现、优缺点等补充说明（可选）'],
+]);
+
+step(4, '保存关联', [
+  '点击弹窗底部"确认"按钮，系统保存工作记录。',
+  '员工列表中该员工的"职位"列将同步更新为最新活跃职位名称。',
+  '再次打开弹窗时，顶部蓝色标签会列出该员工所有历史工作记录，点击可编辑。',
+]);
+
+doc.y += 8;
+sectionBar('常见问题  FAQ', '附　录', C.gray);
 
 const faqs = [
-  {
-    q: '隐藏职位后，之前已提交申请的求职者会受影响吗？',
-    a: '不会。隐藏操作仅影响职位在公开招聘板的可见性，已存在的申请记录不会被删除，管理员仍可在后台正常处理。',
-  },
-  {
-    q: '新建职位后为什么招聘板上没有显示？',
-    a: '请检查：(1) 职位状态是否为"在招（Open）"；(2) 职位可见状态是否为公开（非隐藏）；(3) 联系技术支持确认招聘板数据已同步。',
-  },
-  {
-    q: '"关联职位"和"派工（Assignment）"有什么区别？',
-    a: '"关联职位（员工工作记录）"用于HR档案，记录该员工历史工作的职位、薪酬和绩效。"派工"是为员工创建具体班次/排班计划，通过派工管理模块操作。',
-  },
-  {
-    q: '能否删除职位？',
-    a: '系统仅允许删除关闭原因为"测试（test）"的职位。正式职位建议通过关闭（Close）操作下架，而非删除，以保留历史记录。',
-  },
-  {
-    q: '操作历史可以查看吗？',
-    a: '可以。在职位列表点击对应职位的"历史"按钮，可查看该职位的所有创建、编辑、开放、关闭、隐藏、显示等操作记录，包括操作人和时间。',
-  },
+  ['Q  隐藏职位后，已提交的申请会消失吗？',
+   'A  不会。隐藏仅影响公开招聘板的展示，后台申请记录完整保留，管理员可继续处理。'],
+  ['Q  "可入职"和"可派工"有什么区别？',
+   'A  "可入职（onboarded）"代表入职材料已全部完成；"可派工（dispatch_ready）"是管理员额外确认的班次派遣就绪标志，需在入职弹窗中手动开启。'],
+  ['Q  为什么"📤 派工"按钮不显示？',
+   'A  该工人尚未绑定员工档案。请先点击"🔄 转员工"完成绑定，派工按钮即出现。'],
+  ['Q  一名员工能关联多个职位吗？',
+   'A  可以。工作记录不限数量，历史和并行记录均支持，系统以最新活跃记录为主显示职位名称。'],
+  ['Q  职位能删除吗？',
+   'A  仅"关闭原因=测试（test）"的职位才能删除。正式职位建议改为关闭状态以保留历史记录。'],
 ];
 
-for (const faq of faqs) {
-  pageBreakIfNeeded(80);
-  doc.font('CN').fontSize(10).fillColor('#5B21B6').text(`Q: ${faq.q}`, 60, doc.y, { width: W });
-  doc.moveDown(0.2);
-  doc.font('CN').fontSize(9.5).fillColor('#374151').text(`A: ${faq.a}`, 72, doc.y, { width: W - 12 });
-  doc.moveDown(0.7);
+for (const [q, a] of faqs) {
+  ensureSpace(44);
+  const y = doc.y + 2;
+  doc.rect(ML, y, CW, 40).fillColor('#fafafa').fill();
+  doc.font('CN').fontSize(8.5).fillColor(C.purple).text(q, ML + 8, y + 6, { width: CW - 14 });
+  doc.font('CN').fontSize(8.5).fillColor(C.grayDk).text(a, ML + 8, doc.y + 2, { width: CW - 14 });
+  doc.y += 6;
+  hline(doc.y, '#e5e7eb', 0.4);
+  doc.y += 3;
 }
 
-// Closing line
-pageBreakIfNeeded(60);
-doc.moveTo(60, doc.y).lineTo(60 + W, doc.y).lineWidth(1).strokeColor('#fde68a').stroke();
-doc.moveDown(0.5);
-doc.font('CN').fontSize(8.5).fillColor('#9BA3B0')
-  .text('本文档由 Prime Anchor Workforce 系统自动生成，如有疑问请联系系统管理员。', 60, doc.y, { align: 'center', width: W });
+// ── Footer line ──────────────────────────────────────────────────────────────
+ensureSpace(24);
+doc.y += 8;
+hline(doc.y, C.amberLt, 0.8);
+doc.y += 5;
+doc.font('CN').fontSize(7.5).fillColor(C.gray)
+  .text('本文档由 Prime Anchor Workforce 系统自动生成，如有疑问请联系系统管理员。', ML, doc.y, { align: 'center', width: CW });
 
-// ─── Page numbers ────────────────────────────────────────────────────────────
-const totalPages = doc.bufferedPageRange().count;
-for (let i = 0; i < totalPages; i++) {
-  doc.switchToPage(i);
-  doc.font('CN').fontSize(8).fillColor('#9BA3B0')
-    .text(`第 ${i + 1} 页 / 共 ${totalPages} 页`, 60, doc.page.height - 40, { align: 'center', width: W });
+// ── Running headers & page numbers ──────────────────────────────────────────
+const range = doc.bufferedPageRange();
+for (let i = 0; i < range.count; i++) {
+  doc.switchToPage(range.start + i);
+  if (i > 0) drawRunningHeader();
+  doc.font('CN').fontSize(7.5).fillColor(C.gray)
+    .text(`第 ${i + 1} 页 / 共 ${range.count} 页`, ML, PH - 38, { align: 'center', width: CW });
 }
 
 doc.end();
