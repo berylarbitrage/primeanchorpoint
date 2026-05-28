@@ -28645,7 +28645,10 @@ function renderInvpManualTable(skipSave) {
     const otHrs  = Math.max(totalHrs - 40, 0);
     const subtotal = regHrs * rate + otHrs * otRateVal;
     const linkBadge = emp.linked_employee_id
-      ? `<span title="已链接到系统员工 ${esc(emp.linked_employee_code||'')} — 点击解除" style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:10px;padding:0 6px;font-size:.7rem;line-height:1.5;cursor:pointer;white-space:nowrap;flex-shrink:0" onclick="invpUnlinkEmp(${emp.uid})">🔗${emp.linked_employee_code ? ' '+esc(emp.linked_employee_code) : ''} ✕</span>`
+      ? `<span style="display:inline-flex;align-items:center;background:#dcfce7;border:1px solid #86efac;border-radius:10px;font-size:.7rem;line-height:1.5;white-space:nowrap;flex-shrink:0;overflow:hidden">` +
+        `<span title="点击重新选择系统员工" style="display:inline-flex;align-items:center;gap:2px;padding:0 5px;cursor:pointer;color:#166534" onclick="invpOpenLinkModal(${emp.uid})">🔗${emp.linked_employee_code ? ' '+esc(emp.linked_employee_code) : ''}</span>` +
+        `<span title="解除链接" style="padding:0 5px;cursor:pointer;color:#166534;border-left:1px solid #86efac" onclick="invpUnlinkEmp(${emp.uid})">✕</span>` +
+        `</span>`
       : `<button type="button" onclick="invpOpenLinkModal(${emp.uid})" title="链接到系统员工" style="background:none;border:1px dashed var(--gray-300);border-radius:10px;color:var(--gray-500);font-size:.75rem;padding:0 5px;cursor:pointer;line-height:1.5;flex-shrink:0">🔗</button>`;
     return `<tr class="invp-manual-row" data-uid="${emp.uid}">
       <td style="padding:3px 6px">
@@ -29383,8 +29386,7 @@ function invpDoLink(empId, fullName, code) {
   emp.linked_employee_id = empId || null;
   emp.linked_employee_code = code || '';
   emp.linked_employee_name = fullName || '';
-  // If the name cell was empty, fill it from the linked employee
-  if (!emp.name || !emp.name.trim()) emp.name = fullName || '';
+  emp.name = fullName || '';
   invpCloseLinkModal();
   renderInvpManualTable(true);
   if (typeof showToast === 'function') showToast(`已链接到 ${fullName}${code ? ' ('+code+')' : ''}`, 'success');
