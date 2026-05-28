@@ -510,6 +510,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('compliance')" data-tab="compliance" data-role="admin,staff">📑 合规审核</a>
       <a onclick="showTab('documents')" data-tab="documents" data-role="admin,staff">📄 HR 文件</a>
       <a onclick="showTab('referrals')" data-tab="referrals" data-role="admin,staff">🎁 推荐奖励</a>
+      <a onclick="showTab('referrers')" data-tab="referrers" data-role="admin,staff">👥 推荐人</a>
       <a onclick="showTab('scheduling')" data-tab="scheduling" data-role="admin,staff">📅 排班管理</a>
       <a onclick="showTab('warehouses')" data-tab="warehouses" data-role="admin,staff">🏭 仓库签到</a>
       <a onclick="showTab('warehouse-checkins')" data-tab="warehouse-checkins" data-role="admin,staff">📋 签到记录</a>
@@ -2703,6 +2704,157 @@ tr:hover td{background:var(--sky-light)}
     </table>
   </div>
 </div>
+
+<!-- 推荐人 Referrers -->
+<div id="tab-referrers" style="display:none">
+  <div class="top">
+    <h1>👥 推荐人</h1>
+    <div class="top-actions">
+      <button class="btn" onclick="openReferrerModal()">+ 新增推荐人</button>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
+      <input id="refrSearch" type="text" placeholder="搜索姓名 / 电话 / 邮箱…"
+        style="padding:.4rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;width:240px"
+        oninput="renderReferrersFiltered()">
+      <span id="refrCount" style="font-size:.82rem;color:var(--gray-400);margin-left:auto"></span>
+    </div>
+    <table style="font-size:.84rem;min-width:920px">
+      <thead><tr>
+        <th>姓名</th><th>联系方式</th><th>关联</th>
+        <th style="text-align:center">工种 Bonus</th>
+        <th style="text-align:center">推荐数</th>
+        <th style="text-align:right">待确认 / 已达标 / 已付</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr></thead>
+      <tbody id="referrersTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 推荐人 编辑/新增 弹窗 -->
+<div class="modal-bg" id="referrerModal"><div class="modal" style="max-width:780px">
+  <h2 id="referrerModalTitle">新增推荐人</h2>
+  <input type="hidden" id="refrId">
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+    <div class="field"><label>姓名 *</label>
+      <input id="refrName" placeholder="姓名 / Name" type="text"></div>
+    <div class="field"><label>电话</label>
+      <input id="refrPhone" placeholder="(123) 456-7890" type="text"></div>
+    <div class="field"><label>邮箱</label>
+      <input id="refrEmail" placeholder="email@example.com" type="email"></div>
+    <div class="field"><label>关联系统员工 / 工人账户（可选）</label>
+      <select id="refrLinkedPerson"><option value="">— 不关联 —</option></select></div>
+  </div>
+
+  <div class="field"><label>地址</label>
+    <input id="refrAddress" placeholder="街道地址" type="text"></div>
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.5rem">
+    <div class="field"><label>城市</label><input id="refrCity" type="text"></div>
+    <div class="field"><label>州</label><input id="refrState" type="text" maxlength="4"></div>
+    <div class="field"><label>邮编</label><input id="refrZip" type="text" maxlength="10"></div>
+  </div>
+
+  <div class="field"><label>备注</label>
+    <textarea id="refrNotes" rows="2" style="width:100%;border:1px solid var(--gray-200);border-radius:6px;padding:.5rem;font-size:.88rem;resize:vertical" placeholder="备注信息..."></textarea>
+  </div>
+
+  <div class="field"><label style="display:flex;align-items:center;gap:.4rem;font-weight:normal">
+    <input type="checkbox" id="refrActive" checked> 启用（关闭后不出现在新增推荐选择列表中）
+  </label></div>
+
+  <!-- Per-position bonus configuration -->
+  <div style="margin-top:1rem;padding-top:.75rem;border-top:2px solid var(--gray-100)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+      <h3 style="font-size:1rem;color:var(--blue);margin:0">按工种设置推荐 Bonus</h3>
+      <span style="font-size:.78rem;color:var(--gray-400)">留空表示该工种不参与推荐 bonus</span>
+    </div>
+    <div style="max-height:280px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:6px">
+      <table style="font-size:.82rem;margin:0">
+        <thead style="position:sticky;top:0;background:#fff;z-index:1">
+          <tr>
+            <th style="padding:8px 12px">工种</th>
+            <th style="padding:8px 12px;text-align:right;width:160px">Bonus 金额 ($)</th>
+            <th style="padding:8px 12px;text-align:right;width:160px">达标工时（小时）</th>
+          </tr>
+        </thead>
+        <tbody id="refrPosBonusBody"></tbody>
+      </table>
+    </div>
+    <div style="font-size:.76rem;color:var(--gray-400);margin-top:.4rem">达标工时留空时使用全局配置（推荐奖励页面的"最低达标工时"）</div>
+  </div>
+
+  <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
+    <button class="btn btn-green" onclick="saveReferrer()">保存</button>
+    <button class="btn btn-outline" onclick="closeModal('referrerModal')">取消</button>
+  </div>
+</div></div>
+
+<!-- 推荐人 详情/推荐记录 弹窗 -->
+<div class="modal-bg" id="referrerDetailModal"><div class="modal" style="max-width:900px">
+  <h2 id="refrDetailTitle">推荐记录</h2>
+  <div id="refrDetailMeta" style="font-size:.85rem;color:var(--gray-600);margin-bottom:.75rem"></div>
+
+  <div style="margin-bottom:.75rem">
+    <button class="btn btn-sm btn-green" onclick="openAddReferralRecordModal()">+ 添加推荐记录</button>
+  </div>
+
+  <div id="refrDetailStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin-bottom:.75rem"></div>
+
+  <div style="max-height:380px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:6px">
+    <table style="font-size:.82rem;margin:0">
+      <thead style="position:sticky;top:0;background:#fff;z-index:1">
+        <tr>
+          <th style="padding:8px">被推荐人</th>
+          <th style="padding:8px">工种</th>
+          <th style="padding:8px;text-align:right">Bonus</th>
+          <th style="padding:8px;text-align:right">已工时 / 达标</th>
+          <th style="padding:8px">状态</th>
+          <th style="padding:8px">登记时间</th>
+          <th style="padding:8px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="refrReferralsTable"></tbody>
+    </table>
+  </div>
+
+  <div style="display:flex;gap:1rem;margin-top:1rem;flex-wrap:wrap">
+    <button class="btn btn-outline" onclick="closeModal('referrerDetailModal')">关闭</button>
+  </div>
+</div></div>
+
+<!-- 添加推荐记录 弹窗 -->
+<div class="modal-bg" id="addReferralRecModal"><div class="modal" style="max-width:520px">
+  <h2>添加推荐记录</h2>
+  <input type="hidden" id="arrReferrerId">
+  <div class="field"><label>被推荐人（从系统员工/工人账户选择）</label>
+    <select id="arrReferee"><option value="">— 选择 —</option></select>
+  </div>
+  <div class="field"><label>或手动填写被推荐人姓名（外部）</label>
+    <input id="arrRefereeName" type="text" placeholder="被推荐人姓名（外部，无系统档案）">
+  </div>
+  <div class="field"><label>工种 *</label>
+    <select id="arrPosition"><option value="">— 选择工种 —</option></select>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+    <div class="field"><label>Bonus 金额 ($)</label>
+      <input id="arrBonus" type="number" min="0" step="0.01" placeholder="自动从工种配置读取">
+    </div>
+    <div class="field"><label>达标工时</label>
+      <input id="arrMinHours" type="number" min="0" step="0.5" placeholder="自动从工种配置读取">
+    </div>
+  </div>
+  <div class="field"><label>备注</label>
+    <textarea id="arrNotes" rows="2" style="width:100%;border:1px solid var(--gray-200);border-radius:6px;padding:.5rem;font-size:.88rem"></textarea>
+  </div>
+  <div style="display:flex;gap:1rem;margin-top:1rem;flex-wrap:wrap">
+    <button class="btn btn-green" onclick="saveReferralRecord()">保存</button>
+    <button class="btn btn-outline" onclick="closeModal('addReferralRecModal')">取消</button>
+  </div>
+</div></div>
 
 <!-- 排班管理 Shift Scheduling -->
 <div id="tab-scheduling" style="display:none">
@@ -7554,7 +7706,7 @@ function logout() {
 // ─── Tabs ───
 const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
-  'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker', scheduling:'sec-worker', warehouses:'sec-worker', 'warehouse-checkins':'sec-worker',
+  'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker', referrers:'sec-worker', scheduling:'sec-worker', warehouses:'sec-worker', 'warehouse-checkins':'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
   'company-payments':'sec-company-pay',
@@ -7611,6 +7763,7 @@ function showTab(t) {
   if (t === 'docuseal-templates') loadDocusealTemplatesPage();
   if (t === 'skill-settings')   loadSkillSettings();
   if (t === 'referrals')   loadAllReferrals();
+  if (t === 'referrers')   loadReferrers();
   if (t === 'scheduling')  loadScheduling();
   if (t === 'mgr-workers')     loadMgrWorkers();
   if (t === 'mgr-assignments') loadMgrAssignments();
@@ -25363,6 +25516,328 @@ function filterReferralTable() {
           <td>${bonus}</td>
         </tr>`;
       }).join('');
+}
+
+// ─── Referrers (推荐人) ────────────────────────────────────────────────────
+let _referrers = [];
+let _referrerPeopleOptions = { employees: [], workers: [] };
+let _refrCurrentDetailId = null;
+let _refrCurrentDetailData = null;
+
+async function loadReferrers() {
+  const [list, people] = await Promise.all([
+    api('/admin/referrers'),
+    api('/admin/referrer-people-options'),
+  ]);
+  _referrers = Array.isArray(list) ? list : [];
+  if (people) _referrerPeopleOptions = people;
+  renderReferrersFiltered();
+}
+
+function renderReferrersFiltered() {
+  const q = (document.getElementById('refrSearch')?.value || '').trim().toLowerCase();
+  const filtered = !q ? _referrers : _referrers.filter(r =>
+    (r.name||'').toLowerCase().includes(q) ||
+    (r.phone||'').toLowerCase().includes(q) ||
+    (r.email||'').toLowerCase().includes(q) ||
+    (r.linked_employee_code||'').toLowerCase().includes(q) ||
+    (r.linked_worker_code||'').toLowerCase().includes(q)
+  );
+  document.getElementById('refrCount').textContent = `共 ${filtered.length} 人`;
+  document.getElementById('referrersTable').innerHTML = filtered.length ? filtered.map(r => {
+    const linked = r.linked_employee_id
+      ? `<span style="color:var(--blue);font-weight:600">${esc(r.linked_employee_name||'')}</span> <span style="font-family:monospace;font-size:.74rem;color:var(--gray-400)">${esc(r.linked_employee_code||'')}</span>`
+      : r.linked_worker_account_id
+      ? `<span style="color:#6d28d9;font-weight:600">${esc(r.linked_worker_name||'')}</span> <span style="font-family:monospace;font-size:.74rem;color:var(--gray-400)">${esc(r.linked_worker_code||'')}</span>`
+      : '<span style="color:var(--gray-300)">外部</span>';
+    const contact = [r.phone, r.email].filter(Boolean).join(' · ') || '<span style="color:var(--gray-300)">—</span>';
+    const statusBadge = r.active
+      ? '<span class="badge" style="background:#d1fae5;color:#065f46">启用</span>'
+      : '<span class="badge" style="background:#f3f4f6;color:#6b7280">停用</span>';
+    const money = n => '$' + (Number(n)||0).toFixed(2);
+    return `<tr>
+      <td><strong>${esc(r.name)}</strong></td>
+      <td style="font-size:.8rem">${contact}</td>
+      <td style="font-size:.82rem">${linked}</td>
+      <td style="text-align:center">${r.position_bonus_count || 0}</td>
+      <td style="text-align:center">${r.total_referrals || 0}</td>
+      <td style="text-align:right;font-size:.8rem;white-space:nowrap">
+        <span style="color:#92400e">${money(r.pending_bonus)}</span> /
+        <span style="color:#065f46">${money(r.qualified_bonus)}</span> /
+        <span style="color:#1d4ed8">${money(r.paid_bonus)}</span>
+      </td>
+      <td>${statusBadge}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick="openReferrerDetail(${r.id})">📋 记录</button>
+        <button class="btn btn-sm" onclick="openReferrerModal(${r.id})">✏️ 编辑</button>
+        ${USER_ROLE==='admin' ? `<button class="btn btn-sm btn-red" onclick="deleteReferrer(${r.id},'${esc(r.name).replace(/'/g,"&#39;")}')">🗑️</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">暂无推荐人，点击"+ 新增推荐人"添加</td></tr>';
+}
+
+function _buildRefrPeopleSelectHTML(selectedKey) {
+  // selectedKey format: 'emp:<id>' or 'wa:<id>' or ''
+  let html = '<option value="">— 不关联（外部推荐人）—</option>';
+  if (_referrerPeopleOptions.employees.length) {
+    html += '<optgroup label="员工 Employees">';
+    html += _referrerPeopleOptions.employees.map(e => {
+      const key = `emp:${e.id}`;
+      const name = `${e.first_name||''} ${e.last_name||''}`.trim();
+      return `<option value="${key}" ${key===selectedKey?'selected':''}>${esc(name)} (${esc(e.code||'')})</option>`;
+    }).join('');
+    html += '</optgroup>';
+  }
+  if (_referrerPeopleOptions.workers.length) {
+    html += '<optgroup label="工人账户 Worker Accounts">';
+    html += _referrerPeopleOptions.workers.map(w => {
+      const key = `wa:${w.id}`;
+      return `<option value="${key}" ${key===selectedKey?'selected':''}>${esc(w.name||'')} (${esc(w.code||'')})</option>`;
+    }).join('');
+    html += '</optgroup>';
+  }
+  return html;
+}
+
+function _buildPositionBonusRows(existing) {
+  // existing: array of {position_key, bonus_amount, min_hours}
+  const map = {};
+  (existing||[]).forEach(b => { map[b.position_key] = b; });
+  const positions = window._workerPositionsCache || [];
+  return positions.map(p => {
+    const cur = map[p.key] || {};
+    return `<tr>
+      <td style="padding:6px 12px">${esc(p.zh || p.en)} <span style="color:var(--gray-400);font-size:.72rem">/ ${esc(p.en)}</span></td>
+      <td style="padding:6px 12px;text-align:right">
+        <input type="number" class="refr-pb-bonus" data-key="${p.key}" min="0" step="0.01"
+          value="${cur.bonus_amount != null ? cur.bonus_amount : ''}"
+          placeholder="0.00" style="width:120px;text-align:right;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px">
+      </td>
+      <td style="padding:6px 12px;text-align:right">
+        <input type="number" class="refr-pb-hours" data-key="${p.key}" min="0" step="0.5"
+          value="${cur.min_hours != null ? cur.min_hours : ''}"
+          placeholder="默认" style="width:120px;text-align:right;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px">
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function openReferrerModal(id) {
+  document.getElementById('referrerModalTitle').textContent = id ? '编辑推荐人' : '新增推荐人';
+  document.getElementById('refrId').value = id || '';
+  // Preload worker positions for bonus rows
+  if (!window._workerPositionsCache) {
+    window._workerPositionsCache = await api('/positions') || [];
+  }
+  let r = { name:'', phone:'', email:'', address:'', city:'', state:'', zip:'', notes:'', active:1, position_bonuses:[] };
+  if (id) {
+    const data = await api(`/admin/referrers/${id}`);
+    if (!data || data.error) { showToast('加载失败', 'error'); return; }
+    r = data;
+  }
+  document.getElementById('refrName').value = r.name || '';
+  document.getElementById('refrPhone').value = r.phone || '';
+  document.getElementById('refrEmail').value = r.email || '';
+  document.getElementById('refrAddress').value = r.address || '';
+  document.getElementById('refrCity').value = r.city || '';
+  document.getElementById('refrState').value = r.state || '';
+  document.getElementById('refrZip').value = r.zip || '';
+  document.getElementById('refrNotes').value = r.notes || '';
+  document.getElementById('refrActive').checked = r.active !== 0;
+  const linkedKey = r.linked_employee_id ? `emp:${r.linked_employee_id}`
+                   : r.linked_worker_account_id ? `wa:${r.linked_worker_account_id}` : '';
+  document.getElementById('refrLinkedPerson').innerHTML = _buildRefrPeopleSelectHTML(linkedKey);
+  document.getElementById('refrPosBonusBody').innerHTML = _buildPositionBonusRows(r.position_bonuses);
+  document.getElementById('referrerModal').classList.add('show');
+}
+
+async function saveReferrer() {
+  const id = document.getElementById('refrId').value;
+  const name = document.getElementById('refrName').value.trim();
+  if (!name) { showToast('请填写姓名', 'error'); return; }
+  const linkedSel = document.getElementById('refrLinkedPerson').value;
+  let linked_employee_id = null, linked_worker_account_id = null;
+  if (linkedSel.startsWith('emp:')) linked_employee_id = parseInt(linkedSel.slice(4));
+  else if (linkedSel.startsWith('wa:')) linked_worker_account_id = parseInt(linkedSel.slice(3));
+
+  const position_bonuses = [];
+  document.querySelectorAll('#refrPosBonusBody tr').forEach(tr => {
+    const bInp = tr.querySelector('.refr-pb-bonus');
+    const hInp = tr.querySelector('.refr-pb-hours');
+    const key = bInp.dataset.key;
+    const bonus = parseFloat(bInp.value);
+    const hrs = hInp.value === '' ? null : parseFloat(hInp.value);
+    if ((!isNaN(bonus) && bonus > 0) || hrs != null) {
+      position_bonuses.push({ position_key: key, bonus_amount: isNaN(bonus) ? 0 : bonus, min_hours: hrs });
+    }
+  });
+
+  const body = {
+    name, phone: document.getElementById('refrPhone').value,
+    email: document.getElementById('refrEmail').value,
+    address: document.getElementById('refrAddress').value,
+    city: document.getElementById('refrCity').value,
+    state: document.getElementById('refrState').value,
+    zip: document.getElementById('refrZip').value,
+    notes: document.getElementById('refrNotes').value,
+    active: document.getElementById('refrActive').checked ? 1 : 0,
+    linked_employee_id, linked_worker_account_id, position_bonuses,
+  };
+  const url = id ? `/admin/referrers/${id}` : '/admin/referrers';
+  const method = id ? 'PUT' : 'POST';
+  const res = await api(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (!res || res.error) { showToast(res?.error || '保存失败', 'error'); return; }
+  showToast(id ? '已更新' : '已创建', 'success');
+  closeModal('referrerModal');
+  loadReferrers();
+}
+
+async function deleteReferrer(id, name) {
+  if (!confirm(`确定删除推荐人「${name}」？\n（含未取消推荐记录时无法删除）`)) return;
+  const res = await api(`/admin/referrers/${id}`, { method:'DELETE' });
+  if (!res || res.error) { showToast(res?.error || '删除失败', 'error'); return; }
+  showToast('已删除', 'success');
+  loadReferrers();
+}
+
+async function openReferrerDetail(id) {
+  _refrCurrentDetailId = id;
+  if (!window._workerPositionsCache) {
+    window._workerPositionsCache = await api('/positions') || [];
+  }
+  const data = await api(`/admin/referrers/${id}`);
+  if (!data || data.error) { showToast('加载失败', 'error'); return; }
+  _refrCurrentDetailData = data;
+  document.getElementById('refrDetailTitle').textContent = `推荐记录 — ${data.name}`;
+  const meta = [
+    data.phone, data.email,
+    data.linked_employee_code ? `员工 ${data.linked_employee_code}` : null,
+    data.linked_worker_code ? `工人 ${data.linked_worker_code}` : null,
+  ].filter(Boolean).join(' · ');
+  document.getElementById('refrDetailMeta').textContent = meta;
+
+  const t = data.totals || {};
+  const money = n => '$' + (Number(n)||0).toFixed(2);
+  document.getElementById('refrDetailStats').innerHTML = `
+    <div class="stat-card" style="padding:.6rem"><h3 style="font-size:1.2rem;margin:0;color:#92400e">${money(t.pending)}</h3><p style="font-size:.75rem">⏳ 待达标</p></div>
+    <div class="stat-card" style="padding:.6rem"><h3 style="font-size:1.2rem;margin:0;color:#065f46">${money(t.qualified)}</h3><p style="font-size:.75rem">✅ 已达标待付</p></div>
+    <div class="stat-card" style="padding:.6rem"><h3 style="font-size:1.2rem;margin:0;color:#1d4ed8">${money(t.paid)}</h3><p style="font-size:.75rem">💰 已支付</p></div>
+    <div class="stat-card" style="padding:.6rem"><h3 style="font-size:1.2rem;margin:0">${(data.referrals||[]).length}</h3><p style="font-size:.75rem">总推荐数</p></div>
+  `;
+
+  const posMap = {};
+  (window._workerPositionsCache||[]).forEach(p => { posMap[p.key] = p.zh || p.en; });
+  const statusBadge = s => {
+    if (s === 'qualified') return '<span class="badge" style="background:#d1fae5;color:#065f46">✅ 已达标</span>';
+    if (s === 'paid')      return '<span class="badge" style="background:#dbeafe;color:#1d4ed8">💰 已支付</span>';
+    if (s === 'cancelled') return '<span class="badge" style="background:#f3f4f6;color:#6b7280">已取消</span>';
+    return '<span class="badge" style="background:#fef3c7;color:#92400e">⏳ 待达标</span>';
+  };
+  const rows = (data.referrals||[]).map(rr => `<tr>
+    <td style="padding:6px 8px">
+      <strong>${esc(rr.referee_display_name || rr.referee_name || '—')}</strong>
+      ${rr.referee_employee_code ? `<div style="font-family:monospace;font-size:.7rem;color:var(--gray-400)">${esc(rr.referee_employee_code)}</div>` : ''}
+      ${rr.referee_worker_code && !rr.referee_employee_code ? `<div style="font-family:monospace;font-size:.7rem;color:var(--gray-400)">${esc(rr.referee_worker_code)}</div>` : ''}
+    </td>
+    <td style="padding:6px 8px">${esc(posMap[rr.position_key] || rr.position_key || '—')}</td>
+    <td style="padding:6px 8px;text-align:right">${money(rr.bonus_amount)}</td>
+    <td style="padding:6px 8px;text-align:right;white-space:nowrap">${(rr.worked_hours||0).toFixed(1)} / ${(rr.min_hours||0).toFixed(1)}</td>
+    <td style="padding:6px 8px">${statusBadge(rr.status)}</td>
+    <td style="padding:6px 8px;font-size:.75rem;color:var(--gray-400);white-space:nowrap">${(rr.created_at||'').split('T')[0]}</td>
+    <td style="padding:6px 8px;white-space:nowrap">
+      ${rr.status === 'qualified' ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd" onclick="updateReferralRecStatus(${rr.id},'paid')">标记已付</button>` : ''}
+      ${rr.status === 'pending' ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick="updateReferralRecStatus(${rr.id},'qualified')">标记达标</button>` : ''}
+      ${rr.status !== 'cancelled' ? `<button class="btn btn-sm" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db" onclick="updateReferralRecStatus(${rr.id},'cancelled')">取消</button>` : ''}
+      <button class="btn btn-sm btn-red" onclick="deleteReferralRec(${rr.id})">🗑️</button>
+    </td>
+  </tr>`).join('');
+  document.getElementById('refrReferralsTable').innerHTML = rows
+    || '<tr><td colspan="7" class="empty" style="padding:1rem">暂无推荐记录</td></tr>';
+
+  document.getElementById('referrerDetailModal').classList.add('show');
+}
+
+async function updateReferralRecStatus(recId, newStatus) {
+  const rec = (_refrCurrentDetailData?.referrals || []).find(x => x.id === recId);
+  if (!rec) return;
+  const res = await api(`/admin/referrer-referrals/${recId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: newStatus, notes: rec.notes || '', bonus_amount: rec.bonus_amount, min_hours: rec.min_hours })
+  });
+  if (!res || res.error) { showToast(res?.error || '更新失败', 'error'); return; }
+  showToast('已更新', 'success');
+  openReferrerDetail(_refrCurrentDetailId);
+  loadReferrers();
+}
+
+async function deleteReferralRec(recId) {
+  if (!confirm('确定删除这条推荐记录？')) return;
+  const res = await api(`/admin/referrer-referrals/${recId}`, { method:'DELETE' });
+  if (!res || res.error) { showToast(res?.error || '删除失败', 'error'); return; }
+  openReferrerDetail(_refrCurrentDetailId);
+  loadReferrers();
+}
+
+function openAddReferralRecordModal() {
+  if (!_refrCurrentDetailId) return;
+  document.getElementById('arrReferrerId').value = _refrCurrentDetailId;
+  document.getElementById('arrReferee').innerHTML = _buildRefrPeopleSelectHTML('');
+  document.getElementById('arrRefereeName').value = '';
+  document.getElementById('arrBonus').value = '';
+  document.getElementById('arrMinHours').value = '';
+  document.getElementById('arrNotes').value = '';
+  // Position dropdown
+  const positions = window._workerPositionsCache || [];
+  document.getElementById('arrPosition').innerHTML = '<option value="">— 选择工种 —</option>' +
+    positions.map(p => `<option value="${p.key}">${esc(p.zh || p.en)}</option>`).join('');
+
+  // Auto-fill bonus/min_hours when position changes (from this referrer's config)
+  document.getElementById('arrPosition').onchange = function() {
+    const key = this.value;
+    const pb = (_refrCurrentDetailData?.position_bonuses || []).find(b => b.position_key === key);
+    if (pb) {
+      document.getElementById('arrBonus').value = pb.bonus_amount || '';
+      if (pb.min_hours != null) document.getElementById('arrMinHours').value = pb.min_hours;
+    }
+  };
+
+  document.getElementById('addReferralRecModal').classList.add('show');
+}
+
+async function saveReferralRecord() {
+  const refId = document.getElementById('arrReferrerId').value;
+  if (!refId) return;
+  const refereeSel = document.getElementById('arrReferee').value;
+  const refereeName = document.getElementById('arrRefereeName').value.trim();
+  let referee_employee_id = null, referee_worker_account_id = null;
+  if (refereeSel.startsWith('emp:')) referee_employee_id = parseInt(refereeSel.slice(4));
+  else if (refereeSel.startsWith('wa:')) referee_worker_account_id = parseInt(refereeSel.slice(3));
+  if (!referee_employee_id && !referee_worker_account_id && !refereeName) {
+    showToast('请选择被推荐人或填写姓名', 'error');
+    return;
+  }
+  const position_key = document.getElementById('arrPosition').value;
+  if (!position_key) { showToast('请选择工种', 'error'); return; }
+  const bonus = document.getElementById('arrBonus').value;
+  const hours = document.getElementById('arrMinHours').value;
+  const body = {
+    referee_employee_id, referee_worker_account_id,
+    referee_name: refereeName, position_key,
+    bonus_amount: bonus === '' ? null : parseFloat(bonus),
+    min_hours: hours === '' ? null : parseFloat(hours),
+    notes: document.getElementById('arrNotes').value,
+  };
+  const res = await api(`/admin/referrers/${refId}/referrals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res || res.error) { showToast(res?.error || '保存失败', 'error'); return; }
+  showToast('已添加', 'success');
+  closeModal('addReferralRecModal');
+  openReferrerDetail(refId);
+  loadReferrers();
 }
 
 // ─── Skill Options Settings ───
