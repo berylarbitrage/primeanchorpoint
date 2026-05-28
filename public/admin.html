@@ -27816,6 +27816,8 @@ function onInvpPresetSelect(section) {
   } else if (section === 'bank') {
     saved.bank_account_name = data.bank_account_name || ''; saved.bank_name = data.bank_name || '';
     saved.bank_account_no = data.bank_account_no || ''; saved.bank_routing_no = data.bank_routing_no || '';
+    saved.bank_swift_code = data.bank_swift_code || ''; saved.bank_wire_routing = data.bank_wire_routing || '';
+    saved.bank_paper_routing = data.bank_paper_routing || '';
   } else if (section === 'contact') {
     saved.contact_name = data.contact_name || ''; saved.contact_phone = data.contact_phone || '';
     saved.contact_email = data.contact_email || '';
@@ -27874,6 +27876,9 @@ function fillPresetFields(section, data) {
     document.getElementById('invpBankName').value = data.bank_name || '';
     document.getElementById('invpBankAccountNo').value = data.bank_account_no || '';
     document.getElementById('invpBankRoutingNo').value = data.bank_routing_no || '';
+    document.getElementById('invpBankSwiftCode').value = data.bank_swift_code || '';
+    document.getElementById('invpBankWireRouting').value = data.bank_wire_routing || '';
+    document.getElementById('invpBankPaperRouting').value = data.bank_paper_routing || '';
   } else if (section === 'contact') {
     document.getElementById('invpContactName').value = data.contact_name || '';
     document.getElementById('invpContactPhone').value = data.contact_phone || '';
@@ -27893,6 +27898,9 @@ function collectPresetData(section) {
     bank_name: document.getElementById('invpBankName').value.trim(),
     bank_account_no: document.getElementById('invpBankAccountNo').value.trim(),
     bank_routing_no: document.getElementById('invpBankRoutingNo').value.trim(),
+    bank_swift_code: document.getElementById('invpBankSwiftCode').value.trim(),
+    bank_wire_routing: document.getElementById('invpBankWireRouting').value.trim(),
+    bank_paper_routing: document.getElementById('invpBankPaperRouting').value.trim(),
   };
   if (section === 'contact') return {
     contact_name: document.getElementById('invpContactName').value.trim(),
@@ -27972,7 +27980,9 @@ function renderInvpSettingsLists() {
     ]},
     { key: 'bank', listId: 'invpSettingBankList', fields: [
       { k: 'bank_account_name', label: 'Account Name' }, { k: 'bank_name', label: 'Bank Name' },
-      { k: 'bank_account_no', label: 'Account No' }, { k: 'bank_routing_no', label: 'Routing No' }
+      { k: 'bank_account_no', label: 'Account No' }, { k: 'bank_routing_no', label: 'Routing No' },
+      { k: 'bank_swift_code', label: 'SWIFT Code' }, { k: 'bank_wire_routing', label: 'Wire Routing' },
+      { k: 'bank_paper_routing', label: 'Paper Routing' }
     ]},
     { key: 'contact', listId: 'invpSettingContactList', fields: [
       { k: 'contact_name', label: '联系人' }, { k: 'contact_phone', label: '电话' },
@@ -29576,10 +29586,13 @@ async function generateInvpPreview() {
   }
 
   const bankRows = [
-    profile.bank_account_name ? ['Payable To', `<strong>${esc(profile.bank_account_name)}</strong>`] : null,
-    profile.bank_name         ? ['Bank',       esc(profile.bank_name)]                                : null,
-    profile.bank_routing_no   ? ['Routing No', esc(profile.bank_routing_no)]                          : null,
-    profile.bank_account_no   ? ['Account No', esc(profile.bank_account_no)]                          : null,
+    profile.bank_account_name  ? ['Payable To',    `<strong>${esc(profile.bank_account_name)}</strong>`] : null,
+    profile.bank_name          ? ['Bank',          esc(profile.bank_name)]                                : null,
+    profile.bank_routing_no    ? ['Routing No',    esc(profile.bank_routing_no)]                          : null,
+    profile.bank_account_no    ? ['Account No',    esc(profile.bank_account_no)]                          : null,
+    profile.bank_swift_code    ? ['SWIFT Code',    esc(profile.bank_swift_code)]                          : null,
+    profile.bank_wire_routing  ? ['Wire Routing',  esc(profile.bank_wire_routing)]                        : null,
+    profile.bank_paper_routing ? ['Paper Routing', esc(profile.bank_paper_routing)]                       : null,
   ].filter(Boolean);
   const bankBlock = bankRows.length ? `
     <div style="margin-bottom:.7rem;padding:.6rem .9rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem;color:#1e293b">
@@ -29753,10 +29766,13 @@ function renderInvpProfilePreview() {
   if (bankEl) {
     const bid = p.bank_preset_id;
     bankEl.innerHTML = ([
-      p.bank_account_name ? `<div>Account Name: ${esc(p.bank_account_name)}</div>` : '',
-      p.bank_name         ? `<div>Bank Name: ${esc(p.bank_name)}</div>` : '',
-      p.bank_account_no   ? `<div>Account No: ${esc(p.bank_account_no)}</div>` : '',
-      p.bank_routing_no   ? `<div>Routing No: ${esc(p.bank_routing_no)}</div>` : '',
+      p.bank_account_name  ? `<div>Account Name: ${esc(p.bank_account_name)}</div>` : '',
+      p.bank_name          ? `<div>Bank Name: ${esc(p.bank_name)}</div>` : '',
+      p.bank_account_no    ? `<div>Account No: ${esc(p.bank_account_no)}</div>` : '',
+      p.bank_routing_no    ? `<div>Routing No: ${esc(p.bank_routing_no)}</div>` : '',
+      p.bank_swift_code    ? `<div>SWIFT Code: ${esc(p.bank_swift_code)}</div>` : '',
+      p.bank_wire_routing  ? `<div>Wire Routing: ${esc(p.bank_wire_routing)}</div>` : '',
+      p.bank_paper_routing ? `<div>Paper Routing: ${esc(p.bank_paper_routing)}</div>` : '',
     ].join('') || '<div style="color:var(--gray-400)">（请从下拉菜单选择预设，或点击「+ 新建」创建）</div>') + editBtn('bank', bid);
   }
 
@@ -29777,7 +29793,7 @@ async function deleteInvpPreset(id, section) {
   if (saved[section + '_preset_id'] == id) {
     delete saved[section + '_preset_id'];
     if (section === 'sender') { saved.sender_name=''; saved.sender_address=''; saved.sender_phone=''; saved.sender_email=''; }
-    if (section === 'bank') { saved.bank_account_name=''; saved.bank_name=''; saved.bank_account_no=''; saved.bank_routing_no=''; }
+    if (section === 'bank') { saved.bank_account_name=''; saved.bank_name=''; saved.bank_account_no=''; saved.bank_routing_no=''; saved.bank_swift_code=''; saved.bank_wire_routing=''; saved.bank_paper_routing=''; }
     if (section === 'contact') { saved.contact_name=''; saved.contact_phone=''; saved.contact_email=''; }
     saveInvpProfileData(saved);
   }
@@ -30012,6 +30028,9 @@ function printInvoice() {
         <div class="field"><label>Bank Name</label><input type="text" id="invpBankName" placeholder="e.g. JPMorgan Bank"></div>
         <div class="field"><label>Account No</label><input type="text" id="invpBankAccountNo" placeholder="2904088524"></div>
         <div class="field"><label>Routing No</label><input type="text" id="invpBankRoutingNo" placeholder="322271627"></div>
+        <div class="field"><label>SWIFT Code</label><input type="text" id="invpBankSwiftCode" placeholder="e.g. CHASUS33"></div>
+        <div class="field"><label>Wire Routing</label><input type="text" id="invpBankWireRouting" placeholder="e.g. 021000021"></div>
+        <div class="field" style="grid-column:1/-1"><label>Paper / ACH Routing</label><input type="text" id="invpBankPaperRouting" placeholder="e.g. 322271627"></div>
       </div>
     </div>
     <div id="invpPresetFieldsContact" style="display:none">
