@@ -2002,6 +2002,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
 
     <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-outline" onclick="invpSaveDraft()" style="padding:.55rem 1.5rem;color:#92400e;border-color:#d97706" title="不生成预览直接保存草稿（包括已链接的员工）">💾 保存草稿</button>
       <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
     </div>
   </div>
@@ -28423,6 +28424,13 @@ function updateInvpPreviewBtns() {
     <button class="btn btn-outline" onclick="saveInvpInvoice('draft')" style="color:#92400e;border-color:#d97706">📝 保存草稿</button>
     <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
   `;
+}
+
+async function invpSaveDraft() {
+  const billName = document.getElementById('invPageBillName').value.trim();
+  if (!billName) { alert('请填写账单发往公司名称'); return; }
+  if (!document.getElementById('invPageNumber').value) await invpRefreshInvoiceNumber();
+  return saveInvpInvoice('draft');
 }
 
 async function saveInvpInvoice(status) {
