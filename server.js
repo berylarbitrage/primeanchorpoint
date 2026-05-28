@@ -1409,6 +1409,49 @@ function getWorkerPositions() {
   return db.prepare('SELECT * FROM worker_positions WHERE active=1 ORDER BY sort_order, id').all()
     .map(r => ({ id: r.id, key: r.key, zh: r.name_zh, en: r.name_en, es: r.name_es, sort_order: r.sort_order }));
 }
+
+// ─── Referrers (推荐人) — 独立于 worker_accounts.referred_by 之外的外部推荐人 ───
+db.exec(`CREATE TABLE IF NOT EXISTS referrers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  city TEXT DEFAULT '',
+  state TEXT DEFAULT '',
+  zip TEXT DEFAULT '',
+  linked_employee_id INTEGER DEFAULT NULL,
+  linked_worker_account_id INTEGER DEFAULT NULL,
+  notes TEXT DEFAULT '',
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS referrer_position_bonus (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  referrer_id INTEGER NOT NULL,
+  position_key TEXT NOT NULL,
+  bonus_amount REAL DEFAULT 0,
+  min_hours REAL DEFAULT NULL,
+  UNIQUE(referrer_id, position_key),
+  FOREIGN KEY (referrer_id) REFERENCES referrers(id) ON DELETE CASCADE
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS referrer_referrals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  referrer_id INTEGER NOT NULL,
+  referee_employee_id INTEGER DEFAULT NULL,
+  referee_worker_account_id INTEGER DEFAULT NULL,
+  referee_name TEXT DEFAULT '',
+  position_key TEXT DEFAULT '',
+  bonus_amount REAL DEFAULT 0,
+  min_hours REAL DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  qualified_at DATETIME DEFAULT NULL,
+  paid_at DATETIME DEFAULT NULL,
+  notes TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (referrer_id) REFERENCES referrers(id) ON DELETE CASCADE
+)`);
 // Add quote_request column to inquiries if not already present (migration)
 try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
 
@@ -13435,6 +13478,205 @@ app.delete('/api/admin/worker-positions/:id', requireAdmin, (req, res) => {
   if (!row) return res.status(404).json({ error: '职位不存在' });
   db.prepare('DELETE FROM worker_positions WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Referrers (推荐人) CRUD ─────────────────────────────────────────────────
+function enrichReferrer(r) {
+  if (!r) return null;
+  const bonuses = db.prepare('SELECT position_key, bonus_amount, min_hours FROM referrer_position_bonus WHERE referrer_id=?').all(r.id);
+  const refs = db.prepare(`
+    SELECT rr.*,
+      COALESCE(e.first_name || ' ' || e.last_name, wa.name, rr.referee_name) AS referee_display_name,
+      e.employee_id AS referee_employee_code,
+      wa.worker_code AS referee_worker_code,
+      COALESCE((SELECT SUM(t.total_hours) FROM time_entries t
+                WHERE t.status='closed' AND
+                  (t.employee_id = rr.referee_employee_id
+                   OR t.employee_id = (SELECT employee_id FROM worker_accounts WHERE id=rr.referee_worker_account_id))
+               ), 0) AS worked_hours
+    FROM referrer_referrals rr
+    LEFT JOIN employees e ON e.id = rr.referee_employee_id
+    LEFT JOIN worker_accounts wa ON wa.id = rr.referee_worker_account_id
+    WHERE rr.referrer_id=?
+    ORDER BY rr.created_at DESC
+  `).all(r.id);
+
+  // Auto-promote pending → qualified if worked_hours meets threshold
+  const promote = db.prepare("UPDATE referrer_referrals SET status='qualified', qualified_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'");
+  refs.forEach(ref => {
+    if (ref.status === 'pending' && ref.worked_hours >= (ref.min_hours || 0) && (ref.min_hours || 0) > 0) {
+      promote.run(ref.id);
+      ref.status = 'qualified';
+      ref.qualified_at = new Date().toISOString();
+    }
+  });
+
+  const totals = {
+    pending:   refs.filter(x => x.status === 'pending').reduce((s, x) => s + (x.bonus_amount || 0), 0),
+    qualified: refs.filter(x => x.status === 'qualified').reduce((s, x) => s + (x.bonus_amount || 0), 0),
+    paid:      refs.filter(x => x.status === 'paid').reduce((s, x) => s + (x.bonus_amount || 0), 0),
+  };
+  return { ...r, position_bonuses: bonuses, referrals: refs, totals };
+}
+
+app.get('/api/admin/referrers', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT r.*,
+      COALESCE(e.first_name || ' ' || e.last_name, '') AS linked_employee_name,
+      e.employee_id AS linked_employee_code,
+      wa.name AS linked_worker_name,
+      wa.worker_code AS linked_worker_code
+    FROM referrers r
+    LEFT JOIN employees e ON e.id = r.linked_employee_id
+    LEFT JOIN worker_accounts wa ON wa.id = r.linked_worker_account_id
+    ORDER BY r.active DESC, r.created_at DESC
+  `).all();
+  // Attach summary (counts only, no full referral list for list view)
+  const summary = db.prepare(`
+    SELECT referrer_id,
+      COUNT(*) AS total_count,
+      SUM(CASE WHEN status='pending'   THEN bonus_amount ELSE 0 END) AS pending_bonus,
+      SUM(CASE WHEN status='qualified' THEN bonus_amount ELSE 0 END) AS qualified_bonus,
+      SUM(CASE WHEN status='paid'      THEN bonus_amount ELSE 0 END) AS paid_bonus
+    FROM referrer_referrals GROUP BY referrer_id
+  `).all();
+  const smap = {};
+  summary.forEach(s => { smap[s.referrer_id] = s; });
+  const bonusCount = db.prepare('SELECT referrer_id, COUNT(*) AS cnt FROM referrer_position_bonus GROUP BY referrer_id').all();
+  const bmap = {};
+  bonusCount.forEach(b => { bmap[b.referrer_id] = b.cnt; });
+  rows.forEach(r => {
+    const s = smap[r.id] || {};
+    r.total_referrals = s.total_count || 0;
+    r.pending_bonus = s.pending_bonus || 0;
+    r.qualified_bonus = s.qualified_bonus || 0;
+    r.paid_bonus = s.paid_bonus || 0;
+    r.position_bonus_count = bmap[r.id] || 0;
+  });
+  res.json(rows);
+});
+
+app.get('/api/admin/referrers/:id', requireAdmin, (req, res) => {
+  const r = db.prepare(`
+    SELECT r.*,
+      COALESCE(e.first_name || ' ' || e.last_name, '') AS linked_employee_name,
+      e.employee_id AS linked_employee_code,
+      wa.name AS linked_worker_name,
+      wa.worker_code AS linked_worker_code
+    FROM referrers r
+    LEFT JOIN employees e ON e.id = r.linked_employee_id
+    LEFT JOIN worker_accounts wa ON wa.id = r.linked_worker_account_id
+    WHERE r.id=?
+  `).get(req.params.id);
+  if (!r) return res.status(404).json({ error: '推荐人不存在' });
+  res.json(enrichReferrer(r));
+});
+
+app.post('/api/admin/referrers', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  if (!d.name || !d.name.trim()) return res.status(400).json({ error: '姓名为必填项' });
+  const info = db.prepare(`INSERT INTO referrers
+    (name, phone, email, address, city, state, zip, linked_employee_id, linked_worker_account_id, notes, active)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+    d.name.trim(), d.phone || '', d.email || '', d.address || '', d.city || '', d.state || '', d.zip || '',
+    d.linked_employee_id || null, d.linked_worker_account_id || null, d.notes || '', d.active === 0 ? 0 : 1
+  );
+  const id = info.lastInsertRowid;
+  if (Array.isArray(d.position_bonuses)) {
+    const ins = db.prepare('INSERT INTO referrer_position_bonus (referrer_id, position_key, bonus_amount, min_hours) VALUES (?,?,?,?)');
+    d.position_bonuses.forEach(pb => {
+      if (pb.position_key && (pb.bonus_amount > 0 || pb.min_hours != null)) {
+        ins.run(id, pb.position_key, pb.bonus_amount || 0, pb.min_hours != null && pb.min_hours !== '' ? pb.min_hours : null);
+      }
+    });
+  }
+  res.json({ success: true, id });
+});
+
+app.put('/api/admin/referrers/:id', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  const exist = db.prepare('SELECT id FROM referrers WHERE id=?').get(req.params.id);
+  if (!exist) return res.status(404).json({ error: '推荐人不存在' });
+  if (!d.name || !d.name.trim()) return res.status(400).json({ error: '姓名为必填项' });
+  db.prepare(`UPDATE referrers SET
+    name=?, phone=?, email=?, address=?, city=?, state=?, zip=?,
+    linked_employee_id=?, linked_worker_account_id=?, notes=?, active=?, updated_at=CURRENT_TIMESTAMP
+    WHERE id=?`).run(
+    d.name.trim(), d.phone || '', d.email || '', d.address || '', d.city || '', d.state || '', d.zip || '',
+    d.linked_employee_id || null, d.linked_worker_account_id || null, d.notes || '', d.active === 0 ? 0 : 1,
+    req.params.id
+  );
+  if (Array.isArray(d.position_bonuses)) {
+    db.prepare('DELETE FROM referrer_position_bonus WHERE referrer_id=?').run(req.params.id);
+    const ins = db.prepare('INSERT INTO referrer_position_bonus (referrer_id, position_key, bonus_amount, min_hours) VALUES (?,?,?,?)');
+    d.position_bonuses.forEach(pb => {
+      if (pb.position_key && (pb.bonus_amount > 0 || pb.min_hours != null)) {
+        ins.run(req.params.id, pb.position_key, pb.bonus_amount || 0, pb.min_hours != null && pb.min_hours !== '' ? pb.min_hours : null);
+      }
+    });
+  }
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/referrers/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const cnt = db.prepare("SELECT COUNT(*) AS c FROM referrer_referrals WHERE referrer_id=? AND status!='cancelled'").get(req.params.id);
+  if (cnt.c > 0) return res.status(400).json({ error: '存在未取消的推荐记录，无法删除' });
+  db.prepare('DELETE FROM referrers WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Add a referral record to a referrer
+app.post('/api/admin/referrers/:id/referrals', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  const referrer = db.prepare('SELECT id FROM referrers WHERE id=?').get(req.params.id);
+  if (!referrer) return res.status(404).json({ error: '推荐人不存在' });
+  // Resolve bonus from referrer_position_bonus, fallback to global config
+  const globalCfg = db.prepare('SELECT bonus_per_referral, min_hours_to_qualify FROM referral_bonus_config WHERE id=1').get()
+    || { bonus_per_referral: 0, min_hours_to_qualify: 0 };
+  const positionKey = d.position_key || '';
+  const posBonus = positionKey
+    ? db.prepare('SELECT bonus_amount, min_hours FROM referrer_position_bonus WHERE referrer_id=? AND position_key=?').get(req.params.id, positionKey)
+    : null;
+  const bonusAmount = d.bonus_amount != null ? Number(d.bonus_amount) : (posBonus?.bonus_amount ?? globalCfg.bonus_per_referral);
+  const minHours = d.min_hours != null ? Number(d.min_hours) : (posBonus?.min_hours ?? globalCfg.min_hours_to_qualify);
+  const info = db.prepare(`INSERT INTO referrer_referrals
+    (referrer_id, referee_employee_id, referee_worker_account_id, referee_name, position_key, bonus_amount, min_hours, notes)
+    VALUES (?,?,?,?,?,?,?,?)`).run(
+    req.params.id, d.referee_employee_id || null, d.referee_worker_account_id || null,
+    d.referee_name || '', positionKey, bonusAmount || 0, minHours || 0, d.notes || ''
+  );
+  res.json({ success: true, id: info.lastInsertRowid });
+});
+
+app.put('/api/admin/referrer-referrals/:id', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  const exist = db.prepare('SELECT id, status FROM referrer_referrals WHERE id=?').get(req.params.id);
+  if (!exist) return res.status(404).json({ error: '推荐记录不存在' });
+  const allowed = ['pending', 'qualified', 'paid', 'cancelled'];
+  const status = d.status && allowed.includes(d.status) ? d.status : exist.status;
+  const setPaidAt = status === 'paid' && exist.status !== 'paid' ? 'CURRENT_TIMESTAMP' : 'paid_at';
+  const setQualAt = status === 'qualified' && exist.status === 'pending' ? 'CURRENT_TIMESTAMP' : 'qualified_at';
+  db.prepare(`UPDATE referrer_referrals SET
+    status=?, qualified_at=${setQualAt}, paid_at=${setPaidAt}, notes=?, bonus_amount=?, min_hours=?
+    WHERE id=?`).run(
+    status, d.notes != null ? d.notes : '',
+    d.bonus_amount != null ? Number(d.bonus_amount) : 0,
+    d.min_hours != null ? Number(d.min_hours) : 0,
+    req.params.id
+  );
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/referrer-referrals/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM referrer_referrals WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Helper: list employees + worker_accounts for picking referee/linked person
+app.get('/api/admin/referrer-people-options', requireAdmin, (req, res) => {
+  const employees = db.prepare(`SELECT id, employee_id AS code, first_name, last_name, phone, email FROM employees WHERE status='active' ORDER BY first_name, last_name`).all();
+  const workers = db.prepare(`SELECT id, worker_code AS code, name, phone, email, employee_id FROM worker_accounts WHERE active=1 ORDER BY name`).all();
+  res.json({ employees, workers });
 });
 
 // Inquiry × Worker Position ratings
