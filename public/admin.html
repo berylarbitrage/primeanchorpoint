@@ -5031,7 +5031,11 @@ tr:hover td{background:var(--sky-light)}
   <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
     <div style="font-size:.78rem;font-weight:700;color:#854d0e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem;padding-bottom:.5rem;border-bottom:1px solid #fde68a">🏛️ 税务身份判定 Tax Status Wizard (1099 必填)</div>
 
-    <!-- Step 1: Applicant Type -->
+    <!-- Work permit waived notice (1099 only) -->
+    <div id="trWpWaivedNotice" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:.5rem .75rem;margin-bottom:.75rem;font-size:.8rem;color:#1d4ed8;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
+      <span>⏭️ 工作许可认证已豁免 — 可一键按 <strong>Resident Alien (SPT)</strong> 保存，直接走 W-9 流程。</span>
+      <button type="button" class="btn btn-sm" style="background:#1d4ed8;color:#fff;font-size:.75rem;padding:2px 10px;white-space:nowrap;flex-shrink:0;margin-top:.3rem" onclick="trApplyWpWaivedDefault()">⚡ 一键设为 Resident Alien / W-9</button>
+    </div>
 
     <!-- Step 1: Applicant Type -->
     <div id="trStep1">
@@ -16600,6 +16604,7 @@ function openOnboardingTaskPreview(taskKey, title) {
 }
 let _onboardingRecommendedForm = null;
 let _onboardingApplicantType = null;
+let _onboardingTasks = null;
 
 async function refreshOnboardingModal() {
   let tasks, rows, intvInfo, taxResData;
@@ -16627,6 +16632,7 @@ async function refreshOnboardingModal() {
   _onboardingInterviewInfo = intvInfo || null;
   _onboardingRecommendedForm = (taxResData && taxResData.recommended_form) || null;
   _onboardingApplicantType = (taxResData && taxResData.applicant_type) || null;
+  _onboardingTasks = Array.isArray(tasks) ? tasks : null;
 
   const hasTasks = Array.isArray(tasks) && tasks.length > 0;
   // Use server-side onboarded flag (checks only assigned tasks) for accurate allDone state
@@ -18333,6 +18339,50 @@ function trWizardCollectData() {
   return d;
 }
 
+async function trApplyWpWaivedDefault() {
+  if (!_onboardingWorkerId) return;
+  showConfirmModal(
+    '⚡ 一键设为 Resident Alien / W-9',
+    '将直接保存税务身份为 Resident Alien（SPT 满足），推荐表格 W-9，并完成税务判定任务。\n\n此操作适用于工作许可认证已豁免的 1099 承包商，无需手动填写 SPT 表单。',
+    '✅ 确认保存',
+    'btn-green',
+    async () => {
+      try {
+        const payload = {
+          applicant_type: 'individual',
+          is_us_person: 'no',
+          days_current_year: '183',
+          days_last_year: '0',
+          days_two_years_ago: '0',
+          has_exempt_days: 'no',
+          exempt_days_cy: '0',
+          exempt_days_ly: '0',
+          exempt_days_2y: '0',
+          services_location: 'all_in_us',
+          claim_treaty_benefit: 'no',
+          admin_note: '工作许可认证已豁免，一键设为 Resident Alien (SPT)'
+        };
+        const trResult = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`, {
+          method: 'POST', body: JSON.stringify(payload)
+        });
+        await updateOnboardingTask('tax_residency', 'completed', 'Resident Alien (SPT) · W-9（工作许可豁免一键设定）');
+        const recommendedForm = (trResult && trResult.recommended_form) || 'W-9';
+        if (recommendedForm !== 'W-9') {
+          await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
+            method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（推荐 ${recommendedForm}）` })
+          });
+        }
+        showToast('✅ 已设为 Resident Alien / W-9，税务判定任务已完成', 'success', 3000);
+        closeModal('taxResidencyModal');
+        refreshOnboardingModal();
+      } catch (e) {
+        showToast('❌ 保存失败：' + e.message, 'error');
+      }
+    },
+    'green'
+  );
+}
+
 function trWizardReset() {
   _trStep = 1;
   _trPath = '';
@@ -18525,7 +18575,22 @@ async function openTaxResidencyModal() {
     const indUsFields = document.getElementById('trIndUsFields');
     if (indUsFields && indUsFields.style.display !== 'none') trShowImportBanner();
   } else {
-    // No prior wizard data — banner will be triggered by trSelectIndStatus when user picks a status
+    // No prior wizard data — if 1099 + work_permit waived, pre-select Individual → Neither path
+    const _wpTask = _onboardingTasks && _onboardingTasks.find(t => t.key === 'work_permit');
+    const _empType = _onboardingWorkerData && _onboardingWorkerData.employment_type;
+    if (_empType === '1099' && _wpTask && _wpTask.status === 'waived') {
+      trSelectType('individual');
+      trSelectIndStatus('neither');
+    }
+  }
+
+  // Show one-click Resident Alien banner whenever 1099 + work_permit waived (regardless of prior data)
+  {
+    const _wpTask2 = _onboardingTasks && _onboardingTasks.find(t => t.key === 'work_permit');
+    const _empType2 = _onboardingWorkerData && _onboardingWorkerData.employment_type;
+    if (_empType2 === '1099' && _wpTask2 && _wpTask2.status === 'waived') {
+      document.getElementById('trWpWaivedNotice').style.display = 'flex';
+    }
   }
 
   document.getElementById('taxResidencyModal').classList.add('show');
