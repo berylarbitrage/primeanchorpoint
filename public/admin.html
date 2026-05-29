@@ -28688,7 +28688,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', referrer: item.referrer || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
@@ -29166,6 +29166,8 @@ function _invpSaveTableState() {
     if (!emp) return;
     emp.name = row.querySelector('.invp-man-name').value;
     emp.category = row.querySelector('.invp-man-cat') ? row.querySelector('.invp-man-cat').value : (emp.category || '');
+    const refInp = row.querySelector('.invp-man-ref');
+    if (refInp) emp.referrer = refInp.value;
     emp.rate = row.querySelector('.invp-man-rate').value;
     const otRateInp = row.querySelector('.invp-man-ot-rate');
     emp.otRate = (otRateInp && otRateInp.dataset.auto !== 'false') ? '' : (otRateInp?.value || '');
@@ -29253,6 +29255,12 @@ function renderInvpManualTable(skipSave) {
           ${catOptsHtml}
         </select>
       </td>
+      <td style="padding:3px 4px">
+        <input type="text" class="invp-man-ref" data-uid="${emp.uid}" value="${esc(emp.referrer||'')}"
+          placeholder="介绍人" title="介绍人 Reference person（仅出现在分包商对账单）"
+          style="width:100px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"
+          onchange="_invpSaveTableState()">
+      </td>
       ${dayInputs}
       <td style="padding:3px 4px;text-align:right">
         <input type="number" class="invp-man-rate" data-uid="${emp.uid}" value="${rate ? rate.toFixed(2) : ''}"
@@ -29284,6 +29292,7 @@ function renderInvpManualTable(skipSave) {
       <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">员工姓名</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">工种类别</th>
+        <th style="padding:5px 6px;text-align:left;white-space:nowrap">介绍人</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">时薪($/h)</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fffbeb">加班时薪($/h) <span style="font-weight:400;font-size:.72rem;color:#92400e">×1.5 自动</span></th>
@@ -29300,6 +29309,8 @@ function renderInvpManualTable(skipSave) {
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 添加员工</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpOpenDistribute(0)" title="一次给所有员工分配工时">⇆ 批量分配工时</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#dc2626;border-color:#fca5a5" onclick="invpClearAllHours()" title="一键清空所有员工的所有工时格子">🗑 清空全部工时</button>
+      <span style="color:var(--gray-300);font-size:.85rem">|</span>
+      <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="generateInvpSubcontractorStatement()" title="按工资（去掉 markup）生成给分包商的对账单（可打印/另存为 PDF）">📄 分包商对账单</button>
     </div>`;
 }
 
@@ -29359,7 +29370,7 @@ function invpUpdateRowTotal(row) {
 
 function invpAddEmp() {
   _invpSaveTableState();
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', rate: '', days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', referrer: '', rate: '', days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' });
   renderInvpManualTable();
   // Focus the new name input
   const rows = document.querySelectorAll('.invp-manual-row');
@@ -29793,15 +29804,7 @@ async function invpBulkReceipts(mode) {
 // Uses the per-container 分包价 (sub_price) and is addressed to the unloading
 // subcontractor. Reuses the invoice preview modal + print-to-PDF mechanism.
 function generateInvpSubcontractorStatement() {
-  if ((window._invpMode || 'hourly') !== 'container') {
-    showToast('分包商对账单仅适用于 Container 计费模式', 'error');
-    return;
-  }
-  const containerItems = getInvpContainerItems();
-  if (!containerItems.length) { alert('请至少添加一个 container 行'); return; }
-  if (!containerItems.some(i => (i.sub_price || 0) > 0)) {
-    if (!confirm('所有 container 的「分包价」都为 0，仍要生成对账单吗？')) return;
-  }
+  const mode = window._invpMode || 'hourly';
 
   const invNum  = document.getElementById('invPageNumber').value || '';
   const invDate = document.getElementById('invPageDate').value;
@@ -29820,62 +29823,126 @@ function generateInvpSubcontractorStatement() {
   };
   const servicePeriodLabel = fmtNiceRange(ps, pe);
 
-  // Recipient = most common referrer (介绍人) across rows, else generic label
-  const refCounts = {};
-  containerItems.forEach(i => { const r = (i.referrer || '').trim(); if (r) refCounts[r] = (refCounts[r] || 0) + 1; });
-  const recipientName = Object.keys(refCounts).sort((a, b) => refCounts[b] - refCounts[a])[0] || 'Subcontractor';
-
-  const grandTotal = containerItems.reduce((s, i) => s + ((i.qty || 0) * (i.sub_price || 0)), 0);
-  const totalQty = containerItems.reduce((s, i) => s + (i.qty || 0), 0);
-
   // Green palette (mirrors the blue invoice palette)
   const C = { main:'#047857', dark:'#065f46', soft:'#ecfdf5', band:'#d1fae5', border:'#6ee7b7' };
 
-  const containerRows = containerItems.map((i, idx) => {
-    const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
-    const lineTotal = (i.qty || 0) * (i.sub_price || 0);
-    const staffNames = (Array.isArray(i.staff_list) ? i.staff_list : []).map(s => (s && s.name || '').trim()).filter(Boolean);
-    const referrer = (i.referrer || '').trim();
-    const metaParts = [];
-    if (staffNames.length) metaParts.push(`<span style="color:#475569"><span style="color:#94a3b8">卸柜人员:</span> ${esc(staffNames.join('、'))}</span>`);
-    if (referrer) metaParts.push(`<span style="color:#475569"><span style="color:#94a3b8">介绍人:</span> ${esc(referrer)}</span>`);
-    const metaRow = metaParts.length
-      ? `<tr style="background:${stripe}">
-          <td></td>
-          <td colspan="5" style="padding:0 8px 8px 8px;border-bottom:1px solid #e2e8f0;font-size:.72rem;line-height:1.5">${metaParts.join('&nbsp;&nbsp;·&nbsp;&nbsp;')}</td>
-        </tr>`
-      : '';
-    return `<tr style="background:${stripe}">
-      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;color:#64748b;vertical-align:top">${idx + 1}</td>
-      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;font-family:'Menlo',monospace;font-weight:600;color:#0f172a;vertical-align:top">${esc(i.container_no || '—')}</td>
-      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;white-space:nowrap;vertical-align:top">${esc(i.week || servicePeriodLabel)}</td>
-      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;vertical-align:top">${i.qty || 0}</td>
-      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:right;vertical-align:top">$${(i.sub_price || 0).toFixed(2)}</td>
-      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:right;font-weight:600;vertical-align:top">$${lineTotal.toFixed(2)}</td>
-    </tr>${metaRow}`;
-  }).join('');
+  let recipientName, grandTotal, lineItemTableHtml, bannerText;
 
-  const lineItemTableHtml = `
-    <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid ${C.main}">
-      <thead>
-        <tr style="background:${C.soft};color:${C.dark};font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid ${C.main}">
-          <th style="padding:8px 8px;font-weight:700;text-align:center">N.</th>
-          <th style="padding:8px 8px;font-weight:700;text-align:left">Container Number</th>
-          <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Week</th>
-          <th style="padding:8px 8px;font-weight:700;text-align:center">Qty</th>
-          <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Unit Price</th>
-          <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${containerRows}
-        <tr style="background:${C.band};font-weight:700;color:#1e293b;border-top:2px solid ${C.main}">
-          <td colspan="3" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total</td>
-          <td style="padding:7px 7px;text-align:center">${totalQty}</td>
-          <td style="padding:7px 7px;text-align:right" colspan="2">$${grandTotal.toFixed(2)}</td>
-        </tr>
-      </tbody>
-    </table>`;
+  if (mode === 'container') {
+    const containerItems = getInvpContainerItems();
+    if (!containerItems.length) { alert('请至少添加一个 container 行'); return; }
+    if (!containerItems.some(i => (i.sub_price || 0) > 0)) {
+      if (!confirm('所有 container 的「分包价」都为 0，仍要生成对账单吗？')) return;
+    }
+    const refCounts = {};
+    containerItems.forEach(i => { const r = (i.referrer || '').trim(); if (r) refCounts[r] = (refCounts[r] || 0) + 1; });
+    recipientName = Object.keys(refCounts).sort((a, b) => refCounts[b] - refCounts[a])[0] || 'Subcontractor';
+    grandTotal = containerItems.reduce((s, i) => s + ((i.qty || 0) * (i.sub_price || 0)), 0);
+    const totalQty = containerItems.reduce((s, i) => s + (i.qty || 0), 0);
+    bannerText = `Container unloading services for the period ${servicePeriodLabel}`;
+
+    const containerRows = containerItems.map((i, idx) => {
+      const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
+      const lineTotal = (i.qty || 0) * (i.sub_price || 0);
+      const staffNames = (Array.isArray(i.staff_list) ? i.staff_list : []).map(s => (s && s.name || '').trim()).filter(Boolean);
+      const referrer = (i.referrer || '').trim();
+      const metaParts = [];
+      if (staffNames.length) metaParts.push(`<span style="color:#475569"><span style="color:#94a3b8">卸柜人员:</span> ${esc(staffNames.join('、'))}</span>`);
+      if (referrer) metaParts.push(`<span style="color:#475569"><span style="color:#94a3b8">介绍人:</span> ${esc(referrer)}</span>`);
+      const metaRow = metaParts.length
+        ? `<tr style="background:${stripe}">
+            <td></td>
+            <td colspan="5" style="padding:0 8px 8px 8px;border-bottom:1px solid #e2e8f0;font-size:.72rem;line-height:1.5">${metaParts.join('&nbsp;&nbsp;·&nbsp;&nbsp;')}</td>
+          </tr>`
+        : '';
+      return `<tr style="background:${stripe}">
+        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;color:#64748b;vertical-align:top">${idx + 1}</td>
+        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;font-family:'Menlo',monospace;font-weight:600;color:#0f172a;vertical-align:top">${esc(i.container_no || '—')}</td>
+        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;white-space:nowrap;vertical-align:top">${esc(i.week || servicePeriodLabel)}</td>
+        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;vertical-align:top">${i.qty || 0}</td>
+        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:right;vertical-align:top">$${(i.sub_price || 0).toFixed(2)}</td>
+        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:right;font-weight:600;vertical-align:top">$${lineTotal.toFixed(2)}</td>
+      </tr>${metaRow}`;
+    }).join('');
+
+    lineItemTableHtml = `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid ${C.main}">
+        <thead>
+          <tr style="background:${C.soft};color:${C.dark};font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid ${C.main}">
+            <th style="padding:8px 8px;font-weight:700;text-align:center">N.</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:left">Container Number</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Week</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:center">Qty</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Unit Price</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${containerRows}
+          <tr style="background:${C.band};font-weight:700;color:#1e293b;border-top:2px solid ${C.main}">
+            <td colspan="3" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total</td>
+            <td style="padding:7px 7px;text-align:center">${totalQty}</td>
+            <td style="padding:7px 7px;text-align:right" colspan="2">$${grandTotal.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+  } else {
+    // Hourly mode: subcontractor price = wages WITHOUT markup (base rate × hours)
+    const items = getInvpManualItems();
+    if (!items.length) { alert('请至少添加一名员工并填写姓名'); return; }
+    const refCounts = {};
+    items.forEach(i => { const r = (i.referrer || '').trim(); if (r) refCounts[r] = (refCounts[r] || 0) + 1; });
+    recipientName = Object.keys(refCounts).sort((a, b) => refCounts[b] - refCounts[a])[0] || 'Subcontractor';
+    grandTotal = items.reduce((s, i) => s + (i.total || 0), 0);
+    const totalRegHrs = items.reduce((s, i) => s + (i.regHours || 0), 0);
+    const totalOtHrs  = items.reduce((s, i) => s + (i.otHours || 0), 0);
+    const showOt = totalOtHrs > 0;
+    bannerText = `Labor services for the period ${servicePeriodLabel}`;
+
+    const workerRows = items.map((i, idx) => {
+      const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
+      const referrer = (i.referrer || '').trim();
+      const metaRow = referrer
+        ? `<tr style="background:${stripe}">
+            <td></td>
+            <td colspan="${showOt ? 5 : 4}" style="padding:0 8px 8px 8px;border-bottom:1px solid #e2e8f0;font-size:.72rem;line-height:1.5"><span style="color:#94a3b8">介绍人:</span> <span style="color:#475569">${esc(referrer)}</span></td>
+          </tr>`
+        : '';
+      const pad = referrer ? '2px' : '9px';
+      const bb = referrer ? '' : 'border-bottom:1px solid #e2e8f0;';
+      return `<tr style="background:${stripe}">
+        <td style="padding:9px 8px ${pad} 8px;${bb}text-align:center;color:#64748b;vertical-align:top">${idx + 1}</td>
+        <td style="padding:9px 8px ${pad} 8px;${bb}text-align:left;font-weight:500;text-transform:capitalize;vertical-align:top">${esc(i.name)}</td>
+        <td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;vertical-align:top">${(i.regHours||0).toFixed(2)}</td>
+        ${showOt ? `<td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;vertical-align:top">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>` : ''}
+        <td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;vertical-align:top">$${(i.rate||0).toFixed(2)}</td>
+        <td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;font-weight:600;vertical-align:top">$${(i.total||0).toFixed(2)}</td>
+      </tr>${metaRow}`;
+    }).join('');
+
+    lineItemTableHtml = `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid ${C.main}">
+        <thead>
+          <tr style="background:${C.soft};color:${C.dark};font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid ${C.main}">
+            <th style="padding:8px 8px;font-weight:700;text-align:center">N.</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:left">Worker</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
+            ${showOt ? `<th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>` : ''}
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Rate</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${workerRows}
+          <tr style="background:${C.band};font-weight:700;color:#1e293b;border-top:2px solid ${C.main}">
+            <td colspan="2" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total</td>
+            <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
+            ${showOt ? `<td style="padding:7px 7px;text-align:right">${totalOtHrs.toFixed(2)}h</td>` : ''}
+            <td style="padding:7px 7px;text-align:right" colspan="2">$${grandTotal.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+  }
 
   const contactBlock = (profile.contact_phone || profile.contact_email) ? `
     <div style="font-size:.78rem;color:#475569;line-height:1.55;margin-bottom:.4rem">
@@ -29935,7 +30002,7 @@ function generateInvpSubcontractorStatement() {
 
       <!-- Banner -->
       <div style="background:${C.soft};border-left:4px solid ${C.main};padding:.4rem .8rem;margin-bottom:.75rem;font-size:.8rem;color:${C.dark};font-weight:600;letter-spacing:.02em">
-        Container unloading services for the period ${servicePeriodLabel}
+        ${esc(bannerText)}
       </div>
 
       ${lineItemTableHtml}
@@ -30210,7 +30277,7 @@ function invpImportEmpById(id, fullName, code) {
   _invpSaveTableState();
   const already = (window._invpManualEmps||[]).some(e => e.name.trim().toLowerCase() === fullName.trim().toLowerCase());
   if (already) return;
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', rate: '', days: {}, linked_employee_id: id || null, linked_employee_code: code || '', linked_employee_name: fullName });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', referrer: '', rate: '', days: {}, linked_employee_id: id || null, linked_employee_code: code || '', linked_employee_name: fullName });
   renderInvpManualTable();
   const inp = document.getElementById('invpEmpImportInput');
   if (inp) { inp.value = ''; }
@@ -30349,7 +30416,7 @@ function getInvpManualItems() {
       const regHours = Math.min(totalHours, 40);
       const otHours  = Math.max(totalHours - 40, 0);
       const total = regHours * rate + otHours * otRate;
-      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      return { name, category: emp.category || '', referrer: (emp.referrer || '').trim(), hours: totalHours, regHours, otHours, rate, otRate, total, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
