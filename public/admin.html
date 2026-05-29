@@ -29835,29 +29835,33 @@ function generateInvpSubcontractorStatement() {
     const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
     const lineTotal = (i.qty || 0) * (i.sub_price || 0);
     const staffNames = (Array.isArray(i.staff_list) ? i.staff_list : []).map(s => (s && s.name || '').trim()).filter(Boolean);
-    const staffCell = staffNames.length ? staffNames.join('、') : '—';
-    const refCell = (i.referrer || '').trim() || '—';
+    const referrer = (i.referrer || '').trim();
+    const metaParts = [];
+    if (staffNames.length) metaParts.push(`<span style="color:#475569"><span style="color:#94a3b8">卸柜人员:</span> ${esc(staffNames.join('、'))}</span>`);
+    if (referrer) metaParts.push(`<span style="color:#475569"><span style="color:#94a3b8">介绍人:</span> ${esc(referrer)}</span>`);
+    const metaRow = metaParts.length
+      ? `<tr style="background:${stripe}">
+          <td></td>
+          <td colspan="5" style="padding:0 8px 8px 8px;border-bottom:1px solid #e2e8f0;font-size:.72rem;line-height:1.5">${metaParts.join('&nbsp;&nbsp;·&nbsp;&nbsp;')}</td>
+        </tr>`
+      : '';
     return `<tr style="background:${stripe}">
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b">${idx + 1}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;color:#0f172a">${esc(i.container_no || '—')}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(staffCell)}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(refCell)}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.sub_price || 0).toFixed(2)}</td>
-      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${lineTotal.toFixed(2)}</td>
-    </tr>`;
+      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;color:#64748b;vertical-align:top">${idx + 1}</td>
+      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;font-family:'Menlo',monospace;font-weight:600;color:#0f172a;vertical-align:top">${esc(i.container_no || '—')}</td>
+      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;white-space:nowrap;vertical-align:top">${esc(i.week || servicePeriodLabel)}</td>
+      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;vertical-align:top">${i.qty || 0}</td>
+      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:right;vertical-align:top">$${(i.sub_price || 0).toFixed(2)}</td>
+      <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:right;font-weight:600;vertical-align:top">$${lineTotal.toFixed(2)}</td>
+    </tr>${metaRow}`;
   }).join('');
 
   const lineItemTableHtml = `
-    <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.8rem;border:1px solid ${C.main}">
+    <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid ${C.main}">
       <thead>
-        <tr style="background:${C.soft};color:${C.dark};font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;border-bottom:2px solid ${C.main}">
+        <tr style="background:${C.soft};color:${C.dark};font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid ${C.main}">
           <th style="padding:8px 8px;font-weight:700;text-align:center">N.</th>
           <th style="padding:8px 8px;font-weight:700;text-align:left">Container Number</th>
           <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Week</th>
-          <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Staff</th>
-          <th style="padding:8px 8px;font-weight:700;text-align:left">介绍人 Referrer</th>
           <th style="padding:8px 8px;font-weight:700;text-align:center">Qty</th>
           <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Unit Price</th>
           <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
@@ -29866,7 +29870,7 @@ function generateInvpSubcontractorStatement() {
       <tbody>
         ${containerRows}
         <tr style="background:${C.band};font-weight:700;color:#1e293b;border-top:2px solid ${C.main}">
-          <td colspan="5" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total</td>
+          <td colspan="3" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total</td>
           <td style="padding:7px 7px;text-align:center">${totalQty}</td>
           <td style="padding:7px 7px;text-align:right" colspan="2">$${grandTotal.toFixed(2)}</td>
         </tr>
