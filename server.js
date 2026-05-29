@@ -16356,6 +16356,156 @@ app.post('/api/admin/invoices/:id/cash-receipts-bulk', requireAdmin, async (req,
   doc.end();
 });
 
+// ─── SUBCONTRACTOR PAYMENT STATEMENT ───
+// Generates a PDF addressed FROM us (Prime Anchor Point, per invoice profile)
+// TO the unloading subcontractor, listing each container with the "分包价"
+// (sub_price) — i.e. the amount we pay the subcontractor, separate from what
+// we bill the end client. Item prices come from the request body so the admin
+// can override per-container without changing the saved client invoice.
+app.post('/api/admin/invoices/:id/subcontractor-statement', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+  let profile = {};
+  try { profile = inv.profile_json ? JSON.parse(inv.profile_json) : {}; } catch {}
+
+  const rawItems = Array.isArray(req.body.items) ? req.body.items : [];
+  const items = rawItems.map(it => ({
+    containerNo: String(it.container_no || '').trim(),
+    week: String(it.week || '').trim(),
+    staffing: String(it.staffing || '').trim(),
+    qty: parseFloat(it.qty) || 0,
+    subPrice: parseFloat(it.sub_price) || 0,
+  })).filter(it => it.containerNo || it.subPrice > 0);
+  if (!items.length) return res.status(400).json({ error: 'No items to render' });
+
+  // Recipient = most common staffing (subcontractor) name across the rows
+  const staffingCounts = {};
+  items.forEach(it => { if (it.staffing) staffingCounts[it.staffing] = (staffingCounts[it.staffing] || 0) + 1; });
+  const recipientName = Object.keys(staffingCounts).sort((a, b) => staffingCounts[b] - staffingCounts[a])[0] || '装卸公司 / Subcontractor';
+
+  const inline = String(req.query.inline || '') === '1';
+
+  try {
+    db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)')
+      .run(inv.id, inline ? '预览分包商对账单' : '生成分包商对账单',
+        `${items.length} 个 container · 收款方：${recipientName}`);
+  } catch (e) { console.error('[subcontractor-statement] history insert failed:', e.message); }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  const disposition = inline ? 'inline' : 'attachment';
+  res.setHeader('Content-Disposition',
+    `${disposition}; filename="Subcontractor_Statement_${inv.invoice_number}.pdf"`);
+
+  const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 50, left: 60, right: 60 } });
+  doc.pipe(res);
+
+  const L = 60;
+  const W = doc.page.width - 120;
+  const R = L + W;
+
+  // Header — sender (our company)
+  doc.fontSize(18).font('Helvetica-Bold').fillColor('#0E7BB8')
+    .text(profile.sender_name || 'Prime Anchor Point LLC', L, 50);
+  doc.fontSize(9).font('Helvetica').fillColor('#475569');
+  if (profile.sender_address) doc.text(profile.sender_address, L, doc.y + 2, { width: W * 0.6 });
+  const senderContact = [profile.sender_phone, profile.sender_email].filter(Boolean).join('  ·  ');
+  if (senderContact) doc.text(senderContact, L, doc.y + 1, { width: W * 0.6 });
+
+  // Title block (right aligned)
+  doc.fontSize(20).font('Helvetica-Bold').fillColor('#0f172a')
+    .text('SUBCONTRACTOR STATEMENT', L, 50, { width: W, align: 'right' });
+  doc.fontSize(10).font('Helvetica-Oblique').fillColor('#475569')
+    .text('分包商对账单', L, doc.y + 1, { width: W, align: 'right' });
+  doc.fontSize(9).font('Helvetica').fillColor('#475569')
+    .text(`Ref Invoice: ${inv.invoice_number}`, L, doc.y + 6, { width: W, align: 'right' });
+  const stmtDate = new Date();
+  const dateStr = `${String(stmtDate.getMonth() + 1).padStart(2, '0')}/${String(stmtDate.getDate()).padStart(2, '0')}/${stmtDate.getFullYear()}`;
+  doc.text(`Date: ${dateStr}`, L, doc.y + 1, { width: W, align: 'right' });
+  if (inv.period_start || inv.period_end)
+    doc.text(`Period: ${inv.period_start || ''} ~ ${inv.period_end || ''}`, L, doc.y + 1, { width: W, align: 'right' });
+
+  doc.y = Math.max(doc.y, 150);
+  doc.moveDown(0.5);
+
+  // Pay To block
+  let y = doc.y + 6;
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#64748b')
+    .text('PAY TO / 收款方（分包商）', L, y);
+  doc.fontSize(12).font('Helvetica-Bold').fillColor('#0f172a')
+    .text(recipientName, L, y + 12, { width: W });
+  doc.y = y + 40;
+
+  // Table
+  const cols = [
+    { key: 'n', label: 'N.', w: 26, align: 'center' },
+    { key: 'container', label: 'Container Number', w: 130, align: 'left' },
+    { key: 'week', label: 'Unloading Week', w: 130, align: 'left' },
+    { key: 'qty', label: 'Qty', w: 45, align: 'center' },
+    { key: 'price', label: 'Unit Price', w: 80, align: 'right' },
+    { key: 'total', label: 'Total', w: 80, align: 'right' },
+  ];
+  const totalColW = cols.reduce((s, c) => s + c.w, 0);
+  // scale to fit width
+  const scale = W / totalColW;
+  cols.forEach(c => { c.w = c.w * scale; });
+
+  function drawRow(cells, opts) {
+    opts = opts || {};
+    const rowY = doc.y;
+    const h = opts.h || 20;
+    if (opts.fill) { doc.rect(L, rowY, W, h).fill(opts.fill); }
+    let x = L;
+    doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.fontSize || 9)
+      .fillColor(opts.color || '#0f172a');
+    cols.forEach((c, idx) => {
+      const v = cells[idx] != null ? String(cells[idx]) : '';
+      doc.text(v, x + 4, rowY + 6, { width: c.w - 8, align: c.align });
+      x += c.w;
+    });
+    doc.y = rowY + h;
+    doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor('#e2e8f0').lineWidth(0.6).stroke();
+  }
+
+  // Header row
+  const headerY = doc.y;
+  doc.rect(L, headerY, W, 22).fill('#0E7BB8');
+  let hx = L;
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#ffffff');
+  cols.forEach(c => { doc.text(c.label, hx + 4, headerY + 7, { width: c.w - 8, align: c.align }); hx += c.w; });
+  doc.y = headerY + 22;
+
+  let grand = 0;
+  items.forEach((it, idx) => {
+    const lineTotal = it.qty * it.subPrice;
+    grand += lineTotal;
+    drawRow([
+      idx + 1,
+      it.containerNo || '—',
+      it.week || '',
+      it.qty || '',
+      '$' + it.subPrice.toFixed(2),
+      '$' + lineTotal.toFixed(2),
+    ], { h: 20, fill: idx % 2 ? '#f8fafc' : null });
+  });
+
+  // Grand total row
+  doc.moveDown(0.3);
+  const gtY = doc.y;
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a')
+    .text('TOTAL / 合计', L, gtY + 4, { width: W - cols[cols.length - 1].w - 6, align: 'right' });
+  doc.fillColor('#0E7BB8')
+    .text('$' + grand.toFixed(2), R - cols[cols.length - 1].w, gtY + 4, { width: cols[cols.length - 1].w, align: 'right' });
+  doc.moveTo(L, gtY + 24).lineTo(R, gtY + 24).strokeColor('#0E7BB8').lineWidth(1.2).stroke();
+
+  // Footer note
+  doc.fontSize(7.5).font('Helvetica-Oblique').fillColor('#94a3b8')
+    .text('This statement reflects amounts payable to the subcontractor for container unloading services. / 本对账单为应付分包商的卸柜服务费用。',
+      L, doc.page.height - 70, { align: 'center', width: W });
+
+  doc.end();
+});
+
 // ─── CASH RECEIPT — SIGNED-COPY ATTACHMENTS ───
 db.exec(`CREATE TABLE IF NOT EXISTS invoice_cash_receipts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

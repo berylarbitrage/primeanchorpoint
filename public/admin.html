@@ -1963,6 +1963,9 @@ tr:hover td{background:var(--sky-light)}
           <span style="color:var(--gray-300);font-size:.85rem">|</span>
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0E7BB8;border-color:#0E7BB8" onclick="invpBulkReceipts('preview')" title="一次预览所有 container 的现金回执 PDF">👁 批量预览回执</button>
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="invpBulkReceipts('download')" title="一次下载所有 container 的现金回执 PDF（合并为一个文件）">⬇ 批量下载回执</button>
+          <span style="color:var(--gray-300);font-size:.85rem">|</span>
+          <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0369a1;border-color:#0369a1" onclick="invpSubcontractorStatement('preview')" title="按「分包价」生成给分包商/装卸公司的对账单 PDF">👁 预览分包商对账单</button>
+          <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0369a1;border-color:#0369a1" onclick="invpSubcontractorStatement('download')" title="按「分包价」下载给分包商/装卸公司的对账单 PDF">⬇ 下载分包商对账单</button>
         </div>
       </div>
 
@@ -28667,6 +28670,7 @@ async function openInvpForEdit(id) {
       staffing: c.staffing || '',
       qty: String(c.qty || ''),
       unit_price: String(c.unit_price || ''),
+      sub_price: String(c.sub_price || ''),
       highlighted: !!c.highlighted,
     }));
   }
@@ -29401,6 +29405,8 @@ function _invpSaveContainerState() {
     item.staffing      = row.querySelector('.invp-cont-staffing').value;
     item.qty           = row.querySelector('.invp-cont-qty').value;
     item.unit_price    = row.querySelector('.invp-cont-price').value;
+    const subEl        = row.querySelector('.invp-cont-sub');
+    if (subEl) item.sub_price = subEl.value;
   });
 }
 
@@ -29427,6 +29433,8 @@ function renderInvpContainerTable(skipSave) {
     const qty = parseFloat(it.qty) || 0;
     const price = parseFloat(it.unit_price) || 0;
     const total = qty * price;
+    const subPrice = parseFloat(it.sub_price) || 0;
+    const subTotal = qty * subPrice;
     const hl = !!it.highlighted;
     const rowStyle = hl ? 'background:#fef3c7;box-shadow:inset 3px 0 0 #d97706' : '';
     const starColor = hl ? '#d97706' : 'var(--gray-300)';
@@ -29440,12 +29448,15 @@ function renderInvpContainerTable(skipSave) {
       <td style="padding:3px 4px"><input type="number" class="invp-cont-qty" value="${esc(String(it.qty || ''))}" min="0" step="1" placeholder="1" style="width:60px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td class="invp-cont-total" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap">$${total.toFixed(2)}</td>
+      <td style="padding:3px 4px;background:#f0f9ff"><input type="number" class="invp-cont-sub" value="${esc(String(it.sub_price || ''))}" min="0" step="0.01" placeholder="$" title="付给分包商/装卸公司的价格（仅出现在分包商对账单）" style="width:80px;text-align:right;border:1px solid #bae6fd;border-radius:4px;padding:3px 6px;font-size:.84rem;background:#fff" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
+      <td class="invp-cont-subtotal" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap;color:#0369a1;background:#f0f9ff">$${subTotal.toFixed(2)}</td>
       <td style="padding:3px 2px"><button onclick="invpToggleContainerHighlight(${it.uid})" style="background:none;border:none;cursor:pointer;color:${starColor};font-size:1rem;padding:0 4px;line-height:1" title="${starTitle}">${starChar}</button></td>
       <td style="padding:3px 2px"><button onclick="invpOpenReceiptDialog(${it.uid})" style="background:none;border:none;cursor:pointer;color:#0E7BB8;font-size:.95rem;padding:0 4px;line-height:1" title="生成现金回执 PDF（给工人签字）">🧾</button></td>
       <td style="padding:3px 4px"><button onclick="invpRemoveContainer(${it.uid})" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.85rem;padding:0 4px" title="删除">✕</button></td>
     </tr>`;
   }).join('');
   const grandTotal = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0), 0);
+  const grandSubTotal = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.sub_price)||0), 0);
   wrap.innerHTML = `<table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
     <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
       <th style="padding:5px 6px;text-align:center">N.</th>
@@ -29455,6 +29466,8 @@ function renderInvpContainerTable(skipSave) {
       <th style="padding:5px 6px;text-align:center">Qty</th>
       <th style="padding:5px 6px;text-align:right">Unit Price</th>
       <th style="padding:5px 6px;text-align:right">Total</th>
+      <th style="padding:5px 6px;text-align:right;background:#e0f2fe;color:#0369a1" title="付给分包商/装卸公司的单价（仅用于分包商对账单 PDF）">分包价 Sub</th>
+      <th style="padding:5px 6px;text-align:right;background:#e0f2fe;color:#0369a1">分包小计</th>
       <th style="padding:5px 4px;text-align:center" title="点击星标可标记一行做特殊处理">★</th>
       <th style="padding:5px 4px;text-align:center" title="生成现金回执 PDF">🧾</th>
       <th style="padding:5px 6px"></th>
@@ -29463,6 +29476,8 @@ function renderInvpContainerTable(skipSave) {
     <tfoot><tr style="border-top:2px solid var(--gray-200);font-weight:700;color:#075985">
       <td colspan="6" style="padding:6px 6px;text-align:right">合计</td>
       <td style="padding:6px 6px;text-align:right">$${grandTotal.toFixed(2)}</td>
+      <td style="padding:6px 6px;background:#f0f9ff"></td>
+      <td style="padding:6px 6px;text-align:right;color:#0369a1;background:#f0f9ff">$${grandSubTotal.toFixed(2)}</td>
       <td colspan="3"></td>
     </tr></tfoot>
   </table>`;
@@ -29471,14 +29486,21 @@ function renderInvpContainerTable(skipSave) {
 function invpUpdateContainerRowTotal(row) {
   const qty = parseFloat(row.querySelector('.invp-cont-qty').value) || 0;
   const price = parseFloat(row.querySelector('.invp-cont-price').value) || 0;
+  const subEl = row.querySelector('.invp-cont-sub');
+  const subPrice = subEl ? (parseFloat(subEl.value) || 0) : 0;
   const cell = row.querySelector('.invp-cont-total');
   if (cell) cell.textContent = '$' + (qty * price).toFixed(2);
-  // Update grand total too
+  const subCell = row.querySelector('.invp-cont-subtotal');
+  if (subCell) subCell.textContent = '$' + (qty * subPrice).toFixed(2);
+  // Update grand totals too
   _invpSaveContainerState();
   const items = window._invpContainerItems || [];
   const grand = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0), 0);
+  const grandSub = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.sub_price)||0), 0);
   const tfootCell = document.querySelector('#invpContainerWrap tfoot td:nth-child(2)');
   if (tfootCell) tfootCell.textContent = '$' + grand.toFixed(2);
+  const tfootSubCell = document.querySelector('#invpContainerWrap tfoot td:nth-child(4)');
+  if (tfootSubCell) tfootSubCell.textContent = '$' + grandSub.toFixed(2);
 }
 
 function invpAddContainer() {
@@ -29490,6 +29512,7 @@ function invpAddContainer() {
     staffing: _invpDefaultStaffing(),
     qty: '1',
     unit_price: '',
+    sub_price: '',
     highlighted: false,
   });
   renderInvpContainerTable(true);
@@ -29622,6 +29645,52 @@ async function invpBulkReceipts(mode) {
   }
 }
 
+// ── Subcontractor statement PDF (uses 分包价 / sub_price, addressed to the unloading company) ──
+async function invpSubcontractorStatement(mode) {
+  mode = mode === 'preview' ? 'preview' : 'download';
+  const invIdEl = document.getElementById('invPageEditId');
+  const invId = invIdEl && invIdEl.value;
+  if (!invId) { showToast('请先保存这张 invoice，再生成分包商对账单', 'error'); return; }
+  _invpSaveContainerState();
+  const items = (window._invpContainerItems || [])
+    .filter(i => (i.container_no || '').trim() || parseFloat(i.sub_price) > 0)
+    .map(i => ({
+      container_no: (i.container_no || '').trim(),
+      week: (i.week || '').trim(),
+      staffing: (i.staffing || '').trim(),
+      qty: parseFloat(i.qty) || 0,
+      sub_price: parseFloat(i.sub_price) || 0,
+    }));
+  if (!items.length) { showToast('没有可用的 container（请先填写「分包价」）', 'error'); return; }
+  if (!items.some(i => i.sub_price > 0)) {
+    if (!confirm('所有 container 的「分包价」都为 0，仍要生成对账单吗？')) return;
+  }
+  const url = `/api/admin/invoices/${invId}/subcontractor-statement${mode === 'preview' ? '?inline=1' : ''}`;
+  const verb = mode === 'preview' ? '预览' : '下载';
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    if (!resp.ok) {
+      let msg = '生成失败';
+      try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await resp.blob();
+    const filename = `Subcontractor_Statement_x${items.length}.pdf`;
+    if (mode === 'preview') {
+      invpShowPdfPreview(blob, filename, `📄 分包商对账单预览 — ${items.length} 个 container`);
+    } else {
+      _invpTriggerDownload(blob, filename);
+      showToast(`分包商对账单已生成 ✓`);
+    }
+  } catch (e) {
+    showToast(`分包商对账单${verb}失败：` + (e.message || e), 'error');
+  }
+}
+
 function _invpTriggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -29678,6 +29747,8 @@ function getInvpContainerItems() {
       qty: parseFloat(i.qty) || 0,
       unit_price: parseFloat(i.unit_price) || 0,
       total: (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0),
+      sub_price: parseFloat(i.sub_price) || 0,
+      sub_total: (parseFloat(i.qty)||0) * (parseFloat(i.sub_price)||0),
       highlighted: !!i.highlighted,
     }));
 }
