@@ -5033,7 +5033,7 @@ tr:hover td{background:var(--sky-light)}
 
     <!-- Work permit waived notice (1099 only) -->
     <div id="trWpWaivedNotice" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:.5rem .75rem;margin-bottom:.75rem;font-size:.8rem;color:#1d4ed8;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
-      <span>⏭️ 工作许可认证已豁免 — 可一键按 <strong>Resident Alien (SPT)</strong> 保存，直接走 W-9 流程。</span>
+      <span>1099 承包商快捷操作：可一键按 <strong>Resident Alien (SPT)</strong> 直接完成判定，走 W-9 流程。</span>
       <button type="button" class="btn btn-sm" style="background:#1d4ed8;color:#fff;font-size:.75rem;padding:2px 10px;white-space:nowrap;flex-shrink:0;margin-top:.3rem" onclick="trApplyWpWaivedDefault()">⚡ 一键设为 Resident Alien / W-9</button>
     </div>
 
@@ -5363,6 +5363,7 @@ tr:hover td{background:var(--sky-light)}
   <!-- Wizard actions -->
   <div class="modal-actions" style="margin-top:1rem">
     <button class="btn" onclick="closeModal('taxResidencyModal')">关闭</button>
+    <button class="btn" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="trResetWizardData()">🔄 重置数据</button>
     <button class="btn btn-green" onclick="confirmSaveTaxResidency()">💾 保存判定结果</button>
     <button class="btn btn-green" onclick="confirmCompleteTaxResidency()">✅ 确认判定完成</button>
   </div>
@@ -18339,6 +18340,21 @@ function trWizardCollectData() {
   return d;
 }
 
+function trResetWizardData() {
+  showConfirmModal(
+    '🔄 重置税务判定数据',
+    '将清空当前填写的所有税务身份判定信息（仅清除表单，不影响已完成/保存的任务状态）。确认重置？',
+    '🔄 确认重置',
+    'btn-outline',
+    () => {
+      trWizardReset();
+      const empType = _onboardingWorkerData && _onboardingWorkerData.employment_type;
+      if (empType === '1099') document.getElementById('trWpWaivedNotice').style.display = 'flex';
+    },
+    'amber'
+  );
+}
+
 async function trApplyWpWaivedDefault() {
   if (!_onboardingWorkerId) return;
   showConfirmModal(
@@ -18584,11 +18600,10 @@ async function openTaxResidencyModal() {
     }
   }
 
-  // Show one-click Resident Alien banner whenever 1099 + work_permit waived (regardless of prior data)
+  // Show one-click Resident Alien banner for all 1099 contractors
   {
-    const _wpTask2 = _onboardingTasks && _onboardingTasks.find(t => t.key === 'work_permit');
     const _empType2 = _onboardingWorkerData && _onboardingWorkerData.employment_type;
-    if (_empType2 === '1099' && _wpTask2 && _wpTask2.status === 'waived') {
+    if (_empType2 === '1099') {
       document.getElementById('trWpWaivedNotice').style.display = 'flex';
     }
   }
