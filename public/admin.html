@@ -29323,9 +29323,50 @@ function renderInvpManualTable(skipSave) {
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 添加员工</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpOpenDistribute(0)" title="一次给所有员工分配工时">⇆ 批量分配工时</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#dc2626;border-color:#fca5a5" onclick="invpClearAllHours()" title="一键清空所有员工的所有工时格子">🗑 清空全部工时</button>
+      <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#6ee7b7" onclick="invpBulkSetSubcontractor()" title="一次给多名员工填写同一个分包商">👥 批量填写分包商</button>
       <span style="color:var(--gray-300);font-size:.85rem">|</span>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="generateInvpSubcontractorStatement()" title="按工资（去掉 markup）生成给分包商的对账单（可打印/另存为 PDF）">📄 分包商对账单</button>
     </div>`;
+}
+
+// Batch-fill the 分包商 column for all (or only empty) hourly workers
+function invpBulkSetSubcontractor() {
+  const emps = window._invpManualEmps || [];
+  if (!emps.length) { showToast('请先添加员工', 'error'); return; }
+  _invpSaveTableState();
+  const existing = document.getElementById('invpBulkSubOverlay');
+  if (existing) existing.remove();
+  const subOpts = [...new Set(emps.map(e => (e.subcontractor || '').trim()).filter(Boolean))]
+    .map(s => `<option value="${esc(s)}">`).join('');
+  const ov = document.createElement('div');
+  ov.id = 'invpBulkSubOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2300;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML = `<div style="background:#fff;border-radius:10px;padding:1.1rem 1.25rem;max-width:400px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,.25)">
+    <div style="font-weight:700;font-size:1rem;margin-bottom:.7rem">👥 批量填写分包商</div>
+    <input type="text" id="invpBulkSubInput" list="invpBulkSubList" placeholder="输入分包商名（可自动补全）" autocomplete="off"
+      style="width:100%;padding:.5rem .6rem;border:1px solid #6ee7b7;border-radius:6px;font-size:.92rem;background:#f0fdf4;margin-bottom:.85rem">
+    <datalist id="invpBulkSubList">${subOpts}</datalist>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;flex-wrap:wrap">
+      <button type="button" class="btn btn-outline" id="invpBulkSubCancel">取消</button>
+      <button type="button" class="btn btn-outline" style="color:#047857;border-color:#047857" id="invpBulkSubEmpty">仅填充空白</button>
+      <button type="button" class="btn btn-green" id="invpBulkSubAll">应用到全部</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const apply = (onlyEmpty) => {
+    const val = document.getElementById('invpBulkSubInput').value.trim();
+    if (!val) { showToast('请输入分包商名', 'error'); return; }
+    let n = 0;
+    emps.forEach(e => { if (!onlyEmpty || !(e.subcontractor || '').trim()) { e.subcontractor = val; n++; } });
+    ov.remove();
+    renderInvpManualTable(true);
+    showToast(`已为 ${n} 名员工填写分包商：${val}`, 'success');
+  };
+  document.getElementById('invpBulkSubAll').addEventListener('click', () => apply(false));
+  document.getElementById('invpBulkSubEmpty').addEventListener('click', () => apply(true));
+  document.getElementById('invpBulkSubCancel').addEventListener('click', () => ov.remove());
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  setTimeout(() => { const el = document.getElementById('invpBulkSubInput'); if (el) el.focus(); }, 50);
 }
 
 function invpClearAllHours() {
