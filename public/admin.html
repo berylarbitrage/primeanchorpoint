@@ -1059,7 +1059,7 @@ tr:hover td{background:var(--sky-light)}
   <!-- Section: 基本信息 -->
   <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin:.4rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--gray-200)">基本信息</div>
   <div class="field"><label>公司名称 *</label><input type="text" id="lcName" placeholder="例如：XX 劳务派遣有限公司"></div>
-  <div class="field"><label>联系人</label><input type="text" id="lcContactPerson"></div>
+  <div class="field"><label>联系人 <span style="font-weight:400;color:var(--gray-400);font-size:.78rem">（可从员工选择或手动输入）</span></label><input type="text" id="lcContactPerson" list="lcContactList" placeholder="输入或选择员工" autocomplete="off"><datalist id="lcContactList"></datalist></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
     <div class="field"><label>电话</label><input type="text" id="lcPhone"></div>
     <div class="field"><label>邮箱</label><input type="text" id="lcEmail"></div>
@@ -1106,7 +1106,7 @@ tr:hover td{background:var(--sky-light)}
   <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin:1rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--gray-200)">付款方式</div>
   <div class="field">
     <label>付款类型</label>
-    <select id="lcPaymentMethodType" style="width:100%">
+    <select id="lcPaymentMethodType" style="width:100%" onchange="lcPaymentTypeChanged()">
       <option value="">— 未设置 —</option>
       <option value="check">支票 (Check)</option>
       <option value="ach">银行转账 ACH</option>
@@ -1115,13 +1115,20 @@ tr:hover td{background:var(--sky-light)}
       <option value="other">其他</option>
     </select>
   </div>
-  <div id="lcBankSection">
+  <!-- Bank fields (ACH / Wire) -->
+  <div id="lcBankSection" style="display:none">
     <div class="field"><label>银行名称</label><input type="text" id="lcBankName" placeholder="例如：Chase Bank"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="field"><label>路由号 (Routing #)</label><input type="text" id="lcRoutingNumber" placeholder="9位数字" maxlength="9"></div>
       <div class="field"><label>账户号 (Account #)</label><input type="text" id="lcAccountNumber" placeholder="账户号码"></div>
     </div>
   </div>
+  <!-- SWIFT (Wire only) -->
+  <div id="lcSwiftSection" class="field" style="display:none"><label>SWIFT / BIC（电汇）</label><input type="text" id="lcSwiftCode" placeholder="例如：CHASUS33"></div>
+  <!-- Zelle -->
+  <div id="lcZelleSection" class="field" style="display:none"><label>Zelle 邮箱 / 电话</label><input type="text" id="lcZelleHandle" placeholder="Zelle 注册的邮箱或手机号"></div>
+  <!-- Check -->
+  <div id="lcCheckSection" class="field" style="display:none"><label>收款人抬头 (Payee Name)</label><input type="text" id="lcPayeeName" placeholder="支票抬头名称"></div>
   <div class="field"><label>付款备注</label><textarea id="lcPaymentNotes" rows="2" placeholder="其他付款说明"></textarea></div>
 
   <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
@@ -11144,8 +11151,36 @@ function openLaborCompanyModal(c) {
   document.getElementById('lcBankName').value = c?.bank_name || '';
   document.getElementById('lcRoutingNumber').value = c?.routing_number || '';
   document.getElementById('lcAccountNumber').value = c?.account_number || '';
+  document.getElementById('lcSwiftCode').value = c?.swift_code || '';
+  document.getElementById('lcZelleHandle').value = c?.zelle_handle || '';
+  document.getElementById('lcPayeeName').value = c?.payee_name || '';
   document.getElementById('lcPaymentNotes').value = c?.payment_notes || '';
+  lcPaymentTypeChanged();
+  lcPopulateContactDatalist();
   document.getElementById('laborCompanyModal').classList.add('show');
+}
+
+// Show only the payment fields relevant to the chosen payment type
+function lcPaymentTypeChanged() {
+  const t = document.getElementById('lcPaymentMethodType').value;
+  document.getElementById('lcBankSection').style.display  = (t === 'ach' || t === 'wire') ? '' : 'none';
+  document.getElementById('lcSwiftSection').style.display = (t === 'wire') ? '' : 'none';
+  document.getElementById('lcZelleSection').style.display = (t === 'zelle') ? '' : 'none';
+  document.getElementById('lcCheckSection').style.display = (t === 'check') ? '' : 'none';
+}
+
+// Populate the 联系人 autocomplete datalist from system employees
+async function lcPopulateContactDatalist() {
+  const dl = document.getElementById('lcContactList');
+  if (!dl) return;
+  if (!window._invpSysEmps) {
+    try { const r = await api('/admin/employees'); window._invpSysEmps = Array.isArray(r) ? r : (r?.employees || []); }
+    catch { window._invpSysEmps = []; }
+  }
+  dl.innerHTML = (window._invpSysEmps || []).map(e => {
+    const fullName = `${e.first_name || ''} ${e.last_name || ''}`.trim();
+    return fullName ? `<option value="${esc(fullName)}">` : '';
+  }).join('');
 }
 function closeLaborCompanyModal() { document.getElementById('laborCompanyModal').classList.remove('show'); }
 function editLaborCompany(id) {
@@ -11169,6 +11204,9 @@ async function saveLaborCompany() {
     bank_name: document.getElementById('lcBankName').value.trim(),
     routing_number: document.getElementById('lcRoutingNumber').value.trim(),
     account_number: document.getElementById('lcAccountNumber').value.trim(),
+    swift_code: document.getElementById('lcSwiftCode').value.trim(),
+    zelle_handle: document.getElementById('lcZelleHandle').value.trim(),
+    payee_name: document.getElementById('lcPayeeName').value.trim(),
     payment_notes: document.getElementById('lcPaymentNotes').value.trim()
   };
   if (!payload.name) { showToast('请填写公司名称', 'error'); return; }

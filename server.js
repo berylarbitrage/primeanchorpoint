@@ -2017,6 +2017,9 @@ try { db.exec("ALTER TABLE labor_companies ADD COLUMN bank_name TEXT DEFAULT ''"
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN routing_number TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN account_number TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN payment_notes TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN swift_code TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN zelle_handle TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN payee_name TEXT DEFAULT ''"); } catch {}
 
 // Worker payments ledger
 db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
@@ -13869,9 +13872,9 @@ app.get('/api/admin/labor-companies', requireAdmin, (req, res) => {
 app.post('/api/admin/labor-companies', requireAdmin, (req, res) => {
   const d = req.body || {};
   if (!d.name || !String(d.name).trim()) return res.status(400).json({ error: 'Name required' });
-  const r = db.prepare(`INSERT INTO labor_companies (name, contact_person, phone, email, address, notes, active, ein, payment_method_type, bank_name, routing_number, account_number, payment_notes, agreement_signed, agreement_notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+  const r = db.prepare(`INSERT INTO labor_companies (name, contact_person, phone, email, address, notes, active, ein, payment_method_type, bank_name, routing_number, account_number, swift_code, zelle_handle, payee_name, payment_notes, agreement_signed, agreement_notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1,
-         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.payment_notes||'',
+         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.swift_code||'', d.zelle_handle||'', d.payee_name||'', d.payment_notes||'',
          d.agreement_signed?1:0, d.agreement_notes||'');
   res.json({ success: true, id: r.lastInsertRowid });
 });
@@ -13883,11 +13886,11 @@ app.put('/api/admin/labor-companies/:id', requireAdmin, (req, res) => {
   const newAgreementSigned = d.agreement_signed ? 1 : 0;
   const agreementSignedAt = newAgreementSigned && current && !current.agreement_signed ? 'CURRENT_TIMESTAMP' : (current && current.agreement_signed_at ? current.agreement_signed_at : null);
   db.prepare(`UPDATE labor_companies SET name=?, contact_person=?, phone=?, email=?, address=?, notes=?, active=?,
-    ein=?, payment_method_type=?, bank_name=?, routing_number=?, account_number=?, payment_notes=?,
+    ein=?, payment_method_type=?, bank_name=?, routing_number=?, account_number=?, swift_code=?, zelle_handle=?, payee_name=?, payment_notes=?,
     agreement_signed=?, agreement_signed_at=CASE WHEN ?=1 AND (agreement_signed=0 OR agreement_signed IS NULL) THEN CURRENT_TIMESTAMP ELSE agreement_signed_at END,
     agreement_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1,
-         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.payment_notes||'',
+         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.swift_code||'', d.zelle_handle||'', d.payee_name||'', d.payment_notes||'',
          newAgreementSigned, newAgreementSigned, d.agreement_notes||'', req.params.id);
   res.json({ success: true });
 });
