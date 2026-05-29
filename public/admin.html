@@ -28688,7 +28688,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', referrer: item.referrer || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
@@ -29166,6 +29166,8 @@ function _invpSaveTableState() {
     if (!emp) return;
     emp.name = row.querySelector('.invp-man-name').value;
     emp.category = row.querySelector('.invp-man-cat') ? row.querySelector('.invp-man-cat').value : (emp.category || '');
+    const subInp = row.querySelector('.invp-man-sub');
+    if (subInp) emp.subcontractor = subInp.value;
     const refInp = row.querySelector('.invp-man-ref');
     if (refInp) emp.referrer = refInp.value;
     emp.rate = row.querySelector('.invp-man-rate').value;
@@ -29256,6 +29258,12 @@ function renderInvpManualTable(skipSave) {
         </select>
       </td>
       <td style="padding:3px 4px">
+        <input type="text" class="invp-man-sub" data-uid="${emp.uid}" value="${esc(emp.subcontractor||'')}" list="invpSubcontractorList"
+          placeholder="分包商" title="分包商 Subcontractor（按此分组生成分包商对账单）"
+          style="width:110px;border:1px solid #6ee7b7;border-radius:4px;padding:3px 6px;font-size:.84rem;background:#f0fdf4"
+          onchange="_invpSaveTableState();renderInvpManualTable(true)">
+      </td>
+      <td style="padding:3px 4px">
         <input type="text" class="invp-man-ref" data-uid="${emp.uid}" value="${esc(emp.referrer||'')}"
           placeholder="介绍人" title="介绍人 Reference person（仅出现在分包商对账单）"
           style="width:100px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"
@@ -29286,12 +29294,18 @@ function renderInvpManualTable(skipSave) {
     </tr>`;
   }).join('');
 
+  // Distinct subcontractor names for the autocomplete datalist
+  const subOpts = [...new Set((window._invpManualEmps || []).map(e => (e.subcontractor || '').trim()).filter(Boolean))]
+    .map(s => `<option value="${esc(s)}">`).join('');
+
   wrap.innerHTML = `
+    <datalist id="invpSubcontractorList">${subOpts}</datalist>
     <div style="overflow-x:auto">
     <table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
       <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">员工姓名</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">工种类别</th>
+        <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#047857">分包商</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">介绍人</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">时薪($/h)</th>
@@ -29370,7 +29384,7 @@ function invpUpdateRowTotal(row) {
 
 function invpAddEmp() {
   _invpSaveTableState();
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', referrer: '', rate: '', days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', subcontractor: '', referrer: '', rate: '', days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' });
   renderInvpManualTable();
   // Focus the new name input
   const rows = document.querySelectorAll('.invp-manual-row');
@@ -29803,6 +29817,31 @@ async function invpBulkReceipts(mode) {
 // ── Subcontractor statement (HTML preview, mirrors invoice layout, green theme) ──
 // Uses the per-container 分包价 (sub_price) and is addressed to the unloading
 // subcontractor. Reuses the invoice preview modal + print-to-PDF mechanism.
+// Carries the chosen subcontractor across the re-invocation triggered by the picker
+window._invpStmtSubFilter = null;
+
+// Lightweight chooser: shows one button per subcontractor; calls onPick(key)
+function invpPickSubcontractor(subs, onPick) {
+  const existing = document.getElementById('invpSubPickOverlay');
+  if (existing) existing.remove();
+  const ov = document.createElement('div');
+  ov.id = 'invpSubPickOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2300;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML = `<div style="background:#fff;border-radius:10px;padding:1.1rem 1.25rem;max-width:380px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,.25)">
+    <div style="font-weight:700;font-size:1rem;margin-bottom:.25rem">选择分包商</div>
+    <div style="font-size:.8rem;color:#64748b;margin-bottom:.85rem">为该分包商生成对账单（只含其名下员工）</div>
+    <div style="display:flex;flex-direction:column;gap:.45rem">
+      ${subs.map(s => `<button type="button" class="btn btn-outline" style="display:flex;justify-content:space-between;align-items:center;font-size:.88rem;padding:.5rem .9rem" data-key="${esc(s.key)}">
+        <span style="font-weight:600;color:#047857">${esc(s.label)}</span><span style="color:#94a3b8;font-size:.78rem">${s.count} 人</span></button>`).join('')}
+    </div>
+    <div style="text-align:right;margin-top:1rem"><button type="button" class="btn btn-outline" id="invpSubPickCancel">取消</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelectorAll('button[data-key]').forEach(b => b.addEventListener('click', () => { const k = b.getAttribute('data-key'); ov.remove(); onPick(k); }));
+  ov.querySelector('#invpSubPickCancel').addEventListener('click', () => ov.remove());
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+}
+
 function generateInvpSubcontractorStatement() {
   const mode = window._invpMode || 'hourly';
 
@@ -29888,11 +29927,34 @@ function generateInvpSubcontractorStatement() {
       </table>`;
   } else {
     // Hourly mode: subcontractor price = wages WITHOUT markup (base rate × hours)
-    const items = getInvpManualItems();
+    let items = getInvpManualItems();
     if (!items.length) { alert('请至少添加一名员工并填写姓名'); return; }
-    const refCounts = {};
-    items.forEach(i => { const r = (i.referrer || '').trim(); if (r) refCounts[r] = (refCounts[r] || 0) + 1; });
-    recipientName = Object.keys(refCounts).sort((a, b) => refCounts[b] - refCounts[a])[0] || 'Subcontractor';
+
+    // Group workers by subcontractor; let the admin pick one when there are several
+    const groupMap = {};
+    items.forEach(i => { const k = (i.subcontractor || '').trim() || '__none__'; (groupMap[k] = groupMap[k] || []).push(i); });
+    const groupKeys = Object.keys(groupMap);
+    let chosenKey = window._invpStmtSubFilter;
+    window._invpStmtSubFilter = null;
+    if (!chosenKey) {
+      if (groupKeys.length > 1) {
+        const subs = groupKeys
+          .sort((a, b) => (a === '__none__' ? 1 : b === '__none__' ? -1 : a.localeCompare(b)))
+          .map(k => ({ key: k, label: k === '__none__' ? '未指定分包商' : k, count: groupMap[k].length }));
+        invpPickSubcontractor(subs, k => { window._invpStmtSubFilter = k; generateInvpSubcontractorStatement(); });
+        return;
+      }
+      chosenKey = groupKeys[0];
+    }
+    items = groupMap[chosenKey] || items;
+
+    if (chosenKey && chosenKey !== '__none__') {
+      recipientName = chosenKey;
+    } else {
+      const refCounts = {};
+      items.forEach(i => { const r = (i.referrer || '').trim(); if (r) refCounts[r] = (refCounts[r] || 0) + 1; });
+      recipientName = Object.keys(refCounts).sort((a, b) => refCounts[b] - refCounts[a])[0] || 'Subcontractor';
+    }
     grandTotal = items.reduce((s, i) => s + (i.total || 0), 0);
     const totalRegHrs = items.reduce((s, i) => s + (i.regHours || 0), 0);
     const totalOtHrs  = items.reduce((s, i) => s + (i.otHours || 0), 0);
@@ -30021,7 +30083,9 @@ function generateInvpSubcontractorStatement() {
 
       <!-- Footer -->
       <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;text-align:center;font-size:.72rem;color:#94a3b8;line-height:1.5">
-        This statement reflects amounts payable to the subcontractor for container unloading services.<br>本对账单为应付分包商的卸柜服务费用。
+        ${mode === 'container'
+          ? 'This statement reflects amounts payable to the subcontractor for container unloading services.<br>本对账单为应付分包商的卸柜服务费用。'
+          : 'This statement reflects amounts payable to the subcontractor for labor services.<br>本对账单为应付分包商的劳务费用。'}
       </div>
     </div>
     </div>`;
@@ -30277,7 +30341,7 @@ function invpImportEmpById(id, fullName, code) {
   _invpSaveTableState();
   const already = (window._invpManualEmps||[]).some(e => e.name.trim().toLowerCase() === fullName.trim().toLowerCase());
   if (already) return;
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', referrer: '', rate: '', days: {}, linked_employee_id: id || null, linked_employee_code: code || '', linked_employee_name: fullName });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', subcontractor: '', referrer: '', rate: '', days: {}, linked_employee_id: id || null, linked_employee_code: code || '', linked_employee_name: fullName });
   renderInvpManualTable();
   const inp = document.getElementById('invpEmpImportInput');
   if (inp) { inp.value = ''; }
@@ -30416,7 +30480,7 @@ function getInvpManualItems() {
       const regHours = Math.min(totalHours, 40);
       const otHours  = Math.max(totalHours - 40, 0);
       const total = regHours * rate + otHours * otRate;
-      return { name, category: emp.category || '', referrer: (emp.referrer || '').trim(), hours: totalHours, regHours, otHours, rate, otRate, total, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      return { name, category: emp.category || '', subcontractor: (emp.subcontractor || '').trim(), referrer: (emp.referrer || '').trim(), hours: totalHours, regHours, otHours, rate, otRate, total, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
