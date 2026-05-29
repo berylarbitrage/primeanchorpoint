@@ -16400,22 +16400,41 @@ app.post('/api/admin/invoices/:id/subcontractor-statement', requireAdmin, (req, 
   const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 50, left: 60, right: 60 } });
   doc.pipe(res);
 
+  // Register bundled Noto Sans SC so Chinese text renders (Helvetica can't draw CJK)
+  const cjkFontPath = [
+    path.join(__dirname, 'fonts', 'NotoSansSC-Regular.ttf'),
+    '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+  ].find(p => fs.existsSync(p));
+  const hasCjk = !!cjkFontPath;
+  if (hasCjk) {
+    if (cjkFontPath.endsWith('.ttc')) { doc.registerFont('CJK', cjkFontPath, 'WenQuanYiZenHei'); }
+    else { doc.registerFont('CJK', cjkFontPath); }
+  }
+  // Use the CJK font for strings containing Chinese, else clean Helvetica.
+  const hasZh = s => /[㐀-鿿豈-﫿＀-￯]/.test(String(s || ''));
+  const fR = s => (hasCjk && hasZh(s)) ? 'CJK' : 'Helvetica';
+  const fB = s => (hasCjk && hasZh(s)) ? 'CJK' : 'Helvetica-Bold';
+
+  // Accent color — green, to visually distinguish from the blue client invoice
+  const ACCENT = '#047857';
+
   const L = 60;
   const W = doc.page.width - 120;
   const R = L + W;
 
   // Header — sender (our company)
-  doc.fontSize(18).font('Helvetica-Bold').fillColor('#0E7BB8')
-    .text(profile.sender_name || 'Prime Anchor Point LLC', L, 50);
-  doc.fontSize(9).font('Helvetica').fillColor('#475569');
-  if (profile.sender_address) doc.text(profile.sender_address, L, doc.y + 2, { width: W * 0.6 });
+  const senderName = profile.sender_name || 'Prime Anchor Point LLC';
+  doc.fontSize(18).font(fB(senderName)).fillColor(ACCENT)
+    .text(senderName, L, 50, { width: W * 0.6 });
+  doc.fontSize(9).fillColor('#475569');
+  if (profile.sender_address) doc.font(fR(profile.sender_address)).text(profile.sender_address, L, doc.y + 2, { width: W * 0.6 });
   const senderContact = [profile.sender_phone, profile.sender_email].filter(Boolean).join('  ·  ');
-  if (senderContact) doc.text(senderContact, L, doc.y + 1, { width: W * 0.6 });
+  if (senderContact) doc.font(fR(senderContact)).text(senderContact, L, doc.y + 1, { width: W * 0.6 });
 
   // Title block (right aligned)
   doc.fontSize(20).font('Helvetica-Bold').fillColor('#0f172a')
     .text('SUBCONTRACTOR STATEMENT', L, 50, { width: W, align: 'right' });
-  doc.fontSize(10).font('Helvetica-Oblique').fillColor('#475569')
+  doc.fontSize(10).font(fR('分包商对账单')).fillColor('#475569')
     .text('分包商对账单', L, doc.y + 1, { width: W, align: 'right' });
   doc.fontSize(9).font('Helvetica').fillColor('#475569')
     .text(`Ref Invoice: ${inv.invoice_number}`, L, doc.y + 6, { width: W, align: 'right' });
@@ -16430,9 +16449,10 @@ app.post('/api/admin/invoices/:id/subcontractor-statement', requireAdmin, (req, 
 
   // Pay To block
   let y = doc.y + 6;
-  doc.fontSize(8).font('Helvetica-Bold').fillColor('#64748b')
-    .text('PAY TO / 收款方（分包商）', L, y);
-  doc.fontSize(12).font('Helvetica-Bold').fillColor('#0f172a')
+  const payToLabel = 'PAY TO / 收款方（分包商）';
+  doc.fontSize(8).font(fB(payToLabel)).fillColor('#64748b')
+    .text(payToLabel, L, y);
+  doc.fontSize(12).font(fB(recipientName)).fillColor('#0f172a')
     .text(recipientName, L, y + 12, { width: W });
   doc.y = y + 40;
 
@@ -16456,11 +16476,10 @@ app.post('/api/admin/invoices/:id/subcontractor-statement', requireAdmin, (req, 
     const h = opts.h || 20;
     if (opts.fill) { doc.rect(L, rowY, W, h).fill(opts.fill); }
     let x = L;
-    doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.fontSize || 9)
-      .fillColor(opts.color || '#0f172a');
+    doc.fontSize(opts.fontSize || 9).fillColor(opts.color || '#0f172a');
     cols.forEach((c, idx) => {
       const v = cells[idx] != null ? String(cells[idx]) : '';
-      doc.text(v, x + 4, rowY + 6, { width: c.w - 8, align: c.align });
+      doc.font(opts.bold ? fB(v) : fR(v)).text(v, x + 4, rowY + 6, { width: c.w - 8, align: c.align });
       x += c.w;
     });
     doc.y = rowY + h;
@@ -16469,7 +16488,7 @@ app.post('/api/admin/invoices/:id/subcontractor-statement', requireAdmin, (req, 
 
   // Header row
   const headerY = doc.y;
-  doc.rect(L, headerY, W, 22).fill('#0E7BB8');
+  doc.rect(L, headerY, W, 22).fill(ACCENT);
   let hx = L;
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#ffffff');
   cols.forEach(c => { doc.text(c.label, hx + 4, headerY + 7, { width: c.w - 8, align: c.align }); hx += c.w; });
@@ -16492,16 +16511,17 @@ app.post('/api/admin/invoices/:id/subcontractor-statement', requireAdmin, (req, 
   // Grand total row
   doc.moveDown(0.3);
   const gtY = doc.y;
-  doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a')
-    .text('TOTAL / 合计', L, gtY + 4, { width: W - cols[cols.length - 1].w - 6, align: 'right' });
-  doc.fillColor('#0E7BB8')
+  const totalLabel = 'TOTAL / 合计';
+  doc.font(fB(totalLabel)).fontSize(11).fillColor('#0f172a')
+    .text(totalLabel, L, gtY + 4, { width: W - cols[cols.length - 1].w - 6, align: 'right' });
+  doc.font('Helvetica-Bold').fillColor(ACCENT)
     .text('$' + grand.toFixed(2), R - cols[cols.length - 1].w, gtY + 4, { width: cols[cols.length - 1].w, align: 'right' });
-  doc.moveTo(L, gtY + 24).lineTo(R, gtY + 24).strokeColor('#0E7BB8').lineWidth(1.2).stroke();
+  doc.moveTo(L, gtY + 24).lineTo(R, gtY + 24).strokeColor(ACCENT).lineWidth(1.2).stroke();
 
   // Footer note
-  doc.fontSize(7.5).font('Helvetica-Oblique').fillColor('#94a3b8')
-    .text('This statement reflects amounts payable to the subcontractor for container unloading services. / 本对账单为应付分包商的卸柜服务费用。',
-      L, doc.page.height - 70, { align: 'center', width: W });
+  const footerNote = 'This statement reflects amounts payable to the subcontractor for container unloading services. / 本对账单为应付分包商的卸柜服务费用。';
+  doc.fontSize(7.5).font(fR(footerNote)).fillColor('#94a3b8')
+    .text(footerNote, L, doc.page.height - 70, { align: 'center', width: W });
 
   doc.end();
 });
