@@ -28670,6 +28670,10 @@ async function openInvpForEdit(id) {
       qty: String(c.qty || ''),
       unit_price: String(c.unit_price || ''),
       sub_price: String(c.sub_price || ''),
+      staff_list: Array.isArray(c.staff_list)
+        ? c.staff_list.map(s => ({ name: (s && s.name || '').trim(), employee_id: s && s.employee_id || null, employee_code: s && s.employee_code || '' })).filter(s => s.name)
+        : [],
+      referrer: c.referrer || '',
       highlighted: !!c.highlighted,
     }));
   }
@@ -29409,11 +29413,15 @@ function _invpSaveContainerState() {
     if (!item) return;
     item.container_no  = row.querySelector('.invp-cont-no').value;
     item.week          = row.querySelector('.invp-cont-week').value;
-    item.staffing      = row.querySelector('.invp-cont-staffing').value;
     item.qty           = row.querySelector('.invp-cont-qty').value;
     item.unit_price    = row.querySelector('.invp-cont-price').value;
     const subEl        = row.querySelector('.invp-cont-sub');
     if (subEl) item.sub_price = subEl.value;
+    // staffing display string is derived from staff_list (managed via the staff dialog);
+    // leave any legacy staffing text untouched when no per-person staff has been added.
+    const sl = Array.isArray(item.staff_list) ? item.staff_list : [];
+    const joined = sl.map(s => (s && s.name || '').trim()).filter(Boolean).join('、');
+    if (joined) item.staffing = joined;
   });
 }
 
@@ -29447,11 +29455,22 @@ function renderInvpContainerTable(skipSave) {
     const starColor = hl ? '#d97706' : 'var(--gray-300)';
     const starChar = hl ? '★' : '☆';
     const starTitle = hl ? '取消标记此行' : '标记此行（特殊处理）';
+    const staffList = Array.isArray(it.staff_list) ? it.staff_list : [];
+    const staffNames = staffList.map(s => (s && s.name || '').trim()).filter(Boolean);
+    const staffSummary = staffNames.length
+      ? (staffNames.length <= 2 ? staffNames.join('、') : `${staffNames.slice(0, 2).join('、')} +${staffNames.length - 2}`)
+      : '';
+    const referrer = (it.referrer || '').trim();
+    const staffBtnLabel = staffSummary || '＋ 添加人员';
+    const staffBtnColor = staffSummary ? '#0f172a' : '#94a3b8';
     return `<tr class="invp-cont-row" data-uid="${it.uid}" style="${rowStyle}">
       <td style="padding:4px 6px;text-align:center;color:var(--gray-500);font-size:.85rem">${idx + 1}</td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase"></td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-week" value="${esc(it.week || defaultWeek || '')}" placeholder="MM.DD.YY - MM.DD.YY" style="width:140px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
-      <td style="padding:3px 4px"><input type="text" class="invp-cont-staffing" value="${esc(it.staffing || defaultStaffing || '')}" placeholder="装卸公司" style="width:170px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
+      <td style="padding:3px 4px">
+        <button type="button" onclick="invpOpenStaffDialog(${it.uid})" title="管理卸柜人员（最多5人）与介绍人" style="width:180px;text-align:left;border:1px solid var(--gray-200);border-radius:4px;padding:4px 8px;font-size:.82rem;background:#fff;cursor:pointer;color:${staffBtnColor};display:block">👥 ${esc(staffBtnLabel)}${staffNames.length ? ` <span style="color:#94a3b8;font-size:.74rem">(${staffNames.length}人)</span>` : ''}</button>
+        ${referrer ? `<div style="font-size:.72rem;color:#64748b;margin-top:2px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">介绍人: ${esc(referrer)}</div>` : ''}
+      </td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-qty" value="${esc(String(it.qty || ''))}" min="0" step="1" placeholder="1" style="width:60px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td class="invp-cont-total" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap">$${total.toFixed(2)}</td>
@@ -29520,6 +29539,8 @@ function invpAddContainer() {
     qty: '1',
     unit_price: '',
     sub_price: '',
+    staff_list: [],
+    referrer: '',
     highlighted: false,
   });
   renderInvpContainerTable(true);
@@ -29559,6 +29580,122 @@ function invpOpenReceiptDialog(uid) {
 
 function invpCloseReceiptDialog() {
   document.getElementById('invpCashReceiptModal').style.display = 'none';
+}
+
+// ── Container staff (up to 5) & referrer dialog ──
+const INVP_MAX_STAFF = 5;
+let _invpStaffDraft = [];  // working copy of staff_list while dialog is open
+
+function invpOpenStaffDialog(uid) {
+  _invpSaveContainerState();
+  const item = (window._invpContainerItems || []).find(i => i.uid === uid);
+  if (!item) return;
+  document.getElementById('invpStaffUid').value = String(uid);
+  document.getElementById('invpStaffContainerNo').textContent = (item.container_no || '').trim() || '(未填)';
+  _invpStaffDraft = (Array.isArray(item.staff_list) ? item.staff_list : [])
+    .map(s => ({ name: (s && s.name || '').trim(), employee_id: s && s.employee_id || null, employee_code: s && s.employee_code || '' }));
+  if (!_invpStaffDraft.length) _invpStaffDraft.push({ name: '', employee_id: null, employee_code: '' });
+  document.getElementById('invpStaffReferrer').value = (item.referrer || '').trim();
+  invpRenderStaffRows();
+  // Preload employee list for autocomplete
+  if (!window._invpSysEmps) { api('/admin/employees').then(r => { window._invpSysEmps = Array.isArray(r) ? r : (r?.employees || []); }).catch(() => {}); }
+  document.getElementById('invpStaffModal').style.display = 'flex';
+}
+
+function invpCloseStaffDialog() {
+  document.getElementById('invpStaffModal').style.display = 'none';
+}
+
+function invpRenderStaffRows() {
+  const wrap = document.getElementById('invpStaffRows');
+  if (!wrap) return;
+  wrap.innerHTML = _invpStaffDraft.map((s, idx) => `
+    <div style="display:flex;gap:.4rem;align-items:center;position:relative">
+      <span style="color:var(--gray-400);font-size:.8rem;width:16px;text-align:right">${idx + 1}</span>
+      <div style="flex:1;position:relative">
+        <input type="text" class="invp-staff-name" data-idx="${idx}" value="${esc(s.name || '')}" placeholder="从员工选择或手动输入" autocomplete="off"
+          oninput="invpStaffNameInput(this,${idx})" onfocus="invpStaffEmpSearch(this,${idx})"
+          onblur="setTimeout(()=>{const d=this.parentNode.querySelector('.invp-staff-sugg');if(d)d.style.display='none'},200)"
+          style="width:100%;padding:.4rem .55rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <div class="invp-staff-sugg" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:60;max-height:180px;overflow-y:auto"></div>
+      </div>
+      <button type="button" onclick="invpStaffRemoveRow(${idx})" title="移除" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.95rem;padding:0 4px">✕</button>
+    </div>`).join('');
+  const cnt = _invpStaffDraft.filter(s => (s.name || '').trim()).length;
+  document.getElementById('invpStaffCount').textContent = `${cnt} / ${INVP_MAX_STAFF}`;
+  const addBtn = document.getElementById('invpStaffAddBtn');
+  if (addBtn) {
+    const full = _invpStaffDraft.length >= INVP_MAX_STAFF;
+    addBtn.disabled = full;
+    addBtn.style.opacity = full ? '.45' : '1';
+    addBtn.style.pointerEvents = full ? 'none' : 'auto';
+  }
+}
+
+function invpStaffAddRow() {
+  if (_invpStaffDraft.length >= INVP_MAX_STAFF) return;
+  _invpStaffDraft.push({ name: '', employee_id: null, employee_code: '' });
+  invpRenderStaffRows();
+}
+
+function invpStaffRemoveRow(idx) {
+  _invpStaffDraft.splice(idx, 1);
+  if (!_invpStaffDraft.length) _invpStaffDraft.push({ name: '', employee_id: null, employee_code: '' });
+  invpRenderStaffRows();
+}
+
+function invpStaffNameInput(inp, idx) {
+  if (_invpStaffDraft[idx]) { _invpStaffDraft[idx].name = inp.value; _invpStaffDraft[idx].employee_id = null; _invpStaffDraft[idx].employee_code = ''; }
+  invpStaffEmpSearch(inp, idx);
+}
+
+// Shared employee autocomplete for staff rows (idx number) and referrer ('referrer')
+function invpStaffEmpSearch(inp, idx) {
+  const sugg = idx === 'referrer'
+    ? document.getElementById('invpStaffReferrerSugg')
+    : inp.parentNode.querySelector('.invp-staff-sugg');
+  if (!sugg) return;
+  const emps = window._invpSysEmps || [];
+  const q = inp.value.trim().toLowerCase();
+  const matches = (q
+    ? emps.filter(e => (`${e.first_name || ''} ${e.last_name || ''}`).toLowerCase().includes(q) || (e.last_name || '').toLowerCase().includes(q))
+    : emps).slice(0, 12);
+  if (!matches.length) { sugg.style.display = 'none'; return; }
+  sugg.style.display = 'block';
+  sugg.innerHTML = matches.map(e => {
+    const fullName = `${e.first_name || ''} ${e.last_name || ''}`.trim();
+    const code = e.employee_id || '';
+    const arg = idx === 'referrer' ? "'referrer'" : idx;
+    return `<div style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.85rem"
+      onmousedown="invpStaffPickEmp(${arg}, ${e.id}, '${fullName.replace(/'/g,"\\'")}', '${String(code).replace(/'/g,"\\'")}')"
+      onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background=''">
+      <span style="font-weight:600">${esc(fullName)}</span>${code ? ` <span style="font-size:.72rem;color:var(--gray-400)">${esc(code)}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function invpStaffPickEmp(idx, id, fullName, code) {
+  if (idx === 'referrer') {
+    document.getElementById('invpStaffReferrer').value = fullName;
+    const d = document.getElementById('invpStaffReferrerSugg'); if (d) d.style.display = 'none';
+    return;
+  }
+  if (_invpStaffDraft[idx]) { _invpStaffDraft[idx] = { name: fullName, employee_id: id || null, employee_code: code || '' }; }
+  invpRenderStaffRows();
+}
+
+function invpSaveStaffDialog() {
+  const uid = parseInt(document.getElementById('invpStaffUid').value, 10);
+  const item = (window._invpContainerItems || []).find(i => i.uid === uid);
+  if (!item) { invpCloseStaffDialog(); return; }
+  item.staff_list = _invpStaffDraft
+    .map(s => ({ name: (s.name || '').trim(), employee_id: s.employee_id || null, employee_code: s.employee_code || '' }))
+    .filter(s => s.name)
+    .slice(0, INVP_MAX_STAFF);
+  item.referrer = document.getElementById('invpStaffReferrer').value.trim();
+  item.staffing = item.staff_list.map(s => s.name).join('、');
+  invpCloseStaffDialog();
+  renderInvpContainerTable(true);
 }
 
 async function invpGenerateReceipt(mode) {
@@ -29683,10 +29820,10 @@ function generateInvpSubcontractorStatement() {
   };
   const servicePeriodLabel = fmtNiceRange(ps, pe);
 
-  // Recipient = most common staffing (subcontractor) name across rows
-  const staffingCounts = {};
-  containerItems.forEach(i => { const s = (i.staffing || '').trim(); if (s) staffingCounts[s] = (staffingCounts[s] || 0) + 1; });
-  const recipientName = Object.keys(staffingCounts).sort((a, b) => staffingCounts[b] - staffingCounts[a])[0] || 'Subcontractor';
+  // Recipient = most common referrer (介绍人) across rows, else generic label
+  const refCounts = {};
+  containerItems.forEach(i => { const r = (i.referrer || '').trim(); if (r) refCounts[r] = (refCounts[r] || 0) + 1; });
+  const recipientName = Object.keys(refCounts).sort((a, b) => refCounts[b] - refCounts[a])[0] || 'Subcontractor';
 
   const grandTotal = containerItems.reduce((s, i) => s + ((i.qty || 0) * (i.sub_price || 0)), 0);
   const totalQty = containerItems.reduce((s, i) => s + (i.qty || 0), 0);
@@ -29697,10 +29834,15 @@ function generateInvpSubcontractorStatement() {
   const containerRows = containerItems.map((i, idx) => {
     const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
     const lineTotal = (i.qty || 0) * (i.sub_price || 0);
+    const staffNames = (Array.isArray(i.staff_list) ? i.staff_list : []).map(s => (s && s.name || '').trim()).filter(Boolean);
+    const staffCell = staffNames.length ? staffNames.join('、') : '—';
+    const refCell = (i.referrer || '').trim() || '—';
     return `<tr style="background:${stripe}">
       <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b">${idx + 1}</td>
       <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;color:#0f172a">${esc(i.container_no || '—')}</td>
       <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(staffCell)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(refCell)}</td>
       <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
       <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.sub_price || 0).toFixed(2)}</td>
       <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${lineTotal.toFixed(2)}</td>
@@ -29708,12 +29850,14 @@ function generateInvpSubcontractorStatement() {
   }).join('');
 
   const lineItemTableHtml = `
-    <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid ${C.main}">
+    <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.8rem;border:1px solid ${C.main}">
       <thead>
-        <tr style="background:${C.soft};color:${C.dark};font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid ${C.main}">
+        <tr style="background:${C.soft};color:${C.dark};font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;border-bottom:2px solid ${C.main}">
           <th style="padding:8px 8px;font-weight:700;text-align:center">N.</th>
           <th style="padding:8px 8px;font-weight:700;text-align:left">Container Number</th>
           <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Week</th>
+          <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Staff</th>
+          <th style="padding:8px 8px;font-weight:700;text-align:left">介绍人 Referrer</th>
           <th style="padding:8px 8px;font-weight:700;text-align:center">Qty</th>
           <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Unit Price</th>
           <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
@@ -29722,7 +29866,7 @@ function generateInvpSubcontractorStatement() {
       <tbody>
         ${containerRows}
         <tr style="background:${C.band};font-weight:700;color:#1e293b;border-top:2px solid ${C.main}">
-          <td colspan="3" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total</td>
+          <td colspan="5" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total</td>
           <td style="padding:7px 7px;text-align:center">${totalQty}</td>
           <td style="padding:7px 7px;text-align:right" colspan="2">$${grandTotal.toFixed(2)}</td>
         </tr>
@@ -29866,17 +30010,24 @@ function getInvpContainerItems() {
   _invpSaveContainerState();
   return (window._invpContainerItems||[])
     .filter(i => (i.container_no || '').trim() || parseFloat(i.unit_price) > 0)
-    .map(i => ({
-      container_no: (i.container_no || '').trim(),
-      week: (i.week || '').trim(),
-      staffing: (i.staffing || '').trim(),
-      qty: parseFloat(i.qty) || 0,
-      unit_price: parseFloat(i.unit_price) || 0,
-      total: (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0),
-      sub_price: parseFloat(i.sub_price) || 0,
-      sub_total: (parseFloat(i.qty)||0) * (parseFloat(i.sub_price)||0),
-      highlighted: !!i.highlighted,
-    }));
+    .map(i => {
+      const staffList = (Array.isArray(i.staff_list) ? i.staff_list : [])
+        .map(s => ({ name: (s && s.name || '').trim(), employee_id: s && s.employee_id || null, employee_code: s && s.employee_code || '' }))
+        .filter(s => s.name);
+      return {
+        container_no: (i.container_no || '').trim(),
+        week: (i.week || '').trim(),
+        staffing: staffList.map(s => s.name).join('、') || (i.staffing || '').trim(),
+        staff_list: staffList,
+        referrer: (i.referrer || '').trim(),
+        qty: parseFloat(i.qty) || 0,
+        unit_price: parseFloat(i.unit_price) || 0,
+        total: (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0),
+        sub_price: parseFloat(i.sub_price) || 0,
+        sub_total: (parseFloat(i.qty)||0) * (parseFloat(i.sub_price)||0),
+        highlighted: !!i.highlighted,
+      };
+    });
 }
 
 // ── Distribute hours across selected days ──
@@ -30845,6 +30996,38 @@ function printInvoice() {
       <button class="btn btn-outline" onclick="invpCloseReceiptDialog()">取消</button>
       <button class="btn btn-outline" style="color:#0E7BB8;border-color:#0E7BB8" onclick="invpGenerateReceipt('preview')">👁 预览</button>
       <button class="btn btn-green" onclick="invpGenerateReceipt('download')">⬇ 生成并下载 PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE — CONTAINER STAFF & REFERRER DIALOG ════════════════════ -->
+<div class="modal-bg" id="invpStaffModal" style="display:none;z-index:2000">
+  <div class="modal" style="max-width:520px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h2 style="margin:0;font-size:1.05rem">👥 卸柜人员 &amp; 介绍人</h2>
+      <button class="btn btn-sm btn-outline" onclick="invpCloseStaffDialog()">关闭</button>
+    </div>
+    <input type="hidden" id="invpStaffUid">
+    <div style="font-size:.82rem;color:var(--gray-600);margin-bottom:.75rem">
+      Container：<span id="invpStaffContainerNo" style="font-family:monospace;font-weight:600;color:#0f172a">—</span>
+    </div>
+    <div style="margin-bottom:.4rem;font-weight:600;font-size:.85rem;display:flex;justify-content:space-between;align-items:center">
+      <span>卸柜人员 <span style="color:var(--gray-400);font-weight:400">（最多 5 人，从员工选择或手动输入）</span></span>
+      <span id="invpStaffCount" style="font-size:.78rem;color:var(--gray-400)"></span>
+    </div>
+    <div id="invpStaffRows" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.5rem"></div>
+    <button type="button" id="invpStaffAddBtn" class="btn btn-outline" style="font-size:.82rem;padding:.3rem .9rem;margin-bottom:1rem" onclick="invpStaffAddRow()">＋ 添加人员</button>
+    <div class="field" style="margin-bottom:1rem;position:relative">
+      <label style="font-weight:600;font-size:.85rem">介绍人 Referrer <span style="color:var(--gray-400);font-weight:400">（可选）</span></label>
+      <input type="text" id="invpStaffReferrer" placeholder="从员工选择或手动输入" autocomplete="off"
+        oninput="invpStaffEmpSearch(this,'referrer')" onfocus="invpStaffEmpSearch(this,'referrer')"
+        onblur="setTimeout(()=>{const d=document.getElementById('invpStaffReferrerSugg');if(d)d.style.display='none'},200)"
+        style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.92rem">
+      <div id="invpStaffReferrerSugg" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:60;max-height:200px;overflow-y:auto"></div>
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="invpCloseStaffDialog()">取消</button>
+      <button class="btn btn-green" onclick="invpSaveStaffDialog()">✓ 保存</button>
     </div>
   </div>
 </div>
