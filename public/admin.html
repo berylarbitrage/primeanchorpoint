@@ -11081,6 +11081,7 @@ let _allLaborCompanies = [];
 async function loadLaborCompanies() {
   try {
     _allLaborCompanies = await api('/admin/labor-companies');
+    window._invpLaborCompanies = _allLaborCompanies; // keep invoice 分包商 picker in sync
   } catch (e) { _allLaborCompanies = []; }
   renderLaborCompanies();
 }
@@ -29332,8 +29333,12 @@ function renderInvpManualTable(skipSave) {
     </tr>`;
   }).join('');
 
-  // Distinct subcontractor names for the autocomplete datalist
-  const subOpts = [...new Set((window._invpManualEmps || []).map(e => (e.subcontractor || '').trim()).filter(Boolean))]
+  // Subcontractor options for the autocomplete datalist:
+  // managed 分包商 list (active) + any names already typed into the table
+  invpEnsureLaborCompanies();
+  const lcNames = (window._invpLaborCompanies || []).filter(c => c.active !== 0).map(c => c.name);
+  const typedNames = (window._invpManualEmps || []).map(e => (e.subcontractor || '').trim()).filter(Boolean);
+  const subOpts = [...new Set([...lcNames, ...typedNames])].filter(Boolean)
     .map(s => `<option value="${esc(s)}">`).join('');
 
   wrap.innerHTML = `
@@ -29367,6 +29372,22 @@ function renderInvpManualTable(skipSave) {
     </div>`;
 }
 
+// Load the managed 分包商 list once so the invoice 分包商 column can pick from it
+function invpEnsureLaborCompanies() {
+  if (window._invpLaborCompanies || window._invpLaborCompaniesLoading) return;
+  window._invpLaborCompaniesLoading = true;
+  api('/admin/labor-companies')
+    .then(r => {
+      window._invpLaborCompanies = Array.isArray(r) ? r : [];
+      window._invpLaborCompaniesLoading = false;
+      // Re-render so the datalist picks up the names (only if still in container=off hourly view)
+      if ((window._invpMode || 'hourly') !== 'container' && document.getElementById('invPageEmpWrap')) {
+        renderInvpManualTable(true);
+      }
+    })
+    .catch(() => { window._invpLaborCompanies = []; window._invpLaborCompaniesLoading = false; });
+}
+
 // Batch-fill the 分包商 column for all (or only empty) hourly workers
 function invpBulkSetSubcontractor() {
   const emps = window._invpManualEmps || [];
@@ -29374,7 +29395,9 @@ function invpBulkSetSubcontractor() {
   _invpSaveTableState();
   const existing = document.getElementById('invpBulkSubOverlay');
   if (existing) existing.remove();
-  const subOpts = [...new Set(emps.map(e => (e.subcontractor || '').trim()).filter(Boolean))]
+  invpEnsureLaborCompanies();
+  const lcNames = (window._invpLaborCompanies || []).filter(c => c.active !== 0).map(c => c.name);
+  const subOpts = [...new Set([...lcNames, ...emps.map(e => (e.subcontractor || '').trim())])].filter(Boolean)
     .map(s => `<option value="${esc(s)}">`).join('');
   const ov = document.createElement('div');
   ov.id = 'invpBulkSubOverlay';
