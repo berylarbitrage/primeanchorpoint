@@ -5031,7 +5031,10 @@ tr:hover td{background:var(--sky-light)}
   <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
     <div style="font-size:.78rem;font-weight:700;color:#854d0e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem;padding-bottom:.5rem;border-bottom:1px solid #fde68a">🏛️ 税务身份判定 Tax Status Wizard (1099 必填)</div>
 
-    <!-- Step 1: Applicant Type -->
+    <!-- Work permit waived notice (1099 only) -->
+    <div id="trWpWaivedNotice" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:.5rem .75rem;margin-bottom:.75rem;font-size:.8rem;color:#1d4ed8">
+      ⏭️ 工作许可认证已豁免 — 默认填写 <strong>W-9</strong>（按美国人处理）。如需更改请手动选择身份类型。
+    </div>
 
     <!-- Step 1: Applicant Type -->
     <div id="trStep1">
@@ -16600,6 +16603,7 @@ function openOnboardingTaskPreview(taskKey, title) {
 }
 let _onboardingRecommendedForm = null;
 let _onboardingApplicantType = null;
+let _onboardingTasks = null;
 
 async function refreshOnboardingModal() {
   let tasks, rows, intvInfo, taxResData;
@@ -16627,6 +16631,7 @@ async function refreshOnboardingModal() {
   _onboardingInterviewInfo = intvInfo || null;
   _onboardingRecommendedForm = (taxResData && taxResData.recommended_form) || null;
   _onboardingApplicantType = (taxResData && taxResData.applicant_type) || null;
+  _onboardingTasks = Array.isArray(tasks) ? tasks : null;
 
   const hasTasks = Array.isArray(tasks) && tasks.length > 0;
   // Use server-side onboarded flag (checks only assigned tasks) for accurate allDone state
@@ -18525,7 +18530,14 @@ async function openTaxResidencyModal() {
     const indUsFields = document.getElementById('trIndUsFields');
     if (indUsFields && indUsFields.style.display !== 'none') trShowImportBanner();
   } else {
-    // No prior wizard data — banner will be triggered by trSelectIndStatus when user picks a status
+    // No prior wizard data — if 1099 + work_permit waived, auto-default to Individual / W-9 path
+    const _wpTask = _onboardingTasks && _onboardingTasks.find(t => t.key === 'work_permit');
+    const _empType = _onboardingWorkerData && _onboardingWorkerData.employment_type;
+    if (_empType === '1099' && _wpTask && _wpTask.status === 'waived') {
+      trSelectType('individual');
+      trSelectIndStatus('citizen');
+      document.getElementById('trWpWaivedNotice').style.display = '';
+    }
   }
 
   document.getElementById('taxResidencyModal').classList.add('show');
