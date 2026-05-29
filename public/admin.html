@@ -1964,8 +1964,7 @@ tr:hover td{background:var(--sky-light)}
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0E7BB8;border-color:#0E7BB8" onclick="invpBulkReceipts('preview')" title="一次预览所有 container 的现金回执 PDF">👁 批量预览回执</button>
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="invpBulkReceipts('download')" title="一次下载所有 container 的现金回执 PDF（合并为一个文件）">⬇ 批量下载回执</button>
           <span style="color:var(--gray-300);font-size:.85rem">|</span>
-          <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0369a1;border-color:#0369a1" onclick="invpSubcontractorStatement('preview')" title="按「分包价」生成给分包商/装卸公司的对账单 PDF">👁 预览分包商对账单</button>
-          <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0369a1;border-color:#0369a1" onclick="invpSubcontractorStatement('download')" title="按「分包价」下载给分包商/装卸公司的对账单 PDF">⬇ 下载分包商对账单</button>
+          <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="generateInvpSubcontractorStatement()" title="按「分包价」生成给分包商/装卸公司的对账单（可打印/另存为 PDF）">📄 分包商对账单</button>
         </div>
       </div>
 
@@ -28971,6 +28970,14 @@ function toggleInvpOtCols() {
 function updateInvpPreviewBtns() {
   const wrap = document.getElementById('invpPreviewBtns');
   if (!wrap) return;
+  // Subcontractor statement: only print / close (it's not a saved invoice)
+  if (window._invpPreviewKind === 'subcontractor') {
+    wrap.innerHTML = `
+      <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
+      <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
+    `;
+    return;
+  }
   const editId = document.getElementById('invPageEditId').value;
   const isSaved = window._invpPreviewSaved || !!editId;
   const otToggle = window._invpAllOtZero
@@ -29645,50 +29652,169 @@ async function invpBulkReceipts(mode) {
   }
 }
 
-// ── Subcontractor statement PDF (uses 分包价 / sub_price, addressed to the unloading company) ──
-async function invpSubcontractorStatement(mode) {
-  mode = mode === 'preview' ? 'preview' : 'download';
-  const invIdEl = document.getElementById('invPageEditId');
-  const invId = invIdEl && invIdEl.value;
-  if (!invId) { showToast('请先保存这张 invoice，再生成分包商对账单', 'error'); return; }
-  _invpSaveContainerState();
-  const items = (window._invpContainerItems || [])
-    .filter(i => (i.container_no || '').trim() || parseFloat(i.sub_price) > 0)
-    .map(i => ({
-      container_no: (i.container_no || '').trim(),
-      week: (i.week || '').trim(),
-      staffing: (i.staffing || '').trim(),
-      qty: parseFloat(i.qty) || 0,
-      sub_price: parseFloat(i.sub_price) || 0,
-    }));
-  if (!items.length) { showToast('没有可用的 container（请先填写「分包价」）', 'error'); return; }
-  if (!items.some(i => i.sub_price > 0)) {
+// ── Subcontractor statement (HTML preview, mirrors invoice layout, green theme) ──
+// Uses the per-container 分包价 (sub_price) and is addressed to the unloading
+// subcontractor. Reuses the invoice preview modal + print-to-PDF mechanism.
+function generateInvpSubcontractorStatement() {
+  if ((window._invpMode || 'hourly') !== 'container') {
+    showToast('分包商对账单仅适用于 Container 计费模式', 'error');
+    return;
+  }
+  const containerItems = getInvpContainerItems();
+  if (!containerItems.length) { alert('请至少添加一个 container 行'); return; }
+  if (!containerItems.some(i => (i.sub_price || 0) > 0)) {
     if (!confirm('所有 container 的「分包价」都为 0，仍要生成对账单吗？')) return;
   }
-  const url = `/api/admin/invoices/${invId}/subcontractor-statement${mode === 'preview' ? '?inline=1' : ''}`;
-  const verb = mode === 'preview' ? '预览' : '下载';
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
-    });
-    if (!resp.ok) {
-      let msg = '生成失败';
-      try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch {}
-      throw new Error(msg);
-    }
-    const blob = await resp.blob();
-    const filename = `Subcontractor_Statement_x${items.length}.pdf`;
-    if (mode === 'preview') {
-      invpShowPdfPreview(blob, filename, `📄 分包商对账单预览 — ${items.length} 个 container`);
-    } else {
-      _invpTriggerDownload(blob, filename);
-      showToast(`分包商对账单已生成 ✓`);
-    }
-  } catch (e) {
-    showToast(`分包商对账单${verb}失败：` + (e.message || e), 'error');
-  }
+
+  const invNum  = document.getElementById('invPageNumber').value || '';
+  const invDate = document.getElementById('invPageDate').value;
+  const ps      = document.getElementById('invPageStart').value;
+  const pe      = document.getElementById('invPageEnd').value;
+  const profile = getInvpProfile();
+
+  const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmtNice = d => { if (!d) return ''; const [y,m,day] = d.split('-'); return `${_MONTHS[parseInt(m)-1]} ${parseInt(day)}, ${y}`; };
+  const fmtNiceRange = (a, b) => {
+    if (!a || !b) return '';
+    const [ay,am,ad] = a.split('-'); const [by,bm,bd] = b.split('-');
+    const left = `${_MONTHS[parseInt(am)-1]} ${parseInt(ad)}`;
+    return ay === by ? `${left} – ${_MONTHS[parseInt(bm)-1]} ${parseInt(bd)}, ${by}`
+                     : `${left}, ${ay} – ${_MONTHS[parseInt(bm)-1]} ${parseInt(bd)}, ${by}`;
+  };
+  const servicePeriodLabel = fmtNiceRange(ps, pe);
+
+  // Recipient = most common staffing (subcontractor) name across rows
+  const staffingCounts = {};
+  containerItems.forEach(i => { const s = (i.staffing || '').trim(); if (s) staffingCounts[s] = (staffingCounts[s] || 0) + 1; });
+  const recipientName = Object.keys(staffingCounts).sort((a, b) => staffingCounts[b] - staffingCounts[a])[0] || 'Subcontractor';
+
+  const grandTotal = containerItems.reduce((s, i) => s + ((i.qty || 0) * (i.sub_price || 0)), 0);
+  const totalQty = containerItems.reduce((s, i) => s + (i.qty || 0), 0);
+
+  // Green palette (mirrors the blue invoice palette)
+  const C = { main:'#047857', dark:'#065f46', soft:'#ecfdf5', band:'#d1fae5', border:'#6ee7b7' };
+
+  const containerRows = containerItems.map((i, idx) => {
+    const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
+    const lineTotal = (i.qty || 0) * (i.sub_price || 0);
+    return `<tr style="background:${stripe}">
+      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b">${idx + 1}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;color:#0f172a">${esc(i.container_no || '—')}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.sub_price || 0).toFixed(2)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${lineTotal.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+
+  const lineItemTableHtml = `
+    <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid ${C.main}">
+      <thead>
+        <tr style="background:${C.soft};color:${C.dark};font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid ${C.main}">
+          <th style="padding:8px 8px;font-weight:700;text-align:center">N.</th>
+          <th style="padding:8px 8px;font-weight:700;text-align:left">Container Number</th>
+          <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Week</th>
+          <th style="padding:8px 8px;font-weight:700;text-align:center">Qty</th>
+          <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Unit Price</th>
+          <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${containerRows}
+        <tr style="background:${C.band};font-weight:700;color:#1e293b;border-top:2px solid ${C.main}">
+          <td colspan="3" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total</td>
+          <td style="padding:7px 7px;text-align:center">${totalQty}</td>
+          <td style="padding:7px 7px;text-align:right" colspan="2">$${grandTotal.toFixed(2)}</td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  const contactBlock = (profile.contact_phone || profile.contact_email) ? `
+    <div style="font-size:.78rem;color:#475569;line-height:1.55;margin-bottom:.4rem">
+      For questions regarding this statement, please contact: <strong>${[profile.contact_name,profile.contact_phone,profile.contact_email].filter(Boolean).map(s=>esc(s)).join('&nbsp; | &nbsp;')}</strong>
+    </div>` : '';
+
+  const html = `
+    <div id="invpPaper" style="background:#fff;width:8.5in;min-height:11in;padding:0.5in;box-shadow:0 4px 18px rgba(0,0,0,.12);box-sizing:border-box">
+    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b">
+
+      <!-- ── HEADER ── -->
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem">
+        <div style="display:flex;align-items:center;gap:.85rem;flex:1;min-width:0">
+          <img src="/logo.svg" style="height:72px;width:auto;flex-shrink:0" alt="Logo">
+          <div style="line-height:1.55;font-size:.85rem;color:#1e293b">
+            ${profile.sender_name ? `<div style="font-size:1.1rem;font-weight:800;color:${C.main};letter-spacing:.02em;margin-bottom:.15rem">${esc(profile.sender_name)}</div>` : ''}
+            ${profile.sender_address ? `<div>${esc(profile.sender_address)}</div>` : ''}
+            ${profile.sender_phone   ? `<div>Phone:&nbsp; ${esc(profile.sender_phone)}</div>` : ''}
+            ${profile.sender_email   ? `<div>Email:&nbsp; ${esc(profile.sender_email)}</div>` : ''}
+            ${profile.contact_name   ? `<div>Contact:&nbsp; ${esc(profile.contact_name)}</div>` : ''}
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:1.5rem;font-weight:900;letter-spacing:2px;color:${C.main};line-height:1.1;margin-bottom:.15rem">SUBCONTRACTOR</div>
+          <div style="font-size:1.5rem;font-weight:900;letter-spacing:2px;color:${C.main};line-height:1;margin-bottom:.5rem">STATEMENT</div>
+          <table style="border-collapse:collapse;margin-left:auto;font-size:.8rem;border:1px solid #cbd5e1;border-radius:3px;overflow:hidden;background:#f8fafc">
+            <tr style="border-bottom:1px solid #e2e8f0">
+              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:${C.band};font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Ref Invoice</td>
+              <td style="padding:5px 12px;font-weight:700;text-align:right;white-space:nowrap">${esc(invNum||'—')}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #e2e8f0">
+              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:${C.band};font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Date</td>
+              <td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${fmtNice(invDate)}</td>
+            </tr>
+            <tr>
+              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:${C.band};font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Service Period</td>
+              <td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${servicePeriodLabel}</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- Brand divider -->
+      <div style="border-top:2.5px solid ${C.main};margin-bottom:.9rem"></div>
+
+      <!-- Pay To -->
+      <table style="border-collapse:collapse;margin-bottom:.8rem;font-size:.85rem;line-height:1.55">
+        <tr>
+          <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">PAY TO:</td>
+          <td style="padding:2px 0;font-weight:700;color:${C.main};font-size:.95rem">${esc(recipientName)} <span style="font-weight:500;color:#64748b;font-size:.78rem">/ 分包商 Subcontractor</span></td>
+        </tr>
+        <tr>
+          <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">SERVICE PERIOD:</td>
+          <td style="padding:2px 0;color:#1e293b;font-weight:600">${servicePeriodLabel}</td>
+        </tr>
+      </table>
+
+      <!-- Banner -->
+      <div style="background:${C.soft};border-left:4px solid ${C.main};padding:.4rem .8rem;margin-bottom:.75rem;font-size:.8rem;color:${C.dark};font-weight:600;letter-spacing:.02em">
+        Container unloading services for the period ${servicePeriodLabel}
+      </div>
+
+      ${lineItemTableHtml}
+
+      <!-- Amount summary -->
+      <div style="display:flex;justify-content:flex-end;margin-bottom:.85rem">
+        <table style="border-collapse:collapse;font-size:.86rem;min-width:280px">
+          <tr>
+            <td style="padding:7px 16px 7px 0;border-top:2px solid ${C.main};border-bottom:2px solid ${C.main};color:${C.main};font-weight:700;text-align:right;font-size:.9rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Payable</td>
+            <td style="padding:7px 0;border-top:2px solid ${C.main};border-bottom:2px solid ${C.main};color:${C.main};font-weight:800;text-align:right;font-size:1.2rem;white-space:nowrap">$${grandTotal.toFixed(2)}</td>
+          </tr>
+        </table>
+      </div>
+
+      ${contactBlock}
+
+      <!-- Footer -->
+      <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;text-align:center;font-size:.72rem;color:#94a3b8;line-height:1.5">
+        This statement reflects amounts payable to the subcontractor for container unloading services.<br>本对账单为应付分包商的卸柜服务费用。
+      </div>
+    </div>
+    </div>`;
+
+  document.getElementById('invpPreviewContent').innerHTML = html;
+  window._invpPreviewKind = 'subcontractor';
+  document.getElementById('invpPreviewModal').style.display = 'flex';
+  updateInvpPreviewBtns();
 }
 
 function _invpTriggerDownload(blob, filename) {
@@ -30337,6 +30463,7 @@ async function generateInvpPreview() {
     </div>`;
 
   document.getElementById('invpPreviewContent').innerHTML = html;
+  window._invpPreviewKind = 'invoice';
   // Reset saved/OT-toggle state for new previews (unless editing existing)
   const editId = document.getElementById('invPageEditId').value;
   window._invpPreviewSaved = !!editId;
@@ -30354,6 +30481,7 @@ async function generateInvpPreview() {
 function closeInvpPreview() {
   document.getElementById('invpPreviewModal').style.display = 'none';
   window._invpHideOtCols = false;
+  window._invpPreviewKind = 'invoice';
 }
 
 function printInvpInvoice() {
