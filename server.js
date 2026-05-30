@@ -4477,6 +4477,14 @@ function generateInvoiceApprovalHtmlTemplate_ES() { return _buildInvoiceApproval
 // ── Third-Party Payment Authorization (PayPal / Venmo / Cash App) ──
 // ── Third-Party Payment Authorization — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
+// Split a combined Option A / Option B payment-auth form into a single-option variant.
+// Markers <!--A_ONLY_S/E--> and <!--B_ONLY_S/E--> are emitted by the builders.
+function _zoneVariant(html, variant) {
+  if (variant === 'a') html = html.replace(/<!--B_ONLY_S-->[\s\S]*?<!--B_ONLY_E-->/g, '');
+  else if (variant === 'b') html = html.replace(/<!--A_ONLY_S-->[\s\S]*?<!--A_ONLY_E-->/g, '');
+  return html.replace(/<!--[AB]_ONLY_[SE]-->/g, '');
+}
+
 function _buildThirdPartyPayForm(lang) {
   const companyName = getCompanyLegalName();
   const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
@@ -4623,7 +4631,7 @@ function _buildThirdPartyPayForm(lang) {
   </tr>
 </table>
 
-<!-- Zone A — Direct Receipt to Own Platform Account -->
+<!--A_ONLY_S--><!-- Zone A — Direct Receipt to Own Platform Account -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="tp_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -4689,7 +4697,7 @@ function _buildThirdPartyPayForm(lang) {
   </div>
 </div>
 
-<!-- Zone B — Third-Party Authorization -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third-Party Authorization -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="tp_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -4738,7 +4746,7 @@ function _buildThirdPartyPayForm(lang) {
   </div>
 </div>
 
-<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
+<!--B_ONLY_E--><div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
 <div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.5;background:#fafafa;margin-bottom:8px">
   <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack1}</span></div>
   <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack2}</span></div>
@@ -4765,9 +4773,12 @@ function _buildThirdPartyPayForm(lang) {
 </div>`;
 }
 
-function generateThirdPartyPayHtmlTemplate()    { return _buildThirdPartyPayForm('zh-en'); }
-function generateThirdPartyPayHtmlTemplate_EN() { return _buildThirdPartyPayForm('en'); }
-function generateThirdPartyPayHtmlTemplate_ES() { return _buildThirdPartyPayForm('en-es'); }
+function generateThirdPartyPayHtmlTemplate() { return _zoneVariant(_buildThirdPartyPayForm('zh-en'), 'a'); }
+function generateThirdPartyPayHtmlTemplate_B() { return _zoneVariant(_buildThirdPartyPayForm('zh-en'), 'b'); }
+function generateThirdPartyPayHtmlTemplate_EN() { return _zoneVariant(_buildThirdPartyPayForm('en'), 'a'); }
+function generateThirdPartyPayHtmlTemplate_EN_B() { return _zoneVariant(_buildThirdPartyPayForm('en'), 'b'); }
+function generateThirdPartyPayHtmlTemplate_ES() { return _zoneVariant(_buildThirdPartyPayForm('en-es'), 'a'); }
+function generateThirdPartyPayHtmlTemplate_ES_B() { return _zoneVariant(_buildThirdPartyPayForm('en-es'), 'b'); }
 
 // ── W-7 (ITIN Application) ──
 function generateW7HtmlTemplate() {
@@ -4979,7 +4990,7 @@ function _buildACHAuthForm(lang) {
 <!-- 2. PAYMENT RECIPIENT -->
 <div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 10px;color:#1e3a8a">${s3}</div>
 
-<!-- Zone A: Self / Direct -->
+<!--A_ONLY_S--><!-- Zone A: Self / Direct -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="ach_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5038,7 +5049,7 @@ function _buildACHAuthForm(lang) {
   </div>
 </div>
 
-<!-- Zone B: Third Party -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B: Third Party -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="ach_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5086,7 +5097,7 @@ function _buildACHAuthForm(lang) {
   </div>
 </div>
 
-<!-- 3. AUTHORIZATION -->
+<!--B_ONLY_E--><!-- 3. AUTHORIZATION -->
 <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:10px 13px;margin-bottom:14px">
   <div style="font-size:9pt;font-weight:800;color:#92400e;margin-bottom:6px">${s4}</div>
   <div style="font-size:7.5pt;color:#374151;line-height:1.7">
@@ -5113,9 +5124,12 @@ function _buildACHAuthForm(lang) {
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
-function generateACHAuthHtmlTemplate()    { return _buildACHAuthForm('zh-en'); }
-function generateACHAuthHtmlTemplate_EN() { return _buildACHAuthForm('en'); }
-function generateACHAuthHtmlTemplate_ES() { return _buildACHAuthForm('en-es'); }
+function generateACHAuthHtmlTemplate() { return _zoneVariant(_buildACHAuthForm('zh-en'), 'a'); }
+function generateACHAuthHtmlTemplate_B() { return _zoneVariant(_buildACHAuthForm('zh-en'), 'b'); }
+function generateACHAuthHtmlTemplate_EN() { return _zoneVariant(_buildACHAuthForm('en'), 'a'); }
+function generateACHAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildACHAuthForm('en'), 'b'); }
+function generateACHAuthHtmlTemplate_ES() { return _zoneVariant(_buildACHAuthForm('en-es'), 'a'); }
+function generateACHAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildACHAuthForm('en-es'), 'b'); }
 
 // ── Wire Transfer Authorization ──
 function _buildWireAuthForm(lang) {
@@ -5308,7 +5322,7 @@ function _buildWireAuthForm(lang) {
   </tr>
 </table>
 
-<!-- Zone A — Direct Wire to Own Account -->
+<!--A_ONLY_S--><!-- Zone A — Direct Wire to Own Account -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="wire_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5384,7 +5398,7 @@ function _buildWireAuthForm(lang) {
   </div>
 </div>
 
-<!-- Zone B — Third-Party Authorization -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third-Party Authorization -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="wire_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5433,7 +5447,7 @@ function _buildWireAuthForm(lang) {
   </div>
 </div>
 
-<div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:10px;font-size:7.5pt;line-height:1.6">
+<!--B_ONLY_E--><div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:10px;font-size:7.5pt;line-height:1.6">
   <div style="font-weight:700;margin-bottom:4px;font-size:8.5pt">${s4}</div>
   <div style="margin-bottom:3px">① ${cert1}</div>
   <div style="margin-bottom:3px">② ${cert2}</div>
@@ -5457,9 +5471,12 @@ function _buildWireAuthForm(lang) {
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
-function generateWireAuthHtmlTemplate()    { return _buildWireAuthForm('zh-en'); }
-function generateWireAuthHtmlTemplate_EN() { return _buildWireAuthForm('en'); }
-function generateWireAuthHtmlTemplate_ES() { return _buildWireAuthForm('en-es'); }
+function generateWireAuthHtmlTemplate() { return _zoneVariant(_buildWireAuthForm('zh-en'), 'a'); }
+function generateWireAuthHtmlTemplate_B() { return _zoneVariant(_buildWireAuthForm('zh-en'), 'b'); }
+function generateWireAuthHtmlTemplate_EN() { return _zoneVariant(_buildWireAuthForm('en'), 'a'); }
+function generateWireAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildWireAuthForm('en'), 'b'); }
+function generateWireAuthHtmlTemplate_ES() { return _zoneVariant(_buildWireAuthForm('en-es'), 'a'); }
+function generateWireAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildWireAuthForm('en-es'), 'b'); }
 
 // ── Check / 支票 Instruction Form ──
 function _buildCheckInstructionForm(lang) {
@@ -5609,7 +5626,7 @@ function _buildCheckInstructionForm(lang) {
   </tr>
 </table>
 
-<!-- Zone A — Check Mailed to Own Address -->
+<!--A_ONLY_S--><!-- Zone A — Check Mailed to Own Address -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="check_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5644,7 +5661,7 @@ function _buildCheckInstructionForm(lang) {
   </div>
 </div>
 
-<!-- Zone B — Third Party Receives Check -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third Party Receives Check -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="check_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5693,7 +5710,7 @@ function _buildCheckInstructionForm(lang) {
   </div>
 </div>
 
-<div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:4px;font-size:7.5pt;line-height:1.6">
+<!--B_ONLY_E--><div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:4px;font-size:7.5pt;line-height:1.6">
   <div style="font-weight:700;margin-bottom:5px;font-size:8.5pt">${s5}</div>
   <div style="margin-bottom:3px">① ${confirmLine1}</div>
   <div style="margin-bottom:3px">② ${confirmLine2}</div>
@@ -5716,9 +5733,12 @@ function _buildCheckInstructionForm(lang) {
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
-function generateCheckInstructionHtmlTemplate()    { return _buildCheckInstructionForm('zh-en'); }
-function generateCheckInstructionHtmlTemplate_EN() { return _buildCheckInstructionForm('en'); }
-function generateCheckInstructionHtmlTemplate_ES() { return _buildCheckInstructionForm('en-es'); }
+function generateCheckInstructionHtmlTemplate() { return _zoneVariant(_buildCheckInstructionForm('zh-en'), 'a'); }
+function generateCheckInstructionHtmlTemplate_B() { return _zoneVariant(_buildCheckInstructionForm('zh-en'), 'b'); }
+function generateCheckInstructionHtmlTemplate_EN() { return _zoneVariant(_buildCheckInstructionForm('en'), 'a'); }
+function generateCheckInstructionHtmlTemplate_EN_B() { return _zoneVariant(_buildCheckInstructionForm('en'), 'b'); }
+function generateCheckInstructionHtmlTemplate_ES() { return _zoneVariant(_buildCheckInstructionForm('en-es'), 'a'); }
+function generateCheckInstructionHtmlTemplate_ES_B() { return _zoneVariant(_buildCheckInstructionForm('en-es'), 'b'); }
 
 // ── Zelle Authorization — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
@@ -5855,7 +5875,7 @@ function _buildZelleAuthForm(lang) {
   </tr>
 </table>
 
-<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;margin-bottom:10px;background:#fafafa;font-size:8pt">
+<!--B_ONLY_S--><div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;margin-bottom:10px;background:#fafafa;font-size:8pt">
   <div style="font-weight:700;color:#555;margin-bottom:5px;font-size:8pt">${authRepHeader}</div>
   <table style="width:100%;border-collapse:collapse;font-size:8pt">
     <tr>
@@ -5867,7 +5887,7 @@ function _buildZelleAuthForm(lang) {
   <div style="font-size:7.5pt;color:#555;margin-top:4px;font-style:italic">${authRepNote}</div>
 </div>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
+<!--B_ONLY_E--><div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
 <p style="font-size:8pt;white-space:pre-line">${certText}</p>
 
 <div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
@@ -5877,7 +5897,7 @@ function _buildZelleAuthForm(lang) {
 
 <div style="background:#e8f5e9;border:1px solid #4caf50;padding:6px 10px;margin-top:12px;font-size:7.5pt;color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:6px;font-size:8.5pt">
+<!--A_ONLY_S--><div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:6px;font-size:8.5pt">
   <b>${sigHeader}</b>
   <table style="width:100%;margin-top:6px">
     <tr>
@@ -5890,7 +5910,7 @@ function _buildZelleAuthForm(lang) {
   </table>
 </div>
 
-<div style="border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt;background:#f0f9ff">
+<!--A_ONLY_E--><!--B_ONLY_S--><div style="border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt;background:#f0f9ff">
   <b>${authDelegateHeader}</b>
   <p style="font-size:7.5pt;margin:6px 0 8px;color:#333">${authDelegateText}</p>
   <table style="width:100%;margin-top:4px">
@@ -5903,14 +5923,17 @@ function _buildZelleAuthForm(lang) {
     </tr>
   </table>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
+<!--B_ONLY_E--><div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
 </div>`;
 }
 
 // Convenience wrappers for each language variant
-function generateZelleAuthHtmlTemplate()    { return _buildZelleAuthForm('zh-en'); }
-function generateZelleAuthHtmlTemplate_EN() { return _buildZelleAuthForm('en'); }
-function generateZelleAuthHtmlTemplate_ES() { return _buildZelleAuthForm('en-es'); }
+function generateZelleAuthHtmlTemplate() { return _zoneVariant(_buildZelleAuthForm('zh-en'), 'a'); }
+function generateZelleAuthHtmlTemplate_B() { return _zoneVariant(_buildZelleAuthForm('zh-en'), 'b'); }
+function generateZelleAuthHtmlTemplate_EN() { return _zoneVariant(_buildZelleAuthForm('en'), 'a'); }
+function generateZelleAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildZelleAuthForm('en'), 'b'); }
+function generateZelleAuthHtmlTemplate_ES() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'a'); }
+function generateZelleAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'b'); }
 
 // Third-party authorized representative Zelle signature templates
 function _buildZelleAuthRepForm(lang) {
@@ -6630,7 +6653,7 @@ function _buildCashReceiptForm(lang) {
 
 <div style="font-weight:700;margin:12px 0 8px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">${s1Title}</div>
 
-<!-- Zone A — blue -->
+<!--A_ONLY_S--><!-- Zone A — blue -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer">
     <checkbox-field name="cash_self_receipt" role="First Party" style="width:16px;height:16px;flex-shrink:0"></checkbox-field>
@@ -6656,7 +6679,7 @@ function _buildCashReceiptForm(lang) {
   </div>
 </div>
 
-<!-- Zone B — green -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — green -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer">
     <checkbox-field name="cash_third_receipt" role="First Party" style="width:16px;height:16px;flex-shrink:0"></checkbox-field>
@@ -6692,7 +6715,7 @@ function _buildCashReceiptForm(lang) {
   </div>
 </div>
 
-<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
+<!--B_ONLY_E--><div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
   ${sNotice}
 </div>
 
@@ -6717,13 +6740,16 @@ function _buildCashReceiptForm(lang) {
 }
 
 // ── Cash Payment Receipt (ZH+EN) ──
-function generateCashReceiptHtmlTemplate()   { return _buildCashReceiptForm('zh-en'); }
+function generateCashReceiptHtmlTemplate() { return _zoneVariant(_buildCashReceiptForm('zh-en'), 'a'); }
+function generateCashReceiptHtmlTemplate_B() { return _zoneVariant(_buildCashReceiptForm('zh-en'), 'b'); }
 
 // ── Cash Payment Receipt (EN only) ──
-function generateCashReceiptEnHtmlTemplate() { return _buildCashReceiptForm('en'); }
+function generateCashReceiptEnHtmlTemplate() { return _zoneVariant(_buildCashReceiptForm('en'), 'a'); }
+function generateCashReceiptEnHtmlTemplate_B() { return _zoneVariant(_buildCashReceiptForm('en'), 'b'); }
 
 // ── Cash Payment Receipt (EN+ES) ──
-function generateCashReceiptEsHtmlTemplate() { return _buildCashReceiptForm('en-es'); }
+function generateCashReceiptEsHtmlTemplate() { return _zoneVariant(_buildCashReceiptForm('en-es'), 'a'); }
+function generateCashReceiptEsHtmlTemplate_B() { return _zoneVariant(_buildCashReceiptForm('en-es'), 'b'); }
 
 
 // ── Map of all auto-creatable templates ──
@@ -6758,24 +6784,42 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   zelle_auth_rep:    { name: 'Zelle Auth — Authorized Representative Signature (ZH+EN)', configKey: 'zelle_auth_rep_template_id',    category: 'zelle_auth_rep',    generator: generateZelleAuthRepTemplate },
   zelle_auth_rep_en: { name: 'Zelle Auth — Authorized Representative Signature (EN)',    configKey: 'zelle_auth_rep_en_template_id', category: 'zelle_auth_rep_en', generator: generateZelleAuthRepTemplate_EN },
   zelle_auth_rep_es: { name: 'Zelle Auth — Authorized Representative Signature (EN+ES)', configKey: 'zelle_auth_rep_es_template_id', category: 'zelle_auth_rep_es', generator: generateZelleAuthRepTemplate_ES },
-  zelle_tp_auth:    { name: 'Zelle — Third-Party Payment Authorization (ZH+EN)', configKey: 'zelle_tp_auth_template_id',    category: 'zelle_tp_auth',    generator: generateZelleTPAuthTemplate },
-  zelle_tp_auth_en: { name: 'Zelle — Third-Party Payment Authorization (EN)',    configKey: 'zelle_tp_auth_en_template_id', category: 'zelle_tp_auth_en', generator: generateZelleTPAuthTemplate_EN },
-  zelle_tp_auth_es: { name: 'Zelle — Third-Party Payment Authorization (EN+ES)', configKey: 'zelle_tp_auth_es_template_id', category: 'zelle_tp_auth_es', generator: generateZelleTPAuthTemplate_ES },
-  ach_tp_auth:      { name: 'ACH — Third-Party Payment Authorization (ZH+EN)', configKey: 'ach_tp_auth_template_id',      category: 'ach_tp_auth',      generator: generateAchTPAuthTemplate },
-  ach_tp_auth_en:   { name: 'ACH — Third-Party Payment Authorization (EN)',    configKey: 'ach_tp_auth_en_template_id',   category: 'ach_tp_auth_en',   generator: generateAchTPAuthTemplate_EN },
-  ach_tp_auth_es:   { name: 'ACH — Third-Party Payment Authorization (EN+ES)', configKey: 'ach_tp_auth_es_template_id',   category: 'ach_tp_auth_es',   generator: generateAchTPAuthTemplate_ES },
-  wire_tp_auth:     { name: 'Wire — Third-Party Payment Authorization (ZH+EN)', configKey: 'wire_tp_auth_template_id',     category: 'wire_tp_auth',     generator: generateWireTPAuthTemplate },
-  wire_tp_auth_en:  { name: 'Wire — Third-Party Payment Authorization (EN)',    configKey: 'wire_tp_auth_en_template_id',  category: 'wire_tp_auth_en',  generator: generateWireTPAuthTemplate_EN },
-  wire_tp_auth_es:  { name: 'Wire — Third-Party Payment Authorization (EN+ES)', configKey: 'wire_tp_auth_es_template_id',  category: 'wire_tp_auth_es',  generator: generateWireTPAuthTemplate_ES },
-  check_tp_auth:    { name: 'Check — Third-Party Payment Authorization (ZH+EN)', configKey: 'check_tp_auth_template_id',    category: 'check_tp_auth',    generator: generateCheckTPAuthTemplate },
-  check_tp_auth_en: { name: 'Check — Third-Party Payment Authorization (EN)',    configKey: 'check_tp_auth_en_template_id', category: 'check_tp_auth_en', generator: generateCheckTPAuthTemplate_EN },
-  check_tp_auth_es: { name: 'Check — Third-Party Payment Authorization (EN+ES)', configKey: 'check_tp_auth_es_template_id', category: 'check_tp_auth_es', generator: generateCheckTPAuthTemplate_ES },
-  cash_tp_auth:     { name: 'Cash — Third-Party Payment Authorization (ZH+EN)', configKey: 'cash_tp_auth_template_id',     category: 'cash_tp_auth',     generator: generateCashTPAuthTemplate },
-  cash_tp_auth_en:  { name: 'Cash — Third-Party Payment Authorization (EN)',    configKey: 'cash_tp_auth_en_template_id',  category: 'cash_tp_auth_en',  generator: generateCashTPAuthTemplate_EN },
-  cash_tp_auth_es:    { name: 'Cash — Third-Party Payment Authorization (EN+ES)', configKey: 'cash_tp_auth_es_template_id',    category: 'cash_tp_auth_es',    generator: generateCashTPAuthTemplate_ES },
-  paypal_tp_auth:     { name: 'PayPal/Venmo/CashApp — Third-Party Authorization (ZH+EN)', configKey: 'paypal_tp_auth_template_id',     category: 'paypal_tp_auth',     generator: generatePaypalTPAuthTemplate },
-  paypal_tp_auth_en:  { name: 'PayPal/Venmo/CashApp — Third-Party Authorization (EN)',    configKey: 'paypal_tp_auth_en_template_id',  category: 'paypal_tp_auth_en',  generator: generatePaypalTPAuthTemplate_EN },
-  paypal_tp_auth_es:  { name: 'PayPal/Venmo/CashApp — Third-Party Authorization (EN+ES)', configKey: 'paypal_tp_auth_es_template_id',  category: 'paypal_tp_auth_es',  generator: generatePaypalTPAuthTemplate_ES },
+  zelle_tp_auth:    { name: 'Zelle — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'zelle_tp_auth_template_id',    category: 'zelle_tp_auth',    generator: generateZelleAuthHtmlTemplate_B },
+  zelle_tp_auth_en: { name: 'Zelle — Authorize Another to Receive · Option B (EN)',    configKey: 'zelle_tp_auth_en_template_id', category: 'zelle_tp_auth_en', generator: generateZelleAuthHtmlTemplate_EN_B },
+  zelle_tp_auth_es: { name: 'Zelle — Authorize Another to Receive · Option B (EN+ES)', configKey: 'zelle_tp_auth_es_template_id', category: 'zelle_tp_auth_es', generator: generateZelleAuthHtmlTemplate_ES_B },
+  ach_tp_auth:      { name: 'ACH — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'ach_tp_auth_template_id',      category: 'ach_tp_auth',      generator: generateACHAuthHtmlTemplate_B },
+  ach_tp_auth_en:   { name: 'ACH — Authorize Another to Receive · Option B (EN)',    configKey: 'ach_tp_auth_en_template_id',   category: 'ach_tp_auth_en',   generator: generateACHAuthHtmlTemplate_EN_B },
+  ach_tp_auth_es:   { name: 'ACH — Authorize Another to Receive · Option B (EN+ES)', configKey: 'ach_tp_auth_es_template_id',   category: 'ach_tp_auth_es',   generator: generateACHAuthHtmlTemplate_ES_B },
+  wire_tp_auth:     { name: 'Wire — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'wire_tp_auth_template_id',     category: 'wire_tp_auth',     generator: generateWireAuthHtmlTemplate_B },
+  wire_tp_auth_en:  { name: 'Wire — Authorize Another to Receive · Option B (EN)',    configKey: 'wire_tp_auth_en_template_id',  category: 'wire_tp_auth_en',  generator: generateWireAuthHtmlTemplate_EN_B },
+  wire_tp_auth_es:  { name: 'Wire — Authorize Another to Receive · Option B (EN+ES)', configKey: 'wire_tp_auth_es_template_id',  category: 'wire_tp_auth_es',  generator: generateWireAuthHtmlTemplate_ES_B },
+  check_tp_auth:    { name: 'Check — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'check_tp_auth_template_id',    category: 'check_tp_auth',    generator: generateCheckInstructionHtmlTemplate_B },
+  check_tp_auth_en: { name: 'Check — Authorize Another to Receive · Option B (EN)',    configKey: 'check_tp_auth_en_template_id', category: 'check_tp_auth_en', generator: generateCheckInstructionHtmlTemplate_EN_B },
+  check_tp_auth_es: { name: 'Check — Authorize Another to Receive · Option B (EN+ES)', configKey: 'check_tp_auth_es_template_id', category: 'check_tp_auth_es', generator: generateCheckInstructionHtmlTemplate_ES_B },
+  cash_tp_auth:     { name: 'Cash — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'cash_tp_auth_template_id',     category: 'cash_tp_auth',     generator: generateCashReceiptHtmlTemplate_B },
+  cash_tp_auth_en:  { name: 'Cash — Authorize Another to Receive · Option B (EN)',    configKey: 'cash_tp_auth_en_template_id',  category: 'cash_tp_auth_en',  generator: generateCashReceiptEnHtmlTemplate_B },
+  cash_tp_auth_es:    { name: 'Cash — Authorize Another to Receive · Option B (EN+ES)', configKey: 'cash_tp_auth_es_template_id',    category: 'cash_tp_auth_es',    generator: generateCashReceiptEsHtmlTemplate_B },
+  paypal_tp_auth:     { name: 'PayPal/Venmo/CashApp — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'paypal_tp_auth_template_id',     category: 'paypal_tp_auth',     generator: generateThirdPartyPayHtmlTemplate_B },
+  paypal_tp_auth_en:  { name: 'PayPal/Venmo/CashApp — Authorize Another to Receive · Option B (EN)',    configKey: 'paypal_tp_auth_en_template_id',  category: 'paypal_tp_auth_en',  generator: generateThirdPartyPayHtmlTemplate_EN_B },
+  paypal_tp_auth_es:  { name: 'PayPal/Venmo/CashApp — Authorize Another to Receive · Option B (EN+ES)', configKey: 'paypal_tp_auth_es_template_id',  category: 'paypal_tp_auth_es',  generator: generateThirdPartyPayHtmlTemplate_ES_B },
+  ach_op_auth:      { name: 'ACH — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'ach_op_auth_template_id',      category: 'ach_op_auth',      generator: generateAchTPAuthTemplate },
+  ach_op_auth_en:   { name: 'ACH — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'ach_op_auth_en_template_id',   category: 'ach_op_auth_en',   generator: generateAchTPAuthTemplate_EN },
+  ach_op_auth_es:   { name: 'ACH — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'ach_op_auth_es_template_id',   category: 'ach_op_auth_es',   generator: generateAchTPAuthTemplate_ES },
+  wire_op_auth:     { name: 'Wire — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'wire_op_auth_template_id',     category: 'wire_op_auth',     generator: generateWireTPAuthTemplate },
+  wire_op_auth_en:  { name: 'Wire — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'wire_op_auth_en_template_id',  category: 'wire_op_auth_en',  generator: generateWireTPAuthTemplate_EN },
+  wire_op_auth_es:  { name: 'Wire — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'wire_op_auth_es_template_id',  category: 'wire_op_auth_es',  generator: generateWireTPAuthTemplate_ES },
+  check_op_auth:    { name: 'Check — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'check_op_auth_template_id',    category: 'check_op_auth',    generator: generateCheckTPAuthTemplate },
+  check_op_auth_en: { name: 'Check — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'check_op_auth_en_template_id', category: 'check_op_auth_en', generator: generateCheckTPAuthTemplate_EN },
+  check_op_auth_es: { name: 'Check — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'check_op_auth_es_template_id', category: 'check_op_auth_es', generator: generateCheckTPAuthTemplate_ES },
+  zelle_op_auth:    { name: 'Zelle — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'zelle_op_auth_template_id',    category: 'zelle_op_auth',    generator: generateZelleTPAuthTemplate },
+  zelle_op_auth_en: { name: 'Zelle — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'zelle_op_auth_en_template_id', category: 'zelle_op_auth_en', generator: generateZelleTPAuthTemplate_EN },
+  zelle_op_auth_es: { name: 'Zelle — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'zelle_op_auth_es_template_id', category: 'zelle_op_auth_es', generator: generateZelleTPAuthTemplate_ES },
+  paypal_op_auth:    { name: 'PayPal/Venmo/CashApp — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'paypal_op_auth_template_id',    category: 'paypal_op_auth',    generator: generatePaypalTPAuthTemplate },
+  paypal_op_auth_en: { name: 'PayPal/Venmo/CashApp — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'paypal_op_auth_en_template_id', category: 'paypal_op_auth_en', generator: generatePaypalTPAuthTemplate_EN },
+  paypal_op_auth_es: { name: 'PayPal/Venmo/CashApp — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'paypal_op_auth_es_template_id', category: 'paypal_op_auth_es', generator: generatePaypalTPAuthTemplate_ES },
+  cash_op_auth:     { name: 'Cash — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'cash_op_auth_template_id',     category: 'cash_op_auth',     generator: generateCashTPAuthTemplate },
+  cash_op_auth_en:  { name: 'Cash — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'cash_op_auth_en_template_id',  category: 'cash_op_auth_en',  generator: generateCashTPAuthTemplate_EN },
+  cash_op_auth_es:  { name: 'Cash — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'cash_op_auth_es_template_id',  category: 'cash_op_auth_es',  generator: generateCashTPAuthTemplate_ES },
   third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方收款账户授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
   third_party_pay_en: { name: 'Third-Party Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
   third_party_pay_es: { name: 'Third-Party Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
