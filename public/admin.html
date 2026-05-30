@@ -3191,6 +3191,7 @@ tr:hover td{background:var(--sky-light)}
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">ACH / Direct Deposit</div>
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">银行直接转账授权 — 三种语言版本</div>
+          <div style="font-size:.78rem;font-weight:700;color:#0c4a6e;margin-bottom:.5rem">① 自己收款</div>
           <div style="margin-bottom:.6rem">
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
             <select id="ds-sel-ach" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('ach_auth', this.value)"><option value="">— 未设置 —</option></select>
@@ -3207,15 +3208,22 @@ tr:hover td{background:var(--sky-light)}
             <div id="ds-cfg-ach-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
           </div>
           <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
-            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">🔄 授权第三方收款</div>
+            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">② 授权他人替自己收款</div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-ach-tp" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('ach_tp_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-ach-tp-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-ach-tp-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('ach_tp_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-ach-tp-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-ach-tp-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('ach_tp_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-ach-tp-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+          </div>
+          <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
+            <div style="font-size:.78rem;font-weight:700;color:#b45309;margin-bottom:.5rem">③ 第三方签字</div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-ach-op" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('ach_op_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-ach-op-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-ach-op-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('ach_op_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-ach-op-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-ach-op-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('ach_op_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-ach-op-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">🏦 Wire Transfer</div>
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">电汇付款授权及银行账户确认 — 三种语言版本</div>
+          <div style="font-size:.78rem;font-weight:700;color:#0c4a6e;margin-bottom:.5rem">① 自己收款</div>
           <div style="margin-bottom:.6rem">
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
             <select id="ds-sel-wire" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('wire_auth', this.value)"><option value="">— 未设置 —</option></select>
@@ -3232,15 +3240,22 @@ tr:hover td{background:var(--sky-light)}
             <div id="ds-cfg-wire-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
           </div>
           <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
-            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">🔄 授权第三方收款</div>
+            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">② 授权他人替自己收款</div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-wire-tp" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('wire_tp_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-wire-tp-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-wire-tp-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('wire_tp_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-wire-tp-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-wire-tp-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('wire_tp_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-wire-tp-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+          </div>
+          <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
+            <div style="font-size:.78rem;font-weight:700;color:#b45309;margin-bottom:.5rem">③ 第三方签字</div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-wire-op" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('wire_op_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-wire-op-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-wire-op-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('wire_op_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-wire-op-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-wire-op-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('wire_op_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-wire-op-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">✉️ Check / 支票</div>
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">支票付款及邮寄地址确认 — 三种语言版本</div>
+          <div style="font-size:.78rem;font-weight:700;color:#0c4a6e;margin-bottom:.5rem">① 自己收款</div>
           <div style="margin-bottom:.6rem">
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
             <select id="ds-sel-check" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('check_instruction', this.value)"><option value="">— 未设置 —</option></select>
@@ -3257,15 +3272,22 @@ tr:hover td{background:var(--sky-light)}
             <div id="ds-cfg-check-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
           </div>
           <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
-            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">🔄 授权第三方收款</div>
+            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">② 授权他人替自己收款</div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-check-tp" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('check_tp_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-check-tp-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-check-tp-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('check_tp_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-check-tp-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-check-tp-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('check_tp_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-check-tp-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+          </div>
+          <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
+            <div style="font-size:.78rem;font-weight:700;color:#b45309;margin-bottom:.5rem">③ 第三方签字</div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-check-op" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('check_op_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-check-op-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-check-op-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('check_op_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-check-op-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-check-op-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('check_op_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-check-op-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">Zelle</div>
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">Zelle 收款授权及账户确认 — 三种语言版本</div>
+          <div style="font-size:.78rem;font-weight:700;color:#0c4a6e;margin-bottom:.5rem">① 自己收款</div>
           <div style="margin-bottom:.6rem">
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
             <select id="ds-sel-zelle" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('zelle_auth', this.value)"><option value="">— 未设置 —</option></select>
@@ -3282,15 +3304,22 @@ tr:hover td{background:var(--sky-light)}
             <div id="ds-cfg-zelle-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
           </div>
           <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
-            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">🔄 授权第三方收款</div>
+            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">② 授权他人替自己收款</div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-zelle-tp" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('zelle_tp_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-zelle-tp-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-zelle-tp-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('zelle_tp_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-zelle-tp-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-zelle-tp-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('zelle_tp_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-zelle-tp-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+          </div>
+          <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
+            <div style="font-size:.78rem;font-weight:700;color:#b45309;margin-bottom:.5rem">③ 第三方签字</div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-zelle-op" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('zelle_op_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-zelle-op-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-zelle-op-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('zelle_op_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-zelle-op-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-zelle-op-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('zelle_op_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-zelle-op-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">💳 PayPal / Venmo / CashApp</div>
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">第三方平台付款授权 — 三种语言版本</div>
+          <div style="font-size:.78rem;font-weight:700;color:#0c4a6e;margin-bottom:.5rem">① 自己收款</div>
           <div style="margin-bottom:.6rem">
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
             <select id="ds-sel-third-party" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay', this.value)"><option value="">— 未设置 —</option></select>
@@ -3307,15 +3336,22 @@ tr:hover td{background:var(--sky-light)}
             <div id="ds-cfg-third-party-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
           </div>
           <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
-            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">🔄 授权第三方收款</div>
+            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">② 授权他人替自己收款</div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-paypal-tp" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('paypal_tp_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-paypal-tp-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-paypal-tp-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('paypal_tp_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-paypal-tp-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-paypal-tp-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('paypal_tp_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-paypal-tp-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+          </div>
+          <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
+            <div style="font-size:.78rem;font-weight:700;color:#b45309;margin-bottom:.5rem">③ 第三方签字</div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-paypal-op" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('paypal_op_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-paypal-op-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-paypal-op-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('paypal_op_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-paypal-op-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-paypal-op-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('paypal_op_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-paypal-op-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">💵 现金签收</div>
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">Cash Payment Receipt — 三种语言版本</div>
+          <div style="font-size:.78rem;font-weight:700;color:#0c4a6e;margin-bottom:.5rem">① 自己收款</div>
           <div style="margin-bottom:.6rem">
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
             <select id="ds-sel-cash" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('cash_receipt', this.value)"><option value="">— 未设置 —</option></select>
@@ -3332,10 +3368,16 @@ tr:hover td{background:var(--sky-light)}
             <div id="ds-cfg-cash-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
           </div>
           <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
-            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">🔄 授权第三方收款</div>
+            <div style="font-size:.78rem;font-weight:700;color:#1565c0;margin-bottom:.5rem">② 授权他人替自己收款</div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-cash-tp" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('cash_tp_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-cash-tp-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-cash-tp-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('cash_tp_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-cash-tp-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
             <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-cash-tp-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('cash_tp_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-cash-tp-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+          </div>
+          <div style="border-top:1px dashed #cbd5e1;margin-top:.75rem;padding-top:.6rem">
+            <div style="font-size:.78rem;font-weight:700;color:#b45309;margin-bottom:.5rem">③ 第三方签字</div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">中英</div><select id="ds-sel-cash-op" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('cash_op_auth', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-cash-op-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div style="margin-bottom:.4rem"><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英文</div><select id="ds-sel-cash-op-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('cash_op_auth_en', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-cash-op-en-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
+            <div><div style="font-size:.72rem;color:#475569;margin-bottom:.2rem">英西</div><select id="ds-sel-cash-op-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.3rem .5rem;font-size:.8rem;outline:none" onchange="dsSetTemplate('cash_op_auth_es', this.value)"><option value="">— 未设置 —</option></select><div id="ds-cfg-cash-op-es-info" style="font-size:.72rem;color:#64748b;margin-top:.15rem"></div></div>
           </div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
@@ -3374,68 +3416,6 @@ tr:hover td{background:var(--sky-light)}
             <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
             <select id="ds-sel-invoice-approval-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('invoice_approval_es', this.value)"><option value="">— 未设置 —</option></select>
             <div id="ds-cfg-invoice-approval-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 授权他人付款 (Authorize Another Party to Pay) -->
-      <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin:1.5rem 0 .5rem">🧾 授权他人付款（代付授权）</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem">
-        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem;background:#fffbeb">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">ACH / Direct Deposit</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">授权他人代为发起 ACH 付款 — 三种语言版本</div>
-          <div style="margin-bottom:.6rem">
-            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
-            <select id="ds-sel-ach-op" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('ach_op_auth', this.value)"><option value="">— 未设置 —</option></select>
-            <div id="ds-cfg-ach-op-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-          </div>
-          <div style="margin-bottom:.6rem">
-            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
-            <select id="ds-sel-ach-op-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('ach_op_auth_en', this.value)"><option value="">— 未设置 —</option></select>
-            <div id="ds-cfg-ach-op-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-          </div>
-          <div>
-            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
-            <select id="ds-sel-ach-op-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('ach_op_auth_es', this.value)"><option value="">— 未设置 —</option></select>
-            <div id="ds-cfg-ach-op-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-          </div>
-        </div>
-        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem;background:#fffbeb">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">🏦 Wire Transfer</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">授权他人代为发起电汇 — 三种语言版本</div>
-          <div style="margin-bottom:.6rem">
-            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
-            <select id="ds-sel-wire-op" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('wire_op_auth', this.value)"><option value="">— 未设置 —</option></select>
-            <div id="ds-cfg-wire-op-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-          </div>
-          <div style="margin-bottom:.6rem">
-            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
-            <select id="ds-sel-wire-op-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('wire_op_auth_en', this.value)"><option value="">— 未设置 —</option></select>
-            <div id="ds-cfg-wire-op-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-          </div>
-          <div>
-            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
-            <select id="ds-sel-wire-op-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('wire_op_auth_es', this.value)"><option value="">— 未设置 —</option></select>
-            <div id="ds-cfg-wire-op-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-          </div>
-        </div>
-        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem;background:#fffbeb">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">✉️ Check / 支票</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.75rem">授权他人代为开立/邮寄支票 — 三种语言版本</div>
-          <div style="margin-bottom:.6rem">
-            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">中英 (ZH+EN)</div>
-            <select id="ds-sel-check-op" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('check_op_auth', this.value)"><option value="">— 未设置 —</option></select>
-            <div id="ds-cfg-check-op-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-          </div>
-          <div style="margin-bottom:.6rem">
-            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英文 (EN)</div>
-            <select id="ds-sel-check-op-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('check_op_auth_en', this.value)"><option value="">— 未设置 —</option></select>
-            <div id="ds-cfg-check-op-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
-          </div>
-          <div>
-            <div style="font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.25rem">英西 (EN+ES)</div>
-            <select id="ds-sel-check-op-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('check_op_auth_es', this.value)"><option value="">— 未设置 —</option></select>
-            <div id="ds-cfg-check-op-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
           </div>
         </div>
       </div>
@@ -26238,16 +26218,25 @@ const _DS_SELECTORS = [
   { key: 'cash_tp_auth_template_id',     selId: 'ds-sel-cash-tp',     infoId: 'ds-cfg-cash-tp-info',     label: '现金第三方(中英)',    doc_type: 'cash_tp_auth' },
   { key: 'cash_tp_auth_en_template_id',  selId: 'ds-sel-cash-tp-en',  infoId: 'ds-cfg-cash-tp-en-info',  label: '现金第三方(英文)',    doc_type: 'cash_tp_auth_en' },
   { key: 'cash_tp_auth_es_template_id',  selId: 'ds-sel-cash-tp-es',  infoId: 'ds-cfg-cash-tp-es-info',  label: '现金第三方(英西)',    doc_type: 'cash_tp_auth_es' },
-  // 代付授权（授权他人付款）
-  { key: 'ach_op_auth_template_id',      selId: 'ds-sel-ach-op',      infoId: 'ds-cfg-ach-op-info',      label: 'ACH代付(中英)',     doc_type: 'ach_op_auth' },
-  { key: 'ach_op_auth_en_template_id',   selId: 'ds-sel-ach-op-en',   infoId: 'ds-cfg-ach-op-en-info',   label: 'ACH代付(英文)',     doc_type: 'ach_op_auth_en' },
-  { key: 'ach_op_auth_es_template_id',   selId: 'ds-sel-ach-op-es',   infoId: 'ds-cfg-ach-op-es-info',   label: 'ACH代付(英西)',     doc_type: 'ach_op_auth_es' },
-  { key: 'wire_op_auth_template_id',     selId: 'ds-sel-wire-op',     infoId: 'ds-cfg-wire-op-info',     label: '电汇代付(中英)',     doc_type: 'wire_op_auth' },
-  { key: 'wire_op_auth_en_template_id',  selId: 'ds-sel-wire-op-en',  infoId: 'ds-cfg-wire-op-en-info',  label: '电汇代付(英文)',     doc_type: 'wire_op_auth_en' },
-  { key: 'wire_op_auth_es_template_id',  selId: 'ds-sel-wire-op-es',  infoId: 'ds-cfg-wire-op-es-info',  label: '电汇代付(英西)',     doc_type: 'wire_op_auth_es' },
-  { key: 'check_op_auth_template_id',    selId: 'ds-sel-check-op',    infoId: 'ds-cfg-check-op-info',    label: '支票代付(中英)',     doc_type: 'check_op_auth' },
-  { key: 'check_op_auth_en_template_id', selId: 'ds-sel-check-op-en', infoId: 'ds-cfg-check-op-en-info', label: '支票代付(英文)',     doc_type: 'check_op_auth_en' },
-  { key: 'check_op_auth_es_template_id', selId: 'ds-sel-check-op-es', infoId: 'ds-cfg-check-op-es-info', label: '支票代付(英西)',     doc_type: 'check_op_auth_es' },
+  // 第三方签字（授权他人替自己收款，对方签署确认）
+  { key: 'ach_op_auth_template_id',      selId: 'ds-sel-ach-op',      infoId: 'ds-cfg-ach-op-info',      label: 'ACH第三方签字(中英)',     doc_type: 'ach_op_auth' },
+  { key: 'ach_op_auth_en_template_id',   selId: 'ds-sel-ach-op-en',   infoId: 'ds-cfg-ach-op-en-info',   label: 'ACH第三方签字(英文)',     doc_type: 'ach_op_auth_en' },
+  { key: 'ach_op_auth_es_template_id',   selId: 'ds-sel-ach-op-es',   infoId: 'ds-cfg-ach-op-es-info',   label: 'ACH第三方签字(英西)',     doc_type: 'ach_op_auth_es' },
+  { key: 'wire_op_auth_template_id',     selId: 'ds-sel-wire-op',     infoId: 'ds-cfg-wire-op-info',     label: '电汇第三方签字(中英)',     doc_type: 'wire_op_auth' },
+  { key: 'wire_op_auth_en_template_id',  selId: 'ds-sel-wire-op-en',  infoId: 'ds-cfg-wire-op-en-info',  label: '电汇第三方签字(英文)',     doc_type: 'wire_op_auth_en' },
+  { key: 'wire_op_auth_es_template_id',  selId: 'ds-sel-wire-op-es',  infoId: 'ds-cfg-wire-op-es-info',  label: '电汇第三方签字(英西)',     doc_type: 'wire_op_auth_es' },
+  { key: 'check_op_auth_template_id',    selId: 'ds-sel-check-op',    infoId: 'ds-cfg-check-op-info',    label: '支票第三方签字(中英)',     doc_type: 'check_op_auth' },
+  { key: 'check_op_auth_en_template_id', selId: 'ds-sel-check-op-en', infoId: 'ds-cfg-check-op-en-info', label: '支票第三方签字(英文)',     doc_type: 'check_op_auth_en' },
+  { key: 'check_op_auth_es_template_id', selId: 'ds-sel-check-op-es', infoId: 'ds-cfg-check-op-es-info', label: '支票第三方签字(英西)',     doc_type: 'check_op_auth_es' },
+  { key: 'zelle_op_auth_template_id',    selId: 'ds-sel-zelle-op',    infoId: 'ds-cfg-zelle-op-info',    label: 'Zelle第三方签字(中英)', doc_type: 'zelle_op_auth' },
+  { key: 'zelle_op_auth_en_template_id', selId: 'ds-sel-zelle-op-en', infoId: 'ds-cfg-zelle-op-en-info', label: 'Zelle第三方签字(英文)', doc_type: 'zelle_op_auth_en' },
+  { key: 'zelle_op_auth_es_template_id', selId: 'ds-sel-zelle-op-es', infoId: 'ds-cfg-zelle-op-es-info', label: 'Zelle第三方签字(英西)', doc_type: 'zelle_op_auth_es' },
+  { key: 'paypal_op_auth_template_id',   selId: 'ds-sel-paypal-op',   infoId: 'ds-cfg-paypal-op-info',   label: 'PayPal第三方签字(中英)', doc_type: 'paypal_op_auth' },
+  { key: 'paypal_op_auth_en_template_id',selId: 'ds-sel-paypal-op-en',infoId: 'ds-cfg-paypal-op-en-info',label: 'PayPal第三方签字(英文)', doc_type: 'paypal_op_auth_en' },
+  { key: 'paypal_op_auth_es_template_id',selId: 'ds-sel-paypal-op-es',infoId: 'ds-cfg-paypal-op-es-info',label: 'PayPal第三方签字(英西)', doc_type: 'paypal_op_auth_es' },
+  { key: 'cash_op_auth_template_id',     selId: 'ds-sel-cash-op',     infoId: 'ds-cfg-cash-op-info',     label: '现金第三方签字(中英)',  doc_type: 'cash_op_auth' },
+  { key: 'cash_op_auth_en_template_id',  selId: 'ds-sel-cash-op-en',  infoId: 'ds-cfg-cash-op-en-info',  label: '现金第三方签字(英文)',  doc_type: 'cash_op_auth_en' },
+  { key: 'cash_op_auth_es_template_id',  selId: 'ds-sel-cash-op-es',  infoId: 'ds-cfg-cash-op-es-info',  label: '现金第三方签字(英西)',  doc_type: 'cash_op_auth_es' },
   // 发票
   { key: 'contractor_invoice_template_id',    selId: 'ds-sel-contractor-inv',    infoId: 'ds-cfg-contractor-inv-info',    label: '发票(中英)',        doc_type: 'contractor_invoice' },
   { key: 'contractor_invoice_en_template_id', selId: 'ds-sel-contractor-inv-en', infoId: 'ds-cfg-contractor-inv-en-info', label: '发票(英文)',        doc_type: 'contractor_invoice_en' },
@@ -26279,7 +26268,7 @@ function _dsRefreshSelects() {
 const _DS_CAT_GROUPS = {
   __contract__: ['company_contract','company_contract_en','company_contract_es','worker_1099','worker_1099_en','worker_1099_es','worker_w2','worker_w2_en','worker_w2_es','contract'],
   __tax__:      ['w4','w9','w9_es','w9_individual','w9_individual_es','w8ben','w8ben_es','w8bene','w8bene_es','form8233','i9','i9_es','w7','w7_es','il_w4_en','il_w4_es','tax'],
-  __payment__:  ['ach_auth','ach_auth_en','ach_auth_es','wire_auth','wire_auth_en','wire_auth_es','check_instruction','check_instruction_en','check_instruction_es','zelle_auth','zelle_auth_en','zelle_auth_es','third_party_pay','third_party_pay_en','third_party_pay_es','cash_receipt','cash_receipt_en','cash_receipt_es','ach_tp_auth','ach_tp_auth_en','ach_tp_auth_es','wire_tp_auth','wire_tp_auth_en','wire_tp_auth_es','check_tp_auth','check_tp_auth_en','check_tp_auth_es','zelle_tp_auth','zelle_tp_auth_en','zelle_tp_auth_es','paypal_tp_auth','paypal_tp_auth_en','paypal_tp_auth_es','cash_tp_auth','cash_tp_auth_en','cash_tp_auth_es','ach_op_auth','ach_op_auth_en','ach_op_auth_es','wire_op_auth','wire_op_auth_en','wire_op_auth_es','check_op_auth','check_op_auth_en','check_op_auth_es','payment'],
+  __payment__:  ['ach_auth','ach_auth_en','ach_auth_es','wire_auth','wire_auth_en','wire_auth_es','check_instruction','check_instruction_en','check_instruction_es','zelle_auth','zelle_auth_en','zelle_auth_es','third_party_pay','third_party_pay_en','third_party_pay_es','cash_receipt','cash_receipt_en','cash_receipt_es','ach_tp_auth','ach_tp_auth_en','ach_tp_auth_es','wire_tp_auth','wire_tp_auth_en','wire_tp_auth_es','check_tp_auth','check_tp_auth_en','check_tp_auth_es','zelle_tp_auth','zelle_tp_auth_en','zelle_tp_auth_es','paypal_tp_auth','paypal_tp_auth_en','paypal_tp_auth_es','cash_tp_auth','cash_tp_auth_en','cash_tp_auth_es','ach_op_auth','ach_op_auth_en','ach_op_auth_es','wire_op_auth','wire_op_auth_en','wire_op_auth_es','check_op_auth','check_op_auth_en','check_op_auth_es','zelle_op_auth','zelle_op_auth_en','zelle_op_auth_es','paypal_op_auth','paypal_op_auth_en','paypal_op_auth_es','cash_op_auth','cash_op_auth_en','cash_op_auth_es','payment'],
   __invoice__:  ['contractor_invoice','contractor_invoice_en','contractor_invoice_es','invoice'],
   __approval__: ['invoice_approval','invoice_approval_en','invoice_approval_es'],
 };
@@ -26786,8 +26775,10 @@ function dsChangeCategoryModal(dsTemplateId) {
   const currentCat = tpl ? (tpl.category || '') : '';
   const currentBase = _dsCatBase(currentCat);
   const _tpToBase = { ach_tp_auth:'ach_auth', wire_tp_auth:'wire_auth', check_tp_auth:'check_instruction', zelle_tp_auth:'zelle_auth', paypal_tp_auth:'third_party_pay', cash_tp_auth:'cash_receipt' };
+  const _opToBase = { ach_op_auth:'ach_auth', wire_op_auth:'wire_auth', check_op_auth:'check_instruction', zelle_op_auth:'zelle_auth', paypal_op_auth:'third_party_pay', cash_op_auth:'cash_receipt' };
   const _isTP = _tpToBase.hasOwnProperty(currentBase);
-  const radioBase = _isTP ? _tpToBase[currentBase] : currentBase;
+  const _isOP = _opToBase.hasOwnProperty(currentBase);
+  const radioBase = _isTP ? _tpToBase[currentBase] : (_isOP ? _opToBase[currentBase] : currentBase);
 
   const groups = [
     { title: '合同', items: [
@@ -26843,21 +26834,26 @@ function dsChangeCategoryModal(dsTemplateId) {
     return `<div style="margin-bottom:.9rem"><div style="font-size:.73rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">${g.title}</div><div style="display:flex;flex-wrap:wrap;gap:.1rem">${items}</div></div>`;
   }).join('');
 
-  const _paySelected = _isTP || _paySet.has(currentBase);
+  const _paySelected = _isTP || _isOP || _paySet.has(currentBase);
   const tpChecked = _isTP ? 'checked' : '';
   const tpDisabled = _paySelected ? '' : 'disabled';
   const tpOpacity = _paySelected ? '1' : '.4';
+  const opChecked = _isOP ? 'checked' : '';
   const tpCheckboxHtml = `<style>
-    #ds-cat-tp-cb{appearance:none;-webkit-appearance:none;width:15px;height:15px;border:2px solid #767676;border-radius:50%;background:#fff;cursor:pointer;flex-shrink:0;outline:none;transition:all .15s}
-    #ds-cat-tp-cb:checked{border-color:#0284c7;background:#0284c7;box-shadow:inset 0 0 0 2.5px #fff}
-    #ds-cat-tp-cb:disabled{border-color:#d1d5db;background:#f3f4f6;cursor:not-allowed}
+    #ds-cat-tp-cb,#ds-cat-op-cb{appearance:none;-webkit-appearance:none;width:15px;height:15px;border:2px solid #767676;border-radius:50%;background:#fff;cursor:pointer;flex-shrink:0;outline:none;transition:all .15s}
+    #ds-cat-tp-cb:checked,#ds-cat-op-cb:checked{border-color:#0284c7;background:#0284c7;box-shadow:inset 0 0 0 2.5px #fff}
+    #ds-cat-tp-cb:disabled,#ds-cat-op-cb:disabled{border-color:#d1d5db;background:#f3f4f6;cursor:not-allowed}
   </style>
   <div id="ds-cat-tp-row" style="margin-bottom:.9rem;opacity:${tpOpacity};transition:opacity .2s">
-    <div style="font-size:.73rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">第三方收款</div>
-    <div style="display:flex;flex-wrap:wrap;gap:.1rem">
+    <div style="font-size:.73rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">收款方式（二选一；都不选＝本人收款）</div>
+    <div style="display:flex;flex-direction:column;gap:.1rem">
       <label style="display:flex;align-items:center;gap:.5rem;padding:.28rem .2rem;cursor:pointer">
         <input type="checkbox" id="ds-cat-tp-cb" ${tpChecked} ${tpDisabled}>
-        <span style="display:inline-block;background:#e0f2fe;color:#0c4a6e;border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700">授权第三方收款</span>
+        <span style="display:inline-block;background:#e0f2fe;color:#0c4a6e;border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700">授权他人替自己收款</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:.5rem;padding:.28rem .2rem;cursor:pointer">
+        <input type="checkbox" id="ds-cat-op-cb" ${opChecked} ${tpDisabled}>
+        <span style="display:inline-block;background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700">第三方签字</span>
       </label>
     </div>
   </div>`;
@@ -26880,14 +26876,23 @@ function dsChangeCategoryModal(dsTemplateId) {
     r.addEventListener('change', () => {
       const row = document.getElementById('ds-cat-tp-row');
       const cb = document.getElementById('ds-cat-tp-cb');
+      const opcb = document.getElementById('ds-cat-op-cb');
       if (!row || !cb) return;
       const sel = _overlay.querySelector('input[name="ds-cat-radio"]:checked');
       const isPay = sel && sel.dataset.pay === '1';
       row.style.opacity = isPay ? '1' : '.4';
       cb.disabled = !isPay;
-      if (!isPay) cb.checked = false;
+      if (opcb) opcb.disabled = !isPay;
+      if (!isPay) { cb.checked = false; if (opcb) opcb.checked = false; }
     });
   });
+  // 第三方收款 与 第三方签字 互斥
+  const _tpCbEl = document.getElementById('ds-cat-tp-cb');
+  const _opCbEl = document.getElementById('ds-cat-op-cb');
+  if (_tpCbEl && _opCbEl) {
+    _tpCbEl.addEventListener('change', () => { if (_tpCbEl.checked) _opCbEl.checked = false; });
+    _opCbEl.addEventListener('change', () => { if (_opCbEl.checked) _tpCbEl.checked = false; });
+  }
 }
 
 async function dsApplyCategoryChanges(dsTemplateId) {
@@ -26896,16 +26901,20 @@ async function dsApplyCategoryChanges(dsTemplateId) {
   if (!selected) { overlay.remove(); return; }
   let baseCat = selected.value;
   const tpCb = overlay.querySelector('#ds-cat-tp-cb');
+  const opCb = overlay.querySelector('#ds-cat-op-cb');
   if (tpCb && tpCb.checked) {
     const _baseToTP = { ach_auth:'ach_tp_auth', wire_auth:'wire_tp_auth', check_instruction:'check_tp_auth', zelle_auth:'zelle_tp_auth', third_party_pay:'paypal_tp_auth', cash_receipt:'cash_tp_auth' };
     if (_baseToTP[baseCat]) baseCat = _baseToTP[baseCat];
+  } else if (opCb && opCb.checked) {
+    const _baseToOP = { ach_auth:'ach_op_auth', wire_auth:'wire_op_auth', check_instruction:'check_op_auth', zelle_auth:'zelle_op_auth', third_party_pay:'paypal_op_auth', cash_receipt:'cash_op_auth' };
+    if (_baseToOP[baseCat]) baseCat = _baseToOP[baseCat];
   }
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
   if (!tpl) { overlay.remove(); return; }
   // Derive full category key from base + current languages
   const suffix = _dsCatLangSuffix(tpl.languages);
   // Only apply suffix to categories that have multi-language variants
-  const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','zelle_auth_rep','third_party_pay','cash_receipt','ach_tp_auth','wire_tp_auth','check_tp_auth','zelle_tp_auth','paypal_tp_auth','cash_tp_auth','contractor_invoice','invoice_approval']);
+  const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','zelle_auth_rep','third_party_pay','cash_receipt','ach_tp_auth','wire_tp_auth','check_tp_auth','zelle_tp_auth','paypal_tp_auth','cash_tp_auth','ach_op_auth','wire_op_auth','check_op_auth','zelle_op_auth','paypal_op_auth','cash_op_auth','contractor_invoice','invoice_approval']);
   const newCat = multiLangBases.has(baseCat) ? baseCat + suffix : baseCat;
   if (tpl.category === newCat) { overlay.remove(); return; }
   try {
@@ -26961,7 +26970,7 @@ async function dsApplyLanguageChanges(localId) {
     await api(`/admin/docuseal/my-templates/${localId}/languages`, { method: 'PUT', body: JSON.stringify({ languages: checked }) });
     tpl.languages = checked.join(',');
     // If the template has a multi-language base category, sync the category suffix to match new languages
-    const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','zelle_auth_rep','third_party_pay','cash_receipt','ach_tp_auth','wire_tp_auth','check_tp_auth','zelle_tp_auth','paypal_tp_auth','cash_tp_auth','ach_op_auth','wire_op_auth','check_op_auth','contractor_invoice','invoice_approval']);
+    const multiLangBases = new Set(['company_contract','worker_1099','worker_w2','ach_auth','wire_auth','check_instruction','zelle_auth','zelle_auth_rep','third_party_pay','cash_receipt','ach_tp_auth','wire_tp_auth','check_tp_auth','zelle_tp_auth','paypal_tp_auth','cash_tp_auth','ach_op_auth','wire_op_auth','check_op_auth','zelle_op_auth','paypal_op_auth','cash_op_auth','contractor_invoice','invoice_approval']);
     const base = _dsCatBase(tpl.category || '');
     if (multiLangBases.has(base)) {
       const newCat = base + _dsCatLangSuffix(tpl.languages);
