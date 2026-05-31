@@ -32246,17 +32246,78 @@ async function loadCpyList() {
         <td style="font-weight:600">${_cpyEscape(g.worker_name)}</td>
         <td style="font-weight:700;color:#15803d">${_cpyFmtMoney(g.amount)}</td>
         <td colspan="8" style="color:var(--gray-500);font-size:.82rem">${g.records.length} 笔付款 · 点击展开</td>
+      </tr>
+      <tr class="cpyGrpRows-${gIdx}" style="display:none">
+        <td colspan="11" style="background:#f8fafc;padding:.75rem 1rem">${_cpyListGroupPanel(g, gIdx)}</td>
       </tr>`;
-      const detail = g.records.map(r => _cpyListRecordRow(r, gIdx)).join('');
-      return header + detail;
+      return header;
     }).join('');
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="11" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
   }
 }
 
-// One per-record detail row inside a company+worker group (hidden until expanded).
-function _cpyListRecordRow(r, gIdx) {
+// Expanded panel for a company+worker group: left = mini month calendar(s) with
+// paid days highlighted; right = each payment's detail (clickable calendar days
+// highlight the matching detail entries).
+function _cpyListGroupPanel(g, gIdx) {
+  // Bucket the group's records by month, and within a month by day-of-month.
+  const byMonth = new Map();
+  g.records.forEach(r => {
+    const ym = String(r.payment_date || '').slice(0, 7);
+    const day = parseInt(String(r.payment_date || '').slice(8, 10));
+    if (!ym || !day) return;
+    let mm = byMonth.get(ym);
+    if (!mm) { mm = new Map(); byMonth.set(ym, mm); }
+    let dd = mm.get(day);
+    if (!dd) { dd = { count: 0, amount: 0 }; mm.set(day, dd); }
+    dd.count += 1; dd.amount += Number(r.amount) || 0;
+  });
+  const cals = Array.from(byMonth.keys()).sort()
+    .map(ym => _cpyMiniCalendar(gIdx, ym, byMonth.get(ym))).join('');
+  const items = g.records.slice()
+    .sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)))
+    .map(r => _cpyDetailItem(r, gIdx)).join('');
+  return `
+    <div style="display:flex;gap:1.25rem;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:0 0 auto">${cals}</div>
+      <div style="flex:1 1 340px;min-width:300px;display:flex;flex-direction:column;gap:.4rem">${items}</div>
+    </div>`;
+}
+
+const _CPY_CAL_WD = ['一', '二', '三', '四', '五', '六', '日'];
+
+// Render a small month calendar; days present in daysMap (Map<dayNum,{count,amount}>)
+// are highlighted and clickable to focus the matching detail entries on the right.
+function _cpyMiniCalendar(gIdx, ym, daysMap) {
+  const [y, m] = ym.split('-').map(Number);
+  if (!y || !m) return '';
+  const lastDay = new Date(y, m, 0).getDate();
+  const firstDow = new Date(y, m - 1, 1).getDay();      // 0=Sun
+  const lead = firstDow === 0 ? 6 : firstDow - 1;        // Monday-based leading blanks
+  const cell = (html, extra = '') => `<div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:.72rem;border-radius:6px;${extra}">${html}</div>`;
+  const head = _CPY_CAL_WD.map(w => cell(`<span style="color:var(--gray-400)">${w}</span>`)).join('');
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push(cell(''));
+  for (let d = 1; d <= lastDay; d++) {
+    const hit = daysMap.get(d);
+    if (hit) {
+      const ds = `${ym}-${String(d).padStart(2, '0')}`;
+      cells.push(cell(`<strong>${d}</strong>`,
+        `background:#dcfce7;color:#166534;cursor:pointer;font-weight:700;border:1px solid #86efac" onclick="cpyCalPick(${gIdx},'${ds}')" title="${_cpyFmtMoney(hit.amount)} · ${hit.count} 笔`));
+    } else {
+      cells.push(cell(`<span style="color:var(--gray-300)">${d}</span>`));
+    }
+  }
+  return `
+    <div style="border:1px solid var(--gray-200);border-radius:10px;padding:.6rem;background:#fff;margin-bottom:.6rem">
+      <div style="font-weight:700;font-size:.82rem;color:#9a3412;margin-bottom:.4rem;text-align:center">📅 ${_cpyEscape(ym)}</div>
+      <div style="display:grid;grid-template-columns:repeat(7,30px);gap:2px">${head}${cells.join('')}</div>
+    </div>`;
+}
+
+// One payment-detail card on the right side of the expanded panel.
+function _cpyDetailItem(r, gIdx) {
   const hrs = Number(r.hours) || 0;
   const rate = Number(r.hourly_rate) || 0;
   const br = Number(r.break_minutes) || 0;
@@ -32264,28 +32325,38 @@ function _cpyListRecordRow(r, gIdx) {
     ? ` · 休${_cpyEscape(r.break_start_time)}–${_cpyEscape(r.break_end_time)}`
     : (br ? ` · 休${br}分` : '');
   const timeStr = (r.clock_in_time && r.clock_out_time)
-    ? `<div style="font-size:.7rem;color:var(--gray-500)">${_cpyEscape(r.clock_in_time)}–${_cpyEscape(r.clock_out_time)}${brStr}</div>`
-    : '';
-  const hrCell = (hrs > 0 && rate > 0)
-    ? `<span style="font-size:.78rem">${hrs}h × ${_cpyFmtMoney(rate)}/h</span>${timeStr}`
-    : `<span style="color:var(--gray-300)">—</span>`;
+    ? ` · ${_cpyEscape(r.clock_in_time)}–${_cpyEscape(r.clock_out_time)}${brStr}` : '';
+  const hrStr = (hrs > 0 && rate > 0) ? `${hrs}h × ${_cpyFmtMoney(rate)}/h${timeStr}` : '—';
+  const method = _CPY_METHOD_LABEL[r.payment_method] || r.payment_method || '—';
+  const notesStr = r.notes ? `<div style="font-size:.74rem;color:var(--gray-500);margin-top:.15rem">备注：${_cpyEscape(r.notes)}</div>` : '';
   return `
-      <tr class="cpyGrpRows-${gIdx}" style="display:none">
-        <td style="padding-left:1.5rem;color:var(--gray-300)">↳</td>
-        <td style="color:var(--gray-400);font-size:.78rem">${_cpyEscape(r.worker_name)}</td>
-        <td style="font-weight:600">${_cpyFmtMoney(r.amount)}</td>
-        <td>${hrCell}</td>
-        <td>${_cpyEscape(r.payment_date)}</td>
-        <td>${_cpyEscape(r.year_month)}</td>
-        <td>${_cpyEscape(_CPY_METHOD_LABEL[r.payment_method] || r.payment_method || '—')}</td>
-        <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${_cpyEscape(r.notes)}">${_cpyEscape(r.notes || '')}</td>
-        <td style="font-size:.75rem;color:var(--gray-500)">${_cpyEscape(r.batch_id || '')}</td>
-        <td style="font-size:.78rem;color:var(--gray-500)">${_cpyEscape(r.created_by || '')}</td>
-        <td>
-          <button class="btn btn-sm btn-outline" onclick="openCpyEdit(${r.id})">编辑</button>
-          <button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
-        </td>
-      </tr>`;
+    <div class="cpyDetItem" data-grp="${gIdx}" data-date="${_cpyEscape(r.payment_date)}"
+      style="border:1px solid var(--gray-200);border-radius:8px;padding:.5rem .7rem;background:#fff;transition:background .2s">
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+        <span style="font-weight:600">${_cpyEscape(r.payment_date)} <span style="color:var(--gray-400);font-weight:400">${_cpyWeekdayOf(r.payment_date)}</span></span>
+        <span style="font-weight:700;color:#15803d">${_cpyFmtMoney(r.amount)}</span>
+        <span style="background:#f1f5f9;border-radius:999px;padding:.05rem .5rem;font-size:.72rem;color:var(--gray-600)">${_cpyEscape(method)}</span>
+        <span style="margin-left:auto;display:flex;gap:.35rem">
+          <button class="btn btn-sm btn-outline" style="padding:.05rem .45rem;font-size:.72rem" onclick="openCpyEdit(${r.id})">编辑</button>
+          <button class="btn btn-sm" style="padding:.05rem .45rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
+        </span>
+      </div>
+      <div style="font-size:.78rem;color:var(--gray-600);margin-top:.2rem">${hrStr}</div>
+      ${notesStr}
+    </div>`;
+}
+
+// Highlight the detail entries on a clicked calendar day and scroll the first into view.
+function cpyCalPick(gIdx, dateStr) {
+  const items = document.querySelectorAll('.cpyDetItem[data-grp="' + gIdx + '"]');
+  let first = null;
+  items.forEach(el => {
+    const on = el.getAttribute('data-date') === dateStr;
+    el.style.background = on ? '#fef9c3' : '#fff';
+    el.style.borderColor = on ? '#fde047' : 'var(--gray-200)';
+    if (on && !first) first = el;
+  });
+  if (first) first.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 function toggleCpyListGroup(gIdx) {
