@@ -1774,6 +1774,72 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════════ Company Payment: Weekly Payout Modal (按周付工资 + 上传凭证) ════════ -->
+<div class="modal-bg" id="cpyWkPayModal"><div class="modal" style="max-width:560px">
+  <h2 style="margin-bottom:.25rem">💰 记录本周付工资</h2>
+  <div id="cpyWkPaySub" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.9rem"></div>
+  <input type="hidden" id="cpyWkPayPartnerId">
+  <input type="hidden" id="cpyWkPayPartnerName">
+  <input type="hidden" id="cpyWkPayWeekStart">
+  <input type="hidden" id="cpyWkPayWeekEnd">
+  <input type="hidden" id="cpyWkPayId">
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+    <div class="field" style="margin:0"><label>付款方式 *</label>
+      <select id="cpyWkPayMethod" onchange="onCpyWkPayMethodChange()">
+        <option value="">— 选择 —</option>
+        <option value="zelle">Zelle</option>
+        <option value="ach">ACH</option>
+        <option value="cash">现金 Cash</option>
+        <option value="check">支票 Check</option>
+        <option value="thirdparty">第三方（PayPal / CashApp…）</option>
+      </select>
+    </div>
+    <div class="field" style="margin:0;display:none" id="cpyWkPayTpWrap"><label>第三方平台 *</label>
+      <input type="text" id="cpyWkPayThirdParty" list="cpyWkPayTpList" placeholder="如 PayPal / CashApp / Venmo">
+      <datalist id="cpyWkPayTpList">
+        <option value="PayPal"></option><option value="CashApp"></option>
+        <option value="Venmo"></option><option value="Zelle"></option>
+      </datalist>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-top:.6rem">
+    <div class="field" style="margin:0"><label>付款主体（哪个银行/公司付的）*</label>
+      <select id="cpyWkPayEntity">
+        <option value="">— 选择 —</option>
+        <option value="prime_anchor_point">Prime Anchor Point LLC</option>
+        <option value="surplus_lane">Surplus Lane Inc</option>
+        <option value="bintique">Bintique Inc</option>
+      </select>
+    </div>
+    <div class="field" style="margin:0"><label>金额 ($)</label>
+      <input type="number" id="cpyWkPayAmount" step="0.01" min="0" placeholder="默认=本周合计">
+    </div>
+  </div>
+
+  <div class="field" style="margin-top:.6rem"><label>备注</label>
+    <textarea id="cpyWkPayNotes" rows="2" placeholder="可选"></textarea>
+  </div>
+
+  <div class="field" style="margin-top:.2rem"><label>付款凭证（截图 / PDF，可拖拽上传）</label>
+    <div id="cpyWkPayDrop"
+      style="border:2px dashed var(--sky);border-radius:10px;padding:1.1rem;text-align:center;color:var(--sky);background:#f0f9ff;cursor:pointer;font-size:.85rem"
+      onclick="document.getElementById('cpyWkPayFile').click()">
+      把文件拖到这里，或点击选择
+      <input type="file" id="cpyWkPayFile" accept="image/*,application/pdf" style="display:none" onchange="onCpyWkPayFilePicked()">
+    </div>
+    <div id="cpyWkPayFileInfo" style="font-size:.8rem;color:var(--gray-600);margin-top:.4rem"></div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-top:1rem">
+    <button class="btn btn-sm" id="cpyWkPayDeleteBtn" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;display:none" onclick="deleteCpyWkPay()">删除本周付款记录</button>
+    <span style="flex:1"></span>
+    <button class="btn btn-outline" onclick="closeCpyWkPayModal()">取消</button>
+    <button class="btn btn-green" onclick="submitCpyWkPay()">保存</button>
+  </div>
+</div></div>
+
 <!-- ════════ 承包商发票 Tab ════════ -->
 <div id="tab-ts-emp-invoice" style="display:none">
   <div class="top">
@@ -32022,6 +32088,14 @@ let _cpyAdHocSeq = 0;
 let _cpyWeeklyGroups = []; // weekly-summary groups (for expandable per-day detail)
 let _cpySummaryRows = []; // monthly-summary rows (for expandable in-month weekly breakdown)
 let _cpyMonthSegs = {}; // monthIdx -> in-month week segments (for nested per-week detail)
+let _cpyWeekPayMap = {}; // `${partner_id}|${week_start}` -> week payout record (method/entity/proof)
+
+const _CPY_PAY_METHOD_LABEL = { zelle: 'Zelle', ach: 'ACH', cash: '现金', check: '支票', thirdparty: '第三方' };
+const _CPY_PAY_ENTITY_LABEL = {
+  prime_anchor_point: 'Prime Anchor Point LLC',
+  surplus_lane: 'Surplus Lane Inc',
+  bintique: 'Bintique Inc',
+};
 
 const _CPY_METHOD_LABEL = { cash: '现金', transfer: '转账', check: '支票', other: '其他' };
 
@@ -32238,6 +32312,7 @@ async function loadCpyWeeklySummary() {
         const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
         g = {
           weekKey,
+          partner_id: r.partner_id || null,
           partner_name: r.partner_name || '—',
           worker_name: r.worker_name || '',
           weekStart: mon,
@@ -32258,16 +32333,21 @@ async function loadCpyWeeklySummary() {
     const workerGroups = Array.from(groups.values());
     _cpyWeeklyGroups = workerGroups;
 
-    // Step 2: roll the person-weeks up into weeks (week → people)
+    // Step 2: roll the person-weeks up into weeks (week → people), and track
+    // per-company subtotals so each company in a week gets its own payout control.
     const weeks = new Map();
     workerGroups.forEach((g, idx) => {
       let w = weeks.get(g.weekKey);
       if (!w) {
-        w = { weekStart: g.weekStart, weekEnd: g.weekEnd, people: [], total: 0 };
+        w = { weekStart: g.weekStart, weekEnd: g.weekEnd, people: [], total: 0, companies: new Map() };
         weeks.set(g.weekKey, w);
       }
       w.people.push({ g, idx });
       w.total += g.amount;
+      const ck = String(g.partner_id == null ? '' : g.partner_id);
+      let c = w.companies.get(ck);
+      if (!c) { c = { partner_id: g.partner_id, partner_name: g.partner_name, subtotal: 0 }; w.companies.set(ck, c); }
+      c.subtotal += g.amount;
     });
     const weekList = Array.from(weeks.values()).sort((a, b) => b.weekStart - a.weekStart);
     weekList.forEach(w => w.people.sort((a, b) => {
@@ -32276,6 +32356,19 @@ async function loadCpyWeeklySummary() {
       return a.g.worker_name.localeCompare(b.g.worker_name);
     }));
 
+    // Fetch existing per-week payout records (method/entity/proof) for the same filter
+    _cpyWeekPayMap = {};
+    _cpyWkPayCtx = {};
+    try {
+      const wpParams = new URLSearchParams();
+      if (partnerId) wpParams.set('partner_id', partnerId);
+      if (month) wpParams.set('year_month', month);
+      const wp = await api('/admin/company-week-payments' + (wpParams.toString() ? '?' + wpParams : ''));
+      (Array.isArray(wp) ? wp : []).forEach(rec => {
+        _cpyWeekPayMap[`${rec.partner_id}|${rec.week_start}`] = rec;
+      });
+    } catch (_) { /* non-fatal */ }
+
     const totalAmt = workerGroups.reduce((s, g) => s + g.amount, 0);
     document.getElementById('cpyFilterTotal').textContent =
       `共 ${weekList.length} 周 · ${workerGroups.length} 人次 · 总额 ${_cpyFmtMoney(totalAmt)}`;
@@ -32283,12 +32376,21 @@ async function loadCpyWeeklySummary() {
     tbody.innerHTML = weekList.map(w => {
       const range = `${_cpyFmtDateKey(w.weekStart)} – ${_cpyFmtDateKey(w.weekEnd)}`;
       const rangeShort = `${_cpyFmtDateMD(w.weekStart)} – ${_cpyFmtDateMD(w.weekEnd)}`;
+      const wkStartKey = _cpyFmtDateKey(w.weekStart);
+      const wkEndKey = _cpyFmtDateKey(w.weekEnd);
+      // One payout chip per company present in this week
+      const payChips = Array.from(w.companies.values())
+        .sort((a, b) => a.partner_name.localeCompare(b.partner_name))
+        .map(c => _cpyWkPayChip(c, wkStartKey, wkEndKey)).join('');
       const header = `
       <tr style="background:#fff7ed">
-        <td colspan="5" style="padding:.55rem .75rem;font-weight:700;color:#9a3412;border-top:2px solid #fdba74">
-          📅 ${_cpyEscape(rangeShort)}（周一–周日）
-          <span style="font-weight:400;color:var(--gray-500);font-size:.8rem">· ${_cpyEscape(range)}</span>
-          <span style="float:right;font-weight:600;color:#15803d">${w.people.length} 人 · 合计 ${_cpyFmtMoney(w.total)}</span>
+        <td colspan="5" style="padding:.55rem .75rem;border-top:2px solid #fdba74">
+          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+            <span style="font-weight:700;color:#9a3412">📅 ${_cpyEscape(rangeShort)}（周一–周日）</span>
+            <span style="font-weight:400;color:var(--gray-500);font-size:.8rem">· ${_cpyEscape(range)}</span>
+            <span style="margin-left:auto;font-weight:600;color:#15803d">${w.people.length} 人 · 合计 ${_cpyFmtMoney(w.total)}</span>
+          </div>
+          <div style="margin-top:.45rem;display:flex;flex-wrap:wrap;gap:.5rem">${payChips}</div>
         </td>
       </tr>`;
       const peopleRows = w.people.map(({ g, idx }) => {
@@ -32323,6 +32425,176 @@ function _cpyWeekdayOf(dateStr) {
   const day = d.getDay(); // 0=Sun
   return _CPY_WEEKDAY_LABEL[day === 0 ? 6 : day - 1];
 }
+
+let _cpyWkPayCtx = {}; // ctxKey -> {partner_id, partner_name, weekStart, weekEnd, subtotal}
+
+// Render a per-company payout chip on a week header: shows recorded method/entity
+// (+ proof link) when present, otherwise a "付工资" button. company has {partner_id, partner_name, subtotal}.
+// Registers a ctx entry so the inline onclick can pass only a safe key (no name interpolation).
+function _cpyWkPayChip(company, weekStartKey, weekEndKey) {
+  const pid = company.partner_id;
+  const nameEsc = _cpyEscape(company.partner_name || '—');
+  const disabled = pid == null;
+  const ctxKey = `${pid}|${weekStartKey}`;
+  if (!disabled) {
+    _cpyWkPayCtx[ctxKey] = {
+      partner_id: pid, partner_name: company.partner_name || '',
+      weekStart: weekStartKey, weekEnd: weekEndKey, subtotal: company.subtotal,
+    };
+  }
+  const rec = (pid != null) ? _cpyWeekPayMap[ctxKey] : null;
+  const openBtn = (label, cls) =>
+    `<button class="btn btn-sm ${cls}" style="padding:.12rem .5rem;font-size:.74rem" ${disabled ? 'disabled title="散工无公司，无法记录"' : `onclick="event.stopPropagation();openCpyWkPayModalByKey('${ctxKey}')"`}>${label}</button>`;
+  if (rec) {
+    const method = _CPY_PAY_METHOD_LABEL[rec.payment_method] || rec.payment_method || '—';
+    const methodStr = (rec.payment_method === 'thirdparty' && rec.third_party_platform)
+      ? `${method}·${_cpyEscape(rec.third_party_platform)}` : method;
+    const entity = _CPY_PAY_ENTITY_LABEL[rec.paying_entity] || rec.paying_entity || '—';
+    const proofBtn = rec.proof_url
+      ? `<button class="btn btn-sm btn-outline" style="padding:.1rem .4rem;font-size:.72rem" onclick="event.stopPropagation();viewCpyWkProof('${_cpyEscape(rec.proof_url)}')">查看凭证</button>`
+      : '<span style="color:#b45309;font-size:.72rem">无凭证</span>';
+    return `<span style="display:inline-flex;align-items:center;gap:.4rem;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:.2rem .6rem;font-size:.76rem">
+      <span style="color:#065f46;font-weight:600">✓ ${nameEsc}</span>
+      <span style="color:#047857">${methodStr} · ${_cpyEscape(entity)}</span>
+      ${proofBtn}
+      ${openBtn('编辑', 'btn-outline')}
+    </span>`;
+  }
+  return `<span style="display:inline-flex;align-items:center;gap:.4rem;background:#fff;border:1px dashed #fdba74;border-radius:999px;padding:.2rem .6rem;font-size:.76rem">
+    <span style="color:#9a3412;font-weight:600">${nameEsc}</span>
+    <span style="color:var(--gray-400)">未记录付款</span>
+    ${openBtn('💰 付工资', 'btn-green')}
+  </span>`;
+}
+
+function openCpyWkPayModalByKey(ctxKey) {
+  const c = _cpyWkPayCtx[ctxKey];
+  if (!c) return;
+  openCpyWkPayModal(c.partner_id, c.partner_name, c.weekStart, c.weekEnd, c.subtotal);
+}
+
+async function viewCpyWkProof(url) {
+  // Proof URLs from R2 are presigned (directly openable). Local mode returns
+  // /uploads/<name> or /data-file/<key>, which need the auth header → fetch as blob.
+  if (/^https?:\/\//i.test(url)) { window.open(url, '_blank'); return; }
+  try {
+    const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    if (!resp.ok) throw new Error('打开失败');
+    const blob = await resp.blob();
+    window.open(URL.createObjectURL(blob), '_blank');
+  } catch (e) { showToast('打开凭证失败：' + (e.message || e), 'error'); }
+}
+
+let _cpyWkPayFile = null;
+
+function openCpyWkPayModal(partnerId, partnerName, weekStart, weekEnd, subtotal) {
+  _cpyWkPayFile = null;
+  const rec = (partnerId != null) ? _cpyWeekPayMap[`${partnerId}|${weekStart}`] : null;
+  document.getElementById('cpyWkPayPartnerId').value = partnerId == null ? '' : partnerId;
+  document.getElementById('cpyWkPayPartnerName').value = partnerName || '';
+  document.getElementById('cpyWkPayWeekStart').value = weekStart;
+  document.getElementById('cpyWkPayWeekEnd').value = weekEnd;
+  document.getElementById('cpyWkPayId').value = rec ? rec.id : '';
+  document.getElementById('cpyWkPaySub').innerHTML =
+    `${_cpyEscape(partnerName || '—')} · ${_cpyEscape(weekStart)} – ${_cpyEscape(weekEnd)}（周一–周日）· 本周合计 <strong>${_cpyFmtMoney(subtotal)}</strong>`;
+  document.getElementById('cpyWkPayMethod').value = rec ? (rec.payment_method || '') : '';
+  document.getElementById('cpyWkPayThirdParty').value = rec ? (rec.third_party_platform || '') : '';
+  document.getElementById('cpyWkPayEntity').value = rec ? (rec.paying_entity || '') : '';
+  document.getElementById('cpyWkPayAmount').value = rec && rec.amount ? rec.amount : (subtotal ? Number(subtotal).toFixed(2) : '');
+  document.getElementById('cpyWkPayNotes').value = rec ? (rec.notes || '') : '';
+  onCpyWkPayMethodChange();
+  const info = document.getElementById('cpyWkPayFileInfo');
+  if (rec && rec.proof_file_name) {
+    info.innerHTML = `已有凭证：${_cpyEscape(rec.proof_file_name)}${rec.proof_url ? ` · <a href="#" onclick="event.preventDefault();viewCpyWkProof('${_cpyEscape(rec.proof_url)}')" style="color:var(--sky)">查看</a>` : ''}<br><span style="color:var(--gray-400)">重新上传会替换它</span>`;
+  } else { info.textContent = ''; }
+  document.getElementById('cpyWkPayFile').value = '';
+  document.getElementById('cpyWkPayDeleteBtn').style.display = rec ? '' : 'none';
+  document.getElementById('cpyWkPayModal').classList.add('show');
+}
+
+function closeCpyWkPayModal() {
+  document.getElementById('cpyWkPayModal').classList.remove('show');
+  _cpyWkPayFile = null;
+}
+
+function onCpyWkPayMethodChange() {
+  const m = document.getElementById('cpyWkPayMethod').value;
+  document.getElementById('cpyWkPayTpWrap').style.display = (m === 'thirdparty') ? '' : 'none';
+}
+
+function onCpyWkPayFilePicked() {
+  const f = document.getElementById('cpyWkPayFile').files[0];
+  _cpyWkPayFile = f || null;
+  document.getElementById('cpyWkPayFileInfo').textContent = f ? `已选择：${f.name}（${(f.size / 1024).toFixed(0)} KB）` : '';
+}
+
+async function submitCpyWkPay() {
+  const partnerId = document.getElementById('cpyWkPayPartnerId').value;
+  const weekStart = document.getElementById('cpyWkPayWeekStart').value;
+  const method = document.getElementById('cpyWkPayMethod').value;
+  const entity = document.getElementById('cpyWkPayEntity').value;
+  if (!partnerId) return showToast('缺少公司信息', 'error');
+  if (!method) return showToast('请选择付款方式', 'error');
+  if (method === 'thirdparty' && !document.getElementById('cpyWkPayThirdParty').value.trim())
+    return showToast('请填写第三方平台', 'error');
+  if (!entity) return showToast('请选择付款主体', 'error');
+  const fd = new FormData();
+  fd.append('partner_id', partnerId);
+  fd.append('partner_name', document.getElementById('cpyWkPayPartnerName').value || '');
+  fd.append('week_start', weekStart);
+  fd.append('week_end', document.getElementById('cpyWkPayWeekEnd').value);
+  fd.append('payment_method', method);
+  fd.append('third_party_platform', document.getElementById('cpyWkPayThirdParty').value.trim());
+  fd.append('paying_entity', entity);
+  fd.append('amount', document.getElementById('cpyWkPayAmount').value || 0);
+  fd.append('notes', document.getElementById('cpyWkPayNotes').value || '');
+  if (_cpyWkPayFile) fd.append('proof', _cpyWkPayFile);
+  try {
+    const res = await fetch(API + '/admin/company-week-payments', {
+      method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd,
+    });
+    const r = await res.json();
+    if (!r.success && !r.id) throw new Error(r.error || '保存失败');
+    showToast('已保存 ✓');
+    closeCpyWkPayModal();
+    loadCpyWeeklySummary();
+  } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+}
+
+async function deleteCpyWkPay() {
+  const id = document.getElementById('cpyWkPayId').value;
+  if (!id) return;
+  if (!await showConfirm('确定删除本周这条付款记录（含凭证）？', { danger: true })) return;
+  try {
+    await api(`/admin/company-week-payments/${id}`, { method: 'DELETE' });
+    showToast('已删除 ✓');
+    closeCpyWkPayModal();
+    loadCpyWeeklySummary();
+  } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
+}
+
+// Drag-and-drop wiring for the weekly payout proof drop zone
+(function initCpyWkPayDrop() {
+  function setup() {
+    const dz = document.getElementById('cpyWkPayDrop');
+    if (!dz || dz.dataset.wired) return;
+    dz.dataset.wired = '1';
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation(); dz.style.background = '#e0f2fe';
+    }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation(); dz.style.background = '#f0f9ff';
+    }));
+    dz.addEventListener('drop', e => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!f) return;
+      _cpyWkPayFile = f;
+      document.getElementById('cpyWkPayFileInfo').textContent = `已选择：${f.name}（${(f.size / 1024).toFixed(0)} KB）`;
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup);
+  else setup();
+})();
 
 function toggleCpyWeekDetail(idx) {
   const detailRow = document.getElementById('cpyWkDetail-' + idx);
