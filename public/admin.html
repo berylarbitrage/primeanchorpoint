@@ -32281,8 +32281,19 @@ function _cpyListGroupPanel(g, gIdx) {
   return `
     <div style="display:flex;gap:1.25rem;align-items:flex-start;flex-wrap:wrap">
       <div style="flex:0 0 auto">${cals}</div>
-      <div style="flex:1 1 340px;min-width:300px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.45rem;max-height:340px;overflow-y:auto;align-content:start">${items}</div>
+      <div style="flex:1 1 340px;min-width:300px;display:flex;align-items:stretch;gap:.4rem">
+        <button class="btn btn-sm btn-outline" style="flex:0 0 auto;padding:0 .5rem;font-size:1.1rem;align-self:stretch" onclick="cpyStripScroll(${gIdx},-1)" title="上一组">‹</button>
+        <div id="cpyStrip-${gIdx}" style="flex:1 1 auto;display:flex;gap:.5rem;overflow-x:auto;scroll-behavior:smooth;padding-bottom:.3rem">${items}</div>
+        <button class="btn btn-sm btn-outline" style="flex:0 0 auto;padding:0 .5rem;font-size:1.1rem;align-self:stretch" onclick="cpyStripScroll(${gIdx},1)" title="下一组">›</button>
+      </div>
     </div>`;
+}
+
+// Horizontally scroll a group's detail strip by roughly one viewport (arrows).
+function cpyStripScroll(gIdx, dir) {
+  const strip = document.getElementById('cpyStrip-' + gIdx);
+  if (!strip) return;
+  strip.scrollBy({ left: dir * Math.max(220, strip.clientWidth * 0.8), behavior: 'smooth' });
 }
 
 const _CPY_CAL_WD = ['一', '二', '三', '四', '五', '六', '日'];
@@ -32316,41 +32327,37 @@ function _cpyMiniCalendar(gIdx, ym, daysMap) {
     </div>`;
 }
 
-// One payment-detail card (fields stacked vertically) on the right side of the panel.
-// Cards tile into a responsive multi-column grid so many entries stay compact.
+// One payment-detail card in the horizontal strip — fixed width, shows all info.
 function _cpyDetailItem(r, gIdx) {
   const hrs = Number(r.hours) || 0;
   const rate = Number(r.hourly_rate) || 0;
   const br = Number(r.break_minutes) || 0;
   const brStr = (r.break_start_time && r.break_end_time)
-    ? ` · 休${_cpyEscape(r.break_start_time)}–${_cpyEscape(r.break_end_time)}`
-    : (br ? ` · 休${br}分` : '');
+    ? `休 ${_cpyEscape(r.break_start_time)}–${_cpyEscape(r.break_end_time)}`
+    : (br ? `休 ${br} 分` : '');
   const timeStr = (r.clock_in_time && r.clock_out_time)
-    ? ` · ${_cpyEscape(r.clock_in_time)}–${_cpyEscape(r.clock_out_time)}${brStr}` : '';
-  const hrStr = (hrs > 0 && rate > 0) ? `${hrs}h × ${_cpyFmtMoney(rate)}/h${timeStr}` : '—';
+    ? `${_cpyEscape(r.clock_in_time)}–${_cpyEscape(r.clock_out_time)}` : '';
+  const hrStr = (hrs > 0 && rate > 0) ? `${hrs}h × ${_cpyFmtMoney(rate)}/h` : '—';
   const method = _CPY_METHOD_LABEL[r.payment_method] || r.payment_method || '—';
-  const noteIcon = r.notes ? `<span title="${_cpyEscape(r.notes)}" style="cursor:help">📝</span>` : '';
-  const titleAttr = r.notes ? `${hrStr} · 备注：${r.notes}` : hrStr;
+  const timeLine = timeStr ? `<div style="color:var(--gray-500)">${timeStr}${brStr ? ' · ' + brStr : ''}</div>` : (brStr ? `<div style="color:var(--gray-500)">${brStr}</div>` : '');
+  const notesLine = r.notes ? `<div style="color:var(--gray-500);margin-top:.1rem">备注：${_cpyEscape(r.notes)}</div>` : '';
   return `
     <div class="cpyDetItem" data-grp="${gIdx}" data-date="${_cpyEscape(r.payment_date)}"
-      style="border:1px solid var(--gray-200);border-radius:8px;padding:.4rem .55rem;background:#fff;font-size:.74rem;display:flex;flex-direction:column;gap:.18rem;transition:background .2s">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:.4rem">
-        <span style="font-weight:600;white-space:nowrap">${_cpyEscape(r.payment_date)} <span style="color:var(--gray-400);font-weight:400">${_cpyWeekdayOf(r.payment_date)}</span></span>
-        <span style="display:flex;gap:.25rem;white-space:nowrap">
-          <button class="btn btn-sm btn-outline" style="padding:.02rem .35rem;font-size:.68rem" onclick="openCpyEdit(${r.id})">编辑</button>
-          <button class="btn btn-sm" style="padding:.02rem .35rem;font-size:.68rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
-        </span>
+      style="flex:0 0 190px;width:190px;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem .6rem;background:#fff;font-size:.76rem;display:flex;flex-direction:column;gap:.2rem;transition:background .2s">
+      <div style="font-weight:600">${_cpyEscape(r.payment_date)}<br><span style="color:var(--gray-400);font-weight:400">${_cpyWeekdayOf(r.payment_date)}</span></div>
+      <div style="font-weight:700;color:#15803d;font-size:.95rem">${_cpyFmtMoney(r.amount)}</div>
+      <div><span style="background:#f1f5f9;border-radius:999px;padding:.05rem .5rem;font-size:.7rem;color:var(--gray-600)">${_cpyEscape(method)}</span></div>
+      <div style="color:var(--gray-600)">${hrStr}</div>
+      ${timeLine}
+      ${notesLine}
+      <div style="display:flex;gap:.3rem;margin-top:.3rem">
+        <button class="btn btn-sm btn-outline" style="padding:.05rem .45rem;font-size:.7rem" onclick="openCpyEdit(${r.id})">编辑</button>
+        <button class="btn btn-sm" style="padding:.05rem .45rem;font-size:.7rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
       </div>
-      <div style="display:flex;align-items:center;gap:.4rem">
-        <span style="font-weight:700;color:#15803d">${_cpyFmtMoney(r.amount)}</span>
-        <span style="background:#f1f5f9;border-radius:999px;padding:.02rem .45rem;font-size:.7rem;color:var(--gray-600)">${_cpyEscape(method)}</span>
-        ${noteIcon}
-      </div>
-      <div style="color:var(--gray-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_cpyEscape(titleAttr)}">${hrStr}</div>
     </div>`;
 }
 
-// Highlight the detail entries on a clicked calendar day and scroll the first into view.
+// Highlight the detail cards on a clicked calendar day and scroll the first into view.
 function cpyCalPick(gIdx, dateStr) {
   const items = document.querySelectorAll('.cpyDetItem[data-grp="' + gIdx + '"]');
   let first = null;
@@ -32360,7 +32367,7 @@ function cpyCalPick(gIdx, dateStr) {
     el.style.borderColor = on ? '#fde047' : 'var(--gray-200)';
     if (on && !first) first = el;
   });
-  if (first) first.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  if (first) first.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
 }
 
 function toggleCpyListGroup(gIdx) {
