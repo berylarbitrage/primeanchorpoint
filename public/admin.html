@@ -31461,50 +31461,64 @@ async function generateInvoice() {
   showInvoicePreview(data);
 }
 
-// Build + preview an invoice from the (editable) recorded wages, applying an optional markup.
+// Hand the payments selection to the OFFICIAL invoice builder (invp), pre-filled, so
+// the invoice uses the same style as all other invoices and can be saved to the DB there.
 async function generateInvoiceFromPayments() {
   const ctx = _invPaymentsCtx;
   if (!ctx) return;
   const ps = document.getElementById('invPeriodStart').value;
   const pe = document.getElementById('invPeriodEnd').value;
   const markup = Number(document.getElementById('invMarkup')?.value) || 0;
-  const items = [];
-  // Aggregate each selected worker to one invoice line: total = sum of the current
-  // granularity's reported amounts × (1 + markup).
+
+  // One manual-employee row per selected worker. Reported amount → flat effective rate
+  // (otRate = rate so the builder's 40h OT split adds no premium and the line total
+  // matches exactly). Markup is passed to the builder so it shows on the official layout.
+  const emps = [];
+  let uid = 1;
   document.querySelectorAll('.inv-pay-chk:checked').forEach(chk => {
     const wi = parseInt(chk.dataset.w);
-    const meta = _invPayRows[wi];
-    if (!meta) return;
-    const total = Math.round(_invWorkerTotal(wi) * (1 + markup / 100) * 100) / 100;
-    if (!(total > 0)) return;
-    const hours = meta.hours || 0;
-    const rate = hours > 0 ? Math.round((total / hours) * 100) / 100 : 0;
-    items.push({
-      employee_id: meta.employee_id, name: meta.worker_name, emp_code: '', position: '',
-      regular_hours: hours, overtime_hours: 0, rate, total_amount: total,
+    const g = _invPayRows[wi];
+    if (!g) return;
+    const reported = _invWorkerTotal(wi);
+    const hours = g.hours || 0;
+    if (!(hours > 0) || !(reported > 0)) return;
+    const rate = Math.round((reported / hours) * 10000) / 10000;
+    const days = {};
+    g.days.forEach(d => { if (d.hours) days[d.key] = String(d.hours); });
+    emps.push({
+      uid: uid++, name: g.worker_name, category: '', subcontractor: '', referrer: '',
+      rate: String(rate), otRate: String(rate), days,
+      linked_employee_id: g.employee_id || null, linked_employee_code: '', linked_employee_name: g.worker_name,
     });
   });
-  if (!items.length) { alert('请至少选择一名工人（且金额大于 0）'); return; }
-  const subtotal = Math.round(items.reduce((s, i) => s + i.total_amount, 0) * 100) / 100;
+  if (!emps.length) { alert('请至少选择一名工人（且金额大于 0）'); return; }
 
-  // Look up partner billing info for the "bill to" block.
+  // Partner billing address for the bill-to block.
   let partner = {};
   try {
-    const ps2 = await api('/admin/partners');
-    const list = Array.isArray(ps2) ? ps2 : (ps2?.partners || []);
+    const list0 = await api('/admin/partners');
+    const list = Array.isArray(list0) ? list0 : (list0?.partners || []);
     partner = list.find(p => p.id === ctx.partner_id) || {};
   } catch (_) { /* non-fatal */ }
 
-  const invoiceNum = 'INV-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
   closeInvoiceModal();
-  showInvoicePreview({
-    invoice_number: invoiceNum,
-    company_name: ctx.partner_name || partner.name || '',
-    partner,
-    period_start: ps, period_end: pe,
-    generated_at: new Date().toISOString(),
-    items, subtotal,
-  });
+  // Open + pre-fill the official builder. openInvpBuilderModal resets state and kicks
+  // off showInvpBuilder()/loadInvpPresets() (defaults dates + profile) synchronously
+  // enough that overriding the fields right after wins.
+  openInvpBuilderModal();
+  window._invpMode = 'hourly';
+  document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === 'hourly'); });
+  document.getElementById('invPageBillName').value = ctx.partner_name || partner.name || '';
+  document.getElementById('invPageBillAddr').value = partner.address || '';
+  document.getElementById('invPageStart').value = ps;
+  document.getElementById('invPageEnd').value = pe;
+  if (markup) document.getElementById('invPageMarkupRate').value = (1 + markup / 100).toFixed(4);
+  window._invpManualEmps = emps;
+  _invpManualUidSeq = uid;
+  renderInvpManualTable();
+  await invpRefreshInvoiceNumber();
+  if (typeof renderInvpProfilePreview === 'function') renderInvpProfilePreview();
+  showToast('已带入开票系统，可调整后「生成预览 / 保存」', 'success', 4000);
 }
 
 function showInvoicePreview(inv) {
