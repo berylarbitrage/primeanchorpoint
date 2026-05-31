@@ -1780,6 +1780,8 @@ tr:hover td{background:var(--sky-light)}
   <div id="cpyWkPaySub" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.9rem"></div>
   <input type="hidden" id="cpyWkPayPartnerId">
   <input type="hidden" id="cpyWkPayPartnerName">
+  <input type="hidden" id="cpyWkPayWorkerName">
+  <input type="hidden" id="cpyWkPayEmployeeId">
   <input type="hidden" id="cpyWkPayWeekStart">
   <input type="hidden" id="cpyWkPayWeekEnd">
   <input type="hidden" id="cpyWkPayId">
@@ -32313,6 +32315,7 @@ async function loadCpyWeeklySummary() {
         g = {
           weekKey,
           partner_id: r.partner_id || null,
+          employee_id: r.employee_id || null,
           partner_name: r.partner_name || '—',
           worker_name: r.worker_name || '',
           weekStart: mon,
@@ -32333,21 +32336,16 @@ async function loadCpyWeeklySummary() {
     const workerGroups = Array.from(groups.values());
     _cpyWeeklyGroups = workerGroups;
 
-    // Step 2: roll the person-weeks up into weeks (week → people), and track
-    // per-company subtotals so each company in a week gets its own payout control.
+    // Step 2: roll the person-weeks up into weeks (week → people)
     const weeks = new Map();
     workerGroups.forEach((g, idx) => {
       let w = weeks.get(g.weekKey);
       if (!w) {
-        w = { weekStart: g.weekStart, weekEnd: g.weekEnd, people: [], total: 0, companies: new Map() };
+        w = { weekStart: g.weekStart, weekEnd: g.weekEnd, people: [], total: 0 };
         weeks.set(g.weekKey, w);
       }
       w.people.push({ g, idx });
       w.total += g.amount;
-      const ck = String(g.partner_id == null ? '' : g.partner_id);
-      let c = w.companies.get(ck);
-      if (!c) { c = { partner_id: g.partner_id, partner_name: g.partner_name, subtotal: 0 }; w.companies.set(ck, c); }
-      c.subtotal += g.amount;
     });
     const weekList = Array.from(weeks.values()).sort((a, b) => b.weekStart - a.weekStart);
     weekList.forEach(w => w.people.sort((a, b) => {
@@ -32356,7 +32354,7 @@ async function loadCpyWeeklySummary() {
       return a.g.worker_name.localeCompare(b.g.worker_name);
     }));
 
-    // Fetch existing per-week payout records (method/entity/proof) for the same filter
+    // Fetch existing per-worker-per-week payout records (method/entity/proof)
     _cpyWeekPayMap = {};
     _cpyWkPayCtx = {};
     try {
@@ -32365,7 +32363,7 @@ async function loadCpyWeeklySummary() {
       if (month) wpParams.set('year_month', month);
       const wp = await api('/admin/company-week-payments' + (wpParams.toString() ? '?' + wpParams : ''));
       (Array.isArray(wp) ? wp : []).forEach(rec => {
-        _cpyWeekPayMap[`${rec.partner_id}|${rec.week_start}`] = rec;
+        _cpyWeekPayMap[`${rec.partner_id}|${rec.week_start}|${rec.worker_name}`] = rec;
       });
     } catch (_) { /* non-fatal */ }
 
@@ -32378,10 +32376,6 @@ async function loadCpyWeeklySummary() {
       const rangeShort = `${_cpyFmtDateMD(w.weekStart)} – ${_cpyFmtDateMD(w.weekEnd)}`;
       const wkStartKey = _cpyFmtDateKey(w.weekStart);
       const wkEndKey = _cpyFmtDateKey(w.weekEnd);
-      // One payout chip per company present in this week
-      const payChips = Array.from(w.companies.values())
-        .sort((a, b) => a.partner_name.localeCompare(b.partner_name))
-        .map(c => _cpyWkPayChip(c, wkStartKey, wkEndKey)).join('');
       const header = `
       <tr style="background:#fff7ed">
         <td colspan="5" style="padding:.55rem .75rem;border-top:2px solid #fdba74">
@@ -32390,14 +32384,17 @@ async function loadCpyWeeklySummary() {
             <span style="font-weight:400;color:var(--gray-500);font-size:.8rem">· ${_cpyEscape(range)}</span>
             <span style="margin-left:auto;font-weight:600;color:#15803d">${w.people.length} 人 · 合计 ${_cpyFmtMoney(w.total)}</span>
           </div>
-          <div style="margin-top:.45rem;display:flex;flex-wrap:wrap;gap:.5rem">${payChips}</div>
         </td>
       </tr>`;
       const peopleRows = w.people.map(({ g, idx }) => {
         const hoursStr = g.hours > 0 ? (Math.round(g.hours * 100) / 100) + 'h' : '—';
+        const payCtrl = _cpyWkPayWorkerCtrl(g, wkStartKey, wkEndKey);
         return `
       <tr style="cursor:pointer" onclick="toggleCpyWeekDetail(${idx})" title="点击查看 ${_cpyEscape(g.worker_name)} 本周每日明细">
-        <td style="padding-left:1.25rem"><span id="cpyWkCaret-${idx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(g.worker_name)}</td>
+        <td style="padding-left:1.25rem">
+          <span id="cpyWkCaret-${idx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(g.worker_name)}
+          ${payCtrl}
+        </td>
         <td>${_cpyEscape(g.partner_name)}</td>
         <td>${g.days.size}</td>
         <td>${hoursStr}</td>
@@ -32428,49 +32425,45 @@ function _cpyWeekdayOf(dateStr) {
 
 let _cpyWkPayCtx = {}; // ctxKey -> {partner_id, partner_name, weekStart, weekEnd, subtotal}
 
-// Render a per-company payout chip on a week header: shows recorded method/entity
-// (+ proof link) when present, otherwise a "付工资" button. company has {partner_id, partner_name, subtotal}.
-// Registers a ctx entry so the inline onclick can pass only a safe key (no name interpolation).
-function _cpyWkPayChip(company, weekStartKey, weekEndKey) {
-  const pid = company.partner_id;
-  const nameEsc = _cpyEscape(company.partner_name || '—');
+// Render a per-worker payout control shown right after the worker's name in the
+// weekly view. Shows recorded method/entity (+ proof) when present, else a 付工资 button.
+// g is a worker-week group {partner_id, partner_name, worker_name, employee_id, amount}.
+// Registers a ctx entry so the inline onclick passes only a safe key (no name interpolation).
+function _cpyWkPayWorkerCtrl(g, weekStartKey, weekEndKey) {
+  const pid = g.partner_id;
   const disabled = pid == null;
-  const ctxKey = `${pid}|${weekStartKey}`;
+  const ctxKey = `${pid}|${weekStartKey}|${g.worker_name}`;
   if (!disabled) {
     _cpyWkPayCtx[ctxKey] = {
-      partner_id: pid, partner_name: company.partner_name || '',
-      weekStart: weekStartKey, weekEnd: weekEndKey, subtotal: company.subtotal,
+      partner_id: pid, partner_name: g.partner_name || '',
+      worker_name: g.worker_name || '', employee_id: g.employee_id || null,
+      weekStart: weekStartKey, weekEnd: weekEndKey, subtotal: g.amount,
     };
   }
   const rec = (pid != null) ? _cpyWeekPayMap[ctxKey] : null;
   const openBtn = (label, cls) =>
-    `<button class="btn btn-sm ${cls}" style="padding:.12rem .5rem;font-size:.74rem" ${disabled ? 'disabled title="散工无公司，无法记录"' : `onclick="event.stopPropagation();openCpyWkPayModalByKey('${ctxKey}')"`}>${label}</button>`;
+    `<button class="btn btn-sm ${cls}" style="padding:.05rem .45rem;font-size:.72rem;margin-left:.5rem" ${disabled ? 'disabled title="散工无公司，无法记录"' : `onclick="event.stopPropagation();openCpyWkPayModalByKey('${_cpyEscape(ctxKey)}')"`}>${label}</button>`;
   if (rec) {
     const method = _CPY_PAY_METHOD_LABEL[rec.payment_method] || rec.payment_method || '—';
     const methodStr = (rec.payment_method === 'thirdparty' && rec.third_party_platform)
       ? `${method}·${_cpyEscape(rec.third_party_platform)}` : method;
     const entity = _CPY_PAY_ENTITY_LABEL[rec.paying_entity] || rec.paying_entity || '—';
     const proofBtn = rec.proof_url
-      ? `<button class="btn btn-sm btn-outline" style="padding:.1rem .4rem;font-size:.72rem" onclick="event.stopPropagation();viewCpyWkProof('${_cpyEscape(rec.proof_url)}')">查看凭证</button>`
-      : '<span style="color:#b45309;font-size:.72rem">无凭证</span>';
-    return `<span style="display:inline-flex;align-items:center;gap:.4rem;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:.2rem .6rem;font-size:.76rem">
-      <span style="color:#065f46;font-weight:600">✓ ${nameEsc}</span>
-      <span style="color:#047857">${methodStr} · ${_cpyEscape(entity)}</span>
+      ? `<button class="btn btn-sm btn-outline" style="padding:.02rem .35rem;font-size:.7rem" onclick="event.stopPropagation();viewCpyWkProof('${_cpyEscape(rec.proof_url)}')">凭证</button>`
+      : '<span style="color:#b45309;font-size:.7rem">无凭证</span>';
+    return `<span style="display:inline-flex;align-items:center;gap:.35rem;margin-left:.6rem;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:.05rem .5rem;font-size:.72rem;vertical-align:middle">
+      <span style="color:#047857;font-weight:600">✓ ${_cpyEscape(methodStr)} · ${_cpyEscape(entity)}</span>
       ${proofBtn}
       ${openBtn('编辑', 'btn-outline')}
     </span>`;
   }
-  return `<span style="display:inline-flex;align-items:center;gap:.4rem;background:#fff;border:1px dashed #fdba74;border-radius:999px;padding:.2rem .6rem;font-size:.76rem">
-    <span style="color:#9a3412;font-weight:600">${nameEsc}</span>
-    <span style="color:var(--gray-400)">未记录付款</span>
-    ${openBtn('💰 付工资', 'btn-green')}
-  </span>`;
+  return openBtn('💰 付工资', 'btn-green');
 }
 
 function openCpyWkPayModalByKey(ctxKey) {
   const c = _cpyWkPayCtx[ctxKey];
   if (!c) return;
-  openCpyWkPayModal(c.partner_id, c.partner_name, c.weekStart, c.weekEnd, c.subtotal);
+  openCpyWkPayModal(c);
 }
 
 async function viewCpyWkProof(url) {
@@ -32487,16 +32480,20 @@ async function viewCpyWkProof(url) {
 
 let _cpyWkPayFile = null;
 
-function openCpyWkPayModal(partnerId, partnerName, weekStart, weekEnd, subtotal) {
+function openCpyWkPayModal(c) {
   _cpyWkPayFile = null;
-  const rec = (partnerId != null) ? _cpyWeekPayMap[`${partnerId}|${weekStart}`] : null;
+  const partnerId = c.partner_id, partnerName = c.partner_name, workerName = c.worker_name || '';
+  const weekStart = c.weekStart, weekEnd = c.weekEnd, subtotal = c.subtotal;
+  const rec = (partnerId != null) ? _cpyWeekPayMap[`${partnerId}|${weekStart}|${workerName}`] : null;
   document.getElementById('cpyWkPayPartnerId').value = partnerId == null ? '' : partnerId;
   document.getElementById('cpyWkPayPartnerName').value = partnerName || '';
+  document.getElementById('cpyWkPayWorkerName').value = workerName;
+  document.getElementById('cpyWkPayEmployeeId').value = c.employee_id == null ? '' : c.employee_id;
   document.getElementById('cpyWkPayWeekStart').value = weekStart;
   document.getElementById('cpyWkPayWeekEnd').value = weekEnd;
   document.getElementById('cpyWkPayId').value = rec ? rec.id : '';
   document.getElementById('cpyWkPaySub').innerHTML =
-    `${_cpyEscape(partnerName || '—')} · ${_cpyEscape(weekStart)} – ${_cpyEscape(weekEnd)}（周一–周日）· 本周合计 <strong>${_cpyFmtMoney(subtotal)}</strong>`;
+    `<strong>${_cpyEscape(workerName || '—')}</strong> · ${_cpyEscape(partnerName || '—')} · ${_cpyEscape(weekStart)} – ${_cpyEscape(weekEnd)}（周一–周日）· 本周应付 <strong>${_cpyFmtMoney(subtotal)}</strong>`;
   document.getElementById('cpyWkPayMethod').value = rec ? (rec.payment_method || '') : '';
   document.getElementById('cpyWkPayThirdParty').value = rec ? (rec.third_party_platform || '') : '';
   document.getElementById('cpyWkPayEntity').value = rec ? (rec.paying_entity || '') : '';
@@ -32531,9 +32528,11 @@ function onCpyWkPayFilePicked() {
 async function submitCpyWkPay() {
   const partnerId = document.getElementById('cpyWkPayPartnerId').value;
   const weekStart = document.getElementById('cpyWkPayWeekStart').value;
+  const workerName = document.getElementById('cpyWkPayWorkerName').value;
   const method = document.getElementById('cpyWkPayMethod').value;
   const entity = document.getElementById('cpyWkPayEntity').value;
   if (!partnerId) return showToast('缺少公司信息', 'error');
+  if (!workerName) return showToast('缺少工人信息', 'error');
   if (!method) return showToast('请选择付款方式', 'error');
   if (method === 'thirdparty' && !document.getElementById('cpyWkPayThirdParty').value.trim())
     return showToast('请填写第三方平台', 'error');
@@ -32541,6 +32540,8 @@ async function submitCpyWkPay() {
   const fd = new FormData();
   fd.append('partner_id', partnerId);
   fd.append('partner_name', document.getElementById('cpyWkPayPartnerName').value || '');
+  fd.append('worker_name', workerName);
+  fd.append('employee_id', document.getElementById('cpyWkPayEmployeeId').value || '');
   fd.append('week_start', weekStart);
   fd.append('week_end', document.getElementById('cpyWkPayWeekEnd').value);
   fd.append('payment_method', method);

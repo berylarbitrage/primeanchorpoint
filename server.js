@@ -2078,11 +2078,13 @@ try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_minutes INTE
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_start_time TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_end_time TEXT DEFAULT ''`); } catch(e) {}
 
-// ─── Per-week payout info (method / paying entity / proof) keyed by company+week ───
+// ─── Per-week-per-worker payout info (method / paying entity / proof) ───
 db.exec(`CREATE TABLE IF NOT EXISTS company_week_payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   partner_id INTEGER NOT NULL,
   partner_name TEXT DEFAULT '',
+  worker_name TEXT DEFAULT '',
+  employee_id INTEGER DEFAULT NULL,
   week_start TEXT NOT NULL,
   week_end TEXT DEFAULT '',
   payment_method TEXT DEFAULT '',
@@ -2096,7 +2098,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS company_week_payments (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
-try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cwkp_partner_week ON company_week_payments(partner_id, week_start)`); } catch(e) {}
+// Migrate from the earlier per-company schema: add worker columns and switch the
+// uniqueness from (partner_id, week_start) to (partner_id, week_start, worker_name).
+try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN worker_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN employee_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`DROP INDEX IF EXISTS idx_cwkp_partner_week`); } catch(e) {}
+try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cwkp_partner_week_worker ON company_week_payments(partner_id, week_start, worker_name)`); } catch(e) {}
 
 // ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
 db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
@@ -24210,14 +24217,15 @@ app.get('/api/admin/company-week-payments', requireAdmin, blockManager, async (r
 });
 
 // POST /api/admin/company-week-payments  (multipart; optional `proof` file)
-//   Upsert by (partner_id, week_start). Re-uploading replaces the prior proof file.
+//   Upsert by (partner_id, week_start, worker_name). Re-uploading replaces the prior proof file.
 app.post('/api/admin/company-week-payments', requireAdmin, blockManager, weekPayProofUpload.single('proof'), (req, res) => {
   try {
     const d = req.body || {};
     const partnerId = parseInt(d.partner_id);
     const weekStart = String(d.week_start || '').trim();
-    if (!partnerId || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
-      return res.status(400).json({ error: 'partner_id and week_start (YYYY-MM-DD) required' });
+    const workerName = String(d.worker_name || '').trim();
+    if (!partnerId || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || !workerName) {
+      return res.status(400).json({ error: 'partner_id, week_start (YYYY-MM-DD) and worker_name required' });
     }
     const method = _CWKP_METHODS.includes(d.payment_method) ? d.payment_method : '';
     const entity = _CWKP_ENTITIES.includes(d.paying_entity) ? d.paying_entity : '';
@@ -24226,6 +24234,7 @@ app.post('/api/admin/company-week-payments', requireAdmin, blockManager, weekPay
       const p = db.prepare('SELECT name FROM partners WHERE id=?').get(partnerId);
       if (p) partnerName = p.name;
     }
+    const employeeId = d.employee_id ? parseInt(d.employee_id) : null;
     const weekEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(d.week_end || '')) ? d.week_end : '';
     const thirdParty = method === 'thirdparty' ? String(d.third_party_platform || '').trim() : '';
     const amount = Number(d.amount) || 0;
@@ -24233,27 +24242,28 @@ app.post('/api/admin/company-week-payments', requireAdmin, blockManager, weekPay
     const newProofPath = req.file ? (req.file.key || req.file.path) : '';
     const newProofName = req.file ? (req.file.originalname || '') : '';
 
-    const existing = db.prepare('SELECT * FROM company_week_payments WHERE partner_id=? AND week_start=?').get(partnerId, weekStart);
+    const existing = db.prepare('SELECT * FROM company_week_payments WHERE partner_id=? AND week_start=? AND worker_name=?')
+      .get(partnerId, weekStart, workerName);
     if (existing) {
       // If a new proof was uploaded, delete the old file.
       if (newProofPath && existing.proof_file_path) {
         storage.deleteObject(storage.keyFrom(existing.proof_file_path, 'uploads')).catch(() => {});
       }
       db.prepare(`UPDATE company_week_payments SET
-          partner_name=?, week_end=?, payment_method=?, third_party_platform=?, paying_entity=?,
+          partner_name=?, employee_id=?, week_end=?, payment_method=?, third_party_platform=?, paying_entity=?,
           amount=?, notes=?,
           proof_file_path=COALESCE(NULLIF(?,''), proof_file_path),
           proof_file_name=COALESCE(NULLIF(?,''), proof_file_name),
           updated_at=CURRENT_TIMESTAMP
         WHERE id=?`).run(
-          partnerName, weekEnd, method, thirdParty, entity,
+          partnerName, employeeId, weekEnd, method, thirdParty, entity,
           amount, notes, newProofPath, newProofName, existing.id);
       return res.json({ success: true, id: existing.id });
     }
     const r = db.prepare(`INSERT INTO company_week_payments
-      (partner_id, partner_name, week_start, week_end, payment_method, third_party_platform, paying_entity, amount, proof_file_path, proof_file_name, notes, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-        partnerId, partnerName, weekStart, weekEnd, method, thirdParty, entity, amount,
+      (partner_id, partner_name, worker_name, employee_id, week_start, week_end, payment_method, third_party_platform, paying_entity, amount, proof_file_path, proof_file_name, notes, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        partnerId, partnerName, workerName, employeeId, weekStart, weekEnd, method, thirdParty, entity, amount,
         newProofPath, newProofName, notes, req.userName || '');
     res.json({ success: true, id: r.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
