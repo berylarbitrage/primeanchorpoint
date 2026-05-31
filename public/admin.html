@@ -32204,6 +32204,10 @@ function onCpyFilterChange() {
   else loadCpyList();
 }
 
+// Per-week payout proofs (read-only), keyed by partner+worker+week. Populated by
+// loadCpyList and consulted by _cpyDetailItem so each day card can show its 付款凭证.
+let _cpyWeekProofs = [];
+
 async function loadCpyList() {
   const tbody = document.getElementById('cpyListBody');
   tbody.innerHTML = '<tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
@@ -32214,8 +32218,16 @@ async function loadCpyList() {
   if (partnerId) params.set('partner_id', partnerId);
   if (month) params.set('year_month', month);
   if (q) params.set('q', q);
+  // Week proofs share the partner/month filters (not the text query).
+  const wparams = new URLSearchParams();
+  if (partnerId) wparams.set('partner_id', partnerId);
+  if (month) wparams.set('year_month', month);
   try {
-    const rows = await api('/admin/company-payments' + (params.toString() ? '?' + params : ''));
+    const [rows, weekProofs] = await Promise.all([
+      api('/admin/company-payments' + (params.toString() ? '?' + params : '')),
+      api('/admin/company-week-payments' + (wparams.toString() ? '?' + wparams : '')).catch(() => []),
+    ]);
+    _cpyWeekProofs = Array.isArray(weekProofs) ? weekProofs.filter(x => x && x.proof_url) : [];
     if (!Array.isArray(rows) || !rows.length) {
       tbody.innerHTML = '<tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
       document.getElementById('cpyFilterTotal').textContent = '';
@@ -32335,6 +32347,36 @@ function _cpyMiniCalendar(gIdx, ym, daysMap) {
     </div>`;
 }
 
+// Add `n` days to a YYYY-MM-DD string, returning YYYY-MM-DD.
+function _cpyAddDays(ymd, n) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + n);
+  const z = x => String(x).padStart(2, '0');
+  return `${dt.getFullYear()}-${z(dt.getMonth() + 1)}-${z(dt.getDate())}`;
+}
+
+// Find the per-week payout proof covering a given day payment: same worker (and
+// partner, when both known) and payment_date falling inside the proof's week.
+function _cpyWeekProofFor(r) {
+  if (!_cpyWeekProofs.length) return null;
+  const d = String(r.payment_date || '');
+  if (!d) return null;
+  const wn = r.worker_name || '';
+  const pid = r.partner_id == null ? null : Number(r.partner_id);
+  for (const wp of _cpyWeekProofs) {
+    if ((wp.worker_name || '') !== wn) continue;
+    const wpid = wp.partner_id == null ? null : Number(wp.partner_id);
+    if (pid != null && wpid != null && pid !== wpid) continue;
+    const ws = String(wp.week_start || '');
+    if (!ws) continue;
+    const we = String(wp.week_end || '') || _cpyAddDays(ws, 6);
+    if (d >= ws && d <= we) return wp;
+  }
+  return null;
+}
+
 // One payment-detail card in the horizontal strip — fixed width, shows all info.
 function _cpyDetailItem(r, gIdx) {
   const hrs = Number(r.hours) || 0;
@@ -32349,6 +32391,11 @@ function _cpyDetailItem(r, gIdx) {
   const method = _CPY_METHOD_LABEL[r.payment_method] || r.payment_method || '—';
   const timeLine = timeStr ? `<div style="color:var(--gray-500)">${timeStr}${brStr ? ' · ' + brStr : ''}</div>` : (brStr ? `<div style="color:var(--gray-500)">${brStr}</div>` : '');
   const notesLine = r.notes ? `<div style="color:var(--gray-500);margin-top:.1rem">备注：${_cpyEscape(r.notes)}</div>` : '';
+  // Read-only payment voucher: the matching week's uploaded proof. View only — no edit.
+  const wp = _cpyWeekProofFor(r);
+  const voucherLine = wp
+    ? `<div style="margin-top:.1rem"><a href="${_cpyEscape(wp.proof_url)}" target="_blank" rel="noopener" style="color:#0E7BB8;text-decoration:none;font-weight:600" title="${_cpyEscape(wp.proof_file_name || '付款凭证')} · 只读">📎 付款凭证</a></div>`
+    : `<div style="color:var(--gray-300);margin-top:.1rem">📎 无凭证</div>`;
   return `
     <div class="cpyDetItem" data-grp="${gIdx}" data-date="${_cpyEscape(r.payment_date)}"
       style="flex:0 0 160px;width:160px;align-self:stretch;border:1px solid var(--gray-200);border-radius:8px;padding:.55rem .6rem;background:#fff;font-size:.78rem;display:flex;flex-direction:column;gap:.3rem;transition:background .2s">
@@ -32358,6 +32405,7 @@ function _cpyDetailItem(r, gIdx) {
       <div style="color:var(--gray-600)">${hrStr}</div>
       ${timeLine}
       ${notesLine}
+      ${voucherLine}
       <div style="display:flex;gap:.35rem;margin-top:auto;padding-top:.3rem">
         <button class="btn btn-sm btn-outline" style="padding:.08rem .5rem;font-size:.72rem" onclick="openCpyEdit(${r.id})">编辑</button>
         <button class="btn btn-sm" style="padding:.08rem .5rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
