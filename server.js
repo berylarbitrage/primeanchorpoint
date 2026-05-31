@@ -24451,6 +24451,19 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
     }
     const batchId = `WK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     const defaultMethod = d.payment_method || 'cash';
+    // Edit mode: when `replace` is set, each submitted worker's existing records for
+    // this week are cleared first, so re-submitting adjusts the week instead of
+    // piling up duplicate day records. Scoped per submitted worker only.
+    const replaceWeek = !!d.replace;
+    let weekEnd = '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(d.week_start || ''))) {
+      const [yy, mm, dd] = String(d.week_start).split('-').map(Number);
+      const we = new Date(yy, mm - 1, dd); we.setDate(we.getDate() + 6);
+      const z = x => String(x).padStart(2, '0');
+      weekEnd = `${we.getFullYear()}-${z(we.getMonth() + 1)}-${z(we.getDate())}`;
+    }
+    const delWeek = db.prepare(`DELETE FROM company_worker_payments
+      WHERE partner_id = ? AND worker_name = ? AND payment_date >= ? AND payment_date <= ?`);
     const ins = db.prepare(`INSERT INTO company_worker_payments
       (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month,
        payment_method, notes, batch_id, created_by, hours, hourly_rate, week_start,
@@ -24461,6 +24474,9 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
       for (const it of items) {
         const name = (it.worker_name || '').toString().trim();
         if (!name) continue;
+        if (replaceWeek && d.partner_id && weekEnd) {
+          delWeek.run(parseInt(d.partner_id), name, d.week_start, weekEnd);
+        }
         const rowBreak = Math.max(0, Number(it.break_minutes) || 0);
         const days = Array.isArray(it.days) ? it.days : [];
         for (const day of days) {

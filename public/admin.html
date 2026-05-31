@@ -1560,10 +1560,11 @@ tr:hover td{background:var(--sky-light)}
             <th>工作天数</th>
             <th>总工时</th>
             <th>总金额</th>
+            <th style="text-align:right">操作</th>
           </tr>
         </thead>
         <tbody id="cpyWeeklySummaryBody">
-          <tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
+          <tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
         </tbody>
       </table>
     </div>
@@ -32204,6 +32205,10 @@ function onCpyFilterChange() {
   else loadCpyList();
 }
 
+// Per-week payout proofs (read-only), keyed by partner+worker+week. Populated by
+// loadCpyList and consulted by _cpyDetailItem so each day card can show its 付款凭证.
+let _cpyWeekProofs = [];
+
 async function loadCpyList() {
   const tbody = document.getElementById('cpyListBody');
   tbody.innerHTML = '<tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
@@ -32214,8 +32219,16 @@ async function loadCpyList() {
   if (partnerId) params.set('partner_id', partnerId);
   if (month) params.set('year_month', month);
   if (q) params.set('q', q);
+  // Week proofs share the partner/month filters (not the text query).
+  const wparams = new URLSearchParams();
+  if (partnerId) wparams.set('partner_id', partnerId);
+  if (month) wparams.set('year_month', month);
   try {
-    const rows = await api('/admin/company-payments' + (params.toString() ? '?' + params : ''));
+    const [rows, weekProofs] = await Promise.all([
+      api('/admin/company-payments' + (params.toString() ? '?' + params : '')),
+      api('/admin/company-week-payments' + (wparams.toString() ? '?' + wparams : '')).catch(() => []),
+    ]);
+    _cpyWeekProofs = Array.isArray(weekProofs) ? weekProofs.filter(x => x && x.proof_url) : [];
     if (!Array.isArray(rows) || !rows.length) {
       tbody.innerHTML = '<tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
       document.getElementById('cpyFilterTotal').textContent = '';
@@ -32335,6 +32348,36 @@ function _cpyMiniCalendar(gIdx, ym, daysMap) {
     </div>`;
 }
 
+// Add `n` days to a YYYY-MM-DD string, returning YYYY-MM-DD.
+function _cpyAddDays(ymd, n) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + n);
+  const z = x => String(x).padStart(2, '0');
+  return `${dt.getFullYear()}-${z(dt.getMonth() + 1)}-${z(dt.getDate())}`;
+}
+
+// Find the per-week payout proof covering a given day payment: same worker (and
+// partner, when both known) and payment_date falling inside the proof's week.
+function _cpyWeekProofFor(r) {
+  if (!_cpyWeekProofs.length) return null;
+  const d = String(r.payment_date || '');
+  if (!d) return null;
+  const wn = r.worker_name || '';
+  const pid = r.partner_id == null ? null : Number(r.partner_id);
+  for (const wp of _cpyWeekProofs) {
+    if ((wp.worker_name || '') !== wn) continue;
+    const wpid = wp.partner_id == null ? null : Number(wp.partner_id);
+    if (pid != null && wpid != null && pid !== wpid) continue;
+    const ws = String(wp.week_start || '');
+    if (!ws) continue;
+    const we = String(wp.week_end || '') || _cpyAddDays(ws, 6);
+    if (d >= ws && d <= we) return wp;
+  }
+  return null;
+}
+
 // One payment-detail card in the horizontal strip — fixed width, shows all info.
 function _cpyDetailItem(r, gIdx) {
   const hrs = Number(r.hours) || 0;
@@ -32349,6 +32392,11 @@ function _cpyDetailItem(r, gIdx) {
   const method = _CPY_METHOD_LABEL[r.payment_method] || r.payment_method || '—';
   const timeLine = timeStr ? `<div style="color:var(--gray-500)">${timeStr}${brStr ? ' · ' + brStr : ''}</div>` : (brStr ? `<div style="color:var(--gray-500)">${brStr}</div>` : '');
   const notesLine = r.notes ? `<div style="color:var(--gray-500);margin-top:.1rem">备注：${_cpyEscape(r.notes)}</div>` : '';
+  // Read-only payment voucher: the matching week's uploaded proof. View only — no edit.
+  const wp = _cpyWeekProofFor(r);
+  const voucherLine = wp
+    ? `<div style="margin-top:.1rem"><a href="${_cpyEscape(wp.proof_url)}" target="_blank" rel="noopener" style="color:#0E7BB8;text-decoration:none;font-weight:600" title="${_cpyEscape(wp.proof_file_name || '付款凭证')} · 只读">📎 付款凭证</a></div>`
+    : `<div style="color:var(--gray-300);margin-top:.1rem">📎 无凭证</div>`;
   return `
     <div class="cpyDetItem" data-grp="${gIdx}" data-date="${_cpyEscape(r.payment_date)}"
       style="flex:0 0 160px;width:160px;align-self:stretch;border:1px solid var(--gray-200);border-radius:8px;padding:.55rem .6rem;background:#fff;font-size:.78rem;display:flex;flex-direction:column;gap:.3rem;transition:background .2s">
@@ -32358,6 +32406,7 @@ function _cpyDetailItem(r, gIdx) {
       <div style="color:var(--gray-600)">${hrStr}</div>
       ${timeLine}
       ${notesLine}
+      ${voucherLine}
       <div style="display:flex;gap:.35rem;margin-top:auto;padding-top:.3rem">
         <button class="btn btn-sm btn-outline" style="padding:.08rem .5rem;font-size:.72rem" onclick="openCpyEdit(${r.id})">编辑</button>
         <button class="btn btn-sm" style="padding:.08rem .5rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
@@ -32422,7 +32471,7 @@ function _cpyFmtDateKey(d) {
 
 async function loadCpyWeeklySummary() {
   const tbody = document.getElementById('cpyWeeklySummaryBody');
-  tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
   const partnerId = document.getElementById('cpyFilterPartner').value;
   const month = document.getElementById('cpyFilterMonth').value;
   const q = document.getElementById('cpyFilterQ').value.trim();
@@ -32433,7 +32482,7 @@ async function loadCpyWeeklySummary() {
   try {
     const rows = await api('/admin/company-payments' + (params.toString() ? '?' + params : ''));
     if (!Array.isArray(rows) || !rows.length) {
-      tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
       document.getElementById('cpyFilterTotal').textContent = '';
       return;
     }
@@ -32513,7 +32562,7 @@ async function loadCpyWeeklySummary() {
       const wkEndKey = _cpyFmtDateKey(w.weekEnd);
       const header = `
       <tr style="background:#fff7ed">
-        <td colspan="5" style="padding:.55rem .75rem;border-top:2px solid #fdba74">
+        <td colspan="6" style="padding:.55rem .75rem;border-top:2px solid #fdba74">
           <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
             <span style="font-weight:700;color:#9a3412">📅 ${_cpyEscape(rangeShort)}（周一–周日）</span>
             <span style="font-weight:400;color:var(--gray-500);font-size:.8rem">· ${_cpyEscape(range)}</span>
@@ -32524,25 +32573,30 @@ async function loadCpyWeeklySummary() {
       const peopleRows = w.people.map(({ g, idx }) => {
         const hoursStr = g.hours > 0 ? (Math.round(g.hours * 100) / 100) + 'h' : '—';
         const payCtrl = _cpyWkPayWorkerCtrl(g, wkStartKey, wkEndKey);
+        const editWkBtn = (g.partner_id == null)
+          ? `<button class="btn btn-sm btn-outline" style="padding:.05rem .45rem;font-size:.72rem" disabled title="散工无公司，无法按周编辑">✏️ 按周编辑</button>`
+          : `<button class="btn btn-sm btn-outline" style="padding:.05rem .45rem;font-size:.72rem" onclick="event.stopPropagation();openCpyWeeklyEditWorker(${idx})" title="调整本周工时/金额">✏️ 按周编辑</button>`;
         return `
       <tr style="cursor:pointer" onclick="toggleCpyWeekDetail(${idx})" title="点击查看 ${_cpyEscape(g.worker_name)} 本周每日明细">
         <td style="padding-left:1.25rem">
           <span id="cpyWkCaret-${idx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(g.worker_name)}
-          ${payCtrl}
         </td>
         <td>${_cpyEscape(g.partner_name)}</td>
         <td>${g.days.size}</td>
         <td>${hoursStr}</td>
         <td style="font-weight:600;color:#15803d">${_cpyFmtMoney(g.amount)}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <span style="display:inline-flex;align-items:center;gap:.4rem;justify-content:flex-end">${editWkBtn}${payCtrl}</span>
+        </td>
       </tr>
       <tr id="cpyWkDetail-${idx}" style="display:none">
-        <td colspan="5" style="padding:0;background:#f8fafc"></td>
+        <td colspan="6" style="padding:0;background:#f8fafc"></td>
       </tr>`;
       }).join('');
       return header + peopleRows;
     }).join('');
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="5" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
   }
 }
 
@@ -33359,6 +33413,7 @@ let _cpyWkWorkers = [];      // workers shown in modal (system + ad-hoc)
 let _cpyWkDays = [];         // ['2026-05-19', ...]  7 dates
 let _cpyWkDayLabels = [];    // [{dow:'周一', md:'5/19'}]
 let _cpyWkLoadGen = 0;       // generation counter: discard stale loadCpyWeeklyWorkers results
+let _cpyWkReplaceWeek = false; // edit mode: submit replaces the worker-week instead of inserting
 
 const _CPY_WK_DAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -33390,6 +33445,9 @@ function _cpyCurrentDefaultBreak() {
 }
 
 function openCpyWeeklyModal() {
+  _cpyWkReplaceWeek = false;
+  const h2 = document.querySelector('#cpyWeeklyModal h2');
+  if (h2) h2.textContent = '📅 按周批量付款（每天填上下班时间，自动算工时×时薪）';
   document.getElementById('cpyWkPartner').value = '';
   const today = new Date();
   const dow = today.getDay();
@@ -33411,6 +33469,48 @@ function openCpyWeeklyModal() {
 
 function closeCpyWeeklyModal() {
   document.getElementById('cpyWeeklyModal').classList.remove('show');
+}
+
+// Open the weekly modal in EDIT mode for one worker-week: pre-fill only that worker
+// from their existing day records, scoped to the matching week. Submitting replaces
+// that worker's week (delete + re-insert) so amounts are adjusted, not duplicated.
+function openCpyWeeklyEditWorker(idx) {
+  const g = _cpyWeeklyGroups[idx];
+  if (!g || g.partner_id == null) return;
+  // This editor only handles time-based records. Records without clock in/out times
+  // (e.g. 按月批量 / 单条录入) can't be reproduced here, and replacing the week would
+  // drop them — so block editing such weeks and point the user to 付款明细.
+  const nonTime = g.records.filter(r => !(r.clock_in_time && r.clock_out_time));
+  if (nonTime.length) {
+    alert(`该工人本周有 ${nonTime.length} 条没有上下班时间的记录（可能来自「按月批量」或「单条录入」），无法用「按周编辑」调整。\n请在「付款明细」里单独编辑这些记录。`);
+    return;
+  }
+  openCpyWeeklyModal();
+  const h2 = document.querySelector('#cpyWeeklyModal h2');
+  if (h2) h2.textContent = `✏️ 按周编辑 — ${g.worker_name}（调整本周工时/金额，提交将覆盖本周）`;
+  const sel = document.getElementById('cpyWkPartner');
+  if (sel) sel.value = String(g.partner_id);
+  document.getElementById('cpyWkStart').value = _cpyFmtDateKey(g.weekStart);
+  rebuildCpyWeekDays();
+  // Build a single worker row pre-filled from existing records (mapped by day).
+  const w = _newCpyEmptyWorker({ id: g.employee_id, name: g.worker_name, position: '', phone: '' }, false);
+  w._selected = true;
+  w._notes = (g.records.find(r => r.notes)?.notes) || '';
+  g.records.forEach(r => {
+    const j = _cpyWkDays.indexOf(r.payment_date);
+    if (j < 0) return;
+    w._starts[j] = r.clock_in_time || '';
+    w._ends[j] = r.clock_out_time || '';
+    w._breakStarts[j] = r.break_start_time || '';
+    w._breakEnds[j] = r.break_end_time || '';
+    w._breaks[j] = Number(r.break_minutes) || 0;
+    w._rates[j] = (Number(r.hourly_rate) || '') === '' ? '' : String(r.hourly_rate);
+  });
+  _cpyWkWorkers = [w];
+  _cpyWkReplaceWeek = true;
+  _cpyWkLastRenderCause = 'openCpyWeeklyEditWorker';
+  renderCpyWeeklyRows();
+  updateCpyWkTotal();
 }
 
 function rebuildCpyWeekDays() {
@@ -34242,7 +34342,11 @@ async function submitCpyWeekly() {
     });
   }
   if (!items.length) { alert('请勾选工人并填上下班时间和时薪（每天工时>0 且时薪>0 才会被记录）'); return; }
-  if (!confirm(`确认给 ${partnerName} 的 ${items.length} 名工人生成 ${totalRecords} 条按日付款记录，合计 ${_cpyFmtMoney(totalAmount)}？`)) return;
+  const editing = _cpyWkReplaceWeek;
+  const confirmMsg = editing
+    ? `确认覆盖 ${partnerName} · ${items.map(i => i.worker_name).join('、')} 本周的付款记录，重新生成 ${totalRecords} 条按日记录，合计 ${_cpyFmtMoney(totalAmount)}？（本周原有记录将被替换）`
+    : `确认给 ${partnerName} 的 ${items.length} 名工人生成 ${totalRecords} 条按日付款记录，合计 ${_cpyFmtMoney(totalAmount)}？`;
+  if (!confirm(confirmMsg)) return;
 
   try {
     const r = await api('/admin/company-payments/batch-weekly', {
@@ -34252,14 +34356,15 @@ async function submitCpyWeekly() {
         partner_name: partnerName,
         week_start: ws,
         payment_method: defaultMethod,
+        replace: editing,
         items
       })
     });
     if (r && r.error) { alert('提交失败：' + r.error); return; }
     if (r && r.pending) { closeCpyWeeklyModal(); return; }
     closeCpyWeeklyModal();
-    showToast(`已记录 ${r.inserted} 条付款`, 'success');
-    loadCpyList();
+    showToast(editing ? `已更新本周，共 ${r.inserted} 条付款` : `已记录 ${r.inserted} 条付款`, 'success');
+    if (_cpySubTab === 'weekly') loadCpyWeeklySummary(); else loadCpyList();
   } catch (e) {
     alert('提交失败：' + (e.message || e));
   }
