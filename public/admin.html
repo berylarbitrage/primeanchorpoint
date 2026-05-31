@@ -32020,6 +32020,7 @@ let _cpySubTab = 'history';
 let _cpyInited = false;
 let _cpyBatchWorkers = []; // {id, name} for currently-selected partner in batch modal
 let _cpyAdHocSeq = 0;
+let _cpyWeeklyGroups = []; // weekly-summary groups (for expandable per-day detail)
 
 const _CPY_METHOD_LABEL = { cash: '现金', transfer: '转账', check: '支票', other: '其他' };
 
@@ -32242,12 +32243,14 @@ async function loadCpyWeeklySummary() {
           days: new Set(),
           hours: 0,
           amount: 0,
+          records: [],
         };
         groups.set(key, g);
       }
       g.days.add(r.payment_date);
       g.hours += Number(r.hours) || 0;
       g.amount += Number(r.amount) || 0;
+      g.records.push(r);
     }
     const list = Array.from(groups.values()).sort((a, b) => {
       if (a.weekStart.getTime() !== b.weekStart.getTime()) return b.weekStart - a.weekStart;
@@ -32255,25 +32258,99 @@ async function loadCpyWeeklySummary() {
       if (pn !== 0) return pn;
       return a.worker_name.localeCompare(b.worker_name);
     });
+    _cpyWeeklyGroups = list;
     const totalAmt = list.reduce((s, g) => s + g.amount, 0);
     document.getElementById('cpyFilterTotal').textContent = `共 ${list.length} 周记录 · 总额 ${_cpyFmtMoney(totalAmt)}`;
-    tbody.innerHTML = list.map(g => {
+    tbody.innerHTML = list.map((g, idx) => {
       const hoursStr = g.hours > 0 ? (Math.round(g.hours * 100) / 100) + 'h' : '—';
       const range = `${_cpyFmtDateKey(g.weekStart)} – ${_cpyFmtDateKey(g.weekEnd)}`;
       const rangeShort = `${_cpyFmtDateMD(g.weekStart)} – ${_cpyFmtDateMD(g.weekEnd)}`;
       return `
-      <tr>
+      <tr style="cursor:pointer" onclick="toggleCpyWeekDetail(${idx})" title="点击查看本周每日明细">
         <td>${_cpyEscape(g.partner_name)}</td>
-        <td>${_cpyEscape(g.worker_name)}</td>
+        <td><span id="cpyWkCaret-${idx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(g.worker_name)}</td>
         <td><div>${_cpyEscape(rangeShort)}</div><div style="font-size:.7rem;color:var(--gray-500)">${_cpyEscape(range)}</div></td>
         <td>${g.days.size}</td>
         <td>${hoursStr}</td>
         <td style="font-weight:600;color:#15803d">${_cpyFmtMoney(g.amount)}</td>
+      </tr>
+      <tr id="cpyWkDetail-${idx}" style="display:none">
+        <td colspan="6" style="padding:0;background:#f8fafc"></td>
       </tr>`;
     }).join('');
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="6" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
   }
+}
+
+// Day-of-week labels for weekly detail (Mon..Sun)
+const _CPY_WEEKDAY_LABEL = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+function _cpyWeekdayOf(dateStr) {
+  const parts = String(dateStr || '').split('-');
+  if (parts.length !== 3) return '';
+  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  if (isNaN(d.getTime())) return '';
+  const day = d.getDay(); // 0=Sun
+  return _CPY_WEEKDAY_LABEL[day === 0 ? 6 : day - 1];
+}
+
+function toggleCpyWeekDetail(idx) {
+  const detailRow = document.getElementById('cpyWkDetail-' + idx);
+  const caret = document.getElementById('cpyWkCaret-' + idx);
+  if (!detailRow) return;
+  const isOpen = detailRow.style.display !== 'none';
+  if (isOpen) {
+    detailRow.style.display = 'none';
+    if (caret) caret.textContent = '▶';
+    return;
+  }
+  const g = _cpyWeeklyGroups[idx];
+  const cell = detailRow.querySelector('td');
+  if (g && cell && !cell.dataset.rendered) {
+    const recs = (g.records || []).slice().sort((a, b) =>
+      String(a.payment_date).localeCompare(String(b.payment_date)));
+    const rowsHtml = recs.map(r => {
+      const hrs = Number(r.hours) || 0;
+      const rate = Number(r.hourly_rate) || 0;
+      const br = Number(r.break_minutes) || 0;
+      const brStr = (r.break_start_time && r.break_end_time)
+        ? ` · 休${_cpyEscape(r.break_start_time)}–${_cpyEscape(r.break_end_time)}`
+        : (br ? ` · 休${br}分` : '');
+      const timeStr = (r.clock_in_time && r.clock_out_time)
+        ? `<span style="color:var(--gray-500)">${_cpyEscape(r.clock_in_time)}–${_cpyEscape(r.clock_out_time)}${brStr}</span>`
+        : '<span style="color:var(--gray-300)">—</span>';
+      const hrCell = (hrs > 0 && rate > 0)
+        ? `${hrs}h × ${_cpyFmtMoney(rate)}/h`
+        : '<span style="color:var(--gray-300)">—</span>';
+      return `
+        <tr>
+          <td style="padding:.35rem .6rem">${_cpyEscape(r.payment_date)} <span style="color:var(--gray-400)">${_cpyWeekdayOf(r.payment_date)}</span></td>
+          <td style="padding:.35rem .6rem">${hrCell}</td>
+          <td style="padding:.35rem .6rem">${timeStr}</td>
+          <td style="padding:.35rem .6rem">${_cpyEscape(_CPY_METHOD_LABEL[r.payment_method] || r.payment_method || '—')}</td>
+          <td style="padding:.35rem .6rem;color:var(--gray-500)">${_cpyEscape(r.notes || '')}</td>
+          <td style="padding:.35rem .6rem;font-weight:600;text-align:right">${_cpyFmtMoney(r.amount)}</td>
+        </tr>`;
+    }).join('');
+    cell.innerHTML = `
+      <table style="margin:0;width:100%;font-size:.8rem">
+        <thead>
+          <tr style="background:#eef2f7">
+            <th style="padding:.35rem .6rem;text-align:left">日期</th>
+            <th style="padding:.35rem .6rem;text-align:left">工时×时薪</th>
+            <th style="padding:.35rem .6rem;text-align:left">上下班</th>
+            <th style="padding:.35rem .6rem;text-align:left">付款方式</th>
+            <th style="padding:.35rem .6rem;text-align:left">备注</th>
+            <th style="padding:.35rem .6rem;text-align:right">金额</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+    cell.dataset.rendered = '1';
+  }
+  detailRow.style.display = '';
+  if (caret) caret.textContent = '▼';
 }
 
 async function loadCpySummary() {
