@@ -2105,6 +2105,22 @@ try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN employee_id INTEGER 
 try { db.exec(`DROP INDEX IF EXISTS idx_cwkp_partner_week`); } catch(e) {}
 try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cwkp_partner_week_worker ON company_week_payments(partner_id, week_start, worker_name)`); } catch(e) {}
 
+// ─── Per-month-per-company bill attachments (client payment proof + handwritten timesheet) ───
+db.exec(`CREATE TABLE IF NOT EXISTS company_month_bills (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  year_month TEXT NOT NULL,
+  proof_file_path TEXT DEFAULT '',
+  proof_file_name TEXT DEFAULT '',
+  timesheet_file_path TEXT DEFAULT '',
+  timesheet_file_name TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cmb_partner_ym ON company_month_bills(partner_id, year_month)`); } catch(e) {}
+
 // ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
 db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24303,6 +24319,94 @@ app.get('/api/admin/partners/:id/payment-workers', requireAdmin, blockManager, (
       first_name: r.first_name, last_name: r.last_name,
       phone: r.phone, email: r.email, position: r.position
     })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Per-month-per-company bill attachments: client payment proof + handwritten timesheet ───
+const monthBillUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.bin';
+      cb(null, `monthbill-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|webp|gif)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
+// GET /api/admin/company-month-bills?partner_id=&year=  → list bill attachments (with file URLs)
+app.get('/api/admin/company-month-bills', requireAdmin, blockManager, (req, res) => {
+  try {
+    const { partner_id, year } = req.query;
+    const where = [];
+    const params = [];
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    if (year) { where.push("substr(year_month,1,4) = ?"); params.push(String(year)); }
+    const sql = `SELECT * FROM company_month_bills ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`;
+    const rows = db.prepare(sql).all(...params);
+    for (const r of rows) {
+      r.proof_url = r.proof_file_path ? `/uploads/${path.basename(r.proof_file_path)}` : '';
+      r.timesheet_url = r.timesheet_file_path ? `/uploads/${path.basename(r.timesheet_file_path)}` : '';
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/company-month-bills (multipart `file`) — upsert one attachment slot.
+//   body: { partner_id, partner_name, year_month, kind: 'proof' | 'timesheet' }
+app.post('/api/admin/company-month-bills', requireAdmin, blockManager, monthBillUpload.single('file'), (req, res) => {
+  try {
+    const d = req.body || {};
+    const partnerId = parseInt(d.partner_id);
+    const ym = String(d.year_month || '').trim();
+    const kind = d.kind === 'timesheet' ? 'timesheet' : (d.kind === 'proof' ? 'proof' : '');
+    if (!partnerId || !/^\d{4}-\d{2}$/.test(ym) || !kind) {
+      return res.status(400).json({ error: 'partner_id, year_month (YYYY-MM) and kind (proof|timesheet) required' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'file required' });
+    const newPath = req.file.key || req.file.path;
+    const newName = req.file.originalname || '';
+    let partnerName = d.partner_name || '';
+    if (!partnerName) {
+      const p = db.prepare('SELECT name FROM partners WHERE id=?').get(partnerId);
+      if (p) partnerName = p.name;
+    }
+    const pathCol = kind === 'timesheet' ? 'timesheet_file_path' : 'proof_file_path';
+    const nameCol = kind === 'timesheet' ? 'timesheet_file_name' : 'proof_file_name';
+    const existing = db.prepare('SELECT * FROM company_month_bills WHERE partner_id=? AND year_month=?').get(partnerId, ym);
+    if (existing) {
+      const oldPath = existing[pathCol];
+      if (oldPath) storage.deleteObject(storage.keyFrom(oldPath, 'uploads')).catch(() => {});
+      db.prepare(`UPDATE company_month_bills SET ${pathCol}=?, ${nameCol}=?, partner_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+        .run(newPath, newName, partnerName, existing.id);
+      return res.json({ success: true, id: existing.id });
+    }
+    const r = db.prepare(`INSERT INTO company_month_bills (partner_id, partner_name, year_month, ${pathCol}, ${nameCol}, created_by)
+      VALUES (?,?,?,?,?,?)`).run(partnerId, partnerName, ym, newPath, newName, req.userName || '');
+    res.json({ success: true, id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/admin/company-month-bills?partner_id=&year_month=&kind=  — clear one slot's file
+app.delete('/api/admin/company-month-bills', requireAdmin, blockManager, (req, res) => {
+  try {
+    const partnerId = parseInt(req.query.partner_id);
+    const ym = String(req.query.year_month || '').trim();
+    const kind = req.query.kind === 'timesheet' ? 'timesheet' : (req.query.kind === 'proof' ? 'proof' : '');
+    if (!partnerId || !ym || !kind) return res.status(400).json({ error: 'partner_id, year_month and kind required' });
+    const pathCol = kind === 'timesheet' ? 'timesheet_file_path' : 'proof_file_path';
+    const nameCol = kind === 'timesheet' ? 'timesheet_file_name' : 'proof_file_name';
+    const existing = db.prepare('SELECT * FROM company_month_bills WHERE partner_id=? AND year_month=?').get(partnerId, ym);
+    if (existing && existing[pathCol]) {
+      storage.deleteObject(storage.keyFrom(existing[pathCol], 'uploads')).catch(() => {});
+      db.prepare(`UPDATE company_month_bills SET ${pathCol}='', ${nameCol}='', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(existing.id);
+    }
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
