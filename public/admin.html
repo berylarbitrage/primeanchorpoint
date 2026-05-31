@@ -31219,8 +31219,11 @@ function invToggleAll(chk) {
   document.querySelectorAll('.inv-emp-chk').forEach(c => c.checked = chk.checked);
 }
 
+const _invR2 = x => Math.round((Number(x) || 0) * 100) / 100;
+let _invPayMode = 'month'; // billing-edit granularity: 'month' | 'week' | 'day'
+
 // Load the month's per-worker wages (from company_worker_payments) into the invoice
-// editor. Amounts are pre-filled and editable; a markup % can be applied on generate.
+// editor, broken down so the reported amount can be edited per month / week / day.
 async function loadInvoicePaymentWorkers() {
   const ctx = _invPaymentsCtx;
   const container = document.getElementById('invEmpList');
@@ -31232,64 +31235,140 @@ async function loadInvoicePaymentWorkers() {
   msg.textContent = '加载中…'; msg.style.color = 'var(--gray-400)';
   const qs = new URLSearchParams({ partner_id: ctx.partner_id, year_month: ctx.year_month });
   const rows = await api('/admin/company-payments?' + qs).catch(() => []);
-  const map = new Map();
+  const wmap = new Map();
   (Array.isArray(rows) ? rows : []).forEach(r => {
-    const key = `${r.worker_name || ''}|${r.employee_id || ''}`;
-    let g = map.get(key);
-    if (!g) { g = { worker_name: r.worker_name || '', employee_id: r.employee_id || null, hours: 0, amount: 0 }; map.set(key, g); }
-    g.hours += Number(r.hours) || 0;
-    g.amount += Number(r.amount) || 0;
+    const wkey = `${r.worker_name || ''}|${r.employee_id || ''}`;
+    let g = wmap.get(wkey);
+    if (!g) {
+      g = { worker_name: r.worker_name || '', employee_id: r.employee_id || null,
+            hours: 0, amount: 0, dayMap: new Map(), weekMap: new Map(),
+            bill: { month: null, week: {}, day: {} } };
+      wmap.set(wkey, g);
+    }
+    const h = Number(r.hours) || 0, a = Number(r.amount) || 0;
+    g.hours += h; g.amount += a;
+    const date = r.payment_date;
+    let d = g.dayMap.get(date); if (!d) { d = { key: date, hours: 0, amount: 0 }; g.dayMap.set(date, d); }
+    d.hours += h; d.amount += a;
+    const mon = _cpyMondayOf(date); const wk = mon ? _cpyFmtDateKey(mon) : date;
+    let w = g.weekMap.get(wk); if (!w) { w = { key: wk, hours: 0, amount: 0 }; g.weekMap.set(wk, w); }
+    w.hours += h; w.amount += a;
   });
-  _invPayRows = Array.from(map.values()).sort((a, b) => a.worker_name.localeCompare(b.worker_name));
-  _invPayRows.forEach(g => { g.wageRate = g.hours > 0 ? Math.round((g.amount / g.hours) * 100) / 100 : 0; });
+  _invPayRows = Array.from(wmap.values()).sort((a, b) => a.worker_name.localeCompare(b.worker_name));
+  _invPayRows.forEach(g => {
+    g.wageRate = g.hours > 0 ? _invR2(g.amount / g.hours) : 0;
+    g.days = Array.from(g.dayMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    g.weeks = Array.from(g.weekMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    g.days.forEach(d => { d.wageRate = d.hours > 0 ? _invR2(d.amount / d.hours) : 0; d.label = `${d.key} ${_cpyWeekdayOf(d.key)}`; });
+    g.weeks.forEach(w => {
+      w.wageRate = w.hours > 0 ? _invR2(w.amount / w.hours) : 0;
+      const m = new Date(w.key + 'T00:00:00'); const s = new Date(m); s.setDate(s.getDate() + 6);
+      w.label = `${_cpyFmtDateMD(m)}–${_cpyFmtDateMD(s)}`;
+    });
+  });
   if (!_invPayRows.length) {
     container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">该公司本月无付款记录</div>';
     msg.textContent = ''; return;
   }
+  renderInvPayTable();
+}
+
+function setInvPayMode(mode) {
+  _invPayMode = mode;
+  ['month', 'week', 'day'].forEach(m => {
+    const b = document.getElementById('invPayMode-' + m);
+    if (b) { b.style.background = m === mode ? '#16a34a' : '#fff'; b.style.color = m === mode ? '#fff' : '#166534'; }
+  });
+  renderInvPayTable();
+}
+
+// Reported amount stored per worker per granularity; null → fall back to wage amount.
+function _invBillVal(g, key, wageAmount) {
+  const v = _invPayMode === 'month' ? g.bill.month : g.bill[_invPayMode][key];
+  return v == null ? _invR2(wageAmount) : _invR2(v);
+}
+function _invWorkerTotal(wi) {
+  const g = _invPayRows[wi];
+  if (_invPayMode === 'month') return _invBillVal(g, 'm', g.amount);
+  const leaves = _invPayMode === 'week' ? g.weeks : g.days;
+  return _invR2(leaves.reduce((s, l) => s + _invBillVal(g, l.key, l.amount), 0));
+}
+
+function renderInvPayTable() {
+  const container = document.getElementById('invEmpList');
+  const mode = _invPayMode;
+  const inStyle = 'width:96px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.85rem';
+  const periodHead = mode === 'month' ? '周期' : (mode === 'week' ? '周' : '日期');
+  let body = '';
+  _invPayRows.forEach((g, wi) => {
+    const sub = _invWorkerTotal(wi);
+    body += `
+      <tr style="background:#f8fafc;border-top:1px solid var(--gray-200)">
+        <td style="padding:6px 8px"><input type="checkbox" class="inv-pay-chk" data-w="${wi}" checked onchange="invPayRecalcHint()"></td>
+        <td style="padding:6px 8px;font-weight:600" colspan="2">${esc(g.worker_name)} <span style="color:var(--gray-400);font-weight:400">· ${g.hours.toFixed(2)}h · 工资 ${_cpyFmtMoney(g.amount)}</span></td>
+        <td style="padding:6px 8px;text-align:right;font-weight:700;color:#15803d" colspan="2">报价合计 <span id="invPaySub-${wi}">${_cpyFmtMoney(sub)}</span></td>
+      </tr>`;
+    const leaves = mode === 'month'
+      ? [{ key: 'm', label: '整月', hours: g.hours, amount: g.amount, wageRate: g.wageRate }]
+      : (mode === 'week' ? g.weeks : g.days);
+    leaves.forEach(l => {
+      const billAmt = _invBillVal(g, l.key, l.amount);
+      const rateCell = l.hours > 0
+        ? `<input type="number" class="inv-pay-billrate" data-w="${wi}" data-key="${esc(l.key)}" value="${(l.hours > 0 ? _invR2(billAmt / l.hours) : 0).toFixed(2)}" min="0" step="0.01" oninput="invPayRateEdit(this)" style="width:72px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.85rem">`
+        : '<span style="color:var(--gray-300)">—</span>';
+      body += `
+        <tr>
+          <td></td>
+          <td style="padding:3px 8px 3px 1.5rem;color:var(--gray-600)">${esc(l.label)}</td>
+          <td style="padding:3px 8px;text-align:right;color:var(--gray-500)">${l.hours.toFixed(2)}h${l.hours > 0 ? ' · 发$' + l.wageRate.toFixed(2) : ''}</td>
+          <td style="padding:3px 8px;text-align:right">${rateCell}</td>
+          <td style="padding:3px 8px;text-align:right"><input type="number" class="inv-pay-amount" data-w="${wi}" data-key="${esc(l.key)}" value="${billAmt.toFixed(2)}" min="0" step="0.01" oninput="invPayAmtEdit(this)" style="${inStyle}"></td>
+        </tr>`;
+    });
+  });
   container.innerHTML = `
     <table style="width:100%;border-collapse:collapse;font-size:.87rem">
       <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
-        <th style="padding:6px 8px;text-align:left"><input type="checkbox" id="invPaySelAll" onchange="invPayToggleAll(this)" checked> 全选</th>
-        <th style="padding:6px 8px">工人</th>
-        <th style="padding:6px 8px;text-align:right">工时</th>
-        <th style="padding:6px 8px;text-align:right" title="发给工人的工资时薪（只读，来自工资记录）">工资时薪<br><span style="font-weight:400;font-size:.72rem">我发给他</span></th>
-        <th style="padding:6px 8px;text-align:right" title="报给公司的时薪（可改）">报价时薪<br><span style="font-weight:400;font-size:.72rem">报给公司</span></th>
-        <th style="padding:6px 8px;text-align:right">计费金额 ($)</th>
+        <th style="padding:6px 8px;text-align:left"><input type="checkbox" id="invPaySelAll" onchange="invPayToggleAll(this)" checked></th>
+        <th style="padding:6px 8px;text-align:left">${periodHead}</th>
+        <th style="padding:6px 8px;text-align:right">工时 / 工资时薪</th>
+        <th style="padding:6px 8px;text-align:right">报价时薪</th>
+        <th style="padding:6px 8px;text-align:right">报价金额 ($)</th>
       </tr></thead>
-      <tbody>
-        ${_invPayRows.map((g, i) => `
-          <tr>
-            <td style="padding:5px 8px"><input type="checkbox" class="inv-pay-chk" data-idx="${i}" checked onchange="invPayRecalcHint()"></td>
-            <td style="padding:5px 8px">${esc(g.worker_name)}</td>
-            <td style="padding:5px 8px;text-align:right">${g.hours.toFixed(2)}</td>
-            <td style="padding:5px 8px;text-align:right;color:var(--gray-500)">${g.hours > 0 ? '$' + g.wageRate.toFixed(2) : '—'}</td>
-            <td style="padding:5px 8px;text-align:right">${g.hours > 0
-              ? `<input type="number" class="inv-pay-billrate" data-idx="${i}" value="${g.wageRate.toFixed(2)}" min="0" step="0.01" oninput="invPaySyncFromRate(this)" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.85rem">`
-              : '<span style="color:var(--gray-300)">—</span>'}</td>
-            <td style="padding:5px 8px;text-align:right"><input type="number" class="inv-pay-amount" data-idx="${i}" value="${g.amount.toFixed(2)}" min="0" step="0.01" oninput="invPaySyncFromAmount(this)" style="width:100px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.85rem"></td>
-          </tr>`).join('')}
-      </tbody>
+      <tbody>${body}</tbody>
     </table>`;
   invPayRecalcHint();
 }
 
-// Bill rate edited → recompute that worker's billed amount (hours × bill rate).
-function invPaySyncFromRate(inp) {
-  const idx = inp.dataset.idx;
-  const meta = _invPayRows[idx];
-  const hours = meta ? (meta.hours || 0) : 0;
-  const amtInp = document.querySelector(`.inv-pay-amount[data-idx="${idx}"]`);
-  if (hours > 0 && amtInp) amtInp.value = (hours * (Number(inp.value) || 0)).toFixed(2);
-  invPayRecalcHint();
+function _invLeafHours(g, key) {
+  if (_invPayMode === 'month') return g.hours || 0;
+  const arr = _invPayMode === 'week' ? g.weeks : g.days;
+  const l = arr.find(x => x.key === key);
+  return l ? (l.hours || 0) : 0;
+}
+function _invStoreBill(wi, key, val) {
+  const g = _invPayRows[wi];
+  if (_invPayMode === 'month') g.bill.month = val; else g.bill[_invPayMode][key] = val;
 }
 
-// Billed amount edited directly → back-fill the implied bill rate (amount ÷ hours).
-function invPaySyncFromAmount(inp) {
-  const idx = inp.dataset.idx;
-  const meta = _invPayRows[idx];
-  const hours = meta ? (meta.hours || 0) : 0;
-  const rateInp = document.querySelector(`.inv-pay-billrate[data-idx="${idx}"]`);
-  if (hours > 0 && rateInp) rateInp.value = ((Number(inp.value) || 0) / hours).toFixed(2);
+// Reported amount edited → store it and back-fill the implied report rate.
+function invPayAmtEdit(inp) {
+  const wi = inp.dataset.w, key = inp.dataset.key;
+  const val = _invR2(Number(inp.value) || 0);
+  _invStoreBill(wi, key, val);
+  const hours = _invLeafHours(_invPayRows[wi], key);
+  const rateInp = document.querySelector(`.inv-pay-billrate[data-w="${wi}"][data-key="${(window.CSS && CSS.escape) ? CSS.escape(key) : key}"]`);
+  if (hours > 0 && rateInp) rateInp.value = _invR2(val / hours).toFixed(2);
+  invPayRecalcHint();
+}
+// Report rate edited → reported amount = hours × rate.
+function invPayRateEdit(inp) {
+  const wi = inp.dataset.w, key = inp.dataset.key;
+  const hours = _invLeafHours(_invPayRows[wi], key);
+  const val = _invR2(hours * (Number(inp.value) || 0));
+  _invStoreBill(wi, key, val);
+  const amtInp = document.querySelector(`.inv-pay-amount[data-w="${wi}"][data-key="${(window.CSS && CSS.escape) ? CSS.escape(key) : key}"]`);
+  if (amtInp) amtInp.value = val.toFixed(2);
   invPayRecalcHint();
 }
 
@@ -31298,14 +31377,18 @@ function invPayToggleAll(chk) {
   invPayRecalcHint();
 }
 
-// Live total hint reflecting edited amounts + markup.
+// Live per-worker subtotals + grand total (with markup).
 function invPayRecalcHint() {
   if (_invSource !== 'payments') return;
   const markup = Number(document.getElementById('invMarkup')?.value) || 0;
   let sum = 0;
-  document.querySelectorAll('.inv-pay-chk:checked').forEach(chk => {
-    const inp = document.querySelector(`.inv-pay-amount[data-idx="${chk.dataset.idx}"]`);
-    sum += (Number(inp?.value) || 0);
+  _invPayRows.forEach((g, wi) => {
+    const sub = _invWorkerTotal(wi);
+    const subEl = document.getElementById('invPaySub-' + wi);
+    if (subEl) subEl.textContent = _cpyFmtMoney(sub);
+    const chk = document.querySelector(`.inv-pay-chk[data-w="${wi}"]`);
+    if (chk && !chk.checked) return;
+    sum += sub;
   });
   const total = Math.round(sum * (1 + markup / 100) * 100) / 100;
   const msg = document.getElementById('invMsg');
@@ -31356,12 +31439,14 @@ async function generateInvoiceFromPayments() {
   const pe = document.getElementById('invPeriodEnd').value;
   const markup = Number(document.getElementById('invMarkup')?.value) || 0;
   const items = [];
+  // Aggregate each selected worker to one invoice line: total = sum of the current
+  // granularity's reported amounts × (1 + markup).
   document.querySelectorAll('.inv-pay-chk:checked').forEach(chk => {
-    const meta = _invPayRows[parseInt(chk.dataset.idx)];
+    const wi = parseInt(chk.dataset.w);
+    const meta = _invPayRows[wi];
     if (!meta) return;
-    const inp = document.querySelector(`.inv-pay-amount[data-idx="${chk.dataset.idx}"]`);
-    const base = Number(inp?.value) || 0;
-    const total = Math.round(base * (1 + markup / 100) * 100) / 100;
+    const total = Math.round(_invWorkerTotal(wi) * (1 + markup / 100) * 100) / 100;
+    if (!(total > 0)) return;
     const hours = meta.hours || 0;
     const rate = hours > 0 ? Math.round((total / hours) * 100) / 100 : 0;
     items.push({
@@ -31369,7 +31454,7 @@ async function generateInvoiceFromPayments() {
       regular_hours: hours, overtime_hours: 0, rate, total_amount: total,
     });
   });
-  if (!items.length) { alert('请至少选择一名工人'); return; }
+  if (!items.length) { alert('请至少选择一名工人（且金额大于 0）'); return; }
   const subtotal = Math.round(items.reduce((s, i) => s + i.total_amount, 0) * 100) / 100;
 
   // Look up partner billing info for the "bill to" block.
@@ -31726,7 +31811,12 @@ function printInvoice() {
 
     <div id="invPaymentsOpts" style="display:none;margin:-.25rem 0 1rem">
       <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.5rem .75rem">
-        <span style="font-size:.82rem;color:#166534">数据来自「工资记录（按月）」· 金额可直接修改</span>
+        <span style="font-size:.82rem;color:#166534">数据来自「工资记录」· 报价金额可改</span>
+        <span style="display:inline-flex;border:1px solid #bbf7d0;border-radius:6px;overflow:hidden;font-size:.78rem">
+          <button type="button" id="invPayMode-month" onclick="setInvPayMode('month')" style="border:none;padding:.25rem .6rem;background:#16a34a;color:#fff;cursor:pointer">按月</button>
+          <button type="button" id="invPayMode-week" onclick="setInvPayMode('week')" style="border:none;border-left:1px solid #bbf7d0;padding:.25rem .6rem;background:#fff;color:#166534;cursor:pointer">按周</button>
+          <button type="button" id="invPayMode-day" onclick="setInvPayMode('day')" style="border:none;border-left:1px solid #bbf7d0;padding:.25rem .6rem;background:#fff;color:#166534;cursor:pointer">按天</button>
+        </span>
         <label style="font-size:.82rem;color:#166534;margin-left:auto;display:inline-flex;align-items:center;gap:.3rem">加价 markup
           <input type="number" id="invMarkup" value="0" min="0" step="0.1" oninput="invPayRecalcHint()" style="width:70px;padding:.2rem .4rem;border:1px solid #bbf7d0;border-radius:5px;text-align:right"> %
         </label>
@@ -33151,9 +33241,11 @@ async function openInvoiceModalForMonth(idx) {
   // and auto-load the worker list so the invoice is ready to review/generate.
   _invSource = 'payments';
   _invPaymentsCtx = { partner_id: r.partner_id, year_month: r.year_month, partner_name: r.partner_name || '' };
+  _invPayMode = 'month';
   const opts = document.getElementById('invPaymentsOpts');
   if (opts) opts.style.display = '';
   const mk = document.getElementById('invMarkup'); if (mk) mk.value = '0';
+  setInvPayMode('month');
   await loadInvoiceEmployees();
 }
 
