@@ -1491,6 +1491,10 @@ tr:hover td{background:var(--sky-light)}
       style="padding:.5rem 1.25rem;font-size:.9rem;border:none;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky);background:transparent;font-weight:600;cursor:pointer">
       📋 付款明细
     </button>
+    <button id="cpySubTabBtn-weekly" class="btn" onclick="switchCpySubTab('weekly')"
+      style="padding:.5rem 1.25rem;font-size:.9rem;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500);background:transparent;font-weight:500;cursor:pointer">
+      📅 按周汇总
+    </button>
     <button id="cpySubTabBtn-summary" class="btn" onclick="switchCpySubTab('summary')"
       style="padding:.5rem 1.25rem;font-size:.9rem;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500);background:transparent;font-weight:500;cursor:pointer">
       📊 按月汇总
@@ -1540,6 +1544,27 @@ tr:hover td{background:var(--sky-light)}
         </thead>
         <tbody id="cpyListBody">
           <tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Sub-tab: weekly -->
+  <div id="cpySubTab-weekly" style="display:none">
+    <div class="card" style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>公司</th>
+            <th>工人姓名</th>
+            <th>周（周一–周日）</th>
+            <th>工作天数</th>
+            <th>总工时</th>
+            <th>总金额</th>
+          </tr>
+        </thead>
+        <tbody id="cpyWeeklySummaryBody">
+          <tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
         </tbody>
       </table>
     </div>
@@ -32045,24 +32070,40 @@ async function loadCpyPartners() {
 function switchCpySubTab(name) {
   _cpySubTab = name;
   const btnH = document.getElementById('cpySubTabBtn-history');
+  const btnW = document.getElementById('cpySubTabBtn-weekly');
   const btnS = document.getElementById('cpySubTabBtn-summary');
   const paneH = document.getElementById('cpySubTab-history');
+  const paneW = document.getElementById('cpySubTab-weekly');
   const paneS = document.getElementById('cpySubTab-summary');
   const monthInput = document.getElementById('cpyFilterMonth');
   const yearInput = document.getElementById('cpyFilterYear');
   const yearLabel = document.getElementById('cpyFilterYearLabel');
+  // Reset all buttons to inactive
+  [btnH, btnW, btnS].forEach(b => {
+    b.style.color = 'var(--gray-500)';
+    b.style.borderBottomColor = 'transparent';
+    b.style.fontWeight = '500';
+  });
+  paneH.style.display = 'none';
+  paneW.style.display = 'none';
+  paneS.style.display = 'none';
   if (name === 'summary') {
-    paneH.style.display = 'none'; paneS.style.display = 'block';
-    btnH.style.color = 'var(--gray-500)'; btnH.style.borderBottomColor = 'transparent'; btnH.style.fontWeight = '500';
+    paneS.style.display = 'block';
     btnS.style.color = 'var(--sky)'; btnS.style.borderBottomColor = 'var(--sky)'; btnS.style.fontWeight = '600';
     monthInput.style.display = 'none';
     yearInput.style.display = 'inline-block';
     yearLabel.style.display = 'inline';
     if (!yearInput.value) yearInput.value = new Date().getFullYear();
     loadCpySummary();
+  } else if (name === 'weekly') {
+    paneW.style.display = 'block';
+    btnW.style.color = 'var(--sky)'; btnW.style.borderBottomColor = 'var(--sky)'; btnW.style.fontWeight = '600';
+    monthInput.style.display = 'inline-block';
+    yearInput.style.display = 'none';
+    yearLabel.style.display = 'none';
+    loadCpyWeeklySummary();
   } else {
-    paneH.style.display = 'block'; paneS.style.display = 'none';
-    btnS.style.color = 'var(--gray-500)'; btnS.style.borderBottomColor = 'transparent'; btnS.style.fontWeight = '500';
+    paneH.style.display = 'block';
     btnH.style.color = 'var(--sky)'; btnH.style.borderBottomColor = 'var(--sky)'; btnH.style.fontWeight = '600';
     monthInput.style.display = 'inline-block';
     yearInput.style.display = 'none';
@@ -32081,6 +32122,7 @@ function clearCpyFilter() {
 
 function onCpyFilterChange() {
   if (_cpySubTab === 'summary') loadCpySummary();
+  else if (_cpySubTab === 'weekly') loadCpyWeeklySummary();
   else loadCpyList();
 }
 
@@ -32136,6 +32178,101 @@ async function loadCpyList() {
     }).join('');
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="11" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+  }
+}
+
+// Returns the Monday (00:00 local) for the week containing the given YYYY-MM-DD date.
+function _cpyMondayOf(dateStr) {
+  const parts = String(dateStr || '').split('-');
+  if (parts.length !== 3) return null;
+  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  if (isNaN(d.getTime())) return null;
+  const day = d.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function _cpyFmtDateMD(d) {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${m}/${day}`;
+}
+
+function _cpyFmtDateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+async function loadCpyWeeklySummary() {
+  const tbody = document.getElementById('cpyWeeklySummaryBody');
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
+  const partnerId = document.getElementById('cpyFilterPartner').value;
+  const month = document.getElementById('cpyFilterMonth').value;
+  const q = document.getElementById('cpyFilterQ').value.trim();
+  const params = new URLSearchParams();
+  if (partnerId) params.set('partner_id', partnerId);
+  if (month) params.set('year_month', month);
+  if (q) params.set('q', q);
+  try {
+    const rows = await api('/admin/company-payments' + (params.toString() ? '?' + params : ''));
+    if (!Array.isArray(rows) || !rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
+      document.getElementById('cpyFilterTotal').textContent = '';
+      return;
+    }
+    // Group by partner_id + worker_name + week-start
+    const groups = new Map();
+    for (const r of rows) {
+      const mon = _cpyMondayOf(r.payment_date);
+      if (!mon) continue;
+      const weekKey = _cpyFmtDateKey(mon);
+      const key = `${r.partner_id || ''}|${r.worker_name || ''}|${weekKey}`;
+      let g = groups.get(key);
+      if (!g) {
+        const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+        g = {
+          partner_name: r.partner_name || '—',
+          worker_name: r.worker_name || '',
+          weekStart: mon,
+          weekEnd: sun,
+          days: new Set(),
+          hours: 0,
+          amount: 0,
+        };
+        groups.set(key, g);
+      }
+      g.days.add(r.payment_date);
+      g.hours += Number(r.hours) || 0;
+      g.amount += Number(r.amount) || 0;
+    }
+    const list = Array.from(groups.values()).sort((a, b) => {
+      if (a.weekStart.getTime() !== b.weekStart.getTime()) return b.weekStart - a.weekStart;
+      const pn = a.partner_name.localeCompare(b.partner_name);
+      if (pn !== 0) return pn;
+      return a.worker_name.localeCompare(b.worker_name);
+    });
+    const totalAmt = list.reduce((s, g) => s + g.amount, 0);
+    document.getElementById('cpyFilterTotal').textContent = `共 ${list.length} 周记录 · 总额 ${_cpyFmtMoney(totalAmt)}`;
+    tbody.innerHTML = list.map(g => {
+      const hoursStr = g.hours > 0 ? (Math.round(g.hours * 100) / 100) + 'h' : '—';
+      const range = `${_cpyFmtDateKey(g.weekStart)} – ${_cpyFmtDateKey(g.weekEnd)}`;
+      const rangeShort = `${_cpyFmtDateMD(g.weekStart)} – ${_cpyFmtDateMD(g.weekEnd)}`;
+      return `
+      <tr>
+        <td>${_cpyEscape(g.partner_name)}</td>
+        <td>${_cpyEscape(g.worker_name)}</td>
+        <td><div>${_cpyEscape(rangeShort)}</div><div style="font-size:.7rem;color:var(--gray-500)">${_cpyEscape(range)}</div></td>
+        <td>${g.days.size}</td>
+        <td>${hoursStr}</td>
+        <td style="font-weight:600;color:#15803d">${_cpyFmtMoney(g.amount)}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
   }
 }
 
