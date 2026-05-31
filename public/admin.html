@@ -32020,6 +32020,7 @@ let _cpyInited = false;
 let _cpyBatchWorkers = []; // {id, name} for currently-selected partner in batch modal
 let _cpyAdHocSeq = 0;
 let _cpyWeeklyGroups = []; // weekly-summary groups (for expandable per-day detail)
+let _cpySummaryRows = []; // monthly-summary rows (for expandable in-month weekly breakdown)
 
 const _CPY_METHOD_LABEL = { cash: '现金', transfer: '转账', check: '支票', other: '其他' };
 
@@ -32395,19 +32396,112 @@ async function loadCpySummary() {
       document.getElementById('cpyFilterTotal').textContent = '';
       return;
     }
+    _cpySummaryRows = rows;
     const totalAmt = rows.reduce((s, r) => s + (Number(r.total_amount) || 0), 0);
     document.getElementById('cpyFilterTotal').textContent = `合计 ${_cpyFmtMoney(totalAmt)}`;
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td><strong>${_cpyEscape(r.year_month)}</strong></td>
+    tbody.innerHTML = rows.map((r, idx) => `
+      <tr style="cursor:pointer" onclick="toggleCpyMonthWeeks(${idx})" title="点击查看本月各周（1号起每7天一段）明细">
+        <td><span id="cpyMoCaret-${idx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span><strong>${_cpyEscape(r.year_month)}</strong></td>
         <td>${_cpyEscape(r.partner_name || '—')}</td>
         <td style="font-weight:600;color:#15803d">${_cpyFmtMoney(r.total_amount)}</td>
         <td>${r.worker_count}</td>
         <td>${r.record_count}</td>
       </tr>
+      <tr id="cpyMoDetail-${idx}" style="display:none">
+        <td colspan="5" style="padding:0;background:#f8fafc"></td>
+      </tr>
     `).join('');
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="5" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+  }
+}
+
+// Build calendar-month week segments starting from the 1st: 1-7, 8-14, 15-21, 22-28, 29-end.
+// Returns [{start, end, label, rangeStr}] (day numbers), clipped to the month's last day.
+function _cpyMonthWeekSegments(yearMonth) {
+  const parts = String(yearMonth || '').split('-');
+  if (parts.length < 2) return [];
+  const y = Number(parts[0]), m = Number(parts[1]);
+  if (!y || !m) return [];
+  const daysInMonth = new Date(y, m, 0).getDate(); // m is 1-based; day 0 of next month = last day
+  const mm = String(m).padStart(2, '0');
+  const segs = [];
+  let start = 1, n = 1;
+  while (start <= daysInMonth) {
+    const end = Math.min(start + 6, daysInMonth);
+    segs.push({
+      start, end, no: n,
+      label: `第${n}周`,
+      rangeStr: `${mm}/${String(start).padStart(2, '0')} – ${mm}/${String(end).padStart(2, '0')}`,
+    });
+    start = end + 1; n++;
+  }
+  return segs;
+}
+
+async function toggleCpyMonthWeeks(idx) {
+  const detailRow = document.getElementById('cpyMoDetail-' + idx);
+  const caret = document.getElementById('cpyMoCaret-' + idx);
+  if (!detailRow) return;
+  const isOpen = detailRow.style.display !== 'none';
+  if (isOpen) {
+    detailRow.style.display = 'none';
+    if (caret) caret.textContent = '▶';
+    return;
+  }
+  detailRow.style.display = '';
+  if (caret) caret.textContent = '▼';
+  const cell = detailRow.querySelector('td');
+  const r = _cpySummaryRows[idx];
+  if (!r || !cell || cell.dataset.rendered) return;
+  cell.innerHTML = '<div style="padding:.6rem .75rem;color:var(--gray-400);font-size:.82rem">加载中…</div>';
+  try {
+    const params = new URLSearchParams();
+    if (r.partner_id) params.set('partner_id', r.partner_id);
+    if (r.year_month) params.set('year_month', r.year_month);
+    const recs = await api('/admin/company-payments' + (params.toString() ? '?' + params : ''));
+    const segs = _cpyMonthWeekSegments(r.year_month);
+    // Aggregate each record into its segment by day-of-month
+    segs.forEach(s => { s.amount = 0; s.hours = 0; s.count = 0; s.workers = new Set(); });
+    (recs || []).forEach(rec => {
+      const dParts = String(rec.payment_date || '').split('-');
+      if (dParts.length < 3) return;
+      const day = Number(dParts[2]);
+      const seg = segs.find(s => day >= s.start && day <= s.end);
+      if (!seg) return;
+      seg.amount += Number(rec.amount) || 0;
+      seg.hours += Number(rec.hours) || 0;
+      seg.count += 1;
+      seg.workers.add(rec.worker_name || '');
+    });
+    const rowsHtml = segs.map(s => {
+      const hoursStr = s.hours > 0 ? (Math.round(s.hours * 100) / 100) + 'h' : '—';
+      const dim = s.count === 0 ? 'color:var(--gray-300)' : '';
+      return `
+        <tr style="${dim}">
+          <td style="padding:.35rem .6rem"><strong>${s.label}</strong> <span style="color:var(--gray-500);font-weight:400">${_cpyEscape(s.rangeStr)}</span></td>
+          <td style="padding:.35rem .6rem">${s.workers.size || 0}</td>
+          <td style="padding:.35rem .6rem">${hoursStr}</td>
+          <td style="padding:.35rem .6rem">${s.count}</td>
+          <td style="padding:.35rem .6rem;font-weight:600;text-align:right;${s.count ? 'color:#15803d' : ''}">${_cpyFmtMoney(s.amount)}</td>
+        </tr>`;
+    }).join('');
+    cell.innerHTML = `
+      <table style="margin:0;width:100%;font-size:.8rem">
+        <thead>
+          <tr style="background:#eef2f7">
+            <th style="padding:.35rem .6rem;text-align:left">周（按自然月，1号起每7天）</th>
+            <th style="padding:.35rem .6rem;text-align:left">工人数</th>
+            <th style="padding:.35rem .6rem;text-align:left">总工时</th>
+            <th style="padding:.35rem .6rem;text-align:left">笔数</th>
+            <th style="padding:.35rem .6rem;text-align:right">金额</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+    cell.dataset.rendered = '1';
+  } catch (e) {
+    cell.innerHTML = `<div style="padding:.6rem .75rem;color:#b91c1c;font-size:.82rem">加载失败：${_cpyEscape(e.message || e)}</div>`;
   }
 }
 
