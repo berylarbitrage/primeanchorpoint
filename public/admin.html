@@ -1581,10 +1581,11 @@ tr:hover td{background:var(--sky-light)}
             <th>付款总额</th>
             <th>工人数</th>
             <th>付款笔数</th>
+            <th style="text-align:right">账单 / 凭证</th>
           </tr>
         </thead>
         <tbody id="cpySummaryBody">
-          <tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
+          <tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
         </tbody>
       </table>
     </div>
@@ -32846,16 +32847,25 @@ function toggleCpyWeekDetail(idx) {
 
 async function loadCpySummary() {
   const tbody = document.getElementById('cpySummaryBody');
-  tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
   const partnerId = document.getElementById('cpyFilterPartner').value;
   const year = document.getElementById('cpyFilterYear').value;
   const params = new URLSearchParams();
   if (partnerId) params.set('partner_id', partnerId);
   if (year) params.set('year', year);
+  // Month-bill attachments share the same partner/year filters.
+  const bParams = new URLSearchParams();
+  if (partnerId) bParams.set('partner_id', partnerId);
+  if (year) bParams.set('year', year);
   try {
-    const rows = await api('/admin/company-payments/summary' + (params.toString() ? '?' + params : ''));
+    const [rows, bills] = await Promise.all([
+      api('/admin/company-payments/summary' + (params.toString() ? '?' + params : '')),
+      api('/admin/company-month-bills' + (bParams.toString() ? '?' + bParams : '')).catch(() => []),
+    ]);
+    _cpyMonthBills = {};
+    (Array.isArray(bills) ? bills : []).forEach(b => { _cpyMonthBills[`${b.partner_id}|${b.year_month}`] = b; });
     if (!Array.isArray(rows) || !rows.length) {
-      tbody.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无数据</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无数据</td></tr>';
       document.getElementById('cpyFilterTotal').textContent = '';
       return;
     }
@@ -32869,14 +32879,92 @@ async function loadCpySummary() {
         <td style="font-weight:600;color:#15803d">${_cpyFmtMoney(r.total_amount)}</td>
         <td>${r.worker_count}</td>
         <td>${r.record_count}</td>
+        <td style="text-align:right;white-space:nowrap">${_cpyMonthBillCtrl(r, idx)}</td>
       </tr>
       <tr id="cpyMoDetail-${idx}" style="display:none">
-        <td colspan="5" style="padding:0;background:#f8fafc"></td>
+        <td colspan="6" style="padding:0;background:#f8fafc"></td>
       </tr>
     `).join('');
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="5" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
   }
+}
+
+// State + UI for per-month billing actions on the monthly-summary tab.
+let _cpyMonthBills = {}; // `${partner_id}|${year_month}` -> { proof_url, timesheet_url, ... }
+
+// Render the 发invoice + payment-proof + handwritten-timesheet controls for a month row.
+// Takes the row index so handlers can look the row up (no name interpolation in onclick).
+function _cpyMonthBillCtrl(r, idx) {
+  const pid = r.partner_id;
+  const ym = r.year_month;
+  if (pid == null) {
+    return `<span style="color:var(--gray-300);font-size:.75rem">散工无公司</span>`;
+  }
+  const bill = _cpyMonthBills[`${pid}|${ym}`] || {};
+  const stop = 'event.stopPropagation();';
+  const invBtn = `<button class="btn btn-sm btn-outline" style="padding:.05rem .5rem;font-size:.72rem;color:#16a34a;border-color:#86efac" onclick="${stop}openInvoiceModalForMonth(${idx})" title="用本月公司+周期预填开票系统">🧾 发invoice</button>`;
+  const slot = (kind, label, url) => {
+    const inner = url
+      ? `<a href="${_cpyEscape(url)}" target="_blank" rel="noopener" onclick="${stop}" style="color:#0E7BB8;text-decoration:none;font-weight:600" title="查看（只读）">📎 ${label}✓</a>
+         <button class="btn btn-sm btn-outline" style="padding:.02rem .35rem;font-size:.68rem" onclick="${stop}cpyMonthBillUpload(${idx},'${kind}')" title="重新上传">↻</button>`
+      : `<button class="btn btn-sm btn-outline" style="padding:.05rem .5rem;font-size:.72rem" onclick="${stop}cpyMonthBillUpload(${idx},'${kind}')" title="上传${label}">⬆ ${label}</button>`;
+    return `<span style="display:inline-flex;align-items:center;gap:.25rem">${inner}</span>`;
+  };
+  return `<span style="display:inline-flex;align-items:center;gap:.5rem;justify-content:flex-end;flex-wrap:wrap">
+    ${invBtn}
+    ${slot('proof', '付款凭证', bill.proof_url)}
+    ${slot('timesheet', '手写时间表', bill.timesheet_url)}
+  </span>`;
+}
+
+// Open the existing client-billing invoice modal, pre-filled with this company and
+// the month's full date range. The user then loads employees and generates as usual.
+async function openInvoiceModalForMonth(idx) {
+  const r = _cpySummaryRows[idx];
+  if (!r) return;
+  await openInvoiceModal();
+  const sel = document.getElementById('invCompanySelect');
+  if (sel && r.partner_name) sel.value = r.partner_name;
+  const parts = String(r.year_month || '').split('-');
+  if (parts.length === 2) {
+    const y = Number(parts[0]), m = Number(parts[1]);
+    const last = new Date(y, m, 0).getDate();
+    document.getElementById('invPeriodStart').value = `${r.year_month}-01`;
+    document.getElementById('invPeriodEnd').value = `${r.year_month}-${String(last).padStart(2, '0')}`;
+  }
+}
+
+// Upload (or replace) a month-bill attachment via a transient file picker.
+function cpyMonthBillUpload(idx, kind) {
+  const r = _cpySummaryRows[idx];
+  if (!r || r.partner_id == null) return;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic';
+  input.onchange = async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('partner_id', r.partner_id);
+    fd.append('year_month', r.year_month);
+    fd.append('partner_name', r.partner_name || '');
+    fd.append('kind', kind);
+    try {
+      // Raw fetch (not api()): let the browser set the multipart Content-Type boundary.
+      const res = await fetch(API + '/admin/company-month-bills', {
+        method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd,
+      });
+      const r = await res.json();
+      if (!r.success && !r.id) throw new Error(r.error || '上传失败');
+      showToast(kind === 'timesheet' ? '手写时间表已上传 ✓' : '付款凭证已上传 ✓', 'success');
+      loadCpySummary();
+    } catch (e) {
+      showToast('上传失败：' + (e.message || e), 'error');
+    }
+  };
+  input.click();
 }
 
 // Build week segments for a calendar month using Monday–Sunday weeks, clipped to the
