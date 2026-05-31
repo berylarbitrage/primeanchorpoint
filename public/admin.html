@@ -32281,7 +32281,7 @@ function _cpyListGroupPanel(g, gIdx) {
   return `
     <div style="display:flex;gap:1.25rem;align-items:flex-start;flex-wrap:wrap">
       <div style="flex:0 0 auto">${cals}</div>
-      <div style="flex:1 1 340px;min-width:300px;display:flex;flex-direction:column;gap:.4rem">${items}</div>
+      <div style="flex:1 1 340px;min-width:300px;display:flex;flex-direction:column;gap:.3rem;max-height:280px;overflow-y:auto">${items}</div>
     </div>`;
 }
 
@@ -32316,7 +32316,7 @@ function _cpyMiniCalendar(gIdx, ym, daysMap) {
     </div>`;
 }
 
-// One payment-detail card on the right side of the expanded panel.
+// One payment-detail row (single compact line) on the right side of the panel.
 function _cpyDetailItem(r, gIdx) {
   const hrs = Number(r.hours) || 0;
   const rate = Number(r.hourly_rate) || 0;
@@ -32328,21 +32328,20 @@ function _cpyDetailItem(r, gIdx) {
     ? ` · ${_cpyEscape(r.clock_in_time)}–${_cpyEscape(r.clock_out_time)}${brStr}` : '';
   const hrStr = (hrs > 0 && rate > 0) ? `${hrs}h × ${_cpyFmtMoney(rate)}/h${timeStr}` : '—';
   const method = _CPY_METHOD_LABEL[r.payment_method] || r.payment_method || '—';
-  const notesStr = r.notes ? `<div style="font-size:.74rem;color:var(--gray-500);margin-top:.15rem">备注：${_cpyEscape(r.notes)}</div>` : '';
+  const noteIcon = r.notes ? `<span title="${_cpyEscape(r.notes)}" style="cursor:help">📝</span>` : '';
+  const titleAttr = r.notes ? `${hrStr} · 备注：${r.notes}` : hrStr;
   return `
     <div class="cpyDetItem" data-grp="${gIdx}" data-date="${_cpyEscape(r.payment_date)}"
-      style="border:1px solid var(--gray-200);border-radius:8px;padding:.5rem .7rem;background:#fff;transition:background .2s">
-      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
-        <span style="font-weight:600">${_cpyEscape(r.payment_date)} <span style="color:var(--gray-400);font-weight:400">${_cpyWeekdayOf(r.payment_date)}</span></span>
-        <span style="font-weight:700;color:#15803d">${_cpyFmtMoney(r.amount)}</span>
-        <span style="background:#f1f5f9;border-radius:999px;padding:.05rem .5rem;font-size:.72rem;color:var(--gray-600)">${_cpyEscape(method)}</span>
-        <span style="margin-left:auto;display:flex;gap:.35rem">
-          <button class="btn btn-sm btn-outline" style="padding:.05rem .45rem;font-size:.72rem" onclick="openCpyEdit(${r.id})">编辑</button>
-          <button class="btn btn-sm" style="padding:.05rem .45rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
-        </span>
-      </div>
-      <div style="font-size:.78rem;color:var(--gray-600);margin-top:.2rem">${hrStr}</div>
-      ${notesStr}
+      style="display:flex;align-items:center;gap:.55rem;border:1px solid var(--gray-200);border-radius:6px;padding:.28rem .6rem;background:#fff;font-size:.76rem;transition:background .2s">
+      <span style="font-weight:600;white-space:nowrap">${_cpyEscape(r.payment_date)} <span style="color:var(--gray-400);font-weight:400">${_cpyWeekdayOf(r.payment_date)}</span></span>
+      <span style="font-weight:700;color:#15803d;white-space:nowrap">${_cpyFmtMoney(r.amount)}</span>
+      <span style="background:#f1f5f9;border-radius:999px;padding:.02rem .45rem;font-size:.7rem;color:var(--gray-600);white-space:nowrap">${_cpyEscape(method)}</span>
+      <span style="color:var(--gray-500);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_cpyEscape(titleAttr)}">${hrStr}</span>
+      ${noteIcon}
+      <span style="display:flex;gap:.3rem;white-space:nowrap">
+        <button class="btn btn-sm btn-outline" style="padding:.02rem .4rem;font-size:.7rem" onclick="openCpyEdit(${r.id})">编辑</button>
+        <button class="btn btn-sm" style="padding:.02rem .4rem;font-size:.7rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
+      </span>
     </div>`;
 }
 
