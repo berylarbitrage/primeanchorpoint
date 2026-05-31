@@ -31375,6 +31375,22 @@ function invPayRateEdit(inp) {
   invPayRecalcHint();
 }
 
+// Apply one report rate to EVERY worker's every period (current granularity).
+function invPayApplyRateGlobal() {
+  const rate = Number(document.getElementById('invPayAllGlobal')?.value) || 0;
+  if (!(rate > 0)) { showToast('请输入大于 0 的报价时薪', 'error'); return; }
+  _invPayRows.forEach((g, wi) => {
+    if (_invPayMode === 'month') {
+      if ((g.hours || 0) > 0) _invStoreBill(wi, 'm', _invR2(g.hours * rate));
+    } else {
+      (_invPayMode === 'week' ? g.weeks : g.days).forEach(l => {
+        if ((l.hours || 0) > 0) _invStoreBill(wi, l.key, _invR2(l.hours * rate));
+      });
+    }
+  });
+  renderInvPayTable();
+}
+
 // Apply one report rate to every period (week/day) of a worker: amount = hours × rate.
 function invPayApplyRateAll(wi) {
   const g = _invPayRows[wi];
@@ -31831,6 +31847,8 @@ function printInvoice() {
           <button type="button" id="invPayMode-week" onclick="setInvPayMode('week')" style="border:none;border-left:1px solid #bbf7d0;padding:.25rem .6rem;background:#fff;color:#166534;cursor:pointer">按周</button>
           <button type="button" id="invPayMode-day" onclick="setInvPayMode('day')" style="border:none;border-left:1px solid #bbf7d0;padding:.25rem .6rem;background:#fff;color:#166534;cursor:pointer">按天</button>
         </span>
+        <span style="font-size:.82rem;color:#166534;display:inline-flex;align-items:center;gap:.3rem">全体报价时薪 $<input type="number" id="invPayAllGlobal" min="0" step="0.01" placeholder="如 20" style="width:64px;text-align:right;border:1px solid #bbf7d0;border-radius:4px;padding:1px 4px;font-size:.8rem">
+          <button type="button" onclick="invPayApplyRateGlobal()" style="border:1px solid #bbf7d0;background:#fff;color:#166534;border-radius:4px;padding:1px 8px;font-size:.76rem;cursor:pointer" title="把这个报价时薪应用到所有工人的所有期">应用全部</button></span>
         <label style="font-size:.82rem;color:#166534;margin-left:auto;display:inline-flex;align-items:center;gap:.3rem">加价 markup
           <input type="number" id="invMarkup" value="0" min="0" step="0.1" oninput="invPayRecalcHint()" style="width:70px;padding:.2rem .4rem;border:1px solid #bbf7d0;border-radius:5px;text-align:right"> %
         </label>
