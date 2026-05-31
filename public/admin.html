@@ -32525,7 +32525,7 @@ async function toggleCpyMonthWeeks(idx) {
   }
 }
 
-// Expand a single in-month week to show its individual daily payment records.
+// Expand a single in-month week to show its workers (grouped by person).
 function toggleCpyMonthWeekDetail(idx, sIdx) {
   event && event.stopPropagation && event.stopPropagation();
   const detailRow = document.getElementById(`cpyMoWkDetail-${idx}-${sIdx}`);
@@ -32540,11 +32540,68 @@ function toggleCpyMonthWeekDetail(idx, sIdx) {
   const seg = (_cpyMonthSegs[idx] || [])[sIdx];
   const cell = detailRow.querySelector('td');
   if (seg && cell && !cell.dataset.rendered) {
-    const recs = (seg.records || []).slice().sort((a, b) => {
-      const dc = String(a.payment_date).localeCompare(String(b.payment_date));
-      if (dc !== 0) return dc;
-      return String(a.worker_name || '').localeCompare(String(b.worker_name || ''));
+    // Group this week's records by worker
+    const peopleMap = new Map();
+    (seg.records || []).forEach(rec => {
+      const wn = rec.worker_name || '';
+      let p = peopleMap.get(wn);
+      if (!p) { p = { worker: wn, days: new Set(), hours: 0, amount: 0, records: [] }; peopleMap.set(wn, p); }
+      p.days.add(rec.payment_date);
+      p.hours += Number(rec.hours) || 0;
+      p.amount += Number(rec.amount) || 0;
+      p.records.push(rec);
     });
+    const people = Array.from(peopleMap.values()).sort((a, b) => a.worker.localeCompare(b.worker));
+    seg.people = people;
+    const rowsHtml = people.map((p, pIdx) => {
+      const hoursStr = p.hours > 0 ? (Math.round(p.hours * 100) / 100) + 'h' : '—';
+      return `
+        <tr style="cursor:pointer" onclick="toggleCpyMonthWeekPersonDetail(${idx},${sIdx},${pIdx})" title="点击查看 ${_cpyEscape(p.worker)} 本周每日明细">
+          <td style="padding:.3rem .6rem"><span id="cpyMoWkPCaret-${idx}-${sIdx}-${pIdx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(p.worker)}</td>
+          <td style="padding:.3rem .6rem">${p.days.size}</td>
+          <td style="padding:.3rem .6rem">${hoursStr}</td>
+          <td style="padding:.3rem .6rem;font-weight:600;text-align:right;color:#15803d">${_cpyFmtMoney(p.amount)}</td>
+        </tr>
+        <tr id="cpyMoWkPDetail-${idx}-${sIdx}-${pIdx}" style="display:none">
+          <td colspan="4" style="padding:0;background:#dbe3ef"></td>
+        </tr>`;
+    }).join('');
+    cell.innerHTML = `
+      <table style="margin:0;width:100%;font-size:.78rem">
+        <thead>
+          <tr style="background:#dbe3ef">
+            <th style="padding:.3rem .6rem;text-align:left">工人</th>
+            <th style="padding:.3rem .6rem;text-align:left">工作天数</th>
+            <th style="padding:.3rem .6rem;text-align:left">总工时</th>
+            <th style="padding:.3rem .6rem;text-align:right">金额</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+    cell.dataset.rendered = '1';
+  }
+  detailRow.style.display = '';
+  if (caret) caret.textContent = '▼';
+}
+
+// Expand one worker within an in-month week to show their per-day payment records.
+function toggleCpyMonthWeekPersonDetail(idx, sIdx, pIdx) {
+  event && event.stopPropagation && event.stopPropagation();
+  const detailRow = document.getElementById(`cpyMoWkPDetail-${idx}-${sIdx}-${pIdx}`);
+  const caret = document.getElementById(`cpyMoWkPCaret-${idx}-${sIdx}-${pIdx}`);
+  if (!detailRow) return;
+  const isOpen = detailRow.style.display !== 'none';
+  if (isOpen) {
+    detailRow.style.display = 'none';
+    if (caret) caret.textContent = '▶';
+    return;
+  }
+  const seg = (_cpyMonthSegs[idx] || [])[sIdx];
+  const p = seg && seg.people ? seg.people[pIdx] : null;
+  const cell = detailRow.querySelector('td');
+  if (p && cell && !cell.dataset.rendered) {
+    const recs = (p.records || []).slice().sort((a, b) =>
+      String(a.payment_date).localeCompare(String(b.payment_date)));
     const rowsHtml = recs.map(rec => {
       const hrs = Number(rec.hours) || 0;
       const rate = Number(rec.hourly_rate) || 0;
@@ -32561,7 +32618,6 @@ function toggleCpyMonthWeekDetail(idx, sIdx) {
       return `
         <tr>
           <td style="padding:.3rem .6rem">${_cpyEscape(rec.payment_date)} <span style="color:var(--gray-400)">${_cpyWeekdayOf(rec.payment_date)}</span></td>
-          <td style="padding:.3rem .6rem">${_cpyEscape(rec.worker_name || '')}</td>
           <td style="padding:.3rem .6rem">${hrCell}</td>
           <td style="padding:.3rem .6rem">${timeStr}</td>
           <td style="padding:.3rem .6rem">${_cpyEscape(_CPY_METHOD_LABEL[rec.payment_method] || rec.payment_method || '—')}</td>
@@ -32569,11 +32625,10 @@ function toggleCpyMonthWeekDetail(idx, sIdx) {
         </tr>`;
     }).join('');
     cell.innerHTML = `
-      <table style="margin:0;width:100%;font-size:.78rem">
+      <table style="margin:0;width:100%;font-size:.76rem">
         <thead>
-          <tr style="background:#dbe3ef">
+          <tr style="background:#cdd8e8">
             <th style="padding:.3rem .6rem;text-align:left">日期</th>
-            <th style="padding:.3rem .6rem;text-align:left">工人</th>
             <th style="padding:.3rem .6rem;text-align:left">工时×时薪</th>
             <th style="padding:.3rem .6rem;text-align:left">上下班</th>
             <th style="padding:.3rem .6rem;text-align:left">付款方式</th>
