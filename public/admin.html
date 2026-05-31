@@ -31302,10 +31302,13 @@ function renderInvPayTable() {
   let body = '';
   _invPayRows.forEach((g, wi) => {
     const sub = _invWorkerTotal(wi);
+    const applyCtrl = mode === 'month' ? '' : `
+      <span style="font-weight:400;font-size:.78rem;color:#166534;margin-left:.6rem;white-space:nowrap">统一报价时薪 $<input type="number" id="invPayAll-${wi}" value="${g.wageRate.toFixed(2)}" min="0" step="0.01" style="width:64px;text-align:right;border:1px solid #bbf7d0;border-radius:4px;padding:1px 3px;font-size:.78rem">
+        <button type="button" onclick="invPayApplyRateAll(${wi})" style="border:1px solid #bbf7d0;background:#fff;color:#166534;border-radius:4px;padding:1px 6px;font-size:.74rem;cursor:pointer" title="应用到该工人所有${mode === 'week' ? '周' : '天'}">应用</button></span>`;
     body += `
       <tr style="background:#f8fafc;border-top:1px solid var(--gray-200)">
         <td style="padding:6px 8px"><input type="checkbox" class="inv-pay-chk" data-w="${wi}" checked onchange="invPayRecalcHint()"></td>
-        <td style="padding:6px 8px;font-weight:600" colspan="2">${esc(g.worker_name)} <span style="color:var(--gray-400);font-weight:400">· ${g.hours.toFixed(2)}h · 工资 ${_cpyFmtMoney(g.amount)}</span></td>
+        <td style="padding:6px 8px;font-weight:600" colspan="2">${esc(g.worker_name)} <span style="color:var(--gray-400);font-weight:400">· ${g.hours.toFixed(2)}h · 工资 ${_cpyFmtMoney(g.amount)}</span>${applyCtrl}</td>
         <td style="padding:6px 8px;text-align:right;font-weight:700;color:#15803d" colspan="2">报价合计 <span id="invPaySub-${wi}">${_cpyFmtMoney(sub)}</span></td>
       </tr>`;
     const leaves = mode === 'month'
@@ -31370,6 +31373,17 @@ function invPayRateEdit(inp) {
   const amtInp = document.querySelector(`.inv-pay-amount[data-w="${wi}"][data-key="${(window.CSS && CSS.escape) ? CSS.escape(key) : key}"]`);
   if (amtInp) amtInp.value = val.toFixed(2);
   invPayRecalcHint();
+}
+
+// Apply one report rate to every period (week/day) of a worker: amount = hours × rate.
+function invPayApplyRateAll(wi) {
+  const g = _invPayRows[wi];
+  const inp = document.getElementById('invPayAll-' + wi);
+  const rate = Number(inp?.value) || 0;
+  if (!(rate > 0)) { showToast('请输入大于 0 的报价时薪', 'error'); return; }
+  const leaves = _invPayMode === 'week' ? g.weeks : g.days;
+  leaves.forEach(l => { if ((l.hours || 0) > 0) _invStoreBill(wi, l.key, _invR2(l.hours * rate)); });
+  renderInvPayTable();
 }
 
 function invPayToggleAll(chk) {
