@@ -32206,7 +32206,7 @@ function onCpyFilterChange() {
 
 async function loadCpyList() {
   const tbody = document.getElementById('cpyListBody');
-  tbody.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>';
   const partnerId = document.getElementById('cpyFilterPartner').value;
   const month = document.getElementById('cpyFilterMonth').value;
   const q = document.getElementById('cpyFilterQ').value.trim();
@@ -32223,23 +32223,56 @@ async function loadCpyList() {
     }
     const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
     document.getElementById('cpyFilterTotal').textContent = `共 ${rows.length} 条 · 总额 ${_cpyFmtMoney(total)}`;
-    tbody.innerHTML = rows.map(r => {
-      const hrs = Number(r.hours) || 0;
-      const rate = Number(r.hourly_rate) || 0;
-      const br = Number(r.break_minutes) || 0;
-      const brStr = (r.break_start_time && r.break_end_time)
-        ? ` · 休${_cpyEscape(r.break_start_time)}–${_cpyEscape(r.break_end_time)}`
-        : (br ? ` · 休${br}分` : '');
-      const timeStr = (r.clock_in_time && r.clock_out_time)
-        ? `<div style="font-size:.7rem;color:var(--gray-500)">${_cpyEscape(r.clock_in_time)}–${_cpyEscape(r.clock_out_time)}${brStr}</div>`
-        : '';
-      const hrCell = (hrs > 0 && rate > 0)
-        ? `<span style="font-size:.78rem">${hrs}h × ${_cpyFmtMoney(rate)}/h</span>${timeStr}`
-        : `<span style="color:var(--gray-300)">—</span>`;
-      return `
-      <tr>
-        <td>${_cpyEscape(r.partner_name || '—')}</td>
-        <td>${_cpyEscape(r.worker_name)}</td>
+
+    // Group by company + worker; expand a group to see its individual records.
+    const groups = new Map();
+    rows.forEach(r => {
+      const key = `${r.partner_id == null ? '' : r.partner_id}|${r.worker_name || ''}`;
+      let g = groups.get(key);
+      if (!g) { g = { partner_name: r.partner_name || '—', worker_name: r.worker_name || '', amount: 0, records: [] }; groups.set(key, g); }
+      g.amount += Number(r.amount) || 0;
+      g.records.push(r);
+    });
+    const groupList = Array.from(groups.values()).sort((a, b) => {
+      const pn = a.partner_name.localeCompare(b.partner_name);
+      if (pn !== 0) return pn;
+      return a.worker_name.localeCompare(b.worker_name);
+    });
+
+    tbody.innerHTML = groupList.map((g, gIdx) => {
+      const header = `
+      <tr style="cursor:pointer;background:#f8fafc" onclick="toggleCpyListGroup(${gIdx})" title="点击展开/收起明细">
+        <td style="font-weight:600"><span id="cpyGrpCaret-${gIdx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(g.partner_name)}</td>
+        <td style="font-weight:600">${_cpyEscape(g.worker_name)}</td>
+        <td style="font-weight:700;color:#15803d">${_cpyFmtMoney(g.amount)}</td>
+        <td colspan="8" style="color:var(--gray-500);font-size:.82rem">${g.records.length} 笔付款 · 点击展开</td>
+      </tr>`;
+      const detail = g.records.map(r => _cpyListRecordRow(r, gIdx)).join('');
+      return header + detail;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="11" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+  }
+}
+
+// One per-record detail row inside a company+worker group (hidden until expanded).
+function _cpyListRecordRow(r, gIdx) {
+  const hrs = Number(r.hours) || 0;
+  const rate = Number(r.hourly_rate) || 0;
+  const br = Number(r.break_minutes) || 0;
+  const brStr = (r.break_start_time && r.break_end_time)
+    ? ` · 休${_cpyEscape(r.break_start_time)}–${_cpyEscape(r.break_end_time)}`
+    : (br ? ` · 休${br}分` : '');
+  const timeStr = (r.clock_in_time && r.clock_out_time)
+    ? `<div style="font-size:.7rem;color:var(--gray-500)">${_cpyEscape(r.clock_in_time)}–${_cpyEscape(r.clock_out_time)}${brStr}</div>`
+    : '';
+  const hrCell = (hrs > 0 && rate > 0)
+    ? `<span style="font-size:.78rem">${hrs}h × ${_cpyFmtMoney(rate)}/h</span>${timeStr}`
+    : `<span style="color:var(--gray-300)">—</span>`;
+  return `
+      <tr class="cpyGrpRows-${gIdx}" style="display:none">
+        <td style="padding-left:1.5rem;color:var(--gray-300)">↳</td>
+        <td style="color:var(--gray-400);font-size:.78rem">${_cpyEscape(r.worker_name)}</td>
         <td style="font-weight:600">${_cpyFmtMoney(r.amount)}</td>
         <td>${hrCell}</td>
         <td>${_cpyEscape(r.payment_date)}</td>
@@ -32253,10 +32286,15 @@ async function loadCpyList() {
           <button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
         </td>
       </tr>`;
-    }).join('');
-  } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="11" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
-  }
+}
+
+function toggleCpyListGroup(gIdx) {
+  const rows = document.querySelectorAll('.cpyGrpRows-' + gIdx);
+  const caret = document.getElementById('cpyGrpCaret-' + gIdx);
+  if (!rows.length) return;
+  const willShow = rows[0].style.display === 'none';
+  rows.forEach(r => { r.style.display = willShow ? '' : 'none'; });
+  if (caret) caret.textContent = willShow ? '▼' : '▶';
 }
 
 // Returns the Monday (00:00 local) for the week containing the given YYYY-MM-DD date.
