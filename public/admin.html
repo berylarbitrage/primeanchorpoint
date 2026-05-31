@@ -32280,8 +32280,9 @@ function _cpyListGroupPanel(g, gIdx) {
     .map(r => _cpyDetailItem(r, gIdx)).join('');
   const arrowCol = (back) => `
         <div style="display:flex;flex-direction:column;gap:.3rem;justify-content:center;flex:0 0 auto">
-          <button class="btn btn-sm btn-outline" style="padding:.1rem .4rem;font-size:.72rem;white-space:nowrap" onclick="cpyStripScroll(${gIdx},${back ? -1 : 1},'week')" title="${back ? '上一周' : '下一周'}">${back ? '«周' : '周»'}</button>
-          <button class="btn btn-sm btn-outline" style="padding:.1rem .4rem;font-size:.72rem;white-space:nowrap" onclick="cpyStripScroll(${gIdx},${back ? -1 : 1},'day')" title="${back ? '上一天' : '下一天'}">${back ? '‹天' : '天›'}</button>
+          <button class="btn btn-sm btn-outline" style="padding:.1rem .25rem;font-size:.72rem;white-space:nowrap;min-width:0" onclick="cpyStripScroll(${gIdx},${back ? -1 : 1},'week')" title="${back ? '上一周' : '下一周'}">${back ? '«周' : '周»'}</button>
+          <button class="btn btn-sm btn-outline" style="padding:.1rem .25rem;font-size:.72rem;white-space:nowrap;min-width:0" onclick="cpyStripScroll(${gIdx},${back ? -1 : 1},'day')" title="${back ? '上一天' : '下一天'}">${back ? '‹天' : '天›'}</button>
+          <button class="btn btn-sm btn-outline" style="padding:.1rem .25rem;font-size:.72rem;white-space:nowrap;min-width:0" onclick="cpyStripScroll(${gIdx},${back ? -1 : 1},'month')" title="${back ? '上一月' : '下一月'}">${back ? '«月' : '月»'}</button>
         </div>`;
   return `
     <div id="cpyPanel-${gIdx}" style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
@@ -32299,7 +32300,7 @@ function cpyStripScroll(gIdx, dir, unit) {
   const strip = document.getElementById('cpyStrip-' + gIdx);
   if (!strip) return;
   const cardW = 168; // card width (~160) + gap (~8)
-  const step = unit === 'week' ? cardW * 7 : cardW;
+  const step = unit === 'month' ? cardW * 30 : (unit === 'week' ? cardW * 7 : cardW);
   strip.scrollBy({ left: dir * step, behavior: 'smooth' });
 }
 
