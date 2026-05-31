@@ -32278,22 +32278,29 @@ function _cpyListGroupPanel(g, gIdx) {
   const items = g.records.slice()
     .sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)))
     .map(r => _cpyDetailItem(r, gIdx)).join('');
+  const arrowCol = (back) => `
+        <div style="display:flex;flex-direction:column;gap:.3rem;justify-content:center;flex:0 0 auto">
+          <button class="btn btn-sm btn-outline" style="padding:.1rem .4rem;font-size:.72rem;white-space:nowrap" onclick="cpyStripScroll(${gIdx},${back ? -1 : 1},'week')" title="${back ? '上一周' : '下一周'}">${back ? '«周' : '周»'}</button>
+          <button class="btn btn-sm btn-outline" style="padding:.1rem .4rem;font-size:.72rem;white-space:nowrap" onclick="cpyStripScroll(${gIdx},${back ? -1 : 1},'day')" title="${back ? '上一天' : '下一天'}">${back ? '‹天' : '天›'}</button>
+        </div>`;
   return `
-    <div style="display:flex;gap:1.25rem;align-items:flex-start;flex-wrap:wrap">
+    <div id="cpyPanel-${gIdx}" style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
       <div style="flex:0 0 auto">${cals}</div>
-      <div style="flex:1 1 340px;min-width:300px;display:flex;align-items:stretch;gap:.4rem">
-        <button class="btn btn-sm btn-outline" style="flex:0 0 auto;padding:0 .5rem;font-size:1.1rem;align-self:stretch" onclick="cpyStripScroll(${gIdx},-1)" title="上一组">‹</button>
-        <div id="cpyStrip-${gIdx}" style="flex:1 1 auto;display:flex;gap:.5rem;overflow-x:auto;scroll-behavior:smooth;padding-bottom:.3rem">${items}</div>
-        <button class="btn btn-sm btn-outline" style="flex:0 0 auto;padding:0 .5rem;font-size:1.1rem;align-self:stretch" onclick="cpyStripScroll(${gIdx},1)" title="下一组">›</button>
+      <div style="flex:1 1 320px;min-width:280px;display:flex;align-items:stretch;gap:.4rem">
+        ${arrowCol(true)}
+        <div id="cpyStrip-${gIdx}" style="flex:1 1 0;min-width:0;display:flex;gap:.5rem;overflow-x:auto;scroll-behavior:smooth;padding-bottom:.3rem">${items}</div>
+        ${arrowCol(false)}
       </div>
     </div>`;
 }
 
-// Horizontally scroll a group's detail strip by roughly one viewport (arrows).
-function cpyStripScroll(gIdx, dir) {
+// Scroll a group's detail strip by one day (one card) or one week (7 cards).
+function cpyStripScroll(gIdx, dir, unit) {
   const strip = document.getElementById('cpyStrip-' + gIdx);
   if (!strip) return;
-  strip.scrollBy({ left: dir * Math.max(220, strip.clientWidth * 0.8), behavior: 'smooth' });
+  const cardW = 168; // card width (~160) + gap (~8)
+  const step = unit === 'week' ? cardW * 7 : cardW;
+  strip.scrollBy({ left: dir * step, behavior: 'smooth' });
 }
 
 const _CPY_CAL_WD = ['一', '二', '三', '四', '五', '六', '日'];
@@ -32343,16 +32350,16 @@ function _cpyDetailItem(r, gIdx) {
   const notesLine = r.notes ? `<div style="color:var(--gray-500);margin-top:.1rem">备注：${_cpyEscape(r.notes)}</div>` : '';
   return `
     <div class="cpyDetItem" data-grp="${gIdx}" data-date="${_cpyEscape(r.payment_date)}"
-      style="flex:0 0 190px;width:190px;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem .6rem;background:#fff;font-size:.76rem;display:flex;flex-direction:column;gap:.2rem;transition:background .2s">
-      <div style="font-weight:600">${_cpyEscape(r.payment_date)}<br><span style="color:var(--gray-400);font-weight:400">${_cpyWeekdayOf(r.payment_date)}</span></div>
-      <div style="font-weight:700;color:#15803d;font-size:.95rem">${_cpyFmtMoney(r.amount)}</div>
-      <div><span style="background:#f1f5f9;border-radius:999px;padding:.05rem .5rem;font-size:.7rem;color:var(--gray-600)">${_cpyEscape(method)}</span></div>
+      style="flex:0 0 160px;width:160px;min-height:200px;border:1px solid var(--gray-200);border-radius:8px;padding:.55rem .6rem;background:#fff;font-size:.78rem;display:flex;flex-direction:column;gap:.3rem;transition:background .2s">
+      <div style="font-weight:600;line-height:1.3">${_cpyEscape(r.payment_date)}<br><span style="color:var(--gray-400);font-weight:400">${_cpyWeekdayOf(r.payment_date)}</span></div>
+      <div style="font-weight:700;color:#15803d;font-size:1.05rem">${_cpyFmtMoney(r.amount)}</div>
+      <div><span style="background:#f1f5f9;border-radius:999px;padding:.05rem .5rem;font-size:.72rem;color:var(--gray-600)">${_cpyEscape(method)}</span></div>
       <div style="color:var(--gray-600)">${hrStr}</div>
       ${timeLine}
       ${notesLine}
-      <div style="display:flex;gap:.3rem;margin-top:.3rem">
-        <button class="btn btn-sm btn-outline" style="padding:.05rem .45rem;font-size:.7rem" onclick="openCpyEdit(${r.id})">编辑</button>
-        <button class="btn btn-sm" style="padding:.05rem .45rem;font-size:.7rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
+      <div style="display:flex;gap:.35rem;margin-top:auto;padding-top:.3rem">
+        <button class="btn btn-sm btn-outline" style="padding:.08rem .5rem;font-size:.72rem" onclick="openCpyEdit(${r.id})">编辑</button>
+        <button class="btn btn-sm" style="padding:.08rem .5rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteCpy(${r.id})">删除</button>
       </div>
     </div>`;
 }
@@ -32377,6 +32384,13 @@ function toggleCpyListGroup(gIdx) {
   const willShow = rows[0].style.display === 'none';
   rows.forEach(r => { r.style.display = willShow ? '' : 'none'; });
   if (caret) caret.textContent = willShow ? '▼' : '▶';
+  if (willShow) {
+    // Constrain the expanded panel to the visible card width so the detail strip
+    // scrolls internally (with the arrows) instead of stretching the whole table.
+    const panel = document.getElementById('cpyPanel-' + gIdx);
+    const card = panel && panel.closest('.card');
+    if (panel && card) panel.style.width = Math.max(320, card.clientWidth - 40) + 'px';
+  }
 }
 
 // Returns the Monday (00:00 local) for the week containing the given YYYY-MM-DD date.
