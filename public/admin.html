@@ -31137,7 +31137,17 @@ async function deleteInvpPreset(id, section) {
 let _invoiceCompanies = [];
 let _invoiceEmployees = [];
 
+// Invoice data source: 'punch' = time_entries (default), 'payments' = company_worker_payments
+let _invSource = 'punch';
+let _invPaymentsCtx = null; // { partner_id, year_month, partner_name } when source==='payments'
+let _invPayRows = [];       // grouped per-worker rows for payments mode
+
 async function openInvoiceModal() {
+  _invSource = 'punch';
+  _invPaymentsCtx = null;
+  _invPayRows = [];
+  const opts = document.getElementById('invPaymentsOpts');
+  if (opts) opts.style.display = 'none';
   // Load companies from partners
   const partners = await api('/admin/partners').catch(() => []);
   _invoiceCompanies = Array.isArray(partners) ? partners.filter(p => p.active) : (partners?.partners || []).filter(p => p.active);
@@ -31161,6 +31171,7 @@ async function openInvoiceModal() {
 function closeInvoiceModal() { document.getElementById('invoiceModal').style.display = 'none'; }
 
 async function loadInvoiceEmployees() {
+  if (_invSource === 'payments') { return loadInvoicePaymentWorkers(); }
   const company = document.getElementById('invCompanySelect').value;
   const ps = document.getElementById('invPeriodStart').value;
   const pe = document.getElementById('invPeriodEnd').value;
@@ -31208,7 +31219,79 @@ function invToggleAll(chk) {
   document.querySelectorAll('.inv-emp-chk').forEach(c => c.checked = chk.checked);
 }
 
+// Load the month's per-worker wages (from company_worker_payments) into the invoice
+// editor. Amounts are pre-filled and editable; a markup % can be applied on generate.
+async function loadInvoicePaymentWorkers() {
+  const ctx = _invPaymentsCtx;
+  const container = document.getElementById('invEmpList');
+  const msg = document.getElementById('invMsg');
+  if (!ctx || ctx.partner_id == null) {
+    container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">散工无公司，无法开票</div>';
+    return;
+  }
+  msg.textContent = '加载中…'; msg.style.color = 'var(--gray-400)';
+  const qs = new URLSearchParams({ partner_id: ctx.partner_id, year_month: ctx.year_month });
+  const rows = await api('/admin/company-payments?' + qs).catch(() => []);
+  const map = new Map();
+  (Array.isArray(rows) ? rows : []).forEach(r => {
+    const key = `${r.worker_name || ''}|${r.employee_id || ''}`;
+    let g = map.get(key);
+    if (!g) { g = { worker_name: r.worker_name || '', employee_id: r.employee_id || null, hours: 0, amount: 0 }; map.set(key, g); }
+    g.hours += Number(r.hours) || 0;
+    g.amount += Number(r.amount) || 0;
+  });
+  _invPayRows = Array.from(map.values()).sort((a, b) => a.worker_name.localeCompare(b.worker_name));
+  if (!_invPayRows.length) {
+    container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">该公司本月无付款记录</div>';
+    msg.textContent = ''; return;
+  }
+  container.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.87rem">
+      <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
+        <th style="padding:6px 8px;text-align:left"><input type="checkbox" id="invPaySelAll" onchange="invPayToggleAll(this)" checked> 全选</th>
+        <th style="padding:6px 8px">工人</th>
+        <th style="padding:6px 8px;text-align:right">工时</th>
+        <th style="padding:6px 8px;text-align:right">计费金额 ($)</th>
+      </tr></thead>
+      <tbody>
+        ${_invPayRows.map((g, i) => `
+          <tr>
+            <td style="padding:5px 8px"><input type="checkbox" class="inv-pay-chk" data-idx="${i}" checked></td>
+            <td style="padding:5px 8px">${esc(g.worker_name)}</td>
+            <td style="padding:5px 8px;text-align:right">${g.hours.toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right"><input type="number" class="inv-pay-amount" data-idx="${i}" value="${g.amount.toFixed(2)}" min="0" step="0.01" oninput="invPayRecalcHint()" style="width:100px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.85rem"></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  invPayRecalcHint();
+}
+
+function invPayToggleAll(chk) {
+  document.querySelectorAll('.inv-pay-chk').forEach(c => c.checked = chk.checked);
+  invPayRecalcHint();
+}
+
+// Live total hint reflecting edited amounts + markup.
+function invPayRecalcHint() {
+  if (_invSource !== 'payments') return;
+  const markup = Number(document.getElementById('invMarkup')?.value) || 0;
+  let sum = 0;
+  document.querySelectorAll('.inv-pay-chk:checked').forEach(chk => {
+    const inp = document.querySelector(`.inv-pay-amount[data-idx="${chk.dataset.idx}"]`);
+    sum += (Number(inp?.value) || 0);
+  });
+  const total = Math.round(sum * (1 + markup / 100) * 100) / 100;
+  const msg = document.getElementById('invMsg');
+  if (msg) {
+    msg.style.color = 'var(--green)';
+    msg.textContent = markup
+      ? `合计 ${_cpyFmtMoney(sum)} + ${markup}% = ${_cpyFmtMoney(total)}`
+      : `合计 ${_cpyFmtMoney(total)}`;
+  }
+}
+
 async function generateInvoice() {
+  if (_invSource === 'payments') { return generateInvoiceFromPayments(); }
   const company = document.getElementById('invCompanySelect').value;
   const ps = document.getElementById('invPeriodStart').value;
   const pe = document.getElementById('invPeriodEnd').value;
@@ -31236,6 +31319,50 @@ async function generateInvoice() {
   msg.textContent = '';
   closeInvoiceModal();
   showInvoicePreview(data);
+}
+
+// Build + preview an invoice from the (editable) recorded wages, applying an optional markup.
+async function generateInvoiceFromPayments() {
+  const ctx = _invPaymentsCtx;
+  if (!ctx) return;
+  const ps = document.getElementById('invPeriodStart').value;
+  const pe = document.getElementById('invPeriodEnd').value;
+  const markup = Number(document.getElementById('invMarkup')?.value) || 0;
+  const items = [];
+  document.querySelectorAll('.inv-pay-chk:checked').forEach(chk => {
+    const meta = _invPayRows[parseInt(chk.dataset.idx)];
+    if (!meta) return;
+    const inp = document.querySelector(`.inv-pay-amount[data-idx="${chk.dataset.idx}"]`);
+    const base = Number(inp?.value) || 0;
+    const total = Math.round(base * (1 + markup / 100) * 100) / 100;
+    const hours = meta.hours || 0;
+    const rate = hours > 0 ? Math.round((total / hours) * 100) / 100 : 0;
+    items.push({
+      employee_id: meta.employee_id, name: meta.worker_name, emp_code: '', position: '',
+      regular_hours: hours, overtime_hours: 0, rate, total_amount: total,
+    });
+  });
+  if (!items.length) { alert('请至少选择一名工人'); return; }
+  const subtotal = Math.round(items.reduce((s, i) => s + i.total_amount, 0) * 100) / 100;
+
+  // Look up partner billing info for the "bill to" block.
+  let partner = {};
+  try {
+    const ps2 = await api('/admin/partners');
+    const list = Array.isArray(ps2) ? ps2 : (ps2?.partners || []);
+    partner = list.find(p => p.id === ctx.partner_id) || {};
+  } catch (_) { /* non-fatal */ }
+
+  const invoiceNum = 'INV-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+  closeInvoiceModal();
+  showInvoicePreview({
+    invoice_number: invoiceNum,
+    company_name: ctx.partner_name || partner.name || '',
+    partner,
+    period_start: ps, period_end: pe,
+    generated_at: new Date().toISOString(),
+    items, subtotal,
+  });
 }
 
 function showInvoicePreview(inv) {
@@ -31567,6 +31694,15 @@ function printInvoice() {
       </div>
       <div class="field" style="display:flex;align-items:flex-end">
         <button class="btn btn-outline" onclick="loadInvoiceEmployees()" style="width:100%">加载员工</button>
+      </div>
+    </div>
+
+    <div id="invPaymentsOpts" style="display:none;margin:-.25rem 0 1rem">
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.5rem .75rem">
+        <span style="font-size:.82rem;color:#166534">数据来自「工资记录（按月）」· 金额可直接修改</span>
+        <label style="font-size:.82rem;color:#166534;margin-left:auto;display:inline-flex;align-items:center;gap:.3rem">加价 markup
+          <input type="number" id="invMarkup" value="0" min="0" step="0.1" oninput="invPayRecalcHint()" style="width:70px;padding:.2rem .4rem;border:1px solid #bbf7d0;border-radius:5px;text-align:right"> %
+        </label>
       </div>
     </div>
 
@@ -32944,6 +33080,14 @@ async function openInvoiceModalForMonth(idx) {
     document.getElementById('invPeriodStart').value = `${r.year_month}-01`;
     document.getElementById('invPeriodEnd').value = `${r.year_month}-${String(last).padStart(2, '0')}`;
   }
+  // Source the invoice from the recorded wages (company_worker_payments), not punches,
+  // and auto-load the worker list so the invoice is ready to review/generate.
+  _invSource = 'payments';
+  _invPaymentsCtx = { partner_id: r.partner_id, year_month: r.year_month, partner_name: r.partner_name || '' };
+  const opts = document.getElementById('invPaymentsOpts');
+  if (opts) opts.style.display = '';
+  const mk = document.getElementById('invMarkup'); if (mk) mk.value = '0';
+  await loadInvoiceEmployees();
 }
 
 // Upload (or replace) a month-bill attachment via a transient file picker.
