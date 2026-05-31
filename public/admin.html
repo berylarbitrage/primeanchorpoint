@@ -32925,7 +32925,18 @@ async function openInvoiceModalForMonth(idx) {
   if (!r) return;
   await openInvoiceModal();
   const sel = document.getElementById('invCompanySelect');
-  if (sel && r.partner_name) sel.value = r.partner_name;
+  if (sel && r.partner_name) {
+    sel.value = r.partner_name;
+    // The invoice dropdown only lists active partners; if this company isn't there
+    // the value won't stick — add a matching option so it still pre-selects.
+    if (sel.value !== r.partner_name) {
+      const opt = document.createElement('option');
+      opt.value = r.partner_name;
+      opt.textContent = r.partner_name;
+      sel.appendChild(opt);
+      sel.value = r.partner_name;
+    }
+  }
   const parts = String(r.year_month || '').split('-');
   if (parts.length === 2) {
     const y = Number(parts[0]), m = Number(parts[1]);
