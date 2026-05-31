@@ -33789,13 +33789,12 @@ function applyCpyWkDefaultRate() {
   const def = Number(document.getElementById('cpyWkDefaultRate').value) || 0;
   if (def <= 0) return;
   _readCpyWkRowState();
+  // Apply to every day cell (the default drives all days, overwriting prior values).
   document.querySelectorAll('#cpyWkRows .cpyWkRate').forEach(inp => {
-    if (!inp.value || Number(inp.value) === 0) {
-      inp.value = def;
-      const i = parseInt(inp.getAttribute('data-row'));
-      const j = parseInt(inp.getAttribute('data-day'));
-      if (_cpyWkWorkers[i]) _cpyWkWorkers[i]._rates[j] = String(def);
-    }
+    inp.value = def;
+    const i = parseInt(inp.getAttribute('data-row'));
+    const j = parseInt(inp.getAttribute('data-day'));
+    if (_cpyWkWorkers[i]) _cpyWkWorkers[i]._rates[j] = String(def);
   });
   updateCpyWkTotal();
 }
