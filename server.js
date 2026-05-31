@@ -2078,6 +2078,26 @@ try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_minutes INTE
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_start_time TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_end_time TEXT DEFAULT ''`); } catch(e) {}
 
+// ─── Per-week payout info (method / paying entity / proof) keyed by company+week ───
+db.exec(`CREATE TABLE IF NOT EXISTS company_week_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  week_start TEXT NOT NULL,
+  week_end TEXT DEFAULT '',
+  payment_method TEXT DEFAULT '',
+  third_party_platform TEXT DEFAULT '',
+  paying_entity TEXT DEFAULT '',
+  amount REAL DEFAULT 0,
+  proof_file_path TEXT DEFAULT '',
+  proof_file_name TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cwkp_partner_week ON company_week_payments(partner_id, week_start)`); } catch(e) {}
+
 // ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
 db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24140,6 +24160,113 @@ app.get('/api/admin/company-payments/summary', requireAdmin, blockManager, (req,
                  ORDER BY year_month DESC, partner_name ASC`;
     const rows = db.prepare(sql).all(...params);
     res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Per-week payout info (method / paying entity / proof) ───
+const _CWKP_ENTITIES = ['prime_anchor_point', 'surplus_lane', 'bintique'];
+const _CWKP_METHODS = ['zelle', 'ach', 'cash', 'check', 'thirdparty'];
+
+const weekPayProofUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.bin';
+      cb(null, `weekpay-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|webp|gif)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
+// GET /api/admin/company-week-payments?partner_id=&year_month=
+//   Returns week-payout records (optionally filtered). Each carries proof_url when a file exists.
+app.get('/api/admin/company-week-payments', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const { partner_id, year_month } = req.query;
+    const where = [];
+    const params = [];
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    // year_month filters on the week_start's month OR the week_end's month (a week can straddle)
+    if (year_month) {
+      where.push("(substr(week_start,1,7) = ? OR substr(week_end,1,7) = ?)");
+      params.push(String(year_month), String(year_month));
+    }
+    const sql = `SELECT * FROM company_week_payments
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY week_start DESC, partner_name ASC`;
+    const rows = db.prepare(sql).all(...params);
+    // The /uploads/:filename route serves files in both R2 (302 → presigned) and
+    // local (stream) modes, so a uniform path-style URL works everywhere.
+    for (const r of rows) {
+      r.proof_url = r.proof_file_path ? `/uploads/${path.basename(r.proof_file_path)}` : '';
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/company-week-payments  (multipart; optional `proof` file)
+//   Upsert by (partner_id, week_start). Re-uploading replaces the prior proof file.
+app.post('/api/admin/company-week-payments', requireAdmin, blockManager, weekPayProofUpload.single('proof'), (req, res) => {
+  try {
+    const d = req.body || {};
+    const partnerId = parseInt(d.partner_id);
+    const weekStart = String(d.week_start || '').trim();
+    if (!partnerId || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+      return res.status(400).json({ error: 'partner_id and week_start (YYYY-MM-DD) required' });
+    }
+    const method = _CWKP_METHODS.includes(d.payment_method) ? d.payment_method : '';
+    const entity = _CWKP_ENTITIES.includes(d.paying_entity) ? d.paying_entity : '';
+    let partnerName = d.partner_name || '';
+    if (!partnerName) {
+      const p = db.prepare('SELECT name FROM partners WHERE id=?').get(partnerId);
+      if (p) partnerName = p.name;
+    }
+    const weekEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(d.week_end || '')) ? d.week_end : '';
+    const thirdParty = method === 'thirdparty' ? String(d.third_party_platform || '').trim() : '';
+    const amount = Number(d.amount) || 0;
+    const notes = String(d.notes || '');
+    const newProofPath = req.file ? (req.file.key || req.file.path) : '';
+    const newProofName = req.file ? (req.file.originalname || '') : '';
+
+    const existing = db.prepare('SELECT * FROM company_week_payments WHERE partner_id=? AND week_start=?').get(partnerId, weekStart);
+    if (existing) {
+      // If a new proof was uploaded, delete the old file.
+      if (newProofPath && existing.proof_file_path) {
+        storage.deleteObject(storage.keyFrom(existing.proof_file_path, 'uploads')).catch(() => {});
+      }
+      db.prepare(`UPDATE company_week_payments SET
+          partner_name=?, week_end=?, payment_method=?, third_party_platform=?, paying_entity=?,
+          amount=?, notes=?,
+          proof_file_path=COALESCE(NULLIF(?,''), proof_file_path),
+          proof_file_name=COALESCE(NULLIF(?,''), proof_file_name),
+          updated_at=CURRENT_TIMESTAMP
+        WHERE id=?`).run(
+          partnerName, weekEnd, method, thirdParty, entity,
+          amount, notes, newProofPath, newProofName, existing.id);
+      return res.json({ success: true, id: existing.id });
+    }
+    const r = db.prepare(`INSERT INTO company_week_payments
+      (partner_id, partner_name, week_start, week_end, payment_method, third_party_platform, paying_entity, amount, proof_file_path, proof_file_name, notes, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        partnerId, partnerName, weekStart, weekEnd, method, thirdParty, entity, amount,
+        newProofPath, newProofName, notes, req.userName || '');
+    res.json({ success: true, id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/admin/company-week-payments/:id  (also removes proof file)
+app.delete('/api/admin/company-week-payments/:id', requireAdmin, blockManager, (req, res) => {
+  try {
+    const row = db.prepare('SELECT * FROM company_week_payments WHERE id=?').get(parseInt(req.params.id));
+    if (!row) return res.status(404).json({ error: 'not found' });
+    if (row.proof_file_path) storage.deleteObject(storage.keyFrom(row.proof_file_path, 'uploads')).catch(() => {});
+    db.prepare('DELETE FROM company_week_payments WHERE id=?').run(row.id);
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
