@@ -29465,7 +29465,7 @@ function renderInvpManualTable(skipSave) {
         `</span>`
       : `<button type="button" onclick="invpOpenLinkModal(${emp.uid})" title="链接到系统员工" style="background:none;border:1px dashed var(--gray-300);border-radius:10px;color:var(--gray-500);font-size:.75rem;padding:0 5px;cursor:pointer;line-height:1.5;flex-shrink:0">🔗</button>`;
     return `<tr class="invp-manual-row" data-uid="${emp.uid}">
-      <td style="padding:3px 6px">
+      <td style="padding:3px 6px;position:sticky;left:0;background:#fff;z-index:1;box-shadow:1px 0 0 var(--gray-200)">
         <div style="display:flex;align-items:center;gap:4px">
           <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
             placeholder="员工姓名" style="width:110px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
@@ -29536,7 +29536,7 @@ function renderInvpManualTable(skipSave) {
     <div style="overflow-x:auto">
     <table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
       <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
-        <th style="padding:5px 6px;text-align:left;white-space:nowrap">员工姓名</th>
+        <th style="padding:5px 6px;text-align:left;white-space:nowrap;position:sticky;left:0;background:var(--gray-50);z-index:2;box-shadow:1px 0 0 var(--gray-200)">员工姓名</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">工种类别</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#047857">分包商</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">介绍人</th>
