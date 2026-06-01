@@ -2004,10 +2004,10 @@ tr:hover td{background:var(--sky-light)}
           <input type="text" id="invPageBillAddr" placeholder="客户地址">
         </div>
         <div class="field" id="invPageMarkupRateWrap">
-          <label style="color:#92400e;font-weight:600">Markup Rate（加价系数）</label>
+          <label style="color:#92400e;font-weight:600">Markup Rate（加价系数，默认）</label>
           <div style="display:flex;align-items:center;gap:.5rem">
-            <input type="number" id="invPageMarkupRate" placeholder="如 1.15" min="0" step="0.01" style="width:110px;border:1px solid #d97706;border-radius:6px;padding:5px 8px;font-size:.88rem;font-weight:600;color:#92400e">
-            <span style="font-size:.8rem;color:#92400e">× 总工资 = 最终账单<br><span style="color:var(--gray-400);font-weight:400">1.15 = 加价 15%</span></span>
+            <input type="number" id="invPageMarkupRate" placeholder="如 1.15" min="0" step="0.01" style="width:110px;border:1px solid #d97706;border-radius:6px;padding:5px 8px;font-size:.88rem;font-weight:600;color:#92400e" oninput="renderInvpManualTable(true)">
+            <span style="font-size:.8rem;color:#92400e">× 总工资 = 最终账单<br><span style="color:var(--gray-400);font-weight:400">默认值；可在下方为每名员工单独覆盖</span></span>
           </div>
         </div>
       </div>
@@ -28902,7 +28902,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
@@ -29236,13 +29236,19 @@ async function saveInvpInvoice(status) {
     if (!containerItems.length) { alert('请至少添加一个 container 行'); return; }
     items = []; // hourly items empty in container mode
     baseTotal = containerItems.reduce((s,i) => s+i.total, 0);
+    subtotal = Math.round(baseTotal * markupRate * 100) / 100;
   } else {
     items = getInvpManualItems();
     if (!items.length) { alert('请至少添加一名员工'); return; }
     baseTotal = items.reduce((s,i) => s+i.total, 0);
     containerItems = [];
+    // Per-row markup: each item's effective markup is its own if > 0, else the global default.
+    const billed = items.reduce((s, i) => {
+      const eff = (i.markup && i.markup > 0) ? i.markup : markupRate;
+      return s + i.total * eff;
+    }, 0);
+    subtotal = Math.round(billed * 100) / 100;
   }
-  subtotal = Math.round(baseTotal * markupRate * 100) / 100;
   const profileWithMode = { ...getInvpProfile(), invoice_mode: mode, container_items: containerItems };
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
@@ -29387,6 +29393,8 @@ function _invpSaveTableState() {
     emp.rate = row.querySelector('.invp-man-rate').value;
     const otRateInp = row.querySelector('.invp-man-ot-rate');
     emp.otRate = (otRateInp && otRateInp.dataset.auto !== 'false') ? '' : (otRateInp?.value || '');
+    const mkInp = row.querySelector('.invp-man-markup');
+    emp.markup = mkInp ? mkInp.value : (emp.markup || '');
     emp.days = emp.days || {};
     row.querySelectorAll('.invp-man-day').forEach(inp => {
       emp.days[inp.dataset.date] = inp.value;
@@ -29497,6 +29505,13 @@ function renderInvpManualTable(skipSave) {
           data-auto="${otRateIsAuto ? 'true' : 'false'}"
           oninput="this.dataset.auto='false';invpUpdateRowTotal(this.closest('tr'))">
       </td>
+      <td style="padding:3px 4px;text-align:right">
+        <input type="number" class="invp-man-markup" data-uid="${emp.uid}" value="${emp.markup ? emp.markup : ''}"
+          min="0" step="0.01" placeholder="${(parseFloat(document.getElementById('invPageMarkupRate') && document.getElementById('invPageMarkupRate').value) || 0) > 0 ? Number(document.getElementById('invPageMarkupRate').value).toFixed(2) : '默认'}"
+          title="此员工的 Markup ×。留空则使用上方的默认 Markup Rate。"
+          style="width:64px;text-align:right;border:1px solid #fdba74;border-radius:4px;padding:2px 5px;font-size:.83rem;background:#fff7ed;color:#9a3412"
+          oninput="invpUpdateRowTotal(this.closest('tr'))">
+      </td>
       <td class="invp-man-reghrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${regHrs.toFixed(2)}h</td>
       <td class="invp-man-othrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;${otHrs > 0 ? 'color:var(--accent);font-weight:600' : 'color:var(--gray-400)'}">${otHrs > 0 ? otHrs.toFixed(2) + 'h' : '—'}</td>
       <td class="invp-man-totalhrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${totalHrs.toFixed(1)}h</td>
@@ -29528,10 +29543,11 @@ function renderInvpManualTable(skipSave) {
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">时薪($/h)</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fffbeb">加班时薪($/h) <span style="font-weight:400;font-size:.72rem;color:#92400e">×1.5 自动</span></th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fff7ed;color:#9a3412">Markup × <span style="font-weight:400;font-size:.72rem">留空=默认</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">正常工时</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:var(--accent)">加班工时 <span style="font-weight:400;font-size:.72rem">&gt;40h/周</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">合计工时</th>
-        <th style="padding:5px 6px;text-align:right;white-space:nowrap">小计</th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap" title="工资合计（不含 Markup）">小计</th>
         <th style="padding:5px 6px"></th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
@@ -30757,7 +30773,9 @@ function getInvpManualItems() {
       const regHours = Math.min(totalHours, 40);
       const otHours  = Math.max(totalHours - 40, 0);
       const total = regHours * rate + otHours * otRate;
-      return { name, category: emp.category || '', subcontractor: (emp.subcontractor || '').trim(), referrer: (emp.referrer || '').trim(), hours: totalHours, regHours, otHours, rate, otRate, total, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      const rowMk = parseFloat(emp.markup);
+      const markup = (rowMk > 0) ? rowMk : 0; // 0 means "use global default"
+      return { name, category: emp.category || '', subcontractor: (emp.subcontractor || '').trim(), referrer: (emp.referrer || '').trim(), hours: totalHours, regHours, otHours, rate, otRate, total, markup, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
@@ -30865,7 +30883,12 @@ async function generateInvpPreview() {
     baseAmt     = items.reduce((s,i) => s+i.total, 0);
     totalRegHrs = items.reduce((s,i) => s+(i.regHours||0), 0);
     totalOtHrs  = items.reduce((s,i) => s+(i.otHours||0), 0);
-    billedAmt   = Math.round(baseAmt * markupRate * 100) / 100;
+    // Per-row effective markup (own if > 0, else the page-level default).
+    const effMks = items.map(i => (i.markup && i.markup > 0) ? i.markup : markupRate);
+    billedAmt = Math.round(items.reduce((s, i, idx) => s + (i.total||0) * effMks[idx], 0) * 100) / 100;
+    const uniqueMks = [...new Set(effMks.map(v => Math.round(v * 10000) / 10000))];
+    const allSameMk = uniqueMks.length === 1;
+    const anyMarkup = effMks.some(v => v > 1);
     hasPosition = items.some(i => i.category);
     window._invpAllOtZero = (totalOtHrs === 0);
     const hideOt = window._invpAllOtZero && window._invpHideOtCols;
@@ -30875,6 +30898,7 @@ async function generateInvpPreview() {
       const posCell = hasPosition
         ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
+      const rowBilled = (i.total || 0) * effMks[idx];
       return `<tr style="background:${stripe}">
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}</td>
         ${posCell}
@@ -30882,9 +30906,14 @@ async function generateInvpPreview() {
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>`}
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${rowBilled.toFixed(2)}</td>
       </tr>`;
     }).join('');
+    const mkLabel = anyMarkup
+      ? (allSameMk
+          ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${uniqueMks[0].toFixed(2)})</span>`
+          : ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup per worker)</span>`)
+      : '';
     lineItemTableHtml = `
       <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
         <thead>
@@ -30901,7 +30930,7 @@ async function generateInvpPreview() {
         <tbody>
           ${tableRows}
           <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
-            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total${mkLabel}</td>
             <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
             ${hideOt ? '' : `<td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>`}
             <td style="padding:7px 7px;text-align:right" colspan="${hideOt ? 1 : 2}">$${billedAmt.toFixed(2)}</td>
@@ -31002,12 +31031,27 @@ async function generateInvpPreview() {
       <!-- Amount summary (right-aligned) -->
       <div style="display:flex;justify-content:flex-end;margin-bottom:.85rem">
         <table style="border-collapse:collapse;font-size:.86rem;min-width:280px">
-          ${hasMarkup ? `
-          <tr>
-            <td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">
-              ${mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} $${baseAmt.toFixed(2)} &nbsp;×&nbsp; Markup ${markupRate.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
-            </td>
-          </tr>` : ''}
+          ${(() => {
+            // Show the "subtotal × markup = billed" line whenever the bill differs
+            // from the wage base (covers both container global markup and hourly
+            // per-row markups). In hourly mode with mixed markups, label it as
+            // "Markup per worker" rather than a single number.
+            const showSummary = (mode === 'container' ? hasMarkup : Math.abs(billedAmt - baseAmt) > 0.005);
+            if (!showSummary) return '';
+            let mkText;
+            if (mode === 'container') {
+              mkText = `Markup ${markupRate.toFixed(2)}`;
+            } else {
+              const effMks = items.map(i => (i.markup && i.markup > 0) ? i.markup : markupRate);
+              const uniqueMks = [...new Set(effMks.map(v => Math.round(v * 10000) / 10000))];
+              mkText = uniqueMks.length === 1 ? `Markup ${uniqueMks[0].toFixed(2)}` : 'Markup per worker';
+            }
+            return `<tr>
+              <td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">
+                ${mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} $${baseAmt.toFixed(2)} &nbsp;×&nbsp; ${mkText} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
+              </td>
+            </tr>`;
+          })()}
           <tr>
             <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;font-size:.9rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>
             <td style="padding:7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:800;text-align:right;font-size:1.2rem;white-space:nowrap">$${billedAmt.toFixed(2)}</td>
@@ -32608,7 +32652,7 @@ function _cpyListGroupPanel(g, gIdx) {
     </div>`;
 }
 
-// Scroll a group's detail strip by one day (one card) or one week (7 cards).
+// Scroll a group's detail strip by one day (1 card), one week (7 cards) or one month (~30 cards).
 function cpyStripScroll(gIdx, dir, unit) {
   const strip = document.getElementById('cpyStrip-' + gIdx);
   if (!strip) return;
