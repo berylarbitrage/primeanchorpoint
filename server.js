@@ -2121,6 +2121,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS company_month_bills (
 )`);
 try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cmb_partner_ym ON company_month_bills(partner_id, year_month)`); } catch(e) {}
 
+// ─── Container unloading log (QR scan: photo + container no + who unloaded) ───
+// Each scan logs the FINISH of unloading a container; start_time = the previous
+// record's end_time for that company (continuous unloading), so a record's duration
+// runs from when the prior container finished to when this one finished.
+db.exec(`CREATE TABLE IF NOT EXISTS container_unloads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER,
+  partner_name TEXT DEFAULT '',
+  container_no TEXT DEFAULT '',
+  worker_name TEXT DEFAULT '',
+  photo_path TEXT DEFAULT '',
+  photo_name TEXT DEFAULT '',
+  start_time DATETIME,
+  end_time DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_cu_partner ON container_unloads(partner_id, end_time)`); } catch(e) {}
+
 // ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
 db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17377,6 +17395,11 @@ app.get('/ts', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'ts.html'));
 });
 
+// Public container-unloading scan page (per-company QR points here: /unload?partner=ID)
+app.get('/unload', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'unload.html'));
+});
+
 // ─── Admin Panel Page ───
 // Note: admin.html includes its own login form and client-side auth gate.
 // All sensitive data is protected by requireAdmin middleware on API endpoints.
@@ -24406,6 +24429,92 @@ app.delete('/api/admin/company-month-bills', requireAdmin, blockManager, (req, r
       storage.deleteObject(storage.keyFrom(existing[pathCol], 'uploads')).catch(() => {});
       db.prepare(`UPDATE company_month_bills SET ${pathCol}='', ${nameCol}='', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(existing.id);
     }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Container unloading log (per-company QR) ───
+const unloadPhotoUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `unload-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\//i.test(file.mimetype) || /\.(jpe?g|png|heic|webp|gif)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
+// PUBLIC: info for the scan page — company name, recent worker names, last finish time.
+app.get('/api/unload/info', (req, res) => {
+  try {
+    const partnerId = parseInt(req.query.partner_id);
+    if (!partnerId) return res.status(400).json({ error: 'partner_id required' });
+    const p = db.prepare('SELECT id, name FROM partners WHERE id=?').get(partnerId);
+    if (!p) return res.status(404).json({ error: '公司不存在' });
+    const workers = db.prepare(
+      `SELECT DISTINCT worker_name FROM company_worker_payments WHERE partner_id=? AND worker_name<>'' ORDER BY worker_name`
+    ).all(partnerId).map(r => r.worker_name);
+    const last = db.prepare(
+      'SELECT end_time, container_no FROM container_unloads WHERE partner_id=? ORDER BY end_time DESC, id DESC LIMIT 1'
+    ).get(partnerId);
+    res.json({ partner_id: p.id, partner_name: p.name, workers, last_end_time: last ? last.end_time : null, last_container_no: last ? last.container_no : null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: submit one unloaded-container record (photo required). start = previous finish.
+app.post('/api/unload/submit', unloadPhotoUpload.single('photo'), (req, res) => {
+  try {
+    const d = req.body || {};
+    const partnerId = parseInt(d.partner_id);
+    const containerNo = String(d.container_no || '').trim();
+    const workerName = String(d.worker_name || '').trim();
+    if (!partnerId) return res.status(400).json({ error: 'partner_id required' });
+    if (!containerNo) return res.status(400).json({ error: '请填写柜号' });
+    if (!workerName) return res.status(400).json({ error: '请填写卸柜人姓名' });
+    if (!req.file) return res.status(400).json({ error: '请拍摄柜子照片' });
+    const p = db.prepare('SELECT id, name FROM partners WHERE id=?').get(partnerId);
+    if (!p) return res.status(404).json({ error: '公司不存在' });
+    const photoPath = req.file.key || req.file.path;
+    const photoName = req.file.originalname || '';
+    const prev = db.prepare(
+      'SELECT end_time FROM container_unloads WHERE partner_id=? ORDER BY end_time DESC, id DESC LIMIT 1'
+    ).get(partnerId);
+    const now = new Date().toISOString();
+    const startTime = prev ? prev.end_time : null; // first container of the chain has no prior finish
+    const r = db.prepare(`INSERT INTO container_unloads
+      (partner_id, partner_name, container_no, worker_name, photo_path, photo_name, start_time, end_time)
+      VALUES (?,?,?,?,?,?,?,?)`).run(partnerId, p.name, containerNo, workerName, photoPath, photoName, startTime, now);
+    res.json({ success: true, id: r.lastInsertRowid, start_time: startTime, end_time: now });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: list container-unload records (optional partner/month filter).
+app.get('/api/admin/container-unloads', requireAdmin, blockManager, (req, res) => {
+  try {
+    const { partner_id, year_month } = req.query;
+    const where = [];
+    const params = [];
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    if (year_month) { where.push("substr(end_time,1,7) = ?"); params.push(String(year_month)); }
+    const rows = db.prepare(`SELECT * FROM container_unloads
+      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ORDER BY end_time DESC, id DESC`).all(...params);
+    for (const r of rows) r.photo_url = r.photo_path ? `/uploads/${path.basename(r.photo_path)}` : '';
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: delete a container-unload record.
+app.delete('/api/admin/container-unloads/:id', requireAdmin, blockManager, (req, res) => {
+  try {
+    const row = db.prepare('SELECT * FROM container_unloads WHERE id=?').get(parseInt(req.params.id));
+    if (row && row.photo_path) storage.deleteObject(storage.keyFrom(row.photo_path, 'uploads')).catch(() => {});
+    db.prepare('DELETE FROM container_unloads WHERE id=?').run(parseInt(req.params.id));
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

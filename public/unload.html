@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>卸柜登记 Container Unload</title>
+<link rel="icon" href="/logo.svg">
+<style>
+  :root { --green:#16a34a; --green-d:#15803d; --gray:#64748b; --line:#e2e8f0; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; background:#f1f5f9; color:#0f172a; }
+  .wrap { max-width:520px; margin:0 auto; padding:1rem 1rem 3rem; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:1.1rem; box-shadow:0 2px 10px rgba(0,0,0,.04); margin-bottom:1rem; }
+  h1 { font-size:1.25rem; margin:.2rem 0 .1rem; }
+  .co { font-size:1.05rem; font-weight:800; color:var(--green-d); }
+  .sub { color:var(--gray); font-size:.85rem; margin-top:.15rem; }
+  label { display:block; font-weight:700; font-size:.9rem; margin:.9rem 0 .35rem; }
+  .req::after { content:" *"; color:#dc2626; }
+  input[type=text] { width:100%; padding:.7rem .8rem; border:1px solid var(--line); border-radius:10px; font-size:1.05rem; }
+  input[type=text]:focus { outline:none; border-color:var(--green); }
+  .photo-btn { display:flex; align-items:center; justify-content:center; gap:.5rem; width:100%; padding:1.4rem; border:2px dashed #86efac; border-radius:12px; background:#f0fdf4; color:var(--green-d); font-weight:700; font-size:1rem; cursor:pointer; }
+  #photoInput { display:none; }
+  #preview { display:none; margin-top:.6rem; width:100%; border-radius:12px; border:1px solid var(--line); }
+  .btn { width:100%; padding:.95rem; border:none; border-radius:12px; background:var(--green); color:#fff; font-size:1.1rem; font-weight:800; cursor:pointer; margin-top:1.2rem; }
+  .btn:disabled { opacity:.55; }
+  .hint { background:#eff6ff; border-left:4px solid #3b82f6; padding:.55rem .75rem; border-radius:8px; font-size:.85rem; color:#1e3a8a; margin-top:.2rem; }
+  .ok { background:#f0fdf4; border:1px solid #86efac; border-radius:12px; padding:1rem; text-align:center; }
+  .ok .big { font-size:1.15rem; font-weight:800; color:var(--green-d); }
+  .err { color:#dc2626; font-size:.88rem; margin-top:.6rem; text-align:center; min-height:1.1em; }
+  .muted { color:var(--gray); font-size:.82rem; }
+  .row { display:flex; justify-content:space-between; padding:.25rem 0; border-bottom:1px dashed var(--line); font-size:.95rem; }
+  .row:last-child { border-bottom:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>📦 卸柜登记</h1>
+    <div class="co" id="coName">加载中…</div>
+    <div class="sub">Container unload check-in</div>
+  </div>
+
+  <div class="card" id="formCard" style="display:none">
+    <div class="hint" id="startHint">本柜开始时间：上一柜结束后自动计算</div>
+
+    <label class="req">卸柜人 / Your name</label>
+    <input type="text" id="workerName" list="workerList" placeholder="选择或输入名字" autocomplete="off">
+    <datalist id="workerList"></datalist>
+
+    <label class="req">柜号 / Container No.</label>
+    <input type="text" id="containerNo" placeholder="如 MSKU1234567" autocomplete="off" autocapitalize="characters">
+
+    <label class="req">柜子照片 / Photo</label>
+    <label class="photo-btn" for="photoInput" id="photoLabel">📷 拍摄柜子照片</label>
+    <input type="file" id="photoInput" accept="image/*" capture="environment">
+    <img id="preview" alt="preview">
+
+    <button class="btn" id="submitBtn">✅ 提交（记录结束时间）</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card ok" id="okCard" style="display:none">
+    <div class="big">✅ 已登记</div>
+    <div id="okBody" style="margin-top:.6rem"></div>
+    <button class="btn" id="nextBtn" style="background:#0f172a">➕ 登记下一个柜子</button>
+  </div>
+</div>
+
+<script>
+  const qs = new URLSearchParams(location.search);
+  const partnerId = qs.get('partner') || qs.get('p') || qs.get('partner_id');
+  const $ = id => document.getElementById(id);
+  let photoFile = null;
+
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
+  }
+  function fmtDur(a, b) {
+    if (!a || !b) return '—';
+    const ms = new Date(b) - new Date(a);
+    if (!(ms > 0)) return '—';
+    const m = Math.round(ms / 60000);
+    return m >= 60 ? `${Math.floor(m/60)}小时${m%60}分` : `${m}分钟`;
+  }
+
+  async function init() {
+    if (!partnerId) { $('coName').textContent = '链接无效（缺少公司）'; return; }
+    try {
+      const r = await fetch('/api/unload/info?partner_id=' + encodeURIComponent(partnerId));
+      const data = await r.json();
+      if (!r.ok || data.error) { $('coName').textContent = data.error || '加载失败'; return; }
+      $('coName').textContent = data.partner_name || '';
+      document.title = `卸柜登记 · ${data.partner_name || ''}`;
+      $('workerList').innerHTML = (data.workers || []).map(w => `<option value="${w.replace(/"/g,'&quot;')}">`).join('');
+      updateStartHint(data.last_end_time);
+      $('formCard').style.display = '';
+    } catch (e) { $('coName').textContent = '网络错误，请重试'; }
+  }
+
+  function updateStartHint(lastEnd) {
+    $('startHint').innerHTML = lastEnd
+      ? `本柜开始时间 = 上一柜结束：<b>${fmtTime(lastEnd)}</b>`
+      : `这是第一柜：开始时间将留空（之后的柜子自动接上一柜结束）`;
+  }
+
+  $('photoInput').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    photoFile = f;
+    $('photoLabel').textContent = '📷 重新拍摄';
+    const img = $('preview');
+    img.src = URL.createObjectURL(f);
+    img.style.display = 'block';
+  });
+
+  $('submitBtn').addEventListener('click', async () => {
+    const name = $('workerName').value.trim();
+    const cno = $('containerNo').value.trim();
+    $('err').textContent = '';
+    if (!name) { $('err').textContent = '请填写卸柜人姓名'; return; }
+    if (!cno) { $('err').textContent = '请填写柜号'; return; }
+    if (!photoFile) { $('err').textContent = '请先拍摄柜子照片'; return; }
+    const btn = $('submitBtn');
+    btn.disabled = true; btn.textContent = '提交中…';
+    try {
+      const fd = new FormData();
+      fd.append('partner_id', partnerId);
+      fd.append('container_no', cno);
+      fd.append('worker_name', name);
+      fd.append('photo', photoFile);
+      const r = await fetch('/api/unload/submit', { method:'POST', body: fd });
+      const data = await r.json();
+      if (!r.ok || data.error) { $('err').textContent = data.error || '提交失败'; btn.disabled = false; btn.textContent = '✅ 提交（记录结束时间）'; return; }
+      $('okBody').innerHTML = `
+        <div class="row"><span class="muted">柜号</span><b>${cno.replace(/</g,'&lt;')}</b></div>
+        <div class="row"><span class="muted">卸柜人</span><b>${name.replace(/</g,'&lt;')}</b></div>
+        <div class="row"><span class="muted">开始时间</span><b>${fmtTime(data.start_time)}</b></div>
+        <div class="row"><span class="muted">结束时间</span><b>${fmtTime(data.end_time)}</b></div>
+        <div class="row"><span class="muted">本柜用时</span><b>${fmtDur(data.start_time, data.end_time)}</b></div>`;
+      $('formCard').style.display = 'none';
+      $('okCard').style.display = '';
+      window._lastEnd = data.end_time;
+      window._lastName = name;
+    } catch (e) {
+      $('err').textContent = '网络错误，请重试';
+      btn.disabled = false; btn.textContent = '✅ 提交（记录结束时间）';
+    }
+  });
+
+  $('nextBtn').addEventListener('click', () => {
+    // Reset for the next container; keep the name, refresh the start hint.
+    $('containerNo').value = '';
+    photoFile = null;
+    $('preview').style.display = 'none'; $('preview').src = '';
+    $('photoLabel').textContent = '📷 拍摄柜子照片';
+    $('photoInput').value = '';
+    if (window._lastName) $('workerName').value = window._lastName;
+    updateStartHint(window._lastEnd);
+    const btn = $('submitBtn'); btn.disabled = false; btn.textContent = '✅ 提交（记录结束时间）';
+    $('okCard').style.display = 'none';
+    $('formCard').style.display = '';
+    window.scrollTo(0, 0);
+  });
+
+  init();
+</script>
+</body>
+</html>
