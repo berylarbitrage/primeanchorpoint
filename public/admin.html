@@ -1653,21 +1653,31 @@ tr:hover td{background:var(--sky-light)}
 
 <!-- ════════ 扫码记录: 审核 Modal ════════ -->
 <div class="modal-bg" id="csubReviewModal" style="display:none" onclick="if(event.target===this)closeCsubReviewModal()">
-  <div class="modal" style="max-width:420px">
-    <h2 style="margin:0 0 .4rem">✅ 审核柜子</h2>
-    <div id="csubReviewSub" style="font-size:.86rem;color:var(--gray-500);margin-bottom:.8rem"></div>
-    <div class="field" style="margin-bottom:.7rem">
+  <div class="modal" style="max-width:460px;max-height:92vh;overflow-y:auto">
+    <h2 style="margin:0 0 .4rem">✅ 审核柜子（可编辑）</h2>
+    <div id="csubReviewSub" style="font-size:.86rem;color:var(--gray-500);margin-bottom:.6rem"></div>
+    <div id="csubReviewPhoto" style="margin-bottom:.6rem"></div>
+    <div class="field" style="margin-bottom:.6rem">
       <label>审核人姓名 *</label>
       <input type="text" id="csubReviewName" placeholder="你的名字" autocomplete="off">
     </div>
-    <div class="field" style="margin-bottom:.3rem">
-      <label>核对柜号 *（与照片/实物一致才通过）</label>
-      <input type="text" id="csubReviewCno" placeholder="输入柜号确认" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase">
+    <div class="field" style="margin-bottom:.6rem">
+      <label>柜号</label>
+      <input type="text" id="csubReviewCno" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase">
+    </div>
+    <div class="field" style="margin-bottom:.6rem">
+      <label>参与人（逗号分隔）</label>
+      <input type="text" id="csubReviewParts" autocomplete="off" placeholder="名字1、名字2">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+      <div class="field" style="margin:0"><label>报价 $</label><input type="number" id="csubReviewUnit" min="0" step="0.01"></div>
+      <div class="field" style="margin:0"><label>客户价 $</label><input type="number" id="csubReviewCust" min="0" step="0.01"></div>
+      <div class="field" style="margin:0"><label>工人价 $</label><input type="number" id="csubReviewWorker" min="0" step="0.01"></div>
     </div>
     <div id="csubReviewErr" style="color:#dc2626;font-size:.85rem;min-height:1.1em;margin-bottom:.4rem"></div>
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeCsubReviewModal()">取消</button>
-      <button class="btn btn-green" id="csubReviewBtn" onclick="submitCsubReview()">通过审核</button>
+      <button class="btn btn-green" id="csubReviewBtn" onclick="submitCsubReview()">保存并通过审核</button>
     </div>
   </div>
 </div>
@@ -30120,10 +30130,25 @@ function _invpCsubRow(r) {
 
 function invpOpenCsubPhoto(url) {
   // Photos served by /uploads/:filename require Bearer auth (no token in URL).
+  // Show in an on-page lightbox — window.open from an async callback gets blocked on
+  // mobile and ends up navigating the current page away.
   fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } })
     .then(r => r.ok ? r.blob() : Promise.reject(new Error('打开失败')))
-    .then(blob => window.open(URL.createObjectURL(blob), '_blank'))
+    .then(blob => showImgLightbox(URL.createObjectURL(blob)))
     .catch(e => showToast('打开图片失败：' + (e.message || e), 'error'));
+}
+function showImgLightbox(src) {
+  let lb = document.getElementById('imgLightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'imgLightbox';
+    lb.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:6000;align-items:center;justify-content:center;padding:1rem;cursor:zoom-out';
+    lb.onclick = () => { lb.style.display = 'none'; const i = document.getElementById('imgLightboxImg'); if (i && i.src.startsWith('blob:')) URL.revokeObjectURL(i.src); i.src = ''; };
+    lb.innerHTML = '<img id="imgLightboxImg" style="max-width:96vw;max-height:92vh;object-fit:contain;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)">';
+    document.body.appendChild(lb);
+  }
+  document.getElementById('imgLightboxImg').src = src;
+  lb.style.display = 'flex';
 }
 
 async function invpImportCsub(submissionId) {
@@ -32706,9 +32731,16 @@ function openCsubReview(id) {
   const r = _csubScanRows.find(x => x.id === id);
   if (!r) return;
   _csubReviewId = id;
-  document.getElementById('csubReviewSub').innerHTML = `${esc(r.partner_name || '')} · ${r.submit_type === 'end' ? '🔴 结束' : '🟢 开始'} · 柜号 <strong>${esc(r.container_no || '—')}</strong>`;
+  document.getElementById('csubReviewSub').innerHTML = `${esc(r.partner_name || '')} · ${r.submit_type === 'end' ? '🔴 结束' : '🟢 开始'} · 提交 ${esc(r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '')}`;
+  document.getElementById('csubReviewPhoto').innerHTML = r.photo_url
+    ? `<img src="${esc(r.photo_url)}" onclick="invpOpenCsubPhoto('${esc(r.photo_url)}')" style="max-width:100%;max-height:180px;object-fit:contain;border:1px solid var(--gray-200);border-radius:8px;cursor:zoom-in;background:#f8fafc" alt="">`
+    : '';
   document.getElementById('csubReviewName').value = '';
-  document.getElementById('csubReviewCno').value = '';
+  document.getElementById('csubReviewCno').value = r.container_no || '';
+  document.getElementById('csubReviewParts').value = (Array.isArray(r.participants) ? r.participants : []).join('、');
+  document.getElementById('csubReviewUnit').value = r.unit_price != null ? r.unit_price : '';
+  document.getElementById('csubReviewCust').value = r.customer_price != null ? r.customer_price : '';
+  document.getElementById('csubReviewWorker').value = r.worker_price != null ? r.worker_price : '';
   document.getElementById('csubReviewErr').textContent = '';
   document.getElementById('csubReviewModal').style.display = 'flex';
 }
@@ -32721,14 +32753,19 @@ async function submitCsubReview() {
   errEl.textContent = '';
   if (!reviewer) { errEl.textContent = '请填写审核人姓名'; return; }
   if (!cno) { errEl.textContent = '请填写柜号'; return; }
+  const num = id => { const v = document.getElementById(id).value; return v === '' ? null : Number(v); };
   const btn = document.getElementById('csubReviewBtn');
   btn.disabled = true;
   try {
     const r = await api(`/admin/container-submissions/${_csubReviewId}/approve`, {
-      method: 'POST', body: JSON.stringify({ reviewer_name: reviewer, container_no: cno })
+      method: 'POST', body: JSON.stringify({
+        reviewer_name: reviewer, container_no: cno,
+        participants: document.getElementById('csubReviewParts').value,
+        unit_price: num('csubReviewUnit'), customer_price: num('csubReviewCust'), worker_price: num('csubReviewWorker'),
+      })
     });
     if (r && r.error) { errEl.textContent = r.error; btn.disabled = false; return; }
-    showToast('已通过审核 ✓');
+    showToast('已保存并通过审核 ✓');
     closeCsubReviewModal();
     loadCsubScans();
   } catch (e) { errEl.textContent = '操作失败：' + (e.message || e); }

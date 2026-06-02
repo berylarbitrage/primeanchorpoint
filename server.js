@@ -14149,22 +14149,29 @@ app.post('/api/admin/container-submissions/:id/discard', requireAdmin, blockMana
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/admin/container-submissions/:id/approve  body: { reviewer_name, container_no }
-//   Verifies the entered container number matches the record, then marks it approved
-//   and stamps who reviewed it.
+// POST /api/admin/container-submissions/:id/approve
+//   body: { reviewer_name, container_no, participants?, unit_price?, customer_price?, worker_price? }
+//   Reviewer can edit the record's fields, then it's marked approved + stamped.
 app.post('/api/admin/container-submissions/:id/approve', requireAdmin, blockManager, (req, res) => {
   try {
     const sub = db.prepare('SELECT * FROM container_submissions WHERE id=?').get(parseInt(req.params.id));
     if (!sub) return res.status(404).json({ error: 'not found' });
-    const reviewer = String((req.body && req.body.reviewer_name) || '').trim();
-    const entered = String((req.body && req.body.container_no) || '').trim().toUpperCase();
+    const d = req.body || {};
+    const reviewer = String(d.reviewer_name || '').trim();
+    const cno = String(d.container_no || '').trim().toUpperCase();
     if (!reviewer) return res.status(400).json({ error: '请填写审核人姓名' });
-    if (!entered) return res.status(400).json({ error: '请填写柜号' });
-    if (entered !== String(sub.container_no || '').trim().toUpperCase()) {
-      return res.status(409).json({ error: '柜号不符，无法通过审核', code: 'container_mismatch' });
-    }
-    db.prepare("UPDATE container_submissions SET status='approved', reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP WHERE id=?")
-      .run(reviewer.slice(0, 100), sub.id);
+    if (!cno) return res.status(400).json({ error: '请填写柜号' });
+    let names = d.participants;
+    if (typeof names === 'string') names = names.split(/[,，、\n]/);
+    names = (Array.isArray(names) ? names : []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 30);
+    const numOr = (v, cur) => (v === '' || v == null) ? cur : Number(v);
+    db.prepare(`UPDATE container_submissions SET
+        status='approved', reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP,
+        container_no=?, participants=?, unit_price=?, customer_price=?, worker_price=?
+      WHERE id=?`).run(
+      reviewer.slice(0, 100), cno, JSON.stringify(names),
+      numOr(d.unit_price, sub.unit_price), numOr(d.customer_price, sub.customer_price), numOr(d.worker_price, sub.worker_price),
+      sub.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
