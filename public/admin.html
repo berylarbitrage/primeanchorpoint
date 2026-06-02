@@ -1598,6 +1598,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="top">
     <h1>📦 扫码记录</h1>
     <div class="top-actions">
+      <button class="btn btn-green" onclick="openReviewLinkModal()">🔗 生成审核链接（顾客 / 工头）</button>
       <button class="btn btn-outline" onclick="loadCsubScans()">刷新</button>
     </div>
   </div>
@@ -1640,7 +1641,7 @@ tr:hover td{background:var(--sky-light)}
         <th style="text-align:left">柜号</th>
         <th style="text-align:left">照片</th>
         <th style="text-align:left">参与人</th>
-        <th style="text-align:right">单价</th>
+        <th style="text-align:right">价格</th>
         <th style="text-align:left">提交时间</th>
         <th style="text-align:left">状态</th>
         <th></th>
@@ -1668,6 +1669,24 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="closeCsubReviewModal()">取消</button>
       <button class="btn btn-green" id="csubReviewBtn" onclick="submitCsubReview()">通过审核</button>
     </div>
+  </div>
+</div>
+
+<!-- ════════ 扫码记录: 生成审核链接 Modal ════════ -->
+<div class="modal-bg" id="reviewLinkModal" style="display:none" onclick="if(event.target===this)closeReviewLinkModal()">
+  <div class="modal" style="max-width:560px;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+      <h2 style="margin:0">🔗 生成审核链接</h2>
+      <button class="btn btn-sm btn-outline" onclick="closeReviewLinkModal()">× 关闭</button>
+    </div>
+    <p style="font-size:.83rem;color:var(--gray-500);margin:.2rem 0 .9rem">选公司和日期范围，生成两个链接：<b>顾客</b>（填每个柜子的客户价）、<b>工头</b>（核对柜子/人、填工人价、可改名字）。两者都能留反馈，提交后直接更新对应柜记录。</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem;margin-bottom:.8rem">
+      <div class="field" style="grid-column:1/-1;margin:0"><label>公司 *</label><select id="rlPartner"><option value="">— 选择公司 —</option></select></div>
+      <div class="field" style="margin:0"><label>开始日期 *</label><input type="date" id="rlFrom"></div>
+      <div class="field" style="margin:0"><label>结束日期 *</label><input type="date" id="rlTo"></div>
+      <div class="field" style="margin:0;display:flex;align-items:flex-end"><button class="btn btn-green" style="width:100%" onclick="genReviewLinks()">生成</button></div>
+    </div>
+    <div id="rlResult"></div>
   </div>
 </div>
 
@@ -32645,7 +32664,12 @@ function _csubScanRowHtml(r) {
     <td style="padding:5px 8px;font-family:monospace;font-weight:600">${esc(r.container_no || '—')}</td>
     <td style="padding:5px 8px">${photo}</td>
     <td style="padding:5px 8px">${partsHtml}</td>
-    <td style="padding:5px 8px;text-align:right">${r.unit_price ? '$' + Number(r.unit_price).toFixed(2) : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="padding:5px 8px;text-align:right;white-space:nowrap;font-size:.78rem">
+      ${r.unit_price ? '报价 $' + Number(r.unit_price).toFixed(2) + '<br>' : ''}
+      ${r.customer_price != null ? '<span style="color:#0E7BB8">客户 $' + Number(r.customer_price).toFixed(2) + '</span><br>' : ''}
+      ${r.worker_price != null ? '<span style="color:#9a3412">工人 $' + Number(r.worker_price).toFixed(2) + '</span>' : ''}
+      ${(!r.unit_price && r.customer_price == null && r.worker_price == null) ? '<span style="color:var(--gray-300)">—</span>' : ''}
+    </td>
     <td style="padding:5px 8px;white-space:nowrap;color:var(--gray-500);font-size:.78rem">${esc(when)}</td>
     <td style="padding:5px 8px">${_csubStatusLabel(r)}</td>
     <td style="padding:5px 8px;text-align:right;white-space:nowrap">${reviewBtn} ${discardBtn}</td>
@@ -32717,6 +32741,49 @@ async function discardCsubScan(id) {
     showToast('已丢弃 ✓');
     loadCsubScans();
   } catch (e) { showToast('操作失败：' + (e.message || e), 'error'); }
+}
+
+// ── 生成审核链接（顾客 / 工头）──
+function openReviewLinkModal() {
+  // Reuse the company options from the page filter.
+  const pageSel = document.getElementById('csubScanPartner');
+  const rlSel = document.getElementById('rlPartner');
+  rlSel.innerHTML = '<option value="">— 选择公司 —</option>'
+    + Array.from(pageSel.options).filter(o => o.value).map(o => `<option value="${o.value}">${esc(o.textContent)}</option>`).join('');
+  if (document.getElementById('csubScanPartner').value) rlSel.value = document.getElementById('csubScanPartner').value;
+  // Default range: last 7 days.
+  const today = new Date();
+  const wk = new Date(today); wk.setDate(today.getDate() - 6);
+  const iso = d => d.toISOString().slice(0, 10);
+  document.getElementById('rlFrom').value = iso(wk);
+  document.getElementById('rlTo').value = iso(today);
+  document.getElementById('rlResult').innerHTML = '';
+  document.getElementById('reviewLinkModal').style.display = 'flex';
+}
+function closeReviewLinkModal() { document.getElementById('reviewLinkModal').style.display = 'none'; }
+async function genReviewLinks() {
+  const pid = document.getElementById('rlPartner').value;
+  const from = document.getElementById('rlFrom').value;
+  const to = document.getElementById('rlTo').value;
+  if (!pid) { showToast('请选择公司', 'error'); return; }
+  if (!from || !to) { showToast('请选择日期范围', 'error'); return; }
+  try {
+    const r = await api('/admin/container-review-links', { method: 'POST', body: JSON.stringify({ partner_id: pid, date_from: from, date_to: to }) });
+    if (r && r.error) { showToast(r.error, 'error'); return; }
+    const custUrl = `${location.origin}/r/${r.customer_token}`;
+    const fmUrl = `${location.origin}/r/${r.foreman_token}`;
+    const block = (title, color, url) => `
+      <div style="border:1px solid var(--gray-200);border-radius:10px;padding:.7rem .85rem;margin-bottom:.6rem">
+        <div style="font-weight:700;color:${color};margin-bottom:.35rem">${title}</div>
+        <input type="text" readonly value="${esc(url)}" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem;background:#f8fafc;font-family:monospace">
+        <div style="margin-top:.4rem"><button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText('${esc(url)}').then(()=>showToast('已复制 ✓'))">复制</button>
+        <button class="btn btn-sm btn-outline" onclick="window.open('${esc(url)}','_blank')">打开</button></div>
+      </div>`;
+    document.getElementById('rlResult').innerHTML =
+      `<div style="font-size:.84rem;color:var(--gray-500);margin:.3rem 0">${esc(r.partner_name)} · ${from} ~ ${to}</div>`
+      + block('📋 顾客链接（填客户价 + 反馈）', '#0E7BB8', custUrl)
+      + block('🦺 工头链接（核对柜/人、填工人价 + 反馈）', '#9a3412', fmUrl);
+  } catch (e) { showToast('生成失败：' + (e.message || e), 'error'); }
 }
 function copyCsubUrl(type) {
   const url = type === 'end' ? _csubQrState.endUrl : _csubQrState.startUrl;

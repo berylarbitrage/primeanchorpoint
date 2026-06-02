@@ -756,6 +756,26 @@ try { db.exec(`ALTER TABLE container_submissions ADD COLUMN submit_type TEXT DEF
 // Review: who verified the record (by re-entering the container number) and when.
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN reviewed_by TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN reviewed_at DATETIME`); } catch(e) {}
+// Customer-confirmed price (kept separate from unit_price) and foreman's per-container worker price.
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN customer_price REAL`); } catch(e) {}
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN worker_price REAL`); } catch(e) {}
+
+// Per-date-range review links (one each for customer & foreman). The link covers a
+// company's container records in [date_from, date_to]; submitting updates those records.
+db.exec(`CREATE TABLE IF NOT EXISTS container_review_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL UNIQUE,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  role TEXT NOT NULL,
+  date_from TEXT NOT NULL,
+  date_to TEXT NOT NULL,
+  feedback TEXT DEFAULT '',
+  reviewer_name TEXT DEFAULT '',
+  submitted_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_crl_partner ON container_review_links(partner_id, created_at)`); } catch(e) {}
 
 function generatePartnerNumber(stateAbbr) {
   const s = (stateAbbr || 'XX').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2).padEnd(2, 'X');
@@ -14158,6 +14178,106 @@ app.post('/api/admin/container-submissions/:id/import', requireAdmin, blockManag
     if (!sub) return res.status(404).json({ error: 'not found' });
     db.prepare("UPDATE container_submissions SET status='imported', imported_invoice_id=?, imported_at=CURRENT_TIMESTAMP WHERE id=?")
       .run(req.body && req.body.invoice_id ? parseInt(req.body.invoice_id) : null, sub.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Container review links (date-range): customer + foreman ───
+function _crlRecords(partnerId, from, to) {
+  const rows = db.prepare(`SELECT * FROM container_submissions
+    WHERE partner_id=? AND status!='discarded' AND date(created_at) >= date(?) AND date(created_at) <= date(?)
+    ORDER BY container_no, submit_type, created_at`).all(partnerId, from, to);
+  for (const r of rows) {
+    try { r.participants = JSON.parse(r.participants || '[]'); } catch { r.participants = []; }
+    r.photo_url = r.photo_path ? `/uploads/${path.basename(r.photo_path)}` : '';
+  }
+  return rows;
+}
+
+// ADMIN: generate a customer + foreman review link for a company over a date range.
+app.post('/api/admin/container-review-links', requireAdmin, blockManager, (req, res) => {
+  try {
+    const d = req.body || {};
+    const partnerId = parseInt(d.partner_id);
+    const from = String(d.date_from || '').slice(0, 10);
+    const to = String(d.date_to || '').slice(0, 10);
+    if (!partnerId || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return res.status(400).json({ error: 'partner_id、date_from、date_to 必填(YYYY-MM-DD)' });
+    }
+    const p = db.prepare('SELECT id, name FROM partners WHERE id=?').get(partnerId);
+    if (!p) return res.status(404).json({ error: '公司不存在' });
+    const mk = role => {
+      const token = crypto.randomBytes(16).toString('hex');
+      db.prepare(`INSERT INTO container_review_links (token, partner_id, partner_name, role, date_from, date_to)
+        VALUES (?,?,?,?,?,?)`).run(token, p.id, p.name, role, from, to);
+      return token;
+    };
+    res.json({ success: true, partner_name: p.name, customer_token: mk('customer'), foreman_token: mk('foreman') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: list review links for a company.
+app.get('/api/admin/container-review-links', requireAdmin, blockManager, (req, res) => {
+  try {
+    const partnerId = parseInt(req.query.partner_id);
+    const where = partnerId ? 'WHERE partner_id=?' : '';
+    const rows = db.prepare(`SELECT * FROM container_review_links ${where} ORDER BY created_at DESC LIMIT 100`)
+      .all(...(partnerId ? [partnerId] : []));
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+function _reviewLinkByToken(token) {
+  if (!token || token.length < 16) return null;
+  return db.prepare('SELECT * FROM container_review_links WHERE token=?').get(token);
+}
+
+// PUBLIC: review page
+app.get('/r/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'container-review.html'));
+});
+
+// PUBLIC: review link info + the records in range
+app.get('/api/review/info', (req, res) => {
+  const link = _reviewLinkByToken(String(req.query.t || ''));
+  if (!link) return res.status(404).json({ error: '链接无效或已失效' });
+  const records = _crlRecords(link.partner_id, link.date_from, link.date_to);
+  res.json({
+    role: link.role, partner_name: link.partner_name, date_from: link.date_from, date_to: link.date_to,
+    feedback: link.feedback || '', reviewer_name: link.reviewer_name || '', submitted_at: link.submitted_at || null,
+    records,
+  });
+});
+
+// PUBLIC: submit review — updates each container (customer_price OR worker_price + names) + feedback.
+app.post('/api/review/submit', (req, res) => {
+  try {
+    const link = _reviewLinkByToken(String(req.query.t || (req.body && req.body.t) || ''));
+    if (!link) return res.status(404).json({ error: '链接无效或已失效' });
+    const d = req.body || {};
+    const items = Array.isArray(d.items) ? d.items : [];
+    // Only allow updating records that belong to this link's company + date range.
+    const allowed = new Set(_crlRecords(link.partner_id, link.date_from, link.date_to).map(r => r.id));
+    const tx = db.transaction(() => {
+      for (const it of items) {
+        const id = parseInt(it.id);
+        if (!allowed.has(id)) continue;
+        if (link.role === 'customer') {
+          const price = (it.customer_price === '' || it.customer_price == null) ? null : Number(it.customer_price);
+          db.prepare('UPDATE container_submissions SET customer_price=? WHERE id=?').run(price, id);
+        } else {
+          const price = (it.worker_price === '' || it.worker_price == null) ? null : Number(it.worker_price);
+          let names = it.participants;
+          if (typeof names === 'string') names = names.split(/[,，、\n]/);
+          names = (Array.isArray(names) ? names : []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 30);
+          db.prepare('UPDATE container_submissions SET worker_price=?, participants=? WHERE id=?')
+            .run(price, JSON.stringify(names), id);
+        }
+      }
+      db.prepare('UPDATE container_review_links SET feedback=?, reviewer_name=?, submitted_at=CURRENT_TIMESTAMP WHERE id=?')
+        .run(String(d.feedback || '').slice(0, 2000), String(d.reviewer_name || '').slice(0, 100), link.id);
+    });
+    tx();
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
