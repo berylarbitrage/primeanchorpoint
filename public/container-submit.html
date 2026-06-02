@@ -251,6 +251,8 @@ function setLang(lang) {
 const params = new URLSearchParams(location.search);
 const _pathMatch = location.pathname.match(/^\/c\/([a-f0-9A-F]{16,})/);
 const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
+// Two QR codes per company: ?type=start (开始装/卸柜) or ?type=end (结束)。默认 start。
+const SUBMIT_TYPE = params.get('type') === 'end' ? 'end' : 'start';
 
 let _photoFile = null;
 let _participants = [];
@@ -260,6 +262,25 @@ function showErr(msg) {
   const box = document.getElementById('errBox');
   box.textContent = msg;
   box.style.display = '';
+}
+
+// Prominent banner so the worker knows this QR logs START vs END.
+function showTypeBanner() {
+  const isEnd = SUBMIT_TYPE === 'end';
+  const label = isEnd ? '🔴 结束 / End / Fin' : '🟢 开始 / Start / Inicio';
+  document.title = (isEnd ? '结束登记 · ' : '开始登记 · ') + (_partnerName || 'Container');
+  let b = document.getElementById('typeBanner');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'typeBanner';
+    b.style.cssText = 'margin:0 0 .9rem;padding:.7rem .9rem;border-radius:10px;font-weight:800;font-size:1.05rem;text-align:center';
+    const fm = document.getElementById('formMain');
+    fm.insertBefore(b, fm.firstChild);
+  }
+  b.textContent = label;
+  b.style.background = isEnd ? '#fef2f2' : '#f0fdf4';
+  b.style.color = isEnd ? '#b91c1c' : '#15803d';
+  b.style.border = '1px solid ' + (isEnd ? '#fecaca' : '#86efac');
 }
 
 async function init() {
@@ -281,6 +302,7 @@ async function init() {
     _partnerName = info.partner_name || '';
     document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName;
     document.getElementById('formMain').style.display = '';
+    showTypeBanner();
   } catch (e) {
     showErr('Error: ' + (e.message || e));
   }
@@ -350,6 +372,7 @@ async function submitForm() {
     fd.append('qty', document.getElementById('qty').value || '1');
     fd.append('unit_price', document.getElementById('unitPrice').value || '0');
     fd.append('participants', JSON.stringify(_participants));
+    fd.append('submit_type', SUBMIT_TYPE);
     if (_photoFile) fd.append('photo', _photoFile);
     const resp = await fetch('/c-submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
     const j = await resp.json().catch(() => ({}));
