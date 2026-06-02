@@ -728,6 +728,28 @@ partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
 try { db.exec(`ALTER TABLE partners ADD COLUMN company_number TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE partners ADD COLUMN container_submit_token TEXT DEFAULT ''`); } catch {}
+
+// ─── Per-partner container submission inbox (mobile QR collection) ───
+db.exec(`CREATE TABLE IF NOT EXISTS container_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  container_no TEXT DEFAULT '',
+  qty INTEGER DEFAULT 1,
+  unit_price REAL DEFAULT 0,
+  photo_path TEXT DEFAULT '',
+  participants TEXT DEFAULT '[]',
+  submitter_name TEXT DEFAULT '',
+  submitter_phone TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  status TEXT DEFAULT 'pending',
+  imported_invoice_id INTEGER,
+  imported_at DATETIME,
+  user_agent TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_csub_partner_status ON container_submissions(partner_id, status)`); } catch(e) {}
 
 function generatePartnerNumber(stateAbbr) {
   const s = (stateAbbr || 'XX').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2).padEnd(2, 'X');
@@ -13948,6 +13970,142 @@ app.delete('/api/admin/partners/:id', requireAdmin, requireRole('admin'), (req, 
   db.prepare('DELETE FROM partner_files WHERE partner_id=?').run(req.params.id);
   db.prepare('DELETE FROM partners WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ════════ Container Submission QR — public mobile collection inbox ════════
+
+const containerSubmitPhotoUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `csub-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|webp|gif)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
+// Look up a partner by their public submit token. Returns null if not found.
+function _partnerByCsubToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 16) return null;
+  return db.prepare('SELECT id, name FROM partners WHERE container_submit_token=? AND active=1').get(token);
+}
+
+// GET /api/admin/partners/:id/container-qr — get or lazily create the public token and QR
+app.get('/api/admin/partners/:id/container-qr', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    const p = db.prepare('SELECT id, name, container_submit_token FROM partners WHERE id=?').get(partnerId);
+    if (!p) return res.status(404).json({ error: 'partner not found' });
+    let token = p.container_submit_token;
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare('UPDATE partners SET container_submit_token=? WHERE id=?').run(token, partnerId);
+    }
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
+    const url = `${proto}://${host}/container-submit.html?t=${token}`;
+    const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
+    res.json({ token, url, qr_data_url: qrDataUrl, partner_name: p.name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/partners/:id/container-qr/regenerate — rotate token (invalidates old QR)
+app.post('/api/admin/partners/:id/container-qr/regenerate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    const token = crypto.randomBytes(20).toString('hex');
+    db.prepare('UPDATE partners SET container_submit_token=? WHERE id=?').run(token, partnerId);
+    res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /c-submit/info?t=TOKEN — public: minimal info so the mobile page knows which company it's for
+app.get('/c-submit/info', (req, res) => {
+  const p = _partnerByCsubToken(String(req.query.t || ''));
+  if (!p) return res.status(404).json({ error: '链接无效或已失效' });
+  res.json({ partner_id: p.id, partner_name: p.name });
+});
+
+// POST /c-submit?t=TOKEN — public: submit one container record (multipart)
+app.post('/c-submit', containerSubmitPhotoUpload.single('photo'), (req, res) => {
+  try {
+    const p = _partnerByCsubToken(String(req.query.t || req.body.t || ''));
+    if (!p) return res.status(403).json({ error: '链接无效' });
+    const d = req.body || {};
+    const containerNo = String(d.container_no || '').trim().toUpperCase();
+    let participants = [];
+    try {
+      participants = typeof d.participants === 'string'
+        ? (d.participants.trim().startsWith('[') ? JSON.parse(d.participants) : d.participants.split(/[,，、;；\n]/))
+        : (Array.isArray(d.participants) ? d.participants : []);
+      participants = participants.map(s => String(s || '').trim()).filter(Boolean).slice(0, 20);
+    } catch { participants = []; }
+    if (!containerNo && !req.file && !participants.length) {
+      return res.status(400).json({ error: '请至少填写 container 号、拍照或参与人' });
+    }
+    const photoPath = req.file ? (req.file.key || req.file.path) : '';
+    const r = db.prepare(`INSERT INTO container_submissions
+      (partner_id, partner_name, container_no, qty, unit_price, photo_path, participants, submitter_name, submitter_phone, notes, user_agent)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+        p.id, p.name, containerNo,
+        Math.max(parseInt(d.qty) || 1, 1),
+        Math.max(parseFloat(d.unit_price) || 0, 0),
+        photoPath,
+        JSON.stringify(participants),
+        String(d.submitter_name || '').trim().slice(0, 100),
+        String(d.submitter_phone || '').trim().slice(0, 50),
+        String(d.notes || '').trim().slice(0, 500),
+        String(req.headers['user-agent'] || '').slice(0, 250)
+      );
+    res.json({ success: true, id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/container-submissions?partner_id=&status=pending
+app.get('/api/admin/container-submissions', requireAdmin, blockManager, (req, res) => {
+  try {
+    const { partner_id, status } = req.query;
+    const where = [];
+    const params = [];
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    if (status) { where.push('status = ?'); params.push(String(status)); }
+    const sql = `SELECT * FROM container_submissions
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY created_at DESC LIMIT 200`;
+    const rows = db.prepare(sql).all(...params);
+    for (const r of rows) {
+      try { r.participants = JSON.parse(r.participants || '[]'); } catch { r.participants = []; }
+      r.photo_url = r.photo_path ? `/uploads/${path.basename(r.photo_path)}` : '';
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/container-submissions/:id/discard
+app.post('/api/admin/container-submissions/:id/discard', requireAdmin, blockManager, (req, res) => {
+  try {
+    db.prepare("UPDATE container_submissions SET status='discarded' WHERE id=?").run(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/container-submissions/:id/import  body: { invoice_id }
+//   Marks the submission imported; the frontend reads the submission and appends a row
+//   to the open invoice's container list. invoice_id is informational here.
+app.post('/api/admin/container-submissions/:id/import', requireAdmin, blockManager, (req, res) => {
+  try {
+    const sub = db.prepare('SELECT * FROM container_submissions WHERE id=?').get(parseInt(req.params.id));
+    if (!sub) return res.status(404).json({ error: 'not found' });
+    db.prepare("UPDATE container_submissions SET status='imported', imported_invoice_id=?, imported_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(req.body && req.body.invoice_id ? parseInt(req.body.invoice_id) : null, sub.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── Labor Companies (劳务公司管理) ───
