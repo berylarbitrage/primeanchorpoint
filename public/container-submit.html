@@ -1,22 +1,25 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>Container 现场录入</title>
+<title>Container · Entry</title>
 <style>
   *{box-sizing:border-box}
   body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a;-webkit-text-size-adjust:100%}
-  .top{background:#0E7BB8;color:#fff;padding:1rem 1.1rem;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.12)}
-  .top h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.02em}
+  .top{background:#0E7BB8;color:#fff;padding:.9rem 1.1rem .75rem;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .top-row{display:flex;align-items:flex-start;gap:.5rem}
+  .top h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.02em;flex:1}
   .top .partner{margin-top:.2rem;font-size:.84rem;opacity:.92}
+  .lang{display:flex;gap:.25rem;background:rgba(255,255,255,.15);border-radius:999px;padding:.15rem;flex-shrink:0}
+  .lang button{background:transparent;color:#fff;border:none;padding:.25rem .55rem;border-radius:999px;font-size:.78rem;font-weight:600;cursor:pointer;opacity:.7}
+  .lang button.active{background:#fff;color:#0E7BB8;opacity:1}
   .wrap{padding:1rem 1rem 6rem 1rem;max-width:520px;margin:0 auto}
   .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.85rem;margin-bottom:.85rem;box-shadow:0 1px 2px rgba(0,0,0,.03)}
   label{display:block;font-size:.82rem;font-weight:600;color:#475569;margin:.1rem 0 .35rem}
   .hint{font-size:.74rem;color:#94a3b8;margin-top:.2rem}
-  input[type=text],input[type=number],input[type=tel],textarea{width:100%;padding:.65rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none;-webkit-appearance:none}
-  input:focus,textarea:focus{border-color:#0E7BB8;box-shadow:0 0 0 3px rgba(14,123,184,.15)}
-  textarea{min-height:64px;resize:vertical;font-family:inherit}
+  input[type=text],input[type=number]{width:100%;padding:.65rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none;-webkit-appearance:none}
+  input:focus{border-color:#0E7BB8;box-shadow:0 0 0 3px rgba(14,123,184,.15)}
   .row{display:flex;gap:.55rem}
   .row > *{flex:1}
   .photo-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed #29AAE1;background:#f0f9ff;color:#0E7BB8;padding:1.4rem .75rem;border-radius:10px;cursor:pointer;text-align:center;font-size:.92rem;font-weight:600;transition:background .15s}
@@ -48,8 +51,17 @@
 </head>
 <body>
 <div class="top">
-  <h1>📦 Container 现场录入</h1>
-  <div class="partner" id="partnerName">加载中…</div>
+  <div class="top-row">
+    <div style="flex:1">
+      <h1 id="t-title">📦 Container · Entry</h1>
+      <div class="partner" id="partnerName">…</div>
+    </div>
+    <div class="lang" role="tablist" aria-label="Language">
+      <button type="button" data-lang="es" onclick="setLang('es')">ES</button>
+      <button type="button" data-lang="en" onclick="setLang('en')">EN</button>
+      <button type="button" data-lang="zh" onclick="setLang('zh')">中</button>
+    </div>
+  </div>
 </div>
 
 <div class="wrap" id="wrap">
@@ -57,33 +69,33 @@
 
   <div id="formMain" style="display:none">
     <div class="card">
-      <label>📷 拍 Container 号牌</label>
+      <label id="t-photoLabel">📷 Foto del número de container</label>
       <label for="photoFile" class="photo-zone" id="photoZone">
         <span class="emoji">📸</span>
-        <span>点击拍照 / 选择照片</span>
-        <span class="hint" style="color:#0E7BB8">建议对准箱号正面拍清楚</span>
+        <span id="t-photoCta">Toca para tomar foto / elegir</span>
+        <span class="hint" id="t-photoHint" style="color:#0E7BB8">Enfoca claramente el número del contenedor</span>
         <input type="file" id="photoFile" accept="image/*" capture="environment">
       </label>
       <div id="photoPreviewWrap">
         <img id="photoPreview" alt="">
-        <button type="button" id="photoClear" onclick="clearPhoto()" aria-label="清除">×</button>
+        <button type="button" id="photoClear" onclick="clearPhoto()" aria-label="×">×</button>
       </div>
     </div>
 
     <div class="card">
-      <label>Container 号</label>
-      <input type="text" id="containerNo" class="container-no-input" placeholder="如 TCNU2960705" autocomplete="off" inputmode="text">
-      <div class="hint">字母数字混合；输入后会自动转大写</div>
+      <label id="t-noLabel">Número de Container</label>
+      <input type="text" id="containerNo" class="container-no-input" placeholder="TCNU2960705" autocomplete="off" inputmode="text">
+      <div class="hint" id="t-noHint">Letras + números; se convierte a mayúsculas automáticamente</div>
     </div>
 
     <div class="card">
       <div class="row">
         <div>
-          <label>数量</label>
+          <label id="t-qtyLabel">Cantidad</label>
           <input type="number" id="qty" value="1" min="1" step="1" inputmode="numeric">
         </div>
         <div>
-          <label>价格 ($/箱)</label>
+          <label id="t-priceLabel">Precio ($ por unidad)</label>
           <div class="price-prefix">
             <span class="symbol">$</span>
             <input type="number" id="unitPrice" placeholder="0.00" min="0" step="0.01" inputmode="decimal">
@@ -93,43 +105,153 @@
     </div>
 
     <div class="card">
-      <label>👥 参与的人 <span style="color:#94a3b8;font-weight:400">（可加多个）</span></label>
+      <label id="t-partLabel">👥 Personas que participaron</label>
       <div class="add-row">
-        <input type="text" id="partName" placeholder="名字" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addParticipant()}">
-        <button type="button" onclick="addParticipant()">＋ 加人</button>
+        <input type="text" id="partName" placeholder="Nombre" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addParticipant()}">
+        <button type="button" id="t-addBtn" onclick="addParticipant()">＋ Agregar</button>
       </div>
       <div class="chips" id="partChips"></div>
     </div>
 
-    <div class="card">
-      <label>你的名字 <span style="color:#94a3b8;font-weight:400">（可选）</span></label>
-      <input type="text" id="submitterName" placeholder="提交人姓名" autocomplete="name">
-      <label style="margin-top:.65rem">手机号 <span style="color:#94a3b8;font-weight:400">（可选）</span></label>
-      <input type="tel" id="submitterPhone" placeholder="如有问题方便联系" autocomplete="tel">
-    </div>
-
-    <div class="card">
-      <label>备注 <span style="color:#94a3b8;font-weight:400">（可选）</span></label>
-      <textarea id="notes" placeholder="特殊情况说明…"></textarea>
-    </div>
-
-    <button class="btn-submit" id="submitBtn" onclick="submitForm()">✓ 提交</button>
+    <button class="btn-submit" id="submitBtn" onclick="submitForm()">✓ <span id="t-submitBtn">Enviar</span></button>
   </div>
 
   <div id="okState" class="ok-state" style="display:none">
     <div class="check">✓</div>
-    <h2>提交成功</h2>
-    <div class="meta">已发送给 <strong id="okPartner"></strong> 审核</div>
-    <button onclick="resetForm()">继续录入下一条</button>
+    <h2 id="t-okTitle">¡Enviado!</h2>
+    <div class="meta"><span id="t-okFor">Enviado a</span> <strong id="okPartner"></strong></div>
+    <button onclick="resetForm()" id="t-okAgain">Registrar otro</button>
   </div>
 </div>
 
 <script>
-// Token can come from either /c/TOKEN (path) or ?t=TOKEN (query).
-// Path form is preferred — survives URL truncation/redaction better.
+// ── i18n ──
+const I18N = {
+  es: {
+    title: '📦 Container · Registro',
+    photoLabel: '📷 Foto del número de container',
+    photoCta: 'Toca para tomar foto / elegir',
+    photoHint: 'Enfoca claramente el número del contenedor',
+    noLabel: 'Número de Container',
+    noHint: 'Letras + números; se convierte a mayúsculas',
+    qtyLabel: 'Cantidad',
+    priceLabel: 'Precio ($ por unidad)',
+    partLabel: '👥 Personas que participaron',
+    partNamePh: 'Nombre',
+    addBtn: '＋ Agregar',
+    submitBtn: 'Enviar',
+    submitting: 'Enviando…',
+    okTitle: '¡Enviado!',
+    okFor: 'Enviado a',
+    okAgain: 'Registrar otro',
+    errNoToken: 'Por favor escanee el código QR oficial para acceder a esta página.',
+    errAtLeastOne: 'Por favor ingrese el número de container, tome una foto, o agregue una persona.',
+    errMaxPart: 'Máximo 20 personas',
+    errSubmit: 'Error al enviar: ',
+    sendingTo: 'Enviar a: ',
+    loading: 'Cargando…',
+    invalid: 'Enlace inválido o expirado',
+  },
+  en: {
+    title: '📦 Container · Entry',
+    photoLabel: '📷 Photo of container number',
+    photoCta: 'Tap to take photo / choose',
+    photoHint: 'Aim clearly at the container number',
+    noLabel: 'Container Number',
+    noHint: 'Letters + numbers; auto-uppercased',
+    qtyLabel: 'Quantity',
+    priceLabel: 'Price ($/unit)',
+    partLabel: '👥 People involved',
+    partNamePh: 'Name',
+    addBtn: '＋ Add',
+    submitBtn: 'Submit',
+    submitting: 'Submitting…',
+    okTitle: 'Submitted!',
+    okFor: 'Sent to',
+    okAgain: 'Submit another',
+    errNoToken: 'Please scan the official QR code to access this page.',
+    errAtLeastOne: 'Please enter container number, take a photo, or add at least one person.',
+    errMaxPart: 'Maximum 20 people',
+    errSubmit: 'Submit failed: ',
+    sendingTo: 'Submitting to: ',
+    loading: 'Loading…',
+    invalid: 'Link invalid or expired',
+  },
+  zh: {
+    title: '📦 Container 现场录入',
+    photoLabel: '📷 拍 Container 号牌',
+    photoCta: '点击拍照 / 选择照片',
+    photoHint: '对准箱号正面拍清楚',
+    noLabel: 'Container 号',
+    noHint: '字母数字混合；输入后自动转大写',
+    qtyLabel: '数量',
+    priceLabel: '价格 ($/箱)',
+    partLabel: '👥 参与的人',
+    partNamePh: '名字',
+    addBtn: '＋ 加人',
+    submitBtn: '提交',
+    submitting: '提交中…',
+    okTitle: '提交成功',
+    okFor: '已发送给',
+    okAgain: '继续录入下一条',
+    errNoToken: '请通过专属二维码访问此页面。',
+    errAtLeastOne: '请至少填写 container 号、拍照，或加一个参与人。',
+    errMaxPart: '最多 20 人',
+    errSubmit: '提交失败：',
+    sendingTo: '提交给：',
+    loading: '加载中…',
+    invalid: '链接无效或已失效',
+  },
+};
+
+function pickInitialLang() {
+  const stored = localStorage.getItem('csub_lang');
+  if (stored && I18N[stored]) return stored;
+  const nav = (navigator.language || navigator.userLanguage || '').toLowerCase();
+  if (nav.startsWith('zh')) return 'zh';
+  if (nav.startsWith('en')) return 'en';
+  return 'es'; // default to Spanish (most common audience on-site)
+}
+
+let _lang = pickInitialLang();
+function applyLang() {
+  const L = I18N[_lang];
+  document.documentElement.lang = _lang;
+  document.title = L.title;
+  document.getElementById('t-title').textContent = L.title;
+  document.getElementById('t-photoLabel').textContent = L.photoLabel;
+  document.getElementById('t-photoCta').textContent = L.photoCta;
+  document.getElementById('t-photoHint').textContent = L.photoHint;
+  document.getElementById('t-noLabel').textContent = L.noLabel;
+  document.getElementById('t-noHint').textContent = L.noHint;
+  document.getElementById('t-qtyLabel').textContent = L.qtyLabel;
+  document.getElementById('t-priceLabel').textContent = L.priceLabel;
+  document.getElementById('t-partLabel').textContent = L.partLabel;
+  document.getElementById('partName').placeholder = L.partNamePh;
+  document.getElementById('t-addBtn').textContent = L.addBtn;
+  document.getElementById('t-submitBtn').textContent = L.submitBtn;
+  document.getElementById('t-okTitle').textContent = L.okTitle;
+  document.getElementById('t-okFor').textContent = L.okFor;
+  document.getElementById('t-okAgain').textContent = L.okAgain;
+  // Update partner subtitle
+  if (_partnerName) document.getElementById('partnerName').textContent = L.sendingTo + _partnerName;
+  // Reflect active language button
+  document.querySelectorAll('.lang button').forEach(b => {
+    b.classList.toggle('active', b.dataset.lang === _lang);
+  });
+}
+function setLang(lang) {
+  if (!I18N[lang]) return;
+  _lang = lang;
+  localStorage.setItem('csub_lang', lang);
+  applyLang();
+}
+
+// ── token: path /c/TOKEN or query ?t=TOKEN ──
 const params = new URLSearchParams(location.search);
 const _pathMatch = location.pathname.match(/^\/c\/([a-f0-9A-F]{16,})/);
 const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
+
 let _photoFile = null;
 let _participants = [];
 let _partnerName = '';
@@ -141,8 +263,9 @@ function showErr(msg) {
 }
 
 async function init() {
+  applyLang();
   if (!TOKEN) {
-    showErr('请通过专属二维码访问此页面。如果是从短信/微信分享的链接，请直接扫描公司提供的二维码再试。');
+    showErr(I18N[_lang].errNoToken);
     document.getElementById('partnerName').textContent = '—';
     return;
   }
@@ -150,16 +273,16 @@ async function init() {
     const r = await fetch('/c-submit/info?t=' + encodeURIComponent(TOKEN));
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
-      showErr(j.error || '链接无效或已失效');
+      showErr(j.error || I18N[_lang].invalid);
       document.getElementById('partnerName').textContent = '—';
       return;
     }
     const info = await r.json();
     _partnerName = info.partner_name || '';
-    document.getElementById('partnerName').textContent = '提交给：' + _partnerName;
+    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName;
     document.getElementById('formMain').style.display = '';
   } catch (e) {
-    showErr('加载失败：' + (e.message || e));
+    showErr('Error: ' + (e.message || e));
   }
 }
 init();
@@ -192,7 +315,7 @@ function addParticipant() {
   const inp = document.getElementById('partName');
   const name = (inp.value || '').trim();
   if (!name) return;
-  if (_participants.length >= 20) { showErr('最多 20 人'); return; }
+  if (_participants.length >= 20) { showErr(I18N[_lang].errMaxPart); return; }
   _participants.push(name);
   inp.value = '';
   renderChips();
@@ -204,7 +327,7 @@ function removeParticipant(idx) {
 function renderChips() {
   const wrap = document.getElementById('partChips');
   wrap.innerHTML = _participants.map((n, i) =>
-    `<span class="chip">${escHtml(n)}<button type="button" onclick="removeParticipant(${i})" aria-label="删除">×</button></span>`
+    `<span class="chip">${escHtml(n)}<button type="button" onclick="removeParticipant(${i})" aria-label="×">×</button></span>`
   ).join('');
 }
 function escHtml(s) {
@@ -214,35 +337,32 @@ function escHtml(s) {
 async function submitForm() {
   const cno = document.getElementById('containerNo').value.trim().toUpperCase();
   if (!cno && !_photoFile && _participants.length === 0) {
-    showErr('请至少填写 container 号，或拍张照片，或添加参与人');
+    showErr(I18N[_lang].errAtLeastOne);
     return;
   }
   document.getElementById('errBox').style.display = 'none';
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
-  btn.textContent = '提交中…';
+  document.getElementById('t-submitBtn').textContent = I18N[_lang].submitting;
   try {
     const fd = new FormData();
     fd.append('container_no', cno);
     fd.append('qty', document.getElementById('qty').value || '1');
     fd.append('unit_price', document.getElementById('unitPrice').value || '0');
     fd.append('participants', JSON.stringify(_participants));
-    fd.append('submitter_name', document.getElementById('submitterName').value || '');
-    fd.append('submitter_phone', document.getElementById('submitterPhone').value || '');
-    fd.append('notes', document.getElementById('notes').value || '');
     if (_photoFile) fd.append('photo', _photoFile);
     const resp = await fetch('/c-submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
     const j = await resp.json().catch(() => ({}));
-    if (!resp.ok || !j.success) throw new Error(j.error || '提交失败');
+    if (!resp.ok || !j.success) throw new Error(j.error || 'submit failed');
     document.getElementById('formMain').style.display = 'none';
     document.getElementById('okState').style.display = '';
     document.getElementById('okPartner').textContent = _partnerName;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (e) {
-    showErr('提交失败：' + (e.message || e));
+    showErr(I18N[_lang].errSubmit + (e.message || e));
   } finally {
     btn.disabled = false;
-    btn.textContent = '✓ 提交';
+    document.getElementById('t-submitBtn').textContent = I18N[_lang].submitBtn;
   }
 }
 
@@ -250,7 +370,6 @@ function resetForm() {
   document.getElementById('containerNo').value = '';
   document.getElementById('qty').value = '1';
   document.getElementById('unitPrice').value = '';
-  document.getElementById('notes').value = '';
   _participants = [];
   renderChips();
   clearPhoto();
