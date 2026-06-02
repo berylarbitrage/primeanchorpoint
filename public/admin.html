@@ -582,6 +582,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="nav-group-items">
       <a onclick="showTab('company-payments')" data-tab="company-payments" data-role="admin,staff">📒 月度付款记录</a>
+      <a onclick="showTab('container-scans')" data-tab="container-scans" data-role="admin,staff">📦 扫码记录</a>
     </div>
   </div>
 
@@ -1592,6 +1593,63 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- ════════════════════ 扫码记录 (Container Scan Submissions) ════════════════════ -->
+<div id="tab-container-scans" style="display:none">
+  <div class="top">
+    <h1>📦 扫码记录</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadCsubScans()">刷新</button>
+    </div>
+  </div>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">现场扫码（🟢 开始 / 🔴 结束）提交的 container 记录。可按公司、状态、类型筛选。同一柜号的开始/结束可对照出起止时间。</p>
+  <div class="card" style="margin-bottom:1rem">
+    <div style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="margin:0;min-width:200px">
+        <label>公司</label>
+        <select id="csubScanPartner" onchange="loadCsubScans()"><option value="">全部公司</option></select>
+      </div>
+      <div class="field" style="margin:0;min-width:140px">
+        <label>类型</label>
+        <select id="csubScanType" onchange="loadCsubScans()">
+          <option value="">全部</option>
+          <option value="start">🟢 开始</option>
+          <option value="end">🔴 结束</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0;min-width:140px">
+        <label>状态</label>
+        <select id="csubScanStatus" onchange="loadCsubScans()">
+          <option value="">全部状态</option>
+          <option value="pending">待审核</option>
+          <option value="imported">已导入</option>
+          <option value="discarded">已丢弃</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0;flex:1;min-width:160px">
+        <label>搜索（柜号 / 参与人）</label>
+        <input type="text" id="csubScanQ" placeholder="柜号或人名…" oninput="renderCsubScans()">
+      </div>
+      <div id="csubScanTotal" style="color:var(--gray-500);font-size:.85rem;padding-bottom:.4rem"></div>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table style="width:100%;font-size:.85rem">
+      <thead><tr>
+        <th style="text-align:left">类型</th>
+        <th style="text-align:left">公司</th>
+        <th style="text-align:left">柜号</th>
+        <th style="text-align:left">照片</th>
+        <th style="text-align:left">参与人</th>
+        <th style="text-align:right">单价</th>
+        <th style="text-align:left">提交时间</th>
+        <th style="text-align:left">状态</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="csubScanBody"><tr><td colspan="9" style="color:var(--gray-400);padding:.6rem">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- ════════ Company Payment: Batch Modal ════════ -->
 <div class="modal-bg" id="cpyBatchModal"><div class="modal" style="max-width:900px">
   <h2 style="margin-bottom:.75rem">💵 新建批量付款（按月）</h2>
@@ -1810,33 +1868,6 @@ tr:hover td{background:var(--sky-light)}
   <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.7rem .85rem;font-size:.82rem;color:#92400e">
     🔒 扫码后需输入密码：<strong style="font-size:1rem">123456</strong>（长久有效，一个公司一个码，不会过期）。<br>
     💡 打印<strong>两个</strong>二维码贴在现场：开始卸柜扫「🟢 开始」，卸完扫「🔴 结束」。两次都填同一个 container 号，系统按柜号配对得出开始/结束时间。所有提交进入<strong>待审核区</strong>，admin 制作发票时一键导入。
-  </div>
-</div></div>
-
-<!-- ════════ Container Submission Log Modal (per-partner, all statuses) ════════ -->
-<div class="modal-bg" id="csubLogModal"><div class="modal" style="max-width:960px;max-height:92vh;overflow-y:auto">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
-    <h2 style="margin:0">📋 扫码记录</h2>
-    <button class="btn btn-sm btn-outline" onclick="closeCsubLogModal()">× 关闭</button>
-  </div>
-  <div id="csubLogSub" style="font-size:.9rem;color:var(--gray-600);margin-bottom:.3rem"></div>
-  <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.6rem;flex-wrap:wrap">
-    <select id="csubLogStatus" onchange="loadCsubLog()" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.84rem">
-      <option value="">全部状态</option>
-      <option value="pending">待审核</option>
-      <option value="imported">已导入</option>
-      <option value="discarded">已丢弃</option>
-    </select>
-    <button class="btn btn-sm btn-outline" onclick="loadCsubLog()">刷新</button>
-  </div>
-  <div style="overflow-x:auto">
-    <table style="width:100%;font-size:.84rem">
-      <thead><tr>
-        <th style="text-align:left">类型</th><th style="text-align:left">柜号</th><th style="text-align:left">照片</th>
-        <th style="text-align:left">参与人</th><th style="text-align:right">单价</th><th style="text-align:left">时间</th><th style="text-align:left">状态</th>
-      </tr></thead>
-      <tbody id="csubLogBody"><tr><td colspan="7" style="color:var(--gray-400);padding:.6rem">加载中…</td></tr></tbody>
-    </table>
   </div>
 </div></div>
 
@@ -7937,7 +7968,7 @@ const _TAB_TO_SEC = {
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker', referrers:'sec-worker', scheduling:'sec-worker', warehouses:'sec-worker', 'warehouse-checkins':'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
-  'company-payments':'sec-company-pay',
+  'company-payments':'sec-company-pay', 'container-scans':'sec-company-pay',
   'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
   approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
@@ -7979,6 +8010,7 @@ function showTab(t) {
   if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
   if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
   if (t === 'company-payments') initCompanyPayPage();
+  if (t === 'container-scans') initCsubScansPage();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -11579,7 +11611,6 @@ function renderPartners(partners) {
         <button class="btn btn-sm" style="background:#EFF6FF;color:#0E7BB8;border:1px solid #BFDBFE" onclick='event.stopPropagation();openBlankWorksheetPrint(${p.id}, ${JSON.stringify(p.name||"")})'>📋 空白表</button>
         <button class="btn btn-sm" style="background:#F0FDF4;color:#047857;border:1px solid #BBF7D0" onclick='event.stopPropagation();openBlankWorksheetList(${p.id}, ${JSON.stringify(p.name||"")})'>📥 回传</button>
         <button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A" onclick='event.stopPropagation();openContainerQrModal(${p.id}, ${JSON.stringify(p.name||"")})' title="生成扫码录入 Container 二维码">📱 扫码录入</button>
-        <button class="btn btn-sm" style="background:#EFF6FF;color:#1d4ed8;border:1px solid #BFDBFE" onclick='event.stopPropagation();openCsubLogModal(${p.id}, ${JSON.stringify(p.name||"")})' title="查看该公司扫码提交的记录">📋 扫码记录</button>
         ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>`:''}
       </td>
     </tr>`;
@@ -32533,49 +32564,79 @@ function closeContainerQrModal() {
   document.getElementById('csubQrModal').classList.remove('show');
 }
 
-// ── Container submission LOG (per-partner, all statuses) — a visible home for scans ──
-let _csubLogState = { partnerId: null, partnerName: '' };
-function openCsubLogModal(partnerId, partnerName) {
-  _csubLogState = { partnerId, partnerName };
-  document.getElementById('csubLogSub').innerHTML = `公司：<strong>${esc(partnerName || '—')}</strong>`;
-  document.getElementById('csubLogStatus').value = '';
-  document.getElementById('csubLogModal').classList.add('show');
-  loadCsubLog();
-}
-function closeCsubLogModal() { document.getElementById('csubLogModal').classList.remove('show'); }
-async function loadCsubLog() {
-  const pid = _csubLogState.partnerId;
-  const status = document.getElementById('csubLogStatus').value;
-  const tb = document.getElementById('csubLogBody');
-  tb.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400);padding:.6rem">加载中…</td></tr>';
-  try {
-    const rows = await api(`/admin/container-submissions?partner_id=${pid}${status ? '&status=' + status : ''}`);
-    if (!Array.isArray(rows) || !rows.length) {
-      tb.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400);padding:.6rem">暂无记录</td></tr>'; return;
-    }
-    const statusLabel = { pending: '<span style="color:#92400e">待审核</span>', imported: '<span style="color:#15803d">已导入</span>', discarded: '<span style="color:#b91c1c">已丢弃</span>' };
-    tb.innerHTML = rows.map(r => {
-      const isEnd = r.submit_type === 'end';
-      const typeBadge = `<span style="display:inline-block;border-radius:999px;padding:.05rem .45rem;font-size:.72rem;font-weight:700;${isEnd ? 'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca' : 'background:#f0fdf4;color:#15803d;border:1px solid #86efac'}">${isEnd ? '🔴 结束' : '🟢 开始'}</span>`;
-      const parts = Array.isArray(r.participants) ? r.participants : [];
-      const partsHtml = parts.length ? parts.map(n => esc(n)).join('、') : '<span style="color:var(--gray-300)">—</span>';
-      const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
-      const photo = r.photo_url
-        ? `<a href="#" onclick="event.preventDefault();invpOpenCsubPhoto('${esc(r.photo_url)}')"><img src="${esc(r.photo_url)}" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200)"></a>`
-        : '<span style="color:var(--gray-300)">—</span>';
-      return `<tr style="border-top:1px solid var(--gray-200)">
-        <td style="padding:5px 8px">${typeBadge}</td>
-        <td style="padding:5px 8px;font-family:monospace;font-weight:600">${esc(r.container_no || '—')}</td>
-        <td style="padding:5px 8px">${photo}</td>
-        <td style="padding:5px 8px">${partsHtml}</td>
-        <td style="padding:5px 8px;text-align:right">${r.unit_price ? '$' + Number(r.unit_price).toFixed(2) : '<span style="color:var(--gray-300)">—</span>'}</td>
-        <td style="padding:5px 8px;white-space:nowrap;color:var(--gray-500);font-size:.78rem">${esc(when)}</td>
-        <td style="padding:5px 8px">${statusLabel[r.status] || esc(r.status || '')}</td>
-      </tr>`;
-    }).join('');
-  } catch (e) {
-    tb.innerHTML = `<tr><td colspan="7" style="color:#b91c1c;padding:.6rem">加载失败：${esc(e.message || e)}</td></tr>`;
+// ── 扫码记录 page (all companies / statuses / types) ──
+let _csubScanRows = [];
+async function initCsubScansPage() {
+  const sel = document.getElementById('csubScanPartner');
+  if (sel && sel.options.length <= 1) {
+    try {
+      const partners = await api('/admin/partners');
+      const list = (Array.isArray(partners) ? partners : (partners?.partners || []))
+        .filter(p => p && p.name).sort((a, b) => a.name.localeCompare(b.name));
+      sel.innerHTML = '<option value="">全部公司</option>'
+        + list.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    } catch (_) { /* non-fatal */ }
   }
+  loadCsubScans();
+}
+async function loadCsubScans() {
+  const pid = document.getElementById('csubScanPartner').value;
+  const type = document.getElementById('csubScanType').value;
+  const status = document.getElementById('csubScanStatus').value;
+  const tb = document.getElementById('csubScanBody');
+  tb.innerHTML = '<tr><td colspan="9" style="color:var(--gray-400);padding:.6rem">加载中…</td></tr>';
+  try {
+    const params = new URLSearchParams();
+    if (pid) params.set('partner_id', pid);
+    if (status) params.set('status', status);
+    let rows = await api('/admin/container-submissions' + (params.toString() ? '?' + params : ''));
+    rows = Array.isArray(rows) ? rows : [];
+    if (type) rows = rows.filter(r => (r.submit_type || 'start') === type);
+    _csubScanRows = rows;
+    renderCsubScans();
+  } catch (e) {
+    tb.innerHTML = `<tr><td colspan="9" style="color:#b91c1c;padding:.6rem">加载失败：${esc(e.message || e)}</td></tr>`;
+  }
+}
+function renderCsubScans() {
+  const tb = document.getElementById('csubScanBody');
+  const q = (document.getElementById('csubScanQ').value || '').trim().toLowerCase();
+  let rows = _csubScanRows;
+  if (q) rows = rows.filter(r =>
+    String(r.container_no || '').toLowerCase().includes(q)
+    || (Array.isArray(r.participants) ? r.participants.join(' ').toLowerCase() : '').includes(q));
+  document.getElementById('csubScanTotal').textContent = `共 ${rows.length} 条`;
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="9" style="color:var(--gray-400);padding:.6rem">暂无记录</td></tr>'; return; }
+  const statusLabel = { pending: '<span style="color:#92400e">待审核</span>', imported: '<span style="color:#15803d">已导入</span>', discarded: '<span style="color:#b91c1c">已丢弃</span>' };
+  tb.innerHTML = rows.map(r => {
+    const isEnd = r.submit_type === 'end';
+    const typeBadge = `<span style="display:inline-block;border-radius:999px;padding:.05rem .45rem;font-size:.72rem;font-weight:700;${isEnd ? 'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca' : 'background:#f0fdf4;color:#15803d;border:1px solid #86efac'}">${isEnd ? '🔴 结束' : '🟢 开始'}</span>`;
+    const parts = Array.isArray(r.participants) ? r.participants : [];
+    const partsHtml = parts.length ? parts.map(n => esc(n)).join('、') : '<span style="color:var(--gray-300)">—</span>';
+    const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
+    const photo = r.photo_url
+      ? `<a href="#" onclick="event.preventDefault();invpOpenCsubPhoto('${esc(r.photo_url)}')"><img src="${esc(r.photo_url)}" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200)"></a>`
+      : '<span style="color:var(--gray-300)">—</span>';
+    return `<tr style="border-top:1px solid var(--gray-200)">
+      <td style="padding:5px 8px">${typeBadge}</td>
+      <td style="padding:5px 8px">${esc(r.partner_name || '')}</td>
+      <td style="padding:5px 8px;font-family:monospace;font-weight:600">${esc(r.container_no || '—')}</td>
+      <td style="padding:5px 8px">${photo}</td>
+      <td style="padding:5px 8px">${partsHtml}</td>
+      <td style="padding:5px 8px;text-align:right">${r.unit_price ? '$' + Number(r.unit_price).toFixed(2) : '<span style="color:var(--gray-300)">—</span>'}</td>
+      <td style="padding:5px 8px;white-space:nowrap;color:var(--gray-500);font-size:.78rem">${esc(when)}</td>
+      <td style="padding:5px 8px">${statusLabel[r.status] || esc(r.status || '')}</td>
+      <td style="padding:5px 8px;text-align:right;white-space:nowrap">${r.status === 'discarded' ? '' : `<button class="btn btn-sm" style="padding:.05rem .4rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="discardCsubScan(${r.id})">丢弃</button>`}</td>
+    </tr>`;
+  }).join('');
+}
+async function discardCsubScan(id) {
+  if (!await showConfirm('确定丢弃这条扫码记录？', { danger: true })) return;
+  try {
+    await api(`/admin/container-submissions/${id}/discard`, { method: 'POST' });
+    showToast('已丢弃 ✓');
+    loadCsubScans();
+  } catch (e) { showToast('操作失败：' + (e.message || e), 'error'); }
 }
 function copyCsubUrl(type) {
   const url = type === 'end' ? _csubQrState.endUrl : _csubQrState.startUrl;
