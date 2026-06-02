@@ -29770,11 +29770,12 @@ function renderInvpContainerTable(skipSave) {
     const subTotal = qty * subPrice;
     const hl = !!it.highlighted;
     const pricey = price > 200;
-    // Two highlight tiers: manual star (#fef3c7) wins over auto price>200 (#fffbeb).
-    const rowBg = hl ? '#fef3c7' : (pricey ? '#fffbeb' : '');
+    // Two highlight tiers: manual star (amber #fef3c7) and auto price>200
+    // (light red #fee2e2 + left red bar) — both very visible, distinct from each other.
+    const rowBg = hl ? '#fef3c7' : (pricey ? '#fee2e2' : '');
     const rowStyle = hl
       ? 'background:#fef3c7;box-shadow:inset 3px 0 0 #d97706'
-      : (pricey ? 'background:#fffbeb' : '');
+      : (pricey ? 'background:#fee2e2;box-shadow:inset 3px 0 0 #dc2626' : '');
     const stickyBg = rowBg || '#fff';
     const priceCellStyle = pricey
       ? 'color:#dc2626;font-weight:700'
@@ -29854,8 +29855,8 @@ function invpUpdateContainerRowTotal(row) {
   const starred = item && !!item.highlighted;
   const pricey = price > 200;
   if (!starred) {
-    row.style.background = pricey ? '#fffbeb' : '';
-    row.style.boxShadow = '';
+    row.style.background = pricey ? '#fee2e2' : '';
+    row.style.boxShadow = pricey ? 'inset 3px 0 0 #dc2626' : '';
   }
   // Re-color the price input cell
   priceInp.style.color = pricey ? '#dc2626' : '';
@@ -29863,7 +29864,7 @@ function invpUpdateContainerRowTotal(row) {
   priceInp.style.borderColor = pricey ? '#fca5a5' : 'var(--gray-200)';
   // Refresh the sticky container-no cell background to match the row
   const stickyCell = row.children[1];
-  if (stickyCell) stickyCell.style.background = starred ? '#fef3c7' : (pricey ? '#fffbeb' : '#fff');
+  if (stickyCell) stickyCell.style.background = starred ? '#fef3c7' : (pricey ? '#fee2e2' : '#fff');
   // Update grand totals too
   _invpSaveContainerState();
   const items = window._invpContainerItems || [];
