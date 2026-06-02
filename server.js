@@ -753,6 +753,9 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_csub_partner_status ON container_s
 // Two QR codes per company: 'start' (开始装/卸柜) vs 'end' (结束). Lets a container's
 // start/end times be read from the paired start & end submissions.
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN submit_type TEXT DEFAULT 'start'`); } catch(e) {}
+// Review: who verified the record (by re-entering the container number) and when.
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN reviewed_by TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN reviewed_at DATETIME`); } catch(e) {}
 
 function generatePartnerNumber(stateAbbr) {
   const s = (stateAbbr || 'XX').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2).padEnd(2, 'X');
@@ -14122,6 +14125,26 @@ app.get('/api/admin/container-submissions', requireAdmin, blockManager, (req, re
 app.post('/api/admin/container-submissions/:id/discard', requireAdmin, blockManager, (req, res) => {
   try {
     db.prepare("UPDATE container_submissions SET status='discarded' WHERE id=?").run(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/container-submissions/:id/approve  body: { reviewer_name, container_no }
+//   Verifies the entered container number matches the record, then marks it approved
+//   and stamps who reviewed it.
+app.post('/api/admin/container-submissions/:id/approve', requireAdmin, blockManager, (req, res) => {
+  try {
+    const sub = db.prepare('SELECT * FROM container_submissions WHERE id=?').get(parseInt(req.params.id));
+    if (!sub) return res.status(404).json({ error: 'not found' });
+    const reviewer = String((req.body && req.body.reviewer_name) || '').trim();
+    const entered = String((req.body && req.body.container_no) || '').trim().toUpperCase();
+    if (!reviewer) return res.status(400).json({ error: '请填写审核人姓名' });
+    if (!entered) return res.status(400).json({ error: '请填写柜号' });
+    if (entered !== String(sub.container_no || '').trim().toUpperCase()) {
+      return res.status(409).json({ error: '柜号不符，无法通过审核', code: 'container_mismatch' });
+    }
+    db.prepare("UPDATE container_submissions SET status='approved', reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(reviewer.slice(0, 100), sub.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
