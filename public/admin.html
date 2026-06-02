@@ -29729,7 +29729,7 @@ function _invpSaveContainerState() {
     const uid = parseInt(row.dataset.uid, 10);
     const item = window._invpContainerItems.find(i => i.uid === uid);
     if (!item) return;
-    item.container_no  = row.querySelector('.invp-cont-no').value;
+    item.container_no  = (row.querySelector('.invp-cont-no').value || '').toUpperCase();
     item.week          = row.querySelector('.invp-cont-week').value;
     item.qty           = row.querySelector('.invp-cont-qty').value;
     item.unit_price    = row.querySelector('.invp-cont-price').value;
@@ -30189,7 +30189,7 @@ function generateInvpSubcontractorStatement() {
         : '';
       return `<tr style="background:${stripe}">
         <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;color:#64748b;vertical-align:top">${idx + 1}</td>
-        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;font-family:'Menlo',monospace;font-weight:600;color:#0f172a;vertical-align:top">${esc(i.container_no || '—')}</td>
+        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:#0f172a;vertical-align:top">${esc(i.container_no || '—')}</td>
         <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;white-space:nowrap;vertical-align:top">${esc(i.week || servicePeriodLabel)}</td>
         <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;vertical-align:top">${i.qty || 0}</td>
         <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:right;vertical-align:top">$${(i.sub_price || 0).toFixed(2)}</td>
@@ -30847,7 +30847,7 @@ async function generateInvpPreview() {
       const noColor = hl ? '#92400e' : '#0f172a';
       return `<tr style="background:${rowBg};${rowExtra}">
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${hl ? '#92400e' : '#64748b'}">${idx + 1}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;color:${noColor}">${esc(i.container_no || '—')}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:${noColor}">${esc(i.container_no || '—')}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
