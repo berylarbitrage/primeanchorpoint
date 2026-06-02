@@ -13993,6 +13993,10 @@ const containerSubmitPhotoUpload = multer({
   },
 });
 
+// Shared access code for the public container-submit page (long-lived per-company QR
+// + this simple password keeps random scanners out). Overridable via env.
+const CONTAINER_SUBMIT_PASSWORD = String(process.env.CONTAINER_SUBMIT_PASSWORD || '123456');
+
 // Look up a partner by their public submit token. Returns null if not found.
 function _partnerByCsubToken(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null;
@@ -14043,7 +14047,15 @@ app.get(['/container-submit', '/container-submit.html'], (req, res) => {
 app.get('/c-submit/info', (req, res) => {
   const p = _partnerByCsubToken(String(req.query.t || ''));
   if (!p) return res.status(404).json({ error: '链接无效或已失效' });
-  res.json({ partner_id: p.id, partner_name: p.name });
+  res.json({ partner_id: p.id, partner_name: p.name, needs_password: true });
+});
+
+// POST /c-submit/verify?t=TOKEN — public: check the shared access code (gate the page)
+app.post('/c-submit/verify', (req, res) => {
+  const p = _partnerByCsubToken(String(req.query.t || (req.body && req.body.t) || ''));
+  if (!p) return res.status(404).json({ error: '链接无效或已失效' });
+  const pw = String((req.body && req.body.password) || '');
+  res.json({ ok: pw === CONTAINER_SUBMIT_PASSWORD });
 });
 
 // POST /c-submit?t=TOKEN — public: submit one container record (multipart)
@@ -14052,6 +14064,9 @@ app.post('/c-submit', containerSubmitPhotoUpload.single('photo'), (req, res) => 
     const p = _partnerByCsubToken(String(req.query.t || req.body.t || ''));
     if (!p) return res.status(403).json({ error: '链接无效' });
     const d = req.body || {};
+    if (String(d.password || '') !== CONTAINER_SUBMIT_PASSWORD) {
+      return res.status(401).json({ error: '密码错误 / Wrong password', code: 'bad_password' });
+    }
     const containerNo = String(d.container_no || '').trim().toUpperCase();
     let participants = [];
     try {

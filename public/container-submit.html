@@ -257,11 +257,58 @@ const SUBMIT_TYPE = params.get('type') === 'end' ? 'end' : 'start';
 let _photoFile = null;
 let _participants = [];
 let _partnerName = '';
+let _pw = '';
+const _PW_KEY = 'csub_pw_' + TOKEN;
 
 function showErr(msg) {
   const box = document.getElementById('errBox');
   box.textContent = msg;
   box.style.display = '';
+}
+
+// Password gate (shared access code). Shown before the form until verified.
+function showGate() {
+  document.getElementById('formMain').style.display = 'none';
+  let g = document.getElementById('pwGate');
+  if (!g) {
+    g = document.createElement('div');
+    g.id = 'pwGate';
+    g.style.cssText = 'margin:1rem 0;text-align:center';
+    g.innerHTML = `
+      <div style="font-weight:700;margin-bottom:.5rem">🔒 请输入密码 / Password / Contraseña</div>
+      <input id="pwInput" type="tel" inputmode="numeric" autocomplete="off"
+        style="width:100%;max-width:240px;padding:.7rem;border:1px solid #cbd5e1;border-radius:10px;font-size:1.3rem;text-align:center;letter-spacing:.3em">
+      <div style="margin-top:.7rem"><button id="pwBtn" type="button"
+        style="padding:.7rem 1.6rem;border:none;border-radius:10px;background:#2563eb;color:#fff;font-size:1.05rem;font-weight:700;cursor:pointer">进入 / Enter</button></div>
+      <div id="pwErr" style="color:#dc2626;margin-top:.6rem;min-height:1.1em;font-size:.9rem"></div>`;
+    const fm = document.getElementById('formMain');
+    fm.parentNode.insertBefore(g, fm);
+    document.getElementById('pwBtn').onclick = verifyGate;
+    document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') verifyGate(); });
+  }
+  g.style.display = '';
+  setTimeout(() => { const i = document.getElementById('pwInput'); if (i) i.focus(); }, 100);
+}
+
+async function verifyGate() {
+  const pw = (document.getElementById('pwInput').value || '').trim();
+  document.getElementById('pwErr').textContent = '';
+  try {
+    const r = await fetch('/c-submit/verify?t=' + encodeURIComponent(TOKEN), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) { document.getElementById('pwErr').textContent = '密码错误 / Wrong password'; return; }
+    _pw = pw;
+    sessionStorage.setItem(_PW_KEY, pw);
+    document.getElementById('pwGate').style.display = 'none';
+    openForm();
+  } catch (e) { document.getElementById('pwErr').textContent = 'Error: ' + (e.message || e); }
+}
+
+function openForm() {
+  document.getElementById('formMain').style.display = '';
+  showTypeBanner();
 }
 
 // Prominent banner so the worker knows this QR logs START vs END.
@@ -301,8 +348,9 @@ async function init() {
     const info = await r.json();
     _partnerName = info.partner_name || '';
     document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName;
-    document.getElementById('formMain').style.display = '';
-    showTypeBanner();
+    // Password gate: skip if already entered this session, else show the gate.
+    const saved = sessionStorage.getItem(_PW_KEY);
+    if (saved) { _pw = saved; openForm(); } else { showGate(); }
   } catch (e) {
     showErr('Error: ' + (e.message || e));
   }
@@ -373,9 +421,18 @@ async function submitForm() {
     fd.append('unit_price', document.getElementById('unitPrice').value || '0');
     fd.append('participants', JSON.stringify(_participants));
     fd.append('submit_type', SUBMIT_TYPE);
+    fd.append('password', _pw || '');
     if (_photoFile) fd.append('photo', _photoFile);
     const resp = await fetch('/c-submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
     const j = await resp.json().catch(() => ({}));
+    if (j && j.code === 'bad_password') {
+      // Saved code no longer valid — clear and re-show the gate.
+      sessionStorage.removeItem(_PW_KEY); _pw = '';
+      btn.disabled = false; document.getElementById('t-submitBtn').textContent = I18N[_lang].submitBtn;
+      showGate();
+      document.getElementById('pwErr').textContent = '密码已变更，请重新输入 / Password changed';
+      return;
+    }
     if (!resp.ok || !j.success) throw new Error(j.error || 'submit failed');
     document.getElementById('formMain').style.display = 'none';
     document.getElementById('okState').style.display = '';
