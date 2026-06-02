@@ -88,7 +88,7 @@
       <div class="hint" id="t-noHint">Letras + números; se convierte a mayúsculas automáticamente</div>
     </div>
 
-    <div class="card">
+    <div class="card" id="priceCard">
       <label id="t-priceLabel">Precio ($ por unidad)</label>
       <div class="price-prefix">
         <span class="symbol">$</span>
@@ -249,7 +249,8 @@ let _photoFile = null;
 let _participants = [];
 let _partnerName = '';
 let _pw = '';
-const _PW_KEY = 'csub_pw_' + TOKEN;
+// Per-type key so START and END each prompt for the password (both gated).
+const _PW_KEY = 'csub_pw_' + TOKEN + '_' + SUBMIT_TYPE;
 
 function showErr(msg) {
   const box = document.getElementById('errBox');
@@ -321,8 +322,24 @@ function showTypeBanner() {
   b.style.border = '1px solid ' + (isEnd ? '#fecaca' : '#86efac');
 }
 
+// Strongly distinct look for START vs END so they can't be confused on site.
+function applyTheme() {
+  const isEnd = SUBMIT_TYPE === 'end';
+  const main = isEnd ? '#b91c1c' : '#15803d';
+  document.body.style.background = isEnd ? '#fef2f2' : '#f0fdf4';
+  const top = document.querySelector('.top');
+  if (top) top.style.background = main;
+  const pc = document.getElementById('priceCard');
+  if (pc) pc.style.display = isEnd ? 'none' : '';   // END has no price
+  const st = document.createElement('style');
+  st.textContent = `.btn-submit{background:${main} !important;box-shadow:0 4px 12px ${isEnd ? 'rgba(185,28,28,.35)' : 'rgba(21,128,61,.35)'} !important}`
+    + `#t-addBtn{background:${main} !important}`;
+  document.head.appendChild(st);
+}
+
 async function init() {
   applyLang();
+  applyTheme();
   if (!TOKEN) {
     showErr(I18N[_lang].errNoToken);
     document.getElementById('partnerName').textContent = '—';
