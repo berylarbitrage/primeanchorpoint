@@ -30871,17 +30871,24 @@ async function generateInvpPreview() {
     const containerRows = containerItems.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
       const hl = !!i.highlighted;
-      const rowBg = hl ? '#fef3c7' : stripe;
-      const rowExtra = hl ? 'box-shadow:inset 4px 0 0 #d97706;' : '';
+      const pricey = (Number(i.unit_price) || 0) > 200;
+      // Manual star (amber) beats auto unit-price>200 (light red + red bar).
+      const rowBg = hl ? '#fef3c7' : (pricey ? '#fee2e2' : stripe);
+      const rowExtra = hl
+        ? 'box-shadow:inset 4px 0 0 #d97706;'
+        : (pricey ? 'box-shadow:inset 4px 0 0 #dc2626;' : '');
       const noColor = hl ? '#92400e' : '#0f172a';
+      const idxColor = hl ? '#92400e' : (pricey ? '#991b1b' : '#64748b');
+      const priceStyle = pricey ? 'color:#dc2626;font-weight:700' : '';
+      const totalStyle = pricey ? 'color:#dc2626;font-weight:700' : 'font-weight:600';
       return `<tr style="background:${rowBg};${rowExtra}">
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${hl ? '#92400e' : '#64748b'}">${idx + 1}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${idxColor}">${idx + 1}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:${noColor}">${esc(i.container_no || '—')}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.unit_price||0).toFixed(2)}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${priceStyle}">$${(i.unit_price||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${totalStyle}">$${(i.total||0).toFixed(2)}</td>
       </tr>`;
     }).join('');
     const totalQty = containerItems.reduce((s,i) => s + (i.qty || 0), 0);
