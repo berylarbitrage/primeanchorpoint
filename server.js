@@ -14009,7 +14009,7 @@ app.get('/api/admin/partners/:id/container-qr', requireAdmin, blockManager, asyn
     }
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
-    const url = `${proto}://${host}/container-submit.html?t=${token}`;
+    const url = `${proto}://${host}/c/${token}`;
     const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
     res.json({ token, url, qr_data_url: qrDataUrl, partner_name: p.name });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -14023,6 +14023,17 @@ app.post('/api/admin/partners/:id/container-qr/regenerate', requireAdmin, blockM
     db.prepare('UPDATE partners SET container_submit_token=? WHERE id=?').run(token, partnerId);
     res.json({ success: true, token });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /c/:token — public short URL that serves the mobile submit page.
+// (Path-based form is more robust than ?t=… against URL truncation in some
+// QR scanners / shared links. The page reads the token from either form.)
+app.get('/c/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'container-submit.html'));
+});
+// Backward compat for any old QR codes that linked to the .html page directly.
+app.get(['/container-submit', '/container-submit.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'container-submit.html'));
 });
 
 // GET /c-submit/info?t=TOKEN — public: minimal info so the mobile page knows which company it's for
