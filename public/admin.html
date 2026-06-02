@@ -29770,16 +29770,14 @@ function renderInvpContainerTable(skipSave) {
     const subTotal = qty * subPrice;
     const hl = !!it.highlighted;
     const pricey = price > 200;
-    // Two highlight tiers: manual star (amber #fef3c7) and auto price>200
-    // (light red #fee2e2 + left red bar) — both very visible, distinct from each other.
-    const rowBg = hl ? '#fef3c7' : (pricey ? '#fee2e2' : '');
-    const rowStyle = hl
-      ? 'background:#fef3c7;box-shadow:inset 3px 0 0 #d97706'
-      : (pricey ? 'background:#fee2e2;box-shadow:inset 3px 0 0 #dc2626' : '');
+    // Both manual star (★) and auto price>200 use the same amber highlight
+    // (#fef3c7 background + orange #d97706 left bar). Visually identical
+    // — both mean "this row needs attention".
+    const highlight = hl || pricey;
+    const rowBg = highlight ? '#fef3c7' : '';
+    const rowStyle = highlight ? 'background:#fef3c7;box-shadow:inset 3px 0 0 #d97706' : '';
     const stickyBg = rowBg || '#fff';
-    const priceCellStyle = pricey
-      ? 'color:#dc2626;font-weight:700'
-      : '';
+    const priceCellStyle = '';
     const starColor = hl ? '#d97706' : 'var(--gray-300)';
     const starChar = hl ? '★' : '☆';
     const starTitle = hl ? '取消标记此行' : '标记此行（特殊处理）';
@@ -29800,7 +29798,7 @@ function renderInvpContainerTable(skipSave) {
         ${referrer ? `<div style="font-size:.72rem;color:#64748b;margin-top:2px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">介绍人: ${esc(referrer)}</div>` : ''}
       </td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-qty" value="${esc(String(it.qty || ''))}" min="0" step="1" placeholder="1" style="width:60px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
-      <td style="padding:3px 4px"><input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" title="超过 $200 时本行会自动高亮" style="width:80px;text-align:right;border:1px solid ${pricey ? '#fca5a5' : 'var(--gray-200)'};border-radius:4px;padding:3px 6px;font-size:.84rem;${priceCellStyle}" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
+      <td style="padding:3px 4px"><input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" title="超过 $200 时本行会自动高亮" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td class="invp-cont-total" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap">$${total.toFixed(2)}</td>
       <td style="padding:3px 4px;background:#f0f9ff"><input type="number" class="invp-cont-sub" value="${esc(String(it.sub_price || ''))}" min="0" step="0.01" placeholder="$" title="付给分包商/装卸公司的价格（仅出现在分包商对账单）" style="width:80px;text-align:right;border:1px solid #bae6fd;border-radius:4px;padding:3px 6px;font-size:.84rem;background:#fff" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td class="invp-cont-subtotal" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap;color:#0369a1;background:#f0f9ff">$${subTotal.toFixed(2)}</td>
@@ -29848,23 +29846,17 @@ function invpUpdateContainerRowTotal(row) {
   const subCell = row.querySelector('.invp-cont-subtotal');
   if (subCell) subCell.textContent = '$' + (qty * subPrice).toFixed(2);
   // Live-update the unit-price > $200 highlight without a full re-render.
-  // Manual star-marked rows (data-uid → it.highlighted) keep their stronger
-  // amber background regardless of price.
+  // Same amber treatment as the manual star highlight.
   const _allItems = window._invpContainerItems || [];
   const item = _allItems.find(i => String(i.uid) === String(row.dataset.uid));
   const starred = item && !!item.highlighted;
   const pricey = price > 200;
-  if (!starred) {
-    row.style.background = pricey ? '#fee2e2' : '';
-    row.style.boxShadow = pricey ? 'inset 3px 0 0 #dc2626' : '';
-  }
-  // Re-color the price input cell
-  priceInp.style.color = pricey ? '#dc2626' : '';
-  priceInp.style.fontWeight = pricey ? '700' : '';
-  priceInp.style.borderColor = pricey ? '#fca5a5' : 'var(--gray-200)';
+  const highlight = starred || pricey;
+  row.style.background = highlight ? '#fef3c7' : '';
+  row.style.boxShadow = highlight ? 'inset 3px 0 0 #d97706' : '';
   // Refresh the sticky container-no cell background to match the row
   const stickyCell = row.children[1];
-  if (stickyCell) stickyCell.style.background = starred ? '#fef3c7' : (pricey ? '#fee2e2' : '#fff');
+  if (stickyCell) stickyCell.style.background = highlight ? '#fef3c7' : '#fff';
   // Update grand totals too
   _invpSaveContainerState();
   const items = window._invpContainerItems || [];
@@ -30872,23 +30864,20 @@ async function generateInvpPreview() {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
       const hl = !!i.highlighted;
       const pricey = (Number(i.unit_price) || 0) > 200;
-      // Manual star (amber) beats auto unit-price>200 (light red + red bar).
-      const rowBg = hl ? '#fef3c7' : (pricey ? '#fee2e2' : stripe);
-      const rowExtra = hl
-        ? 'box-shadow:inset 4px 0 0 #d97706;'
-        : (pricey ? 'box-shadow:inset 4px 0 0 #dc2626;' : '');
-      const noColor = hl ? '#92400e' : '#0f172a';
-      const idxColor = hl ? '#92400e' : (pricey ? '#991b1b' : '#64748b');
-      const priceStyle = pricey ? 'color:#dc2626;font-weight:700' : '';
-      const totalStyle = pricey ? 'color:#dc2626;font-weight:700' : 'font-weight:600';
+      // Manual star and auto unit-price>200 share the same amber highlight.
+      const highlight = hl || pricey;
+      const rowBg = highlight ? '#fef3c7' : stripe;
+      const rowExtra = highlight ? 'box-shadow:inset 4px 0 0 #d97706;' : '';
+      const noColor = highlight ? '#92400e' : '#0f172a';
+      const idxColor = highlight ? '#92400e' : '#64748b';
       return `<tr style="background:${rowBg};${rowExtra}">
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${idxColor}">${idx + 1}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:${noColor}">${esc(i.container_no || '—')}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${priceStyle}">$${(i.unit_price||0).toFixed(2)}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${totalStyle}">$${(i.total||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.unit_price||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
       </tr>`;
     }).join('');
     const totalQty = containerItems.reduce((s,i) => s + (i.qty || 0), 0);
