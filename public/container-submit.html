@@ -89,18 +89,10 @@
     </div>
 
     <div class="card">
-      <div class="row">
-        <div>
-          <label id="t-qtyLabel">Cantidad</label>
-          <input type="number" id="qty" value="1" min="1" step="1" inputmode="numeric">
-        </div>
-        <div>
-          <label id="t-priceLabel">Precio ($ por unidad)</label>
-          <div class="price-prefix">
-            <span class="symbol">$</span>
-            <input type="number" id="unitPrice" placeholder="0.00" min="0" step="0.01" inputmode="decimal">
-          </div>
-        </div>
+      <label id="t-priceLabel">Precio ($ por unidad)</label>
+      <div class="price-prefix">
+        <span class="symbol">$</span>
+        <input type="number" id="unitPrice" placeholder="0.00" min="0" step="0.01" inputmode="decimal">
       </div>
     </div>
 
@@ -224,7 +216,6 @@ function applyLang() {
   document.getElementById('t-photoHint').textContent = L.photoHint;
   document.getElementById('t-noLabel').textContent = L.noLabel;
   document.getElementById('t-noHint').textContent = L.noHint;
-  document.getElementById('t-qtyLabel').textContent = L.qtyLabel;
   document.getElementById('t-priceLabel').textContent = L.priceLabel;
   document.getElementById('t-partLabel').textContent = L.partLabel;
   document.getElementById('partName').placeholder = L.partNamePh;
@@ -417,7 +408,6 @@ async function submitForm() {
   try {
     const fd = new FormData();
     fd.append('container_no', cno);
-    fd.append('qty', document.getElementById('qty').value || '1');
     fd.append('unit_price', document.getElementById('unitPrice').value || '0');
     fd.append('participants', JSON.stringify(_participants));
     fd.append('submit_type', SUBMIT_TYPE);
@@ -448,7 +438,6 @@ async function submitForm() {
 
 function resetForm() {
   document.getElementById('containerNo').value = '';
-  document.getElementById('qty').value = '1';
   document.getElementById('unitPrice').value = '';
   _participants = [];
   renderChips();
