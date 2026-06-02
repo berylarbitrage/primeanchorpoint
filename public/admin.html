@@ -1776,6 +1776,41 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════════ Container Submission QR Modal ════════ -->
+<div class="modal-bg" id="csubQrModal"><div class="modal" style="max-width:520px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+    <h2 style="margin:0">📱 Container 现场扫码录入</h2>
+    <button class="btn btn-sm btn-outline" onclick="closeContainerQrModal()">× 关闭</button>
+  </div>
+  <div id="csubQrPartner" style="font-size:.92rem;color:var(--gray-600);margin-bottom:.6rem"></div>
+  <div style="text-align:center;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:1rem;margin-bottom:.6rem">
+    <img id="csubQrImg" alt="QR" style="display:block;margin:0 auto;max-width:280px;width:100%">
+    <div id="csubQrUrl" style="margin-top:.5rem;font-family:monospace;font-size:.74rem;color:var(--gray-500);word-break:break-all;text-align:center"></div>
+  </div>
+  <div style="display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.7rem">
+    <button class="btn btn-sm btn-outline" onclick="copyCsubUrl()">📋 复制链接</button>
+    <button class="btn btn-sm btn-outline" onclick="downloadCsubQr()">⬇ 下载二维码</button>
+    <button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;margin-left:auto" onclick="regenerateCsubQr()" title="作废旧二维码并生成新的">↻ 重新生成（旧码失效）</button>
+  </div>
+  <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.7rem .85rem;font-size:.82rem;color:#92400e">
+    💡 这个二维码可以打印贴在现场，工人/装卸队扫码即可录入 container 号、价格和参与人员。
+    所有提交都进入<strong>待审核区</strong>，admin 在制作发票时一键导入需要的条目。
+  </div>
+</div></div>
+
+<!-- ════════ Container Submission Inbox Modal (per-partner, pending review) ════════ -->
+<div class="modal-bg" id="invpCsubInboxModal"><div class="modal" style="max-width:920px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+    <h2 style="margin:0">📥 扫码录入 · 待审核</h2>
+    <div style="display:flex;gap:.4rem">
+      <button class="btn btn-sm btn-outline" onclick="loadInvpCsubInbox()" title="刷新">↻ 刷新</button>
+      <button class="btn btn-sm btn-outline" onclick="closeInvpCsubInbox()">× 关闭</button>
+    </div>
+  </div>
+  <div id="invpCsubInboxSub" style="font-size:.85rem;color:var(--gray-600);margin-bottom:.6rem"></div>
+  <div id="invpCsubInboxBody" style="max-height:62vh;overflow-y:auto"></div>
+</div></div>
+
 <!-- ════════ Company Payment: Weekly Payout Modal (按周付工资 + 上传凭证) ════════ -->
 <div class="modal-bg" id="cpyWkPayModal"><div class="modal" style="max-width:560px">
   <h2 style="margin-bottom:.25rem">💰 记录本周付工资</h2>
@@ -2061,6 +2096,7 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddContainer()">＋ 添加 Container</button>
+          <button type="button" id="invpInboxBtn" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#92400E;border-color:#FDE68A;background:#fffbeb;display:none" onclick="openInvpCsubInbox()" title="查看本公司扫码录入的待审核记录">📥 扫码收件箱 <span id="invpInboxCount" style="font-weight:700">(0)</span></button>
           <span style="color:var(--gray-300);font-size:.85rem">|</span>
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0E7BB8;border-color:#0E7BB8" onclick="invpBulkReceipts('preview')" title="一次预览所有 container 的现金回执 PDF">👁 批量预览回执</button>
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="invpBulkReceipts('download')" title="一次下载所有 container 的现金回执 PDF（合并为一个文件）">⬇ 批量下载回执</button>
@@ -11500,6 +11536,7 @@ function renderPartners(partners) {
             : `<button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">✍ 发送合同</button>`}
         <button class="btn btn-sm" style="background:#EFF6FF;color:#0E7BB8;border:1px solid #BFDBFE" onclick='event.stopPropagation();openBlankWorksheetPrint(${p.id}, ${JSON.stringify(p.name||"")})'>📋 空白表</button>
         <button class="btn btn-sm" style="background:#F0FDF4;color:#047857;border:1px solid #BBF7D0" onclick='event.stopPropagation();openBlankWorksheetList(${p.id}, ${JSON.stringify(p.name||"")})'>📥 回传</button>
+        <button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A" onclick='event.stopPropagation();openContainerQrModal(${p.id}, ${JSON.stringify(p.name||"")})' title="生成扫码录入 Container 二维码">📱 扫码录入</button>
         ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>`:''}
       </td>
     </tr>`;
@@ -28826,6 +28863,8 @@ function openInvpBuilderModal() {
   document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === 'hourly'); });
   invpSwitchMode('hourly');
   window._invpSelectedPartnerState = null;
+  window._invpSelectedPartnerId = null;
+  refreshInvpInboxBadge();
   window._invpCurrentSavedId = null;
   const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -28859,6 +28898,13 @@ async function openInvpForEdit(id) {
   await loadInvpCompanies();
   const partnerState = await _getPartnerStateFromData(inv.company_name || '');
   window._invpSelectedPartnerState = partnerState || null;
+  // Resolve partner_id from company name so the 扫码收件箱 badge can poll.
+  {
+    const _nm = (inv.company_name || '').trim().toLowerCase();
+    const _hit = (window._invpPartners || []).find(p => (p.name || '').trim().toLowerCase() === _nm);
+    window._invpSelectedPartnerId = _hit ? _hit.id : null;
+    refreshInvpInboxBadge();
+  }
   document.getElementById('invPageUniformRate').value = '';
   document.getElementById('invPageMarkupRate').value = inv.markup_rate || '';
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
@@ -29337,6 +29383,8 @@ function selectInvPartner(id) {
   if (sugg) sugg.style.display = 'none';
   // Update invoice number with customer state
   window._invpSelectedPartnerState = stateAbbr || null;
+  window._invpSelectedPartnerId = partner.id;
+  refreshInvpInboxBadge();
   const numEl = document.getElementById('invPageNumber');
   if (numEl) { numEl.value = ''; invpRefreshInvoiceNumber(); }
 }
@@ -29348,6 +29396,8 @@ function onInvBillNameInput() {
   const selectedName = sr ? sr.value.trim() : '';
   if (billName !== selectedName) {
     window._invpSelectedPartnerState = null;
+    window._invpSelectedPartnerId = null;
+    refreshInvpInboxBadge();
   }
   // Auto-refresh invoice number when company name changes (debounced)
   clearTimeout(window._invpBillNameTimer);
@@ -29866,6 +29916,145 @@ function invpUpdateContainerRowTotal(row) {
   if (tfootCell) tfootCell.textContent = '$' + grand.toFixed(2);
   const tfootSubCell = document.querySelector('#invpContainerWrap tfoot td:nth-child(4)');
   if (tfootSubCell) tfootSubCell.textContent = '$' + grandSub.toFixed(2);
+}
+
+// ── Container submission inbox (pending mobile-QR records for the selected partner) ──
+async function refreshInvpInboxBadge() {
+  const btn = document.getElementById('invpInboxBtn');
+  const cnt = document.getElementById('invpInboxCount');
+  if (!btn || !cnt) return;
+  const pid = window._invpSelectedPartnerId;
+  if (!pid) { btn.style.display = 'none'; return; }
+  try {
+    const rows = await api(`/admin/container-submissions?partner_id=${pid}&status=pending`);
+    const n = Array.isArray(rows) ? rows.length : 0;
+    cnt.textContent = `(${n})`;
+    btn.style.display = n > 0 ? '' : 'none';
+  } catch { btn.style.display = 'none'; }
+}
+
+function openInvpCsubInbox() {
+  const pid = window._invpSelectedPartnerId;
+  if (!pid) return showToast('请先选择客户公司', 'error');
+  document.getElementById('invpCsubInboxSub').innerHTML =
+    `公司：<strong>${esc(document.getElementById('invPageBillName').value || '')}</strong> · 点击「→ 导入」会把该条加入当前发票的 container 表`;
+  document.getElementById('invpCsubInboxModal').classList.add('show');
+  loadInvpCsubInbox();
+}
+
+function closeInvpCsubInbox() {
+  document.getElementById('invpCsubInboxModal').classList.remove('show');
+}
+
+async function loadInvpCsubInbox() {
+  const pid = window._invpSelectedPartnerId;
+  const body = document.getElementById('invpCsubInboxBody');
+  if (!pid) { body.innerHTML = '<div style="padding:1rem;color:var(--gray-400)">请先选择客户公司</div>'; return; }
+  body.innerHTML = '<div style="padding:1rem;color:var(--gray-400)">加载中…</div>';
+  try {
+    const rows = await api(`/admin/container-submissions?partner_id=${pid}&status=pending`);
+    if (!Array.isArray(rows) || !rows.length) {
+      body.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--gray-400);font-size:.9rem">📭 暂无待审核记录</div>';
+      return;
+    }
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead><tr style="background:var(--gray-50);color:var(--gray-600);text-align:left">
+          <th style="padding:6px 8px">照片</th>
+          <th style="padding:6px 8px">Container #</th>
+          <th style="padding:6px 8px;text-align:center">数量</th>
+          <th style="padding:6px 8px;text-align:right">单价</th>
+          <th style="padding:6px 8px">参与人</th>
+          <th style="padding:6px 8px">提交者</th>
+          <th style="padding:6px 8px">时间</th>
+          <th style="padding:6px 8px;text-align:right">操作</th>
+        </tr></thead>
+        <tbody>${rows.map(r => _invpCsubRow(r)).join('')}</tbody>
+      </table>`;
+  } catch (e) {
+    body.innerHTML = `<div style="padding:1rem;color:#b91c1c">加载失败：${esc(e.message || e)}</div>`;
+  }
+}
+
+function _invpCsubRow(r) {
+  const parts = Array.isArray(r.participants) ? r.participants : [];
+  const partsHtml = parts.length
+    ? parts.map(n => `<span style="display:inline-block;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;border-radius:999px;padding:.1rem .5rem;font-size:.74rem;margin:1px 2px 1px 0">${esc(n)}</span>`).join('')
+    : '<span style="color:var(--gray-300)">—</span>';
+  const photoCell = r.photo_url
+    ? `<a href="#" onclick="event.preventDefault();invpOpenCsubPhoto('${esc(r.photo_url)}')" title="点击查看大图"><img src="${esc(r.photo_url)}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200)"></a>`
+    : '<span style="color:var(--gray-300);font-size:.78rem">无照片</span>';
+  const submitter = (r.submitter_name ? esc(r.submitter_name) : '') +
+    (r.submitter_phone ? `<br><span style="color:var(--gray-400);font-size:.74rem">${esc(r.submitter_phone)}</span>` : '');
+  const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
+  return `<tr style="border-top:1px solid var(--gray-200)">
+    <td style="padding:6px 8px">${photoCell}</td>
+    <td style="padding:6px 8px;font-family:monospace;font-weight:600;text-transform:uppercase">${esc(r.container_no || '—')}</td>
+    <td style="padding:6px 8px;text-align:center">${r.qty || 1}</td>
+    <td style="padding:6px 8px;text-align:right">${r.unit_price ? '$' + Number(r.unit_price).toFixed(2) : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="padding:6px 8px">${partsHtml}</td>
+    <td style="padding:6px 8px;font-size:.82rem">${submitter || '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="padding:6px 8px;font-size:.74rem;color:var(--gray-500);white-space:nowrap">${esc(when)}</td>
+    <td style="padding:6px 8px;text-align:right;white-space:nowrap">
+      <button class="btn btn-sm btn-green" style="padding:.18rem .55rem;font-size:.78rem" onclick="invpImportCsub(${r.id})">→ 导入</button>
+      <button class="btn btn-sm" style="padding:.18rem .55rem;font-size:.78rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="invpDiscardCsub(${r.id})">丢弃</button>
+    </td>
+  </tr>`;
+}
+
+function invpOpenCsubPhoto(url) {
+  // Photos served by /uploads/:filename require Bearer auth (no token in URL).
+  fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } })
+    .then(r => r.ok ? r.blob() : Promise.reject(new Error('打开失败')))
+    .then(blob => window.open(URL.createObjectURL(blob), '_blank'))
+    .catch(e => showToast('打开图片失败：' + (e.message || e), 'error'));
+}
+
+async function invpImportCsub(submissionId) {
+  // Fetch the submission, append to current invoice's container list, then mark imported.
+  try {
+    const rows = await api(`/admin/container-submissions?partner_id=${window._invpSelectedPartnerId}&status=pending`);
+    const rec = (Array.isArray(rows) ? rows : []).find(r => r.id === submissionId);
+    if (!rec) throw new Error('记录已被处理或不存在，请刷新');
+    // Append a container row populated from the submission.
+    _invpSaveContainerState();
+    const parts = Array.isArray(rec.participants) ? rec.participants : [];
+    const staffList = parts.slice(0, 5).map((name, i) => ({ id: 'csub-' + submissionId + '-' + i, name: String(name || '').trim() }));
+    const noteSuffix = rec.notes ? `（提交备注：${rec.notes}）` : '';
+    const submitterNote = rec.submitter_name ? `[扫码 ${rec.submitter_name}${rec.submitter_phone ? ' '+rec.submitter_phone : ''}]${noteSuffix}` : (noteSuffix || '');
+    window._invpContainerItems.push({
+      uid: _invpContainerUidSeq++,
+      container_no: (rec.container_no || '').toUpperCase(),
+      week: _invpFmtPeriodForContainer(),
+      staffing: _invpDefaultStaffing(),
+      qty: String(rec.qty || 1),
+      unit_price: rec.unit_price ? String(rec.unit_price) : '',
+      sub_price: '',
+      highlighted: false,
+      staff_list: staffList,
+      referrer: '',
+      notes: submitterNote,
+    });
+    renderInvpContainerTable(true);
+    // Mark as imported on the server
+    await api(`/admin/container-submissions/${submissionId}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ invoice_id: document.getElementById('invPageEditId').value || null }),
+    });
+    showToast('已导入 ✓');
+    loadInvpCsubInbox();
+    refreshInvpInboxBadge();
+  } catch (e) { showToast('导入失败：' + (e.message || e), 'error'); }
+}
+
+async function invpDiscardCsub(submissionId) {
+  if (!await showConfirm('确定丢弃这条扫码记录？', { danger: true })) return;
+  try {
+    await api(`/admin/container-submissions/${submissionId}/discard`, { method: 'POST' });
+    showToast('已丢弃 ✓');
+    loadInvpCsubInbox();
+    refreshInvpInboxBadge();
+  } catch (e) { showToast('丢弃失败：' + (e.message || e), 'error'); }
 }
 
 function invpAddContainer() {
@@ -32262,6 +32451,51 @@ function printInvoice() {
 </div>
 
 <script>
+// ── Container submission QR (per-partner) ──
+let _csubQrState = { partnerId: null, partnerName: '', url: '', qrDataUrl: '' };
+async function openContainerQrModal(partnerId, partnerName) {
+  _csubQrState = { partnerId, partnerName, url: '', qrDataUrl: '' };
+  document.getElementById('csubQrPartner').innerHTML = `公司：<strong>${esc(partnerName || '—')}</strong>`;
+  document.getElementById('csubQrImg').src = '';
+  document.getElementById('csubQrUrl').textContent = '生成中…';
+  document.getElementById('csubQrModal').classList.add('show');
+  try {
+    const r = await api(`/admin/partners/${partnerId}/container-qr`);
+    if (!r || !r.qr_data_url) throw new Error(r && r.error || '生成失败');
+    _csubQrState.url = r.url;
+    _csubQrState.qrDataUrl = r.qr_data_url;
+    document.getElementById('csubQrImg').src = r.qr_data_url;
+    document.getElementById('csubQrUrl').textContent = r.url;
+  } catch (e) {
+    document.getElementById('csubQrUrl').textContent = '加载失败：' + (e.message || e);
+  }
+}
+function closeContainerQrModal() {
+  document.getElementById('csubQrModal').classList.remove('show');
+}
+function copyCsubUrl() {
+  if (!_csubQrState.url) return;
+  navigator.clipboard.writeText(_csubQrState.url)
+    .then(() => showToast('链接已复制 ✓'))
+    .catch(() => showToast('复制失败，请手动选择 URL', 'error'));
+}
+function downloadCsubQr() {
+  if (!_csubQrState.qrDataUrl) return;
+  const a = document.createElement('a');
+  a.href = _csubQrState.qrDataUrl;
+  a.download = `container-qr-partner-${_csubQrState.partnerId}.png`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+async function regenerateCsubQr() {
+  if (!_csubQrState.partnerId) return;
+  if (!await showConfirm('重新生成会让现场已经打印/扫过的旧二维码失效，确定继续？', { danger: true })) return;
+  try {
+    await api(`/admin/partners/${_csubQrState.partnerId}/container-qr/regenerate`, { method: 'POST' });
+    showToast('已重新生成 ✓');
+    openContainerQrModal(_csubQrState.partnerId, _csubQrState.partnerName);
+  } catch (e) { showToast('重新生成失败：' + (e.message || e), 'error'); }
+}
+
 // ── Partner blank-worksheet print + returns viewer ──
 function openBlankWorksheetPrint(partnerId, partnerName) {
   document.getElementById('bwPrintPartnerId').value = partnerId;
