@@ -1479,6 +1479,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-green" onclick="openCpyWeeklyModal()">+ 按周批量（工时×时薪）</button>
       <button class="btn btn-outline" onclick="openCpyBatchModal()">+ 按月批量</button>
       <button class="btn btn-outline" onclick="openCpySingleModal()">+ 单条录入</button>
+      <button class="btn btn-outline" onclick="openUnloadModal()">📦 卸柜二维码 / 记录</button>
       <button class="btn btn-outline" onclick="exportCpyCsv()">⬇ 导出 CSV</button>
       <button class="btn btn-outline" onclick="loadCpyList()">刷新</button>
     </div>
@@ -1587,6 +1588,46 @@ tr:hover td{background:var(--sky-light)}
         <tbody id="cpySummaryBody">
           <tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</td></tr>
         </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ Container Unload: QR + Records Modal ════════ -->
+<div class="modal-bg" id="unloadModal" style="display:none" onclick="if(event.target===this)closeUnloadModal()">
+  <div class="modal" style="max-width:860px;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <h2 style="margin:0">📦 卸柜二维码 / 记录</h2>
+      <button class="btn btn-outline" onclick="closeUnloadModal()">✕ 关闭</button>
+    </div>
+    <p style="font-size:.84rem;color:var(--gray-500);margin:.2rem 0 1rem">每个公司一个二维码：工人扫码后选/填名字、填柜号、拍柜照提交。每提交一条记一个结束时间，开始时间 = 上一柜结束（连续卸柜）。</p>
+    <div class="field" style="max-width:340px">
+      <label>公司</label>
+      <select id="unloadPartner" onchange="renderUnloadQR();loadUnloadRecords()"><option value="">— 选择公司 —</option></select>
+    </div>
+    <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-start;margin:.75rem 0 1rem">
+      <div style="text-align:center">
+        <div id="unloadQRBox" style="width:180px;height:180px;border:1px solid var(--gray-200);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:.8rem">请选择公司</div>
+      </div>
+      <div style="flex:1 1 260px;min-width:240px">
+        <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.3rem">扫码 / 链接：</div>
+        <input type="text" id="unloadLink" readonly style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:#f8fafc" value="">
+        <div style="display:flex;gap:.4rem;margin-top:.5rem">
+          <button class="btn btn-sm btn-outline" onclick="copyUnloadLink()">复制链接</button>
+          <button class="btn btn-sm btn-outline" onclick="openUnloadLink()">打开页面</button>
+          <button class="btn btn-sm btn-outline" onclick="window.print()">打印二维码</button>
+        </div>
+        <p style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">把二维码打印出来贴在仓库/车门口，工人手机扫码即可登记。</p>
+      </div>
+    </div>
+    <h3 style="margin:.5rem 0;font-size:1rem">卸柜记录</h3>
+    <div style="overflow-x:auto">
+      <table style="width:100%;font-size:.85rem">
+        <thead><tr>
+          <th style="text-align:left">柜照</th><th style="text-align:left">柜号</th><th style="text-align:left">卸柜人</th>
+          <th style="text-align:left">开始</th><th style="text-align:left">结束</th><th style="text-align:right">用时</th><th></th>
+        </tr></thead>
+        <tbody id="unloadRecordsBody"><tr><td colspan="7" style="color:var(--gray-400);padding:.6rem">请选择公司</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -32747,6 +32788,98 @@ async function loadCpyPartners() {
   } catch (e) {
     console.error('loadCpyPartners failed', e);
   }
+}
+
+// ── Container unload: QR + records modal ──
+function openUnloadModal() {
+  const sel = document.getElementById('unloadPartner');
+  sel.innerHTML = ['<option value="">— 选择公司 —</option>']
+    .concat(_cpyPartners.map(p => `<option value="${p.id}">${_cpyEscape(p.name)}</option>`)).join('');
+  // Default to the page's current company filter if one is set.
+  const cur = document.getElementById('cpyFilterPartner').value;
+  if (cur) sel.value = cur;
+  document.getElementById('unloadModal').style.display = 'flex';
+  renderUnloadQR();
+  loadUnloadRecords();
+}
+function closeUnloadModal() { document.getElementById('unloadModal').style.display = 'none'; }
+
+function _unloadUrlFor(pid) { return `${location.origin}/unload?partner=${pid}`; }
+
+async function renderUnloadQR() {
+  const pid = document.getElementById('unloadPartner').value;
+  const box = document.getElementById('unloadQRBox');
+  const linkEl = document.getElementById('unloadLink');
+  box.innerHTML = '';
+  if (!pid) { box.textContent = '请选择公司'; linkEl.value = ''; return; }
+  const url = _unloadUrlFor(pid);
+  linkEl.value = url;
+  try {
+    await _loadQRLib();
+    box.innerHTML = '';
+    new QRCode(box, { text: url, width: 168, height: 168, colorDark: '#0f172a', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  } catch (e) { box.textContent = '二维码加载失败'; }
+}
+
+function copyUnloadLink() {
+  const v = document.getElementById('unloadLink').value;
+  if (!v) return;
+  navigator.clipboard?.writeText(v).then(() => showToast('链接已复制 ✓'), () => {});
+}
+function openUnloadLink() {
+  const v = document.getElementById('unloadLink').value;
+  if (v) window.open(v, '_blank');
+}
+
+function _unloadFmtTime(iso) {
+  if (!iso) return '<span style="color:var(--gray-300)">—</span>';
+  const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return _cpyEscape(iso);
+  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+function _unloadFmtDur(a, b) {
+  if (!a || !b) return '<span style="color:var(--gray-300)">—</span>';
+  const pa = new Date(a.includes('T') ? a : a.replace(' ', 'T') + 'Z');
+  const pb = new Date(b.includes('T') ? b : b.replace(' ', 'T') + 'Z');
+  const ms = pb - pa;
+  if (!(ms > 0)) return '<span style="color:var(--gray-300)">—</span>';
+  const m = Math.round(ms / 60000);
+  return m >= 60 ? `${Math.floor(m / 60)}小时${m % 60}分` : `${m}分钟`;
+}
+
+async function loadUnloadRecords() {
+  const pid = document.getElementById('unloadPartner').value;
+  const tb = document.getElementById('unloadRecordsBody');
+  if (!pid) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400);padding:.6rem">请选择公司</td></tr>'; return; }
+  tb.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400);padding:.6rem">加载中…</td></tr>';
+  try {
+    const rows = await api('/admin/container-unloads?partner_id=' + pid);
+    if (!Array.isArray(rows) || !rows.length) {
+      tb.innerHTML = '<tr><td colspan="7" style="color:var(--gray-400);padding:.6rem">暂无卸柜记录</td></tr>'; return;
+    }
+    tb.innerHTML = rows.map(r => `
+      <tr>
+        <td style="padding:.3rem .4rem">${r.photo_url ? `<a href="${_cpyEscape(r.photo_url)}" target="_blank" rel="noopener"><img src="${_cpyEscape(r.photo_url)}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200)"></a>` : '—'}</td>
+        <td style="padding:.3rem .4rem;font-weight:600">${_cpyEscape(r.container_no || '')}</td>
+        <td style="padding:.3rem .4rem">${_cpyEscape(r.worker_name || '')}</td>
+        <td style="padding:.3rem .4rem">${_unloadFmtTime(r.start_time)}</td>
+        <td style="padding:.3rem .4rem">${_unloadFmtTime(r.end_time)}</td>
+        <td style="padding:.3rem .4rem;text-align:right">${_unloadFmtDur(r.start_time, r.end_time)}</td>
+        <td style="padding:.3rem .4rem;text-align:right"><button class="btn btn-sm" style="padding:.05rem .4rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteUnloadRecord(${r.id})">删除</button></td>
+      </tr>`).join('');
+  } catch (e) {
+    tb.innerHTML = `<tr><td colspan="7" style="color:#b91c1c;padding:.6rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
+  }
+}
+
+async function deleteUnloadRecord(id) {
+  if (!confirm('删除这条卸柜记录？')) return;
+  try {
+    const r = await api('/admin/container-unloads/' + id, { method: 'DELETE' });
+    if (r && r.error) { showToast('删除失败：' + r.error, 'error'); return; }
+    showToast('已删除');
+    loadUnloadRecords();
+  } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
 }
 
 function switchCpySubTab(name) {
