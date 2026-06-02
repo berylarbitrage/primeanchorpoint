@@ -125,8 +125,11 @@
 </div>
 
 <script>
+// Token can come from either /c/TOKEN (path) or ?t=TOKEN (query).
+// Path form is preferred — survives URL truncation/redaction better.
 const params = new URLSearchParams(location.search);
-const TOKEN = params.get('t') || '';
+const _pathMatch = location.pathname.match(/^\/c\/([a-f0-9A-F]{16,})/);
+const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
 let _photoFile = null;
 let _participants = [];
 let _partnerName = '';
@@ -138,7 +141,11 @@ function showErr(msg) {
 }
 
 async function init() {
-  if (!TOKEN) { showErr('链接无效（缺少 token）'); return; }
+  if (!TOKEN) {
+    showErr('请通过专属二维码访问此页面。如果是从短信/微信分享的链接，请直接扫描公司提供的二维码再试。');
+    document.getElementById('partnerName').textContent = '—';
+    return;
+  }
   try {
     const r = await fetch('/c-submit/info?t=' + encodeURIComponent(TOKEN));
     if (!r.ok) {
