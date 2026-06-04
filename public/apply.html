@@ -135,8 +135,8 @@
         <div class="doc-slot">
           <span class="doc-cap" id="t-ssnFront">SSN — Frente <span class="req">*</span></span>
           <div class="zone-row" id="ssn_front_zone">
-            <label class="photo-zone" for="ssn_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
-            <label class="photo-zone" for="ssn_front_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
+            <label class="photo-zone" data-target="ssn_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+            <label class="photo-zone" data-target="ssn_front_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
           </div>
           <input type="file" id="ssn_front_cam" accept="image/*" capture="environment" data-doc="ssn_front">
           <input type="file" id="ssn_front_gal" accept="image/*" data-doc="ssn_front">
@@ -145,8 +145,8 @@
         <div class="doc-slot">
           <span class="doc-cap" id="t-ssnBack">SSN — Reverso <span class="opt">(opcional)</span></span>
           <div class="zone-row" id="ssn_back_zone">
-            <label class="photo-zone" for="ssn_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
-            <label class="photo-zone" for="ssn_back_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
+            <label class="photo-zone" data-target="ssn_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+            <label class="photo-zone" data-target="ssn_back_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
           </div>
           <input type="file" id="ssn_back_cam" accept="image/*" capture="environment" data-doc="ssn_back">
           <input type="file" id="ssn_back_gal" accept="image/*" data-doc="ssn_back">
@@ -155,8 +155,8 @@
         <div class="doc-slot">
           <span class="doc-cap" id="t-eadFront">EAD — Frente <span class="req">*</span></span>
           <div class="zone-row" id="ead_front_zone">
-            <label class="photo-zone" for="ead_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
-            <label class="photo-zone" for="ead_front_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
+            <label class="photo-zone" data-target="ead_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+            <label class="photo-zone" data-target="ead_front_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
           </div>
           <input type="file" id="ead_front_cam" accept="image/*" capture="environment" data-doc="ead_front">
           <input type="file" id="ead_front_gal" accept="image/*" data-doc="ead_front">
@@ -165,8 +165,8 @@
         <div class="doc-slot">
           <span class="doc-cap" id="t-eadBack">EAD — Reverso <span class="req">*</span></span>
           <div class="zone-row" id="ead_back_zone">
-            <label class="photo-zone" for="ead_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
-            <label class="photo-zone" for="ead_back_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
+            <label class="photo-zone" data-target="ead_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+            <label class="photo-zone" data-target="ead_back_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
           </div>
           <input type="file" id="ead_back_cam" accept="image/*" capture="environment" data-doc="ead_back">
           <input type="file" id="ead_back_gal" accept="image/*" data-doc="ead_back">
@@ -367,6 +367,14 @@ async function checkCode(ch) {
 });
 
 // ── document photos ──
+// iOS Safari does NOT open a file input via <label for> when the input is
+// display:none, so trigger it explicitly with .click() (works for hidden inputs).
+document.querySelectorAll('.photo-zone[data-target]').forEach(zone => {
+  zone.addEventListener('click', () => {
+    const inp = document.getElementById(zone.dataset.target);
+    if (inp) inp.click();
+  });
+});
 document.querySelectorAll('input[type=file][data-doc]').forEach(inp => {
   inp.addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
