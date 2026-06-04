@@ -1923,19 +1923,24 @@ tr:hover td{background:var(--sky-light)}
 <!-- ════════ Applicant Onboarding QR Modal (招工申请) ════════ -->
 <div class="modal-bg" id="applyQrModal"><div class="modal" style="max-width:420px;text-align:center">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-    <h2 style="margin:0">🪪 招工申请二维码</h2>
-    <button class="btn btn-sm btn-outline" onclick="closeApplicantQrModal()">× 关闭</button>
+    <h2 id="aqrTitle" style="margin:0">🪪 招工申请二维码</h2>
+    <button id="aqrClose" class="btn btn-sm btn-outline" onclick="closeApplicantQrModal()">× 关闭</button>
+  </div>
+  <div id="applyQrLangSw" style="display:flex;gap:.3rem;justify-content:center;margin-bottom:.6rem">
+    <button type="button" data-qrlang="zh" onclick="setApplyQrLang('zh')" style="cursor:pointer;border:1px solid #c7d2fe;border-radius:999px;padding:.15rem .7rem;font-size:.82rem;font-weight:600">中文</button>
+    <button type="button" data-qrlang="en" onclick="setApplyQrLang('en')" style="cursor:pointer;border:1px solid #c7d2fe;border-radius:999px;padding:.15rem .7rem;font-size:.82rem;font-weight:600">English</button>
+    <button type="button" data-qrlang="es" onclick="setApplyQrLang('es')" style="cursor:pointer;border:1px solid #c7d2fe;border-radius:999px;padding:.15rem .7rem;font-size:.82rem;font-weight:600">Español</button>
   </div>
   <div id="applyQrPartner" style="font-size:.92rem;color:var(--gray-600);margin-bottom:.6rem"></div>
   <div id="applyQrLoading" style="text-align:center;color:var(--gray-500);font-size:.85rem;margin-bottom:.4rem">生成中…</div>
   <div id="applyQrBox" style="display:inline-block;padding:12px;background:#fff;border:2px solid var(--gray-200);border-radius:12px;margin-bottom:.6rem;min-height:120px"></div>
   <div id="applyQrUrl" style="font-family:monospace;font-size:.66rem;color:var(--gray-500);word-break:break-all;margin-bottom:.6rem"></div>
   <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap;margin-bottom:.7rem">
-    <button class="btn btn-sm btn-outline" onclick="copyApplyUrl()">📋 复制链接</button>
-    <button class="btn btn-sm btn-outline" onclick="downloadApplyQr()">⬇ 下载二维码</button>
-    <button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="regenerateApplyQr()" title="作废旧二维码并生成新的">↻ 重新生成</button>
+    <button id="aqrCopy" class="btn btn-sm btn-outline" onclick="copyApplyUrl()">📋 复制链接</button>
+    <button id="aqrDownload" class="btn btn-sm btn-outline" onclick="downloadApplyQr()">⬇ 下载二维码</button>
+    <button id="aqrRegen" class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="regenerateApplyQr()" title="作废旧二维码并生成新的">↻ 重新生成</button>
   </div>
-  <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:.7rem .85rem;font-size:.82rem;color:#3730a3;text-align:left">
+  <div id="aqrNote" style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:.7rem .85rem;font-size:.82rem;color:#3730a3;text-align:left">
     📲 应聘者扫码后填写<strong>姓名 / 电话 / 邮箱 / 职位</strong>，需通过<strong>短信 + 邮箱验证码</strong>验证，并上传 <strong>SSN 正反面</strong> 与 <strong>EAD 正反面</strong>。支持中文 / English / Español。所有申请进入「📨 申请收件箱」。
   </div>
 </div></div>
@@ -32770,31 +32775,76 @@ function closeContainerQrModal() {
 
 // ── Applicant onboarding QR (招工申请) ──
 let _applyQrState = { partnerId: null, partnerName: '', url: '' };
+let _applyQrLang = 'zh';
+const APPLY_QR_I18N = {
+  zh: {
+    title: '🪪 招工申请二维码', close: '× 关闭', company: '公司：',
+    loading: '生成中…', copy: '📋 复制链接', download: '⬇ 下载二维码', regen: '↻ 重新生成',
+    regenTitle: '作废旧二维码并生成新的', loadFail: '加载失败：',
+    copied: '已复制链接', regenConfirm: '重新生成后，旧二维码将立即失效。确定继续？', regenFail: '失败：',
+    note: '📲 应聘者扫码后填写<strong>姓名 / 电话 / 邮箱 / 职位</strong>，需通过<strong>短信 + 邮箱验证码</strong>验证，并上传 <strong>SSN 正反面</strong> 与 <strong>EAD 正反面</strong>。支持中文 / English / Español。所有申请进入「📨 申请收件箱」。',
+  },
+  en: {
+    title: '🪪 Applicant QR Code', close: '× Close', company: 'Company: ',
+    loading: 'Generating…', copy: '📋 Copy link', download: '⬇ Download QR', regen: '↻ Regenerate',
+    regenTitle: 'Void the old QR code and generate a new one', loadFail: 'Load failed: ',
+    copied: 'Link copied', regenConfirm: 'Regenerating will immediately invalidate the old QR code. Continue?', regenFail: 'Failed: ',
+    note: '📲 After scanning, the applicant fills in <strong>name / phone / email / position</strong>, verifies via <strong>SMS + email code</strong>, and uploads <strong>SSN (front & back)</strong> and <strong>EAD (front & back)</strong>. Available in 中文 / English / Español. All submissions go to the “📨 Applicant Inbox”.',
+  },
+  es: {
+    title: '🪪 Código QR de solicitud', close: '× Cerrar', company: 'Empresa: ',
+    loading: 'Generando…', copy: '📋 Copiar enlace', download: '⬇ Descargar QR', regen: '↻ Regenerar',
+    regenTitle: 'Anular el QR anterior y generar uno nuevo', loadFail: 'Error al cargar: ',
+    copied: 'Enlace copiado', regenConfirm: 'Al regenerar, el QR anterior quedará invalidado de inmediato. ¿Continuar?', regenFail: 'Error: ',
+    note: '📲 Tras escanear, el solicitante completa <strong>nombre / teléfono / correo / puesto</strong>, verifica con <strong>código por SMS + correo</strong> y sube <strong>SSN (frente y reverso)</strong> y <strong>EAD (frente y reverso)</strong>. Disponible en 中文 / English / Español. Todas las solicitudes llegan a «📨 Bandeja de solicitudes».',
+  },
+};
+function setApplyQrLang(lang) {
+  _applyQrLang = APPLY_QR_I18N[lang] ? lang : 'zh';
+  const t = APPLY_QR_I18N[_applyQrLang];
+  document.getElementById('aqrTitle').textContent = t.title;
+  document.getElementById('aqrClose').textContent = t.close;
+  document.getElementById('aqrCopy').textContent = t.copy;
+  document.getElementById('aqrDownload').textContent = t.download;
+  const rg = document.getElementById('aqrRegen'); rg.textContent = t.regen; rg.title = t.regenTitle;
+  document.getElementById('aqrNote').innerHTML = t.note;
+  document.getElementById('applyQrPartner').innerHTML = `${t.company}<strong>${esc(_applyQrState.partnerName || '—')}</strong>`;
+  const ld = document.getElementById('applyQrLoading');
+  if (ld.style.display !== 'none' && ld.dataset.failed !== '1') ld.textContent = t.loading;
+  document.querySelectorAll('#applyQrLangSw [data-qrlang]').forEach(b => {
+    const on = b.dataset.qrlang === _applyQrLang;
+    b.style.background = on ? '#4338ca' : '#fff';
+    b.style.color = on ? '#fff' : '#3730a3';
+  });
+}
 async function openApplicantQrModal(partnerId, partnerName) {
   _applyQrState = { partnerId, partnerName, url: '' };
-  document.getElementById('applyQrPartner').innerHTML = `公司：<strong>${esc(partnerName || '—')}</strong>`;
   document.getElementById('applyQrBox').innerHTML = '';
   document.getElementById('applyQrUrl').textContent = '';
-  document.getElementById('applyQrLoading').style.display = '';
+  const ld = document.getElementById('applyQrLoading');
+  ld.dataset.failed = '0';
+  ld.style.display = '';
+  setApplyQrLang(_applyQrLang); // render all text (incl. partner + loading) in current language
   document.getElementById('applyQrModal').classList.add('show');
   try {
     const r = await api(`/admin/partners/${partnerId}/applicant-qr`);
-    if (!r || !r.url) throw new Error(r && r.error || '生成失败');
+    if (!r || !r.url) throw new Error(r && r.error || 'failed');
     _applyQrState.url = r.url;
     await _loadQRLib();
-    document.getElementById('applyQrLoading').style.display = 'none';
+    ld.style.display = 'none';
     const box = document.getElementById('applyQrBox');
     box.innerHTML = '';
     new QRCode(box, { text: r.url, width: 220, height: 220, colorDark: '#3730A3', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
     document.getElementById('applyQrUrl').textContent = r.url;
   } catch (e) {
-    document.getElementById('applyQrLoading').textContent = '加载失败：' + (e.message || e);
+    ld.dataset.failed = '1';
+    ld.textContent = APPLY_QR_I18N[_applyQrLang].loadFail + (e.message || e);
   }
 }
 function closeApplicantQrModal() { document.getElementById('applyQrModal').classList.remove('show'); }
 function copyApplyUrl() {
   if (!_applyQrState.url) return;
-  navigator.clipboard.writeText(_applyQrState.url).then(() => { if (typeof toast === 'function') toast('已复制链接'); }).catch(() => {});
+  navigator.clipboard.writeText(_applyQrState.url).then(() => { if (typeof toast === 'function') toast(APPLY_QR_I18N[_applyQrLang].copied); }).catch(() => {});
 }
 function downloadApplyQr() {
   const img = document.querySelector('#applyQrBox img') || document.querySelector('#applyQrBox canvas');
@@ -32807,11 +32857,11 @@ function downloadApplyQr() {
 }
 async function regenerateApplyQr() {
   if (!_applyQrState.partnerId) return;
-  if (!confirm('重新生成后，旧二维码将立即失效。确定继续？')) return;
+  if (!confirm(APPLY_QR_I18N[_applyQrLang].regenConfirm)) return;
   try {
     await api(`/admin/partners/${_applyQrState.partnerId}/applicant-qr/regenerate`, { method: 'POST' });
     openApplicantQrModal(_applyQrState.partnerId, _applyQrState.partnerName);
-  } catch (e) { alert('失败：' + (e.message || e)); }
+  } catch (e) { alert(APPLY_QR_I18N[_applyQrLang].regenFail + (e.message || e)); }
 }
 
 // ── Applicant submissions inbox ──
