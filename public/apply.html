@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<!-- Meta Pixel Code -->
+<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js'); fbq('init', '978932388059197'); fbq('track', 'PageView');</script>
+<noscript><img height="1" width="1" src="https://www.facebook.com/tr?id=978932388059197&ev=PageView&noscript=1"/></noscript>
+<!-- End Meta Pixel Code -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Application</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a;-webkit-text-size-adjust:100%}
+  .top{background:#0F2B5B;color:#fff;padding:.9rem 1.1rem .75rem;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .top-row{display:flex;align-items:flex-start;gap:.5rem}
+  .top h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.02em;flex:1}
+  .top .partner{margin-top:.2rem;font-size:.84rem;opacity:.92}
+  .lang{display:flex;gap:.25rem;background:rgba(255,255,255,.15);border-radius:999px;padding:.15rem;flex-shrink:0}
+  .lang button{background:transparent;color:#fff;border:none;padding:.25rem .55rem;border-radius:999px;font-size:.78rem;font-weight:600;cursor:pointer;opacity:.7}
+  .lang button.active{background:#fff;color:#0F2B5B;opacity:1}
+  .wrap{padding:1rem 1rem 6rem 1rem;max-width:520px;margin:0 auto}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.95rem;margin-bottom:.85rem;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card h2{margin:0 0 .7rem;font-size:.98rem;color:#0F2B5B}
+  label{display:block;font-size:.82rem;font-weight:600;color:#475569;margin:.55rem 0 .35rem}
+  label:first-child{margin-top:0}
+  .hint{font-size:.74rem;color:#94a3b8;margin-top:.25rem}
+  input[type=text],input[type=tel],input[type=email]{width:100%;padding:.65rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none;-webkit-appearance:none}
+  input:focus{border-color:#2E5BA0;box-shadow:0 0 0 3px rgba(46,91,160,.15)}
+  input:disabled{background:#f1f5f9;color:#64748b}
+  .verify-row{display:flex;gap:.5rem;align-items:stretch}
+  .verify-row input{flex:1}
+  .btn-code{flex:0 0 auto;padding:.5rem .8rem;background:#2E5BA0;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap}
+  .btn-code:disabled{background:#94a3b8;cursor:default}
+  .otp-box{display:none;margin-top:.5rem}
+  .otp-box.show{display:block}
+  .verified-tag{display:none;color:#15803d;font-size:.8rem;font-weight:700;margin-top:.3rem}
+  .verified-tag.show{display:block}
+  .photo-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed #4A90D9;background:#f0f7ff;color:#1A3F7A;padding:1.1rem .75rem;border-radius:10px;cursor:pointer;text-align:center;font-size:.9rem;font-weight:600}
+  .photo-zone:active{background:#e0efff}
+  .photo-zone .emoji{font-size:1.8rem;display:block;margin-bottom:.25rem}
+  .photo-zone input{display:none}
+  .doc-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+  .doc-slot .prev{position:relative;display:none;margin-top:.4rem}
+  .doc-slot .prev img{display:block;width:100%;max-height:150px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#000}
+  .doc-slot .prev button{position:absolute;top:.3rem;right:.3rem;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:28px;height:28px;font-size:.85rem;cursor:pointer}
+  .doc-cap{font-size:.78rem;font-weight:600;color:#475569;margin-bottom:.3rem;display:block}
+  .req{color:#dc2626}
+  .opt{color:#94a3b8;font-weight:400}
+  .btn-submit{display:block;width:100%;padding:1rem;background:#0F2B5B;color:#fff;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;letter-spacing:.03em;margin-top:.4rem;box-shadow:0 4px 12px rgba(15,43,91,.3)}
+  .btn-submit:disabled{background:#94a3b8;box-shadow:none}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:.65rem .8rem;border-radius:8px;font-size:.88rem;margin-bottom:.85rem}
+  .msg{font-size:.8rem;margin-top:.3rem;min-height:1em}
+  .msg.ok{color:#15803d}
+  .msg.bad{color:#dc2626}
+  .privacy{font-size:.74rem;color:#94a3b8;text-align:center;margin-top:.5rem;line-height:1.5}
+  .ok-state{text-align:center;padding:2.5rem 1rem}
+  .ok-state .check{display:inline-flex;align-items:center;justify-content:center;width:76px;height:76px;background:#dcfce7;color:#15803d;border-radius:50%;font-size:2.4rem;margin-bottom:.8rem}
+  .ok-state h2{margin:.2rem 0;color:#15803d}
+  .ok-state .meta{color:#475569;margin:.4rem 0 1.5rem;font-size:.92rem}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="top-row">
+    <div style="flex:1">
+      <h1 id="t-title">📋 Solicitud de empleo</h1>
+      <div class="partner" id="partnerName">…</div>
+    </div>
+    <div class="lang" role="tablist" aria-label="Language">
+      <button type="button" data-lang="es" onclick="setLang('es')">ES</button>
+      <button type="button" data-lang="en" onclick="setLang('en')">EN</button>
+      <button type="button" data-lang="zh" onclick="setLang('zh')">中</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="wrap">
+  <div id="errBox" class="err" style="display:none"></div>
+
+  <div id="formMain" style="display:none">
+    <!-- Personal info -->
+    <div class="card">
+      <h2 id="t-secInfo">① Información personal</h2>
+      <label id="t-lName">Nombre completo <span class="req">*</span></label>
+      <input type="text" id="fName" autocomplete="name">
+      <label id="t-lPosition">Puesto solicitado <span class="req">*</span></label>
+      <input type="text" id="fPosition" autocomplete="organization-title">
+    </div>
+
+    <!-- Phone verify -->
+    <div class="card">
+      <h2 id="t-secPhone">② Teléfono</h2>
+      <label id="t-lPhone">Teléfono móvil <span class="req">*</span></label>
+      <div class="verify-row">
+        <input type="tel" id="fPhone" autocomplete="tel" inputmode="tel" placeholder="(555) 555-5555">
+        <button type="button" class="btn-code" id="phoneSendBtn" onclick="sendCode('phone')">Enviar código</button>
+      </div>
+      <div class="otp-box" id="phoneOtpBox">
+        <div class="verify-row" style="margin-top:.5rem">
+          <input type="tel" id="fPhoneCode" inputmode="numeric" autocomplete="one-time-code" placeholder="••••••" maxlength="8">
+          <button type="button" class="btn-code" id="phoneCheckBtn" onclick="checkCode('phone')">Verificar</button>
+        </div>
+      </div>
+      <div class="msg" id="phoneMsg"></div>
+      <div class="verified-tag" id="phoneVerified">✓ <span id="t-verified1">Verificado</span></div>
+    </div>
+
+    <!-- Email verify -->
+    <div class="card">
+      <h2 id="t-secEmail">③ Correo electrónico</h2>
+      <label id="t-lEmail">Correo electrónico <span class="req">*</span></label>
+      <div class="verify-row">
+        <input type="email" id="fEmail" autocomplete="email" inputmode="email" placeholder="name@email.com">
+        <button type="button" class="btn-code" id="emailSendBtn" onclick="sendCode('email')">Enviar código</button>
+      </div>
+      <div class="otp-box" id="emailOtpBox">
+        <div class="verify-row" style="margin-top:.5rem">
+          <input type="tel" id="fEmailCode" inputmode="numeric" autocomplete="one-time-code" placeholder="••••••" maxlength="8">
+          <button type="button" class="btn-code" id="emailCheckBtn" onclick="checkCode('email')">Verificar</button>
+        </div>
+      </div>
+      <div class="msg" id="emailMsg"></div>
+      <div class="verified-tag" id="emailVerified">✓ <span id="t-verified2">Verificado</span></div>
+    </div>
+
+    <!-- Documents -->
+    <div class="card">
+      <h2 id="t-secDocs">④ Documentos</h2>
+      <div class="doc-grid">
+        <div class="doc-slot">
+          <span class="doc-cap" id="t-ssnFront">SSN — Frente <span class="req">*</span></span>
+          <label class="photo-zone" for="ssn_front_in"><span class="emoji">📷</span><span id="t-tap1">Tomar foto</span></label>
+          <input type="file" id="ssn_front_in" accept="image/*" capture="environment" data-doc="ssn_front">
+          <div class="prev" id="ssn_front_prev"><img alt=""><button type="button" data-clear="ssn_front">×</button></div>
+        </div>
+        <div class="doc-slot">
+          <span class="doc-cap" id="t-ssnBack">SSN — Reverso <span class="opt">(opcional)</span></span>
+          <label class="photo-zone" for="ssn_back_in"><span class="emoji">📷</span><span id="t-tap2">Tomar foto</span></label>
+          <input type="file" id="ssn_back_in" accept="image/*" capture="environment" data-doc="ssn_back">
+          <div class="prev" id="ssn_back_prev"><img alt=""><button type="button" data-clear="ssn_back">×</button></div>
+        </div>
+        <div class="doc-slot">
+          <span class="doc-cap" id="t-eadFront">EAD — Frente <span class="req">*</span></span>
+          <label class="photo-zone" for="ead_front_in"><span class="emoji">📷</span><span id="t-tap3">Tomar foto</span></label>
+          <input type="file" id="ead_front_in" accept="image/*" capture="environment" data-doc="ead_front">
+          <div class="prev" id="ead_front_prev"><img alt=""><button type="button" data-clear="ead_front">×</button></div>
+        </div>
+        <div class="doc-slot">
+          <span class="doc-cap" id="t-eadBack">EAD — Reverso <span class="req">*</span></span>
+          <label class="photo-zone" for="ead_back_in"><span class="emoji">📷</span><span id="t-tap4">Tomar foto</span></label>
+          <input type="file" id="ead_back_in" accept="image/*" capture="environment" data-doc="ead_back">
+          <div class="prev" id="ead_back_prev"><img alt=""><button type="button" data-clear="ead_back">×</button></div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-submit" id="submitBtn" onclick="submitForm()">✓ <span id="t-submitBtn">Enviar solicitud</span></button>
+    <div class="privacy" id="t-privacy">Tus documentos se transmiten de forma segura y solo los usa el equipo de RR. HH. para verificar tu elegibilidad de empleo.</div>
+  </div>
+
+  <div id="okState" class="ok-state" style="display:none">
+    <div class="check">✓</div>
+    <h2 id="t-okTitle">¡Enviado!</h2>
+    <div class="meta" id="t-okMsg">Gracias. Hemos recibido tu solicitud.</div>
+  </div>
+</div>
+
+<script>
+// ── i18n ──
+const I18N = {
+  es: {
+    title: '📋 Solicitud de empleo', secInfo: '① Información personal', secPhone: '② Teléfono',
+    secEmail: '③ Correo electrónico', secDocs: '④ Documentos',
+    lName: 'Nombre completo', lPosition: 'Puesto solicitado', lPhone: 'Teléfono móvil', lEmail: 'Correo electrónico',
+    sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
+    ssnFront: 'SSN — Frente', ssnBack: 'SSN — Reverso', eadFront: 'EAD — Frente', eadBack: 'EAD — Reverso',
+    optional: '(opcional)', tap: 'Tomar foto', submitBtn: 'Enviar solicitud', submitting: 'Enviando…',
+    okTitle: '¡Enviado!', okMsg: 'Gracias. Hemos recibido tu solicitud.',
+    privacy: 'Tus documentos se transmiten de forma segura y solo los usa el equipo de RR. HH. para verificar tu elegibilidad de empleo.',
+    sendingTo: 'Para: ', codeSent: 'Código enviado. Revisa tus mensajes.', codeOk: '✓ Verificado correctamente',
+    errNoToken: 'Escanea el código QR oficial para acceder a esta página.', invalid: 'Enlace inválido o expirado',
+    errFields: 'Completa nombre, teléfono, correo y puesto.', errPhone: 'Verifica tu teléfono primero.',
+    errEmail: 'Verifica tu correo primero.', errDocs: 'Sube SSN (frente) y EAD (frente y reverso).',
+    errSubmit: 'Error al enviar: ', loading: 'Cargando…',
+  },
+  en: {
+    title: '📋 Job Application', secInfo: '① Personal information', secPhone: '② Phone',
+    secEmail: '③ Email', secDocs: '④ Documents',
+    lName: 'Full name', lPosition: 'Position applying for', lPhone: 'Mobile phone', lEmail: 'Email address',
+    sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
+    ssnFront: 'SSN — Front', ssnBack: 'SSN — Back', eadFront: 'EAD — Front', eadBack: 'EAD — Back',
+    optional: '(optional)', tap: 'Take photo', submitBtn: 'Submit application', submitting: 'Submitting…',
+    okTitle: 'Submitted!', okMsg: 'Thank you. We have received your application.',
+    privacy: 'Your documents are transmitted securely and used only by the HR team to verify your employment eligibility.',
+    sendingTo: 'For: ', codeSent: 'Code sent. Check your messages.', codeOk: '✓ Verified successfully',
+    errNoToken: 'Please scan the official QR code to access this page.', invalid: 'Link invalid or expired',
+    errFields: 'Please fill in name, phone, email and position.', errPhone: 'Please verify your phone first.',
+    errEmail: 'Please verify your email first.', errDocs: 'Please upload SSN (front) and EAD (front & back).',
+    errSubmit: 'Submit failed: ', loading: 'Loading…',
+  },
+  zh: {
+    title: '📋 入职申请', secInfo: '① 个人信息', secPhone: '② 手机号',
+    secEmail: '③ 邮箱', secDocs: '④ 证件',
+    lName: '姓名', lPosition: '申请职位', lPhone: '手机号', lEmail: '邮箱',
+    sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
+    ssnFront: 'SSN 正面', ssnBack: 'SSN 反面', eadFront: 'EAD 正面', eadBack: 'EAD 反面',
+    optional: '（选填）', tap: '拍照', submitBtn: '提交申请', submitting: '提交中…',
+    okTitle: '提交成功', okMsg: '谢谢！我们已收到您的申请。',
+    privacy: '您的证件通过安全通道传输，仅供人力资源团队核验入职资格使用。',
+    sendingTo: '应聘公司：', codeSent: '验证码已发送，请查收。', codeOk: '✓ 验证成功',
+    errNoToken: '请通过专属二维码访问此页面。', invalid: '链接无效或已失效',
+    errFields: '请填写姓名、手机号、邮箱和职位。', errPhone: '请先完成手机验证。',
+    errEmail: '请先完成邮箱验证。', errDocs: '请上传 SSN 正面、EAD 正反面。',
+    errSubmit: '提交失败：', loading: '加载中…',
+  },
+};
+
+function pickInitialLang() {
+  const stored = localStorage.getItem('apply_lang');
+  if (stored && I18N[stored]) return stored;
+  const nav = (navigator.language || navigator.userLanguage || '').toLowerCase();
+  if (nav.startsWith('zh')) return 'zh';
+  if (nav.startsWith('en')) return 'en';
+  return 'es';
+}
+let _lang = pickInitialLang();
+function txt(id, key) { const el = document.getElementById(id); if (el) el.textContent = I18N[_lang][key]; }
+function applyLang() {
+  const L = I18N[_lang];
+  document.documentElement.lang = _lang;
+  document.title = L.title;
+  txt('t-title', 'title'); txt('t-secInfo', 'secInfo'); txt('t-secPhone', 'secPhone');
+  txt('t-secEmail', 'secEmail'); txt('t-secDocs', 'secDocs');
+  txt('t-verified1', 'verified'); txt('t-verified2', 'verified');
+  txt('t-submitBtn', 'submitBtn'); txt('t-okTitle', 'okTitle'); txt('t-okMsg', 'okMsg'); txt('t-privacy', 'privacy');
+  // labels (keep the required asterisk markup)
+  document.getElementById('t-lName').innerHTML = L.lName + ' <span class="req">*</span>';
+  document.getElementById('t-lPosition').innerHTML = L.lPosition + ' <span class="req">*</span>';
+  document.getElementById('t-lPhone').innerHTML = L.lPhone + ' <span class="req">*</span>';
+  document.getElementById('t-lEmail').innerHTML = L.lEmail + ' <span class="req">*</span>';
+  document.getElementById('t-ssnFront').innerHTML = L.ssnFront + ' <span class="req">*</span>';
+  document.getElementById('t-ssnBack').innerHTML = L.ssnBack + ' <span class="opt">' + L.optional + '</span>';
+  document.getElementById('t-eadFront').innerHTML = L.eadFront + ' <span class="req">*</span>';
+  document.getElementById('t-eadBack').innerHTML = L.eadBack + ' <span class="req">*</span>';
+  ['t-tap1', 't-tap2', 't-tap3', 't-tap4'].forEach(id => txt(id, 'tap'));
+  // verify buttons reflect state
+  ['phone', 'email'].forEach(ch => {
+    const sent = _otpSent[ch];
+    const sb = document.getElementById(ch + 'SendBtn');
+    if (sb && !_verified[ch]) sb.textContent = sent ? L.resend : L.sendCode;
+    const cb = document.getElementById(ch + 'CheckBtn');
+    if (cb) cb.textContent = L.verify;
+  });
+  if (_partnerName) document.getElementById('partnerName').textContent = L.sendingTo + _partnerName;
+  document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b.dataset.lang === _lang));
+}
+function setLang(lang) { if (!I18N[lang]) return; _lang = lang; localStorage.setItem('apply_lang', lang); applyLang(); }
+
+// ── token: path /apply/TOKEN or ?t=TOKEN ──
+const params = new URLSearchParams(location.search);
+const _pathMatch = location.pathname.match(/^\/apply\/([a-f0-9A-F]{16,})/);
+const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
+
+let _partnerName = '';
+const _files = { ssn_front: null, ssn_back: null, ead_front: null, ead_back: null };
+const _verified = { phone: false, email: false };
+const _otpSent = { phone: false, email: false };
+const _verifiedTarget = { phone: '', email: '' }; // value that was verified
+
+function showErr(msg) { const b = document.getElementById('errBox'); b.textContent = msg; b.style.display = ''; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+function setMsg(ch, text, ok) { const m = document.getElementById(ch + 'Msg'); m.textContent = text || ''; m.className = 'msg' + (text ? (ok ? ' ok' : ' bad') : ''); }
+
+async function init() {
+  applyLang();
+  if (!TOKEN) { showErr(I18N[_lang].errNoToken); document.getElementById('partnerName').textContent = '—'; return; }
+  try {
+    const r = await fetch('/api/apply/info?t=' + encodeURIComponent(TOKEN));
+    if (!r.ok) { const j = await r.json().catch(() => ({})); showErr(j.error || I18N[_lang].invalid); document.getElementById('partnerName').textContent = '—'; return; }
+    const info = await r.json();
+    _partnerName = info.partner_name || '';
+    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName;
+    document.getElementById('formMain').style.display = '';
+  } catch (e) { showErr('Error: ' + (e.message || e)); }
+}
+init();
+
+// ── OTP ──
+async function sendCode(ch) {
+  const L = I18N[_lang];
+  const target = ch === 'phone' ? document.getElementById('fPhone').value : document.getElementById('fEmail').value;
+  if (!String(target || '').trim()) { setMsg(ch, ch === 'phone' ? L.errPhone : L.errEmail, false); return; }
+  const btn = document.getElementById(ch + 'SendBtn');
+  btn.disabled = true;
+  setMsg(ch, '…', true);
+  try {
+    const body = { t: TOKEN, channel: ch };
+    if (ch === 'phone') body.phone = target; else body.email = target;
+    const r = await fetch('/api/apply/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setMsg(ch, j.error || 'Error', false); btn.disabled = false; return; }
+    _otpSent[ch] = true;
+    document.getElementById(ch + 'OtpBox').classList.add('show');
+    setMsg(ch, L.codeSent, true);
+    btn.textContent = L.resend;
+    // brief cooldown so people don't spam
+    let n = 30;
+    const tick = () => { if (n > 0 && !_verified[ch]) { btn.textContent = L.resend + ' (' + n + ')'; n--; setTimeout(tick, 1000); } else if (!_verified[ch]) { btn.textContent = L.resend; btn.disabled = false; } };
+    tick();
+  } catch (e) { setMsg(ch, 'Error: ' + (e.message || e), false); btn.disabled = false; }
+}
+
+async function checkCode(ch) {
+  const L = I18N[_lang];
+  const code = document.getElementById('f' + (ch === 'phone' ? 'Phone' : 'Email') + 'Code').value.trim();
+  const target = ch === 'phone' ? document.getElementById('fPhone').value : document.getElementById('fEmail').value;
+  if (!code) { setMsg(ch, L.verify, false); return; }
+  const btn = document.getElementById(ch + 'CheckBtn');
+  btn.disabled = true;
+  try {
+    const body = { t: TOKEN, channel: ch, code };
+    if (ch === 'phone') body.phone = target; else body.email = target;
+    const r = await fetch('/api/apply/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.verified) { setMsg(ch, j.error || 'Error', false); btn.disabled = false; return; }
+    _verified[ch] = true;
+    _verifiedTarget[ch] = target;
+    setMsg(ch, '', true);
+    document.getElementById(ch + 'Verified').classList.add('show');
+    document.getElementById(ch + 'OtpBox').classList.remove('show');
+    document.getElementById(ch === 'phone' ? 'fPhone' : 'fEmail').disabled = true;
+    document.getElementById(ch + 'SendBtn').style.display = 'none';
+  } catch (e) { setMsg(ch, 'Error: ' + (e.message || e), false); btn.disabled = false; }
+}
+
+// If a verified field is edited (it's disabled, but just in case), re-require verification.
+['fPhone', 'fEmail'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    const ch = id === 'fPhone' ? 'phone' : 'email';
+    if (_verified[ch] && document.getElementById(id).value !== _verifiedTarget[ch]) {
+      _verified[ch] = false;
+      document.getElementById(ch + 'Verified').classList.remove('show');
+      document.getElementById(ch + 'SendBtn').style.display = '';
+    }
+  });
+});
+
+// ── document photos ──
+document.querySelectorAll('input[type=file][data-doc]').forEach(inp => {
+  inp.addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    const doc = inp.dataset.doc;
+    if (!f) return;
+    _files[doc] = f;
+    const prev = document.getElementById(doc + '_prev');
+    prev.querySelector('img').src = URL.createObjectURL(f);
+    prev.style.display = '';
+    inp.previousElementSibling.style.display = 'none'; // hide the photo-zone label
+  });
+});
+document.querySelectorAll('button[data-clear]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const doc = btn.dataset.clear;
+    _files[doc] = null;
+    document.getElementById(doc + '_in').value = '';
+    const prev = document.getElementById(doc + '_prev');
+    prev.style.display = 'none';
+    prev.querySelector('img').src = '';
+    document.getElementById(doc + '_in').previousElementSibling.style.display = '';
+  });
+});
+
+async function submitForm() {
+  const L = I18N[_lang];
+  document.getElementById('errBox').style.display = 'none';
+  const name = document.getElementById('fName').value.trim();
+  const position = document.getElementById('fPosition').value.trim();
+  const phone = document.getElementById('fPhone').value.trim();
+  const email = document.getElementById('fEmail').value.trim();
+  if (!name || !position || !phone || !email) { showErr(L.errFields); return; }
+  if (!_verified.phone) { showErr(L.errPhone); return; }
+  if (!_verified.email) { showErr(L.errEmail); return; }
+  if (!_files.ssn_front || !_files.ead_front || !_files.ead_back) { showErr(L.errDocs); return; }
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  document.getElementById('t-submitBtn').textContent = L.submitting;
+  try {
+    const fd = new FormData();
+    fd.append('t', TOKEN);
+    fd.append('name', name);
+    fd.append('position', position);
+    fd.append('phone', phone);
+    fd.append('email', email);
+    Object.entries(_files).forEach(([k, f]) => { if (f) fd.append(k, f); });
+    const r = await fetch('/api/apply/submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || 'submit failed');
+    document.getElementById('formMain').style.display = 'none';
+    document.getElementById('okState').style.display = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (e) {
+    showErr(L.errSubmit + (e.message || e));
+    btn.disabled = false;
+    document.getElementById('t-submitBtn').textContent = L.submitBtn;
+  }
+}
+</script>
+</body>
+</html>
