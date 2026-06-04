@@ -190,8 +190,10 @@ const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
 const _sgKey = process.env.SENDGRID_API_KEY ||
   (process.env.SMTP_USER === 'apikey' ? process.env.SMTP_PASS : null);
 
-// Fallback: generic SMTP via nodemailer (non-SendGrid providers only)
-const emailTransporter = (!_sgKey && process.env.SMTP_HOST)
+// Fallback / alternative: generic SMTP via nodemailer. Built whenever SMTP_HOST
+// is set — even alongside SendGrid — so a bad/expired SendGrid key can fail over
+// to SMTP instead of blocking all email.
+const emailTransporter = process.env.SMTP_HOST
   ? nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
@@ -206,12 +208,26 @@ const emailTransporter = (!_sgKey && process.env.SMTP_HOST)
 if (!_sgKey && !emailTransporter) {
   console.warn('[EMAIL-WARN] No email transport configured. Set SENDGRID_API_KEY (recommended) or SMTP_HOST.');
 }
-if (_sgKey) {
-  console.log(`[EMAIL] SendGrid HTTP API ready (from: ${EMAIL_FROM})`);
-} else if (emailTransporter) {
+if (_sgKey) console.log(`[EMAIL] SendGrid HTTP API ready (from: ${EMAIL_FROM})`);
+if (emailTransporter) {
   emailTransporter.verify()
-    .then(() => console.log(`[EMAIL] SMTP connection verified OK (from: ${EMAIL_FROM})`))
+    .then(() => console.log(`[EMAIL] SMTP ${_sgKey ? 'fallback ' : ''}connection verified OK (from: ${EMAIL_FROM})`))
     .catch(e => console.error(`[EMAIL-ERR] SMTP connection failed at startup: ${e.message}`));
+}
+
+// Send via the SMTP transporter. Returns { ok, error }.
+async function _smtpSend(to, subject, text, html, attachments) {
+  if (!emailTransporter) return { ok: false, error: 'SMTP 未配置' };
+  try {
+    const msg = { from: EMAIL_FROM, to, subject, text };
+    if (html) msg.html = html;
+    if (attachments) msg.attachments = attachments;
+    await emailTransporter.sendMail(msg);
+    return { ok: true };
+  } catch (e) {
+    console.error(`[EMAIL-ERR] SMTP send failed to ${to}: ${e.message}`);
+    return { ok: false, error: 'SMTP: ' + e.message };
+  }
 }
 
 function verificationCodeHtml(code, isAdminTest = false) {
@@ -242,43 +258,15 @@ function verificationCodeHtml(code, isAdminTest = false) {
 }
 
 async function sendEmail(to, subject, text, html) {
-  if (_sgKey) {
-    try {
-      const content = [{ type: 'text/plain', value: text }];
-      if (html) content.push({ type: 'text/html', value: html });
-      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          personalizations: [{ to: [{ email: to }] }],
-          from: { email: EMAIL_FROM },
-          subject,
-          content,
-        }),
-      });
-      if (r.status === 202) { console.log(`[EMAIL] Sent to ${to}`); return true; }
-      const body = await r.text();
-      console.error(`[EMAIL-ERR] SendGrid API ${r.status}: ${body}`);
-      return false;
-    } catch (e) {
-      console.error(`[EMAIL-ERR] SendGrid API fetch failed: ${e.message}`);
-      return false;
-    }
-  }
-  if (!emailTransporter) { console.log(`[EMAIL-SKIP] No transport. To: ${to}`); return false; }
-  try {
-    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text, html });
-    console.log(`[EMAIL] Sent to ${to}`);
-    return true;
-  } catch (e) {
-    console.error(`[EMAIL-ERR] Failed to send to ${to}: ${e.message} (code: ${e.code}, response: ${e.response})`);
-    return false;
-  }
+  const r = await sendEmailWithDetail(to, subject, text, html);
+  return r.ok;
 }
 
 // Like sendEmail but returns the provider's exact status/error for diagnostics.
 // { ok, status, error } — e.g. SendGrid 401 (bad key) vs 403 (unverified sender).
+// On SendGrid failure, automatically falls back to SMTP when one is configured.
 async function sendEmailWithDetail(to, subject, text, html) {
+  let sgHint = '';
   if (_sgKey) {
     try {
       const content = [{ type: 'text/plain', value: text }];
@@ -288,26 +276,24 @@ async function sendEmailWithDetail(to, subject, text, html) {
         headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ personalizations: [{ to: [{ email: to }] }], from: { email: EMAIL_FROM }, subject, content }),
       });
-      if (r.status === 202) return { ok: true, status: 202 };
+      if (r.status === 202) { console.log(`[EMAIL] Sent to ${to} via SendGrid`); return { ok: true, status: 202 }; }
       const body = (await r.text()).slice(0, 300);
       console.error(`[EMAIL-ERR] SendGrid API ${r.status}: ${body}`);
-      const hint = r.status === 401 ? 'SENDGRID_API_KEY 无效或无 Mail Send 权限'
+      sgHint = r.status === 401 ? 'SENDGRID_API_KEY 无效或无 Mail Send 权限'
         : r.status === 403 ? `发件人未验证（from=${EMAIL_FROM}）`
         : `SendGrid ${r.status}`;
-      return { ok: false, status: r.status, error: hint };
+      // fall through to SMTP fallback below if one is configured
+      if (!emailTransporter) return { ok: false, status: r.status, error: sgHint };
     } catch (e) {
       console.error(`[EMAIL-ERR] SendGrid fetch failed: ${e.message}`);
-      return { ok: false, error: 'SendGrid 请求失败: ' + e.message };
+      sgHint = 'SendGrid 请求失败: ' + e.message;
+      if (!emailTransporter) return { ok: false, error: sgHint };
     }
   }
   if (!emailTransporter) return { ok: false, error: 'SENDGRID_API_KEY / SMTP_HOST 未配置' };
-  try {
-    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text, html });
-    return { ok: true };
-  } catch (e) {
-    console.error(`[EMAIL-ERR] SMTP send failed to ${to}: ${e.message}`);
-    return { ok: false, error: 'SMTP: ' + e.message };
-  }
+  const s = await _smtpSend(to, subject, text, html);
+  if (s.ok) { console.log(`[EMAIL] Sent to ${to} via SMTP${sgHint ? ' (SendGrid failed: ' + sgHint + ')' : ''}`); return { ok: true }; }
+  return { ok: false, error: sgHint ? `${sgHint}；SMTP 也失败: ${s.error}` : s.error };
 }
 
 // ─── Email with PDF attachment ───
