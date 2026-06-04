@@ -1603,6 +1603,7 @@ tr:hover td{background:var(--sky-light)}
     <h1>📦 扫码记录</h1>
     <div class="top-actions">
       <button class="btn btn-green" onclick="openReviewLinkModal()">🔗 生成审核链接（顾客 / 工头）</button>
+      <button class="btn btn-outline" onclick="openPendingQrModal()">📱 待确认记录二维码</button>
       <button class="btn btn-outline" onclick="loadCsubScans()">刷新</button>
     </div>
   </div>
@@ -1696,6 +1697,25 @@ tr:hover td{background:var(--sky-light)}
       <div class="field" style="margin:0;display:flex;align-items:flex-end"><button class="btn btn-green" style="width:100%" onclick="genReviewLinks()">生成</button></div>
     </div>
     <div id="rlResult"></div>
+  </div>
+</div>
+
+<!-- ════════ 扫码记录: 待确认记录二维码 Modal ════════ -->
+<div class="modal-bg" id="pendingQrModal" style="display:none" onclick="if(event.target===this)closePendingQrModal()">
+  <div class="modal" style="max-width:420px;text-align:center">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <h2 style="margin:0">📱 待确认记录二维码</h2>
+      <button class="btn btn-sm btn-outline" onclick="closePendingQrModal()">× 关闭</button>
+    </div>
+    <p style="font-size:.83rem;color:var(--gray-500);margin:.2rem 0 .8rem">扫码即可在手机上查看<b>所有尚未最终确定</b>（未导入发票、未丢弃）的扫码记录。只读、无需登录，所有公司汇总在一起。</p>
+    <div id="pendingQrLoading" style="color:var(--gray-500);font-size:.85rem;margin-bottom:.4rem">生成中…</div>
+    <div id="pendingQrBox" style="display:inline-block;padding:12px;background:#fff;border:2px solid var(--gray-200);border-radius:12px;margin-bottom:.6rem;min-height:120px"></div>
+    <div id="pendingQrUrl" style="font-family:monospace;font-size:.66rem;color:var(--gray-500);word-break:break-all;margin-bottom:.6rem"></div>
+    <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap">
+      <button class="btn btn-sm btn-outline" onclick="copyPendingUrl()">📋 复制链接</button>
+      <button class="btn btn-sm btn-outline" onclick="downloadPendingQr()">⬇ 下载二维码</button>
+      <button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="regeneratePendingQr()" title="作废旧二维码并生成新的">↻ 重新生成</button>
+    </div>
   </div>
 </div>
 
@@ -33112,6 +33132,52 @@ async function genReviewLinks() {
       + block('📋 顾客链接（填客户价 + 反馈）', '#0E7BB8', custUrl)
       + block('🦺 工头链接（核对柜/人、填工人价 + 反馈）', '#9a3412', fmUrl);
   } catch (e) { showToast('生成失败：' + (e.message || e), 'error'); }
+}
+
+// ── 待确认记录二维码（所有公司、未最终确定）──
+let _pendingQrUrl = '';
+async function openPendingQrModal() {
+  _pendingQrUrl = '';
+  document.getElementById('pendingQrBox').innerHTML = '';
+  document.getElementById('pendingQrUrl').textContent = '';
+  const ld = document.getElementById('pendingQrLoading');
+  ld.style.display = ''; ld.textContent = '生成中…';
+  document.getElementById('pendingQrModal').style.display = 'flex';
+  try {
+    const r = await api('/admin/pending-overview-link');
+    if (!r || !r.url) throw new Error(r && r.error || '生成失败');
+    _pendingQrUrl = r.url;
+    await _loadQRLib();
+    ld.style.display = 'none';
+    const box = document.getElementById('pendingQrBox');
+    box.innerHTML = '';
+    new QRCode(box, { text: r.url, width: 220, height: 220, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    document.getElementById('pendingQrUrl').textContent = r.url;
+  } catch (e) {
+    ld.textContent = '加载失败：' + (e.message || e);
+  }
+}
+function closePendingQrModal() { document.getElementById('pendingQrModal').style.display = 'none'; }
+function copyPendingUrl() {
+  if (!_pendingQrUrl) return;
+  navigator.clipboard.writeText(_pendingQrUrl).then(() => showToast('链接已复制 ✓')).catch(() => showToast('复制失败', 'error'));
+}
+function downloadPendingQr() {
+  const box = document.getElementById('pendingQrBox');
+  const canvas = box && box.querySelector('canvas');
+  const img = box && box.querySelector('img');
+  const dataUrl = canvas ? canvas.toDataURL('image/png') : (img && img.src);
+  if (!dataUrl) return;
+  const a = document.createElement('a');
+  a.href = dataUrl; a.download = 'pending-records-qr.png';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+async function regeneratePendingQr() {
+  if (!confirm('重新生成后，旧二维码将立即失效。确定继续？')) return;
+  try {
+    await api('/admin/pending-overview-link/regenerate', { method: 'POST' });
+    openPendingQrModal();
+  } catch (e) { showToast('失败：' + (e.message || e), 'error'); }
 }
 function copyCsubUrl(type) {
   const url = type === 'end' ? _csubQrState.endUrl : _csubQrState.startUrl;
