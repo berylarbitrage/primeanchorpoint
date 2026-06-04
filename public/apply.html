@@ -39,7 +39,9 @@
   .photo-zone:active{background:#e0efff}
   .photo-zone .emoji{font-size:1.8rem;display:block;margin-bottom:.25rem}
   .photo-zone input{display:none}
-  .doc-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+  .doc-slot input[type=file]{display:none}
+  .doc-grid{display:grid;grid-template-columns:1fr;gap:.7rem}
+  @media(min-width:560px){.doc-grid{grid-template-columns:1fr 1fr}}
   .doc-slot .prev{position:relative;display:none;margin-top:.4rem}
   .doc-slot .prev img{display:block;width:100%;max-height:150px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#000}
   .doc-slot .prev button{position:absolute;top:.3rem;right:.3rem;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:28px;height:28px;font-size:.85rem;cursor:pointer}
