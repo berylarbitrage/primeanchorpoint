@@ -14083,9 +14083,15 @@ app.post('/api/apply/send-code', async (req, res) => {
     const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     let sent = false, code = null;
     if (channel === 'phone') {
+      // Prefer Twilio Verify; if it isn't configured or the send fails, fall
+      // back to a locally-generated code over regular SMS (the app's SMS sender).
+      let usedVerify = false;
       if (twilioClient && TWILIO_VERIFY_SID) {
-        sent = await sendVerifyCode(target);
+        usedVerify = await sendVerifyCode(target);
+      }
+      if (usedVerify) {
         db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, '__twilio_verify__', expires);
+        sent = true;
       } else {
         code = String(Math.floor(100000 + Math.random() * 900000));
         db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, code, expires);
@@ -14097,6 +14103,15 @@ app.post('/api/apply/send-code', async (req, res) => {
       sent = await sendEmail(target, 'Prime Anchor Workforce 验证码 / Verification Code',
         `您的验证码 / Your verification code: ${code}\n\n15分钟内有效 / This code expires in 15 minutes.`,
         verificationCodeHtml(code));
+    }
+    if (!sent) {
+      // Sending failed (provider not configured / delivery error). Tell the
+      // applicant clearly instead of pretending the code went out.
+      console.warn(`[apply] code send failed channel=${channel} target=${target}`);
+      return res.status(502).json({ success: false, sent: false,
+        error: channel === 'phone'
+          ? '短信发送失败，请稍后重试或联系招聘方 / Could not send SMS, please try again later or contact the recruiter'
+          : '邮件发送失败，请检查邮箱或联系招聘方 / Could not send email, please check the address or contact the recruiter' });
     }
     res.json({ success: true, sent });
   } catch (e) { res.status(500).json({ error: e.message }); }
