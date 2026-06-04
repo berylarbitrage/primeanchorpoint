@@ -355,7 +355,7 @@ document.querySelectorAll('input[type=file][data-doc]').forEach(inp => {
     _files[doc] = f;
     const prev = document.getElementById(doc + '_prev');
     prev.querySelector('img').src = URL.createObjectURL(f);
-    prev.style.display = '';
+    prev.style.display = 'block'; // override CSS `.prev{display:none}` so the preview actually shows
     inp.previousElementSibling.style.display = 'none'; // hide the photo-zone label
   });
 });
