@@ -12243,8 +12243,8 @@ app.post('/api/admin/test-email', requireAdmin, requireRole('admin'), async (req
     transport: _sgKey ? 'sendgrid-api' : emailTransporter ? 'smtp' : 'none',
   };
   if (!_sgKey && !emailTransporter) return res.json({ configured, sent: false, error: 'No email transport configured' });
-  const sent = await sendEmail(to, 'Prime Anchor Workforce Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
-  res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
+  const er = await sendEmailWithDetail(to, 'Prime Anchor Workforce Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
+  res.json({ configured, sent: er.ok, status: er.status || null, error: er.ok ? null : er.error });
 });
 
 // Admin: test email verification code (sends a real 6-digit code in the same format as registration)
