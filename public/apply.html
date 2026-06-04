@@ -132,25 +132,25 @@
         <div class="doc-slot">
           <span class="doc-cap" id="t-ssnFront">SSN — Frente <span class="req">*</span></span>
           <label class="photo-zone" for="ssn_front_in"><span class="emoji">📷</span><span id="t-tap1">Tomar foto</span></label>
-          <input type="file" id="ssn_front_in" accept="image/*" capture="environment" data-doc="ssn_front">
+          <input type="file" id="ssn_front_in" accept="image/*" data-doc="ssn_front">
           <div class="prev" id="ssn_front_prev"><img alt=""><button type="button" data-clear="ssn_front">×</button></div>
         </div>
         <div class="doc-slot">
           <span class="doc-cap" id="t-ssnBack">SSN — Reverso <span class="opt">(opcional)</span></span>
           <label class="photo-zone" for="ssn_back_in"><span class="emoji">📷</span><span id="t-tap2">Tomar foto</span></label>
-          <input type="file" id="ssn_back_in" accept="image/*" capture="environment" data-doc="ssn_back">
+          <input type="file" id="ssn_back_in" accept="image/*" data-doc="ssn_back">
           <div class="prev" id="ssn_back_prev"><img alt=""><button type="button" data-clear="ssn_back">×</button></div>
         </div>
         <div class="doc-slot">
           <span class="doc-cap" id="t-eadFront">EAD — Frente <span class="req">*</span></span>
           <label class="photo-zone" for="ead_front_in"><span class="emoji">📷</span><span id="t-tap3">Tomar foto</span></label>
-          <input type="file" id="ead_front_in" accept="image/*" capture="environment" data-doc="ead_front">
+          <input type="file" id="ead_front_in" accept="image/*" data-doc="ead_front">
           <div class="prev" id="ead_front_prev"><img alt=""><button type="button" data-clear="ead_front">×</button></div>
         </div>
         <div class="doc-slot">
           <span class="doc-cap" id="t-eadBack">EAD — Reverso <span class="req">*</span></span>
           <label class="photo-zone" for="ead_back_in"><span class="emoji">📷</span><span id="t-tap4">Tomar foto</span></label>
-          <input type="file" id="ead_back_in" accept="image/*" capture="environment" data-doc="ead_back">
+          <input type="file" id="ead_back_in" accept="image/*" data-doc="ead_back">
           <div class="prev" id="ead_back_prev"><img alt=""><button type="button" data-clear="ead_back">×</button></div>
         </div>
       </div>
@@ -176,7 +176,7 @@ const I18N = {
     lName: 'Nombre completo', lPosition: 'Puesto solicitado', lPhone: 'Teléfono móvil', lEmail: 'Correo electrónico',
     sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
     ssnFront: 'SSN — Frente', ssnBack: 'SSN — Reverso', eadFront: 'EAD — Frente', eadBack: 'EAD — Reverso',
-    optional: '(opcional)', tap: 'Tomar foto', submitBtn: 'Enviar solicitud', submitting: 'Enviando…',
+    optional: '(opcional)', tap: 'Tomar foto o elegir de la galería', submitBtn: 'Enviar solicitud', submitting: 'Enviando…',
     okTitle: '¡Enviado!', okMsg: 'Gracias. Hemos recibido tu solicitud.',
     privacy: 'Tus documentos se transmiten de forma segura y solo los usa el equipo de RR. HH. para verificar tu elegibilidad de empleo.',
     sendingTo: 'Para: ', codeSent: 'Código enviado. Revisa tus mensajes.', codeOk: '✓ Verificado correctamente',
@@ -191,7 +191,7 @@ const I18N = {
     lName: 'Full name', lPosition: 'Position applying for', lPhone: 'Mobile phone', lEmail: 'Email address',
     sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
     ssnFront: 'SSN — Front', ssnBack: 'SSN — Back', eadFront: 'EAD — Front', eadBack: 'EAD — Back',
-    optional: '(optional)', tap: 'Take photo', submitBtn: 'Submit application', submitting: 'Submitting…',
+    optional: '(optional)', tap: 'Take photo or choose from album', submitBtn: 'Submit application', submitting: 'Submitting…',
     okTitle: 'Submitted!', okMsg: 'Thank you. We have received your application.',
     privacy: 'Your documents are transmitted securely and used only by the HR team to verify your employment eligibility.',
     sendingTo: 'For: ', codeSent: 'Code sent. Check your messages.', codeOk: '✓ Verified successfully',
@@ -206,7 +206,7 @@ const I18N = {
     lName: '姓名', lPosition: '申请职位', lPhone: '手机号', lEmail: '邮箱',
     sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
     ssnFront: 'SSN 正面', ssnBack: 'SSN 反面', eadFront: 'EAD 正面', eadBack: 'EAD 反面',
-    optional: '（选填）', tap: '拍照', submitBtn: '提交申请', submitting: '提交中…',
+    optional: '（选填）', tap: '拍照或从相册选择', submitBtn: '提交申请', submitting: '提交中…',
     okTitle: '提交成功', okMsg: '谢谢！我们已收到您的申请。',
     privacy: '您的证件通过安全通道传输，仅供人力资源团队核验入职资格使用。',
     sendingTo: '应聘公司：', codeSent: '验证码已发送，请查收。', codeOk: '✓ 验证成功',
