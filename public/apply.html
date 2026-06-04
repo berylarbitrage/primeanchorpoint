@@ -39,6 +39,9 @@
   .photo-zone:active{background:#e0efff}
   .photo-zone .emoji{font-size:1.8rem;display:block;margin-bottom:.25rem}
   .photo-zone input{display:none}
+  .zone-row{display:flex;gap:.4rem}
+  .zone-row .photo-zone{flex:1;padding:.8rem .4rem;font-size:.82rem}
+  .zone-row .photo-zone .emoji{font-size:1.4rem;margin-bottom:.15rem}
   .doc-slot input[type=file]{display:none}
   .doc-grid{display:grid;grid-template-columns:1fr;gap:.7rem}
   @media(min-width:560px){.doc-grid{grid-template-columns:1fr 1fr}}
@@ -131,26 +134,42 @@
       <div class="doc-grid">
         <div class="doc-slot">
           <span class="doc-cap" id="t-ssnFront">SSN — Frente <span class="req">*</span></span>
-          <label class="photo-zone" for="ssn_front_in"><span class="emoji">📷</span><span id="t-tap1">Tomar foto</span></label>
-          <input type="file" id="ssn_front_in" accept="image/*" data-doc="ssn_front">
+          <div class="zone-row" id="ssn_front_zone">
+            <label class="photo-zone" for="ssn_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+            <label class="photo-zone" for="ssn_front_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
+          </div>
+          <input type="file" id="ssn_front_cam" accept="image/*" capture="environment" data-doc="ssn_front">
+          <input type="file" id="ssn_front_gal" accept="image/*" data-doc="ssn_front">
           <div class="prev" id="ssn_front_prev"><img alt=""><button type="button" data-clear="ssn_front">×</button></div>
         </div>
         <div class="doc-slot">
           <span class="doc-cap" id="t-ssnBack">SSN — Reverso <span class="opt">(opcional)</span></span>
-          <label class="photo-zone" for="ssn_back_in"><span class="emoji">📷</span><span id="t-tap2">Tomar foto</span></label>
-          <input type="file" id="ssn_back_in" accept="image/*" data-doc="ssn_back">
+          <div class="zone-row" id="ssn_back_zone">
+            <label class="photo-zone" for="ssn_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+            <label class="photo-zone" for="ssn_back_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
+          </div>
+          <input type="file" id="ssn_back_cam" accept="image/*" capture="environment" data-doc="ssn_back">
+          <input type="file" id="ssn_back_gal" accept="image/*" data-doc="ssn_back">
           <div class="prev" id="ssn_back_prev"><img alt=""><button type="button" data-clear="ssn_back">×</button></div>
         </div>
         <div class="doc-slot">
           <span class="doc-cap" id="t-eadFront">EAD — Frente <span class="req">*</span></span>
-          <label class="photo-zone" for="ead_front_in"><span class="emoji">📷</span><span id="t-tap3">Tomar foto</span></label>
-          <input type="file" id="ead_front_in" accept="image/*" data-doc="ead_front">
+          <div class="zone-row" id="ead_front_zone">
+            <label class="photo-zone" for="ead_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+            <label class="photo-zone" for="ead_front_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
+          </div>
+          <input type="file" id="ead_front_cam" accept="image/*" capture="environment" data-doc="ead_front">
+          <input type="file" id="ead_front_gal" accept="image/*" data-doc="ead_front">
           <div class="prev" id="ead_front_prev"><img alt=""><button type="button" data-clear="ead_front">×</button></div>
         </div>
         <div class="doc-slot">
           <span class="doc-cap" id="t-eadBack">EAD — Reverso <span class="req">*</span></span>
-          <label class="photo-zone" for="ead_back_in"><span class="emoji">📷</span><span id="t-tap4">Tomar foto</span></label>
-          <input type="file" id="ead_back_in" accept="image/*" data-doc="ead_back">
+          <div class="zone-row" id="ead_back_zone">
+            <label class="photo-zone" for="ead_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+            <label class="photo-zone" for="ead_back_gal"><span class="emoji">🖼️</span><span class="t-gal">Galería</span></label>
+          </div>
+          <input type="file" id="ead_back_cam" accept="image/*" capture="environment" data-doc="ead_back">
+          <input type="file" id="ead_back_gal" accept="image/*" data-doc="ead_back">
           <div class="prev" id="ead_back_prev"><img alt=""><button type="button" data-clear="ead_back">×</button></div>
         </div>
       </div>
@@ -176,7 +195,7 @@ const I18N = {
     lName: 'Nombre completo', lPosition: 'Puesto solicitado', lPhone: 'Teléfono móvil', lEmail: 'Correo electrónico',
     sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
     ssnFront: 'SSN — Frente', ssnBack: 'SSN — Reverso', eadFront: 'EAD — Frente', eadBack: 'EAD — Reverso',
-    optional: '(opcional)', tap: 'Tomar foto o elegir de la galería', submitBtn: 'Enviar solicitud', submitting: 'Enviando…',
+    optional: '(opcional)', cam: 'Tomar foto', gal: 'Galería', submitBtn: 'Enviar solicitud', submitting: 'Enviando…',
     okTitle: '¡Enviado!', okMsg: 'Gracias. Hemos recibido tu solicitud.',
     privacy: 'Tus documentos se transmiten de forma segura y solo los usa el equipo de RR. HH. para verificar tu elegibilidad de empleo.',
     sendingTo: 'Para: ', codeSent: 'Código enviado. Revisa tus mensajes.', codeOk: '✓ Verificado correctamente',
@@ -191,7 +210,7 @@ const I18N = {
     lName: 'Full name', lPosition: 'Position applying for', lPhone: 'Mobile phone', lEmail: 'Email address',
     sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
     ssnFront: 'SSN — Front', ssnBack: 'SSN — Back', eadFront: 'EAD — Front', eadBack: 'EAD — Back',
-    optional: '(optional)', tap: 'Take photo or choose from album', submitBtn: 'Submit application', submitting: 'Submitting…',
+    optional: '(optional)', cam: 'Take photo', gal: 'Album', submitBtn: 'Submit application', submitting: 'Submitting…',
     okTitle: 'Submitted!', okMsg: 'Thank you. We have received your application.',
     privacy: 'Your documents are transmitted securely and used only by the HR team to verify your employment eligibility.',
     sendingTo: 'For: ', codeSent: 'Code sent. Check your messages.', codeOk: '✓ Verified successfully',
@@ -206,7 +225,7 @@ const I18N = {
     lName: '姓名', lPosition: '申请职位', lPhone: '手机号', lEmail: '邮箱',
     sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
     ssnFront: 'SSN 正面', ssnBack: 'SSN 反面', eadFront: 'EAD 正面', eadBack: 'EAD 反面',
-    optional: '（选填）', tap: '拍照或从相册选择', submitBtn: '提交申请', submitting: '提交中…',
+    optional: '（选填）', cam: '拍照', gal: '相册', submitBtn: '提交申请', submitting: '提交中…',
     okTitle: '提交成功', okMsg: '谢谢！我们已收到您的申请。',
     privacy: '您的证件通过安全通道传输，仅供人力资源团队核验入职资格使用。',
     sendingTo: '应聘公司：', codeSent: '验证码已发送，请查收。', codeOk: '✓ 验证成功',
@@ -244,7 +263,8 @@ function applyLang() {
   document.getElementById('t-ssnBack').innerHTML = L.ssnBack + ' <span class="opt">' + L.optional + '</span>';
   document.getElementById('t-eadFront').innerHTML = L.eadFront + ' <span class="req">*</span>';
   document.getElementById('t-eadBack').innerHTML = L.eadBack + ' <span class="req">*</span>';
-  ['t-tap1', 't-tap2', 't-tap3', 't-tap4'].forEach(id => txt(id, 'tap'));
+  document.querySelectorAll('.t-cam').forEach(el => { el.textContent = L.cam; });
+  document.querySelectorAll('.t-gal').forEach(el => { el.textContent = L.gal; });
   // verify buttons reflect state
   ['phone', 'email'].forEach(ch => {
     const sent = _otpSent[ch];
@@ -356,18 +376,19 @@ document.querySelectorAll('input[type=file][data-doc]').forEach(inp => {
     const prev = document.getElementById(doc + '_prev');
     prev.querySelector('img').src = URL.createObjectURL(f);
     prev.style.display = 'block'; // override CSS `.prev{display:none}` so the preview actually shows
-    inp.previousElementSibling.style.display = 'none'; // hide the photo-zone label
+    document.getElementById(doc + '_zone').style.display = 'none'; // hide the camera/gallery buttons
   });
 });
 document.querySelectorAll('button[data-clear]').forEach(btn => {
   btn.addEventListener('click', () => {
     const doc = btn.dataset.clear;
     _files[doc] = null;
-    document.getElementById(doc + '_in').value = '';
+    // Reset both the camera and gallery inputs for this document.
+    document.querySelectorAll('input[data-doc="' + doc + '"]').forEach(i => { i.value = ''; });
     const prev = document.getElementById(doc + '_prev');
     prev.style.display = 'none';
     prev.querySelector('img').src = '';
-    document.getElementById(doc + '_in').previousElementSibling.style.display = '';
+    document.getElementById(doc + '_zone').style.display = 'flex'; // restore the buttons
   });
 });
 
