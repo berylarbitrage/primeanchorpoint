@@ -14082,12 +14082,19 @@ app.post('/api/apply/send-code', async (req, res) => {
     db.prepare('DELETE FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=0').run(token, channel, target);
     const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     let sent = false, code = null;
+    const detail = [];   // collected provider errors, surfaced for diagnosis
     if (channel === 'phone') {
       // Prefer Twilio Verify; if it isn't configured or the send fails, fall
       // back to a locally-generated code over regular SMS (the app's SMS sender).
       let usedVerify = false;
       if (twilioClient && TWILIO_VERIFY_SID) {
-        usedVerify = await sendVerifyCode(target);
+        try {
+          const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID).verifications.create({ to: target, channel: 'sms' });
+          usedVerify = (v.status === 'pending' || !!v.sid);
+          if (!usedVerify) detail.push(`Verify status=${v.status}`);
+        } catch (e) { detail.push(`Verify: ${e.message}${e.code ? ' (code ' + e.code + ')' : ''}`); }
+      } else if (!twilioClient) {
+        detail.push('TWILIO_ACCOUNT_SID/AUTH_TOKEN 未配置');
       }
       if (usedVerify) {
         db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, '__twilio_verify__', expires);
@@ -14095,7 +14102,10 @@ app.post('/api/apply/send-code', async (req, res) => {
       } else {
         code = String(Math.floor(100000 + Math.random() * 900000));
         db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, code, expires);
-        sent = await sendSMS(target, `[Prime Anchor Workforce] 验证码 / Code: ${code}（15分钟有效 / valid 15 min）`);
+        const r = await sendSMSWithDetail(target, `[Prime Anchor Workforce] 验证码 / Code: ${code}（15分钟有效 / valid 15 min）`);
+        sent = !!r.ok;
+        if (!sent) detail.push(`SMS: ${r.error || r.errorMessage || ('status=' + r.status)}`);
+        else if (r.status && /fail|undeliv/i.test(r.status)) { sent = false; detail.push(`SMS status=${r.status}${r.errorMessage ? ' ' + r.errorMessage : ''}`); }
       }
     } else {
       code = String(Math.floor(100000 + Math.random() * 900000));
@@ -14103,15 +14113,15 @@ app.post('/api/apply/send-code', async (req, res) => {
       sent = await sendEmail(target, 'Prime Anchor Workforce 验证码 / Verification Code',
         `您的验证码 / Your verification code: ${code}\n\n15分钟内有效 / This code expires in 15 minutes.`,
         verificationCodeHtml(code));
+      if (!sent) detail.push('Email send failed — check SENDGRID_API_KEY / sender identity (server log [EMAIL-ERR] has the response)');
     }
     if (!sent) {
-      // Sending failed (provider not configured / delivery error). Tell the
-      // applicant clearly instead of pretending the code went out.
-      console.warn(`[apply] code send failed channel=${channel} target=${target}`);
+      // Sending failed. Surface the real provider reason so it's diagnosable
+      // (the form is reached only via the company's private QR token).
+      const reason = detail.join(' | ') || 'unknown';
+      console.warn(`[apply] code send failed channel=${channel} target=${target} :: ${reason}`);
       return res.status(502).json({ success: false, sent: false,
-        error: channel === 'phone'
-          ? '短信发送失败，请稍后重试或联系招聘方 / Could not send SMS, please try again later or contact the recruiter'
-          : '邮件发送失败，请检查邮箱或联系招聘方 / Could not send email, please check the address or contact the recruiter' });
+        error: (channel === 'phone' ? '短信发送失败 / SMS failed' : '邮件发送失败 / Email failed') + '：' + reason });
     }
     res.json({ success: true, sent });
   } catch (e) { res.status(500).json({ error: e.message }); }
