@@ -32828,10 +32828,20 @@ async function openApplicantInbox(partnerId, partnerName) {
     const rowsHtml = await Promise.all(list.map(async s => {
       let docs = [];
       try { docs = await api(`/admin/applicant-submissions/${s.id}/docs`); } catch (_) {}
-      const docLabel = { ssn_front: 'SSN正', ssn_back: 'SSN反', ead_front: 'EAD正', ead_back: 'EAD反' };
-      const docLinks = (Array.isArray(docs) ? docs : []).map(d =>
-        `<a href="${dl(s.id, d.id)}" target="_blank" style="display:inline-block;margin:1px;padding:.05rem .4rem;background:#eef2ff;color:#3730a3;border-radius:5px;font-size:.72rem;text-decoration:none">${docLabel[d.doc_type] || d.doc_type}</a>`
-      ).join('') || '<span style="color:var(--gray-300)">—</span>';
+      const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+      // Render each document as a clickable thumbnail (PDFs fall back to a badge).
+      const docLinks = (Array.isArray(docs) ? docs : []).map(d => {
+        const url = dl(s.id, d.id);
+        const label = docLabel[d.doc_type] || d.doc_type;
+        const isPdf = /\.pdf$/i.test(d.file_name || '');
+        if (isPdf) {
+          return `<a href="${url}" target="_blank" style="display:inline-block;margin:2px;padding:.2rem .5rem;background:#eef2ff;color:#3730a3;border-radius:6px;font-size:.72rem;text-decoration:none">📄 ${label}</a>`;
+        }
+        return `<a href="${url}" target="_blank" title="${label}（点击查看大图）" style="display:inline-block;text-align:center;margin:2px;text-decoration:none;vertical-align:top">
+            <img src="${url}" loading="lazy" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);background:#000;display:block">
+            <span style="display:block;font-size:.66rem;color:var(--gray-500);margin-top:1px">${label}</span>
+          </a>`;
+      }).join('') || '<span style="color:var(--gray-300)">—</span>';
       const when = s.created_at ? new Date(s.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
       const del = USER_ROLE === 'admin'
         ? `<button class="btn btn-sm" style="padding:.05rem .4rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id}, ${s.partner_id}, ${JSON.stringify(s.partner_name || '')})">删除</button>`
