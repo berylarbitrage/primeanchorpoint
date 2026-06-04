@@ -14063,10 +14063,14 @@ const applicantDocUpload = multer({
   }
 });
 
-// Look up a partner by their public applicant-form token. null if not found/inactive.
+// Look up a partner by their public applicant-form token. null if not found.
+// The 40-char random token is itself the authorization (admin-issued via the QR
+// modal), so we do NOT gate on the partner's `active` flag — doing so made a
+// deliberately-generated recruiting QR fail with a confusing "expired" error
+// whenever the company was temporarily inactive (e.g. mid contract re-sign).
 function _partnerByApplyToken(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null;
-  return db.prepare('SELECT id, name FROM partners WHERE applicant_form_token=? AND active=1').get(token);
+  return db.prepare("SELECT id, name FROM partners WHERE applicant_form_token=? AND applicant_form_token!=''").get(token);
 }
 // Normalize a US phone to E.164 (last 10 digits → +1XXXXXXXXXX). Best-effort.
 function _normApplyPhone(raw) {
