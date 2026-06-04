@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>待确认记录 / Pending Records</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+  :root{--ink:#0f172a;--gray-700:#334155;--gray-500:#64748b;--gray-400:#94a3b8;--gray-200:#e2e8f0;--gray-100:#f1f5f9;--sky:#0E7BB8;--bg:#f8fafc}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--ink)}
+  .topbar{position:sticky;top:0;z-index:5;background:#0F2B5B;color:#fff;padding:.85rem 1rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem}
+  .topbar h1{font-size:1.05rem;margin:0;font-weight:700}
+  .topbar .count{font-size:.8rem;color:#c7d2fe}
+  .topbar button{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;font-weight:600;cursor:pointer}
+  .wrap{max-width:760px;margin:0 auto;padding:.8rem .7rem 3rem}
+  .hint{font-size:.8rem;color:var(--gray-500);margin:.2rem 0 .9rem}
+  .company{margin:0 0 .4rem;font-size:.95rem;font-weight:700;color:#1A3F7A;display:flex;align-items:center;gap:.4rem;padding:.5rem .2rem .35rem;border-bottom:2px solid var(--gray-200)}
+  .company .c-count{font-size:.74rem;font-weight:600;color:#fff;background:#4A90D9;border-radius:999px;padding:1px 9px}
+  .card{background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:.7rem .8rem;margin:.55rem 0;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  .row1{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem}
+  .badge{display:inline-block;border-radius:999px;padding:.1rem .55rem;font-size:.72rem;font-weight:700}
+  .b-start{background:#f0fdf4;color:#15803d;border:1px solid #86efac}
+  .b-end{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
+  .b-pending{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+  .b-approved{background:#ecfdf5;color:#047857;border:1px solid #6ee7b7}
+  .b-other{background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-200)}
+  .cno{font-size:1.05rem;font-weight:800;letter-spacing:.02em;color:var(--ink)}
+  .body{display:flex;gap:.7rem}
+  .thumb{flex:0 0 auto}
+  .thumb img{width:78px;height:78px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;cursor:zoom-in;display:block}
+  .thumb .noimg{width:78px;height:78px;border-radius:8px;border:1px dashed var(--gray-200);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:.72rem}
+  .meta{flex:1;min-width:0;font-size:.82rem;color:var(--gray-700);line-height:1.55}
+  .meta .k{color:var(--gray-400)}
+  .price{font-weight:700;color:#0E7BB8}
+  .price.worker{color:#9a3412}
+  .empty{text-align:center;color:var(--gray-400);padding:3rem 1rem;font-size:.9rem}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:1rem;margin:1.5rem .2rem;font-size:.9rem;text-align:center}
+  /* lightbox */
+  #lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:50;padding:1rem}
+  #lb.show{display:flex}
+  #lb img{max-width:100%;max-height:100%;border-radius:8px}
+  #lb .x{position:absolute;top:1rem;right:1rem;background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:999px;width:40px;height:40px;font-size:1.3rem;cursor:pointer}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h1>📦 待确认记录</h1>
+      <div class="count" id="count">加载中…</div>
+    </div>
+    <button onclick="load()">↻ 刷新</button>
+  </div>
+  <div class="wrap">
+    <div class="hint">所有尚未最终确定（未导入发票、未丢弃）的扫码记录。只读，供核对。</div>
+    <div id="list"><div class="empty">加载中…</div></div>
+  </div>
+
+  <div id="lb" onclick="closeLb()"><button class="x" onclick="closeLb()">×</button><img id="lbImg" alt=""></div>
+
+<script>
+const _m = location.pathname.match(/^\/p\/([a-f0-9A-F]{16,})/);
+const TOKEN = (_m && _m[1]) || new URLSearchParams(location.search).get('t') || '';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = v => (v == null || v === '' || isNaN(v)) ? null : '$' + Number(v).toFixed(2);
+
+function statusBadge(s) {
+  if (s === 'approved') return '<span class="badge b-approved">已通过</span>';
+  if (s === 'pending') return '<span class="badge b-pending">待审核</span>';
+  return '<span class="badge b-other">' + esc(s) + '</span>';
+}
+function typeBadge(t) {
+  return t === 'end' ? '<span class="badge b-end">🔴 结束</span>' : '<span class="badge b-start">🟢 开始</span>';
+}
+function openLb(src) { document.getElementById('lbImg').src = src; document.getElementById('lb').classList.add('show'); }
+function closeLb() { document.getElementById('lb').classList.remove('show'); document.getElementById('lbImg').src = ''; }
+
+function cardHtml(r) {
+  const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
+  const parts = (r.participants && r.participants.length) ? r.participants.map(esc).join('、') : '<span class="k">—</span>';
+  const prices = [];
+  if (money(r.unit_price)) prices.push('报价 <span class="price">' + money(r.unit_price) + '</span>');
+  if (money(r.customer_price)) prices.push('客户价 <span class="price">' + money(r.customer_price) + '</span>');
+  if (money(r.worker_price)) prices.push('工人价 <span class="price worker">' + money(r.worker_price) + '</span>');
+  const photo = r.photo_url
+    ? '<div class="thumb"><img src="' + esc(r.photo_url) + '" loading="lazy" onclick="openLb(this.src)" alt="柜照"></div>'
+    : '<div class="thumb"><div class="noimg">无照片</div></div>';
+  return '<div class="card">'
+    + '<div class="row1">' + typeBadge(r.submit_type) + '<span class="cno">' + (esc(r.container_no) || '<span class="k">无柜号</span>') + '</span>' + statusBadge(r.status) + '</div>'
+    + '<div class="body">' + photo
+    + '<div class="meta">'
+    + '<div><span class="k">参与人：</span>' + parts + '</div>'
+    + (prices.length ? '<div>' + prices.join(' &nbsp; ') + '</div>' : '')
+    + (r.submitter_name ? '<div><span class="k">提交人：</span>' + esc(r.submitter_name) + '</div>' : '')
+    + '<div><span class="k">提交时间：</span>' + esc(when) + '</div>'
+    + '</div></div></div>';
+}
+
+async function load() {
+  const list = document.getElementById('list');
+  if (!TOKEN) { list.innerHTML = '<div class="err">链接无效，请使用最新的二维码。</div>'; document.getElementById('count').textContent = ''; return; }
+  list.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const res = await fetch('/api/pending/info?t=' + encodeURIComponent(TOKEN));
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || ('HTTP ' + res.status)); }
+    const data = await res.json();
+    const recs = data.records || [];
+    document.getElementById('count').textContent = '共 ' + recs.length + ' 条待确认';
+    if (!recs.length) { list.innerHTML = '<div class="empty">🎉 没有待确认的记录，全部已处理。</div>'; return; }
+    // group by company, preserving the server's ordering
+    const groups = [];
+    const idx = {};
+    for (const r of recs) {
+      const k = r.partner_name || '—';
+      if (!(k in idx)) { idx[k] = groups.length; groups.push({ name: k, items: [] }); }
+      groups[idx[k]].items.push(r);
+    }
+    list.innerHTML = groups.map(g =>
+      '<div class="company">📋 ' + esc(g.name) + '<span class="c-count">' + g.items.length + '</span></div>'
+      + g.items.map(cardHtml).join('')
+    ).join('');
+  } catch (e) {
+    document.getElementById('count').textContent = '';
+    list.innerHTML = '<div class="err">' + esc(e.message || e) + '</div>';
+  }
+}
+load();
+</script>
+</body>
+</html>

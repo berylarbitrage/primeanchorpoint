@@ -14652,6 +14652,90 @@ app.get('/r/:token', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'container-review.html'));
 });
 
+// ─── Pending-records overview (read-only QR: "all not-yet-finalized records") ───
+// One global token (stored in app_settings) lets a manager scan a QR and see every
+// container scan still awaiting finalization (status not imported/discarded).
+function _pendingOverviewToken() {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='pending_overview_token'").get();
+  let token = row && row.value;
+  if (!token || token.length < 16) {
+    token = crypto.randomBytes(16).toString('hex');
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pending_overview_token', ?, CURRENT_TIMESTAMP)").run(token);
+  }
+  return token;
+}
+function _validPendingToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 16) return false;
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='pending_overview_token'").get();
+  return !!(row && row.value && row.value === token);
+}
+
+// ADMIN: get (lazily create) the read-only overview link.
+app.get('/api/admin/pending-overview-link', requireAdmin, blockManager, (req, res) => {
+  try {
+    const token = _pendingOverviewToken();
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = req.headers['x-forwarded-proto'] || ((req.connection && req.connection.encrypted) ? 'https' : 'http');
+    res.json({ token, url: `${proto}://${host}/p/${token}` });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: rotate the overview token (invalidates the old QR/link).
+app.post('/api/admin/pending-overview-link/regenerate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const token = crypto.randomBytes(16).toString('hex');
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pending_overview_token', ?, CURRENT_TIMESTAMP)").run(token);
+    res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: read-only overview page (token in path).
+app.get('/p/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'pending-overview.html'));
+});
+
+// PUBLIC: every container record not yet finalized (grouped client-side by company).
+app.get('/api/pending/info', (req, res) => {
+  const tok = String(req.query.t || '');
+  if (!_validPendingToken(tok)) return res.status(404).json({ error: '链接无效或已失效 / Invalid or expired link' });
+  const rows = db.prepare(`SELECT id, partner_name, container_no, qty, unit_price, customer_price, worker_price,
+      photo_path, participants, submitter_name, submit_type, status, created_at
+      FROM container_submissions
+      WHERE status NOT IN ('imported','discarded')
+      ORDER BY partner_name COLLATE NOCASE, created_at DESC`).all();
+  const t = encodeURIComponent(tok);
+  const records = rows.map(r => {
+    let parts = []; try { parts = JSON.parse(r.participants || '[]'); } catch {}
+    return {
+      id: r.id, partner_name: r.partner_name || '—', container_no: r.container_no || '', qty: r.qty,
+      unit_price: r.unit_price, customer_price: r.customer_price, worker_price: r.worker_price,
+      participants: parts, submitter_name: r.submitter_name || '', submit_type: r.submit_type || 'start',
+      status: r.status || 'pending', created_at: r.created_at,
+      photo_url: r.photo_path ? `/api/pending/photo/${r.id}?t=${t}` : '',
+    };
+  });
+  res.json({ count: records.length, records });
+});
+
+// PUBLIC: stream one record's photo, gated by the overview token.
+app.get('/api/pending/photo/:id', async (req, res) => {
+  try {
+    if (!_validPendingToken(String(req.query.t || ''))) return res.status(404).json({ error: 'Not found' });
+    const row = db.prepare('SELECT photo_path FROM container_submissions WHERE id=?').get(req.params.id);
+    if (!row || !row.photo_path) return res.status(404).json({ error: 'Not found' });
+    const key = storage.normalizeKey('uploads/' + path.basename(row.photo_path));
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    if (storage.isR2()) {
+      try { return res.redirect(302, await storage.getDownloadUrl(key)); }
+      catch { return res.status(404).json({ error: 'Not found' }); }
+    }
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'Not found' });
+    const s = await storage.getStream(key);
+    s.on('error', () => { try { res.status(500).end(); } catch {} });
+    s.pipe(res);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // PUBLIC: review link info + the records in range
 app.get('/api/review/info', (req, res) => {
   const link = _reviewLinkByToken(String(req.query.t || ''));
