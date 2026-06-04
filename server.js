@@ -325,6 +325,40 @@ async function sendEmailWithAttachment(to, subject, text, pdfBuffer, pdfFileName
   } catch (e) { console.error(`[EMAIL-ERR] ${e.message}`); return false; }
 }
 
+// ─── Email with arbitrary file attachments (images/PDF) ───
+// files: [{ filename, content: Buffer, mime }]
+async function sendEmailWithFiles(to, subject, text, html, files = []) {
+  if (_sgKey) {
+    try {
+      const content = [{ type: 'text/plain', value: text }];
+      if (html) content.push({ type: 'text/html', value: html });
+      const attachments = files.map(f => ({
+        content: f.content.toString('base64'),
+        filename: f.filename,
+        type: f.mime || 'application/octet-stream',
+        disposition: 'attachment',
+      }));
+      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personalizations: [{ to: [{ email: to }] }], from: { email: EMAIL_FROM }, subject, content, attachments }),
+      });
+      if (r.status === 202) { console.log(`[EMAIL] Sent ${files.length} attachment(s) to ${to} via SendGrid`); return true; }
+      const body = (await r.text()).slice(0, 300);
+      console.error(`[EMAIL-ERR] SendGrid ${r.status}: ${body}`);
+      if (!emailTransporter) return false;
+    } catch (e) {
+      console.error(`[EMAIL-ERR] SendGrid attachment fetch failed: ${e.message}`);
+      if (!emailTransporter) return false;
+    }
+  }
+  if (!emailTransporter) { console.log(`[EMAIL-SKIP] No transport. To: ${to}`); return false; }
+  const smtpAttachments = files.map(f => ({ filename: f.filename, content: f.content, contentType: f.mime }));
+  const s = await _smtpSend(to, subject, text, html, smtpAttachments);
+  if (s.ok) { console.log(`[EMAIL] Sent ${files.length} attachment(s) to ${to} via SMTP`); return true; }
+  return false;
+}
+
 // ─── Database Setup ───
 const dataDir = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
@@ -14205,16 +14239,63 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
         p.id, p.name, name, phone, email, position, 1, 1,
         String(req.headers['user-agent'] || '').slice(0, 250));
     const subId = r.lastInsertRowid;
+    const docMeta = [];
     for (const [docType, arr] of Object.entries(files)) {
       if (arr && arr[0]) {
         const f = arr[0];
+        const fileKey = (f.key || f.filename || f.path);
         db.prepare('INSERT INTO applicant_docs (submission_id, doc_type, file_path, file_name) VALUES (?,?,?,?)')
-          .run(subId, docType, (f.key || f.filename || f.path), f.originalname || '');
+          .run(subId, docType, fileKey, f.originalname || '');
+        docMeta.push({ docType, key: fileKey, originalname: f.originalname || '', mime: f.mimetype || '' });
       }
     }
     res.json({ success: true, id: subId });
+    // Fire-and-forget: notify the company inbox with all applicant details + photo attachments.
+    notifyNewApplication({ subId, partner: p, name, position, phone, email, docMeta })
+      .catch(e => console.error('[apply-notify] failed:', e.message));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// Send the company a notification email for a new applicant submission.
+// Includes all form fields + attaches the uploaded SSN/EAD photos.
+const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@primeanchorpoint.com';
+async function notifyNewApplication({ subId, partner, name, position, phone, email, docMeta }) {
+  const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
+  const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+  // Read each uploaded photo back from storage to attach.
+  const files = [];
+  for (const d of docMeta) {
+    try {
+      const buf = await storage.getBuffer(storage.normalizeKey(d.key));
+      const ext = (path.extname(d.originalname || d.key) || '.jpg').toLowerCase();
+      const mime = d.mime || ({ '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.heic': 'image/heic', '.heif': 'image/heif', '.webp': 'image/webp', '.pdf': 'application/pdf' }[ext] || 'application/octet-stream');
+      files.push({ filename: `${d.docType}${ext}`, content: buf, mime });
+    } catch (e) { console.error(`[apply-notify] could not read ${d.key}: ${e.message}`); }
+  }
+  const rows = [
+    ['应聘公司 / Company', partner.name || ''],
+    ['姓名 / Name', name],
+    ['职位 / Position', position],
+    ['电话 / Phone', phone + ' ✓ 已验证 / verified'],
+    ['邮箱 / Email', email + ' ✓ 已验证 / verified'],
+    ['提交时间 / Submitted', when + ' (PT)'],
+    ['已上传证件 / Documents', docMeta.map(d => docLabels[d.docType] || d.docType).join('、') || '无'],
+  ];
+  const text = '新入职申请 / New Application\n\n' + rows.map(([k, v]) => `${k}: ${v}`).join('\n')
+    + `\n\n证件照片见附件。也可在管理后台「申请箱」查看。\nDocument photos are attached. You can also view them in the admin “Applicant Inbox”.`;
+  const html = `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:560px">
+    <h2 style="color:#1a3f7a;margin:0 0 .5rem">📋 新入职申请 / New Application</h2>
+    <table cellpadding="6" style="border-collapse:collapse;font-size:14px;width:100%">
+      ${rows.map(([k, v]) => `<tr><td style="color:#64748b;white-space:nowrap;vertical-align:top">${k}</td><td style="font-weight:600;color:#0f172a">${String(v).replace(/</g, '&lt;')}</td></tr>`).join('')}
+    </table>
+    <p style="color:#64748b;font-size:13px;margin-top:1rem">证件照片见附件。也可在管理后台「申请箱」查看。<br>Document photos are attached. You can also view them in the admin “Applicant Inbox”.</p>
+  </div>`;
+  const subject = `新入职申请 / New Application — ${name}（${partner.name || ''}）`;
+  const sent = files.length
+    ? await sendEmailWithFiles(APPLICATION_NOTIFY_EMAIL, subject, text, html, files)
+    : await sendEmail(APPLICATION_NOTIFY_EMAIL, subject, text, html);
+  console.log(`[apply-notify] submission #${subId} → ${APPLICATION_NOTIFY_EMAIL}: ${sent ? 'sent' : 'FAILED'} (${files.length} attachments)`);
+}
 
 // ADMIN: list applicant submissions (optionally filtered by company).
 app.get('/api/admin/applicant-submissions', requireAdmin, blockManager, (req, res) => {
