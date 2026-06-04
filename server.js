@@ -215,7 +215,7 @@ if (_sgKey) {
 }
 
 function verificationCodeHtml(code, isAdminTest = false) {
-  const label = isAdminTest ? '管理员测试 / Admin Test' : '邮箱验证 / Email Verification';
+  const label = isAdminTest ? 'Admin Test' : 'Verificación de Correo / Email Verification';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 0">
@@ -226,14 +226,14 @@ function verificationCodeHtml(code, isAdminTest = false) {
   <p style="margin:4px 0 0;color:#a0aec0;font-size:12px">${label}</p>
 </td></tr>
 <tr><td style="padding:32px">
-  <p style="margin:0 0 8px;color:#374151;font-size:15px">您的验证码 / Your verification code:</p>
+  <p style="margin:0 0 8px;color:#374151;font-size:15px">Su código de verificación / Your verification code:</p>
   <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:20px;text-align:center;margin:16px 0">
     <span style="font-size:36px;font-weight:700;letter-spacing:8px;color:#1a1a2e;font-family:monospace">${code}</span>
   </div>
-  <p style="margin:0;color:#6b7280;font-size:13px">验证码15分钟内有效。请勿分享给他人。<br>This code expires in 15 minutes. Do not share it with anyone.</p>
+  <p style="margin:0;color:#6b7280;font-size:13px">El código expira en 15 minutos. No lo comparta con nadie.<br>This code expires in 15 minutes. Do not share it with anyone.</p>
 </td></tr>
 <tr><td style="padding:0 32px 24px;border-top:1px solid #f3f4f6">
-  <p style="margin:16px 0 0;color:#9ca3af;font-size:11px">如非本人操作请忽略此邮件。If you did not request this, please ignore this email.</p>
+  <p style="margin:16px 0 0;color:#9ca3af;font-size:11px">Si no lo solicitó, ignore este correo. If you did not request this, please ignore this email.</p>
 </td></tr>
 </table>
 </td></tr>
@@ -8202,8 +8202,8 @@ app.post('/api/admin-invite/send-email-code', async (req, res) => {
   if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchor Workforce',
-    `您的邮箱验证码是 ${code}，15分钟内有效。\nYour email verification code is ${code}, valid for 15 minutes.`,
+  const sent = await sendEmail(email, 'Código de Verificación / Verification Code — Prime Anchor Workforce',
+    `Su código de correo es ${code}, válido 15 min.\nYour email verification code is ${code}, valid for 15 minutes.`,
     verificationCodeHtml(code));
   if (sent) {
     db.prepare('DELETE FROM admin_reg_codes WHERE token=? AND contact=?').run(token, email);
@@ -8635,10 +8635,10 @@ app.post('/api/public/manager-register/send-code', async (req, res) => {
 
   let delivered = false;
   if (contact_type === 'phone') {
-    delivered = await sendSMS(contact, `您的 Prime Anchor Workforce 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
+    delivered = await sendSMS(contact, `[Prime Anchor Workforce] Su código de verificación es ${code}, válido 10 min. / Your verification code is ${code}.`);
   } else {
-    delivered = await sendEmail(contact, '验证码 / Verification Code — Prime Anchor Workforce',
-      `您的验证码是 ${code}，10分钟内有效。\nYour verification code is ${code}.`,
+    delivered = await sendEmail(contact, 'Código de Verificación / Verification Code — Prime Anchor Workforce',
+      `Su código de verificación es ${code}, válido 10 min.\nYour verification code is ${code}.`,
       verificationCodeHtml(code));
   }
   // If delivery failed (not configured), remove the code record so verification is skipped
@@ -12051,8 +12051,8 @@ app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const sent = await sendEmail(
     to,
-    'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-    `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+    `[Admin Test]\n\nSu código de correo es: ${code}\nYour email verification code: ${code}\n\nVálido 15 min / Valid for 15 minutes.`,
     verificationCodeHtml(code, true)
   );
   res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
@@ -13097,14 +13097,14 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
   } else if (canSMSFallback) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
-    smsSent = await sendSMS(w.phone, `[Prime Anchor Workforce] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+    smsSent = await sendSMS(w.phone, `[Prime Anchor Workforce] Su código de verificación es: ${phoneCode}, válido 15 min. / Your verification code: ${phoneCode}`);
   }
   // Email
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
-    emailSent = await sendEmail(w.email, 'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    emailSent = await sendEmail(w.email, 'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+      `Su código de correo es: ${emailCode}\nYour email verification code: ${emailCode}\n\nVálido 15 min / Valid for 15 minutes.`,
       verificationCodeHtml(emailCode));
   }
   console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${canVerifyPhone?'TwilioVerify':phoneCode||'N/A'}(sent:${smsSent}) email=${emailCode||'N/A'}(sent:${emailSent})`);
@@ -17525,14 +17525,14 @@ app.post('/api/worker/contact/request-change', requireWorker, async (req, res) =
     const canVerify = !!(twilioClient && TWILIO_VERIFY_SID);
     if (oldPhone) {
       if (canVerify) { await sendVerifyCode(oldPhone); oldSent = true; }
-      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchor Workforce] 验证旧手机号，验证码：${oldCode}，15分钟有效`); }
+      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchor Workforce] Código para verificar teléfono anterior: ${oldCode}, válido 15 min. / Code to verify old phone: ${oldCode}`); }
     }
     if (canVerify) { await sendVerifyCode(val); newSent = true; }
-    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchor Workforce] 验证新手机号，验证码：${newCode}，15分钟有效`); }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchor Workforce] Código para verificar teléfono nuevo: ${newCode}, válido 15 min. / Code to verify new phone: ${newCode}`); }
   } else {
     const oldEmail = w.email;
-    if (oldEmail) oldSent = await sendEmail(oldEmail, 'Prime Anchor Workforce 更换邮箱验证', `旧邮箱验证码：${oldCode}，15分钟内有效。`);
-    newSent = await sendEmail(val, 'Prime Anchor Workforce 新邮箱验证', `新邮箱验证码：${newCode}，15分钟内有效。`);
+    if (oldEmail) oldSent = await sendEmail(oldEmail, 'Prime Anchor Workforce Verificación de Correo / Email Verification', `Código para su correo anterior: ${oldCode}, válido 15 min.\nCode for your old email: ${oldCode}, valid for 15 minutes.`);
+    newSent = await sendEmail(val, 'Prime Anchor Workforce Verificación de Correo Nuevo / New Email Verification', `Código para su nuevo correo: ${newCode}, válido 15 min.\nCode for your new email: ${newCode}, valid for 15 minutes.`);
   }
   console.log(`[ContactChange] Worker ${req.workerId} field=${field} old_code=${oldCode} new_code=${newCode}`);
   res.json({ success: true, old_sent: oldSent, new_sent: newSent });
@@ -18700,10 +18700,10 @@ app.post('/api/worker/forgot-password', async (req, res) => {
   resetCodes.set('worker:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
   // Try to send via SMS or email
   if (w.phone && twilioClient && TWILIO_FROM) {
-    await sendSMS(w.phone, `[Prime Anchor Workforce] 重置密码验证码: ${code}，10分钟内有效。Reset code: ${code}`);
+    await sendSMS(w.phone, `[Prime Anchor Workforce] Código para restablecer contraseña: ${code}, válido 10 min. / Password reset code: ${code}`);
   } else if (w.email && emailTransporter) {
-    await sendEmail(w.email, 'Prime Anchor Workforce 重置密码 / Password Reset',
-      `您的重置密码验证码: ${code}\nYour password reset code: ${code}\n\n10分钟内有效 / Valid for 10 minutes.`);
+    await sendEmail(w.email, 'Prime Anchor Workforce Restablecimiento de Contraseña / Password Reset',
+      `Su código para restablecer contraseña: ${code}\nYour password reset code: ${code}\n\nVálido 10 min / Valid for 10 minutes.`);
   }
   console.log(`[Reset Code] Worker account ${login}: ${code}`);
   res.json({ success: true, message: '验证码已发送 / Code sent' });
@@ -19438,7 +19438,7 @@ app.post('/api/checkin/send-code', async (req, res) => {
   _checkinCodes[normalizedPhone] = { code, expires: Date.now() + 5 * 60 * 1000, site_id: parseInt(site_id) };
 
   console.log(`[Checkin] Code for ${normalizedPhone}: ${code}`);
-  await sendSMS(phone, `[Prime Anchor Workforce] 您的签到验证码 / Your check-in code: ${code}  (5分钟内有效)`);
+  await sendSMS(phone, `[Prime Anchor Workforce] Su código de registro / Your check-in code: ${code}  (válido 5 min)`);
 
   res.json({ success: true });
 });
@@ -19847,7 +19847,37 @@ app.get('/api/admin/compliance-docs/:id/download', requireAdmin, (req, res) => {
   const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
   if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
+  if (req.query.inline === '1') {
+    const ext = path.extname(doc.file_path).toLowerCase();
+    const mime = ext === '.pdf' ? 'application/pdf'
+      : ext === '.png' ? 'image/png'
+      : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
+      : ext === '.gif' ? 'image/gif'
+      : ext === '.webp' ? 'image/webp'
+      : 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="${(doc.file_name || 'document').replace(/"/g, '')}"`);
+    return res.sendFile(path.resolve(doc.file_path));
+  }
   res.download(doc.file_path, doc.file_name || 'document');
+});
+
+app.delete('/api/admin/compliance-docs/:id', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) try { fs.unlinkSync(doc.file_path); } catch {}
+  db.prepare('DELETE FROM worker_compliance_docs WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+app.post('/api/admin/compliance-docs/:id/replace-file', requireAdmin, docUpload.single('file'), (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) try { fs.unlinkSync(doc.file_path); } catch {}
+  db.prepare('UPDATE worker_compliance_docs SET file_path=?, file_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(req.file.path, req.file.originalname, req.params.id);
+  res.json({ success: true, file_name: req.file.originalname });
 });
 
 // ─── OCR: Extract text from compliance doc image via Google Cloud Vision ───
@@ -20270,10 +20300,10 @@ app.post('/api/register/worker', async (req, res) => {
       // Try to resend so the user gets fresh codes in their inbox
       let phoneSent = false, emailSent = false;
       if (phoneRow && phoneRow.code !== '__twilio_verify__' && existing.phone)
-        phoneSent = await sendSMS(existing.phone, `[Prime Anchor Workforce] 您的手机验证码是: ${phoneRow.code}，15分钟内有效。Your verification code: ${phoneRow.code}`);
+        phoneSent = await sendSMS(existing.phone, `[Prime Anchor Workforce] Su código de verificación es: ${phoneRow.code}, válido 15 min. / Your verification code: ${phoneRow.code}`);
       if (emailRow && existing.email)
-        emailSent = await sendEmail(existing.email, 'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-          `您的邮箱验证码是: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+        emailSent = await sendEmail(existing.email, 'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+          `Su código de correo es: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\nVálido 15 min / Valid for 15 minutes.`,
           verificationCodeHtml(emailRow.code));
       const pendingResp = {
         error: '该手机号或邮箱已有待验证的注册，验证码已重新发送，请输入验证码完成注册。 / A pending registration exists. Verification codes have been resent — please enter them below.',
@@ -20365,14 +20395,14 @@ app.post('/api/register/worker', async (req, res) => {
   } else if (canSMSFallback) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
-    smsSent = await sendSMS(phone, `[Prime Anchor Workforce] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+    smsSent = await sendSMS(phone, `[Prime Anchor Workforce] Su código de verificación es: ${phoneCode}, válido 15 min. / Your verification code: ${phoneCode}`);
   }
   // Email: always use our own codes via SMTP
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
-    emailSent = await sendEmail(email, 'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    emailSent = await sendEmail(email, 'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+      `Su código de correo es: ${emailCode}\nYour email verification code: ${emailCode}\n\nVálido 15 min / Valid for 15 minutes.`,
       verificationCodeHtml(emailCode));
   }
   console.log(`[Verify] Worker #${accountId} phone: ${canVerifyPhone ? 'Twilio Verify' : phoneCode || 'N/A'} (sent:${smsSent}), email: ${emailCode || 'N/A'} (sent:${emailSent})`);
@@ -20407,14 +20437,14 @@ app.post('/api/register/resend-code', async (req, res) => {
     } else {
       code = String(Math.floor(100000 + Math.random() * 900000));
       db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'phone', code, expires);
-      sent = await sendSMS(acc.phone, `[Prime Anchor Workforce] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+      sent = await sendSMS(acc.phone, `[Prime Anchor Workforce] Su código de verificación es: ${code}, válido 15 min. / Your verification code: ${code}`);
       console.log(`[Verify] Resend phone SMS for Worker #${account_id}: ${code} (sent:${sent})`);
     }
   } else {
     code = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'email', code, expires);
-    sent = await sendEmail(acc.email, 'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-      `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    sent = await sendEmail(acc.email, 'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+      `Su código de correo es: ${code}\nYour email verification code: ${code}\n\nVálido 15 min / Valid for 15 minutes.`,
       verificationCodeHtml(code));
     console.log(`[Verify] Resend email for Worker #${account_id}: ${code} (sent:${sent})`);
   }
