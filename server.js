@@ -276,6 +276,40 @@ async function sendEmail(to, subject, text, html) {
   }
 }
 
+// Like sendEmail but returns the provider's exact status/error for diagnostics.
+// { ok, status, error } — e.g. SendGrid 401 (bad key) vs 403 (unverified sender).
+async function sendEmailWithDetail(to, subject, text, html) {
+  if (_sgKey) {
+    try {
+      const content = [{ type: 'text/plain', value: text }];
+      if (html) content.push({ type: 'text/html', value: html });
+      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personalizations: [{ to: [{ email: to }] }], from: { email: EMAIL_FROM }, subject, content }),
+      });
+      if (r.status === 202) return { ok: true, status: 202 };
+      const body = (await r.text()).slice(0, 300);
+      console.error(`[EMAIL-ERR] SendGrid API ${r.status}: ${body}`);
+      const hint = r.status === 401 ? 'SENDGRID_API_KEY 无效或无 Mail Send 权限'
+        : r.status === 403 ? `发件人未验证（from=${EMAIL_FROM}）`
+        : `SendGrid ${r.status}`;
+      return { ok: false, status: r.status, error: hint };
+    } catch (e) {
+      console.error(`[EMAIL-ERR] SendGrid fetch failed: ${e.message}`);
+      return { ok: false, error: 'SendGrid 请求失败: ' + e.message };
+    }
+  }
+  if (!emailTransporter) return { ok: false, error: 'SENDGRID_API_KEY / SMTP_HOST 未配置' };
+  try {
+    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text, html });
+    return { ok: true };
+  } catch (e) {
+    console.error(`[EMAIL-ERR] SMTP send failed to ${to}: ${e.message}`);
+    return { ok: false, error: 'SMTP: ' + e.message };
+  }
+}
+
 // ─── Email with PDF attachment ───
 async function sendEmailWithAttachment(to, subject, text, pdfBuffer, pdfFileName) {
   if (_sgKey) {
@@ -14110,10 +14144,11 @@ app.post('/api/apply/send-code', async (req, res) => {
     } else {
       code = String(Math.floor(100000 + Math.random() * 900000));
       db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'email', target, code, expires);
-      sent = await sendEmail(target, 'Prime Anchor Workforce 验证码 / Verification Code',
+      const er = await sendEmailWithDetail(target, 'Prime Anchor Workforce 验证码 / Verification Code',
         `您的验证码 / Your verification code: ${code}\n\n15分钟内有效 / This code expires in 15 minutes.`,
         verificationCodeHtml(code));
-      if (!sent) detail.push('Email send failed — check SENDGRID_API_KEY / sender identity (server log [EMAIL-ERR] has the response)');
+      sent = !!er.ok;
+      if (!sent) detail.push(`Email${er.status ? ' ' + er.status : ''}: ${er.error}`);
     }
     if (!sent) {
       // Sending failed. Surface the real provider reason so it's diagnosable
