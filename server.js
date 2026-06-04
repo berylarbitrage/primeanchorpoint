@@ -777,6 +777,47 @@ db.exec(`CREATE TABLE IF NOT EXISTS container_review_links (
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_crl_partner ON container_review_links(partner_id, created_at)`); } catch(e) {}
 
+// ─── Per-company applicant onboarding (QR self-service: name/phone/email/position
+//     + SSN & EAD document photos, gated by phone + email OTP verification) ───
+try { db.exec(`ALTER TABLE partners ADD COLUMN applicant_form_token TEXT DEFAULT ''`); } catch {}
+db.exec(`CREATE TABLE IF NOT EXISTS applicant_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  name TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  position TEXT DEFAULT '',
+  phone_verified INTEGER DEFAULT 0,
+  email_verified INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'submitted',
+  notes TEXT DEFAULT '',
+  user_agent TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_apl_partner ON applicant_submissions(partner_id, created_at)`); } catch(e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  submission_id INTEGER NOT NULL,
+  doc_type TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+// Standalone OTP store for the public applicant form (not tied to a worker account).
+db.exec(`CREATE TABLE IF NOT EXISTS applicant_otp (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  form_token TEXT NOT NULL,
+  type TEXT NOT NULL,
+  target TEXT NOT NULL,
+  code TEXT DEFAULT '',
+  verified INTEGER DEFAULT 0,
+  attempts INTEGER DEFAULT 0,
+  expires_at TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_aotp ON applicant_otp(form_token, type, target)`); } catch(e) {}
+
 function generatePartnerNumber(stateAbbr) {
   const s = (stateAbbr || 'XX').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2).padEnd(2, 'X');
   const now = new Date();
@@ -13944,6 +13985,242 @@ app.get('/api/admin/onboard-submissions/:id/docs/:docId/download', requireAdmin,
   const fp = path.join(docsDir, doc.file_path);
   if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File not found' });
   res.download(fp, doc.file_name || doc.file_path);
+});
+
+// ════════ Per-company Applicant Onboarding QR ════════
+// Public, mobile self-service form reached via a per-company QR. The applicant
+// enters name / phone / email / position, verifies BOTH phone and email by OTP,
+// then uploads photos of their SSN (front/back) and EAD (front/back). Submissions
+// land in an admin inbox. Multilingual: 中文 / English / Español.
+
+const applicantDocUpload = multer({
+  storage: r2Storage({
+    subdir: 'employee_docs',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `apply-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|heif|webp)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|heif|webp|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  }
+});
+
+// Look up a partner by their public applicant-form token. null if not found/inactive.
+function _partnerByApplyToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 16) return null;
+  return db.prepare('SELECT id, name FROM partners WHERE applicant_form_token=? AND active=1').get(token);
+}
+// Normalize a US phone to E.164 (last 10 digits → +1XXXXXXXXXX). Best-effort.
+function _normApplyPhone(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.length === 10) return '+1' + d;
+  if (d.length === 11 && d[0] === '1') return '+' + d;
+  return '+' + d;
+}
+
+// ADMIN: get or lazily create the applicant-form token + QR for a company.
+app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    const p = db.prepare('SELECT id, name, applicant_form_token FROM partners WHERE id=?').get(partnerId);
+    if (!p) return res.status(404).json({ error: 'partner not found' });
+    let token = p.applicant_form_token;
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
+    }
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
+    const url = `${proto}://${host}/apply/${token}`;
+    const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
+    res.json({ token, url, qr_data_url: qrDataUrl, partner_name: p.name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: rotate the token (invalidates the old QR).
+app.post('/api/admin/partners/:id/applicant-qr/regenerate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    const token = crypto.randomBytes(20).toString('hex');
+    db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
+    res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: short URL that serves the mobile applicant form.
+app.get('/apply/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'apply.html'));
+});
+
+// PUBLIC: minimal info so the page knows which company it's for.
+app.get('/api/apply/info', (req, res) => {
+  const p = _partnerByApplyToken(String(req.query.t || ''));
+  if (!p) return res.status(404).json({ error: '链接无效或已失效 / Invalid or expired link' });
+  res.json({ partner_id: p.id, partner_name: p.name });
+});
+
+// PUBLIC: send a one-time verification code to a phone or email.
+app.post('/api/apply/send-code', async (req, res) => {
+  try {
+    const token = String(req.body.t || '');
+    if (!_partnerByApplyToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
+    const channel = req.body.channel === 'email' ? 'email' : 'phone';
+    const target = channel === 'phone' ? _normApplyPhone(req.body.phone) : String(req.body.email || '').trim().toLowerCase();
+    if (channel === 'phone' && target.replace(/\D/g, '').length < 10)
+      return res.status(400).json({ error: '请输入有效手机号 / Enter a valid phone number' });
+    if (channel === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target))
+      return res.status(400).json({ error: '请输入有效邮箱 / Enter a valid email address' });
+    // Basic rate limit: max 5 sends per target per 15 minutes.
+    const recent = db.prepare(`SELECT COUNT(*) n FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND created_at > datetime('now','-15 minutes')`).get(token, channel, target);
+    if (recent && recent.n >= 5) return res.status(429).json({ error: '请求过于频繁，请稍后再试 / Too many requests, please try later' });
+    // Drop previous unverified codes for this target so only the newest is valid.
+    db.prepare('DELETE FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=0').run(token, channel, target);
+    const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    let sent = false, code = null;
+    if (channel === 'phone') {
+      if (twilioClient && TWILIO_VERIFY_SID) {
+        sent = await sendVerifyCode(target);
+        db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, '__twilio_verify__', expires);
+      } else {
+        code = String(Math.floor(100000 + Math.random() * 900000));
+        db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, code, expires);
+        sent = await sendSMS(target, `[Prime Anchor Workforce] 验证码 / Code: ${code}（15分钟有效 / valid 15 min）`);
+      }
+    } else {
+      code = String(Math.floor(100000 + Math.random() * 900000));
+      db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'email', target, code, expires);
+      sent = await sendEmail(target, 'Prime Anchor Workforce 验证码 / Verification Code',
+        `您的验证码 / Your verification code: ${code}\n\n15分钟内有效 / This code expires in 15 minutes.`,
+        verificationCodeHtml(code));
+    }
+    res.json({ success: true, sent });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: check a verification code; marks the (form_token,type,target) as verified.
+app.post('/api/apply/verify-code', async (req, res) => {
+  try {
+    const token = String(req.body.t || '');
+    if (!_partnerByApplyToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
+    const channel = req.body.channel === 'email' ? 'email' : 'phone';
+    const target = channel === 'phone' ? _normApplyPhone(req.body.phone || req.body.target) : String(req.body.email || req.body.target || '').trim().toLowerCase();
+    const code = String(req.body.code || '').trim();
+    if (!target || !code) return res.status(400).json({ error: '请输入验证码 / Enter the verification code' });
+    const row = db.prepare(`SELECT * FROM applicant_otp WHERE form_token=? AND type=? AND target=? ORDER BY id DESC LIMIT 1`).get(token, channel, target);
+    if (!row) return res.status(400).json({ error: '请先获取验证码 / Request a code first' });
+    if (new Date(row.expires_at).getTime() < Date.now()) return res.status(400).json({ error: '验证码已过期，请重新获取 / Code expired, request a new one' });
+    if (row.attempts >= 6) return res.status(429).json({ error: '尝试次数过多，请重新获取验证码 / Too many attempts' });
+    let ok = false;
+    if (row.code === '__twilio_verify__') {
+      ok = await checkVerifyCode(target, code);
+    } else {
+      ok = (row.code === code);
+    }
+    db.prepare('UPDATE applicant_otp SET attempts=attempts+1, verified=? WHERE id=?').run(ok ? 1 : row.verified, row.id);
+    if (!ok) return res.status(400).json({ error: '验证码错误 / Incorrect code' });
+    res.json({ success: true, verified: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: submit the application (multipart) — name/phone/email/position + doc photos.
+// Requires BOTH phone and email to have a verified OTP for the submitted values.
+app.post('/api/apply/submit', applicantDocUpload.fields([
+  { name: 'ssn_front', maxCount: 1 },
+  { name: 'ssn_back', maxCount: 1 },
+  { name: 'ead_front', maxCount: 1 },
+  { name: 'ead_back', maxCount: 1 },
+]), (req, res) => {
+  try {
+    const token = String(req.query.t || req.body.t || '');
+    const p = _partnerByApplyToken(token);
+    if (!p) return res.status(403).json({ error: '链接无效 / Invalid link' });
+    const d = req.body || {};
+    const name = String(d.name || '').trim().slice(0, 120);
+    const position = String(d.position || '').trim().slice(0, 120);
+    const phone = _normApplyPhone(d.phone);
+    const email = String(d.email || '').trim().toLowerCase();
+    if (!name || !phone || !email || !position)
+      return res.status(400).json({ error: '请填写姓名、电话、邮箱和职位 / Name, phone, email and position are required' });
+    // Require a verified OTP for BOTH the submitted phone and email.
+    const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, type, tgt);
+    if (!verified('phone', phone)) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone number first' });
+    if (!verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
+    const files = req.files || {};
+    if (!files.ssn_front || !files.ead_front || !files.ead_back)
+      return res.status(400).json({ error: '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back' });
+    const r = db.prepare(`INSERT INTO applicant_submissions
+      (partner_id, partner_name, name, phone, email, position, phone_verified, email_verified, user_agent)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        p.id, p.name, name, phone, email, position, 1, 1,
+        String(req.headers['user-agent'] || '').slice(0, 250));
+    const subId = r.lastInsertRowid;
+    for (const [docType, arr] of Object.entries(files)) {
+      if (arr && arr[0]) {
+        const f = arr[0];
+        db.prepare('INSERT INTO applicant_docs (submission_id, doc_type, file_path, file_name) VALUES (?,?,?,?)')
+          .run(subId, docType, (f.key || f.filename || f.path), f.originalname || '');
+      }
+    }
+    res.json({ success: true, id: subId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: list applicant submissions (optionally filtered by company).
+app.get('/api/admin/applicant-submissions', requireAdmin, blockManager, (req, res) => {
+  try {
+    const where = [];
+    const params = [];
+    if (req.query.partner_id) { where.push('partner_id = ?'); params.push(parseInt(req.query.partner_id)); }
+    if (req.query.status) { where.push('status = ?'); params.push(String(req.query.status)); }
+    const sql = `SELECT s.*, (SELECT COUNT(*) FROM applicant_docs d WHERE d.submission_id=s.id) as doc_count
+                 FROM applicant_submissions s
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY created_at DESC LIMIT 300`;
+    res.json(db.prepare(sql).all(...params));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: list a submission's documents.
+app.get('/api/admin/applicant-submissions/:id/docs', requireAdmin, blockManager, (req, res) => {
+  res.json(db.prepare('SELECT id, doc_type, file_name, uploaded_at FROM applicant_docs WHERE submission_id=?').all(req.params.id));
+});
+
+// ADMIN: download/stream one document (works for both local and R2 backends).
+app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const doc = db.prepare('SELECT * FROM applicant_docs WHERE id=? AND submission_id=?').get(req.params.docId, req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    const key = storage.normalizeKey(doc.file_path);
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    if (storage.isR2()) {
+      try { return res.redirect(302, await storage.getDownloadUrl(key)); }
+      catch (e) { return res.status(404).json({ error: 'Not found' }); }
+    }
+    const ext = path.extname(key).toLowerCase();
+    const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+    if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
+    try {
+      const s = await storage.getStream(key);
+      s.on('error', () => { try { res.status(500).end(); } catch {} });
+      s.pipe(res);
+    } catch (e) { res.status(404).json({ error: 'Not found' }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: delete a submission and its documents.
+app.delete('/api/admin/applicant-submissions/:id', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const docs = db.prepare('SELECT * FROM applicant_docs WHERE submission_id=?').all(req.params.id);
+    for (const d of docs) { try { await storage.deleteObject(storage.normalizeKey(d.file_path)); } catch {} }
+    db.prepare('DELETE FROM applicant_docs WHERE submission_id=?').run(req.params.id);
+    db.prepare('DELETE FROM applicant_submissions WHERE id=?').run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Quotes

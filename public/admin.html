@@ -1920,6 +1920,45 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════════ Applicant Onboarding QR Modal (招工申请) ════════ -->
+<div class="modal-bg" id="applyQrModal"><div class="modal" style="max-width:420px;text-align:center">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+    <h2 style="margin:0">🪪 招工申请二维码</h2>
+    <button class="btn btn-sm btn-outline" onclick="closeApplicantQrModal()">× 关闭</button>
+  </div>
+  <div id="applyQrPartner" style="font-size:.92rem;color:var(--gray-600);margin-bottom:.6rem"></div>
+  <div id="applyQrLoading" style="text-align:center;color:var(--gray-500);font-size:.85rem;margin-bottom:.4rem">生成中…</div>
+  <div id="applyQrBox" style="display:inline-block;padding:12px;background:#fff;border:2px solid var(--gray-200);border-radius:12px;margin-bottom:.6rem;min-height:120px"></div>
+  <div id="applyQrUrl" style="font-family:monospace;font-size:.66rem;color:var(--gray-500);word-break:break-all;margin-bottom:.6rem"></div>
+  <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap;margin-bottom:.7rem">
+    <button class="btn btn-sm btn-outline" onclick="copyApplyUrl()">📋 复制链接</button>
+    <button class="btn btn-sm btn-outline" onclick="downloadApplyQr()">⬇ 下载二维码</button>
+    <button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="regenerateApplyQr()" title="作废旧二维码并生成新的">↻ 重新生成</button>
+  </div>
+  <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:.7rem .85rem;font-size:.82rem;color:#3730a3;text-align:left">
+    📲 应聘者扫码后填写<strong>姓名 / 电话 / 邮箱 / 职位</strong>，需通过<strong>短信 + 邮箱验证码</strong>验证，并上传 <strong>SSN 正反面</strong> 与 <strong>EAD 正反面</strong>。支持中文 / English / Español。所有申请进入「📨 申请收件箱」。
+  </div>
+</div></div>
+
+<!-- ════════ Applicant Submissions Inbox Modal ════════ -->
+<div class="modal-bg" id="applyInboxModal"><div class="modal" style="max-width:900px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+    <h2 style="margin:0">📨 招工申请收件箱 <span id="applyInboxPartner" style="font-size:.85rem;color:var(--gray-500);font-weight:400"></span></h2>
+    <button class="btn btn-sm btn-outline" onclick="closeApplicantInbox()">× 关闭</button>
+  </div>
+  <div style="overflow:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+      <thead><tr style="text-align:left;border-bottom:2px solid var(--gray-200);color:var(--gray-600)">
+        <th style="padding:.45rem .5rem">姓名</th><th style="padding:.45rem .5rem">职位</th>
+        <th style="padding:.45rem .5rem">电话</th><th style="padding:.45rem .5rem">邮箱</th>
+        <th style="padding:.45rem .5rem">证件</th><th style="padding:.45rem .5rem">时间</th>
+        <th style="padding:.45rem .5rem"></th>
+      </tr></thead>
+      <tbody id="applyInboxBody"><tr><td colspan="7" style="padding:.6rem;color:var(--gray-400)">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div></div>
+
 <!-- ════════ Container Submission Inbox Modal (per-partner, pending review) ════════ -->
 <div class="modal-bg" id="invpCsubInboxModal"><div class="modal" style="max-width:920px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
@@ -11660,6 +11699,8 @@ function renderPartners(partners) {
         <button class="btn btn-sm" style="background:#EFF6FF;color:#0E7BB8;border:1px solid #BFDBFE" onclick='event.stopPropagation();openBlankWorksheetPrint(${p.id}, ${JSON.stringify(p.name||"")})'>📋 空白表</button>
         <button class="btn btn-sm" style="background:#F0FDF4;color:#047857;border:1px solid #BBF7D0" onclick='event.stopPropagation();openBlankWorksheetList(${p.id}, ${JSON.stringify(p.name||"")})'>📥 回传</button>
         <button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A" onclick='event.stopPropagation();openContainerQrModal(${p.id}, ${JSON.stringify(p.name||"")})' title="生成扫码录入 Container 二维码">📱 扫码录入</button>
+        <button class="btn btn-sm" style="background:#EEF2FF;color:#3730A3;border:1px solid #C7D2FE" onclick='event.stopPropagation();openApplicantQrModal(${p.id}, ${JSON.stringify(p.name||"")})' title="招工二维码：应聘者填资料+SSN/EAD证件">🪪 招工申请</button>
+        <button class="btn btn-sm" style="background:#F5F3FF;color:#6D28D9;border:1px solid #DDD6FE" onclick='event.stopPropagation();openApplicantInbox(${p.id}, ${JSON.stringify(p.name||"")})' title="查看本公司收到的招工申请">📨 申请收件箱</button>
         ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>`:''}
       </td>
     </tr>`;
@@ -32626,6 +32667,98 @@ function _renderCsubQr(boxId, url, color) {
 }
 function closeContainerQrModal() {
   document.getElementById('csubQrModal').classList.remove('show');
+}
+
+// ── Applicant onboarding QR (招工申请) ──
+let _applyQrState = { partnerId: null, partnerName: '', url: '' };
+async function openApplicantQrModal(partnerId, partnerName) {
+  _applyQrState = { partnerId, partnerName, url: '' };
+  document.getElementById('applyQrPartner').innerHTML = `公司：<strong>${esc(partnerName || '—')}</strong>`;
+  document.getElementById('applyQrBox').innerHTML = '';
+  document.getElementById('applyQrUrl').textContent = '';
+  document.getElementById('applyQrLoading').style.display = '';
+  document.getElementById('applyQrModal').classList.add('show');
+  try {
+    const r = await api(`/admin/partners/${partnerId}/applicant-qr`);
+    if (!r || !r.url) throw new Error(r && r.error || '生成失败');
+    _applyQrState.url = r.url;
+    await _loadQRLib();
+    document.getElementById('applyQrLoading').style.display = 'none';
+    const box = document.getElementById('applyQrBox');
+    box.innerHTML = '';
+    new QRCode(box, { text: r.url, width: 220, height: 220, colorDark: '#3730A3', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    document.getElementById('applyQrUrl').textContent = r.url;
+  } catch (e) {
+    document.getElementById('applyQrLoading').textContent = '加载失败：' + (e.message || e);
+  }
+}
+function closeApplicantQrModal() { document.getElementById('applyQrModal').classList.remove('show'); }
+function copyApplyUrl() {
+  if (!_applyQrState.url) return;
+  navigator.clipboard.writeText(_applyQrState.url).then(() => { if (typeof toast === 'function') toast('已复制链接'); }).catch(() => {});
+}
+function downloadApplyQr() {
+  const img = document.querySelector('#applyQrBox img') || document.querySelector('#applyQrBox canvas');
+  if (!img) return;
+  const src = img.tagName === 'CANVAS' ? img.toDataURL('image/png') : img.src;
+  const a = document.createElement('a');
+  a.href = src;
+  a.download = `招工二维码-${(_applyQrState.partnerName || 'company').replace(/[^\w一-龥-]/g, '_')}.png`;
+  a.click();
+}
+async function regenerateApplyQr() {
+  if (!_applyQrState.partnerId) return;
+  if (!confirm('重新生成后，旧二维码将立即失效。确定继续？')) return;
+  try {
+    await api(`/admin/partners/${_applyQrState.partnerId}/applicant-qr/regenerate`, { method: 'POST' });
+    openApplicantQrModal(_applyQrState.partnerId, _applyQrState.partnerName);
+  } catch (e) { alert('失败：' + (e.message || e)); }
+}
+
+// ── Applicant submissions inbox ──
+async function openApplicantInbox(partnerId, partnerName) {
+  document.getElementById('applyInboxPartner').textContent = partnerName ? '· ' + partnerName : '';
+  document.getElementById('applyInboxBody').innerHTML = '<tr><td colspan="7" style="padding:.6rem;color:var(--gray-400)">加载中…</td></tr>';
+  document.getElementById('applyInboxModal').classList.add('show');
+  try {
+    const rows = await api('/admin/applicant-submissions?partner_id=' + encodeURIComponent(partnerId));
+    const list = Array.isArray(rows) ? rows : [];
+    const tb = document.getElementById('applyInboxBody');
+    if (!list.length) { tb.innerHTML = '<tr><td colspan="7" style="padding:.6rem;color:var(--gray-400)">暂无申请</td></tr>'; return; }
+    const dl = (sid, did) => `/api/admin/applicant-submissions/${sid}/docs/${did}/download`;
+    const rowsHtml = await Promise.all(list.map(async s => {
+      let docs = [];
+      try { docs = await api(`/admin/applicant-submissions/${s.id}/docs`); } catch (_) {}
+      const docLabel = { ssn_front: 'SSN正', ssn_back: 'SSN反', ead_front: 'EAD正', ead_back: 'EAD反' };
+      const docLinks = (Array.isArray(docs) ? docs : []).map(d =>
+        `<a href="${dl(s.id, d.id)}" target="_blank" style="display:inline-block;margin:1px;padding:.05rem .4rem;background:#eef2ff;color:#3730a3;border-radius:5px;font-size:.72rem;text-decoration:none">${docLabel[d.doc_type] || d.doc_type}</a>`
+      ).join('') || '<span style="color:var(--gray-300)">—</span>';
+      const when = s.created_at ? new Date(s.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
+      const del = USER_ROLE === 'admin'
+        ? `<button class="btn btn-sm" style="padding:.05rem .4rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id}, ${s.partner_id}, ${JSON.stringify(s.partner_name || '')})">删除</button>`
+        : '';
+      return `<tr style="border-bottom:1px solid var(--gray-100)">
+        <td style="padding:.45rem .5rem;font-weight:600">${esc(s.name || '')}</td>
+        <td style="padding:.45rem .5rem">${esc(s.position || '')}</td>
+        <td style="padding:.45rem .5rem">${esc(s.phone || '')} ${s.phone_verified ? '<span style="color:#15803d" title="已验证">✓</span>' : ''}</td>
+        <td style="padding:.45rem .5rem">${esc(s.email || '')} ${s.email_verified ? '<span style="color:#15803d" title="已验证">✓</span>' : ''}</td>
+        <td style="padding:.45rem .5rem">${docLinks}</td>
+        <td style="padding:.45rem .5rem;color:var(--gray-500);font-size:.78rem;white-space:nowrap">${esc(when)}</td>
+        <td style="padding:.45rem .5rem">${del}</td>
+      </tr>`;
+    }));
+    tb.innerHTML = rowsHtml.join('');
+  } catch (e) {
+    document.getElementById('applyInboxBody').innerHTML = `<tr><td colspan="7" style="padding:.6rem;color:#b91c1c">加载失败：${esc(e.message || e)}</td></tr>`;
+  }
+}
+function closeApplicantInbox() { document.getElementById('applyInboxModal').classList.remove('show'); }
+async function deleteApplicant(id, partnerId, partnerName) {
+  if (!confirm('确定删除此申请及其所有证件？此操作不可恢复。')) return;
+  try {
+    await api(`/admin/applicant-submissions/${id}`, { method: 'DELETE' });
+    openApplicantInbox(partnerId, partnerName);
+  } catch (e) { alert('删除失败：' + (e.message || e)); }
 }
 
 // ── 扫码记录 page (all companies / statuses / types) ──
