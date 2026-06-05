@@ -1902,10 +1902,10 @@ tr:hover td{background:var(--sky-light)}
           <input type="text" id="invPageBillAddr" placeholder="客户地址">
         </div>
         <div class="field" id="invPageMarkupRateWrap">
-          <label style="color:#92400e;font-weight:600">Markup Rate（加价系数）</label>
+          <label style="color:#92400e;font-weight:600">Markup Rate（批量填入每行）</label>
           <div style="display:flex;align-items:center;gap:.5rem">
-            <input type="number" id="invPageMarkupRate" placeholder="如 1.15" min="0" step="0.01" style="width:110px;border:1px solid #d97706;border-radius:6px;padding:5px 8px;font-size:.88rem;font-weight:600;color:#92400e">
-            <span style="font-size:.8rem;color:#92400e">× 总工资 = 最终账单<br><span style="color:var(--gray-400);font-weight:400">1.15 = 加价 15%</span></span>
+            <input type="number" id="invPageMarkupRate" placeholder="如 1.20" min="0" step="0.01" style="width:110px;border:1px solid #d97706;border-radius:6px;padding:5px 8px;font-size:.88rem;font-weight:600;color:#92400e" oninput="applyInvMarkupRate(this.value)">
+            <span style="font-size:.8rem;color:#92400e">填入后应用到所有行<br><span style="color:var(--gray-400);font-weight:400">每行可单独修改</span></span>
           </div>
         </div>
       </div>
@@ -28115,7 +28115,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: item.markup ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
@@ -28440,7 +28440,9 @@ async function saveInvpInvoice(status) {
     baseTotal = items.reduce((s,i) => s+i.total, 0);
     containerItems = [];
   }
-  subtotal = Math.round(baseTotal * markupRate * 100) / 100;
+  subtotal = mode === 'container'
+    ? Math.round(baseTotal * markupRate * 100) / 100
+    : Math.round(items.reduce((s,i) => s+(i.billed||i.total), 0) * 100) / 100;
   const profileWithMode = { ...getInvpProfile(), invoice_mode: mode, container_items: containerItems };
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
@@ -28581,6 +28583,7 @@ function _invpSaveTableState() {
     emp.rate = row.querySelector('.invp-man-rate').value;
     const otRateInp = row.querySelector('.invp-man-ot-rate');
     emp.otRate = (otRateInp && otRateInp.dataset.auto !== 'false') ? '' : (otRateInp?.value || '');
+    emp.markup = row.querySelector('.invp-man-markup')?.value || '';
     emp.days = emp.days || {};
     row.querySelectorAll('.invp-man-day').forEach(inp => {
       emp.days[inp.dataset.date] = inp.value;
@@ -28644,6 +28647,8 @@ function renderInvpManualTable(skipSave) {
     const regHrs = Math.min(totalHrs, 40);
     const otHrs  = Math.max(totalHrs - 40, 0);
     const subtotal = regHrs * rate + otHrs * otRateVal;
+    const empMarkup = parseFloat(emp.markup) || 0;
+    const empBilled = empMarkup > 0 ? subtotal * empMarkup : 0;
     const linkBadge = emp.linked_employee_id
       ? `<span title="已链接到系统员工 ${esc(emp.linked_employee_code||'')} — 点击解除" style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:10px;padding:0 6px;font-size:.7rem;line-height:1.5;cursor:pointer;white-space:nowrap;flex-shrink:0" onclick="invpUnlinkEmp(${emp.uid})">🔗${emp.linked_employee_code ? ' '+esc(emp.linked_employee_code) : ''} ✕</span>`
       : `<button type="button" onclick="invpOpenLinkModal(${emp.uid})" title="链接到系统员工" style="background:none;border:1px dashed var(--gray-300);border-radius:10px;color:var(--gray-500);font-size:.75rem;padding:0 5px;cursor:pointer;line-height:1.5;flex-shrink:0">🔗</button>`;
@@ -28680,6 +28685,13 @@ function renderInvpManualTable(skipSave) {
       <td class="invp-man-othrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;${otHrs > 0 ? 'color:var(--accent);font-weight:600' : 'color:var(--gray-400)'}">${otHrs > 0 ? otHrs.toFixed(2) + 'h' : '—'}</td>
       <td class="invp-man-totalhrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${totalHrs.toFixed(1)}h</td>
       <td class="invp-man-subtotal" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;font-weight:600">$${subtotal.toFixed(2)}</td>
+      <td style="padding:3px 4px;text-align:right">
+        <input type="number" class="invp-man-markup" data-uid="${emp.uid}" value="${emp.markup || ''}"
+          min="1" step="0.01" placeholder="×mk"
+          style="width:58px;text-align:right;border:1px solid #bfdbfe;border-radius:4px;padding:2px 4px;font-size:.83rem;background:#eff6ff;color:#1d4ed8"
+          oninput="invpUpdateRowTotal(this.closest('tr'))">
+      </td>
+      <td class="invp-man-billed" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;font-weight:700;color:#1d4ed8">${empMarkup > 0 ? '$'+empBilled.toFixed(2) : '—'}</td>
       <td style="padding:3px 4px;white-space:nowrap">
         <button onclick="invpOpenDistribute(${emp.uid})" style="background:none;border:none;cursor:pointer;color:var(--sky);font-size:.95rem;padding:0 4px" title="分配工时到所选日期">⇆</button>
         <button onclick="invpRemoveEmp(${emp.uid})" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.85rem;padding:0 4px" title="删除">✕</button>
@@ -28700,6 +28712,8 @@ function renderInvpManualTable(skipSave) {
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:var(--accent)">加班工时 <span style="font-weight:400;font-size:.72rem">&gt;40h/周</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">合计工时</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">小计</th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#eff6ff;color:#1d4ed8">Markup</th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#1d4ed8">账单金额</th>
         <th style="padding:5px 6px"></th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
@@ -28764,11 +28778,16 @@ function invpUpdateRowTotal(row) {
   otCell.style.color = otHrs > 0 ? 'var(--accent)' : 'var(--gray-400)';
   otCell.style.fontWeight = otHrs > 0 ? '600' : '';
   row.querySelector('.invp-man-subtotal').textContent = '$' + subtotal.toFixed(2);
+  const markupInp = row.querySelector('.invp-man-markup');
+  const markup = parseFloat(markupInp?.value) || 0;
+  const billedCell = row.querySelector('.invp-man-billed');
+  if (billedCell) billedCell.textContent = markup > 0 ? '$' + (subtotal * markup).toFixed(2) : '—';
 }
 
 function invpAddEmp() {
   _invpSaveTableState();
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', rate: '', days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' });
+  const defaultMarkup = document.getElementById('invPageMarkupRate').value || '';
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', rate: '', markup: defaultMarkup, days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' });
   renderInvpManualTable();
   // Focus the new name input
   const rows = document.querySelectorAll('.invp-manual-row');
@@ -29409,6 +29428,15 @@ function applyInvUniformRate(val) {
   });
 }
 
+function applyInvMarkupRate(val) {
+  const markup = parseFloat(val);
+  if (!markup || markup <= 0) return;
+  document.querySelectorAll('.invp-man-markup').forEach(inp => {
+    inp.value = markup.toFixed(2);
+    invpUpdateRowTotal(inp.closest('tr'));
+  });
+}
+
 function getInvpManualItems() {
   _invpSaveTableState();
   return window._invpManualEmps
@@ -29422,7 +29450,9 @@ function getInvpManualItems() {
       const regHours = Math.min(totalHours, 40);
       const otHours  = Math.max(totalHours - 40, 0);
       const total = regHours * rate + otHours * otRate;
-      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      const markup = parseFloat(emp.markup) || 1;
+      const billed = Math.round(total * markup * 100) / 100;
+      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total, markup, billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
@@ -29474,18 +29504,18 @@ async function generateInvpPreview() {
     return `${left}, ${ay} – ${_MONTHS[parseInt(bm)-1]} ${parseInt(bd)}, ${by}`;
   };
   const markupRate  = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
-  const hasMarkup   = markupRate > 1;
   const servicePeriodLabel = fmtNiceRange(ps, pe);
 
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
 
   // Mode-specific aggregations
-  let baseAmt, billedAmt, totalRegHrs = 0, totalOtHrs = 0, hasPosition = false, totalRowColspan = 3;
+  let baseAmt, billedAmt, hasMarkup = false, totalRegHrs = 0, totalOtHrs = 0, hasPosition = false, totalRowColspan = 3;
   let lineItemTableHtml = '';
 
   if (mode === 'container') {
     baseAmt   = containerItems.reduce((s,i) => s + (i.total || 0), 0);
     billedAmt = Math.round(baseAmt * markupRate * 100) / 100;
+    hasMarkup = billedAmt > baseAmt;
     const containerRows = containerItems.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
       const hl = !!i.highlighted;
@@ -29530,7 +29560,8 @@ async function generateInvpPreview() {
     baseAmt     = items.reduce((s,i) => s+i.total, 0);
     totalRegHrs = items.reduce((s,i) => s+(i.regHours||0), 0);
     totalOtHrs  = items.reduce((s,i) => s+(i.otHours||0), 0);
-    billedAmt   = Math.round(baseAmt * markupRate * 100) / 100;
+    billedAmt   = Math.round(items.reduce((s,i) => s+(i.billed||i.total), 0) * 100) / 100;
+    hasMarkup   = billedAmt > baseAmt;
     hasPosition = items.some(i => i.category);
     window._invpAllOtZero = (totalOtHrs === 0);
     const hideOt = window._invpAllOtZero && window._invpHideOtCols;
@@ -29566,13 +29597,23 @@ async function generateInvpPreview() {
         <tbody>
           ${tableRows}
           <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
-            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(incl. markup)</span>` : ''}</td>
             <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
             ${hideOt ? '' : `<td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>`}
             <td style="padding:7px 7px;text-align:right" colspan="${hideOt ? 1 : 2}">$${billedAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>`;
+  }
+
+  // Markup label for summary: show single rate if uniform, "per worker" if mixed
+  let markupSummaryLabel;
+  if (mode === 'container') {
+    markupSummaryLabel = `× Markup ${markupRate.toFixed(2)}`;
+  } else {
+    const markupRates = items.map(i => i.markup || 1);
+    const allSame = markupRates.every(r => r === markupRates[0]);
+    markupSummaryLabel = allSame ? `× Markup ${markupRates[0].toFixed(2)}` : `× Markup (per worker)`;
   }
 
   const bankRows = [
@@ -29670,7 +29711,7 @@ async function generateInvpPreview() {
             <td style="padding:5px 0;text-align:right;color:#64748b;white-space:nowrap">$${baseAmt.toFixed(2)}</td>
           </tr>
           <tr>
-            <td colspan="2" style="padding:1px 0 5px 0;text-align:right;font-size:.74rem;color:#94a3b8;white-space:nowrap">× Markup ${markupRate.toFixed(2)}</td>
+            <td colspan="2" style="padding:1px 0 5px 0;text-align:right;font-size:.74rem;color:#94a3b8;white-space:nowrap">${markupSummaryLabel}</td>
           </tr>` : ''}
           <tr>
             <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;font-size:.9rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>
