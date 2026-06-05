@@ -29574,17 +29574,19 @@ async function generateInvpPreview() {
     totalRowColspan = hasPosition ? 4 : 3;
     const tableRows = items.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
+      const customMarkup = Math.abs((i.markup || markupRate) - markupRate) > 0.0001;
+      const rowWeight = customMarkup ? 'font-weight:700;' : '';
       const posCell = hasPosition
-        ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
+        ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;${rowWeight}">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
       return `<tr style="background:${stripe}">
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;${rowWeight}font-weight:${customMarkup ? '700' : '500'}">${esc(i.name)}</td>
         ${posCell}
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${(i.regHours||0).toFixed(2)}</td>
-        ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
-        ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>`}
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.billed||i.total||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${rowWeight}">${(i.regHours||0).toFixed(2)}</td>
+        ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${rowWeight}${(i.otHours||0) > 0 ? '' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${rowWeight}">$${(i.rate||0).toFixed(2)}</td>
+        ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${rowWeight}">$${(i.otRate||0).toFixed(2)}</td>`}
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
       </tr>`;
     }).join('');
     lineItemTableHtml = `
