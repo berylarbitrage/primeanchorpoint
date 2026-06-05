@@ -29666,9 +29666,11 @@ async function generateInvpPreview() {
         <table style="border-collapse:collapse;font-size:.86rem;min-width:280px">
           ${hasMarkup ? `
           <tr>
-            <td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">
-              ${mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} $${baseAmt.toFixed(2)} &nbsp;×&nbsp; Markup ${markupRate.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
-            </td>
+            <td style="padding:5px 16px 5px 0;text-align:right;color:#64748b;white-space:nowrap">${mode === 'container' ? 'Subtotal' : 'Wage Subtotal'}</td>
+            <td style="padding:5px 0;text-align:right;color:#64748b;white-space:nowrap">$${baseAmt.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td colspan="2" style="padding:1px 0 5px 0;text-align:right;font-size:.74rem;color:#94a3b8;white-space:nowrap">× Markup ${markupRate.toFixed(2)}</td>
           </tr>` : ''}
           <tr>
             <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;font-size:.9rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>
