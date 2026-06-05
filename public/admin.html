@@ -29574,7 +29574,7 @@ async function generateInvpPreview() {
     totalRowColspan = hasPosition ? 4 : 3;
     const tableRows = items.map((i, idx) => {
       const customMarkup = Math.abs((i.markup || markupRate) - markupRate) > 0.0001;
-      const rowBg = customMarkup ? '#fff7ed' : (idx % 2 === 1 ? '#f8fafc' : '#ffffff');
+      const rowBg = customMarkup ? '#eff6ff' : (idx % 2 === 1 ? '#f8fafc' : '#ffffff');
       const posCell = hasPosition
         ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
