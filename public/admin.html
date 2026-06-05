@@ -29574,7 +29574,7 @@ async function generateInvpPreview() {
     totalRowColspan = hasPosition ? 4 : 3;
     const tableRows = items.map((i, idx) => {
       const customMarkup = Math.abs((i.markup || markupRate) - markupRate) > 0.0001;
-      const rowBg = customMarkup ? '#eff6ff' : (idx % 2 === 1 ? '#f8fafc' : '#ffffff');
+      const rowBg = customMarkup ? '#bfdbfe' : (idx % 2 === 1 ? '#f8fafc' : '#ffffff');
       const posCell = hasPosition
         ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
@@ -29604,10 +29604,10 @@ async function generateInvpPreview() {
         <tbody>
           ${tableRows}
           <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
-            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(incl. markup)</span>` : ''}</td>
+            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total</td>
             <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
             ${hideOt ? '' : `<td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>`}
-            <td style="padding:7px 7px;text-align:right" colspan="${hideOt ? 1 : 2}">$${billedAmt.toFixed(2)}</td>
+            <td style="padding:7px 7px;text-align:right" colspan="${hideOt ? 1 : 2}">$${baseAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>`;
