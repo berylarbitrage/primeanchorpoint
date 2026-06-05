@@ -190,8 +190,10 @@ const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
 const _sgKey = process.env.SENDGRID_API_KEY ||
   (process.env.SMTP_USER === 'apikey' ? process.env.SMTP_PASS : null);
 
-// Fallback: generic SMTP via nodemailer (non-SendGrid providers only)
-const emailTransporter = (!_sgKey && process.env.SMTP_HOST)
+// Fallback / alternative: generic SMTP via nodemailer. Built whenever SMTP_HOST
+// is set — even alongside SendGrid — so a bad/expired SendGrid key can fail over
+// to SMTP instead of blocking all email.
+const emailTransporter = process.env.SMTP_HOST
   ? nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
@@ -206,16 +208,30 @@ const emailTransporter = (!_sgKey && process.env.SMTP_HOST)
 if (!_sgKey && !emailTransporter) {
   console.warn('[EMAIL-WARN] No email transport configured. Set SENDGRID_API_KEY (recommended) or SMTP_HOST.');
 }
-if (_sgKey) {
-  console.log(`[EMAIL] SendGrid HTTP API ready (from: ${EMAIL_FROM})`);
-} else if (emailTransporter) {
+if (_sgKey) console.log(`[EMAIL] SendGrid HTTP API ready (from: ${EMAIL_FROM})`);
+if (emailTransporter) {
   emailTransporter.verify()
-    .then(() => console.log(`[EMAIL] SMTP connection verified OK (from: ${EMAIL_FROM})`))
+    .then(() => console.log(`[EMAIL] SMTP ${_sgKey ? 'fallback ' : ''}connection verified OK (from: ${EMAIL_FROM})`))
     .catch(e => console.error(`[EMAIL-ERR] SMTP connection failed at startup: ${e.message}`));
 }
 
+// Send via the SMTP transporter. Returns { ok, error }.
+async function _smtpSend(to, subject, text, html, attachments) {
+  if (!emailTransporter) return { ok: false, error: 'SMTP 未配置' };
+  try {
+    const msg = { from: EMAIL_FROM, to, subject, text };
+    if (html) msg.html = html;
+    if (attachments) msg.attachments = attachments;
+    await emailTransporter.sendMail(msg);
+    return { ok: true };
+  } catch (e) {
+    console.error(`[EMAIL-ERR] SMTP send failed to ${to}: ${e.message}`);
+    return { ok: false, error: 'SMTP: ' + e.message };
+  }
+}
+
 function verificationCodeHtml(code, isAdminTest = false) {
-  const label = isAdminTest ? '管理员测试 / Admin Test' : '邮箱验证 / Email Verification';
+  const label = isAdminTest ? 'Admin Test' : 'Verificación de Correo / Email Verification';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 0">
@@ -226,14 +242,14 @@ function verificationCodeHtml(code, isAdminTest = false) {
   <p style="margin:4px 0 0;color:#a0aec0;font-size:12px">${label}</p>
 </td></tr>
 <tr><td style="padding:32px">
-  <p style="margin:0 0 8px;color:#374151;font-size:15px">您的验证码 / Your verification code:</p>
+  <p style="margin:0 0 8px;color:#374151;font-size:15px">Su código de verificación / Your verification code:</p>
   <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:20px;text-align:center;margin:16px 0">
     <span style="font-size:36px;font-weight:700;letter-spacing:8px;color:#1a1a2e;font-family:monospace">${code}</span>
   </div>
-  <p style="margin:0;color:#6b7280;font-size:13px">验证码15分钟内有效。请勿分享给他人。<br>This code expires in 15 minutes. Do not share it with anyone.</p>
+  <p style="margin:0;color:#6b7280;font-size:13px">El código expira en 15 minutos. No lo comparta con nadie.<br>This code expires in 15 minutes. Do not share it with anyone.</p>
 </td></tr>
 <tr><td style="padding:0 32px 24px;border-top:1px solid #f3f4f6">
-  <p style="margin:16px 0 0;color:#9ca3af;font-size:11px">如非本人操作请忽略此邮件。If you did not request this, please ignore this email.</p>
+  <p style="margin:16px 0 0;color:#9ca3af;font-size:11px">Si no lo solicitó, ignore este correo. If you did not request this, please ignore this email.</p>
 </td></tr>
 </table>
 </td></tr>
@@ -242,6 +258,15 @@ function verificationCodeHtml(code, isAdminTest = false) {
 }
 
 async function sendEmail(to, subject, text, html) {
+  const r = await sendEmailWithDetail(to, subject, text, html);
+  return r.ok;
+}
+
+// Like sendEmail but returns the provider's exact status/error for diagnostics.
+// { ok, status, error } — e.g. SendGrid 401 (bad key) vs 403 (unverified sender).
+// On SendGrid failure, automatically falls back to SMTP when one is configured.
+async function sendEmailWithDetail(to, subject, text, html) {
+  let sgHint = '';
   if (_sgKey) {
     try {
       const content = [{ type: 'text/plain', value: text }];
@@ -249,31 +274,26 @@ async function sendEmail(to, subject, text, html) {
       const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
         headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          personalizations: [{ to: [{ email: to }] }],
-          from: { email: EMAIL_FROM },
-          subject,
-          content,
-        }),
+        body: JSON.stringify({ personalizations: [{ to: [{ email: to }] }], from: { email: EMAIL_FROM }, subject, content }),
       });
-      if (r.status === 202) { console.log(`[EMAIL] Sent to ${to}`); return true; }
-      const body = await r.text();
+      if (r.status === 202) { console.log(`[EMAIL] Sent to ${to} via SendGrid`); return { ok: true, status: 202 }; }
+      const body = (await r.text()).slice(0, 300);
       console.error(`[EMAIL-ERR] SendGrid API ${r.status}: ${body}`);
-      return false;
+      sgHint = r.status === 401 ? 'SENDGRID_API_KEY 无效或无 Mail Send 权限'
+        : r.status === 403 ? `发件人未验证（from=${EMAIL_FROM}）`
+        : `SendGrid ${r.status}`;
+      // fall through to SMTP fallback below if one is configured
+      if (!emailTransporter) return { ok: false, status: r.status, error: sgHint };
     } catch (e) {
-      console.error(`[EMAIL-ERR] SendGrid API fetch failed: ${e.message}`);
-      return false;
+      console.error(`[EMAIL-ERR] SendGrid fetch failed: ${e.message}`);
+      sgHint = 'SendGrid 请求失败: ' + e.message;
+      if (!emailTransporter) return { ok: false, error: sgHint };
     }
   }
-  if (!emailTransporter) { console.log(`[EMAIL-SKIP] No transport. To: ${to}`); return false; }
-  try {
-    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text, html });
-    console.log(`[EMAIL] Sent to ${to}`);
-    return true;
-  } catch (e) {
-    console.error(`[EMAIL-ERR] Failed to send to ${to}: ${e.message} (code: ${e.code}, response: ${e.response})`);
-    return false;
-  }
+  if (!emailTransporter) return { ok: false, error: 'SENDGRID_API_KEY / SMTP_HOST 未配置' };
+  const s = await _smtpSend(to, subject, text, html);
+  if (s.ok) { console.log(`[EMAIL] Sent to ${to} via SMTP${sgHint ? ' (SendGrid failed: ' + sgHint + ')' : ''}`); return { ok: true }; }
+  return { ok: false, error: sgHint ? `${sgHint}；SMTP 也失败: ${s.error}` : s.error };
 }
 
 // ─── Email with PDF attachment ───
@@ -303,6 +323,40 @@ async function sendEmailWithAttachment(to, subject, text, pdfBuffer, pdfFileName
     console.log(`[EMAIL] Sent attachment to ${to}`);
     return true;
   } catch (e) { console.error(`[EMAIL-ERR] ${e.message}`); return false; }
+}
+
+// ─── Email with arbitrary file attachments (images/PDF) ───
+// files: [{ filename, content: Buffer, mime }]
+async function sendEmailWithFiles(to, subject, text, html, files = []) {
+  if (_sgKey) {
+    try {
+      const content = [{ type: 'text/plain', value: text }];
+      if (html) content.push({ type: 'text/html', value: html });
+      const attachments = files.map(f => ({
+        content: f.content.toString('base64'),
+        filename: f.filename,
+        type: f.mime || 'application/octet-stream',
+        disposition: 'attachment',
+      }));
+      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personalizations: [{ to: [{ email: to }] }], from: { email: EMAIL_FROM }, subject, content, attachments }),
+      });
+      if (r.status === 202) { console.log(`[EMAIL] Sent ${files.length} attachment(s) to ${to} via SendGrid`); return true; }
+      const body = (await r.text()).slice(0, 300);
+      console.error(`[EMAIL-ERR] SendGrid ${r.status}: ${body}`);
+      if (!emailTransporter) return false;
+    } catch (e) {
+      console.error(`[EMAIL-ERR] SendGrid attachment fetch failed: ${e.message}`);
+      if (!emailTransporter) return false;
+    }
+  }
+  if (!emailTransporter) { console.log(`[EMAIL-SKIP] No transport. To: ${to}`); return false; }
+  const smtpAttachments = files.map(f => ({ filename: f.filename, content: f.content, contentType: f.mime }));
+  const s = await _smtpSend(to, subject, text, html, smtpAttachments);
+  if (s.ok) { console.log(`[EMAIL] Sent ${files.length} attachment(s) to ${to} via SMTP`); return true; }
+  return false;
 }
 
 // ─── Database Setup ───
@@ -728,6 +782,95 @@ partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
 try { db.exec(`ALTER TABLE partners ADD COLUMN company_number TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE partners ADD COLUMN container_submit_token TEXT DEFAULT ''`); } catch {}
+
+// ─── Per-partner container submission inbox (mobile QR collection) ───
+db.exec(`CREATE TABLE IF NOT EXISTS container_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  container_no TEXT DEFAULT '',
+  qty INTEGER DEFAULT 1,
+  unit_price REAL DEFAULT 0,
+  photo_path TEXT DEFAULT '',
+  participants TEXT DEFAULT '[]',
+  submitter_name TEXT DEFAULT '',
+  submitter_phone TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  status TEXT DEFAULT 'pending',
+  imported_invoice_id INTEGER,
+  imported_at DATETIME,
+  user_agent TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_csub_partner_status ON container_submissions(partner_id, status)`); } catch(e) {}
+// Two QR codes per company: 'start' (开始装/卸柜) vs 'end' (结束). Lets a container's
+// start/end times be read from the paired start & end submissions.
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN submit_type TEXT DEFAULT 'start'`); } catch(e) {}
+// Review: who verified the record (by re-entering the container number) and when.
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN reviewed_by TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN reviewed_at DATETIME`); } catch(e) {}
+// Customer-confirmed price (kept separate from unit_price) and foreman's per-container worker price.
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN customer_price REAL`); } catch(e) {}
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN worker_price REAL`); } catch(e) {}
+
+// Per-date-range review links (one each for customer & foreman). The link covers a
+// company's container records in [date_from, date_to]; submitting updates those records.
+db.exec(`CREATE TABLE IF NOT EXISTS container_review_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL UNIQUE,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  role TEXT NOT NULL,
+  date_from TEXT NOT NULL,
+  date_to TEXT NOT NULL,
+  feedback TEXT DEFAULT '',
+  reviewer_name TEXT DEFAULT '',
+  submitted_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_crl_partner ON container_review_links(partner_id, created_at)`); } catch(e) {}
+
+// ─── Per-company applicant onboarding (QR self-service: name/phone/email/position
+//     + SSN & EAD document photos, gated by phone + email OTP verification) ───
+try { db.exec(`ALTER TABLE partners ADD COLUMN applicant_form_token TEXT DEFAULT ''`); } catch {}
+db.exec(`CREATE TABLE IF NOT EXISTS applicant_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  name TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  position TEXT DEFAULT '',
+  phone_verified INTEGER DEFAULT 0,
+  email_verified INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'submitted',
+  notes TEXT DEFAULT '',
+  user_agent TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_apl_partner ON applicant_submissions(partner_id, created_at)`); } catch(e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  submission_id INTEGER NOT NULL,
+  doc_type TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+// Standalone OTP store for the public applicant form (not tied to a worker account).
+db.exec(`CREATE TABLE IF NOT EXISTS applicant_otp (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  form_token TEXT NOT NULL,
+  type TEXT NOT NULL,
+  target TEXT NOT NULL,
+  code TEXT DEFAULT '',
+  verified INTEGER DEFAULT 0,
+  attempts INTEGER DEFAULT 0,
+  expires_at TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_aotp ON applicant_otp(form_token, type, target)`); } catch(e) {}
 
 function generatePartnerNumber(stateAbbr) {
   const s = (stateAbbr || 'XX').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2).padEnd(2, 'X');
@@ -1409,6 +1552,49 @@ function getWorkerPositions() {
   return db.prepare('SELECT * FROM worker_positions WHERE active=1 ORDER BY sort_order, id').all()
     .map(r => ({ id: r.id, key: r.key, zh: r.name_zh, en: r.name_en, es: r.name_es, sort_order: r.sort_order }));
 }
+
+// ─── Referrers (推荐人) — 独立于 worker_accounts.referred_by 之外的外部推荐人 ───
+db.exec(`CREATE TABLE IF NOT EXISTS referrers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  city TEXT DEFAULT '',
+  state TEXT DEFAULT '',
+  zip TEXT DEFAULT '',
+  linked_employee_id INTEGER DEFAULT NULL,
+  linked_worker_account_id INTEGER DEFAULT NULL,
+  notes TEXT DEFAULT '',
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS referrer_position_bonus (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  referrer_id INTEGER NOT NULL,
+  position_key TEXT NOT NULL,
+  bonus_amount REAL DEFAULT 0,
+  min_hours REAL DEFAULT NULL,
+  UNIQUE(referrer_id, position_key),
+  FOREIGN KEY (referrer_id) REFERENCES referrers(id) ON DELETE CASCADE
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS referrer_referrals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  referrer_id INTEGER NOT NULL,
+  referee_employee_id INTEGER DEFAULT NULL,
+  referee_worker_account_id INTEGER DEFAULT NULL,
+  referee_name TEXT DEFAULT '',
+  position_key TEXT DEFAULT '',
+  bonus_amount REAL DEFAULT 0,
+  min_hours REAL DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  qualified_at DATETIME DEFAULT NULL,
+  paid_at DATETIME DEFAULT NULL,
+  notes TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (referrer_id) REFERENCES referrers(id) ON DELETE CASCADE
+)`);
 // Add quote_request column to inquiries if not already present (migration)
 try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
 
@@ -1974,6 +2160,9 @@ try { db.exec("ALTER TABLE labor_companies ADD COLUMN bank_name TEXT DEFAULT ''"
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN routing_number TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN account_number TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN payment_notes TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN swift_code TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN zelle_handle TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN payee_name TEXT DEFAULT ''"); } catch {}
 
 // Worker payments ledger
 db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
@@ -2031,6 +2220,49 @@ try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN clock_out_time TEX
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_minutes INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_start_time TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_end_time TEXT DEFAULT ''`); } catch(e) {}
+
+// ─── Per-week-per-worker payout info (method / paying entity / proof) ───
+db.exec(`CREATE TABLE IF NOT EXISTS company_week_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  worker_name TEXT DEFAULT '',
+  employee_id INTEGER DEFAULT NULL,
+  week_start TEXT NOT NULL,
+  week_end TEXT DEFAULT '',
+  payment_method TEXT DEFAULT '',
+  third_party_platform TEXT DEFAULT '',
+  paying_entity TEXT DEFAULT '',
+  amount REAL DEFAULT 0,
+  proof_file_path TEXT DEFAULT '',
+  proof_file_name TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+// Migrate from the earlier per-company schema: add worker columns and switch the
+// uniqueness from (partner_id, week_start) to (partner_id, week_start, worker_name).
+try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN worker_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN employee_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`DROP INDEX IF EXISTS idx_cwkp_partner_week`); } catch(e) {}
+try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cwkp_partner_week_worker ON company_week_payments(partner_id, week_start, worker_name)`); } catch(e) {}
+
+// ─── Per-month-per-company bill attachments (client payment proof + handwritten timesheet) ───
+db.exec(`CREATE TABLE IF NOT EXISTS company_month_bills (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  partner_name TEXT DEFAULT '',
+  year_month TEXT NOT NULL,
+  proof_file_path TEXT DEFAULT '',
+  proof_file_name TEXT DEFAULT '',
+  timesheet_file_path TEXT DEFAULT '',
+  timesheet_file_name TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cmb_partner_ym ON company_month_bills(partner_id, year_month)`); } catch(e) {}
 
 // ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
 db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
@@ -4431,6 +4663,14 @@ function generateInvoiceApprovalHtmlTemplate_ES() { return _buildInvoiceApproval
 // ── Third-Party Payment Authorization (PayPal / Venmo / Cash App) ──
 // ── Third-Party Payment Authorization — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
+// Split a combined Option A / Option B payment-auth form into a single-option variant.
+// Markers <!--A_ONLY_S/E--> and <!--B_ONLY_S/E--> are emitted by the builders.
+function _zoneVariant(html, variant) {
+  if (variant === 'a') html = html.replace(/<!--B_ONLY_S-->[\s\S]*?<!--B_ONLY_E-->/g, '');
+  else if (variant === 'b') html = html.replace(/<!--A_ONLY_S-->[\s\S]*?<!--A_ONLY_E-->/g, '');
+  return html.replace(/<!--[AB]_ONLY_[SE]-->/g, '');
+}
+
 function _buildThirdPartyPayForm(lang) {
   const companyName = getCompanyLegalName();
   const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
@@ -4577,7 +4817,7 @@ function _buildThirdPartyPayForm(lang) {
   </tr>
 </table>
 
-<!-- Zone A — Direct Receipt to Own Platform Account -->
+<!--A_ONLY_S--><!-- Zone A — Direct Receipt to Own Platform Account -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="tp_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -4643,7 +4883,7 @@ function _buildThirdPartyPayForm(lang) {
   </div>
 </div>
 
-<!-- Zone B — Third-Party Authorization -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third-Party Authorization -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="tp_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -4692,7 +4932,7 @@ function _buildThirdPartyPayForm(lang) {
   </div>
 </div>
 
-<div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
+<!--B_ONLY_E--><div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
 <div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.5;background:#fafafa;margin-bottom:8px">
   <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack1}</span></div>
   <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack2}</span></div>
@@ -4719,9 +4959,12 @@ function _buildThirdPartyPayForm(lang) {
 </div>`;
 }
 
-function generateThirdPartyPayHtmlTemplate()    { return _buildThirdPartyPayForm('zh-en'); }
-function generateThirdPartyPayHtmlTemplate_EN() { return _buildThirdPartyPayForm('en'); }
-function generateThirdPartyPayHtmlTemplate_ES() { return _buildThirdPartyPayForm('en-es'); }
+function generateThirdPartyPayHtmlTemplate() { return _zoneVariant(_buildThirdPartyPayForm('zh-en'), 'a'); }
+function generateThirdPartyPayHtmlTemplate_B() { return _zoneVariant(_buildThirdPartyPayForm('zh-en'), 'b'); }
+function generateThirdPartyPayHtmlTemplate_EN() { return _zoneVariant(_buildThirdPartyPayForm('en'), 'a'); }
+function generateThirdPartyPayHtmlTemplate_EN_B() { return _zoneVariant(_buildThirdPartyPayForm('en'), 'b'); }
+function generateThirdPartyPayHtmlTemplate_ES() { return _zoneVariant(_buildThirdPartyPayForm('en-es'), 'a'); }
+function generateThirdPartyPayHtmlTemplate_ES_B() { return _zoneVariant(_buildThirdPartyPayForm('en-es'), 'b'); }
 
 // ── W-7 (ITIN Application) ──
 function generateW7HtmlTemplate() {
@@ -4933,7 +5176,7 @@ function _buildACHAuthForm(lang) {
 <!-- 2. PAYMENT RECIPIENT -->
 <div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 10px;color:#1e3a8a">${s3}</div>
 
-<!-- Zone A: Self / Direct -->
+<!--A_ONLY_S--><!-- Zone A: Self / Direct -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="ach_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -4992,7 +5235,7 @@ function _buildACHAuthForm(lang) {
   </div>
 </div>
 
-<!-- Zone B: Third Party -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B: Third Party -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="ach_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5040,7 +5283,7 @@ function _buildACHAuthForm(lang) {
   </div>
 </div>
 
-<!-- 3. AUTHORIZATION -->
+<!--B_ONLY_E--><!-- 3. AUTHORIZATION -->
 <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:10px 13px;margin-bottom:14px">
   <div style="font-size:9pt;font-weight:800;color:#92400e;margin-bottom:6px">${s4}</div>
   <div style="font-size:7.5pt;color:#374151;line-height:1.7">
@@ -5067,9 +5310,12 @@ function _buildACHAuthForm(lang) {
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
-function generateACHAuthHtmlTemplate()    { return _buildACHAuthForm('zh-en'); }
-function generateACHAuthHtmlTemplate_EN() { return _buildACHAuthForm('en'); }
-function generateACHAuthHtmlTemplate_ES() { return _buildACHAuthForm('en-es'); }
+function generateACHAuthHtmlTemplate() { return _zoneVariant(_buildACHAuthForm('zh-en'), 'a'); }
+function generateACHAuthHtmlTemplate_B() { return _zoneVariant(_buildACHAuthForm('zh-en'), 'b'); }
+function generateACHAuthHtmlTemplate_EN() { return _zoneVariant(_buildACHAuthForm('en'), 'a'); }
+function generateACHAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildACHAuthForm('en'), 'b'); }
+function generateACHAuthHtmlTemplate_ES() { return _zoneVariant(_buildACHAuthForm('en-es'), 'a'); }
+function generateACHAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildACHAuthForm('en-es'), 'b'); }
 
 // ── Wire Transfer Authorization ──
 function _buildWireAuthForm(lang) {
@@ -5262,7 +5508,7 @@ function _buildWireAuthForm(lang) {
   </tr>
 </table>
 
-<!-- Zone A — Direct Wire to Own Account -->
+<!--A_ONLY_S--><!-- Zone A — Direct Wire to Own Account -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="wire_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5338,7 +5584,7 @@ function _buildWireAuthForm(lang) {
   </div>
 </div>
 
-<!-- Zone B — Third-Party Authorization -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third-Party Authorization -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="wire_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5387,7 +5633,7 @@ function _buildWireAuthForm(lang) {
   </div>
 </div>
 
-<div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:10px;font-size:7.5pt;line-height:1.6">
+<!--B_ONLY_E--><div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:10px;font-size:7.5pt;line-height:1.6">
   <div style="font-weight:700;margin-bottom:4px;font-size:8.5pt">${s4}</div>
   <div style="margin-bottom:3px">① ${cert1}</div>
   <div style="margin-bottom:3px">② ${cert2}</div>
@@ -5411,9 +5657,12 @@ function _buildWireAuthForm(lang) {
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
-function generateWireAuthHtmlTemplate()    { return _buildWireAuthForm('zh-en'); }
-function generateWireAuthHtmlTemplate_EN() { return _buildWireAuthForm('en'); }
-function generateWireAuthHtmlTemplate_ES() { return _buildWireAuthForm('en-es'); }
+function generateWireAuthHtmlTemplate() { return _zoneVariant(_buildWireAuthForm('zh-en'), 'a'); }
+function generateWireAuthHtmlTemplate_B() { return _zoneVariant(_buildWireAuthForm('zh-en'), 'b'); }
+function generateWireAuthHtmlTemplate_EN() { return _zoneVariant(_buildWireAuthForm('en'), 'a'); }
+function generateWireAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildWireAuthForm('en'), 'b'); }
+function generateWireAuthHtmlTemplate_ES() { return _zoneVariant(_buildWireAuthForm('en-es'), 'a'); }
+function generateWireAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildWireAuthForm('en-es'), 'b'); }
 
 // ── Check / 支票 Instruction Form ──
 function _buildCheckInstructionForm(lang) {
@@ -5563,7 +5812,7 @@ function _buildCheckInstructionForm(lang) {
   </tr>
 </table>
 
-<!-- Zone A — Check Mailed to Own Address -->
+<!--A_ONLY_S--><!-- Zone A — Check Mailed to Own Address -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="check_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5598,7 +5847,7 @@ function _buildCheckInstructionForm(lang) {
   </div>
 </div>
 
-<!-- Zone B — Third Party Receives Check -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third Party Receives Check -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
     <checkbox-field name="check_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
@@ -5647,7 +5896,7 @@ function _buildCheckInstructionForm(lang) {
   </div>
 </div>
 
-<div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:4px;font-size:7.5pt;line-height:1.6">
+<!--B_ONLY_E--><div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:4px;font-size:7.5pt;line-height:1.6">
   <div style="font-weight:700;margin-bottom:5px;font-size:8.5pt">${s5}</div>
   <div style="margin-bottom:3px">① ${confirmLine1}</div>
   <div style="margin-bottom:3px">② ${confirmLine2}</div>
@@ -5670,9 +5919,12 @@ function _buildCheckInstructionForm(lang) {
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
 }
-function generateCheckInstructionHtmlTemplate()    { return _buildCheckInstructionForm('zh-en'); }
-function generateCheckInstructionHtmlTemplate_EN() { return _buildCheckInstructionForm('en'); }
-function generateCheckInstructionHtmlTemplate_ES() { return _buildCheckInstructionForm('en-es'); }
+function generateCheckInstructionHtmlTemplate() { return _zoneVariant(_buildCheckInstructionForm('zh-en'), 'a'); }
+function generateCheckInstructionHtmlTemplate_B() { return _zoneVariant(_buildCheckInstructionForm('zh-en'), 'b'); }
+function generateCheckInstructionHtmlTemplate_EN() { return _zoneVariant(_buildCheckInstructionForm('en'), 'a'); }
+function generateCheckInstructionHtmlTemplate_EN_B() { return _zoneVariant(_buildCheckInstructionForm('en'), 'b'); }
+function generateCheckInstructionHtmlTemplate_ES() { return _zoneVariant(_buildCheckInstructionForm('en-es'), 'a'); }
+function generateCheckInstructionHtmlTemplate_ES_B() { return _zoneVariant(_buildCheckInstructionForm('en-es'), 'b'); }
 
 // ── Zelle Authorization — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
@@ -5809,7 +6061,7 @@ function _buildZelleAuthForm(lang) {
   </tr>
 </table>
 
-<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;margin-bottom:10px;background:#fafafa;font-size:8pt">
+<!--B_ONLY_S--><div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;margin-bottom:10px;background:#fafafa;font-size:8pt">
   <div style="font-weight:700;color:#555;margin-bottom:5px;font-size:8pt">${authRepHeader}</div>
   <table style="width:100%;border-collapse:collapse;font-size:8pt">
     <tr>
@@ -5821,7 +6073,7 @@ function _buildZelleAuthForm(lang) {
   <div style="font-size:7.5pt;color:#555;margin-top:4px;font-style:italic">${authRepNote}</div>
 </div>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
+<!--B_ONLY_E--><div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
 <p style="font-size:8pt;white-space:pre-line">${certText}</p>
 
 <div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
@@ -5831,7 +6083,7 @@ function _buildZelleAuthForm(lang) {
 
 <div style="background:#e8f5e9;border:1px solid #4caf50;padding:6px 10px;margin-top:12px;font-size:7.5pt;color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:6px;font-size:8.5pt">
+<!--A_ONLY_S--><div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:6px;font-size:8.5pt">
   <b>${sigHeader}</b>
   <table style="width:100%;margin-top:6px">
     <tr>
@@ -5844,7 +6096,7 @@ function _buildZelleAuthForm(lang) {
   </table>
 </div>
 
-<div style="border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt;background:#f0f9ff">
+<!--A_ONLY_E--><!--B_ONLY_S--><div style="border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt;background:#f0f9ff">
   <b>${authDelegateHeader}</b>
   <p style="font-size:7.5pt;margin:6px 0 8px;color:#333">${authDelegateText}</p>
   <table style="width:100%;margin-top:4px">
@@ -5857,14 +6109,17 @@ function _buildZelleAuthForm(lang) {
     </tr>
   </table>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
+<!--B_ONLY_E--><div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
 </div>`;
 }
 
 // Convenience wrappers for each language variant
-function generateZelleAuthHtmlTemplate()    { return _buildZelleAuthForm('zh-en'); }
-function generateZelleAuthHtmlTemplate_EN() { return _buildZelleAuthForm('en'); }
-function generateZelleAuthHtmlTemplate_ES() { return _buildZelleAuthForm('en-es'); }
+function generateZelleAuthHtmlTemplate() { return _zoneVariant(_buildZelleAuthForm('zh-en'), 'a'); }
+function generateZelleAuthHtmlTemplate_B() { return _zoneVariant(_buildZelleAuthForm('zh-en'), 'b'); }
+function generateZelleAuthHtmlTemplate_EN() { return _zoneVariant(_buildZelleAuthForm('en'), 'a'); }
+function generateZelleAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildZelleAuthForm('en'), 'b'); }
+function generateZelleAuthHtmlTemplate_ES() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'a'); }
+function generateZelleAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'b'); }
 
 // Third-party authorized representative Zelle signature templates
 function _buildZelleAuthRepForm(lang) {
@@ -6584,7 +6839,7 @@ function _buildCashReceiptForm(lang) {
 
 <div style="font-weight:700;margin:12px 0 8px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.5px">${s1Title}</div>
 
-<!-- Zone A — blue -->
+<!--A_ONLY_S--><!-- Zone A — blue -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer">
     <checkbox-field name="cash_self_receipt" role="First Party" style="width:16px;height:16px;flex-shrink:0"></checkbox-field>
@@ -6610,7 +6865,7 @@ function _buildCashReceiptForm(lang) {
   </div>
 </div>
 
-<!-- Zone B — green -->
+<!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — green -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
   <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer">
     <checkbox-field name="cash_third_receipt" role="First Party" style="width:16px;height:16px;flex-shrink:0"></checkbox-field>
@@ -6646,7 +6901,7 @@ function _buildCashReceiptForm(lang) {
   </div>
 </div>
 
-<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
+<!--B_ONLY_E--><div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:6px 8px;font-size:8pt;color:#856404;margin-bottom:12px">
   ${sNotice}
 </div>
 
@@ -6671,13 +6926,16 @@ function _buildCashReceiptForm(lang) {
 }
 
 // ── Cash Payment Receipt (ZH+EN) ──
-function generateCashReceiptHtmlTemplate()   { return _buildCashReceiptForm('zh-en'); }
+function generateCashReceiptHtmlTemplate() { return _zoneVariant(_buildCashReceiptForm('zh-en'), 'a'); }
+function generateCashReceiptHtmlTemplate_B() { return _zoneVariant(_buildCashReceiptForm('zh-en'), 'b'); }
 
 // ── Cash Payment Receipt (EN only) ──
-function generateCashReceiptEnHtmlTemplate() { return _buildCashReceiptForm('en'); }
+function generateCashReceiptEnHtmlTemplate() { return _zoneVariant(_buildCashReceiptForm('en'), 'a'); }
+function generateCashReceiptEnHtmlTemplate_B() { return _zoneVariant(_buildCashReceiptForm('en'), 'b'); }
 
 // ── Cash Payment Receipt (EN+ES) ──
-function generateCashReceiptEsHtmlTemplate() { return _buildCashReceiptForm('en-es'); }
+function generateCashReceiptEsHtmlTemplate() { return _zoneVariant(_buildCashReceiptForm('en-es'), 'a'); }
+function generateCashReceiptEsHtmlTemplate_B() { return _zoneVariant(_buildCashReceiptForm('en-es'), 'b'); }
 
 
 // ── Map of all auto-creatable templates ──
@@ -6712,24 +6970,42 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   zelle_auth_rep:    { name: 'Zelle Auth — Authorized Representative Signature (ZH+EN)', configKey: 'zelle_auth_rep_template_id',    category: 'zelle_auth_rep',    generator: generateZelleAuthRepTemplate },
   zelle_auth_rep_en: { name: 'Zelle Auth — Authorized Representative Signature (EN)',    configKey: 'zelle_auth_rep_en_template_id', category: 'zelle_auth_rep_en', generator: generateZelleAuthRepTemplate_EN },
   zelle_auth_rep_es: { name: 'Zelle Auth — Authorized Representative Signature (EN+ES)', configKey: 'zelle_auth_rep_es_template_id', category: 'zelle_auth_rep_es', generator: generateZelleAuthRepTemplate_ES },
-  zelle_tp_auth:    { name: 'Zelle — Third-Party Payment Authorization (ZH+EN)', configKey: 'zelle_tp_auth_template_id',    category: 'zelle_tp_auth',    generator: generateZelleTPAuthTemplate },
-  zelle_tp_auth_en: { name: 'Zelle — Third-Party Payment Authorization (EN)',    configKey: 'zelle_tp_auth_en_template_id', category: 'zelle_tp_auth_en', generator: generateZelleTPAuthTemplate_EN },
-  zelle_tp_auth_es: { name: 'Zelle — Third-Party Payment Authorization (EN+ES)', configKey: 'zelle_tp_auth_es_template_id', category: 'zelle_tp_auth_es', generator: generateZelleTPAuthTemplate_ES },
-  ach_tp_auth:      { name: 'ACH — Third-Party Payment Authorization (ZH+EN)', configKey: 'ach_tp_auth_template_id',      category: 'ach_tp_auth',      generator: generateAchTPAuthTemplate },
-  ach_tp_auth_en:   { name: 'ACH — Third-Party Payment Authorization (EN)',    configKey: 'ach_tp_auth_en_template_id',   category: 'ach_tp_auth_en',   generator: generateAchTPAuthTemplate_EN },
-  ach_tp_auth_es:   { name: 'ACH — Third-Party Payment Authorization (EN+ES)', configKey: 'ach_tp_auth_es_template_id',   category: 'ach_tp_auth_es',   generator: generateAchTPAuthTemplate_ES },
-  wire_tp_auth:     { name: 'Wire — Third-Party Payment Authorization (ZH+EN)', configKey: 'wire_tp_auth_template_id',     category: 'wire_tp_auth',     generator: generateWireTPAuthTemplate },
-  wire_tp_auth_en:  { name: 'Wire — Third-Party Payment Authorization (EN)',    configKey: 'wire_tp_auth_en_template_id',  category: 'wire_tp_auth_en',  generator: generateWireTPAuthTemplate_EN },
-  wire_tp_auth_es:  { name: 'Wire — Third-Party Payment Authorization (EN+ES)', configKey: 'wire_tp_auth_es_template_id',  category: 'wire_tp_auth_es',  generator: generateWireTPAuthTemplate_ES },
-  check_tp_auth:    { name: 'Check — Third-Party Payment Authorization (ZH+EN)', configKey: 'check_tp_auth_template_id',    category: 'check_tp_auth',    generator: generateCheckTPAuthTemplate },
-  check_tp_auth_en: { name: 'Check — Third-Party Payment Authorization (EN)',    configKey: 'check_tp_auth_en_template_id', category: 'check_tp_auth_en', generator: generateCheckTPAuthTemplate_EN },
-  check_tp_auth_es: { name: 'Check — Third-Party Payment Authorization (EN+ES)', configKey: 'check_tp_auth_es_template_id', category: 'check_tp_auth_es', generator: generateCheckTPAuthTemplate_ES },
-  cash_tp_auth:     { name: 'Cash — Third-Party Payment Authorization (ZH+EN)', configKey: 'cash_tp_auth_template_id',     category: 'cash_tp_auth',     generator: generateCashTPAuthTemplate },
-  cash_tp_auth_en:  { name: 'Cash — Third-Party Payment Authorization (EN)',    configKey: 'cash_tp_auth_en_template_id',  category: 'cash_tp_auth_en',  generator: generateCashTPAuthTemplate_EN },
-  cash_tp_auth_es:    { name: 'Cash — Third-Party Payment Authorization (EN+ES)', configKey: 'cash_tp_auth_es_template_id',    category: 'cash_tp_auth_es',    generator: generateCashTPAuthTemplate_ES },
-  paypal_tp_auth:     { name: 'PayPal/Venmo/CashApp — Third-Party Authorization (ZH+EN)', configKey: 'paypal_tp_auth_template_id',     category: 'paypal_tp_auth',     generator: generatePaypalTPAuthTemplate },
-  paypal_tp_auth_en:  { name: 'PayPal/Venmo/CashApp — Third-Party Authorization (EN)',    configKey: 'paypal_tp_auth_en_template_id',  category: 'paypal_tp_auth_en',  generator: generatePaypalTPAuthTemplate_EN },
-  paypal_tp_auth_es:  { name: 'PayPal/Venmo/CashApp — Third-Party Authorization (EN+ES)', configKey: 'paypal_tp_auth_es_template_id',  category: 'paypal_tp_auth_es',  generator: generatePaypalTPAuthTemplate_ES },
+  zelle_tp_auth:    { name: 'Zelle — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'zelle_tp_auth_template_id',    category: 'zelle_tp_auth',    generator: generateZelleAuthHtmlTemplate_B },
+  zelle_tp_auth_en: { name: 'Zelle — Authorize Another to Receive · Option B (EN)',    configKey: 'zelle_tp_auth_en_template_id', category: 'zelle_tp_auth_en', generator: generateZelleAuthHtmlTemplate_EN_B },
+  zelle_tp_auth_es: { name: 'Zelle — Authorize Another to Receive · Option B (EN+ES)', configKey: 'zelle_tp_auth_es_template_id', category: 'zelle_tp_auth_es', generator: generateZelleAuthHtmlTemplate_ES_B },
+  ach_tp_auth:      { name: 'ACH — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'ach_tp_auth_template_id',      category: 'ach_tp_auth',      generator: generateACHAuthHtmlTemplate_B },
+  ach_tp_auth_en:   { name: 'ACH — Authorize Another to Receive · Option B (EN)',    configKey: 'ach_tp_auth_en_template_id',   category: 'ach_tp_auth_en',   generator: generateACHAuthHtmlTemplate_EN_B },
+  ach_tp_auth_es:   { name: 'ACH — Authorize Another to Receive · Option B (EN+ES)', configKey: 'ach_tp_auth_es_template_id',   category: 'ach_tp_auth_es',   generator: generateACHAuthHtmlTemplate_ES_B },
+  wire_tp_auth:     { name: 'Wire — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'wire_tp_auth_template_id',     category: 'wire_tp_auth',     generator: generateWireAuthHtmlTemplate_B },
+  wire_tp_auth_en:  { name: 'Wire — Authorize Another to Receive · Option B (EN)',    configKey: 'wire_tp_auth_en_template_id',  category: 'wire_tp_auth_en',  generator: generateWireAuthHtmlTemplate_EN_B },
+  wire_tp_auth_es:  { name: 'Wire — Authorize Another to Receive · Option B (EN+ES)', configKey: 'wire_tp_auth_es_template_id',  category: 'wire_tp_auth_es',  generator: generateWireAuthHtmlTemplate_ES_B },
+  check_tp_auth:    { name: 'Check — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'check_tp_auth_template_id',    category: 'check_tp_auth',    generator: generateCheckInstructionHtmlTemplate_B },
+  check_tp_auth_en: { name: 'Check — Authorize Another to Receive · Option B (EN)',    configKey: 'check_tp_auth_en_template_id', category: 'check_tp_auth_en', generator: generateCheckInstructionHtmlTemplate_EN_B },
+  check_tp_auth_es: { name: 'Check — Authorize Another to Receive · Option B (EN+ES)', configKey: 'check_tp_auth_es_template_id', category: 'check_tp_auth_es', generator: generateCheckInstructionHtmlTemplate_ES_B },
+  cash_tp_auth:     { name: 'Cash — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'cash_tp_auth_template_id',     category: 'cash_tp_auth',     generator: generateCashReceiptHtmlTemplate_B },
+  cash_tp_auth_en:  { name: 'Cash — Authorize Another to Receive · Option B (EN)',    configKey: 'cash_tp_auth_en_template_id',  category: 'cash_tp_auth_en',  generator: generateCashReceiptEnHtmlTemplate_B },
+  cash_tp_auth_es:    { name: 'Cash — Authorize Another to Receive · Option B (EN+ES)', configKey: 'cash_tp_auth_es_template_id',    category: 'cash_tp_auth_es',    generator: generateCashReceiptEsHtmlTemplate_B },
+  paypal_tp_auth:     { name: 'PayPal/Venmo/CashApp — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'paypal_tp_auth_template_id',     category: 'paypal_tp_auth',     generator: generateThirdPartyPayHtmlTemplate_B },
+  paypal_tp_auth_en:  { name: 'PayPal/Venmo/CashApp — Authorize Another to Receive · Option B (EN)',    configKey: 'paypal_tp_auth_en_template_id',  category: 'paypal_tp_auth_en',  generator: generateThirdPartyPayHtmlTemplate_EN_B },
+  paypal_tp_auth_es:  { name: 'PayPal/Venmo/CashApp — Authorize Another to Receive · Option B (EN+ES)', configKey: 'paypal_tp_auth_es_template_id',  category: 'paypal_tp_auth_es',  generator: generateThirdPartyPayHtmlTemplate_ES_B },
+  ach_op_auth:      { name: 'ACH — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'ach_op_auth_template_id',      category: 'ach_op_auth',      generator: generateAchTPAuthTemplate },
+  ach_op_auth_en:   { name: 'ACH — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'ach_op_auth_en_template_id',   category: 'ach_op_auth_en',   generator: generateAchTPAuthTemplate_EN },
+  ach_op_auth_es:   { name: 'ACH — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'ach_op_auth_es_template_id',   category: 'ach_op_auth_es',   generator: generateAchTPAuthTemplate_ES },
+  wire_op_auth:     { name: 'Wire — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'wire_op_auth_template_id',     category: 'wire_op_auth',     generator: generateWireTPAuthTemplate },
+  wire_op_auth_en:  { name: 'Wire — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'wire_op_auth_en_template_id',  category: 'wire_op_auth_en',  generator: generateWireTPAuthTemplate_EN },
+  wire_op_auth_es:  { name: 'Wire — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'wire_op_auth_es_template_id',  category: 'wire_op_auth_es',  generator: generateWireTPAuthTemplate_ES },
+  check_op_auth:    { name: 'Check — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'check_op_auth_template_id',    category: 'check_op_auth',    generator: generateCheckTPAuthTemplate },
+  check_op_auth_en: { name: 'Check — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'check_op_auth_en_template_id', category: 'check_op_auth_en', generator: generateCheckTPAuthTemplate_EN },
+  check_op_auth_es: { name: 'Check — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'check_op_auth_es_template_id', category: 'check_op_auth_es', generator: generateCheckTPAuthTemplate_ES },
+  zelle_op_auth:    { name: 'Zelle — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'zelle_op_auth_template_id',    category: 'zelle_op_auth',    generator: generateZelleTPAuthTemplate },
+  zelle_op_auth_en: { name: 'Zelle — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'zelle_op_auth_en_template_id', category: 'zelle_op_auth_en', generator: generateZelleTPAuthTemplate_EN },
+  zelle_op_auth_es: { name: 'Zelle — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'zelle_op_auth_es_template_id', category: 'zelle_op_auth_es', generator: generateZelleTPAuthTemplate_ES },
+  paypal_op_auth:    { name: 'PayPal/Venmo/CashApp — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'paypal_op_auth_template_id',    category: 'paypal_op_auth',    generator: generatePaypalTPAuthTemplate },
+  paypal_op_auth_en: { name: 'PayPal/Venmo/CashApp — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'paypal_op_auth_en_template_id', category: 'paypal_op_auth_en', generator: generatePaypalTPAuthTemplate_EN },
+  paypal_op_auth_es: { name: 'PayPal/Venmo/CashApp — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'paypal_op_auth_es_template_id', category: 'paypal_op_auth_es', generator: generatePaypalTPAuthTemplate_ES },
+  cash_op_auth:     { name: 'Cash — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'cash_op_auth_template_id',     category: 'cash_op_auth',     generator: generateCashTPAuthTemplate },
+  cash_op_auth_en:  { name: 'Cash — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'cash_op_auth_en_template_id',  category: 'cash_op_auth_en',  generator: generateCashTPAuthTemplate_EN },
+  cash_op_auth_es:  { name: 'Cash — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'cash_op_auth_es_template_id',  category: 'cash_op_auth_es',  generator: generateCashTPAuthTemplate_ES },
   third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方收款账户授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
   third_party_pay_en: { name: 'Third-Party Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
   third_party_pay_es: { name: 'Third-Party Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
@@ -8159,8 +8435,8 @@ app.post('/api/admin-invite/send-email-code', async (req, res) => {
   if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
-  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchor Workforce',
-    `您的邮箱验证码是 ${code}，15分钟内有效。\nYour email verification code is ${code}, valid for 15 minutes.`,
+  const sent = await sendEmail(email, 'Código de Verificación / Verification Code — Prime Anchor Workforce',
+    `Su código de correo es ${code}, válido 15 min.\nYour email verification code is ${code}, valid for 15 minutes.`,
     verificationCodeHtml(code));
   if (sent) {
     db.prepare('DELETE FROM admin_reg_codes WHERE token=? AND contact=?').run(token, email);
@@ -8592,10 +8868,10 @@ app.post('/api/public/manager-register/send-code', async (req, res) => {
 
   let delivered = false;
   if (contact_type === 'phone') {
-    delivered = await sendSMS(contact, `您的 Prime Anchor Workforce 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
+    delivered = await sendSMS(contact, `[Prime Anchor Workforce] Su código de verificación es ${code}, válido 10 min. / Your verification code is ${code}.`);
   } else {
-    delivered = await sendEmail(contact, '验证码 / Verification Code — Prime Anchor Workforce',
-      `您的验证码是 ${code}，10分钟内有效。\nYour verification code is ${code}.`,
+    delivered = await sendEmail(contact, 'Código de Verificación / Verification Code — Prime Anchor Workforce',
+      `Su código de verificación es ${code}, válido 10 min.\nYour verification code is ${code}.`,
       verificationCodeHtml(code));
   }
   // If delivery failed (not configured), remove the code record so verification is skipped
@@ -11987,8 +12263,8 @@ app.post('/api/admin/test-email', requireAdmin, requireRole('admin'), async (req
     transport: _sgKey ? 'sendgrid-api' : emailTransporter ? 'smtp' : 'none',
   };
   if (!_sgKey && !emailTransporter) return res.json({ configured, sent: false, error: 'No email transport configured' });
-  const sent = await sendEmail(to, 'Prime Anchor Workforce Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
-  res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
+  const er = await sendEmailWithDetail(to, 'Prime Anchor Workforce Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
+  res.json({ configured, sent: er.ok, status: er.status || null, error: er.ok ? null : er.error });
 });
 
 // Admin: test email verification code (sends a real 6-digit code in the same format as registration)
@@ -12008,8 +12284,8 @@ app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const sent = await sendEmail(
     to,
-    'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-    `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+    `[Admin Test]\n\nSu código de correo es: ${code}\nYour email verification code: ${code}\n\nVálido 15 min / Valid for 15 minutes.`,
     verificationCodeHtml(code, true)
   );
   res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
@@ -13054,14 +13330,14 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
   } else if (canSMSFallback) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
-    smsSent = await sendSMS(w.phone, `[Prime Anchor Workforce] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+    smsSent = await sendSMS(w.phone, `[Prime Anchor Workforce] Su código de verificación es: ${phoneCode}, válido 15 min. / Your verification code: ${phoneCode}`);
   }
   // Email
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
-    emailSent = await sendEmail(w.email, 'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    emailSent = await sendEmail(w.email, 'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+      `Su código de correo es: ${emailCode}\nYour email verification code: ${emailCode}\n\nVálido 15 min / Valid for 15 minutes.`,
       verificationCodeHtml(emailCode));
   }
   console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${canVerifyPhone?'TwilioVerify':phoneCode||'N/A'}(sent:${smsSent}) email=${emailCode||'N/A'}(sent:${emailSent})`);
@@ -13437,6 +13713,205 @@ app.delete('/api/admin/worker-positions/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// ─── Referrers (推荐人) CRUD ─────────────────────────────────────────────────
+function enrichReferrer(r) {
+  if (!r) return null;
+  const bonuses = db.prepare('SELECT position_key, bonus_amount, min_hours FROM referrer_position_bonus WHERE referrer_id=?').all(r.id);
+  const refs = db.prepare(`
+    SELECT rr.*,
+      COALESCE(e.first_name || ' ' || e.last_name, wa.name, rr.referee_name) AS referee_display_name,
+      e.employee_id AS referee_employee_code,
+      wa.worker_code AS referee_worker_code,
+      COALESCE((SELECT SUM(t.total_hours) FROM time_entries t
+                WHERE t.status='closed' AND
+                  (t.employee_id = rr.referee_employee_id
+                   OR t.employee_id = (SELECT employee_id FROM worker_accounts WHERE id=rr.referee_worker_account_id))
+               ), 0) AS worked_hours
+    FROM referrer_referrals rr
+    LEFT JOIN employees e ON e.id = rr.referee_employee_id
+    LEFT JOIN worker_accounts wa ON wa.id = rr.referee_worker_account_id
+    WHERE rr.referrer_id=?
+    ORDER BY rr.created_at DESC
+  `).all(r.id);
+
+  // Auto-promote pending → qualified if worked_hours meets threshold
+  const promote = db.prepare("UPDATE referrer_referrals SET status='qualified', qualified_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'");
+  refs.forEach(ref => {
+    if (ref.status === 'pending' && ref.worked_hours >= (ref.min_hours || 0) && (ref.min_hours || 0) > 0) {
+      promote.run(ref.id);
+      ref.status = 'qualified';
+      ref.qualified_at = new Date().toISOString();
+    }
+  });
+
+  const totals = {
+    pending:   refs.filter(x => x.status === 'pending').reduce((s, x) => s + (x.bonus_amount || 0), 0),
+    qualified: refs.filter(x => x.status === 'qualified').reduce((s, x) => s + (x.bonus_amount || 0), 0),
+    paid:      refs.filter(x => x.status === 'paid').reduce((s, x) => s + (x.bonus_amount || 0), 0),
+  };
+  return { ...r, position_bonuses: bonuses, referrals: refs, totals };
+}
+
+app.get('/api/admin/referrers', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT r.*,
+      COALESCE(e.first_name || ' ' || e.last_name, '') AS linked_employee_name,
+      e.employee_id AS linked_employee_code,
+      wa.name AS linked_worker_name,
+      wa.worker_code AS linked_worker_code
+    FROM referrers r
+    LEFT JOIN employees e ON e.id = r.linked_employee_id
+    LEFT JOIN worker_accounts wa ON wa.id = r.linked_worker_account_id
+    ORDER BY r.active DESC, r.created_at DESC
+  `).all();
+  // Attach summary (counts only, no full referral list for list view)
+  const summary = db.prepare(`
+    SELECT referrer_id,
+      COUNT(*) AS total_count,
+      SUM(CASE WHEN status='pending'   THEN bonus_amount ELSE 0 END) AS pending_bonus,
+      SUM(CASE WHEN status='qualified' THEN bonus_amount ELSE 0 END) AS qualified_bonus,
+      SUM(CASE WHEN status='paid'      THEN bonus_amount ELSE 0 END) AS paid_bonus
+    FROM referrer_referrals GROUP BY referrer_id
+  `).all();
+  const smap = {};
+  summary.forEach(s => { smap[s.referrer_id] = s; });
+  const bonusCount = db.prepare('SELECT referrer_id, COUNT(*) AS cnt FROM referrer_position_bonus GROUP BY referrer_id').all();
+  const bmap = {};
+  bonusCount.forEach(b => { bmap[b.referrer_id] = b.cnt; });
+  rows.forEach(r => {
+    const s = smap[r.id] || {};
+    r.total_referrals = s.total_count || 0;
+    r.pending_bonus = s.pending_bonus || 0;
+    r.qualified_bonus = s.qualified_bonus || 0;
+    r.paid_bonus = s.paid_bonus || 0;
+    r.position_bonus_count = bmap[r.id] || 0;
+  });
+  res.json(rows);
+});
+
+app.get('/api/admin/referrers/:id', requireAdmin, (req, res) => {
+  const r = db.prepare(`
+    SELECT r.*,
+      COALESCE(e.first_name || ' ' || e.last_name, '') AS linked_employee_name,
+      e.employee_id AS linked_employee_code,
+      wa.name AS linked_worker_name,
+      wa.worker_code AS linked_worker_code
+    FROM referrers r
+    LEFT JOIN employees e ON e.id = r.linked_employee_id
+    LEFT JOIN worker_accounts wa ON wa.id = r.linked_worker_account_id
+    WHERE r.id=?
+  `).get(req.params.id);
+  if (!r) return res.status(404).json({ error: '推荐人不存在' });
+  res.json(enrichReferrer(r));
+});
+
+app.post('/api/admin/referrers', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  if (!d.name || !d.name.trim()) return res.status(400).json({ error: '姓名为必填项' });
+  const info = db.prepare(`INSERT INTO referrers
+    (name, phone, email, address, city, state, zip, linked_employee_id, linked_worker_account_id, notes, active)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+    d.name.trim(), d.phone || '', d.email || '', d.address || '', d.city || '', d.state || '', d.zip || '',
+    d.linked_employee_id || null, d.linked_worker_account_id || null, d.notes || '', d.active === 0 ? 0 : 1
+  );
+  const id = info.lastInsertRowid;
+  if (Array.isArray(d.position_bonuses)) {
+    const ins = db.prepare('INSERT INTO referrer_position_bonus (referrer_id, position_key, bonus_amount, min_hours) VALUES (?,?,?,?)');
+    d.position_bonuses.forEach(pb => {
+      if (pb.position_key && (pb.bonus_amount > 0 || pb.min_hours != null)) {
+        ins.run(id, pb.position_key, pb.bonus_amount || 0, pb.min_hours != null && pb.min_hours !== '' ? pb.min_hours : null);
+      }
+    });
+  }
+  res.json({ success: true, id });
+});
+
+app.put('/api/admin/referrers/:id', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  const exist = db.prepare('SELECT id FROM referrers WHERE id=?').get(req.params.id);
+  if (!exist) return res.status(404).json({ error: '推荐人不存在' });
+  if (!d.name || !d.name.trim()) return res.status(400).json({ error: '姓名为必填项' });
+  db.prepare(`UPDATE referrers SET
+    name=?, phone=?, email=?, address=?, city=?, state=?, zip=?,
+    linked_employee_id=?, linked_worker_account_id=?, notes=?, active=?, updated_at=CURRENT_TIMESTAMP
+    WHERE id=?`).run(
+    d.name.trim(), d.phone || '', d.email || '', d.address || '', d.city || '', d.state || '', d.zip || '',
+    d.linked_employee_id || null, d.linked_worker_account_id || null, d.notes || '', d.active === 0 ? 0 : 1,
+    req.params.id
+  );
+  if (Array.isArray(d.position_bonuses)) {
+    db.prepare('DELETE FROM referrer_position_bonus WHERE referrer_id=?').run(req.params.id);
+    const ins = db.prepare('INSERT INTO referrer_position_bonus (referrer_id, position_key, bonus_amount, min_hours) VALUES (?,?,?,?)');
+    d.position_bonuses.forEach(pb => {
+      if (pb.position_key && (pb.bonus_amount > 0 || pb.min_hours != null)) {
+        ins.run(req.params.id, pb.position_key, pb.bonus_amount || 0, pb.min_hours != null && pb.min_hours !== '' ? pb.min_hours : null);
+      }
+    });
+  }
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/referrers/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const cnt = db.prepare("SELECT COUNT(*) AS c FROM referrer_referrals WHERE referrer_id=? AND status!='cancelled'").get(req.params.id);
+  if (cnt.c > 0) return res.status(400).json({ error: '存在未取消的推荐记录，无法删除' });
+  db.prepare('DELETE FROM referrers WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Add a referral record to a referrer
+app.post('/api/admin/referrers/:id/referrals', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  const referrer = db.prepare('SELECT id FROM referrers WHERE id=?').get(req.params.id);
+  if (!referrer) return res.status(404).json({ error: '推荐人不存在' });
+  // Resolve bonus from referrer_position_bonus, fallback to global config
+  const globalCfg = db.prepare('SELECT bonus_per_referral, min_hours_to_qualify FROM referral_bonus_config WHERE id=1').get()
+    || { bonus_per_referral: 0, min_hours_to_qualify: 0 };
+  const positionKey = d.position_key || '';
+  const posBonus = positionKey
+    ? db.prepare('SELECT bonus_amount, min_hours FROM referrer_position_bonus WHERE referrer_id=? AND position_key=?').get(req.params.id, positionKey)
+    : null;
+  const bonusAmount = d.bonus_amount != null ? Number(d.bonus_amount) : (posBonus?.bonus_amount ?? globalCfg.bonus_per_referral);
+  const minHours = d.min_hours != null ? Number(d.min_hours) : (posBonus?.min_hours ?? globalCfg.min_hours_to_qualify);
+  const info = db.prepare(`INSERT INTO referrer_referrals
+    (referrer_id, referee_employee_id, referee_worker_account_id, referee_name, position_key, bonus_amount, min_hours, notes)
+    VALUES (?,?,?,?,?,?,?,?)`).run(
+    req.params.id, d.referee_employee_id || null, d.referee_worker_account_id || null,
+    d.referee_name || '', positionKey, bonusAmount || 0, minHours || 0, d.notes || ''
+  );
+  res.json({ success: true, id: info.lastInsertRowid });
+});
+
+app.put('/api/admin/referrer-referrals/:id', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  const exist = db.prepare('SELECT id, status FROM referrer_referrals WHERE id=?').get(req.params.id);
+  if (!exist) return res.status(404).json({ error: '推荐记录不存在' });
+  const allowed = ['pending', 'qualified', 'paid', 'cancelled'];
+  const status = d.status && allowed.includes(d.status) ? d.status : exist.status;
+  const setPaidAt = status === 'paid' && exist.status !== 'paid' ? 'CURRENT_TIMESTAMP' : 'paid_at';
+  const setQualAt = status === 'qualified' && exist.status === 'pending' ? 'CURRENT_TIMESTAMP' : 'qualified_at';
+  db.prepare(`UPDATE referrer_referrals SET
+    status=?, qualified_at=${setQualAt}, paid_at=${setPaidAt}, notes=?, bonus_amount=?, min_hours=?
+    WHERE id=?`).run(
+    status, d.notes != null ? d.notes : '',
+    d.bonus_amount != null ? Number(d.bonus_amount) : 0,
+    d.min_hours != null ? Number(d.min_hours) : 0,
+    req.params.id
+  );
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/referrer-referrals/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM referrer_referrals WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Helper: list employees + worker_accounts for picking referee/linked person
+app.get('/api/admin/referrer-people-options', requireAdmin, (req, res) => {
+  const employees = db.prepare(`SELECT id, employee_id AS code, first_name, last_name, phone, email FROM employees WHERE status='active' ORDER BY first_name, last_name`).all();
+  const workers = db.prepare(`SELECT id, worker_code AS code, name, phone, email, employee_id FROM worker_accounts WHERE active=1 ORDER BY name`).all();
+  res.json({ employees, workers });
+});
+
 // Inquiry × Worker Position ratings
 app.get('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
   const saved = db.prepare('SELECT * FROM inquiry_position_ratings WHERE inquiry_id=?').all(req.params.id);
@@ -13566,6 +14041,319 @@ app.get('/api/admin/onboard-submissions/:id/docs/:docId/download', requireAdmin,
   res.download(fp, doc.file_name || doc.file_path);
 });
 
+// ════════ Per-company Applicant Onboarding QR ════════
+// Public, mobile self-service form reached via a per-company QR. The applicant
+// enters name / phone / email / position, verifies BOTH phone and email by OTP,
+// then uploads photos of their SSN (front/back) and EAD (front/back). Submissions
+// land in an admin inbox. Multilingual: 中文 / English / Español.
+
+const applicantDocUpload = multer({
+  storage: r2Storage({
+    subdir: 'employee_docs',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `apply-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|heif|webp)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|heif|webp|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  }
+});
+
+// Look up a partner by their public applicant-form token. null if not found.
+// The 40-char random token is itself the authorization (admin-issued via the QR
+// modal), so we do NOT gate on the partner's `active` flag — doing so made a
+// deliberately-generated recruiting QR fail with a confusing "expired" error
+// whenever the company was temporarily inactive (e.g. mid contract re-sign).
+function _partnerByApplyToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 16) return null;
+  return db.prepare("SELECT id, name FROM partners WHERE applicant_form_token=? AND applicant_form_token!=''").get(token);
+}
+// Normalize a US phone to E.164 (last 10 digits → +1XXXXXXXXXX). Best-effort.
+function _normApplyPhone(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.length === 10) return '+1' + d;
+  if (d.length === 11 && d[0] === '1') return '+' + d;
+  return '+' + d;
+}
+
+// ADMIN: get or lazily create the applicant-form token + QR for a company.
+app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    const p = db.prepare('SELECT id, name, applicant_form_token FROM partners WHERE id=?').get(partnerId);
+    if (!p) return res.status(404).json({ error: 'partner not found' });
+    let token = p.applicant_form_token;
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
+    }
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
+    const url = `${proto}://${host}/apply/${token}`;
+    const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
+    res.json({ token, url, qr_data_url: qrDataUrl, partner_name: p.name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: rotate the token (invalidates the old QR).
+app.post('/api/admin/partners/:id/applicant-qr/regenerate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    const token = crypto.randomBytes(20).toString('hex');
+    db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
+    res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: short URL that serves the mobile applicant form.
+app.get('/apply/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'apply.html'));
+});
+
+// PUBLIC: minimal info so the page knows which company it's for.
+app.get('/api/apply/info', (req, res) => {
+  const p = _partnerByApplyToken(String(req.query.t || ''));
+  if (!p) return res.status(404).json({ error: '链接无效或已失效 / Invalid or expired link' });
+  res.json({ partner_id: p.id, partner_name: p.name });
+});
+
+// PUBLIC: send a one-time verification code to a phone or email.
+app.post('/api/apply/send-code', async (req, res) => {
+  try {
+    const token = String(req.body.t || '');
+    if (!_partnerByApplyToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
+    const channel = req.body.channel === 'email' ? 'email' : 'phone';
+    const target = channel === 'phone' ? _normApplyPhone(req.body.phone) : String(req.body.email || '').trim().toLowerCase();
+    if (channel === 'phone' && target.replace(/\D/g, '').length < 10)
+      return res.status(400).json({ error: '请输入有效手机号 / Enter a valid phone number' });
+    if (channel === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target))
+      return res.status(400).json({ error: '请输入有效邮箱 / Enter a valid email address' });
+    // Basic rate limit: max 5 sends per target per 15 minutes.
+    const recent = db.prepare(`SELECT COUNT(*) n FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND created_at > datetime('now','-15 minutes')`).get(token, channel, target);
+    if (recent && recent.n >= 5) return res.status(429).json({ error: '请求过于频繁，请稍后再试 / Too many requests, please try later' });
+    // Drop previous unverified codes for this target so only the newest is valid.
+    db.prepare('DELETE FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=0').run(token, channel, target);
+    const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    let sent = false, code = null;
+    const detail = [];   // collected provider errors, surfaced for diagnosis
+    if (channel === 'phone') {
+      // Prefer Twilio Verify; if it isn't configured or the send fails, fall
+      // back to a locally-generated code over regular SMS (the app's SMS sender).
+      let usedVerify = false;
+      if (twilioClient && TWILIO_VERIFY_SID) {
+        try {
+          const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID).verifications.create({ to: target, channel: 'sms' });
+          usedVerify = (v.status === 'pending' || !!v.sid);
+          if (!usedVerify) detail.push(`Verify status=${v.status}`);
+        } catch (e) { detail.push(`Verify: ${e.message}${e.code ? ' (code ' + e.code + ')' : ''}`); }
+      } else if (!twilioClient) {
+        detail.push('TWILIO_ACCOUNT_SID/AUTH_TOKEN 未配置');
+      }
+      if (usedVerify) {
+        db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, '__twilio_verify__', expires);
+        sent = true;
+      } else {
+        code = String(Math.floor(100000 + Math.random() * 900000));
+        db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, code, expires);
+        const r = await sendSMSWithDetail(target, `[Prime Anchor Workforce] 验证码 / Code: ${code}（15分钟有效 / valid 15 min）`);
+        sent = !!r.ok;
+        if (!sent) detail.push(`SMS: ${r.error || r.errorMessage || ('status=' + r.status)}`);
+        else if (r.status && /fail|undeliv/i.test(r.status)) { sent = false; detail.push(`SMS status=${r.status}${r.errorMessage ? ' ' + r.errorMessage : ''}`); }
+      }
+    } else {
+      code = String(Math.floor(100000 + Math.random() * 900000));
+      db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'email', target, code, expires);
+      const er = await sendEmailWithDetail(target, 'Prime Anchor Workforce 验证码 / Verification Code',
+        `您的验证码 / Your verification code: ${code}\n\n15分钟内有效 / This code expires in 15 minutes.`,
+        verificationCodeHtml(code));
+      sent = !!er.ok;
+      if (!sent) detail.push(`Email${er.status ? ' ' + er.status : ''}: ${er.error}`);
+    }
+    if (!sent) {
+      // Sending failed. Surface the real provider reason so it's diagnosable
+      // (the form is reached only via the company's private QR token).
+      const reason = detail.join(' | ') || 'unknown';
+      console.warn(`[apply] code send failed channel=${channel} target=${target} :: ${reason}`);
+      return res.status(502).json({ success: false, sent: false,
+        error: (channel === 'phone' ? '短信发送失败 / SMS failed' : '邮件发送失败 / Email failed') + '：' + reason });
+    }
+    res.json({ success: true, sent });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: check a verification code; marks the (form_token,type,target) as verified.
+app.post('/api/apply/verify-code', async (req, res) => {
+  try {
+    const token = String(req.body.t || '');
+    if (!_partnerByApplyToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
+    const channel = req.body.channel === 'email' ? 'email' : 'phone';
+    const target = channel === 'phone' ? _normApplyPhone(req.body.phone || req.body.target) : String(req.body.email || req.body.target || '').trim().toLowerCase();
+    const code = String(req.body.code || '').trim();
+    if (!target || !code) return res.status(400).json({ error: '请输入验证码 / Enter the verification code' });
+    const row = db.prepare(`SELECT * FROM applicant_otp WHERE form_token=? AND type=? AND target=? ORDER BY id DESC LIMIT 1`).get(token, channel, target);
+    if (!row) return res.status(400).json({ error: '请先获取验证码 / Request a code first' });
+    if (new Date(row.expires_at).getTime() < Date.now()) return res.status(400).json({ error: '验证码已过期，请重新获取 / Code expired, request a new one' });
+    if (row.attempts >= 6) return res.status(429).json({ error: '尝试次数过多，请重新获取验证码 / Too many attempts' });
+    let ok = false;
+    if (row.code === '__twilio_verify__') {
+      ok = await checkVerifyCode(target, code);
+    } else {
+      ok = (row.code === code);
+    }
+    db.prepare('UPDATE applicant_otp SET attempts=attempts+1, verified=? WHERE id=?').run(ok ? 1 : row.verified, row.id);
+    if (!ok) return res.status(400).json({ error: '验证码错误 / Incorrect code' });
+    res.json({ success: true, verified: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: submit the application (multipart) — name/phone/email/position + doc photos.
+// Requires BOTH phone and email to have a verified OTP for the submitted values.
+app.post('/api/apply/submit', applicantDocUpload.fields([
+  { name: 'ssn_front', maxCount: 1 },
+  { name: 'ssn_back', maxCount: 1 },
+  { name: 'ead_front', maxCount: 1 },
+  { name: 'ead_back', maxCount: 1 },
+]), (req, res) => {
+  try {
+    const token = String(req.query.t || req.body.t || '');
+    const p = _partnerByApplyToken(token);
+    if (!p) return res.status(403).json({ error: '链接无效 / Invalid link' });
+    const d = req.body || {};
+    const name = String(d.name || '').trim().slice(0, 120);
+    const position = String(d.position || '').trim().slice(0, 120);
+    const phone = _normApplyPhone(d.phone);
+    const email = String(d.email || '').trim().toLowerCase();
+    if (!name || !phone || !email || !position)
+      return res.status(400).json({ error: '请填写姓名、电话、邮箱和职位 / Name, phone, email and position are required' });
+    // Require a verified OTP for BOTH the submitted phone and email.
+    const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, type, tgt);
+    if (!verified('phone', phone)) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone number first' });
+    if (!verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
+    const files = req.files || {};
+    if (!files.ssn_front || !files.ead_front || !files.ead_back)
+      return res.status(400).json({ error: '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back' });
+    const r = db.prepare(`INSERT INTO applicant_submissions
+      (partner_id, partner_name, name, phone, email, position, phone_verified, email_verified, user_agent)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        p.id, p.name, name, phone, email, position, 1, 1,
+        String(req.headers['user-agent'] || '').slice(0, 250));
+    const subId = r.lastInsertRowid;
+    const docMeta = [];
+    for (const [docType, arr] of Object.entries(files)) {
+      if (arr && arr[0]) {
+        const f = arr[0];
+        const fileKey = (f.key || f.filename || f.path);
+        db.prepare('INSERT INTO applicant_docs (submission_id, doc_type, file_path, file_name) VALUES (?,?,?,?)')
+          .run(subId, docType, fileKey, f.originalname || '');
+        docMeta.push({ docType, key: fileKey, originalname: f.originalname || '', mime: f.mimetype || '' });
+      }
+    }
+    res.json({ success: true, id: subId });
+    // Fire-and-forget: notify the company inbox with all applicant details + photo attachments.
+    notifyNewApplication({ subId, partner: p, name, position, phone, email, docMeta })
+      .catch(e => console.error('[apply-notify] failed:', e.message));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Send the company a notification email for a new applicant submission.
+// Includes all form fields + attaches the uploaded SSN/EAD photos.
+const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@primeanchorpoint.com';
+async function notifyNewApplication({ subId, partner, name, position, phone, email, docMeta }) {
+  const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
+  const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+  // Read each uploaded photo back from storage to attach.
+  const files = [];
+  for (const d of docMeta) {
+    try {
+      const buf = await storage.getBuffer(storage.normalizeKey(d.key));
+      const ext = (path.extname(d.originalname || d.key) || '.jpg').toLowerCase();
+      const mime = d.mime || ({ '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.heic': 'image/heic', '.heif': 'image/heif', '.webp': 'image/webp', '.pdf': 'application/pdf' }[ext] || 'application/octet-stream');
+      files.push({ filename: `${d.docType}${ext}`, content: buf, mime });
+    } catch (e) { console.error(`[apply-notify] could not read ${d.key}: ${e.message}`); }
+  }
+  const rows = [
+    ['应聘公司 / Company', partner.name || ''],
+    ['姓名 / Name', name],
+    ['职位 / Position', position],
+    ['电话 / Phone', phone + ' ✓ 已验证 / verified'],
+    ['邮箱 / Email', email + ' ✓ 已验证 / verified'],
+    ['提交时间 / Submitted', when + ' (PT)'],
+    ['已上传证件 / Documents', docMeta.map(d => docLabels[d.docType] || d.docType).join('、') || '无'],
+  ];
+  const text = '新入职申请 / New Application\n\n' + rows.map(([k, v]) => `${k}: ${v}`).join('\n')
+    + `\n\n证件照片见附件。也可在管理后台「申请箱」查看。\nDocument photos are attached. You can also view them in the admin “Applicant Inbox”.`;
+  const html = `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:560px">
+    <h2 style="color:#1a3f7a;margin:0 0 .5rem">📋 新入职申请 / New Application</h2>
+    <table cellpadding="6" style="border-collapse:collapse;font-size:14px;width:100%">
+      ${rows.map(([k, v]) => `<tr><td style="color:#64748b;white-space:nowrap;vertical-align:top">${k}</td><td style="font-weight:600;color:#0f172a">${String(v).replace(/</g, '&lt;')}</td></tr>`).join('')}
+    </table>
+    <p style="color:#64748b;font-size:13px;margin-top:1rem">证件照片见附件。也可在管理后台「申请箱」查看。<br>Document photos are attached. You can also view them in the admin “Applicant Inbox”.</p>
+  </div>`;
+  const subject = `新入职申请 / New Application — ${name}（${partner.name || ''}）`;
+  const sent = files.length
+    ? await sendEmailWithFiles(APPLICATION_NOTIFY_EMAIL, subject, text, html, files)
+    : await sendEmail(APPLICATION_NOTIFY_EMAIL, subject, text, html);
+  console.log(`[apply-notify] submission #${subId} → ${APPLICATION_NOTIFY_EMAIL}: ${sent ? 'sent' : 'FAILED'} (${files.length} attachments)`);
+}
+
+// ADMIN: list applicant submissions (optionally filtered by company).
+app.get('/api/admin/applicant-submissions', requireAdmin, blockManager, (req, res) => {
+  try {
+    const where = [];
+    const params = [];
+    if (req.query.partner_id) { where.push('partner_id = ?'); params.push(parseInt(req.query.partner_id)); }
+    if (req.query.status) { where.push('status = ?'); params.push(String(req.query.status)); }
+    const sql = `SELECT s.*, (SELECT COUNT(*) FROM applicant_docs d WHERE d.submission_id=s.id) as doc_count
+                 FROM applicant_submissions s
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY created_at DESC LIMIT 300`;
+    res.json(db.prepare(sql).all(...params));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: list a submission's documents.
+app.get('/api/admin/applicant-submissions/:id/docs', requireAdmin, blockManager, (req, res) => {
+  res.json(db.prepare('SELECT id, doc_type, file_name, uploaded_at FROM applicant_docs WHERE submission_id=?').all(req.params.id));
+});
+
+// ADMIN: download/stream one document (works for both local and R2 backends).
+app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const doc = db.prepare('SELECT * FROM applicant_docs WHERE id=? AND submission_id=?').get(req.params.docId, req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    const key = storage.normalizeKey(doc.file_path);
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    if (storage.isR2()) {
+      try { return res.redirect(302, await storage.getDownloadUrl(key)); }
+      catch (e) { return res.status(404).json({ error: 'Not found' }); }
+    }
+    const ext = path.extname(key).toLowerCase();
+    const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+    if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
+    try {
+      const s = await storage.getStream(key);
+      s.on('error', () => { try { res.status(500).end(); } catch {} });
+      s.pipe(res);
+    } catch (e) { res.status(404).json({ error: 'Not found' }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: delete a submission and its documents.
+app.delete('/api/admin/applicant-submissions/:id', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const docs = db.prepare('SELECT * FROM applicant_docs WHERE submission_id=?').all(req.params.id);
+    for (const d of docs) { try { await storage.deleteObject(storage.normalizeKey(d.file_path)); } catch {} }
+    db.prepare('DELETE FROM applicant_docs WHERE submission_id=?').run(req.params.id);
+    db.prepare('DELETE FROM applicant_submissions WHERE id=?').run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Quotes
 app.get('/api/admin/quotes', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare('SELECT * FROM quotes ORDER BY created_at DESC').all());
@@ -13618,6 +14406,381 @@ app.delete('/api/admin/partners/:id', requireAdmin, requireRole('admin'), (req, 
   res.json({ success: true });
 });
 
+// ════════ Container Submission QR — public mobile collection inbox ════════
+
+const containerSubmitPhotoUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `csub-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|webp|gif)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
+// Shared access code for the public container-submit page (long-lived per-company QR
+// + this simple password keeps random scanners out). Overridable via env.
+const CONTAINER_SUBMIT_PASSWORD = String(process.env.CONTAINER_SUBMIT_PASSWORD || '123456');
+
+// Look up a partner by their public submit token. Returns null if not found.
+function _partnerByCsubToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 16) return null;
+  return db.prepare('SELECT id, name FROM partners WHERE container_submit_token=? AND active=1').get(token);
+}
+
+// GET /api/admin/partners/:id/container-qr — get or lazily create the public token and QR
+app.get('/api/admin/partners/:id/container-qr', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    const p = db.prepare('SELECT id, name, container_submit_token FROM partners WHERE id=?').get(partnerId);
+    if (!p) return res.status(404).json({ error: 'partner not found' });
+    let token = p.container_submit_token;
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare('UPDATE partners SET container_submit_token=? WHERE id=?').run(token, partnerId);
+    }
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
+    const url = `${proto}://${host}/c/${token}`;
+    const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
+    res.json({ token, url, qr_data_url: qrDataUrl, partner_name: p.name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/partners/:id/container-qr/regenerate — rotate token (invalidates old QR)
+app.post('/api/admin/partners/:id/container-qr/regenerate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const partnerId = parseInt(req.params.id);
+    const token = crypto.randomBytes(20).toString('hex');
+    db.prepare('UPDATE partners SET container_submit_token=? WHERE id=?').run(token, partnerId);
+    res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /c/:token — public short URL that serves the mobile submit page.
+// (Path-based form is more robust than ?t=… against URL truncation in some
+// QR scanners / shared links. The page reads the token from either form.)
+app.get('/c/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'container-submit.html'));
+});
+// Backward compat for any old QR codes that linked to the .html page directly.
+app.get(['/container-submit', '/container-submit.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'container-submit.html'));
+});
+
+// GET /c-submit/info?t=TOKEN — public: minimal info so the mobile page knows which company it's for
+app.get('/c-submit/info', (req, res) => {
+  const p = _partnerByCsubToken(String(req.query.t || ''));
+  if (!p) return res.status(404).json({ error: '链接无效或已失效' });
+  res.json({ partner_id: p.id, partner_name: p.name, needs_password: true });
+});
+
+// POST /c-submit/verify?t=TOKEN — public: check the shared access code (gate the page)
+app.post('/c-submit/verify', (req, res) => {
+  const p = _partnerByCsubToken(String(req.query.t || (req.body && req.body.t) || ''));
+  if (!p) return res.status(404).json({ error: '链接无效或已失效' });
+  const pw = String((req.body && req.body.password) || '');
+  res.json({ ok: pw === CONTAINER_SUBMIT_PASSWORD });
+});
+
+// POST /c-submit?t=TOKEN — public: submit one container record (multipart)
+app.post('/c-submit', containerSubmitPhotoUpload.single('photo'), (req, res) => {
+  try {
+    const p = _partnerByCsubToken(String(req.query.t || req.body.t || ''));
+    if (!p) return res.status(403).json({ error: '链接无效' });
+    const d = req.body || {};
+    if (String(d.password || '') !== CONTAINER_SUBMIT_PASSWORD) {
+      return res.status(401).json({ error: '密码错误 / Wrong password', code: 'bad_password' });
+    }
+    const containerNo = String(d.container_no || '').trim().toUpperCase();
+    let participants = [];
+    try {
+      participants = typeof d.participants === 'string'
+        ? (d.participants.trim().startsWith('[') ? JSON.parse(d.participants) : d.participants.split(/[,，、;；\n]/))
+        : (Array.isArray(d.participants) ? d.participants : []);
+      participants = participants.map(s => String(s || '').trim()).filter(Boolean).slice(0, 20);
+    } catch { participants = []; }
+    if (!containerNo && !req.file && !participants.length) {
+      return res.status(400).json({ error: '请至少填写 container 号、拍照或参与人' });
+    }
+    const photoPath = req.file ? (req.file.key || req.file.path) : '';
+    const submitType = (d.submit_type === 'end') ? 'end' : 'start';
+    const r = db.prepare(`INSERT INTO container_submissions
+      (partner_id, partner_name, container_no, qty, unit_price, photo_path, participants, submitter_name, submitter_phone, notes, user_agent, submit_type)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        p.id, p.name, containerNo,
+        Math.max(parseInt(d.qty) || 1, 1),
+        Math.max(parseFloat(d.unit_price) || 0, 0),
+        photoPath,
+        JSON.stringify(participants),
+        String(d.submitter_name || '').trim().slice(0, 100),
+        String(d.submitter_phone || '').trim().slice(0, 50),
+        String(d.notes || '').trim().slice(0, 500),
+        String(req.headers['user-agent'] || '').slice(0, 250),
+        submitType
+      );
+    res.json({ success: true, id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/container-submissions?partner_id=&status=pending
+app.get('/api/admin/container-submissions', requireAdmin, blockManager, (req, res) => {
+  try {
+    const { partner_id, status } = req.query;
+    const where = [];
+    const params = [];
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    if (status) { where.push('status = ?'); params.push(String(status)); }
+    const sql = `SELECT * FROM container_submissions
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY created_at DESC LIMIT 200`;
+    const rows = db.prepare(sql).all(...params);
+    for (const r of rows) {
+      try { r.participants = JSON.parse(r.participants || '[]'); } catch { r.participants = []; }
+      r.photo_url = r.photo_path ? `/uploads/${path.basename(r.photo_path)}` : '';
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/container-submissions/:id/discard
+app.post('/api/admin/container-submissions/:id/discard', requireAdmin, blockManager, (req, res) => {
+  try {
+    db.prepare("UPDATE container_submissions SET status='discarded' WHERE id=?").run(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/container-submissions/:id/approve
+//   body: { reviewer_name, container_no, participants?, unit_price?, customer_price?, worker_price? }
+//   Reviewer can edit the record's fields, then it's marked approved + stamped.
+app.post('/api/admin/container-submissions/:id/approve', requireAdmin, blockManager, (req, res) => {
+  try {
+    const sub = db.prepare('SELECT * FROM container_submissions WHERE id=?').get(parseInt(req.params.id));
+    if (!sub) return res.status(404).json({ error: 'not found' });
+    const d = req.body || {};
+    const reviewer = String(d.reviewer_name || '').trim();
+    const cno = String(d.container_no || '').trim().toUpperCase();
+    if (!reviewer) return res.status(400).json({ error: '请填写审核人姓名' });
+    if (!cno) return res.status(400).json({ error: '请填写柜号' });
+    let names = d.participants;
+    if (typeof names === 'string') names = names.split(/[,，、\n]/);
+    names = (Array.isArray(names) ? names : []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 30);
+    const numOr = (v, cur) => (v === '' || v == null) ? cur : Number(v);
+    db.prepare(`UPDATE container_submissions SET
+        status='approved', reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP,
+        container_no=?, participants=?, unit_price=?, customer_price=?, worker_price=?
+      WHERE id=?`).run(
+      reviewer.slice(0, 100), cno, JSON.stringify(names),
+      numOr(d.unit_price, sub.unit_price), numOr(d.customer_price, sub.customer_price), numOr(d.worker_price, sub.worker_price),
+      sub.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/container-submissions/:id/import  body: { invoice_id }
+//   Marks the submission imported; the frontend reads the submission and appends a row
+//   to the open invoice's container list. invoice_id is informational here.
+app.post('/api/admin/container-submissions/:id/import', requireAdmin, blockManager, (req, res) => {
+  try {
+    const sub = db.prepare('SELECT * FROM container_submissions WHERE id=?').get(parseInt(req.params.id));
+    if (!sub) return res.status(404).json({ error: 'not found' });
+    db.prepare("UPDATE container_submissions SET status='imported', imported_invoice_id=?, imported_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(req.body && req.body.invoice_id ? parseInt(req.body.invoice_id) : null, sub.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Container review links (date-range): customer + foreman ───
+function _crlRecords(partnerId, from, to) {
+  const rows = db.prepare(`SELECT * FROM container_submissions
+    WHERE partner_id=? AND status!='discarded' AND date(created_at) >= date(?) AND date(created_at) <= date(?)
+    ORDER BY container_no, submit_type, created_at`).all(partnerId, from, to);
+  for (const r of rows) {
+    try { r.participants = JSON.parse(r.participants || '[]'); } catch { r.participants = []; }
+    r.photo_url = r.photo_path ? `/uploads/${path.basename(r.photo_path)}` : '';
+  }
+  return rows;
+}
+
+// ADMIN: generate a customer + foreman review link for a company over a date range.
+app.post('/api/admin/container-review-links', requireAdmin, blockManager, (req, res) => {
+  try {
+    const d = req.body || {};
+    const partnerId = parseInt(d.partner_id);
+    const from = String(d.date_from || '').slice(0, 10);
+    const to = String(d.date_to || '').slice(0, 10);
+    if (!partnerId || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return res.status(400).json({ error: 'partner_id、date_from、date_to 必填(YYYY-MM-DD)' });
+    }
+    const p = db.prepare('SELECT id, name FROM partners WHERE id=?').get(partnerId);
+    if (!p) return res.status(404).json({ error: '公司不存在' });
+    const mk = role => {
+      const token = crypto.randomBytes(16).toString('hex');
+      db.prepare(`INSERT INTO container_review_links (token, partner_id, partner_name, role, date_from, date_to)
+        VALUES (?,?,?,?,?,?)`).run(token, p.id, p.name, role, from, to);
+      return token;
+    };
+    res.json({ success: true, partner_name: p.name, customer_token: mk('customer'), foreman_token: mk('foreman') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: list review links for a company.
+app.get('/api/admin/container-review-links', requireAdmin, blockManager, (req, res) => {
+  try {
+    const partnerId = parseInt(req.query.partner_id);
+    const where = partnerId ? 'WHERE partner_id=?' : '';
+    const rows = db.prepare(`SELECT * FROM container_review_links ${where} ORDER BY created_at DESC LIMIT 100`)
+      .all(...(partnerId ? [partnerId] : []));
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+function _reviewLinkByToken(token) {
+  if (!token || token.length < 16) return null;
+  return db.prepare('SELECT * FROM container_review_links WHERE token=?').get(token);
+}
+
+// PUBLIC: review page
+app.get('/r/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'container-review.html'));
+});
+
+// ─── Pending-records overview (read-only QR: "all not-yet-finalized records") ───
+// One global token (stored in app_settings) lets a manager scan a QR and see every
+// container scan still awaiting finalization (status not imported/discarded).
+function _pendingOverviewToken() {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='pending_overview_token'").get();
+  let token = row && row.value;
+  if (!token || token.length < 16) {
+    token = crypto.randomBytes(16).toString('hex');
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pending_overview_token', ?, CURRENT_TIMESTAMP)").run(token);
+  }
+  return token;
+}
+function _validPendingToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 16) return false;
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='pending_overview_token'").get();
+  return !!(row && row.value && row.value === token);
+}
+
+// ADMIN: get (lazily create) the read-only overview link.
+app.get('/api/admin/pending-overview-link', requireAdmin, blockManager, (req, res) => {
+  try {
+    const token = _pendingOverviewToken();
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = req.headers['x-forwarded-proto'] || ((req.connection && req.connection.encrypted) ? 'https' : 'http');
+    res.json({ token, url: `${proto}://${host}/p/${token}` });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: rotate the overview token (invalidates the old QR/link).
+app.post('/api/admin/pending-overview-link/regenerate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const token = crypto.randomBytes(16).toString('hex');
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pending_overview_token', ?, CURRENT_TIMESTAMP)").run(token);
+    res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: read-only overview page (token in path).
+app.get('/p/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'pending-overview.html'));
+});
+
+// PUBLIC: every container record not yet finalized (grouped client-side by company).
+app.get('/api/pending/info', (req, res) => {
+  const tok = String(req.query.t || '');
+  if (!_validPendingToken(tok)) return res.status(404).json({ error: '链接无效或已失效 / Invalid or expired link' });
+  const rows = db.prepare(`SELECT id, partner_name, container_no, qty, unit_price, customer_price, worker_price,
+      photo_path, participants, submitter_name, submit_type, status, created_at
+      FROM container_submissions
+      WHERE status NOT IN ('imported','discarded')
+      ORDER BY partner_name COLLATE NOCASE, created_at DESC`).all();
+  const t = encodeURIComponent(tok);
+  const records = rows.map(r => {
+    let parts = []; try { parts = JSON.parse(r.participants || '[]'); } catch {}
+    return {
+      id: r.id, partner_name: r.partner_name || '—', container_no: r.container_no || '', qty: r.qty,
+      unit_price: r.unit_price, customer_price: r.customer_price, worker_price: r.worker_price,
+      participants: parts, submitter_name: r.submitter_name || '', submit_type: r.submit_type || 'start',
+      status: r.status || 'pending', created_at: r.created_at,
+      photo_url: r.photo_path ? `/api/pending/photo/${r.id}?t=${t}` : '',
+    };
+  });
+  res.json({ count: records.length, records });
+});
+
+// PUBLIC: stream one record's photo, gated by the overview token.
+app.get('/api/pending/photo/:id', async (req, res) => {
+  try {
+    if (!_validPendingToken(String(req.query.t || ''))) return res.status(404).json({ error: 'Not found' });
+    const row = db.prepare('SELECT photo_path FROM container_submissions WHERE id=?').get(req.params.id);
+    if (!row || !row.photo_path) return res.status(404).json({ error: 'Not found' });
+    const key = storage.normalizeKey('uploads/' + path.basename(row.photo_path));
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    if (storage.isR2()) {
+      try { return res.redirect(302, await storage.getDownloadUrl(key)); }
+      catch { return res.status(404).json({ error: 'Not found' }); }
+    }
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'Not found' });
+    const s = await storage.getStream(key);
+    s.on('error', () => { try { res.status(500).end(); } catch {} });
+    s.pipe(res);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: review link info + the records in range
+app.get('/api/review/info', (req, res) => {
+  const link = _reviewLinkByToken(String(req.query.t || ''));
+  if (!link) return res.status(404).json({ error: '链接无效或已失效' });
+  const records = _crlRecords(link.partner_id, link.date_from, link.date_to);
+  res.json({
+    role: link.role, partner_name: link.partner_name, date_from: link.date_from, date_to: link.date_to,
+    feedback: link.feedback || '', reviewer_name: link.reviewer_name || '', submitted_at: link.submitted_at || null,
+    records,
+  });
+});
+
+// PUBLIC: submit review — updates each container (customer_price OR worker_price + names) + feedback.
+app.post('/api/review/submit', (req, res) => {
+  try {
+    const link = _reviewLinkByToken(String(req.query.t || (req.body && req.body.t) || ''));
+    if (!link) return res.status(404).json({ error: '链接无效或已失效' });
+    const d = req.body || {};
+    const items = Array.isArray(d.items) ? d.items : [];
+    // Only allow updating records that belong to this link's company + date range.
+    const allowed = new Set(_crlRecords(link.partner_id, link.date_from, link.date_to).map(r => r.id));
+    const tx = db.transaction(() => {
+      for (const it of items) {
+        const id = parseInt(it.id);
+        if (!allowed.has(id)) continue;
+        if (link.role === 'customer') {
+          const price = (it.customer_price === '' || it.customer_price == null) ? null : Number(it.customer_price);
+          db.prepare('UPDATE container_submissions SET customer_price=? WHERE id=?').run(price, id);
+        } else {
+          const price = (it.worker_price === '' || it.worker_price == null) ? null : Number(it.worker_price);
+          let names = it.participants;
+          if (typeof names === 'string') names = names.split(/[,，、\n]/);
+          names = (Array.isArray(names) ? names : []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 30);
+          db.prepare('UPDATE container_submissions SET worker_price=?, participants=? WHERE id=?')
+            .run(price, JSON.stringify(names), id);
+        }
+      }
+      db.prepare('UPDATE container_review_links SET feedback=?, reviewer_name=?, submitted_at=CURRENT_TIMESTAMP WHERE id=?')
+        .run(String(d.feedback || '').slice(0, 2000), String(d.reviewer_name || '').slice(0, 100), link.id);
+    });
+    tx();
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Labor Companies (劳务公司管理) ───
 app.get('/api/admin/labor-companies', requireAdmin, (req, res) => {
   const rows = db.prepare(`SELECT lc.*, (SELECT COUNT(*) FROM worker_accounts wa WHERE wa.payment_labor_company_id=lc.id) AS worker_count FROM labor_companies lc ORDER BY lc.active DESC, lc.name ASC`).all();
@@ -13627,9 +14790,9 @@ app.get('/api/admin/labor-companies', requireAdmin, (req, res) => {
 app.post('/api/admin/labor-companies', requireAdmin, (req, res) => {
   const d = req.body || {};
   if (!d.name || !String(d.name).trim()) return res.status(400).json({ error: 'Name required' });
-  const r = db.prepare(`INSERT INTO labor_companies (name, contact_person, phone, email, address, notes, active, ein, payment_method_type, bank_name, routing_number, account_number, payment_notes, agreement_signed, agreement_notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+  const r = db.prepare(`INSERT INTO labor_companies (name, contact_person, phone, email, address, notes, active, ein, payment_method_type, bank_name, routing_number, account_number, swift_code, zelle_handle, payee_name, payment_notes, agreement_signed, agreement_notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1,
-         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.payment_notes||'',
+         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.swift_code||'', d.zelle_handle||'', d.payee_name||'', d.payment_notes||'',
          d.agreement_signed?1:0, d.agreement_notes||'');
   res.json({ success: true, id: r.lastInsertRowid });
 });
@@ -13641,11 +14804,11 @@ app.put('/api/admin/labor-companies/:id', requireAdmin, (req, res) => {
   const newAgreementSigned = d.agreement_signed ? 1 : 0;
   const agreementSignedAt = newAgreementSigned && current && !current.agreement_signed ? 'CURRENT_TIMESTAMP' : (current && current.agreement_signed_at ? current.agreement_signed_at : null);
   db.prepare(`UPDATE labor_companies SET name=?, contact_person=?, phone=?, email=?, address=?, notes=?, active=?,
-    ein=?, payment_method_type=?, bank_name=?, routing_number=?, account_number=?, payment_notes=?,
+    ein=?, payment_method_type=?, bank_name=?, routing_number=?, account_number=?, swift_code=?, zelle_handle=?, payee_name=?, payment_notes=?,
     agreement_signed=?, agreement_signed_at=CASE WHEN ?=1 AND (agreement_signed=0 OR agreement_signed IS NULL) THEN CURRENT_TIMESTAMP ELSE agreement_signed_at END,
     agreement_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(String(d.name).trim(), d.contact_person||'', d.phone||'', d.email||'', d.address||'', d.notes||'', d.active===0?0:1,
-         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.payment_notes||'',
+         d.ein||'', d.payment_method_type||'', d.bank_name||'', d.routing_number||'', d.account_number||'', d.swift_code||'', d.zelle_handle||'', d.payee_name||'', d.payment_notes||'',
          newAgreementSigned, newAgreementSigned, d.agreement_notes||'', req.params.id);
   res.json({ success: true });
 });
@@ -17045,6 +18208,7 @@ app.get('/ts', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'ts.html'));
 });
 
+
 // ─── Admin Panel Page ───
 // Note: admin.html includes its own login form and client-side auth gate.
 // All sensitive data is protected by requireAdmin middleware on API endpoints.
@@ -17283,14 +18447,14 @@ app.post('/api/worker/contact/request-change', requireWorker, async (req, res) =
     const canVerify = !!(twilioClient && TWILIO_VERIFY_SID);
     if (oldPhone) {
       if (canVerify) { await sendVerifyCode(oldPhone); oldSent = true; }
-      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchor Workforce] 验证旧手机号，验证码：${oldCode}，15分钟有效`); }
+      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchor Workforce] Código para verificar teléfono anterior: ${oldCode}, válido 15 min. / Code to verify old phone: ${oldCode}`); }
     }
     if (canVerify) { await sendVerifyCode(val); newSent = true; }
-    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchor Workforce] 验证新手机号，验证码：${newCode}，15分钟有效`); }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchor Workforce] Código para verificar teléfono nuevo: ${newCode}, válido 15 min. / Code to verify new phone: ${newCode}`); }
   } else {
     const oldEmail = w.email;
-    if (oldEmail) oldSent = await sendEmail(oldEmail, 'Prime Anchor Workforce 更换邮箱验证', `旧邮箱验证码：${oldCode}，15分钟内有效。`);
-    newSent = await sendEmail(val, 'Prime Anchor Workforce 新邮箱验证', `新邮箱验证码：${newCode}，15分钟内有效。`);
+    if (oldEmail) oldSent = await sendEmail(oldEmail, 'Prime Anchor Workforce Verificación de Correo / Email Verification', `Código para su correo anterior: ${oldCode}, válido 15 min.\nCode for your old email: ${oldCode}, valid for 15 minutes.`);
+    newSent = await sendEmail(val, 'Prime Anchor Workforce Verificación de Correo Nuevo / New Email Verification', `Código para su nuevo correo: ${newCode}, válido 15 min.\nCode for your new email: ${newCode}, valid for 15 minutes.`);
   }
   console.log(`[ContactChange] Worker ${req.workerId} field=${field} old_code=${oldCode} new_code=${newCode}`);
   res.json({ success: true, old_sent: oldSent, new_sent: newSent });
@@ -18458,10 +19622,10 @@ app.post('/api/worker/forgot-password', async (req, res) => {
   resetCodes.set('worker:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
   // Try to send via SMS or email
   if (w.phone && twilioClient && TWILIO_FROM) {
-    await sendSMS(w.phone, `[Prime Anchor Workforce] 重置密码验证码: ${code}，10分钟内有效。Reset code: ${code}`);
+    await sendSMS(w.phone, `[Prime Anchor Workforce] Código para restablecer contraseña: ${code}, válido 10 min. / Password reset code: ${code}`);
   } else if (w.email && emailTransporter) {
-    await sendEmail(w.email, 'Prime Anchor Workforce 重置密码 / Password Reset',
-      `您的重置密码验证码: ${code}\nYour password reset code: ${code}\n\n10分钟内有效 / Valid for 10 minutes.`);
+    await sendEmail(w.email, 'Prime Anchor Workforce Restablecimiento de Contraseña / Password Reset',
+      `Su código para restablecer contraseña: ${code}\nYour password reset code: ${code}\n\nVálido 10 min / Valid for 10 minutes.`);
   }
   console.log(`[Reset Code] Worker account ${login}: ${code}`);
   res.json({ success: true, message: '验证码已发送 / Code sent' });
@@ -19196,7 +20360,7 @@ app.post('/api/checkin/send-code', async (req, res) => {
   _checkinCodes[normalizedPhone] = { code, expires: Date.now() + 5 * 60 * 1000, site_id: parseInt(site_id) };
 
   console.log(`[Checkin] Code for ${normalizedPhone}: ${code}`);
-  await sendSMS(phone, `[Prime Anchor Workforce] 您的签到验证码 / Your check-in code: ${code}  (5分钟内有效)`);
+  await sendSMS(phone, `[Prime Anchor Workforce] Su código de registro / Your check-in code: ${code}  (válido 5 min)`);
 
   res.json({ success: true });
 });
@@ -19605,7 +20769,37 @@ app.get('/api/admin/compliance-docs/:id/download', requireAdmin, (req, res) => {
   const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
   if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
+  if (req.query.inline === '1') {
+    const ext = path.extname(doc.file_path).toLowerCase();
+    const mime = ext === '.pdf' ? 'application/pdf'
+      : ext === '.png' ? 'image/png'
+      : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
+      : ext === '.gif' ? 'image/gif'
+      : ext === '.webp' ? 'image/webp'
+      : 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="${(doc.file_name || 'document').replace(/"/g, '')}"`);
+    return res.sendFile(path.resolve(doc.file_path));
+  }
   res.download(doc.file_path, doc.file_name || 'document');
+});
+
+app.delete('/api/admin/compliance-docs/:id', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) try { fs.unlinkSync(doc.file_path); } catch {}
+  db.prepare('DELETE FROM worker_compliance_docs WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+app.post('/api/admin/compliance-docs/:id/replace-file', requireAdmin, docUpload.single('file'), (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) try { fs.unlinkSync(doc.file_path); } catch {}
+  db.prepare('UPDATE worker_compliance_docs SET file_path=?, file_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(req.file.path, req.file.originalname, req.params.id);
+  res.json({ success: true, file_name: req.file.originalname });
 });
 
 // ─── OCR: Extract text from compliance doc image via Google Cloud Vision ───
@@ -20028,10 +21222,10 @@ app.post('/api/register/worker', async (req, res) => {
       // Try to resend so the user gets fresh codes in their inbox
       let phoneSent = false, emailSent = false;
       if (phoneRow && phoneRow.code !== '__twilio_verify__' && existing.phone)
-        phoneSent = await sendSMS(existing.phone, `[Prime Anchor Workforce] 您的手机验证码是: ${phoneRow.code}，15分钟内有效。Your verification code: ${phoneRow.code}`);
+        phoneSent = await sendSMS(existing.phone, `[Prime Anchor Workforce] Su código de verificación es: ${phoneRow.code}, válido 15 min. / Your verification code: ${phoneRow.code}`);
       if (emailRow && existing.email)
-        emailSent = await sendEmail(existing.email, 'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-          `您的邮箱验证码是: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+        emailSent = await sendEmail(existing.email, 'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+          `Su código de correo es: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\nVálido 15 min / Valid for 15 minutes.`,
           verificationCodeHtml(emailRow.code));
       const pendingResp = {
         error: '该手机号或邮箱已有待验证的注册，验证码已重新发送，请输入验证码完成注册。 / A pending registration exists. Verification codes have been resent — please enter them below.',
@@ -20123,14 +21317,14 @@ app.post('/api/register/worker', async (req, res) => {
   } else if (canSMSFallback) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
-    smsSent = await sendSMS(phone, `[Prime Anchor Workforce] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+    smsSent = await sendSMS(phone, `[Prime Anchor Workforce] Su código de verificación es: ${phoneCode}, válido 15 min. / Your verification code: ${phoneCode}`);
   }
   // Email: always use our own codes via SMTP
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
-    emailSent = await sendEmail(email, 'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    emailSent = await sendEmail(email, 'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+      `Su código de correo es: ${emailCode}\nYour email verification code: ${emailCode}\n\nVálido 15 min / Valid for 15 minutes.`,
       verificationCodeHtml(emailCode));
   }
   console.log(`[Verify] Worker #${accountId} phone: ${canVerifyPhone ? 'Twilio Verify' : phoneCode || 'N/A'} (sent:${smsSent}), email: ${emailCode || 'N/A'} (sent:${emailSent})`);
@@ -20165,14 +21359,14 @@ app.post('/api/register/resend-code', async (req, res) => {
     } else {
       code = String(Math.floor(100000 + Math.random() * 900000));
       db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'phone', code, expires);
-      sent = await sendSMS(acc.phone, `[Prime Anchor Workforce] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+      sent = await sendSMS(acc.phone, `[Prime Anchor Workforce] Su código de verificación es: ${code}, válido 15 min. / Your verification code: ${code}`);
       console.log(`[Verify] Resend phone SMS for Worker #${account_id}: ${code} (sent:${sent})`);
     }
   } else {
     code = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'email', code, expires);
-    sent = await sendEmail(acc.email, 'Prime Anchor Workforce 邮箱验证码 / Email Verification Code',
-      `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    sent = await sendEmail(acc.email, 'Prime Anchor Workforce Código de Verificación / Email Verification Code',
+      `Su código de correo es: ${code}\nYour email verification code: ${code}\n\nVálido 15 min / Valid for 15 minutes.`,
       verificationCodeHtml(code));
     console.log(`[Verify] Resend email for Worker #${account_id}: ${code} (sent:${sent})`);
   }
@@ -21576,7 +22770,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
     'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','paypal_tp_auth_template_id','paypal_tp_auth_en_template_id','paypal_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','paypal_tp_auth_template_id','paypal_tp_auth_en_template_id','paypal_tp_auth_es_template_id','ach_op_auth_template_id','ach_op_auth_en_template_id','ach_op_auth_es_template_id','wire_op_auth_template_id','wire_op_auth_en_template_id','wire_op_auth_es_template_id','check_op_auth_template_id','check_op_auth_en_template_id','check_op_auth_es_template_id','zelle_op_auth_template_id','zelle_op_auth_en_template_id','zelle_op_auth_es_template_id','paypal_op_auth_template_id','paypal_op_auth_en_template_id','paypal_op_auth_es_template_id','cash_op_auth_template_id','cash_op_auth_en_template_id','cash_op_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
     'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id'];
   const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL || dsealPublicHost();
@@ -21615,7 +22809,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id',
     'wire_auth_template_id','wire_auth_en_template_id','wire_auth_es_template_id',
     'check_instruction_template_id','check_instruction_en_template_id','check_instruction_es_template_id',
-    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','paypal_tp_auth_template_id','paypal_tp_auth_en_template_id','paypal_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
+    'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','paypal_tp_auth_template_id','paypal_tp_auth_en_template_id','paypal_tp_auth_es_template_id','ach_op_auth_template_id','ach_op_auth_en_template_id','ach_op_auth_es_template_id','wire_op_auth_template_id','wire_op_auth_en_template_id','wire_op_auth_es_template_id','check_op_auth_template_id','check_op_auth_en_template_id','check_op_auth_es_template_id','zelle_op_auth_template_id','zelle_op_auth_en_template_id','zelle_op_auth_es_template_id','paypal_op_auth_template_id','paypal_op_auth_en_template_id','paypal_op_auth_es_template_id','cash_op_auth_template_id','cash_op_auth_en_template_id','cash_op_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
     'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id',
     'invoice_approval_template_id','invoice_approval_en_template_id','invoice_approval_es_template_id',
     'contract_template_id' /* legacy */,
@@ -21788,7 +22982,7 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
         'w4_template_id','w9_template_id','w9_individual_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
         'i9_template_id','w7_template_id',
         'ach_auth_template_id','ach_auth_en_template_id','ach_auth_es_template_id','wire_auth_template_id','check_instruction_template_id',
-        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','paypal_tp_auth_template_id','paypal_tp_auth_en_template_id','paypal_tp_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
+        'zelle_auth_template_id','zelle_auth_en_template_id','zelle_auth_es_template_id','zelle_auth_rep_template_id','zelle_auth_rep_en_template_id','zelle_auth_rep_es_template_id','zelle_tp_auth_template_id','zelle_tp_auth_en_template_id','zelle_tp_auth_es_template_id','ach_tp_auth_template_id','ach_tp_auth_en_template_id','ach_tp_auth_es_template_id','wire_tp_auth_template_id','wire_tp_auth_en_template_id','wire_tp_auth_es_template_id','check_tp_auth_template_id','check_tp_auth_en_template_id','check_tp_auth_es_template_id','cash_tp_auth_template_id','cash_tp_auth_en_template_id','cash_tp_auth_es_template_id','paypal_tp_auth_template_id','paypal_tp_auth_en_template_id','paypal_tp_auth_es_template_id','ach_op_auth_template_id','ach_op_auth_en_template_id','ach_op_auth_es_template_id','wire_op_auth_template_id','wire_op_auth_en_template_id','wire_op_auth_es_template_id','check_op_auth_template_id','check_op_auth_en_template_id','check_op_auth_es_template_id','zelle_op_auth_template_id','zelle_op_auth_en_template_id','zelle_op_auth_es_template_id','paypal_op_auth_template_id','paypal_op_auth_en_template_id','paypal_op_auth_es_template_id','cash_op_auth_template_id','cash_op_auth_en_template_id','cash_op_auth_es_template_id','third_party_pay_template_id','third_party_pay_en_template_id','third_party_pay_es_template_id','cash_receipt_template_id','cash_receipt_en_template_id','cash_receipt_es_template_id',
         'contractor_invoice_template_id','invoice_approval_template_id',
         'invoice_approval_en_template_id','invoice_approval_es_template_id'
       ];
@@ -23854,6 +25048,116 @@ app.get('/api/admin/company-payments/summary', requireAdmin, blockManager, (req,
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Per-week payout info (method / paying entity / proof) ───
+const _CWKP_ENTITIES = ['prime_anchor_point', 'surplus_lane', 'bintique'];
+const _CWKP_METHODS = ['zelle', 'ach', 'cash', 'check', 'thirdparty'];
+
+const weekPayProofUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.bin';
+      cb(null, `weekpay-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|webp|gif)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
+// GET /api/admin/company-week-payments?partner_id=&year_month=
+//   Returns week-payout records (optionally filtered). Each carries proof_url when a file exists.
+app.get('/api/admin/company-week-payments', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const { partner_id, year_month } = req.query;
+    const where = [];
+    const params = [];
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    // year_month filters on the week_start's month OR the week_end's month (a week can straddle)
+    if (year_month) {
+      where.push("(substr(week_start,1,7) = ? OR substr(week_end,1,7) = ?)");
+      params.push(String(year_month), String(year_month));
+    }
+    const sql = `SELECT * FROM company_week_payments
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY week_start DESC, partner_name ASC`;
+    const rows = db.prepare(sql).all(...params);
+    // The /uploads/:filename route serves files in both R2 (302 → presigned) and
+    // local (stream) modes, so a uniform path-style URL works everywhere.
+    for (const r of rows) {
+      r.proof_url = r.proof_file_path ? `/uploads/${path.basename(r.proof_file_path)}` : '';
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/company-week-payments  (multipart; optional `proof` file)
+//   Upsert by (partner_id, week_start, worker_name). Re-uploading replaces the prior proof file.
+app.post('/api/admin/company-week-payments', requireAdmin, blockManager, weekPayProofUpload.single('proof'), (req, res) => {
+  try {
+    const d = req.body || {};
+    const partnerId = parseInt(d.partner_id);
+    const weekStart = String(d.week_start || '').trim();
+    const workerName = String(d.worker_name || '').trim();
+    if (!partnerId || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || !workerName) {
+      return res.status(400).json({ error: 'partner_id, week_start (YYYY-MM-DD) and worker_name required' });
+    }
+    const method = _CWKP_METHODS.includes(d.payment_method) ? d.payment_method : '';
+    const entity = _CWKP_ENTITIES.includes(d.paying_entity) ? d.paying_entity : '';
+    let partnerName = d.partner_name || '';
+    if (!partnerName) {
+      const p = db.prepare('SELECT name FROM partners WHERE id=?').get(partnerId);
+      if (p) partnerName = p.name;
+    }
+    const employeeId = d.employee_id ? parseInt(d.employee_id) : null;
+    const weekEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(d.week_end || '')) ? d.week_end : '';
+    const thirdParty = method === 'thirdparty' ? String(d.third_party_platform || '').trim() : '';
+    const amount = Number(d.amount) || 0;
+    const notes = String(d.notes || '');
+    const newProofPath = req.file ? (req.file.key || req.file.path) : '';
+    const newProofName = req.file ? (req.file.originalname || '') : '';
+
+    const existing = db.prepare('SELECT * FROM company_week_payments WHERE partner_id=? AND week_start=? AND worker_name=?')
+      .get(partnerId, weekStart, workerName);
+    if (existing) {
+      // If a new proof was uploaded, delete the old file.
+      if (newProofPath && existing.proof_file_path) {
+        storage.deleteObject(storage.keyFrom(existing.proof_file_path, 'uploads')).catch(() => {});
+      }
+      db.prepare(`UPDATE company_week_payments SET
+          partner_name=?, employee_id=?, week_end=?, payment_method=?, third_party_platform=?, paying_entity=?,
+          amount=?, notes=?,
+          proof_file_path=COALESCE(NULLIF(?,''), proof_file_path),
+          proof_file_name=COALESCE(NULLIF(?,''), proof_file_name),
+          updated_at=CURRENT_TIMESTAMP
+        WHERE id=?`).run(
+          partnerName, employeeId, weekEnd, method, thirdParty, entity,
+          amount, notes, newProofPath, newProofName, existing.id);
+      return res.json({ success: true, id: existing.id });
+    }
+    const r = db.prepare(`INSERT INTO company_week_payments
+      (partner_id, partner_name, worker_name, employee_id, week_start, week_end, payment_method, third_party_platform, paying_entity, amount, proof_file_path, proof_file_name, notes, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        partnerId, partnerName, workerName, employeeId, weekStart, weekEnd, method, thirdParty, entity, amount,
+        newProofPath, newProofName, notes, req.userName || '');
+    res.json({ success: true, id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/admin/company-week-payments/:id  (also removes proof file)
+app.delete('/api/admin/company-week-payments/:id', requireAdmin, blockManager, (req, res) => {
+  try {
+    const row = db.prepare('SELECT * FROM company_week_payments WHERE id=?').get(parseInt(req.params.id));
+    if (!row) return res.status(404).json({ error: 'not found' });
+    if (row.proof_file_path) storage.deleteObject(storage.keyFrom(row.proof_file_path, 'uploads')).catch(() => {});
+    db.prepare('DELETE FROM company_week_payments WHERE id=?').run(row.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/partners/:id/payment-workers
 // List employees linked to a partner via time_entries or assignments — for picking in payment batch
 app.get('/api/admin/partners/:id/payment-workers', requireAdmin, blockManager, (req, res) => {
@@ -23877,6 +25181,94 @@ app.get('/api/admin/partners/:id/payment-workers', requireAdmin, blockManager, (
       first_name: r.first_name, last_name: r.last_name,
       phone: r.phone, email: r.email, position: r.position
     })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Per-month-per-company bill attachments: client payment proof + handwritten timesheet ───
+const monthBillUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.bin';
+      cb(null, `monthbill-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|webp|gif)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
+// GET /api/admin/company-month-bills?partner_id=&year=  → list bill attachments (with file URLs)
+app.get('/api/admin/company-month-bills', requireAdmin, blockManager, (req, res) => {
+  try {
+    const { partner_id, year } = req.query;
+    const where = [];
+    const params = [];
+    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
+    if (year) { where.push("substr(year_month,1,4) = ?"); params.push(String(year)); }
+    const sql = `SELECT * FROM company_month_bills ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`;
+    const rows = db.prepare(sql).all(...params);
+    for (const r of rows) {
+      r.proof_url = r.proof_file_path ? `/uploads/${path.basename(r.proof_file_path)}` : '';
+      r.timesheet_url = r.timesheet_file_path ? `/uploads/${path.basename(r.timesheet_file_path)}` : '';
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/company-month-bills (multipart `file`) — upsert one attachment slot.
+//   body: { partner_id, partner_name, year_month, kind: 'proof' | 'timesheet' }
+app.post('/api/admin/company-month-bills', requireAdmin, blockManager, monthBillUpload.single('file'), (req, res) => {
+  try {
+    const d = req.body || {};
+    const partnerId = parseInt(d.partner_id);
+    const ym = String(d.year_month || '').trim();
+    const kind = d.kind === 'timesheet' ? 'timesheet' : (d.kind === 'proof' ? 'proof' : '');
+    if (!partnerId || !/^\d{4}-\d{2}$/.test(ym) || !kind) {
+      return res.status(400).json({ error: 'partner_id, year_month (YYYY-MM) and kind (proof|timesheet) required' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'file required' });
+    const newPath = req.file.key || req.file.path;
+    const newName = req.file.originalname || '';
+    let partnerName = d.partner_name || '';
+    if (!partnerName) {
+      const p = db.prepare('SELECT name FROM partners WHERE id=?').get(partnerId);
+      if (p) partnerName = p.name;
+    }
+    const pathCol = kind === 'timesheet' ? 'timesheet_file_path' : 'proof_file_path';
+    const nameCol = kind === 'timesheet' ? 'timesheet_file_name' : 'proof_file_name';
+    const existing = db.prepare('SELECT * FROM company_month_bills WHERE partner_id=? AND year_month=?').get(partnerId, ym);
+    if (existing) {
+      const oldPath = existing[pathCol];
+      if (oldPath) storage.deleteObject(storage.keyFrom(oldPath, 'uploads')).catch(() => {});
+      db.prepare(`UPDATE company_month_bills SET ${pathCol}=?, ${nameCol}=?, partner_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+        .run(newPath, newName, partnerName, existing.id);
+      return res.json({ success: true, id: existing.id });
+    }
+    const r = db.prepare(`INSERT INTO company_month_bills (partner_id, partner_name, year_month, ${pathCol}, ${nameCol}, created_by)
+      VALUES (?,?,?,?,?,?)`).run(partnerId, partnerName, ym, newPath, newName, req.userName || '');
+    res.json({ success: true, id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/admin/company-month-bills?partner_id=&year_month=&kind=  — clear one slot's file
+app.delete('/api/admin/company-month-bills', requireAdmin, blockManager, (req, res) => {
+  try {
+    const partnerId = parseInt(req.query.partner_id);
+    const ym = String(req.query.year_month || '').trim();
+    const kind = req.query.kind === 'timesheet' ? 'timesheet' : (req.query.kind === 'proof' ? 'proof' : '');
+    if (!partnerId || !ym || !kind) return res.status(400).json({ error: 'partner_id, year_month and kind required' });
+    const pathCol = kind === 'timesheet' ? 'timesheet_file_path' : 'proof_file_path';
+    const nameCol = kind === 'timesheet' ? 'timesheet_file_name' : 'proof_file_name';
+    const existing = db.prepare('SELECT * FROM company_month_bills WHERE partner_id=? AND year_month=?').get(partnerId, ym);
+    if (existing && existing[pathCol]) {
+      storage.deleteObject(storage.keyFrom(existing[pathCol], 'uploads')).catch(() => {});
+      db.prepare(`UPDATE company_month_bills SET ${pathCol}='', ${nameCol}='', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(existing.id);
+    }
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -24025,6 +25417,19 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
     }
     const batchId = `WK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     const defaultMethod = d.payment_method || 'cash';
+    // Edit mode: when `replace` is set, each submitted worker's existing records for
+    // this week are cleared first, so re-submitting adjusts the week instead of
+    // piling up duplicate day records. Scoped per submitted worker only.
+    const replaceWeek = !!d.replace;
+    let weekEnd = '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(d.week_start || ''))) {
+      const [yy, mm, dd] = String(d.week_start).split('-').map(Number);
+      const we = new Date(yy, mm - 1, dd); we.setDate(we.getDate() + 6);
+      const z = x => String(x).padStart(2, '0');
+      weekEnd = `${we.getFullYear()}-${z(we.getMonth() + 1)}-${z(we.getDate())}`;
+    }
+    const delWeek = db.prepare(`DELETE FROM company_worker_payments
+      WHERE partner_id = ? AND worker_name = ? AND payment_date >= ? AND payment_date <= ?`);
     const ins = db.prepare(`INSERT INTO company_worker_payments
       (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month,
        payment_method, notes, batch_id, created_by, hours, hourly_rate, week_start,
@@ -24035,6 +25440,9 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
       for (const it of items) {
         const name = (it.worker_name || '').toString().trim();
         if (!name) continue;
+        if (replaceWeek && d.partner_id && weekEnd) {
+          delWeek.run(parseInt(d.partner_id), name, d.week_start, weekEnd);
+        }
         const rowBreak = Math.max(0, Number(it.break_minutes) || 0);
         const days = Array.isArray(it.days) ? it.days : [];
         for (const day of days) {

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<!-- Meta Pixel Code -->
+<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js'); fbq('init', '978932388059197'); fbq('track', 'PageView');</script>
+<noscript><img height="1" width="1" src="https://www.facebook.com/tr?id=978932388059197&ev=PageView&noscript=1"/></noscript>
+<!-- End Meta Pixel Code -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>审核 / Review</title>
+<link rel="icon" href="/logo.svg">
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a}
+  .top{color:#fff;padding:1rem 1.1rem;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .top h1{margin:0;font-size:1.1rem}
+  .top .sub{font-size:.85rem;opacity:.92;margin-top:.2rem}
+  .wrap{max-width:640px;margin:0 auto;padding:1rem 1rem 4rem}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.85rem;margin-bottom:.8rem;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+  .cno{font-family:monospace;font-weight:800;font-size:1.05rem}
+  .meta{color:#64748b;font-size:.8rem;margin:.2rem 0 .5rem}
+  .badge{display:inline-block;border-radius:999px;padding:.05rem .45rem;font-size:.72rem;font-weight:700;margin-right:.3rem}
+  .b-start{background:#f0fdf4;color:#15803d;border:1px solid #86efac}
+  .b-end{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
+  label{display:block;font-weight:600;font-size:.85rem;margin:.5rem 0 .25rem}
+  input[type=text],input[type=number],textarea{width:100%;padding:.6rem .7rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff}
+  img.photo{width:100%;max-height:200px;object-fit:contain;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:.4rem;background:#f8fafc}
+  .price-prefix{position:relative}.price-prefix .sym{position:absolute;left:.7rem;top:50%;transform:translateY(-50%);color:#94a3b8;font-weight:600}.price-prefix input{padding-left:1.5rem}
+  .btn{display:block;width:100%;padding:1rem;border:none;border-radius:10px;color:#fff;font-size:1.05rem;font-weight:800;cursor:pointer;margin-top:.6rem}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:.6rem .8rem;border-radius:8px;font-size:.88rem;margin-bottom:.8rem;display:none}
+  .ok{text-align:center;padding:2rem 1rem}
+  .ok .check{font-size:2.6rem}
+  .done-tag{display:inline-block;background:#dcfce7;color:#15803d;border-radius:999px;padding:.15rem .7rem;font-size:.8rem;font-weight:700;margin-top:.3rem}
+</style>
+</head>
+<body>
+<div class="top" id="top"><h1 id="title">审核 / Review</h1><div class="sub" id="sub">…</div></div>
+<div class="wrap">
+  <div id="errBox" class="err"></div>
+  <div id="main" style="display:none">
+    <div id="doneTag" style="display:none;text-align:center;margin-bottom:.6rem"><span class="done-tag">✓ 此链接已提交过，可再次修改</span></div>
+    <div class="card">
+      <label id="nameLabel">你的名字 / Your name</label>
+      <input type="text" id="reviewerName" autocomplete="off">
+    </div>
+    <div id="list"></div>
+    <div class="card">
+      <label id="fbLabel">反馈意见 / Feedback（可选）</label>
+      <textarea id="feedback" rows="3" placeholder=""></textarea>
+    </div>
+    <button class="btn" id="submitBtn">提交 / Submit</button>
+  </div>
+  <div id="okState" class="ok" style="display:none">
+    <div class="check">✅</div>
+    <h2 id="okTitle">已提交，谢谢！</h2>
+  </div>
+</div>
+<script>
+const TOKEN = (location.pathname.match(/^\/r\/([a-f0-9]{16,})/) || [])[1] || new URLSearchParams(location.search).get('t') || '';
+const $ = id => document.getElementById(id);
+let _role = '', _records = [];
+
+function showErr(m){ $('errBox').textContent = m; $('errBox').style.display = ''; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtDate(s){ if(!s) return ''; const d=new Date((s.includes('T')?s:s.replace(' ','T')+'Z')); return isNaN(d)?s:d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); }
+
+async function init(){
+  if(!TOKEN){ showErr('链接无效 / Invalid link'); return; }
+  try{
+    const r = await fetch('/api/review/info?t='+encodeURIComponent(TOKEN));
+    const j = await r.json();
+    if(!r.ok || j.error){ showErr(j.error||'链接无效'); return; }
+    _role = j.role; _records = j.records || [];
+    const isCust = _role === 'customer';
+    $('top').style.background = isCust ? '#0E7BB8' : '#9a3412';
+    $('title').textContent = isCust ? '📋 客户审核 / Customer Review' : '🦺 工头审核 / Foreman Review';
+    $('sub').textContent = `${j.partner_name||''} · ${j.date_from} ~ ${j.date_to}`;
+    document.title = (isCust?'客户审核 · ':'工头审核 · ') + (j.partner_name||'');
+    if(j.reviewer_name) $('reviewerName').value = j.reviewer_name;
+    if(j.feedback) $('feedback').value = j.feedback;
+    if(j.submitted_at) $('doneTag').style.display = '';
+    renderList(isCust);
+    $('main').style.display = '';
+  }catch(e){ showErr('网络错误，请重试'); }
+}
+
+function renderList(isCust){
+  if(!_records.length){ $('list').innerHTML = '<div class="card" style="color:#64748b">该时间段暂无柜子记录 / No containers in range</div>'; return; }
+  $('list').innerHTML = _records.map(r=>{
+    const isEnd = r.submit_type==='end';
+    const typeBadge = `<span class="badge ${isEnd?'b-end':'b-start'}">${isEnd?'🔴 结束':'🟢 开始'}</span>`;
+    const photo = r.photo_url ? `<img class="photo" src="${esc(r.photo_url)}" alt="">` : '';
+    const parts = Array.isArray(r.participants)?r.participants:[];
+    if(isCust){
+      return `<div class="card" data-id="${r.id}">
+        ${photo}
+        <div>${typeBadge}<span class="cno">${esc(r.container_no||'—')}</span></div>
+        <div class="meta">${fmtDate(r.created_at)} · 参与人：${parts.length?esc(parts.join('、')):'—'}</div>
+        <label>客户价 / Price ($)</label>
+        <div class="price-prefix"><span class="sym">$</span><input type="number" class="r-cust" data-id="${r.id}" min="0" step="0.01" value="${r.customer_price!=null?r.customer_price:''}" placeholder="0.00"></div>
+      </div>`;
+    }
+    return `<div class="card" data-id="${r.id}">
+      ${photo}
+      <div>${typeBadge}<span class="cno">${esc(r.container_no||'—')}</span></div>
+      <div class="meta">${fmtDate(r.created_at)}</div>
+      <label>给工人的价 / Worker price ($)</label>
+      <div class="price-prefix"><span class="sym">$</span><input type="number" class="r-worker" data-id="${r.id}" min="0" step="0.01" value="${r.worker_price!=null?r.worker_price:''}" placeholder="0.00"></div>
+      <label>工人名字 / Workers（逗号分隔）</label>
+      <input type="text" class="r-names" data-id="${r.id}" value="${esc(parts.join('、'))}" placeholder="名字1、名字2">
+    </div>`;
+  }).join('');
+}
+
+$('submitBtn').addEventListener('click', async ()=>{
+  $('errBox').style.display='none';
+  const items = _records.map(r=>{
+    if(_role==='customer'){
+      const el = document.querySelector(`.r-cust[data-id="${r.id}"]`);
+      return { id:r.id, customer_price: el? el.value : '' };
+    }
+    const pe = document.querySelector(`.r-worker[data-id="${r.id}"]`);
+    const ne = document.querySelector(`.r-names[data-id="${r.id}"]`);
+    return { id:r.id, worker_price: pe?pe.value:'', participants: ne?ne.value:'' };
+  });
+  const btn = $('submitBtn'); btn.disabled=true; btn.textContent='提交中…';
+  try{
+    const r = await fetch('/api/review/submit?t='+encodeURIComponent(TOKEN), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ items, feedback: $('feedback').value, reviewer_name: $('reviewerName').value })
+    });
+    const j = await r.json();
+    if(!r.ok || !j.success) throw new Error(j.error||'提交失败');
+    $('main').style.display='none'; $('okState').style.display='';
+  }catch(e){ showErr('提交失败：'+(e.message||e)); btn.disabled=false; btn.textContent='提交 / Submit'; }
+});
+
+init();
+</script>
+</body>
+</html>
