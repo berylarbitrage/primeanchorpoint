@@ -2009,6 +2009,25 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Container Number 重复提醒 Modal -->
+<div class="modal-bg" id="containerDupModal" style="z-index:9999">
+  <div class="modal" style="max-width:440px">
+    <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem">
+      <div style="width:42px;height:42px;border-radius:50%;background:#FEF3C7;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">⚠️</div>
+      <h2 style="margin:0;font-size:1.15rem;color:#92400e">Container 号重复</h2>
+    </div>
+    <p style="font-size:.9rem;color:var(--gray-600);line-height:1.6;margin-bottom:1rem">
+      Container Number <span id="cdupNo" style="font-family:monospace;font-weight:700;color:#b91c1c;background:#fef2f2;padding:.1rem .4rem;border-radius:5px"></span>
+      在 <span id="cdupCompany" style="font-weight:700"></span> 的记录中已存在。
+    </p>
+    <div id="cdupDetails" style="background:#fafafa;border:1px solid var(--gray-200);border-radius:8px;padding:.75rem 1rem;font-size:.85rem;color:var(--gray-700);line-height:1.7;margin-bottom:1.25rem"></div>
+    <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1.25rem">请确认是否为重复录入。重复的输入框已标红。</p>
+    <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:.5rem">
+      <button class="btn btn-accent" onclick="document.getElementById('containerDupModal').classList.remove('show')">知道了</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════ HR DOCUMENTS TAB ════════════════════ -->
 <div id="tab-documents" style="display:none">
   <div class="top">
@@ -28965,9 +28984,8 @@ async function invpCheckDuplicateContainerNo(input) {
   _invpSaveContainerState();
   const localDups = (window._invpContainerItems || []).filter(i => (i.container_no || '').trim().toUpperCase() === val);
   if (localDups.length > 1) {
-    alert(`⚠️ 重复提醒\n\nContainer Number「${val}」在当前 Invoice 中出现了 ${localDups.length} 次，请检查是否重复输入。`);
-    input.style.borderColor = '#ef4444';
-    input.style.background = '#fef2f2';
+    _invpMarkDupInput(input, true);
+    _invpShowDupModal(val, companyName, `<div>📋 当前 Invoice 中出现了 <strong style="color:#b91c1c">${localDups.length}</strong> 次</div>`);
     return;
   }
 
@@ -28978,24 +28996,43 @@ async function invpCheckDuplicateContainerNo(input) {
     if (res && res.duplicate) {
       const invoiceMatches = (res.matches || []).filter(m => m.invoice_number);
       const submissionMatches = (res.matches || []).filter(m => m.source === 'submission');
-      let msg = `⚠️ 重复提醒\n\nContainer Number「${val}」在「${companyName}」的历史记录中已存在：\n`;
+      let html = '';
       if (invoiceMatches.length) {
-        msg += `\n📄 已保存的 Invoice：\n` + invoiceMatches.map(m => `   • ${m.invoice_number}`).join('\n');
+        html += `<div style="margin-bottom:.4rem">📄 已保存的 Invoice：</div>` +
+          invoiceMatches.map(m => `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• ${esc(m.invoice_number)}</div>`).join('');
       }
       if (submissionMatches.length) {
-        msg += `\n📦 Container 提交记录：${submissionMatches.length} 条`;
+        html += `<div style="margin-top:${invoiceMatches.length ? '.5rem' : '0'}">📦 Container 提交记录：<strong>${submissionMatches.length}</strong> 条</div>`;
       }
-      msg += `\n\n请确认是否为重复录入。`;
-      alert(msg);
-      input.style.borderColor = '#ef4444';
-      input.style.background = '#fef2f2';
+      _invpMarkDupInput(input, true);
+      _invpShowDupModal(val, companyName, html);
     } else {
-      input.style.borderColor = '';
-      input.style.background = '';
+      _invpMarkDupInput(input, false);
     }
   } catch (e) {
     // silently ignore check failures
   }
+}
+
+function _invpMarkDupInput(input, isDup) {
+  if (isDup) {
+    input.style.borderColor = '#ef4444';
+    input.style.background = '#fef2f2';
+    input.style.color = '#b91c1c';
+    input.style.fontWeight = '700';
+  } else {
+    input.style.borderColor = '';
+    input.style.background = '';
+    input.style.color = '';
+    input.style.fontWeight = '';
+  }
+}
+
+function _invpShowDupModal(containerNo, companyName, detailsHtml) {
+  document.getElementById('cdupNo').textContent = containerNo;
+  document.getElementById('cdupCompany').textContent = companyName;
+  document.getElementById('cdupDetails').innerHTML = detailsHtml || '<div style="color:var(--gray-400)">—</div>';
+  document.getElementById('containerDupModal').classList.add('show');
 }
 
 // ── Cash payment receipt PDF for a single container row ──
