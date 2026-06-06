@@ -16967,6 +16967,44 @@ app.delete('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// Check duplicate container number across all invoices for a company
+app.get('/api/admin/container-no/check-duplicate', requireAdmin, (req, res) => {
+  const containerNo = String(req.query.container_no || '').trim().toUpperCase();
+  const companyName = String(req.query.company_name || '').trim();
+  const excludeInvoiceId = parseInt(req.query.exclude_invoice_id) || 0;
+  if (!containerNo) return res.json({ duplicate: false });
+
+  const allInvoices = db.prepare(
+    `SELECT id, invoice_number, company_name, profile_json FROM invoices WHERE company_name = ? COLLATE NOCASE`
+  ).all(companyName);
+
+  const matches = [];
+  for (const inv of allInvoices) {
+    if (excludeInvoiceId && inv.id === excludeInvoiceId) continue;
+    try {
+      const profile = JSON.parse(inv.profile_json || '{}');
+      const items = Array.isArray(profile.container_items) ? profile.container_items : [];
+      for (const item of items) {
+        if ((item.container_no || '').trim().toUpperCase() === containerNo) {
+          matches.push({ invoice_id: inv.id, invoice_number: inv.invoice_number });
+          break;
+        }
+      }
+    } catch {}
+  }
+
+  // Also check container_submissions table
+  const submissions = db.prepare(
+    `SELECT id, partner_name, container_no, created_at FROM container_submissions
+     WHERE UPPER(TRIM(container_no)) = ? AND partner_name = ? COLLATE NOCASE AND status NOT IN ('discarded')`
+  ).all(containerNo, companyName);
+  for (const sub of submissions) {
+    matches.push({ submission_id: sub.id, source: 'submission', created_at: sub.created_at });
+  }
+
+  res.json({ duplicate: matches.length > 0, matches });
+});
+
 // Upload payment receipt and mark invoice as paid
 const receiptUpload = multer({
   storage: r2Storage({
