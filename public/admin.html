@@ -2002,7 +2002,9 @@ tr:hover td{background:var(--sky-light)}
     </div>
 
     <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
-      <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
+      <button class="btn btn-outline" onclick="saveInvpInvoice('draft')" style="padding:.55rem 1.2rem;color:#92400e;border-color:#d97706">📝 保存草稿</button>
+      <button class="btn btn-green" onclick="saveInvpInvoice('saved')" style="padding:.55rem 1.2rem">💾 保存 Invoice</button>
+      <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem;background:#0369a1">🔍 预览 Invoice</button>
     </div>
   </div>
 </div>
@@ -28882,7 +28884,7 @@ function renderInvpContainerTable(skipSave) {
     const starTitle = hl ? '取消标记此行' : '标记此行（特殊处理）';
     return `<tr class="invp-cont-row" data-uid="${it.uid}" style="${rowStyle}">
       <td style="padding:4px 6px;text-align:center;color:var(--gray-500);font-size:.85rem">${idx + 1}</td>
-      <td style="padding:3px 4px"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase"></td>
+      <td style="padding:3px 4px"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase" onblur="invpCheckDuplicateContainerNo(this)"></td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-week" value="${esc(it.week || defaultWeek || '')}" placeholder="MM.DD.YY - MM.DD.YY" style="width:140px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-staffing" value="${esc(it.staffing || defaultStaffing || '')}" placeholder="装卸公司" style="width:170px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-qty" value="${esc(String(it.qty || ''))}" min="0" step="1" placeholder="1" style="width:60px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
@@ -28950,6 +28952,50 @@ function invpRemoveContainer(uid) {
   _invpSaveContainerState();
   window._invpContainerItems = window._invpContainerItems.filter(i => i.uid !== uid);
   renderInvpContainerTable(true);
+}
+
+async function invpCheckDuplicateContainerNo(input) {
+  const val = (input.value || '').trim().toUpperCase();
+  if (!val) return;
+  const companyName = (document.getElementById('invPageBillName').value || '').trim();
+  if (!companyName) return;
+  const editId = document.getElementById('invPageEditId').value || '';
+
+  // Also check within current invoice rows for local duplicates
+  _invpSaveContainerState();
+  const localDups = (window._invpContainerItems || []).filter(i => (i.container_no || '').trim().toUpperCase() === val);
+  if (localDups.length > 1) {
+    alert(`⚠️ 重复提醒\n\nContainer Number「${val}」在当前 Invoice 中出现了 ${localDups.length} 次，请检查是否重复输入。`);
+    input.style.borderColor = '#ef4444';
+    input.style.background = '#fef2f2';
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams({ container_no: val, company_name: companyName });
+    if (editId) params.set('exclude_invoice_id', editId);
+    const res = await api('/admin/container-no/check-duplicate?' + params.toString());
+    if (res && res.duplicate) {
+      const invoiceMatches = (res.matches || []).filter(m => m.invoice_number);
+      const submissionMatches = (res.matches || []).filter(m => m.source === 'submission');
+      let msg = `⚠️ 重复提醒\n\nContainer Number「${val}」在「${companyName}」的历史记录中已存在：\n`;
+      if (invoiceMatches.length) {
+        msg += `\n📄 已保存的 Invoice：\n` + invoiceMatches.map(m => `   • ${m.invoice_number}`).join('\n');
+      }
+      if (submissionMatches.length) {
+        msg += `\n📦 Container 提交记录：${submissionMatches.length} 条`;
+      }
+      msg += `\n\n请确认是否为重复录入。`;
+      alert(msg);
+      input.style.borderColor = '#ef4444';
+      input.style.background = '#fef2f2';
+    } else {
+      input.style.borderColor = '';
+      input.style.background = '';
+    }
+  } catch (e) {
+    // silently ignore check failures
+  }
 }
 
 // ── Cash payment receipt PDF for a single container row ──
