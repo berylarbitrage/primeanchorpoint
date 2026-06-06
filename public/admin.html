@@ -509,6 +509,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('bgchecks')" data-tab="bgchecks" data-role="admin,staff">🔍 背景调查</a>
       <a onclick="showTab('compliance')" data-tab="compliance" data-role="admin,staff">📑 合规审核</a>
       <a onclick="showTab('documents')" data-tab="documents" data-role="admin,staff">📄 HR 文件</a>
+      <a onclick="showTab('worker-docs')" data-tab="worker-docs" data-role="admin,staff">📎 员工文件二维码</a>
       <a onclick="showTab('referrals')" data-tab="referrals" data-role="admin,staff">🎁 推荐奖励</a>
       <a onclick="showTab('scheduling')" data-tab="scheduling" data-role="admin,staff">📅 排班管理</a>
       <a onclick="showTab('warehouses')" data-tab="warehouses" data-role="admin,staff">🏭 仓库签到</a>
@@ -2054,6 +2055,41 @@ tr:hover td{background:var(--sky-light)}
   <div class="card">
     <table><thead><tr><th>员工</th><th>文件类型</th><th>标签/描述</th><th>文件名</th><th>到期日</th><th>上传时间</th><th>操作</th></tr></thead>
     <tbody id="docTable"></tbody></table>
+  </div>
+</div>
+
+<!-- ════════════════════ WORKER DOCUMENTS QR TAB ════════════════════ -->
+<div id="tab-worker-docs" style="display:none">
+  <div class="top">
+    <h1>员工文件二维码</h1>
+  </div>
+  <div class="notice">📎 工人扫码后先验证手机号，再上传 W-9、Contract（必填）及 Direct Deposit / Zelle / Check 三种付款方式的签字文件（选填）。提交后会邮件通知并在下方收件箱显示。</div>
+
+  <div class="card" style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap">
+    <div id="wdocQrBox" style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;background:#f8fafc;border:1px solid var(--gray-200);border-radius:10px;flex-shrink:0">
+      <span style="color:var(--gray-400);font-size:.82rem">加载中…</span>
+    </div>
+    <div style="flex:1;min-width:240px">
+      <div style="font-weight:700;font-size:.95rem;margin-bottom:.4rem">通用上传二维码</div>
+      <p style="font-size:.83rem;color:var(--gray-500);margin:.2rem 0 .7rem;line-height:1.6">打印或分享此二维码 / 链接。所有工人共用同一个二维码，无需区分公司。</p>
+      <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.7rem;flex-wrap:wrap">
+        <input type="text" id="wdocUrl" readonly style="flex:1;min-width:220px;font-size:.8rem;font-family:monospace;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;background:#f8fafc">
+        <button class="btn btn-sm btn-outline" onclick="copyWdocUrl()">📋 复制链接</button>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-sm btn-outline" onclick="printWdocQr()">🖨️ 打印二维码</button>
+        <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:#fecaca" onclick="regenWdocQr()">🔄 重新生成（作废旧码）</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;flex-wrap:wrap;gap:.5rem">
+      <h3 style="margin:0;font-size:.95rem">📥 收件箱</h3>
+      <button class="btn btn-sm btn-outline" onclick="loadWorkerDocsList()">🔄 刷新</button>
+    </div>
+    <table><thead><tr><th>姓名</th><th>手机号</th><th>文件</th><th>提交时间</th><th>操作</th></tr></thead>
+    <tbody id="wdocTable"><tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem">加载中…</td></tr></tbody></table>
   </div>
 </div>
 
@@ -7620,6 +7656,7 @@ function showTab(t) {
   if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
   if (t === 'company-payments') initCompanyPayPage();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
+  if (t === 'worker-docs') loadWorkerDocsTab();
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
   if (t === 'internal-staff') loadInternalStaff();
@@ -15667,6 +15704,117 @@ async function populateDocEmpFilter() {
     emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id||'')})</option>`).join('');
   sel.innerHTML  = opts;
   sel2.innerHTML = opts;
+}
+
+// ── Worker Documents QR + inbox ──
+const WDOC_LABELS = {
+  w9: 'W-9', contract: 'Contract', pay_direct_deposit: 'Direct Deposit', pay_zelle: 'Zelle', pay_check: 'Check',
+};
+window._wdocUrl = '';
+
+async function loadWorkerDocsTab() {
+  await renderWdocQr();
+  loadWorkerDocsList();
+}
+
+async function renderWdocQr() {
+  const box = document.getElementById('wdocQrBox');
+  try {
+    const res = await api('/admin/worker-doc-qr');
+    if (res && res.qr_data_url) {
+      window._wdocUrl = res.url || '';
+      box.innerHTML = `<img src="${res.qr_data_url}" alt="QR" style="width:100%;height:100%;object-fit:contain;border-radius:10px">`;
+      const urlEl = document.getElementById('wdocUrl');
+      if (urlEl) urlEl.value = res.url || '';
+    } else {
+      box.innerHTML = '<span style="color:var(--red);font-size:.82rem">生成失败</span>';
+    }
+  } catch (e) {
+    box.innerHTML = '<span style="color:var(--red);font-size:.82rem">生成失败</span>';
+  }
+}
+
+function copyWdocUrl() {
+  const el = document.getElementById('wdocUrl');
+  if (!el || !el.value) return;
+  navigator.clipboard.writeText(el.value).then(
+    () => showToast('链接已复制', 'success', 2000),
+    () => { el.select(); document.execCommand('copy'); showToast('链接已复制', 'success', 2000); }
+  );
+}
+
+function printWdocQr() {
+  const img = document.querySelector('#wdocQrBox img');
+  if (!img) { showToast('二维码尚未生成', 'error'); return; }
+  const w = window.open('', '_blank');
+  w.document.write(`<html><head><title>员工文件上传二维码</title></head>
+    <body style="text-align:center;font-family:sans-serif;padding:40px">
+    <h2 style="color:#0F2B5B">📎 员工文件上传 / Worker Documents</h2>
+    <p style="color:#475569">扫码上传 W-9、Contract 及付款方式签字文件<br>Scan to upload W-9, Contract & payment forms</p>
+    <img src="${img.src}" style="width:320px;height:320px">
+    <p style="font-family:monospace;font-size:12px;color:#64748b;word-break:break-all">${esc(window._wdocUrl || '')}</p>
+    </body></html>`);
+  w.document.close();
+  setTimeout(() => { w.print(); }, 300);
+}
+
+async function regenWdocQr() {
+  if (!confirm('重新生成会使旧二维码立即失效，已打印/分享的旧码将无法使用。确定继续？')) return;
+  try {
+    await api('/admin/worker-doc-qr/regenerate', { method: 'POST' });
+    await renderWdocQr();
+    showToast('已生成新二维码，旧码已失效', 'success', 3500);
+  } catch (e) { showToast('操作失败', 'error'); }
+}
+
+async function loadWorkerDocsList() {
+  const tb = document.getElementById('wdocTable');
+  tb.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem">加载中…</td></tr>';
+  try {
+    const rows = await api('/admin/worker-doc-submissions');
+    if (!Array.isArray(rows) || !rows.length) {
+      tb.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem">暂无提交</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(r => {
+      const when = r.created_at ? new Date(r.created_at.replace(' ', 'T') + 'Z').toLocaleString('zh-CN', { timeZone: 'America/Los_Angeles' }) : '';
+      return `<tr>
+        <td>${esc(r.worker_name || '—')}</td>
+        <td style="font-family:monospace;font-size:.82rem">${esc(r.worker_phone || '')} ${r.phone_verified ? '<span style="color:#15803d">✓</span>' : ''}</td>
+        <td><button class="btn btn-sm btn-outline" onclick="viewWdocFiles(${r.id})">📎 ${r.doc_count || 0} 个文件</button></td>
+        <td style="font-size:.82rem;color:var(--gray-500)">${esc(when)}</td>
+        <td><button class="btn btn-sm" style="color:var(--red);background:#fef2f2;border:1px solid #fecaca" onclick="deleteWdocSubmission(${r.id})">删除</button></td>
+      </tr>
+      <tr id="wdocFiles-${r.id}" style="display:none"><td colspan="5" style="background:#f8fafc"><div id="wdocFilesBody-${r.id}" style="padding:.4rem .2rem"></div></td></tr>`;
+    }).join('');
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="5" style="color:var(--red);font-size:.85rem">加载失败</td></tr>';
+  }
+}
+
+async function viewWdocFiles(subId) {
+  const row = document.getElementById('wdocFiles-' + subId);
+  const body = document.getElementById('wdocFilesBody-' + subId);
+  if (!row || !body) return;
+  if (row.style.display !== 'none') { row.style.display = 'none'; return; }
+  row.style.display = '';
+  body.innerHTML = '<span style="color:var(--gray-400);font-size:.82rem">加载中…</span>';
+  try {
+    const docs = await api(`/admin/worker-doc-submissions/${subId}/docs`);
+    if (!Array.isArray(docs) || !docs.length) { body.innerHTML = '<span style="color:var(--gray-400);font-size:.82rem">无文件</span>'; return; }
+    body.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:.5rem">' + docs.map(d =>
+      `<a class="btn btn-sm btn-outline" target="_blank" href="/api/admin/worker-doc-submissions/${subId}/docs/${d.id}/download">⬇ ${esc(WDOC_LABELS[d.doc_type] || d.doc_type)}</a>`
+    ).join('') + '</div>';
+  } catch (e) { body.innerHTML = '<span style="color:var(--red);font-size:.82rem">加载失败</span>'; }
+}
+
+async function deleteWdocSubmission(subId) {
+  if (!confirm('确定删除这条提交及其所有文件？此操作不可撤销。')) return;
+  try {
+    await api(`/admin/worker-doc-submissions/${subId}`, { method: 'DELETE' });
+    showToast('已删除', 'success', 2000);
+    loadWorkerDocsList();
+  } catch (e) { showToast('删除失败（需要管理员权限）', 'error'); }
 }
 
 async function loadDocuments() {

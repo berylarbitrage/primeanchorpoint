@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Worker Documents</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a;-webkit-text-size-adjust:100%}
+  .top{background:#0F2B5B;color:#fff;padding:.9rem 1.1rem .75rem;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .top-row{display:flex;align-items:flex-start;gap:.5rem}
+  .top h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.02em;flex:1}
+  .top .sub{margin-top:.2rem;font-size:.84rem;opacity:.92}
+  .lang{display:flex;gap:.25rem;background:rgba(255,255,255,.15);border-radius:999px;padding:.15rem;flex-shrink:0}
+  .lang button{background:transparent;color:#fff;border:none;padding:.25rem .55rem;border-radius:999px;font-size:.78rem;font-weight:600;cursor:pointer;opacity:.7}
+  .lang button.active{background:#fff;color:#0F2B5B;opacity:1}
+  .wrap{padding:1rem 1rem 6rem 1rem;max-width:520px;margin:0 auto}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.95rem;margin-bottom:.85rem;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card h2{margin:0 0 .7rem;font-size:.98rem;color:#0F2B5B}
+  label{display:block;font-size:.82rem;font-weight:600;color:#475569;margin:.55rem 0 .35rem}
+  label:first-child{margin-top:0}
+  .hint{font-size:.74rem;color:#94a3b8;margin-top:.25rem}
+  input[type=text],input[type=tel]{width:100%;padding:.65rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none;-webkit-appearance:none}
+  input:focus{border-color:#2E5BA0;box-shadow:0 0 0 3px rgba(46,91,160,.15)}
+  input:disabled{background:#f1f5f9;color:#64748b}
+  .verify-row{display:flex;gap:.5rem;align-items:stretch}
+  .verify-row input{flex:1}
+  .btn-code{flex:0 0 auto;padding:.5rem .8rem;background:#2E5BA0;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap}
+  .btn-code:disabled{background:#94a3b8;cursor:default}
+  .otp-box{display:none;margin-top:.5rem}
+  .otp-box.show{display:block}
+  .verified-tag{display:none;color:#15803d;font-size:.8rem;font-weight:700;margin-top:.3rem}
+  .verified-tag.show{display:block}
+  .photo-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed #4A90D9;background:#f0f7ff;color:#1A3F7A;padding:1.1rem .75rem;border-radius:10px;cursor:pointer;text-align:center;font-size:.9rem;font-weight:600}
+  .photo-zone:active{background:#e0efff}
+  .photo-zone .emoji{font-size:1.8rem;display:block;margin-bottom:.25rem}
+  .photo-zone input{display:none}
+  .zone-row{display:flex;gap:.4rem}
+  .zone-row .photo-zone{flex:1;padding:.8rem .4rem;font-size:.82rem}
+  .zone-row .photo-zone .emoji{font-size:1.4rem;margin-bottom:.15rem}
+  .doc-slot{margin-bottom:.85rem}
+  .doc-slot:last-child{margin-bottom:0}
+  .doc-slot input[type=file]{display:none}
+  .doc-slot .prev{position:relative;display:none;margin-top:.4rem}
+  .doc-slot .prev img{display:block;width:100%;max-height:170px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#000}
+  .doc-slot .prev .pdf{display:flex;align-items:center;gap:.5rem;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:.7rem .85rem;font-size:.88rem;color:#334155;font-weight:600}
+  .doc-slot .prev button{position:absolute;top:.3rem;right:.3rem;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:28px;height:28px;font-size:.85rem;cursor:pointer}
+  .doc-cap{font-size:.84rem;font-weight:700;color:#334155;margin-bottom:.3rem;display:block}
+  .req{color:#dc2626}
+  .opt{color:#94a3b8;font-weight:400}
+  .btn-submit{display:block;width:100%;padding:1rem;background:#0F2B5B;color:#fff;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;letter-spacing:.03em;margin-top:.4rem;box-shadow:0 4px 12px rgba(15,43,91,.3)}
+  .btn-submit:disabled{background:#94a3b8;box-shadow:none}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:.65rem .8rem;border-radius:8px;font-size:.88rem;margin-bottom:.85rem}
+  .msg{font-size:.8rem;margin-top:.3rem;min-height:1em}
+  .msg.ok{color:#15803d}
+  .msg.bad{color:#dc2626}
+  .privacy{font-size:.74rem;color:#94a3b8;text-align:center;margin-top:.5rem;line-height:1.5}
+  .ok-state{text-align:center;padding:2.5rem 1rem}
+  .ok-state .check{display:inline-flex;align-items:center;justify-content:center;width:76px;height:76px;background:#dcfce7;color:#15803d;border-radius:50%;font-size:2.4rem;margin-bottom:.8rem}
+  .ok-state h2{margin:.2rem 0;color:#15803d}
+  .ok-state .meta{color:#475569;margin:.4rem 0 1.5rem;font-size:.92rem}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="top-row">
+    <div style="flex:1">
+      <h1 id="t-title">📎 Documentos del trabajador</h1>
+      <div class="sub" id="t-sub">Prime Anchor Workforce</div>
+    </div>
+    <div class="lang" role="tablist" aria-label="Language">
+      <button type="button" data-lang="es" onclick="setLang('es')">ES</button>
+      <button type="button" data-lang="en" onclick="setLang('en')">EN</button>
+      <button type="button" data-lang="zh" onclick="setLang('zh')">中</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="wrap">
+  <div id="errBox" class="err" style="display:none"></div>
+
+  <div id="formMain" style="display:none">
+    <!-- Phone verify -->
+    <div class="card">
+      <h2 id="t-secPhone">① Teléfono</h2>
+      <label id="t-lName">Nombre <span class="opt">(opcional)</span></label>
+      <input type="text" id="fName" autocomplete="name">
+      <label id="t-lPhone">Teléfono móvil <span class="req">*</span></label>
+      <div class="verify-row">
+        <input type="tel" id="fPhone" autocomplete="tel" inputmode="tel" placeholder="(555) 555-5555">
+        <button type="button" class="btn-code" id="phoneSendBtn" onclick="sendCode()">Enviar código</button>
+      </div>
+      <div class="otp-box" id="phoneOtpBox">
+        <div class="verify-row" style="margin-top:.5rem">
+          <input type="tel" id="fPhoneCode" inputmode="numeric" autocomplete="one-time-code" placeholder="••••••" maxlength="8">
+          <button type="button" class="btn-code" id="phoneCheckBtn" onclick="checkCode()">Verificar</button>
+        </div>
+      </div>
+      <div class="msg" id="phoneMsg"></div>
+      <div class="verified-tag" id="phoneVerified">✓ <span id="t-verified">Verificado</span></div>
+    </div>
+
+    <!-- Required documents -->
+    <div class="card">
+      <h2 id="t-secReq">② Documentos requeridos</h2>
+      <div class="doc-slot" data-doc="w9">
+        <span class="doc-cap" id="t-w9">W-9 <span class="req">*</span></span>
+        <div class="zone-row" id="w9_zone">
+          <label class="photo-zone" data-target="w9_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+          <label class="photo-zone" data-target="w9_gal"><span class="emoji">📎</span><span class="t-gal">Archivo</span></label>
+        </div>
+        <input type="file" id="w9_cam" accept="image/*" capture="environment" data-doc="w9">
+        <input type="file" id="w9_gal" accept="image/*,application/pdf" data-doc="w9">
+        <div class="prev" id="w9_prev"></div>
+      </div>
+      <div class="doc-slot" data-doc="contract">
+        <span class="doc-cap" id="t-contract">Contract / 合同 <span class="req">*</span></span>
+        <div class="zone-row" id="contract_zone">
+          <label class="photo-zone" data-target="contract_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+          <label class="photo-zone" data-target="contract_gal"><span class="emoji">📎</span><span class="t-gal">Archivo</span></label>
+        </div>
+        <input type="file" id="contract_cam" accept="image/*" capture="environment" data-doc="contract">
+        <input type="file" id="contract_gal" accept="image/*,application/pdf" data-doc="contract">
+        <div class="prev" id="contract_prev"></div>
+      </div>
+    </div>
+
+    <!-- Payment method signatures -->
+    <div class="card">
+      <h2 id="t-secPay">③ Método de pago</h2>
+      <div class="hint" id="t-payHint" style="margin-bottom:.6rem">Sube el formulario firmado del método que uses (opcional).</div>
+      <div class="doc-slot" data-doc="pay_direct_deposit">
+        <span class="doc-cap" id="t-payDD">Direct Deposit <span class="opt">(opcional)</span></span>
+        <div class="zone-row" id="pay_direct_deposit_zone">
+          <label class="photo-zone" data-target="pay_direct_deposit_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+          <label class="photo-zone" data-target="pay_direct_deposit_gal"><span class="emoji">📎</span><span class="t-gal">Archivo</span></label>
+        </div>
+        <input type="file" id="pay_direct_deposit_cam" accept="image/*" capture="environment" data-doc="pay_direct_deposit">
+        <input type="file" id="pay_direct_deposit_gal" accept="image/*,application/pdf" data-doc="pay_direct_deposit">
+        <div class="prev" id="pay_direct_deposit_prev"></div>
+      </div>
+      <div class="doc-slot" data-doc="pay_zelle">
+        <span class="doc-cap" id="t-payZelle">Zelle <span class="opt">(opcional)</span></span>
+        <div class="zone-row" id="pay_zelle_zone">
+          <label class="photo-zone" data-target="pay_zelle_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+          <label class="photo-zone" data-target="pay_zelle_gal"><span class="emoji">📎</span><span class="t-gal">Archivo</span></label>
+        </div>
+        <input type="file" id="pay_zelle_cam" accept="image/*" capture="environment" data-doc="pay_zelle">
+        <input type="file" id="pay_zelle_gal" accept="image/*,application/pdf" data-doc="pay_zelle">
+        <div class="prev" id="pay_zelle_prev"></div>
+      </div>
+      <div class="doc-slot" data-doc="pay_check">
+        <span class="doc-cap" id="t-payCheck">Check <span class="opt">(opcional)</span></span>
+        <div class="zone-row" id="pay_check_zone">
+          <label class="photo-zone" data-target="pay_check_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
+          <label class="photo-zone" data-target="pay_check_gal"><span class="emoji">📎</span><span class="t-gal">Archivo</span></label>
+        </div>
+        <input type="file" id="pay_check_cam" accept="image/*" capture="environment" data-doc="pay_check">
+        <input type="file" id="pay_check_gal" accept="image/*,application/pdf" data-doc="pay_check">
+        <div class="prev" id="pay_check_prev"></div>
+      </div>
+    </div>
+
+    <button class="btn-submit" id="submitBtn" onclick="submitForm()">✓ <span id="t-submitBtn">Enviar</span></button>
+    <div class="privacy" id="t-privacy">Tus documentos se transmiten de forma segura y solo los usa el equipo de RR. HH.</div>
+  </div>
+
+  <div id="okState" class="ok-state" style="display:none">
+    <div class="check">✓</div>
+    <h2 id="t-okTitle">¡Enviado!</h2>
+    <div class="meta" id="t-okMsg">Gracias. Hemos recibido tus documentos.</div>
+  </div>
+</div>
+
+<script>
+// ── i18n ──
+const I18N = {
+  es: {
+    title: '📎 Documentos del trabajador', sub: 'Prime Anchor Workforce',
+    secPhone: '① Teléfono', secReq: '② Documentos requeridos', secPay: '③ Método de pago',
+    lName: 'Nombre', lPhone: 'Teléfono móvil', optional: '(opcional)',
+    sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
+    w9: 'W-9', contract: 'Contract / 合同', payHint: 'Sube el formulario firmado del método que uses (opcional).',
+    payDD: 'Direct Deposit', payZelle: 'Zelle', payCheck: 'Check',
+    cam: 'Tomar foto', gal: 'Archivo', remove: 'Quitar',
+    submitBtn: 'Enviar', submitting: 'Enviando…',
+    okTitle: '¡Enviado!', okMsg: 'Gracias. Hemos recibido tus documentos.',
+    privacy: 'Tus documentos se transmiten de forma segura y solo los usa el equipo de RR. HH.',
+    codeSent: 'Código enviado. Revisa tus mensajes.',
+    errNoToken: 'Escanea el código QR oficial para acceder a esta página.', invalid: 'Enlace inválido o expirado',
+    errPhone: 'Verifica tu teléfono primero.', errDocs: 'Sube W-9 y Contract.',
+    errSubmit: 'Error al enviar: ',
+  },
+  en: {
+    title: '📎 Worker Documents', sub: 'Prime Anchor Workforce',
+    secPhone: '① Phone', secReq: '② Required documents', secPay: '③ Payment method',
+    lName: 'Name', lPhone: 'Mobile phone', optional: '(optional)',
+    sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
+    w9: 'W-9', contract: 'Contract / 合同', payHint: 'Upload the signed form for the method you use (optional).',
+    payDD: 'Direct Deposit', payZelle: 'Zelle', payCheck: 'Check',
+    cam: 'Take photo', gal: 'File', remove: 'Remove',
+    submitBtn: 'Submit', submitting: 'Submitting…',
+    okTitle: 'Submitted!', okMsg: 'Thank you. We have received your documents.',
+    privacy: 'Your documents are transmitted securely and used only by the HR team.',
+    codeSent: 'Code sent. Check your messages.',
+    errNoToken: 'Please scan the official QR code to access this page.', invalid: 'Link invalid or expired',
+    errPhone: 'Please verify your phone first.', errDocs: 'Please upload W-9 and Contract.',
+    errSubmit: 'Submit failed: ',
+  },
+  zh: {
+    title: '📎 员工文件上传', sub: 'Prime Anchor Workforce',
+    secPhone: '① 手机号', secReq: '② 必填文件', secPay: '③ 付款方式',
+    lName: '姓名', lPhone: '手机号', optional: '（选填）',
+    sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
+    w9: 'W-9', contract: 'Contract / 合同', payHint: '上传你所用付款方式的已签字表格（选填）。',
+    payDD: 'Direct Deposit 直接存款', payZelle: 'Zelle', payCheck: 'Check 支票',
+    cam: '拍照', gal: '选文件', remove: '移除',
+    submitBtn: '提交', submitting: '提交中…',
+    okTitle: '提交成功', okMsg: '谢谢！我们已收到您的文件。',
+    privacy: '您的文件通过安全通道传输，仅供人力资源团队使用。',
+    codeSent: '验证码已发送，请查收。',
+    errNoToken: '请通过专属二维码访问此页面。', invalid: '链接无效或已失效',
+    errPhone: '请先完成手机验证。', errDocs: '请上传 W-9 和 Contract。',
+    errSubmit: '提交失败：',
+  },
+};
+
+function pickInitialLang() {
+  const stored = localStorage.getItem('wdoc_lang');
+  if (stored && I18N[stored]) return stored;
+  const nav = (navigator.language || navigator.userLanguage || '').toLowerCase();
+  if (nav.startsWith('zh')) return 'zh';
+  if (nav.startsWith('en')) return 'en';
+  return 'es';
+}
+let _lang = pickInitialLang();
+function txt(id, key) { const el = document.getElementById(id); if (el) el.textContent = I18N[_lang][key]; }
+function applyLang() {
+  const L = I18N[_lang];
+  document.documentElement.lang = _lang;
+  document.title = L.title;
+  txt('t-title', 'title'); txt('t-sub', 'sub');
+  txt('t-secPhone', 'secPhone'); txt('t-secReq', 'secReq'); txt('t-secPay', 'secPay');
+  txt('t-verified', 'verified'); txt('t-payHint', 'payHint');
+  txt('t-submitBtn', 'submitBtn'); txt('t-okTitle', 'okTitle'); txt('t-okMsg', 'okMsg'); txt('t-privacy', 'privacy');
+  document.getElementById('t-lName').innerHTML = L.lName + ' <span class="opt">' + L.optional + '</span>';
+  document.getElementById('t-lPhone').innerHTML = L.lPhone + ' <span class="req">*</span>';
+  document.getElementById('t-w9').innerHTML = L.w9 + ' <span class="req">*</span>';
+  document.getElementById('t-contract').innerHTML = L.contract + ' <span class="req">*</span>';
+  document.getElementById('t-payDD').innerHTML = L.payDD + ' <span class="opt">' + L.optional + '</span>';
+  document.getElementById('t-payZelle').innerHTML = L.payZelle + ' <span class="opt">' + L.optional + '</span>';
+  document.getElementById('t-payCheck').innerHTML = L.payCheck + ' <span class="opt">' + L.optional + '</span>';
+  document.querySelectorAll('.t-cam').forEach(el => { el.textContent = L.cam; });
+  document.querySelectorAll('.t-gal').forEach(el => { el.textContent = L.gal; });
+  const sb = document.getElementById('phoneSendBtn');
+  if (sb && !_verified) sb.textContent = _otpSent ? L.resend : L.sendCode;
+  document.getElementById('phoneCheckBtn').textContent = L.verify;
+  document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b.dataset.lang === _lang));
+}
+function setLang(lang) { if (!I18N[lang]) return; _lang = lang; localStorage.setItem('wdoc_lang', lang); applyLang(); }
+
+// ── token: path /wd/TOKEN or ?t=TOKEN ──
+const params = new URLSearchParams(location.search);
+const _pathMatch = location.pathname.match(/^\/wd\/([a-f0-9A-F]{16,})/);
+const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
+
+const DOC_TYPES = ['w9', 'contract', 'pay_direct_deposit', 'pay_zelle', 'pay_check'];
+const _files = {};
+DOC_TYPES.forEach(d => { _files[d] = null; });
+let _verified = false;
+let _otpSent = false;
+let _verifiedTarget = '';
+
+function showErr(msg) { const b = document.getElementById('errBox'); b.textContent = msg; b.style.display = ''; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+function setMsg(text, ok) { const m = document.getElementById('phoneMsg'); m.textContent = text || ''; m.className = 'msg' + (text ? (ok ? ' ok' : ' bad') : ''); }
+
+async function init() {
+  applyLang();
+  if (!TOKEN) { showErr(I18N[_lang].errNoToken); return; }
+  try {
+    const r = await fetch('/api/worker-docs/info?t=' + encodeURIComponent(TOKEN));
+    if (!r.ok) { const j = await r.json().catch(() => ({})); showErr(j.error || I18N[_lang].invalid); return; }
+    document.getElementById('formMain').style.display = '';
+  } catch (e) { showErr('Error: ' + (e.message || e)); }
+}
+init();
+
+// ── OTP (phone only) ──
+async function sendCode() {
+  const L = I18N[_lang];
+  const target = document.getElementById('fPhone').value;
+  if (!String(target || '').trim()) { setMsg(L.errPhone, false); return; }
+  const btn = document.getElementById('phoneSendBtn');
+  btn.disabled = true;
+  setMsg('…', true);
+  try {
+    const r = await fetch('/api/worker-docs/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: TOKEN, phone: target }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setMsg(j.error || 'Error', false); btn.disabled = false; return; }
+    _otpSent = true;
+    document.getElementById('phoneOtpBox').classList.add('show');
+    setMsg(L.codeSent, true);
+    btn.textContent = L.resend;
+    let n = 30;
+    const tick = () => { if (n > 0 && !_verified) { btn.textContent = L.resend + ' (' + n + ')'; n--; setTimeout(tick, 1000); } else if (!_verified) { btn.textContent = L.resend; btn.disabled = false; } };
+    tick();
+  } catch (e) { setMsg('Error: ' + (e.message || e), false); btn.disabled = false; }
+}
+
+async function checkCode() {
+  const L = I18N[_lang];
+  const code = document.getElementById('fPhoneCode').value.trim();
+  const target = document.getElementById('fPhone').value;
+  if (!code) { setMsg(L.verify, false); return; }
+  const btn = document.getElementById('phoneCheckBtn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/worker-docs/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: TOKEN, phone: target, code }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.verified) { setMsg(j.error || 'Error', false); btn.disabled = false; return; }
+    _verified = true;
+    _verifiedTarget = target;
+    setMsg('', true);
+    document.getElementById('phoneVerified').classList.add('show');
+    document.getElementById('phoneOtpBox').classList.remove('show');
+    document.getElementById('fPhone').disabled = true;
+    document.getElementById('phoneSendBtn').style.display = 'none';
+  } catch (e) { setMsg('Error: ' + (e.message || e), false); btn.disabled = false; }
+}
+
+// Re-require verification if the (disabled) phone is somehow edited.
+document.getElementById('fPhone').addEventListener('input', () => {
+  if (_verified && document.getElementById('fPhone').value !== _verifiedTarget) {
+    _verified = false;
+    document.getElementById('phoneVerified').classList.remove('show');
+    document.getElementById('phoneSendBtn').style.display = '';
+  }
+});
+
+// ── document files (image or PDF) ──
+// iOS Safari won't open a display:none input via <label for>, so click it explicitly.
+document.querySelectorAll('.photo-zone[data-target]').forEach(zone => {
+  zone.addEventListener('click', () => {
+    const inp = document.getElementById(zone.dataset.target);
+    if (inp) inp.click();
+  });
+});
+document.querySelectorAll('input[type=file][data-doc]').forEach(inp => {
+  inp.addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    const doc = inp.dataset.doc;
+    if (!f) return;
+    _files[doc] = f;
+    const prev = document.getElementById(doc + '_prev');
+    const isPdf = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name || '');
+    if (isPdf) {
+      prev.innerHTML = '<div class="pdf">📄 <span></span></div><button type="button" data-clear="' + doc + '">×</button>';
+      prev.querySelector('.pdf span').textContent = f.name || 'PDF';
+    } else {
+      prev.innerHTML = '<img alt=""><button type="button" data-clear="' + doc + '">×</button>';
+      prev.querySelector('img').src = URL.createObjectURL(f);
+    }
+    prev.style.display = 'block';
+    prev.querySelector('button[data-clear]').addEventListener('click', () => clearDoc(doc));
+    document.getElementById(doc + '_zone').style.display = 'none';
+  });
+});
+function clearDoc(doc) {
+  _files[doc] = null;
+  document.querySelectorAll('input[data-doc="' + doc + '"]').forEach(i => { i.value = ''; });
+  const prev = document.getElementById(doc + '_prev');
+  prev.style.display = 'none';
+  prev.innerHTML = '';
+  document.getElementById(doc + '_zone').style.display = 'flex';
+}
+
+async function submitForm() {
+  const L = I18N[_lang];
+  document.getElementById('errBox').style.display = 'none';
+  const name = document.getElementById('fName').value.trim();
+  const phone = document.getElementById('fPhone').value.trim();
+  if (!phone || !_verified) { showErr(L.errPhone); return; }
+  if (!_files.w9 || !_files.contract) { showErr(L.errDocs); return; }
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  document.getElementById('t-submitBtn').textContent = L.submitting;
+  try {
+    const fd = new FormData();
+    fd.append('t', TOKEN);
+    fd.append('name', name);
+    fd.append('phone', phone);
+    DOC_TYPES.forEach(k => { if (_files[k]) fd.append(k, _files[k]); });
+    const r = await fetch('/api/worker-docs/submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || 'submit failed');
+    document.getElementById('formMain').style.display = 'none';
+    document.getElementById('okState').style.display = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (e) {
+    showErr(L.errSubmit + (e.message || e));
+    btn.disabled = false;
+    document.getElementById('t-submitBtn').textContent = L.submitBtn;
+  }
+}
+</script>
+</body>
+</html>
