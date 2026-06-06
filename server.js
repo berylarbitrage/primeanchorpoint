@@ -14563,10 +14563,10 @@ app.post('/api/worker-docs/verify-code', async (req, res) => {
 app.post('/api/worker-docs/submit', workerDocUpload.fields([
   { name: 'w9', maxCount: 20 },
   { name: 'contract', maxCount: 20 },
-  { name: 'pay_self_1', maxCount: 1 },
-  { name: 'pay_self_2', maxCount: 1 },
-  { name: 'pay_other_1', maxCount: 1 },
-  { name: 'pay_other_2', maxCount: 1 },
+  { name: 'pay_self_1', maxCount: 20 },
+  { name: 'pay_self_2', maxCount: 20 },
+  { name: 'pay_other_1', maxCount: 20 },
+  { name: 'pay_other_2', maxCount: 20 },
 ]), (req, res) => {
   try {
     const token = String(req.query.t || req.body.t || '');

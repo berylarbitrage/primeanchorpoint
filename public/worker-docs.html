@@ -75,16 +75,8 @@
   .pay-slots.show{display:block}
   .pay-slot{margin-bottom:.65rem}
   .pay-slot:last-child{margin-bottom:0}
-  .photo-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed #4A90D9;background:#f0f7ff;color:#1A3F7A;padding:.9rem .75rem;border-radius:10px;cursor:pointer;text-align:center;font-size:.85rem;font-weight:600}
-  .photo-zone:active{background:#e0efff}
-  .photo-zone .emoji{font-size:1.5rem;display:block;margin-bottom:.15rem}
-  .zone-row{display:flex;gap:.4rem}
-  .zone-row .photo-zone{flex:1;padding:.7rem .4rem;font-size:.8rem}
-  .zone-row .photo-zone .emoji{font-size:1.2rem}
-  .pay-prev{position:relative;display:none;margin-top:.35rem}
-  .pay-prev img{display:block;width:100%;max-height:150px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#000}
-  .pay-prev .pdf{display:flex;align-items:center;gap:.5rem;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .75rem;font-size:.85rem;color:#334155;font-weight:600}
-  .pay-prev button{position:absolute;top:.25rem;right:.25rem;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:26px;height:26px;font-size:.8rem;cursor:pointer}
+  .pay-slot{margin-bottom:.65rem}
+  .pay-slot:last-child{margin-bottom:0}
 </style>
 </head>
 <body>
@@ -172,48 +164,60 @@
       </div>
 
       <div class="pay-slots" id="paySelfSlots">
-        <div class="pay-slot" data-pay="pay_self_1">
+        <div class="doc-section" data-multi="pay_self_1">
           <span class="doc-cap" id="t-paySelf1">信息 1 / Info 1</span>
-          <div class="zone-row" id="pay_self_1_zone">
-            <label class="photo-zone" onclick="event.preventDefault();pickPayFile('pay_self_1','cam')"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
-            <label class="photo-zone" onclick="event.preventDefault();pickPayFile('pay_self_1','file')"><span class="emoji">📎</span><span class="t-gal">Archivo</span></label>
+          <div class="img-grid" id="pay_self_1_grid">
+            <div class="add-btn" onclick="captureMulti('pay_self_1','cam')">
+              <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+            </div>
+            <div class="add-btn" onclick="captureMulti('pay_self_1','file')">
+              <span class="plus">📎</span><span class="t-gal">Archivo</span>
+            </div>
           </div>
-          <input type="file" id="pay_self_1_cam" accept="image/*" capture="environment" style="display:none" data-pay="pay_self_1">
-          <input type="file" id="pay_self_1_file" accept="image/*,application/pdf" style="display:none" data-pay="pay_self_1">
-          <div class="pay-prev" id="pay_self_1_prev"></div>
+          <input type="file" id="pay_self_1_cam_inp" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="pay_self_1_file_inp" accept="image/*,application/pdf" style="display:none">
         </div>
-        <div class="pay-slot" data-pay="pay_self_2">
+        <div class="doc-section" data-multi="pay_self_2" style="margin-top:.65rem">
           <span class="doc-cap" id="t-paySelf2">信息 2 / Info 2</span>
-          <div class="zone-row" id="pay_self_2_zone">
-            <label class="photo-zone" onclick="event.preventDefault();pickPayFile('pay_self_2','cam')"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
-            <label class="photo-zone" onclick="event.preventDefault();pickPayFile('pay_self_2','file')"><span class="emoji">📎</span><span class="t-gal">Archivo</span></label>
+          <div class="img-grid" id="pay_self_2_grid">
+            <div class="add-btn" onclick="captureMulti('pay_self_2','cam')">
+              <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+            </div>
+            <div class="add-btn" onclick="captureMulti('pay_self_2','file')">
+              <span class="plus">📎</span><span class="t-gal">Archivo</span>
+            </div>
           </div>
-          <input type="file" id="pay_self_2_cam" accept="image/*" capture="environment" style="display:none" data-pay="pay_self_2">
-          <input type="file" id="pay_self_2_file" accept="image/*,application/pdf" style="display:none" data-pay="pay_self_2">
-          <div class="pay-prev" id="pay_self_2_prev"></div>
+          <input type="file" id="pay_self_2_cam_inp" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="pay_self_2_file_inp" accept="image/*,application/pdf" style="display:none">
         </div>
       </div>
 
       <div class="pay-slots" id="payOtherSlots">
-        <div class="pay-slot" data-pay="pay_other_1">
+        <div class="doc-section" data-multi="pay_other_1">
           <span class="doc-cap" id="t-payOther1">信息 1 / Info 1</span>
-          <div class="zone-row" id="pay_other_1_zone">
-            <label class="photo-zone" onclick="event.preventDefault();pickPayFile('pay_other_1','cam')"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
-            <label class="photo-zone" onclick="event.preventDefault();pickPayFile('pay_other_1','file')"><span class="emoji">📎</span><span class="t-gal">Archivo</span></label>
+          <div class="img-grid" id="pay_other_1_grid">
+            <div class="add-btn" onclick="captureMulti('pay_other_1','cam')">
+              <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+            </div>
+            <div class="add-btn" onclick="captureMulti('pay_other_1','file')">
+              <span class="plus">📎</span><span class="t-gal">Archivo</span>
+            </div>
           </div>
-          <input type="file" id="pay_other_1_cam" accept="image/*" capture="environment" style="display:none" data-pay="pay_other_1">
-          <input type="file" id="pay_other_1_file" accept="image/*,application/pdf" style="display:none" data-pay="pay_other_1">
-          <div class="pay-prev" id="pay_other_1_prev"></div>
+          <input type="file" id="pay_other_1_cam_inp" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="pay_other_1_file_inp" accept="image/*,application/pdf" style="display:none">
         </div>
-        <div class="pay-slot" data-pay="pay_other_2">
+        <div class="doc-section" data-multi="pay_other_2" style="margin-top:.65rem">
           <span class="doc-cap" id="t-payOther2">信息 2 / Info 2</span>
-          <div class="zone-row" id="pay_other_2_zone">
-            <label class="photo-zone" onclick="event.preventDefault();pickPayFile('pay_other_2','cam')"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
-            <label class="photo-zone" onclick="event.preventDefault();pickPayFile('pay_other_2','file')"><span class="emoji">📎</span><span class="t-gal">Archivo</span></label>
+          <div class="img-grid" id="pay_other_2_grid">
+            <div class="add-btn" onclick="captureMulti('pay_other_2','cam')">
+              <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+            </div>
+            <div class="add-btn" onclick="captureMulti('pay_other_2','file')">
+              <span class="plus">📎</span><span class="t-gal">Archivo</span>
+            </div>
           </div>
-          <input type="file" id="pay_other_2_cam" accept="image/*" capture="environment" style="display:none" data-pay="pay_other_2">
-          <input type="file" id="pay_other_2_file" accept="image/*,application/pdf" style="display:none" data-pay="pay_other_2">
-          <div class="pay-prev" id="pay_other_2_prev"></div>
+          <input type="file" id="pay_other_2_cam_inp" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="pay_other_2_file_inp" accept="image/*,application/pdf" style="display:none">
         </div>
       </div>
     </div>
@@ -345,8 +349,9 @@ const _pathMatch = location.pathname.match(/^\/wd\/([a-f0-9A-F]{16,})/);
 const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
 
 // ── state ──
-const _multiFiles = { w9: [], contract: [] };
-const _payFiles = { pay_self_1: null, pay_self_2: null, pay_other_1: null, pay_other_2: null };
+const ALL_MULTI = ['w9', 'contract', 'pay_self_1', 'pay_self_2', 'pay_other_1', 'pay_other_2'];
+const _multiFiles = {};
+ALL_MULTI.forEach(k => { _multiFiles[k] = []; });
 let _verified = false, _otpSent = false, _verifiedTarget = '';
 
 // Scan adjustment state
@@ -428,7 +433,7 @@ function captureMulti(docType, mode) {
   if (inp) inp.click();
 }
 
-['w9', 'contract'].forEach(docType => {
+ALL_MULTI.forEach(docType => {
   ['cam', 'file'].forEach(mode => {
     const inp = document.getElementById(docType + '_' + mode + '_inp');
     if (!inp) return;
@@ -557,42 +562,6 @@ function togglePaySlots() {
   document.getElementById('payOtherSlots').classList.toggle('show', other);
 }
 
-// ── Payment single-file uploads ──
-function pickPayFile(key, mode) {
-  const inp = document.getElementById(key + '_' + mode);
-  if (inp) inp.click();
-}
-
-document.querySelectorAll('input[type=file][data-pay]').forEach(inp => {
-  inp.addEventListener('change', e => {
-    const f = e.target.files && e.target.files[0];
-    const key = inp.dataset.pay;
-    if (!f) return;
-    _payFiles[key] = f;
-    const prev = document.getElementById(key + '_prev');
-    const isPdf = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name || '');
-    if (isPdf) {
-      prev.innerHTML = '<div class="pdf">📄 <span></span></div><button type="button">×</button>';
-      prev.querySelector('.pdf span').textContent = f.name || 'PDF';
-    } else {
-      prev.innerHTML = '<img alt=""><button type="button">×</button>';
-      prev.querySelector('img').src = URL.createObjectURL(f);
-    }
-    prev.style.display = 'block';
-    prev.querySelector('button').addEventListener('click', () => clearPayFile(key));
-    document.getElementById(key + '_zone').style.display = 'none';
-  });
-});
-
-function clearPayFile(key) {
-  _payFiles[key] = null;
-  document.querySelectorAll('input[data-pay="' + key + '"]').forEach(i => { i.value = ''; });
-  const prev = document.getElementById(key + '_prev');
-  prev.style.display = 'none';
-  prev.innerHTML = '';
-  document.getElementById(key + '_zone').style.display = 'flex';
-}
-
 // ── Submit ──
 async function submitForm() {
   const L = I18N[_lang];
@@ -615,8 +584,8 @@ async function submitForm() {
     if (payType) {
       fd.append('pay_type', payType.value);
       const prefix = payType.value === 'self' ? 'pay_self' : 'pay_other';
-      if (_payFiles[prefix + '_1']) fd.append(prefix + '_1', _payFiles[prefix + '_1']);
-      if (_payFiles[prefix + '_2']) fd.append(prefix + '_2', _payFiles[prefix + '_2']);
+      _multiFiles[prefix + '_1'].forEach(item => fd.append(prefix + '_1', item.file));
+      _multiFiles[prefix + '_2'].forEach(item => fd.append(prefix + '_2', item.file));
     }
     const r = await fetch('/api/worker-docs/submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
     const j = await r.json().catch(() => ({}));
