@@ -2,50 +2,166 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>待确认记录 / Pending Records</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>待确认记录</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <style>
-  :root{--ink:#0f172a;--gray-700:#334155;--gray-500:#64748b;--gray-400:#94a3b8;--gray-200:#e2e8f0;--gray-100:#f1f5f9;--sky:#0E7BB8;--bg:#f8fafc}
-  *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--ink)}
-  .topbar{position:sticky;top:0;z-index:5;background:#0F2B5B;color:#fff;padding:.85rem 1rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem}
-  .topbar h1{font-size:1.05rem;margin:0;font-weight:700}
-  .topbar .count{font-size:.8rem;color:#c7d2fe}
-  .topbar button{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:.35rem .7rem;font-size:.82rem;font-weight:600;cursor:pointer}
-  .wrap{max-width:760px;margin:0 auto;padding:.8rem .7rem 3rem}
-  .hint{font-size:.8rem;color:var(--gray-500);margin:.2rem 0 .9rem}
-  .company{margin:0 0 .4rem;font-size:.95rem;font-weight:700;color:#1A3F7A;display:flex;align-items:center;gap:.4rem;padding:.5rem .2rem .35rem;border-bottom:2px solid var(--gray-200)}
-  .company .c-count{font-size:.74rem;font-weight:600;color:#fff;background:#4A90D9;border-radius:999px;padding:1px 9px}
-  .card{background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:.7rem .8rem;margin:.55rem 0;box-shadow:0 1px 2px rgba(15,23,42,.04)}
-  .row1{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem}
-  .badge{display:inline-block;border-radius:999px;padding:.1rem .55rem;font-size:.72rem;font-weight:700}
-  .b-start{background:#f0fdf4;color:#15803d;border:1px solid #86efac}
-  .b-end{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
-  .b-pending{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
-  .b-approved{background:#ecfdf5;color:#047857;border:1px solid #6ee7b7}
+  :root{
+    --ink:#0f172a;--gray-700:#334155;--gray-500:#64748b;--gray-400:#94a3b8;
+    --gray-200:#e2e8f0;--gray-100:#f1f5f9;--sky:#0E7BB8;--bg:#f0f4f8;
+    --navy:#0F2B5B;--card:#fff;--radius:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--ink)}
+
+  /* ── Top bar ── */
+  .topbar{
+    position:sticky;top:0;z-index:10;
+    background:var(--navy);color:#fff;
+    padding:.9rem 1rem;
+    padding-top:calc(.9rem + env(safe-area-inset-top));
+    display:flex;justify-content:space-between;align-items:center;gap:.6rem;
+  }
+  .topbar-left h1{font-size:1.1rem;margin:0 0 .15rem;font-weight:800;letter-spacing:.01em}
+  .topbar-left .count{font-size:.78rem;color:#93c5fd;font-weight:500}
+  .topbar button{
+    background:rgba(255,255,255,.18);color:#fff;
+    border:1.5px solid rgba(255,255,255,.35);border-radius:10px;
+    padding:.5rem 1rem;font-size:.88rem;font-weight:700;cursor:pointer;
+    min-width:64px;min-height:40px;white-space:nowrap;
+    -webkit-appearance:none;
+  }
+  .topbar button:active{background:rgba(255,255,255,.3)}
+
+  /* ── Main wrap ── */
+  .wrap{
+    max-width:680px;margin:0 auto;
+    padding:.9rem .85rem calc(2.5rem + env(safe-area-inset-bottom));
+  }
+  .hint{
+    font-size:.78rem;color:var(--gray-500);
+    margin:.1rem 0 1rem;line-height:1.5;
+  }
+
+  /* ── Company group header ── */
+  .company{
+    display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;
+    margin:1.2rem 0 .45rem;
+    padding:.55rem .5rem .45rem;
+    border-bottom:2px solid var(--gray-200);
+    font-size:.97rem;font-weight:800;color:#1A3F7A;
+  }
+  .company:first-child{margin-top:.2rem}
+  .c-count{
+    font-size:.72rem;font-weight:700;color:#fff;
+    background:#3b82f6;border-radius:999px;padding:2px 10px;
+    line-height:1.4;
+  }
+
+  /* ── Card ── */
+  .card{
+    background:var(--card);border:1px solid var(--gray-200);
+    border-radius:var(--radius);
+    padding:.85rem .9rem;margin:.5rem 0;
+    box-shadow:0 1px 4px rgba(15,23,42,.06);
+  }
+
+  /* Row 1: badges + container number */
+  .row1{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-bottom:.65rem}
+  .badge{
+    display:inline-flex;align-items:center;
+    border-radius:999px;padding:.18rem .65rem;
+    font-size:.73rem;font-weight:700;line-height:1.3;white-space:nowrap;
+  }
+  .b-start{background:#f0fdf4;color:#15803d;border:1.5px solid #86efac}
+  .b-end{background:#fef2f2;color:#b91c1c;border:1.5px solid #fecaca}
+  .b-pending{background:#fffbeb;color:#92400e;border:1.5px solid #fde68a}
+  .b-approved{background:#ecfdf5;color:#047857;border:1.5px solid #6ee7b7}
   .b-other{background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-200)}
-  .cno{font-size:1.05rem;font-weight:800;letter-spacing:.02em;color:var(--ink)}
-  .body{display:flex;gap:.7rem}
+  .cno{font-size:1.1rem;font-weight:900;letter-spacing:.03em;color:var(--ink)}
+
+  /* Card body: photo + meta */
+  .card-body{display:flex;gap:.8rem;align-items:flex-start}
+
+  /* Thumbnail */
   .thumb{flex:0 0 auto}
-  .thumb img{width:78px;height:78px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;cursor:zoom-in;display:block}
-  .thumb .noimg{width:78px;height:78px;border-radius:8px;border:1px dashed var(--gray-200);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:.72rem}
-  .meta{flex:1;min-width:0;font-size:.82rem;color:var(--gray-700);line-height:1.55}
-  .meta .k{color:var(--gray-400)}
-  .price{font-weight:700;color:#0E7BB8}
-  .price.worker{color:#9a3412}
-  .empty{text-align:center;color:var(--gray-400);padding:3rem 1rem;font-size:.9rem}
-  .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:1rem;margin:1.5rem .2rem;font-size:.9rem;text-align:center}
-  /* lightbox */
-  #lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:50;padding:1rem}
+  .thumb img{
+    width:86px;height:86px;object-fit:cover;
+    border-radius:10px;border:1px solid var(--gray-200);
+    background:#000;cursor:zoom-in;display:block;
+  }
+  .noimg{
+    width:86px;height:86px;border-radius:10px;
+    border:1.5px dashed var(--gray-300,#cbd5e1);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--gray-400);font-size:.7rem;text-align:center;
+    line-height:1.3;
+  }
+
+  /* Meta lines */
+  .meta{flex:1;min-width:0;font-size:.84rem;color:var(--gray-700);line-height:1.65}
+  .meta .k{color:var(--gray-400);font-size:.78rem}
+  .meta .val{font-weight:600;color:var(--ink)}
+
+  /* Prices row */
+  .prices{display:flex;flex-wrap:wrap;gap:.3rem .7rem;margin-top:.1rem}
+  .price-chip{
+    display:inline-flex;align-items:center;gap:.22rem;
+    font-size:.78rem;font-weight:700;
+    background:#eff6ff;color:#1d4ed8;
+    border:1px solid #bfdbfe;border-radius:6px;padding:.1rem .45rem;
+  }
+  .price-chip.worker{background:#fff7ed;color:#9a3412;border-color:#fed7aa}
+
+  /* State badge in meta */
+  .time-line{font-size:.75rem;color:var(--gray-400);margin-top:.2rem}
+
+  /* ── Empty / error ── */
+  .empty{text-align:center;color:var(--gray-400);padding:3.5rem 1rem;font-size:.92rem;line-height:1.6}
+  .err{
+    background:#fef2f2;border:1.5px solid #fecaca;color:#b91c1c;
+    border-radius:12px;padding:1.1rem;margin:1.5rem .1rem;
+    font-size:.88rem;text-align:center;line-height:1.5;
+  }
+
+  /* ── Lightbox ── */
+  #lb{
+    position:fixed;inset:0;
+    background:rgba(0,0,0,.92);
+    display:none;align-items:center;justify-content:center;
+    z-index:100;padding:1rem;
+    overscroll-behavior:contain;
+  }
   #lb.show{display:flex}
-  #lb img{max-width:100%;max-height:100%;border-radius:8px}
-  #lb .x{position:absolute;top:1rem;right:1rem;background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:999px;width:40px;height:40px;font-size:1.3rem;cursor:pointer}
+  #lb img{
+    max-width:100%;max-height:calc(100vh - 2rem);
+    border-radius:10px;object-fit:contain;
+    touch-action:pinch-zoom;
+  }
+  #lb .x{
+    position:absolute;top:max(1rem, env(safe-area-inset-top));right:1rem;
+    background:rgba(255,255,255,.22);color:#fff;border:none;
+    border-radius:999px;width:44px;height:44px;
+    font-size:1.4rem;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+
+  /* ── Responsive tweaks ── */
+  @media(max-width:400px){
+    .wrap{padding:.7rem .6rem 2.5rem}
+    .card{padding:.75rem .75rem}
+    .thumb img,.noimg{width:72px;height:72px}
+    .cno{font-size:1rem}
+    .meta{font-size:.82rem}
+  }
+  @media(max-width:320px){
+    .card-body{flex-direction:column}
+    .thumb img,.noimg{width:100%;height:160px;border-radius:10px}
+  }
 </style>
 </head>
 <body>
   <div class="topbar">
-    <div>
+    <div class="topbar-left">
       <h1>📦 待确认记录</h1>
       <div class="count" id="count">加载中…</div>
     </div>
@@ -56,58 +172,90 @@
     <div id="list"><div class="empty">加载中…</div></div>
   </div>
 
-  <div id="lb" onclick="closeLb()"><button class="x" onclick="closeLb()">×</button><img id="lbImg" alt=""></div>
+  <div id="lb" onclick="closeLb()">
+    <button class="x" onclick="event.stopPropagation();closeLb()">×</button>
+    <img id="lbImg" alt="柜照">
+  </div>
 
 <script>
 const _m = location.pathname.match(/^\/p\/([a-f0-9A-F]{16,})/);
 const TOKEN = (_m && _m[1]) || new URLSearchParams(location.search).get('t') || '';
-const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const money = v => (v == null || v === '' || isNaN(v)) ? null : '$' + Number(v).toFixed(2);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = v => (v == null || v === '' || isNaN(+v)) ? null : '$' + Number(v).toFixed(2);
 
 function statusBadge(s) {
-  if (s === 'approved') return '<span class="badge b-approved">已通过</span>';
-  if (s === 'pending') return '<span class="badge b-pending">待审核</span>';
+  if (s === 'approved') return '<span class="badge b-approved">✓ 已通过</span>';
+  if (s === 'pending')  return '<span class="badge b-pending">⏳ 待审核</span>';
   return '<span class="badge b-other">' + esc(s) + '</span>';
 }
 function typeBadge(t) {
-  return t === 'end' ? '<span class="badge b-end">🔴 结束</span>' : '<span class="badge b-start">🟢 开始</span>';
+  return t === 'end'
+    ? '<span class="badge b-end">🔴 结束</span>'
+    : '<span class="badge b-start">🟢 开始</span>';
 }
-function openLb(src) { document.getElementById('lbImg').src = src; document.getElementById('lb').classList.add('show'); }
-function closeLb() { document.getElementById('lb').classList.remove('show'); document.getElementById('lbImg').src = ''; }
+
+function openLb(src) {
+  document.getElementById('lbImg').src = src;
+  document.getElementById('lb').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeLb() {
+  document.getElementById('lb').classList.remove('show');
+  document.getElementById('lbImg').src = '';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLb(); });
 
 function cardHtml(r) {
-  const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
-  const parts = (r.participants && r.participants.length) ? r.participants.map(esc).join('、') : '<span class="k">—</span>';
-  const prices = [];
-  if (money(r.unit_price)) prices.push('报价 <span class="price">' + money(r.unit_price) + '</span>');
-  if (money(r.customer_price)) prices.push('客户价 <span class="price">' + money(r.customer_price) + '</span>');
-  if (money(r.worker_price)) prices.push('工人价 <span class="price worker">' + money(r.worker_price) + '</span>');
+  const when = r.created_at
+    ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })
+    : '';
+  const parts = (r.participants && r.participants.length)
+    ? r.participants.map(esc).join('、')
+    : '<span class="k">—</span>';
+
+  const priceChips = [];
+  if (money(r.unit_price))     priceChips.push('<span class="price-chip">报价 ' + money(r.unit_price) + '</span>');
+  if (money(r.customer_price)) priceChips.push('<span class="price-chip">客户 ' + money(r.customer_price) + '</span>');
+  if (money(r.worker_price))   priceChips.push('<span class="price-chip worker">工人 ' + money(r.worker_price) + '</span>');
+
   const photo = r.photo_url
     ? '<div class="thumb"><img src="' + esc(r.photo_url) + '" loading="lazy" onclick="openLb(this.src)" alt="柜照"></div>'
-    : '<div class="thumb"><div class="noimg">无照片</div></div>';
+    : '<div class="thumb"><div class="noimg">无<br>照片</div></div>';
+
   return '<div class="card">'
-    + '<div class="row1">' + typeBadge(r.submit_type) + '<span class="cno">' + (esc(r.container_no) || '<span class="k">无柜号</span>') + '</span>' + statusBadge(r.status) + '</div>'
-    + '<div class="body">' + photo
+    + '<div class="row1">' + typeBadge(r.submit_type) + '<span class="cno">' + (esc(r.container_no) || '<span class="k" style="font-size:.82rem;font-weight:400">无柜号</span>') + '</span>' + statusBadge(r.status) + '</div>'
+    + '<div class="card-body">' + photo
     + '<div class="meta">'
-    + '<div><span class="k">参与人：</span>' + parts + '</div>'
-    + (prices.length ? '<div>' + prices.join(' &nbsp; ') + '</div>' : '')
-    + (r.submitter_name ? '<div><span class="k">提交人：</span>' + esc(r.submitter_name) + '</div>' : '')
-    + '<div><span class="k">提交时间：</span>' + esc(when) + '</div>'
-    + '</div></div></div>';
+    + '<div><span class="k">参与人 </span><span class="val">' + parts + '</span></div>'
+    + (r.submitter_name ? '<div><span class="k">提交人 </span><span class="val">' + esc(r.submitter_name) + '</span></div>' : '')
+    + (priceChips.length ? '<div class="prices">' + priceChips.join('') + '</div>' : '')
+    + '<div class="time-line">🕐 ' + esc(when) + '</div>'
+    + '</div></div>'
+    + '</div>';
 }
 
 async function load() {
   const list = document.getElementById('list');
-  if (!TOKEN) { list.innerHTML = '<div class="err">链接无效，请使用最新的二维码。</div>'; document.getElementById('count').textContent = ''; return; }
+  const countEl = document.getElementById('count');
+  if (!TOKEN) {
+    list.innerHTML = '<div class="err">链接无效，请使用最新的二维码。</div>';
+    countEl.textContent = '';
+    return;
+  }
   list.innerHTML = '<div class="empty">加载中…</div>';
+  countEl.textContent = '加载中…';
   try {
     const res = await fetch('/api/pending/info?t=' + encodeURIComponent(TOKEN));
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || ('HTTP ' + res.status)); }
     const data = await res.json();
     const recs = data.records || [];
-    document.getElementById('count').textContent = '共 ' + recs.length + ' 条待确认';
-    if (!recs.length) { list.innerHTML = '<div class="empty">🎉 没有待确认的记录，全部已处理。</div>'; return; }
-    // group by company, preserving the server's ordering
+    countEl.textContent = recs.length ? '共 ' + recs.length + ' 条待确认' : '暂无待确认记录';
+    if (!recs.length) {
+      list.innerHTML = '<div class="empty">🎉 没有待确认的记录<br>全部已处理完毕</div>';
+      return;
+    }
+    // group by company
     const groups = [];
     const idx = {};
     for (const r of recs) {
@@ -120,8 +268,8 @@ async function load() {
       + g.items.map(cardHtml).join('')
     ).join('');
   } catch (e) {
-    document.getElementById('count').textContent = '';
-    list.innerHTML = '<div class="err">' + esc(e.message || e) + '</div>';
+    countEl.textContent = '';
+    list.innerHTML = '<div class="err">⚠️ ' + esc(e.message || e) + '</div>';
   }
 }
 load();
