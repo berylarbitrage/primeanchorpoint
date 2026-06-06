@@ -2080,6 +2080,10 @@ tr:hover td{background:var(--sky-light)}
         <button class="btn btn-sm btn-outline" onclick="printWdocQr()">🖨️ 打印二维码</button>
         <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:#fecaca" onclick="regenWdocQr()">🔄 重新生成（作废旧码）</button>
       </div>
+      <div style="margin-top:.8rem;padding:.6rem .8rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e;line-height:1.6">
+        🔑 <strong>万能验证码</strong>：<span id="wdocMasterCode" style="font-family:monospace;font-size:1rem;font-weight:700;letter-spacing:1px">—</span>
+        <div style="color:#a16207;font-size:.76rem;margin-top:.2rem">当工作人员代填、收不到工人手机短信时，验证码处输入此码即可通过（适用于员工文件 / 申请表单）。可用环境变量 <code>MASTER_VERIFY_CODE</code> 修改或留空关闭。</div>
+      </div>
     </div>
   </div>
 
@@ -15726,6 +15730,8 @@ async function renderWdocQr() {
       box.innerHTML = `<img src="${res.qr_data_url}" alt="QR" style="width:100%;height:100%;object-fit:contain;border-radius:10px">`;
       const urlEl = document.getElementById('wdocUrl');
       if (urlEl) urlEl.value = res.url || '';
+      const mc = document.getElementById('wdocMasterCode');
+      if (mc) mc.textContent = res.master_code || '（已关闭）';
     } else {
       box.innerHTML = '<span style="color:var(--red);font-size:.82rem">生成失败</span>';
     }
