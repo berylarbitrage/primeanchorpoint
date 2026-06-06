@@ -872,6 +872,34 @@ db.exec(`CREATE TABLE IF NOT EXISTS applicant_otp (
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_aotp ON applicant_otp(form_token, type, target)`); } catch(e) {}
 
+// ── Worker document self-upload (global QR) ──
+// One global QR for workers to upload W9 + Contract (required) and up to three
+// payment-method signature forms (Direct Deposit / Zelle / Check, optional).
+db.exec(`CREATE TABLE IF NOT EXISTS worker_doc_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  form_token TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS worker_doc_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_name TEXT DEFAULT '',
+  worker_phone TEXT DEFAULT '',
+  phone_verified INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'submitted',
+  notes TEXT DEFAULT '',
+  user_agent TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS worker_doc_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  submission_id INTEGER NOT NULL,
+  doc_type TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_wdocf ON worker_doc_files(submission_id)`); } catch(e) {}
+
 function generatePartnerNumber(stateAbbr) {
   const s = (stateAbbr || 'XX').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2).padEnd(2, 'X');
   const now = new Date();
@@ -14350,6 +14378,270 @@ app.delete('/api/admin/applicant-submissions/:id', requireAdmin, requireRole('ad
     for (const d of docs) { try { await storage.deleteObject(storage.normalizeKey(d.file_path)); } catch {} }
     db.prepare('DELETE FROM applicant_docs WHERE submission_id=?').run(req.params.id);
     db.prepare('DELETE FROM applicant_submissions WHERE id=?').run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ════════ Worker Document self-upload — single global QR ════════
+// Workers scan one QR → verify phone via SMS → upload W9 + Contract (required)
+// + up to three payment-method signature forms (Direct Deposit / Zelle / Check).
+
+const workerDocUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `wdoc-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|heif|webp|gif)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|heif|webp|gif|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
+const WORKER_DOC_TYPES = ['w9', 'contract', 'pay_direct_deposit', 'pay_zelle', 'pay_check'];
+const WORKER_DOC_LABELS = {
+  w9: 'W-9', contract: 'Contract / 合同',
+  pay_direct_deposit: 'Direct Deposit 授权 / Authorization',
+  pay_zelle: 'Zelle 授权 / Authorization',
+  pay_check: 'Check 授权 / Authorization',
+};
+
+// Get (lazily create) the single global worker-doc form token.
+function _getWorkerDocToken() {
+  let row = db.prepare('SELECT form_token FROM worker_doc_settings WHERE id=1').get();
+  if (!row || !row.form_token) {
+    const token = crypto.randomBytes(20).toString('hex');
+    db.prepare(`INSERT INTO worker_doc_settings (id, form_token, updated_at) VALUES (1, ?, datetime('now'))
+                ON CONFLICT(id) DO UPDATE SET form_token=excluded.form_token, updated_at=datetime('now')`).run(token);
+    return token;
+  }
+  return row.form_token;
+}
+function _validWorkerDocToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 16) return false;
+  const row = db.prepare('SELECT form_token FROM worker_doc_settings WHERE id=1').get();
+  return !!(row && row.form_token && row.form_token === token);
+}
+
+// ADMIN: get/create the global token + QR.
+app.get('/api/admin/worker-doc-qr', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const token = _getWorkerDocToken();
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
+    const url = `${proto}://${host}/wd/${token}`;
+    const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
+    res.json({ token, url, qr_data_url: qrDataUrl });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: rotate the token (invalidates the old QR).
+app.post('/api/admin/worker-doc-qr/regenerate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const token = crypto.randomBytes(20).toString('hex');
+    db.prepare(`INSERT INTO worker_doc_settings (id, form_token, updated_at) VALUES (1, ?, datetime('now'))
+                ON CONFLICT(id) DO UPDATE SET form_token=excluded.form_token, updated_at=datetime('now')`).run(token);
+    res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: short URL that serves the mobile worker-doc upload page.
+app.get('/wd/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'worker-docs.html'));
+});
+
+// PUBLIC: validate the token.
+app.get('/api/worker-docs/info', (req, res) => {
+  if (!_validWorkerDocToken(String(req.query.t || ''))) return res.status(404).json({ error: '链接无效或已失效 / Invalid or expired link' });
+  res.json({ ok: true });
+});
+
+// PUBLIC: send an SMS verification code to the worker's phone.
+app.post('/api/worker-docs/send-code', async (req, res) => {
+  try {
+    const token = String(req.body.t || '');
+    if (!_validWorkerDocToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
+    const target = _normApplyPhone(req.body.phone);
+    if (target.replace(/\D/g, '').length < 10)
+      return res.status(400).json({ error: '请输入有效手机号 / Enter a valid phone number' });
+    const recent = db.prepare(`SELECT COUNT(*) n FROM applicant_otp WHERE form_token=? AND type='phone' AND target=? AND created_at > datetime('now','-15 minutes')`).get(token, target);
+    if (recent && recent.n >= 5) return res.status(429).json({ error: '请求过于频繁，请稍后再试 / Too many requests, please try later' });
+    db.prepare("DELETE FROM applicant_otp WHERE form_token=? AND type='phone' AND target=? AND verified=0").run(token, target);
+    const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    let sent = false; const detail = [];
+    let usedVerify = false;
+    if (twilioClient && TWILIO_VERIFY_SID) {
+      try {
+        const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID).verifications.create({ to: target, channel: 'sms' });
+        usedVerify = (v.status === 'pending' || !!v.sid);
+        if (!usedVerify) detail.push(`Verify status=${v.status}`);
+      } catch (e) { detail.push(`Verify: ${e.message}${e.code ? ' (code ' + e.code + ')' : ''}`); }
+    } else if (!twilioClient) {
+      detail.push('TWILIO_ACCOUNT_SID/AUTH_TOKEN 未配置');
+    }
+    if (usedVerify) {
+      db.prepare("INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,'phone',?,?,?)").run(token, target, '__twilio_verify__', expires);
+      sent = true;
+    } else {
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      db.prepare("INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,'phone',?,?,?)").run(token, target, code, expires);
+      const r = await sendSMSWithDetail(target, `[Prime Anchor Workforce] 验证码 / Code: ${code}（15分钟有效 / valid 15 min）`);
+      sent = !!r.ok;
+      if (!sent) detail.push(`SMS: ${r.error || r.errorMessage || ('status=' + r.status)}`);
+    }
+    if (!sent) {
+      const reason = detail.join(' | ') || 'unknown';
+      console.warn(`[worker-docs] code send failed target=${target} :: ${reason}`);
+      return res.status(502).json({ success: false, sent: false, error: '短信发送失败 / SMS failed：' + reason });
+    }
+    res.json({ success: true, sent });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: check the SMS verification code.
+app.post('/api/worker-docs/verify-code', async (req, res) => {
+  try {
+    const token = String(req.body.t || '');
+    if (!_validWorkerDocToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
+    const target = _normApplyPhone(req.body.phone || req.body.target);
+    const code = String(req.body.code || '').trim();
+    if (!target || !code) return res.status(400).json({ error: '请输入验证码 / Enter the verification code' });
+    const row = db.prepare(`SELECT * FROM applicant_otp WHERE form_token=? AND type='phone' AND target=? ORDER BY id DESC LIMIT 1`).get(token, target);
+    if (!row) return res.status(400).json({ error: '请先获取验证码 / Request a code first' });
+    if (new Date(row.expires_at).getTime() < Date.now()) return res.status(400).json({ error: '验证码已过期，请重新获取 / Code expired, request a new one' });
+    if (row.attempts >= 6) return res.status(429).json({ error: '尝试次数过多，请重新获取验证码 / Too many attempts' });
+    let ok = false;
+    if (row.code === '__twilio_verify__') ok = await checkVerifyCode(target, code);
+    else ok = (row.code === code);
+    db.prepare('UPDATE applicant_otp SET attempts=attempts+1, verified=? WHERE id=?').run(ok ? 1 : row.verified, row.id);
+    if (!ok) return res.status(400).json({ error: '验证码错误 / Incorrect code' });
+    res.json({ success: true, verified: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: submit the worker documents (multipart).
+app.post('/api/worker-docs/submit', workerDocUpload.fields(
+  WORKER_DOC_TYPES.map(name => ({ name, maxCount: 1 }))
+), (req, res) => {
+  try {
+    const token = String(req.query.t || req.body.t || '');
+    if (!_validWorkerDocToken(token)) return res.status(403).json({ error: '链接无效 / Invalid link' });
+    const d = req.body || {};
+    const name = String(d.name || '').trim().slice(0, 120);
+    const phone = _normApplyPhone(d.phone);
+    if (!phone) return res.status(400).json({ error: '请填写手机号 / Phone is required' });
+    const verified = !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type='phone' AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, phone);
+    if (!verified) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone number first' });
+    const files = req.files || {};
+    if (!files.w9 || !files.contract)
+      return res.status(400).json({ error: '请上传 W-9 和 Contract / Please upload W-9 and Contract' });
+    const r = db.prepare(`INSERT INTO worker_doc_submissions
+      (worker_name, worker_phone, phone_verified, user_agent) VALUES (?,?,?,?)`).run(
+        name, phone, 1, String(req.headers['user-agent'] || '').slice(0, 250));
+    const subId = r.lastInsertRowid;
+    const docMeta = [];
+    for (const docType of WORKER_DOC_TYPES) {
+      const arr = files[docType];
+      if (arr && arr[0]) {
+        const f = arr[0];
+        const fileKey = (f.key || f.filename || f.path);
+        db.prepare('INSERT INTO worker_doc_files (submission_id, doc_type, file_path, file_name) VALUES (?,?,?,?)')
+          .run(subId, docType, fileKey, f.originalname || '');
+        docMeta.push({ docType, key: fileKey, originalname: f.originalname || '', mime: f.mimetype || '' });
+      }
+    }
+    res.json({ success: true, id: subId });
+    notifyNewWorkerDocs({ subId, name, phone, docMeta })
+      .catch(e => console.error('[worker-docs-notify] failed:', e.message));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+const WORKER_DOC_NOTIFY_EMAIL = process.env.WORKER_DOC_NOTIFY_EMAIL || APPLICATION_NOTIFY_EMAIL;
+async function notifyNewWorkerDocs({ subId, name, phone, docMeta }) {
+  const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+  const files = [];
+  for (const d of docMeta) {
+    try {
+      const buf = await storage.getBuffer(storage.normalizeKey(d.key));
+      const ext = (path.extname(d.originalname || d.key) || '.jpg').toLowerCase();
+      const mime = d.mime || ({ '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.heic': 'image/heic', '.heif': 'image/heif', '.webp': 'image/webp', '.pdf': 'application/pdf' }[ext] || 'application/octet-stream');
+      files.push({ filename: `${d.docType}${ext}`, content: buf, mime });
+    } catch (e) { console.error(`[worker-docs-notify] could not read ${d.key}: ${e.message}`); }
+  }
+  const rows = [
+    ['姓名 / Name', name || '—'],
+    ['电话 / Phone', phone + ' ✓ 已验证 / verified'],
+    ['提交时间 / Submitted', when + ' (PT)'],
+    ['已上传文件 / Documents', docMeta.map(d => WORKER_DOC_LABELS[d.docType] || d.docType).join('、') || '无'],
+  ];
+  const text = '员工文件上传 / Worker Documents\n\n' + rows.map(([k, v]) => `${k}: ${v}`).join('\n')
+    + `\n\n文件见附件。也可在管理后台「员工文件」查看。\nDocuments are attached. You can also view them in the admin “Worker Documents” inbox.`;
+  const html = `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:560px">
+    <h2 style="color:#1a3f7a;margin:0 0 .5rem">📎 员工文件上传 / Worker Documents</h2>
+    <table cellpadding="6" style="border-collapse:collapse;font-size:14px;width:100%">
+      ${rows.map(([k, v]) => `<tr><td style="color:#64748b;white-space:nowrap;vertical-align:top">${k}</td><td style="font-weight:600;color:#0f172a">${String(v).replace(/</g, '&lt;')}</td></tr>`).join('')}
+    </table>
+    <p style="color:#64748b;font-size:13px;margin-top:1rem">文件见附件。也可在管理后台「员工文件」查看。<br>Documents are attached. You can also view them in the admin “Worker Documents” inbox.</p>
+  </div>`;
+  const subject = `员工文件上传 / Worker Documents — ${name || phone}`;
+  const sent = files.length
+    ? await sendEmailWithFiles(WORKER_DOC_NOTIFY_EMAIL, subject, text, html, files)
+    : await sendEmail(WORKER_DOC_NOTIFY_EMAIL, subject, text, html);
+  console.log(`[worker-docs-notify] submission #${subId} → ${WORKER_DOC_NOTIFY_EMAIL}: ${sent ? 'sent' : 'FAILED'} (${files.length} attachments)`);
+}
+
+// ADMIN: list worker-doc submissions.
+app.get('/api/admin/worker-doc-submissions', requireAdmin, blockManager, (req, res) => {
+  try {
+    const where = [];
+    const params = [];
+    if (req.query.status) { where.push('status = ?'); params.push(String(req.query.status)); }
+    const sql = `SELECT s.*, (SELECT COUNT(*) FROM worker_doc_files f WHERE f.submission_id=s.id) as doc_count
+                 FROM worker_doc_submissions s
+                 ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                 ORDER BY created_at DESC LIMIT 300`;
+    res.json(db.prepare(sql).all(...params));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: list a submission's documents.
+app.get('/api/admin/worker-doc-submissions/:id/docs', requireAdmin, blockManager, (req, res) => {
+  res.json(db.prepare('SELECT id, doc_type, file_name, uploaded_at FROM worker_doc_files WHERE submission_id=?').all(req.params.id));
+});
+
+// ADMIN: download/stream one document (local + R2).
+app.get('/api/admin/worker-doc-submissions/:id/docs/:docId/download', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const doc = db.prepare('SELECT * FROM worker_doc_files WHERE id=? AND submission_id=?').get(req.params.docId, req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    const key = storage.normalizeKey(doc.file_path);
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    if (storage.isR2()) {
+      try { return res.redirect(302, await storage.getDownloadUrl(key)); }
+      catch (e) { return res.status(404).json({ error: 'Not found' }); }
+    }
+    const ext = path.extname(key).toLowerCase();
+    const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+    if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
+    try {
+      const s = await storage.getStream(key);
+      s.on('error', () => { try { res.status(500).end(); } catch {} });
+      s.pipe(res);
+    } catch (e) { res.status(404).json({ error: 'Not found' }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: delete a worker-doc submission and its files.
+app.delete('/api/admin/worker-doc-submissions/:id', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const docs = db.prepare('SELECT * FROM worker_doc_files WHERE submission_id=?').all(req.params.id);
+    for (const d of docs) { try { await storage.deleteObject(storage.normalizeKey(d.file_path)); } catch {} }
+    db.prepare('DELETE FROM worker_doc_files WHERE submission_id=?').run(req.params.id);
+    db.prepare('DELETE FROM worker_doc_submissions WHERE id=?').run(req.params.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
