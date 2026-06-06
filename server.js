@@ -108,6 +108,29 @@ async function checkVerifyCode(to, code) {
   }
 }
 
+// Master/override verification code: lets staff complete a phone/email
+// verification on a worker's behalf when the real SMS code can't be received.
+// Memorable default (888888); override with env MASTER_VERIFY_CODE. Set it to
+// an empty value to disable the bypass entirely.
+const MASTER_VERIFY_CODE = (process.env.MASTER_VERIFY_CODE !== undefined)
+  ? String(process.env.MASTER_VERIFY_CODE).trim()
+  : '888888';
+function isMasterVerifyCode(code) {
+  return !!MASTER_VERIFY_CODE && String(code || '').trim() === MASTER_VERIFY_CODE;
+}
+// Record a verified OTP row for (form_token,type,target) so the later submit
+// check passes — used when the master code is accepted.
+function markOtpVerifiedByMaster(formToken, type, target) {
+  const existing = db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? ORDER BY id DESC LIMIT 1`).get(formToken, type, target);
+  if (existing) {
+    db.prepare('UPDATE applicant_otp SET verified=1 WHERE id=?').run(existing.id);
+  } else {
+    const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,verified,expires_at) VALUES (?,?,?,?,1,?)')
+      .run(formToken, type, target, '__master__', expires);
+  }
+}
+
 // Returns detailed Twilio status for diagnostics (used by admin test endpoint)
 async function sendSMSWithDetail(to, body) {
   if (!twilioClient) return { ok: false, error: 'TWILIO_ACCOUNT_SID 或 TWILIO_AUTH_TOKEN 未配置' };
@@ -14223,6 +14246,12 @@ app.post('/api/apply/verify-code', async (req, res) => {
     const target = channel === 'phone' ? _normApplyPhone(req.body.phone || req.body.target) : String(req.body.email || req.body.target || '').trim().toLowerCase();
     const code = String(req.body.code || '').trim();
     if (!target || !code) return res.status(400).json({ error: '请输入验证码 / Enter the verification code' });
+    // Master override: staff can complete verification without the real code.
+    if (isMasterVerifyCode(code)) {
+      markOtpVerifiedByMaster(token, channel, target);
+      console.log(`[apply] master code accepted for ${channel} ${target}`);
+      return res.json({ success: true, verified: true });
+    }
     const row = db.prepare(`SELECT * FROM applicant_otp WHERE form_token=? AND type=? AND target=? ORDER BY id DESC LIMIT 1`).get(token, channel, target);
     if (!row) return res.status(400).json({ error: '请先获取验证码 / Request a code first' });
     if (new Date(row.expires_at).getTime() < Date.now()) return res.status(400).json({ error: '验证码已过期，请重新获取 / Code expired, request a new one' });
@@ -14435,7 +14464,7 @@ app.get('/api/admin/worker-doc-qr', requireAdmin, blockManager, async (req, res)
     const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
     const url = `${proto}://${host}/wd/${token}`;
     const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
-    res.json({ token, url, qr_data_url: qrDataUrl });
+    res.json({ token, url, qr_data_url: qrDataUrl, master_code: MASTER_VERIFY_CODE || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -14510,6 +14539,12 @@ app.post('/api/worker-docs/verify-code', async (req, res) => {
     const target = _normApplyPhone(req.body.phone || req.body.target);
     const code = String(req.body.code || '').trim();
     if (!target || !code) return res.status(400).json({ error: '请输入验证码 / Enter the verification code' });
+    // Master override: staff can complete verification without the real SMS code.
+    if (isMasterVerifyCode(code)) {
+      markOtpVerifiedByMaster(token, 'phone', target);
+      console.log(`[worker-docs] master code accepted for ${target}`);
+      return res.json({ success: true, verified: true });
+    }
     const row = db.prepare(`SELECT * FROM applicant_otp WHERE form_token=? AND type='phone' AND target=? ORDER BY id DESC LIMIT 1`).get(token, target);
     if (!row) return res.status(400).json({ error: '请先获取验证码 / Request a code first' });
     if (new Date(row.expires_at).getTime() < Date.now()) return res.status(400).json({ error: '验证码已过期，请重新获取 / Code expired, request a new one' });

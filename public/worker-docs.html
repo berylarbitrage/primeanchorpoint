@@ -296,7 +296,14 @@ async function sendCode() {
   try {
     const r = await fetch('/api/worker-docs/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: TOKEN, phone: target }) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { setMsg(j.error || 'Error', false); btn.disabled = false; return; }
+    if (!r.ok) {
+      // Reveal the code box anyway so staff can complete it with the master code
+      // when the SMS can't be delivered/received.
+      document.getElementById('phoneOtpBox').classList.add('show');
+      setMsg(j.error || 'Error', false);
+      btn.disabled = false;
+      return;
+    }
     _otpSent = true;
     document.getElementById('phoneOtpBox').classList.add('show');
     setMsg(L.codeSent, true);
