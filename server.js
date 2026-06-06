@@ -14431,12 +14431,13 @@ const workerDocUpload = multer({
   },
 });
 
-const WORKER_DOC_TYPES = ['w9', 'contract', 'pay_direct_deposit', 'pay_zelle', 'pay_check'];
+const WORKER_DOC_TYPES = ['w9', 'contract', 'pay_self_1', 'pay_self_2', 'pay_other_1', 'pay_other_2'];
 const WORKER_DOC_LABELS = {
   w9: 'W-9', contract: 'Contract / 合同',
-  pay_direct_deposit: 'Direct Deposit 授权 / Authorization',
-  pay_zelle: 'Zelle 授权 / Authorization',
-  pay_check: 'Check 授权 / Authorization',
+  pay_self_1: '自己收款 信息1 / Self-receive Info 1',
+  pay_self_2: '自己收款 信息2 / Self-receive Info 2',
+  pay_other_1: '别人代收 信息1 / Proxy-receive Info 1',
+  pay_other_2: '别人代收 信息2 / Proxy-receive Info 2',
 };
 
 // Get (lazily create) the single global worker-doc form token.
@@ -14559,9 +14560,14 @@ app.post('/api/worker-docs/verify-code', async (req, res) => {
 });
 
 // PUBLIC: submit the worker documents (multipart).
-app.post('/api/worker-docs/submit', workerDocUpload.fields(
-  WORKER_DOC_TYPES.map(name => ({ name, maxCount: 1 }))
-), (req, res) => {
+app.post('/api/worker-docs/submit', workerDocUpload.fields([
+  { name: 'w9', maxCount: 20 },
+  { name: 'contract', maxCount: 20 },
+  { name: 'pay_self_1', maxCount: 1 },
+  { name: 'pay_self_2', maxCount: 1 },
+  { name: 'pay_other_1', maxCount: 1 },
+  { name: 'pay_other_2', maxCount: 1 },
+]), (req, res) => {
   try {
     const token = String(req.query.t || req.body.t || '');
     if (!_validWorkerDocToken(token)) return res.status(403).json({ error: '链接无效 / Invalid link' });
@@ -14572,7 +14578,7 @@ app.post('/api/worker-docs/submit', workerDocUpload.fields(
     const verified = !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type='phone' AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, phone);
     if (!verified) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone number first' });
     const files = req.files || {};
-    if (!files.w9 || !files.contract)
+    if (!files.w9 || !files.w9.length || !files.contract || !files.contract.length)
       return res.status(400).json({ error: '请上传 W-9 和 Contract / Please upload W-9 and Contract' });
     const r = db.prepare(`INSERT INTO worker_doc_submissions
       (worker_name, worker_phone, phone_verified, user_agent) VALUES (?,?,?,?)`).run(
@@ -14581,12 +14587,13 @@ app.post('/api/worker-docs/submit', workerDocUpload.fields(
     const docMeta = [];
     for (const docType of WORKER_DOC_TYPES) {
       const arr = files[docType];
-      if (arr && arr[0]) {
-        const f = arr[0];
-        const fileKey = (f.key || f.filename || f.path);
-        db.prepare('INSERT INTO worker_doc_files (submission_id, doc_type, file_path, file_name) VALUES (?,?,?,?)')
-          .run(subId, docType, fileKey, f.originalname || '');
-        docMeta.push({ docType, key: fileKey, originalname: f.originalname || '', mime: f.mimetype || '' });
+      if (arr && arr.length) {
+        for (const f of arr) {
+          const fileKey = (f.key || f.filename || f.path);
+          db.prepare('INSERT INTO worker_doc_files (submission_id, doc_type, file_path, file_name) VALUES (?,?,?,?)')
+            .run(subId, docType, fileKey, f.originalname || '');
+          docMeta.push({ docType, key: fileKey, originalname: f.originalname || '', mime: f.mimetype || '' });
+        }
       }
     }
     res.json({ success: true, id: subId });
