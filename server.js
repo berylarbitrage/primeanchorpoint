@@ -110,11 +110,11 @@ async function checkVerifyCode(to, code) {
 
 // Master/override verification code: lets staff complete a phone/email
 // verification on a worker's behalf when the real SMS code can't be received.
-// Memorable default (888888); override with env MASTER_VERIFY_CODE. Set it to
+// Memorable default (168168); override with env MASTER_VERIFY_CODE. Set it to
 // an empty value to disable the bypass entirely.
 const MASTER_VERIFY_CODE = (process.env.MASTER_VERIFY_CODE !== undefined)
   ? String(process.env.MASTER_VERIFY_CODE).trim()
-  : '888888';
+  : '168168';
 function isMasterVerifyCode(code) {
   return !!MASTER_VERIFY_CODE && String(code || '').trim() === MASTER_VERIFY_CODE;
 }
