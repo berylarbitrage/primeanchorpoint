@@ -33213,7 +33213,7 @@ async function regenerateApplyQr() {
 }
 
 // ── Applicant submissions inbox ──
-let _inboxPartnerId = null, _inboxPartnerName = '';
+let _inboxPartnerId = null, _inboxPartnerName = '', _inboxSubmissions = [];
 async function openApplicantInbox(partnerId, partnerName) {
   _inboxPartnerId = partnerId;
   _inboxPartnerName = partnerName || '';
@@ -33225,6 +33225,7 @@ async function openApplicantInbox(partnerId, partnerName) {
   try {
     const rows = await api('/admin/applicant-submissions?partner_id=' + encodeURIComponent(partnerId));
     const list = Array.isArray(rows) ? rows : [];
+    _inboxSubmissions = list;
     document.getElementById('applyInboxCount').textContent = list.length ? `共 ${list.length} 份申请` : '';
     if (!list.length) { body.innerHTML = '<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">📭 暂无申请</div>'; return; }
     const dl = (sid, did) => `/api/admin/applicant-submissions/${sid}/docs/${did}/download`;
@@ -33258,6 +33259,9 @@ async function openApplicantInbox(partnerId, partnerName) {
       const del = USER_ROLE === 'admin'
         ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id})">删除</button>`
         : '';
+      const mkEmp = (USER_ROLE === 'admin' || USER_ROLE === 'staff')
+        ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0" onclick="createEmployeeFromApplicant(${s.id})">➕ 创建员工</button>`
+        : '';
       return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04)">
         <div style="display:flex;align-items:flex-start;gap:.7rem">
           <div style="flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#4A90D9,#1A3F7A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.05rem">${initial}</div>
@@ -33272,8 +33276,9 @@ async function openApplicantInbox(partnerId, partnerName) {
               ${addrLine ? `<div style="word-break:break-word">📍 ${esc(addrLine)} ${s.address_verified ? vBadge(true) : ''}</div>` : ''}
             </div>
           </div>
-          <div style="flex:0 0 auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:.5rem">
+          <div style="flex:0 0 auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:.4rem">
             <span style="font-size:.72rem;color:var(--gray-400);white-space:nowrap">🕒 ${esc(when)}</span>
+            ${mkEmp}
             ${del}
           </div>
         </div>
@@ -33304,6 +33309,34 @@ async function deleteApplicant(id) {
   } catch (e) {
     adminAlert('删除失败：' + (e.message || e), '错误');
   }
+}
+
+// Pre-fill the "新增员工" form with an applicant's submitted info, then open it
+// for review. DOB / SSN / pay details still need to be completed by hand.
+function createEmployeeFromApplicant(id) {
+  const s = (_inboxSubmissions || []).find(x => x.id === id);
+  if (!s) { adminAlert('找不到该申请记录', '提示'); return; }
+  closeApplicantInbox();
+  openEmpModal(); // new-employee mode: clears fields + sets sensible defaults
+  // Split the full name → first / middle-less last (first token is given name).
+  const parts = String(s.name || '').trim().split(/\s+/).filter(Boolean);
+  const first = parts.shift() || '';
+  const last = parts.join(' ');
+  document.getElementById('eFirst').value = first;
+  document.getElementById('eLast').value = last;
+  document.getElementById('ePhone').value = s.phone || '';
+  document.getElementById('eEmail').value = s.email || '';
+  document.getElementById('eAddr').value = s.address1 || '';
+  document.getElementById('eStreet2').value = s.address2 || '';
+  document.getElementById('eCity').value = s.city || '';
+  fillStateSelect(document.getElementById('eState'), s.state || '');
+  document.getElementById('eZip').value = s.zip || '';
+  // Position isn't a plain field (it lives in Job Records), so keep it as a note.
+  if (s.position) {
+    const notes = document.getElementById('eNotes');
+    notes.value = (notes.value ? notes.value + '\n' : '') + '申请职位 / Applied position: ' + s.position;
+  }
+  if (typeof showToast === 'function') showToast('已用申请信息预填，请补充出生日期等必填项后保存', 'success', 4000);
 }
 
 // ── 扫码记录 page (all companies / statuses / types) ──
