@@ -108,9 +108,10 @@
         </div>
         <div style="flex:1 1 0;min-width:0">
           <label id="t-lZip">Código postal <span class="req">*</span></label>
-          <input type="text" id="fZip" autocomplete="postal-code" inputmode="numeric" maxlength="10" placeholder="90001">
+          <input type="text" id="fZip" autocomplete="postal-code" inputmode="numeric" maxlength="10" placeholder="90001" onblur="if(document.getElementById('fAddr1').value.trim()&&document.getElementById('fCity').value.trim()&&document.getElementById('fState').value.trim()&&this.value.trim())verifyAddressFields()">
         </div>
       </div>
+      <button type="button" class="btn-code" id="addrVerifyBtn" onclick="verifyAddressFields()" style="margin-top:.7rem;width:100%;padding:.6rem">🔍 <span id="t-verifyAddr">Verificar dirección</span></button>
       <div class="msg" id="addrMsg"></div>
       <div class="verified-tag" id="addrVerified">✓ <span id="t-verified3">Verificado</span></div>
     </div>
@@ -218,7 +219,7 @@ const I18N = {
     lName: 'Nombre completo', lPosition: 'Puesto solicitado', lPhone: 'Teléfono móvil', lEmail: 'Correo electrónico',
     lAddr1: 'Dirección', lAddr2: 'Apt / Unidad', lCity: 'Ciudad', lState: 'Estado', lZip: 'Código postal',
     addrVerifying: 'Verificando dirección…', addrVerifiedMsg: '✓ Dirección verificada', addrUnverified: 'No se pudo verificar la dirección',
-    errAddr: 'Completa dirección, ciudad, estado y código postal.',
+    verifyAddr: 'Verificar dirección', errAddr: 'Completa dirección, ciudad, estado y código postal.',
     sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
     ssnFront: 'SSN — Frente', ssnBack: 'SSN — Reverso', eadFront: 'EAD — Frente', eadBack: 'EAD — Reverso',
     optional: '(opcional)', cam: 'Tomar foto', gal: 'Galería', submitBtn: 'Enviar solicitud', submitting: 'Enviando…',
@@ -236,7 +237,7 @@ const I18N = {
     lName: 'Full name', lPosition: 'Position applying for', lPhone: 'Mobile phone', lEmail: 'Email address',
     lAddr1: 'Street address', lAddr2: 'Apt / Unit', lCity: 'City', lState: 'State', lZip: 'ZIP code',
     addrVerifying: 'Verifying address…', addrVerifiedMsg: '✓ Address verified', addrUnverified: 'Address could not be verified',
-    errAddr: 'Please fill in street, city, state and ZIP.',
+    verifyAddr: 'Verify address', errAddr: 'Please fill in street, city, state and ZIP.',
     sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
     ssnFront: 'SSN — Front', ssnBack: 'SSN — Back', eadFront: 'EAD — Front', eadBack: 'EAD — Back',
     optional: '(optional)', cam: 'Take photo', gal: 'Album', submitBtn: 'Submit application', submitting: 'Submitting…',
@@ -254,7 +255,7 @@ const I18N = {
     lName: '姓名', lPosition: '申请职位', lPhone: '手机号', lEmail: '邮箱',
     lAddr1: '街道地址', lAddr2: '公寓 / 单元号', lCity: '城市', lState: '州', lZip: '邮编',
     addrVerifying: '正在验证地址…', addrVerifiedMsg: '✓ 地址已验证', addrUnverified: '地址无法验证',
-    errAddr: '请填写街道地址、城市、州和邮编。',
+    verifyAddr: '验证地址', errAddr: '请填写街道地址、城市、州和邮编。',
     sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
     ssnFront: 'SSN 正面', ssnBack: 'SSN 反面', eadFront: 'EAD 正面', eadBack: 'EAD 反面',
     optional: '（选填）', cam: '拍照', gal: '相册', submitBtn: '提交申请', submitting: '提交中…',
@@ -294,6 +295,7 @@ function applyLang() {
   document.getElementById('t-lCity').innerHTML = L.lCity + ' <span class="req">*</span>';
   document.getElementById('t-lState').innerHTML = L.lState + ' <span class="req">*</span>';
   document.getElementById('t-lZip').innerHTML = L.lZip + ' <span class="req">*</span>';
+  txt('t-verifyAddr', 'verifyAddr');
   document.getElementById('t-lPhone').innerHTML = L.lPhone + ' <span class="req">*</span>';
   document.getElementById('t-lEmail').innerHTML = L.lEmail + ' <span class="req">*</span>';
   document.getElementById('t-ssnFront').innerHTML = L.ssnFront + ' <span class="req">*</span>';
@@ -528,6 +530,9 @@ async function verifyAddressFields() {
   const state = document.getElementById('fState').value.trim();
   const zip = document.getElementById('fZip').value.trim();
   document.getElementById('addrVerified').classList.remove('show');
+  if (!addr1 || !city || !state || !zip) { setAddrMsg(L.errAddr, false); return 0; }
+  const vbtn = document.getElementById('addrVerifyBtn');
+  if (vbtn) vbtn.disabled = true;
   setAddrMsg(L.addrVerifying, true);
   try {
     const r = await fetch('/api/validate-address', {
@@ -551,6 +556,7 @@ async function verifyAddressFields() {
     setAddrMsg(L.addrUnverified, false);
     return 0;
   } catch (_) { setAddrMsg('', true); return 0; } // network failure is non-fatal
+  finally { if (vbtn) vbtn.disabled = false; }
 }
 
 async function submitForm() {
