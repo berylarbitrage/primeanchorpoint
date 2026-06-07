@@ -10830,11 +10830,36 @@ app.post('/api/admin/worker-accounts/:id/ssn-cards', requireAdmin, docUpload.sin
   res.json({ success: true, id: result.lastInsertRowid, file_name: req.file.originalname });
 });
 
+// Copy an applicant doc into worker_compliance_docs as an SSN card
+app.post('/api/admin/worker-accounts/:id/ssn-cards/copy-applicant-doc', requireAdmin, (req, res) => {
+  try {
+    const { submission_id, doc_id } = req.body;
+    const doc = db.prepare('SELECT * FROM applicant_docs WHERE id=? AND submission_id=?').get(doc_id, submission_id);
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+    const workerId = parseInt(req.params.id);
+    const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='ssn_card' AND file_path=?").get(workerId, doc.file_path);
+    if (existing) return res.json({ success: true, id: existing.id, file_name: doc.file_name, duplicate: true });
+    const adminUser = (req.session && req.session.username) || 'admin';
+    const r = db.prepare(`INSERT INTO worker_compliance_docs
+      (worker_account_id, doc_type, file_path, file_name, form_data, status, reviewer_notes, reviewed_at)
+      VALUES (?, 'ssn_card', ?, ?, ?, 'approved', ?, CURRENT_TIMESTAMP)`)
+      .run(workerId, doc.file_path, doc.file_name, JSON.stringify({ from_applicant: true, uploaded_by: adminUser }), '从申请表选用');
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, adminUser, 'ssn_card_upload', '', 'ssn_card', `从申请表选用 SSN 卡: ${doc.file_name}`);
+    res.json({ success: true, id: r.lastInsertRowid, file_name: doc.file_name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.delete('/api/admin/worker-accounts/:id/ssn-cards/:docId', requireAdmin, (req, res) => {
   const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND worker_account_id=? AND doc_type='ssn_card'")
     .get(req.params.docId, req.params.id);
   if (!doc) return res.status(404).json({ error: 'Not found' });
-  if (doc.file_path && fs.existsSync(doc.file_path)) try { fs.unlinkSync(doc.file_path); } catch {}
+  // Only remove the physical file if no other record references it
+  if (doc.file_path) {
+    const otherWcd = db.prepare("SELECT id FROM worker_compliance_docs WHERE file_path=? AND id!=?").get(doc.file_path, req.params.docId);
+    const otherAppl = db.prepare('SELECT id FROM applicant_docs WHERE file_path=?').get(doc.file_path);
+    if (!otherWcd && !otherAppl) { try { if (fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path); } catch {} }
+  }
   db.prepare('DELETE FROM worker_compliance_docs WHERE id=?').run(req.params.docId);
   const adminUser = (req.session && req.session.username) || 'admin';
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
@@ -10842,25 +10867,27 @@ app.delete('/api/admin/worker-accounts/:id/ssn-cards/:docId', requireAdmin, (req
   res.json({ success: true });
 });
 
-app.get('/api/admin/worker-accounts/:id/ssn-cards/:docId/file', requireAdmin, (req, res) => {
+app.get('/api/admin/worker-accounts/:id/ssn-cards/:docId/file', requireAdmin, async (req, res) => {
   const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND worker_account_id=? AND doc_type='ssn_card'")
     .get(req.params.docId, req.params.id);
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'Not found' });
-  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
-  const inline = req.query.inline === '1';
-  if (inline) {
-    const ext = path.extname(doc.file_path).toLowerCase();
-    const mime = ext === '.pdf' ? 'application/pdf'
-      : ext === '.png' ? 'image/png'
-      : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
-      : ext === '.gif' ? 'image/gif'
-      : 'application/octet-stream';
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Content-Disposition', `inline; filename="${(doc.file_name || 'ssn-card').replace(/"/g, '')}"`);
-    fs.createReadStream(doc.file_path).pipe(res);
-  } else {
-    res.download(doc.file_path, doc.file_name || 'ssn-card');
+  const key = storage.normalizeKey(doc.file_path);
+  if (!(await storage.exists(key))) return res.status(404).json({ error: 'File missing' });
+  if (storage.isR2() && req.query.inline !== '1') {
+    try { return res.redirect(302, await storage.getDownloadUrl(key)); }
+    catch (e) { return res.status(404).json({ error: 'Not found' }); }
   }
+  const ext = path.extname(key).toLowerCase();
+  const mime = ext === '.pdf' ? 'application/pdf'
+    : ext === '.png' ? 'image/png'
+    : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
+    : ext === '.gif' ? 'image/gif'
+    : 'application/octet-stream';
+  res.setHeader('Content-Type', mime);
+  const disp = req.query.inline === '1' ? 'inline' : 'attachment';
+  res.setHeader('Content-Disposition', `${disp}; filename="${(doc.file_name || 'ssn-card').replace(/"/g, '')}"`);
+  try { const s = await storage.getStream(key); s.on('error', () => { try { res.status(500).end(); } catch {} }); s.pipe(res); }
+  catch (e) { res.status(404).json({ error: 'Not found' }); }
 });
 
 // ─── Paper W-9 Upload (cash workers — physical W-9 photo/scan) ───

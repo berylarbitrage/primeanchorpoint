@@ -4553,6 +4553,11 @@ tr:hover td{background:var(--sky-light)}
 
   <div id="ssnCardUploadStatus" style="display:none;margin-bottom:.75rem;padding:.5rem .75rem;border-radius:6px;font-size:.85rem"></div>
 
+  <div id="ssnCardApplicantDocs" style="display:none;margin-bottom:1rem">
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem;color:#0f2b5b">📋 申请表已上传的证件 Documents from Application</div>
+    <div id="ssnCardApplicantList" style="display:flex;flex-wrap:wrap;gap:.5rem"></div>
+  </div>
+
   <div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem;color:#0f2b5b">已上传文件</div>
   <div id="ssnCardList" style="border:1px solid #e2e8f0;border-radius:8px;max-height:240px;overflow-y:auto;background:#fff">
     <div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.83rem">加载中…</div>
@@ -21201,6 +21206,54 @@ async function openSsnCardModal() {
   document.getElementById('ssnCardUploadStatus').style.display = 'none';
   document.getElementById('ssnCardFileInput').value = '';
   await loadSsnCardList();
+  await loadSsnCardApplicantDocs();
+}
+
+async function loadSsnCardApplicantDocs() {
+  const section = document.getElementById('ssnCardApplicantDocs');
+  const list = document.getElementById('ssnCardApplicantList');
+  if (!section || !list) return;
+  try {
+    const docs = await api(`/admin/worker-accounts/${_onboardingWorkerId}/applicant-docs`);
+    if (docs && docs.length) {
+      const DOC_LABELS = { ssn_front:'SSN 正面', ssn_back:'SSN 背面', ead_front:'EAD 正面', ead_back:'EAD 背面', id_front:'证件正面', id_back:'证件背面', drivers_license:'驾照', passport:'护照', photo:'照片' };
+      list.innerHTML = docs.map(d => {
+        const label = DOC_LABELS[d.doc_type] || d.doc_type;
+        const url = `/api/admin/applicant-submissions/${d.submission_id}/docs/${d.id}/download`;
+        return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:.5rem;background:#fafafa;text-align:center;width:130px">
+          <img src="${url}" style="width:110px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;display:block;margin:0 auto .35rem;cursor:pointer" onclick="openApplicantDocViewer('${url}','${esc(label)}')" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" alt="${esc(label)}">
+          <span style="display:none;font-size:1.5rem;cursor:pointer" onclick="openApplicantDocViewer('${url}','${esc(label)}')">📄</span>
+          <div style="font-size:.72rem;font-weight:600;color:#374151;margin-bottom:.35rem">${esc(label)}</div>
+          <button class="btn btn-sm" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;font-size:.7rem;padding:2px 8px" onclick="ssnCardCopyApplicantDoc(${d.submission_id},${d.id},'${esc(d.doc_type)}')">📥 选用此文件</button>
+        </div>`;
+      }).join('');
+      section.style.display = 'block';
+    } else {
+      section.style.display = 'none';
+    }
+  } catch(e) { section.style.display = 'none'; }
+}
+
+let _ssnCardCopying = false;
+async function ssnCardCopyApplicantDoc(submissionId, docId, docType) {
+  if (_ssnCardCopying) return;
+  _ssnCardCopying = true;
+  try {
+    const DOC_LABELS = { ssn_front:'SSN 正面', ssn_back:'SSN 背面', ead_front:'EAD 正面', ead_back:'EAD 背面', id_front:'证件正面', id_back:'证件背面', drivers_license:'驾照', passport:'护照', photo:'照片' };
+    const label = DOC_LABELS[docType] || docType;
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/ssn-cards/copy-applicant-doc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submission_id: submissionId, doc_id: docId })
+    });
+    if (r && r.success) {
+      showToast(r.duplicate ? `「${label}」已存在，无需重复选用` : `✅ 已选用「${label}」文件`);
+      await loadSsnCardList();
+    } else {
+      showToast(r?.error || '选用文件失败', 'error');
+    }
+  } catch (e) { showToast('选用文件失败: ' + e.message, 'error'); }
+  finally { _ssnCardCopying = false; }
 }
 
 async function loadSsnCardList() {
