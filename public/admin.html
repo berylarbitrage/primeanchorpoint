@@ -13654,7 +13654,7 @@ function getDobValue() {
 function openEmpModal(id) {
   document.getElementById('empModalTitle').textContent = id ? '编辑员工' : '新增员工';
   document.getElementById('empId').value = id || '';
-  { const _ad = document.getElementById('empApplicantDocs'); if (_ad) { _ad.style.display = 'none'; _ad.innerHTML = ''; } }
+  { const _ad = document.getElementById('empApplicantDocs'); if (_ad) { _ad.style.display = 'none'; _ad.innerHTML = ''; } if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); }
   if (id) {
     const e = allEmployees.find(x=>x.id===id) || {};
     document.getElementById('eFirst').value    = e.first_name||'';
@@ -13738,7 +13738,7 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
-function closeEmpModal() { _convertFromWorkerId = null; _pendingWorkerLink = null; guardClose('empModal'); }
+function closeEmpModal() { _convertFromWorkerId = null; _pendingWorkerLink = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); guardClose('empModal'); }
 
 // ── Address verify helpers ──
 function _setAddrStatus(el, verified) {
@@ -33361,7 +33361,7 @@ async function renderApplicantDocPanel(subId) {
     if (/\.pdf$/i.test(d.file_name || '')) {
       return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.4rem .65rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${label}</a>`;
     }
-    return `<a href="${url}" target="_blank" title="${label}（点击查看大图）" style="text-decoration:none">
+    return `<a href="${url}" onclick="openApplicantDocViewer('${url}','${label}');return false" title="${label}（点击查看，可拖动，不挡表单）" style="text-decoration:none">
         <span style="display:block;position:relative">
           <img src="${url}" loading="lazy" style="width:86px;height:86px;object-fit:cover;border-radius:8px;border:1px solid #bae6fd;background:#000;display:block">
           <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.62rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${label}</span>
@@ -33370,6 +33370,68 @@ async function renderApplicantDocPanel(subId) {
   }).join('') || '<span style="color:var(--gray-400);font-size:.82rem">无证件 / No documents</span>';
   panel.innerHTML = `<div style="font-size:.78rem;font-weight:700;color:#1A3F7A;margin-bottom:.5rem">📎 申请人上传的证件 · 请核对姓名 / Applicant's IDs — verify the name</div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start">${thumbs}</div>`;
+}
+
+// Floating, draggable image viewer for applicant docs. Deliberately has NO
+// full-screen backdrop so the employee form stays editable while it's open.
+function openApplicantDocViewer(url, label) {
+  let v = document.getElementById('applicantDocViewer');
+  if (!v) {
+    v = document.createElement('div');
+    v.id = 'applicantDocViewer';
+    v.style.cssText = 'position:fixed;z-index:12000;top:84px;right:24px;width:360px;max-width:92vw;background:#fff;border-radius:12px;box-shadow:0 14px 44px rgba(0,0,0,.4);border:1px solid #cbd5e1;overflow:hidden';
+    v.innerHTML =
+      `<div id="adVwHead" style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.45rem .35rem .45rem .65rem;background:#1A3F7A;color:#fff;cursor:move;user-select:none">
+        <span id="adVwTitle" style="font-size:.8rem;font-weight:700">证件</span>
+        <span style="display:flex;gap:.5rem;align-items:center">
+          <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap">原图 ↗</a>
+          <button type="button" onclick="closeApplicantDocViewer()" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 .35rem">✕</button>
+        </span>
+      </div>
+      <div style="background:#000;display:flex;align-items:center;justify-content:center;max-height:72vh;overflow:auto">
+        <img id="adVwImg" style="max-width:100%;display:block" alt="">
+      </div>`;
+    document.body.appendChild(v);
+    v.addEventListener('mousedown', e => e.stopPropagation());
+    _makeDraggable(v, v.querySelector('#adVwHead'));
+  }
+  v.style.display = 'block';
+  v.querySelector('#adVwTitle').textContent = label || '证件';
+  v.querySelector('#adVwImg').src = url;
+  v.querySelector('#adVwOpen').href = url;
+}
+function closeApplicantDocViewer() { const v = document.getElementById('applicantDocViewer'); if (v) v.style.display = 'none'; }
+
+// Generic drag-by-handle helper (used by the floating doc viewer).
+function _makeDraggable(el, handle) {
+  let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
+  const onMove = e => {
+    if (!dragging) return;
+    const ev = e.touches ? e.touches[0] : e;
+    let nx = ox + (ev.clientX - sx), ny = oy + (ev.clientY - sy);
+    nx = Math.max(0, Math.min(window.innerWidth - 60, nx));
+    ny = Math.max(0, Math.min(window.innerHeight - 40, ny));
+    el.style.left = nx + 'px'; el.style.top = ny + 'px'; el.style.right = 'auto';
+    if (e.cancelable) e.preventDefault();
+  };
+  const onUp = () => {
+    dragging = false;
+    document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp);
+  };
+  const onDown = e => {
+    dragging = true;
+    const ev = e.touches ? e.touches[0] : e;
+    sx = ev.clientX; sy = ev.clientY;
+    const r = el.getBoundingClientRect();
+    ox = r.left; oy = r.top;
+    el.style.left = r.left + 'px'; el.style.top = r.top + 'px'; el.style.right = 'auto';
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp);
+    if (e.cancelable) e.preventDefault();
+  };
+  handle.addEventListener('mousedown', onDown);
+  handle.addEventListener('touchstart', onDown, { passive: false });
 }
 
 // ── 扫码记录 page (all companies / statuses / types) ──
