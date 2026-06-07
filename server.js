@@ -11451,7 +11451,7 @@ app.put('/api/admin/worker-accounts/:id/tin-verify-result', requireAdmin, (req, 
   const valid = ['verified', 'unverified', 'no_conclusion'];
   if (!valid.includes(result)) return res.status(400).json({ error: 'Invalid result' });
   const workerId = parseInt(req.params.id);
-  const resultLabel = { verified: '已核对', unverified: '不匹配', no_conclusion: '没有结论' };
+  const resultLabel = { verified: '已核对', unverified: '不匹配', no_conclusion: '需要进一步验证' };
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
   db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, tin_verify_result, completed_at, updated_at)
     VALUES (?, 'tin_verify', 'completed', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)

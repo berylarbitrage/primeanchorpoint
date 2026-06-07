@@ -4528,7 +4528,7 @@ tr:hover td{background:var(--sky-light)}
   <div style="display:flex;flex-direction:column;gap:.5rem">
     <button class="btn" style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;font-weight:700;padding:.65rem .9rem;text-align:left" onclick="pickTinVerifyResult('verified')">✅ 已核对（TIN 与姓名匹配）</button>
     <button class="btn" style="background:#fff1f2;color:#be123c;border:1px solid #fda4af;font-weight:700;padding:.65rem .9rem;text-align:left" onclick="pickTinVerifyResult('unverified')">❌ 不匹配（TIN 与姓名不符）</button>
-    <button class="btn" style="background:#fffbeb;color:#b45309;border:1px solid #fde68a;font-weight:700;padding:.65rem .9rem;text-align:left" onclick="pickTinVerifyResult('no_conclusion')">❓ 没有结论（暂无法判断）</button>
+    <button class="btn" style="background:#fffbeb;color:#b45309;border:1px solid #fde68a;font-weight:700;padding:.65rem .9rem;text-align:left" onclick="pickTinVerifyResult('no_conclusion')">❓ 需要进一步验证（暂无法判断）</button>
   </div>
   <div style="display:flex;justify-content:flex-end;margin-top:1rem">
     <button class="btn btn-outline" onclick="closeTinVerifyResultModal()">取消</button>
@@ -4564,7 +4564,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="modal-actions" style="margin-top:1rem">
-    <button class="btn btn-green" id="ssnCardCompleteBtn" onclick="ssnCardMarkComplete()">✅ 完成核对</button>
+    <button class="btn btn-green" id="ssnCardCompleteBtn" onclick="ssnCardMarkComplete()">🔢 标记核对结果</button>
     <button class="btn" onclick="closeModal('ssnCardModal')">关闭</button>
   </div>
 </div></div>
@@ -17454,7 +17454,7 @@ function renderOnboardingTasks(tasks) {
             : t.key==='work_permit'
             ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openWorkPermitModal()">🛂 ${s==='completed'?'查看/修改验证':'开始工作许可验证'}</button>`
             : t.key==='tin_verify'
-            ? (()=>{ const r=t.tin_verify_result; const label = r==='verified'?'✅ 已核对':r==='unverified'?'❌ 不匹配':r==='no_conclusion'?'❓ 没有结论':'🔢 标记核对结果'; const style = r==='verified'?'background:#d1fae5;color:#065f46;border:2px solid #34d399;font-weight:700':r==='unverified'?'background:#fee2e2;color:#991b1b;border:2px solid #f87171;font-weight:700':r==='no_conclusion'?'background:#fef3c7;color:#92400e;border:2px solid #fbbf24;font-weight:700':'background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700'; return `<button class="btn btn-sm" style="${style}" onclick="openTinVerifyResultModal()">${label}</button> <button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openSsnCardModal()">📎 上传 SSN 卡</button> <button class="btn btn-sm" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;font-weight:600" onclick="verifyTinTaxbandits(${_onboardingWorkerId})">🔍 TaxBandits 核对</button>`; })()
+            ? (()=>{ const r=t.tin_verify_result; const label = r==='verified'?'✅ 已核对':r==='unverified'?'❌ 不匹配':r==='no_conclusion'?'❓ 需要进一步验证':'🔢 标记核对结果'; const style = r==='verified'?'background:#d1fae5;color:#065f46;border:2px solid #34d399;font-weight:700':r==='unverified'?'background:#fee2e2;color:#991b1b;border:2px solid #f87171;font-weight:700':r==='no_conclusion'?'background:#fef3c7;color:#92400e;border:2px solid #fbbf24;font-weight:700':'background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700'; return `<button class="btn btn-sm" style="${style}" onclick="openTinVerifyResultModal()">${label}</button> <button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openSsnCardModal()">📎 上传 SSN 卡</button> <button class="btn btn-sm" style="background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;font-weight:600" onclick="verifyTinTaxbandits(${_onboardingWorkerId})">🔍 TaxBandits 核对</button>`; })()
             : t.key==='payment_method'
             ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;font-weight:700" onclick="openPaymentAuthModal()">💳 ${t.ds_status==='completed'?'✅ 已签署':t.ds_status==='sent'?'⏳ 等待签署':'发送付款授权'}</button>${t.ds_envelope_id?` <button class="btn btn-sm" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;font-weight:700" onclick="paymentAuthAddCompany()">✍️ 公司签字</button>`:''} ${(t.ds_status==='completed'&&s==='completed')?` <button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="window.open('/api/admin/worker-accounts/${_onboardingWorkerId}/payment-auth-signed-pdf','_blank')">📥 查看已签文件</button>`:''} ${!t.ds_envelope_id?`<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="openLinkDsModal('payment_method')">🔗 绑定已签文件</button>`:''} <button class="btn btn-sm" style="${t.labor_company_id?'background:#ecfdf5;color:#065f46;border:2px solid #34d399;font-weight:700':'background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-weight:600'}" onclick="openPaymentLaborCompanyModal()">🏢 ${t.labor_company_id?'已分配分包商：'+esc(t.labor_company_name||''):'用分包商支付'}</button>`
             : (t.key==='i9'||t.key==='ead_upload')
@@ -21348,7 +21348,7 @@ async function deleteSsnCard(docId) {
 
 async function ssnCardMarkComplete() {
   closeModal('ssnCardModal');
-  await confirmOnboardingComplete('tin_verify', '核对税号');
+  openTinVerifyResultModal();
 }
 
 // ─── Paper Contract Upload (cash workers) ───
@@ -21639,7 +21639,7 @@ function closeTinVerifyResultModal() {
   document.getElementById('tinVerifyResultModal').classList.remove('show');
 }
 async function pickTinVerifyResult(result) {
-  const labels = { verified: '已核对', unverified: '不匹配', no_conclusion: '没有结论' };
+  const labels = { verified: '已核对', unverified: '不匹配', no_conclusion: '需要进一步验证' };
   closeTinVerifyResultModal();
   try {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/tin-verify-result`, { method: 'PUT', body: JSON.stringify({ result }) });
