@@ -20462,8 +20462,8 @@ async function openWorkPermitModal() {
         const label = DOC_LABELS[d.doc_type] || d.doc_type;
         const url = `/api/admin/applicant-submissions/${d.submission_id}/docs/${d.id}/download`;
         return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:.5rem;background:#fafafa;text-align:center;width:130px">
-          <img src="${url}" style="width:110px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;display:block;margin:0 auto .35rem;cursor:pointer" onclick="showImgLightbox('${url}')" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" alt="${esc(label)}">
-          <span style="display:none;font-size:1.5rem;cursor:pointer" onclick="showImgLightbox('${url}')">📄</span>
+          <img src="${url}" style="width:110px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;display:block;margin:0 auto .35rem;cursor:pointer" onclick="openApplicantDocViewer('${url}','${esc(label)}')" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" alt="${esc(label)}">
+          <span style="display:none;font-size:1.5rem;cursor:pointer" onclick="openApplicantDocViewer('${url}','${esc(label)}')">📄</span>
           <div style="font-size:.72rem;font-weight:600;color:#374151;margin-bottom:.35rem">${esc(label)}</div>
           <button class="btn btn-sm" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;font-size:.7rem;padding:2px 8px" onclick="wpCopyApplicantDoc(${d.submission_id},${d.id},'${esc(d.doc_type)}','${esc(d.file_name||'')}')">📥 选用此文件</button>
         </div>`;
