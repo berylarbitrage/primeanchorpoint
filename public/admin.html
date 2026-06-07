@@ -8324,6 +8324,11 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function titleCase(s) {
+  if (!s) return '';
+  return s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // Format SQLite date/datetime string to "YYYY/MM/DD"
 function fmtDate(s) {
   if (!s) return '';
@@ -8433,7 +8438,7 @@ function renderJobApps(list) {
   const statusLabel = { pending:'待审核', interview_scheduled:'已安排面试', approved:'已通过', rejected:'未通过', assigned:'已派工' };
   const statusCls   = { pending:'badge-pending', interview_scheduled:'badge-info', approved:'badge-approved', rejected:'badge-rejected', assigned:'badge-approved' };
   document.getElementById('jobAppsTable').innerHTML = list.length ? list.map(a => {
-    const name = a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : (a.username || '—');
+    const name = titleCase(a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : (a.username || '—'));
     const ivInfo = a.status === 'interview_scheduled' && a.interview_datetime
       ? `<br><small style="color:#2563eb">📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</small>` : '';
     return `<tr>
@@ -8482,7 +8487,7 @@ function showJobAppDetail(id) {
       </div>
       <div style="background:#f0fdf4;border-radius:10px;padding:1rem;display:grid;gap:.4rem;font-size:.88rem">
         <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">申请人信息</div>
-        <div><span style="color:var(--gray-400)">姓名：</span>${esc(a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'—')}</div>
+        <div><span style="color:var(--gray-400)">姓名：</span>${esc(titleCase(a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'—'))}</div>
         ${a.worker_phone ? `<div><span style="color:var(--gray-400)">电话：</span>${esc(a.worker_phone)}</div>` : ''}
         ${a.worker_email ? `<div><span style="color:var(--gray-400)">邮箱：</span>${esc(a.worker_email)}</div>` : ''}
         ${a.interview_availability ? `<div><span style="color:var(--gray-400)">可面试时间：</span>${esc(a.interview_availability)}</div>` : ''}
@@ -13343,7 +13348,7 @@ function renderEmployees(list) {
     const workerCodeHtml = e.worker_code
       ? `<span style="font-family:monospace;font-size:.72rem;color:var(--sky);font-weight:600">${esc(e.worker_code)}</span>`
       : '';
-    const empFullName = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ');
+    const empFullName = titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '));
     return `<tr>
     <td>
       <div style="font-weight:700;font-size:.88rem">${esc(e.employee_id||'—')}</div>
@@ -14473,7 +14478,7 @@ async function viewEmployee(id) {
       <div style="display:flex;align-items:center;gap:1rem">
         <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;flex-shrink:0">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
         <div>
-          <h3 style="color:var(--blue);font-size:1.2rem">${esc([emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' '))}</h3>
+          <h3 style="color:var(--blue);font-size:1.2rem">${esc(titleCase([emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')))}</h3>
           <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
         </div>
       </div>
@@ -17045,7 +17050,7 @@ async function loadWorkerAccounts() {
     extraBtns += `<button class="btn btn-sm wa-abtn-del" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除</button>`;
     return `<tr>
     <td style="font-family:monospace;font-size:.78rem;white-space:nowrap;color:var(--sky)">${w.worker_code ? esc(w.worker_code) : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div>${w.emp_code ? `<div style="font-size:.72rem;color:var(--sky);font-family:monospace;white-space:nowrap">${esc(w.emp_code)}</div>` : ''}</td>
+    <td><span class="wa-name">${esc(titleCase(w.name||w.username))}</span><div class="wa-sub">${w.first_name ? esc(titleCase(w.first_name+' '+w.last_name)) : '未绑定员工'}</div>${w.emp_code ? `<div style="font-size:.72rem;color:var(--sky);font-family:monospace;white-space:nowrap">${esc(w.emp_code)}</div>` : ''}</td>
     <td style="font-size:.8rem;white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
     <td style="font-size:.78rem;white-space:nowrap">${(()=>{
