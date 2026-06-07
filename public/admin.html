@@ -20316,8 +20316,10 @@ async function wpCopyApplicantDoc(submissionId, docId, docType, fileName) {
 
 async function wpLoadExistingDocs(category) {
   try {
+    // Clear any previously rendered existing-doc lists so repeated calls don't duplicate
+    document.querySelectorAll('[id^="wpUploadZone_"][id$="_existing"]').forEach(el => { el.innerHTML = ''; });
     const docs = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit-docs`);
-    if (!docs || !Array.isArray(docs) || docs.length === 0) return;
+    if (!docs || !Array.isArray(docs) || docs.length === 0) { _wpUploadedDocs = []; return; }
     _wpUploadedDocs = docs.map(d => d.id);
     const uploadDocs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
     // Match existing docs to zones by label, or show remaining in first zone
