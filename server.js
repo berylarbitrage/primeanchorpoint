@@ -873,6 +873,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS applicant_submissions (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_apl_partner ON applicant_submissions(partner_id, created_at)`); } catch(e) {}
+// Address fields (added later — migrate existing DBs).
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN address1 TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN address2 TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN city TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN state TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN zip TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN address_verified INTEGER DEFAULT 0`); } catch(e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   submission_id INTEGER NOT NULL,
@@ -14285,8 +14292,16 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     const position = String(d.position || '').trim().slice(0, 120);
     const phone = _normApplyPhone(d.phone);
     const email = String(d.email || '').trim().toLowerCase();
+    const address1 = String(d.address1 || '').trim().slice(0, 200);
+    const address2 = String(d.address2 || '').trim().slice(0, 200);
+    const city = String(d.city || '').trim().slice(0, 100);
+    const state = String(d.state || '').trim().slice(0, 60);
+    const zip = String(d.zip || '').trim().slice(0, 20);
+    const addressVerified = (d.address_verified === '1' || d.address_verified === 1 || d.address_verified === true) ? 1 : 0;
     if (!name || !phone || !email || !position)
       return res.status(400).json({ error: '请填写姓名、电话、邮箱和职位 / Name, phone, email and position are required' });
+    if (!address1 || !city || !state || !zip)
+      return res.status(400).json({ error: '请填写完整地址 / Street, city, state and ZIP are required' });
     // Require a verified OTP for BOTH the submitted phone and email.
     const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, type, tgt);
     if (!verified('phone', phone)) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone number first' });
@@ -14295,9 +14310,11 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     if (!files.ssn_front || !files.ead_front || !files.ead_back)
       return res.status(400).json({ error: '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back' });
     const r = db.prepare(`INSERT INTO applicant_submissions
-      (partner_id, partner_name, name, phone, email, position, phone_verified, email_verified, user_agent)
-      VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      (partner_id, partner_name, name, phone, email, position, phone_verified, email_verified,
+       address1, address2, city, state, zip, address_verified, user_agent)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         p.id, p.name, name, phone, email, position, 1, 1,
+        address1, address2, city, state, zip, addressVerified,
         String(req.headers['user-agent'] || '').slice(0, 250));
     const subId = r.lastInsertRowid;
     const docMeta = [];
@@ -14312,7 +14329,8 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     }
     res.json({ success: true, id: subId });
     // Fire-and-forget: notify the company inbox with all applicant details + photo attachments.
-    notifyNewApplication({ subId, partner: p, name, position, phone, email, docMeta })
+    const address = { address1, address2, city, state, zip, verified: addressVerified };
+    notifyNewApplication({ subId, partner: p, name, position, phone, email, address, docMeta })
       .catch(e => console.error('[apply-notify] failed:', e.message));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -14320,7 +14338,7 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
 // Send the company a notification email for a new applicant submission.
 // Includes all form fields + attaches the uploaded SSN/EAD photos.
 const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@primeanchorpoint.com';
-async function notifyNewApplication({ subId, partner, name, position, phone, email, docMeta }) {
+async function notifyNewApplication({ subId, partner, name, position, phone, email, address, docMeta }) {
   const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
   const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
   // Read each uploaded photo back from storage to attach.
@@ -14333,12 +14351,17 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
       files.push({ filename: `${d.docType}${ext}`, content: buf, mime });
     } catch (e) { console.error(`[apply-notify] could not read ${d.key}: ${e.message}`); }
   }
+  const addrLine = address ? [
+    [address.address1, address.address2].filter(Boolean).join(', '),
+    [address.city, address.state].filter(Boolean).join(', ') + ' ' + (address.zip || ''),
+  ].filter(s => s && s.trim()).join('  ') : '';
   const rows = [
     ['应聘公司 / Company', partner.name || ''],
     ['姓名 / Name', name],
     ['职位 / Position', position],
     ['电话 / Phone', phone + ' ✓ 已验证 / verified'],
     ['邮箱 / Email', email + ' ✓ 已验证 / verified'],
+    ['地址 / Address', addrLine + (address && address.verified ? ' ✓ 已验证 / verified' : '')],
     ['提交时间 / Submitted', when + ' (PT)'],
     ['已上传证件 / Documents', docMeta.map(d => docLabels[d.docType] || d.docType).join('、') || '无'],
   ];

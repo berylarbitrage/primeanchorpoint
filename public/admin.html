@@ -33248,6 +33248,10 @@ async function openApplicantInbox(partnerId, partnerName) {
       }).join('') || '<span style="color:var(--gray-300);font-size:.8rem">无证件</span>';
       const when = s.created_at ? new Date(s.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
       const initial = esc((s.name || '?').trim().charAt(0).toUpperCase() || '?');
+      const addrLine = [
+        [s.address1, s.address2].filter(Boolean).join(', '),
+        [[s.city, s.state].filter(Boolean).join(', '), s.zip].filter(Boolean).join(' '),
+      ].filter(x => x && x.trim()).join(' · ');
       const vBadge = ok => ok
         ? '<span style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#15803d;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">✓ 已验证</span>'
         : '<span style="background:#fef9c3;color:#a16207;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">未验证</span>';
@@ -33265,6 +33269,7 @@ async function openApplicantInbox(partnerId, partnerName) {
             <div style="margin-top:.4rem;display:flex;flex-direction:column;gap:.2rem;font-size:.82rem;color:var(--gray-600)">
               <div>📞 ${esc(s.phone || '—')} ${vBadge(s.phone_verified)}</div>
               <div style="word-break:break-all">✉️ ${esc(s.email || '—')} ${vBadge(s.email_verified)}</div>
+              ${addrLine ? `<div style="word-break:break-word">📍 ${esc(addrLine)} ${s.address_verified ? vBadge(true) : ''}</div>` : ''}
             </div>
           </div>
           <div style="flex:0 0 auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:.5rem">
