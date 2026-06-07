@@ -880,6 +880,10 @@ try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN city TEXT DEFAULT ''
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN state TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN zip TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN address_verified INTEGER DEFAULT 0`); } catch(e) {}
+// Links an applicant to the employee档案 created from it. History/archival in the
+// inbox is driven by this linked employee reaching 在职 (after starting 待入职) —
+// NOT by any matching employee being active, which would archive legacy records.
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN employee_id INTEGER`); } catch(e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   submission_id INTEGER NOT NULL,
@@ -14513,6 +14517,18 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
       s.on('error', () => { try { res.status(500).end(); } catch {} });
       s.pipe(res);
     } catch (e) { res.status(404).json({ error: 'Not found' }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: link a submission to the employee created from it (so the inbox can
+// archive it only once that specific employee is onboarded → 在职).
+app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (req, res) => {
+  try {
+    if (!req.body || req.body.employee_id === undefined) return res.status(400).json({ error: 'employee_id required' });
+    const empId = req.body.employee_id ? parseInt(req.body.employee_id) : null;
+    const r = db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(empId, req.params.id);
+    if (!r.changes) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
