@@ -33375,6 +33375,11 @@ async function openApplicantInbox(partnerId, partnerName) {
   try {
     const rows = await api('/admin/applicant-submissions?partner_id=' + encodeURIComponent(partnerId));
     const list = Array.isArray(rows) ? rows : [];
+    // Need the employee roster to detect applicants who already have a档案
+    // (so their "创建员工" button is hidden even if they weren't hired via this flow).
+    if (!Array.isArray(allEmployees) || !allEmployees.length) {
+      try { allEmployees = await api('/admin/employees'); } catch (_) {}
+    }
     // Prefetch docs once so tab switches don't refetch.
     await Promise.all(list.map(async s => {
       try { s._docs = await api(`/admin/applicant-submissions/${s.id}/docs`); }
@@ -33401,11 +33406,36 @@ function switchApplicantInboxTab(tab) {
   _applyInboxTabStyles();
   renderApplicantInbox();
 }
+// True once an employee档案 exists for this applicant — either it was marked
+// 'hired' through the create flow, or an employee already matches by phone/email
+// (covers archives created before this feature, or via a different path).
+function _normPhoneForMatch(p) {
+  const d = String(p || '').replace(/\D/g, '');
+  return d.length > 10 ? d.slice(-10) : d; // compare last 10 digits, ignore country code
+}
+function applicantHasEmployee(s) {
+  if (s.status === 'hired') return true;
+  const aPhone = _normPhoneForMatch(s.phone);
+  const aEmail = String(s.email || '').trim().toLowerCase();
+  if (!aPhone && !aEmail) return false;
+  const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+  return (allEmployees || []).some(e => {
+    if (aEmail) {
+      if (String(e.email || '').trim().toLowerCase() === aEmail) return true;
+      if (parseArr(e.extra_emails).some(em => String(em || '').trim().toLowerCase() === aEmail)) return true;
+    }
+    if (aPhone) {
+      if (_normPhoneForMatch(e.phone) === aPhone) return true;
+      if (parseArr(e.extra_phones).some(p => _normPhoneForMatch(p) === aPhone)) return true;
+    }
+    return false;
+  });
+}
 function renderApplicantInbox() {
   const body = document.getElementById('applyInboxBody');
   const all = _inboxSubmissions || [];
-  const active = all.filter(s => s.status !== 'hired');
-  const history = all.filter(s => s.status === 'hired');
+  const active = all.filter(s => !applicantHasEmployee(s));
+  const history = all.filter(s => applicantHasEmployee(s));
   document.getElementById('applyInboxCountActive').textContent = active.length ? `(${active.length})` : '';
   document.getElementById('applyInboxCountHistory').textContent = history.length ? `(${history.length})` : '';
   const shown = _inboxTab === 'history' ? history : active;
@@ -33443,7 +33473,7 @@ function renderApplicantInbox() {
     const vBadge = ok => ok
       ? '<span style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#15803d;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">✓ 已验证</span>'
       : '<span style="background:#fef9c3;color:#a16207;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">未验证</span>';
-    const isHired = s.status === 'hired';
+    const isHired = applicantHasEmployee(s);
     const del = USER_ROLE === 'admin'
       ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id})">删除</button>`
       : '';
