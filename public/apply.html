@@ -375,22 +375,100 @@ document.querySelectorAll('.photo-zone[data-target]').forEach(zone => {
     if (inp) inp.click();
   });
 });
+// ── Document-scan enhancement ──────────────────────────────────────
+// Per-channel auto-levels (1%/99% histogram stretch) + S-curve contrast.
+function _autoLevels(px, w, h) {
+  const N = w * h;
+  const hR = new Uint32Array(256), hG = new Uint32Array(256), hB = new Uint32Array(256);
+  for (let i = 0; i < px.length; i += 4) { hR[px[i]]++; hG[px[i+1]]++; hB[px[i+2]]++; }
+  const clip = Math.max(1, Math.round(N * 0.01));
+  const lo = (hist) => { let c=0; for (let v=0;v<256;v++){c+=hist[v];if(c>=clip)return v;} return 0; };
+  const hi = (hist) => { let c=0; for (let v=255;v>=0;v--){c+=hist[v];if(c>=clip)return v;} return 255; };
+  const rLo=lo(hR),rHi=hi(hR), gLo=lo(hG),gHi=hi(hG), bLo=lo(hB),bHi=hi(hB);
+  const sc = (lo,hi) => hi>lo ? 255/(hi-lo) : 1;
+  const scR=sc(rLo,rHi), scG=sc(gLo,gHi), scB=sc(bLo,bHi);
+  const curve = (v) => {
+    const x = v/255;
+    const s = x<0.5 ? 2*x*x : 1-2*(1-x)*(1-x);
+    return Math.max(0,Math.min(255, (s*0.65+x*0.35)*255+6));
+  };
+  const lutR=new Uint8ClampedArray(256), lutG=new Uint8ClampedArray(256), lutB=new Uint8ClampedArray(256);
+  for (let v=0;v<256;v++) {
+    lutR[v]=curve(Math.max(0,Math.min(255,(v-rLo)*scR)));
+    lutG[v]=curve(Math.max(0,Math.min(255,(v-gLo)*scG)));
+    lutB[v]=curve(Math.max(0,Math.min(255,(v-bLo)*scB)));
+  }
+  for (let i=0;i<px.length;i+=4) { px[i]=lutR[px[i]]; px[i+1]=lutG[px[i+1]]; px[i+2]=lutB[px[i+2]]; }
+}
+
+async function _processDocImage(file) {
+  const MAX = 2400;
+  let bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch { return file; } // fallback: return raw file unchanged
+  let w = bmp.width, h = bmp.height;
+  if (Math.max(w,h) > MAX) { const s=MAX/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(bmp, 0, 0, w, h);
+  if (bmp.close) bmp.close();
+  const id = ctx.getImageData(0, 0, w, h);
+  _autoLevels(id.data, w, h);
+  ctx.putImageData(id, 0, 0);
+  return new Promise(res => c.toBlob(b => res(b || file), 'image/jpeg', 0.90));
+}
+
+const _objUrls = {};  // track per-doc object URLs so we can revoke
+
 document.querySelectorAll('input[type=file][data-doc]').forEach(inp => {
-  inp.addEventListener('change', e => {
+  inp.addEventListener('change', async e => {
     const f = e.target.files && e.target.files[0];
     const doc = inp.dataset.doc;
     if (!f) return;
-    _files[doc] = f;
+
     const prev = document.getElementById(doc + '_prev');
-    prev.querySelector('img').src = URL.createObjectURL(f);
-    prev.style.display = 'block'; // override CSS `.prev{display:none}` so the preview actually shows
-    document.getElementById(doc + '_zone').style.display = 'none'; // hide the camera/gallery buttons
+    const imgEl = prev.querySelector('img');
+
+    // Show raw preview immediately so user sees something
+    if (_objUrls[doc]) { URL.revokeObjectURL(_objUrls[doc]); }
+    _objUrls[doc] = URL.createObjectURL(f);
+    imgEl.src = _objUrls[doc];
+    prev.style.display = 'block';
+    document.getElementById(doc + '_zone').style.display = 'none';
+
+    // Show "processing" badge
+    let badge = prev.querySelector('.scan-badge');
+    if (!badge) {
+      badge = Object.assign(document.createElement('div'), { className: 'scan-badge' });
+      badge.style.cssText = 'position:absolute;bottom:.45rem;left:.45rem;background:rgba(15,23,42,.72);color:#fff;font-size:.68rem;font-weight:700;border-radius:999px;padding:.15rem .55rem;pointer-events:none;transition:opacity .3s';
+      prev.style.position = 'relative';
+      prev.appendChild(badge);
+    }
+    badge.textContent = '⏳ 增强中…';
+    badge.style.opacity = '1';
+
+    // Process in background — does not block UI
+    try {
+      const processed = await _processDocImage(f);
+      _files[doc] = processed;
+      if (_objUrls[doc]) URL.revokeObjectURL(_objUrls[doc]);
+      _objUrls[doc] = URL.createObjectURL(processed);
+      imgEl.src = _objUrls[doc];
+      badge.textContent = '✨ 已增强';
+      setTimeout(() => { badge.style.opacity = '0'; }, 1800);
+    } catch {
+      _files[doc] = f;
+      badge.textContent = '📷 原图';
+      setTimeout(() => { badge.style.opacity = '0'; }, 1800);
+    }
   });
 });
 document.querySelectorAll('button[data-clear]').forEach(btn => {
   btn.addEventListener('click', () => {
     const doc = btn.dataset.clear;
     _files[doc] = null;
+    if (_objUrls[doc]) { URL.revokeObjectURL(_objUrls[doc]); _objUrls[doc] = null; }
     // Reset both the camera and gallery inputs for this document.
     document.querySelectorAll('input[data-doc="' + doc + '"]').forEach(i => { i.value = ''; });
     const prev = document.getElementById(doc + '_prev');

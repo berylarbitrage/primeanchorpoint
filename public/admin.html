@@ -280,8 +280,32 @@ tr:hover td{background:var(--sky-light)}
 .ts-confirm label{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--gray-600);cursor:pointer}
 .ts-confirm input[type="checkbox"]{width:18px;height:18px;accent-color:var(--sky)}
 .ts-actions{display:flex;gap:.75rem;flex-wrap:wrap}
+/* ── Mobile topbar ── */
+.mobile-topbar{display:none;position:sticky;top:0;z-index:201;background:#92400e;color:#fff;padding:.7rem 1rem;align-items:center;justify-content:space-between;gap:.75rem;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.hamburger{background:none;border:none;cursor:pointer;padding:.3rem;display:flex;flex-direction:column;gap:5px;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.hamburger span{display:block;width:22px;height:2px;background:#fff;border-radius:2px;transition:.2s}
+.mobile-topbar-title{font-size:.95rem;font-weight:800;letter-spacing:.01em}
+.mobile-topbar-right{display:flex;align-items:center;gap:.5rem}
+.mobile-topbar-right .btn-logout-m{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:.3rem .65rem;font-size:.78rem;font-weight:600;cursor:pointer}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199}
+.sidebar-overlay.show{display:block}
 @media print{body *{visibility:hidden}#tsPrintArea,#tsPrintArea *{visibility:visible}#tsPrintArea{position:absolute;left:0;top:0;width:100%;padding:20px}#tsPrintArea .no-print{display:none!important}}
-@media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}.stats-row{grid-template-columns:repeat(2,1fr)}.hours-bar{grid-template-columns:repeat(2,1fr)}.field-row3{grid-template-columns:1fr}}
+@media(max-width:768px){
+  .mobile-topbar{display:flex}
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease;z-index:200;height:100vh;top:0}
+  .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,.3)}
+  .main{margin-left:0;padding:1rem}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .hours-bar{grid-template-columns:repeat(2,1fr)}
+  .field-row3{grid-template-columns:1fr}
+  th,td{padding:7px 8px;font-size:.8rem}
+  .top{margin-bottom:1rem}
+  .top h1{font-size:1.15rem}
+}
+@media(max-width:420px){
+  .stats-row{grid-template-columns:1fr}
+  .top-actions{width:100%}
+}
 /* Day toggle buttons */
 .day-btn{padding:5px 9px;border:1.5px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-600);font-size:.78rem;cursor:pointer;transition:all .15s;font-weight:600;white-space:nowrap}
 .day-btn:hover{border-color:var(--sky);color:var(--sky)}
@@ -484,6 +508,14 @@ tr:hover td{background:var(--sky-light)}
 
 <!-- APP -->
 <div class="app" id="app">
+<div class="mobile-topbar">
+  <button class="hamburger" onclick="openAdminSidebar()" aria-label="菜单"><span></span><span></span><span></span></button>
+  <span class="mobile-topbar-title">⚓ 管理后台</span>
+  <div class="mobile-topbar-right">
+    <button class="btn-logout-m" onclick="logout()">退出</button>
+  </div>
+</div>
+<div class="sidebar-overlay" id="adminSidebarOverlay" onclick="closeAdminSidebar()"></div>
 <div class="sidebar" id="sidebar">
   <h2>⚓ 管理后台</h2>
   <a class="active" onclick="showTab('dashboard')" data-tab="dashboard">🏠 仪表盘</a>
@@ -8165,6 +8197,9 @@ function toggleNav(secId) {
   document.getElementById(secId).classList.toggle('open');
 }
 
+function openAdminSidebar()  { document.getElementById('sidebar').classList.add('open'); document.getElementById('adminSidebarOverlay').classList.add('show'); }
+function closeAdminSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('adminSidebarOverlay').classList.remove('show'); }
+
 function showTab(t) {
   document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
   document.getElementById('tab-' + t).style.display = 'block';
@@ -8175,6 +8210,8 @@ function showTab(t) {
   // Ensure the containing section is expanded
   const secId = _TAB_TO_SEC[t];
   if (secId) document.getElementById(secId)?.classList.add('open');
+  // Close sidebar on mobile after navigation
+  if (window.innerWidth <= 768) closeAdminSidebar();
   if (t === 'dashboard')  loadDashboard();
   if (t === 'jobs')       loadJobs();
   if (t === 'client-inquiries') loadClientInquiries();
@@ -33176,7 +33213,10 @@ async function regenerateApplyQr() {
 }
 
 // ── Applicant submissions inbox ──
+let _inboxPartnerId = null, _inboxPartnerName = '';
 async function openApplicantInbox(partnerId, partnerName) {
+  _inboxPartnerId = partnerId;
+  _inboxPartnerName = partnerName || '';
   document.getElementById('applyInboxPartner').textContent = partnerName ? '· ' + partnerName : '';
   document.getElementById('applyInboxCount').textContent = '';
   document.getElementById('applyInboxBody').innerHTML = '<div style="padding:1.2rem;color:var(--gray-400);text-align:center">加载中…</div>';
@@ -33212,7 +33252,7 @@ async function openApplicantInbox(partnerId, partnerName) {
         ? '<span style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#15803d;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">✓ 已验证</span>'
         : '<span style="background:#fef9c3;color:#a16207;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">未验证</span>';
       const del = USER_ROLE === 'admin'
-        ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id}, ${s.partner_id}, ${JSON.stringify(s.partner_name || '')})">删除</button>`
+        ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id})">删除</button>`
         : '';
       return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04)">
         <div style="display:flex;align-items:flex-start;gap:.7rem">
@@ -33241,12 +33281,24 @@ async function openApplicantInbox(partnerId, partnerName) {
   }
 }
 function closeApplicantInbox() { document.getElementById('applyInboxModal').classList.remove('show'); }
-async function deleteApplicant(id, partnerId, partnerName) {
-  if (!confirm('确定删除此申请及其所有证件？此操作不可恢复。')) return;
+async function deleteApplicant(id) {
+  const name = _inboxPartnerName ? `【${_inboxPartnerName}】` : '';
+  const step1 = await showConfirm(
+    `确定要删除此招工申请${name}吗？\n\n申请人信息及所有上传证件将被永久删除。`,
+    { confirmLabel: '继续', cancelLabel: '取消', danger: true }
+  );
+  if (!step1) return;
+  const step2 = await showConfirm(
+    '⚠️ 此操作不可撤销。\n\n删除后数据无法恢复，确认删除？',
+    { confirmLabel: '确认删除', cancelLabel: '返回', danger: true }
+  );
+  if (!step2) return;
   try {
     await api(`/admin/applicant-submissions/${id}`, { method: 'DELETE' });
-    openApplicantInbox(partnerId, partnerName);
-  } catch (e) { alert('删除失败：' + (e.message || e)); }
+    openApplicantInbox(_inboxPartnerId, _inboxPartnerName);
+  } catch (e) {
+    adminAlert('删除失败：' + (e.message || e), '错误');
+  }
 }
 
 // ── 扫码记录 page (all companies / statuses / types) ──

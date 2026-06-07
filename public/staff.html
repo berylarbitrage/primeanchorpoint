@@ -138,11 +138,30 @@ tr:hover td{background:#f0fdf4}
 .form-input:focus{border-color:var(--green)}
 .form-actions{display:flex;justify-content:flex-end;gap:.6rem;margin-top:1.25rem}
 
+/* ── Mobile top bar ── */
+.mobile-topbar{display:none;background:var(--green);color:#fff;padding:.7rem 1rem;align-items:center;justify-content:space-between;gap:.75rem;position:sticky;top:0;z-index:201;box-shadow:0 2px 8px rgba(5,150,105,.3)}
+.hamburger{background:none;border:none;cursor:pointer;padding:.3rem;display:flex;flex-direction:column;gap:5px;flex-shrink:0}
+.hamburger span{display:block;width:22px;height:2px;background:#fff;border-radius:2px;transition:.2s}
+.mobile-topbar-title{font-size:.95rem;font-weight:700}
+.mobile-topbar-right{display:flex;align-items:center;gap:.6rem}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199}
+.sidebar-overlay.show{display:block}
+
 /* ── Responsive ── */
 @media(max-width:768px){
-  .sidebar{display:none}
-  .stats-row{grid-template-columns:repeat(2,1fr)}
-  .main{padding:1rem}
+  .topbar{display:none}
+  .mobile-topbar{display:flex}
+  .sidebar{position:fixed;top:0;left:0;bottom:0;z-index:200;height:100vh;transform:translateX(-100%);transition:transform .25s ease;box-shadow:none}
+  .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,.3)}
+  .layout{min-height:calc(100vh - 48px)}
+  .main{padding:.85rem;margin-left:0}
+  .stats-row{grid-template-columns:1fr 1fr}
+  th,td{padding:.5rem .55rem;font-size:.8rem}
+}
+@media(max-width:420px){
+  .stats-row{grid-template-columns:1fr}
+  .filter-bar{flex-direction:column;align-items:stretch}
+  .filter-bar input,.filter-bar select{width:100%}
 }
 </style>
 </head>
@@ -179,9 +198,22 @@ tr:hover td{background:#f0fdf4}
     </div>
   </div>
 
+  <!-- Mobile topbar (shown only on small screens) -->
+  <div class="mobile-topbar">
+    <button class="hamburger" onclick="openSidebar()" aria-label="菜单">
+      <span></span><span></span><span></span>
+    </button>
+    <span class="mobile-topbar-title">Staff Portal</span>
+    <div class="mobile-topbar-right">
+      <span style="font-size:.78rem;opacity:.8" id="mobileTopbarUser"></span>
+      <button class="btn-logout" onclick="doLogout()">退出</button>
+    </div>
+  </div>
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
   <div class="layout">
     <!-- Sidebar -->
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
       <div class="nav-section">
         <div class="nav-section-label">概览</div>
         <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">🏠 仪表盘</div>
@@ -509,6 +541,7 @@ function finishLogin(){
   document.getElementById('loginWrap').style.display='none';
   document.getElementById('appWrap').style.display='block';
   document.getElementById('topbarUser').textContent=USER_NAME;
+  document.getElementById('mobileTopbarUser').textContent=USER_NAME;
   showPage('dashboard');
   loadDashboard();
 }
@@ -536,6 +569,9 @@ const PAGE_LOADERS = {
   'assignments': loadAssignments,
 };
 
+function openSidebar()  { document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebarOverlay').classList.add('show'); }
+function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('show'); }
+
 function showPage(name){
   document.getElementById('page-'+_currentPage).style.display='none';
   document.getElementById('nav-'+_currentPage)?.classList.remove('active');
@@ -543,6 +579,7 @@ function showPage(name){
   document.getElementById('page-'+name).style.display='block';
   document.getElementById('nav-'+name)?.classList.add('active');
   if(PAGE_LOADERS[name]) PAGE_LOADERS[name]();
+  if(window.innerWidth<=768) closeSidebar();
 }
 
 // ── Dashboard ──────────────────────────────────────────────────
