@@ -20278,6 +20278,12 @@ async function wpDeleteDoc(docId) {
           if (el) el.remove();
           _wpUploadedDocs = _wpUploadedDocs.filter(id => id !== docId);
           showToast('文件已删除', 'success');
+          // Re-enable any applicant doc "选用" buttons
+          document.querySelectorAll('#wpApplicantDocsList button[disabled]').forEach(btn => {
+            btn.disabled = false;
+            btn.textContent = '📥 选用此文件';
+            btn.style.background = '#dbeafe'; btn.style.color = '#1e40af'; btn.style.borderColor = '#93c5fd';
+          });
         }
       } catch(e) { showToast('删除失败', 'error'); }
     },
@@ -20298,9 +20304,7 @@ async function wpCopyApplicantDoc(submissionId, docId, docType, fileName) {
       body: JSON.stringify({ submission_id: submissionId, doc_id: docId, doc_label: label })
     });
     if (r && r.success) {
-      showToast(`✅ 已选用「${label}」文件`);
-      const btn = document.querySelector(`[onclick*="wpCopyApplicantDoc(${submissionId},${docId}"]`);
-      if (btn) { btn.disabled = true; btn.textContent = '✅ 已选用'; btn.style.background = '#d1fae5'; btn.style.color = '#065f46'; btn.style.borderColor = '#6ee7b7'; }
+      showToast(r.duplicate ? `「${label}」已存在，无需重复选用` : `✅ 已选用「${label}」文件`);
       const cat = document.getElementById('wpDocType')?.value || 'generic';
       await wpLoadExistingDocs(cat);
     } else {

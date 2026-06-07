@@ -10749,7 +10749,14 @@ app.get('/api/admin/work-permit-docs/:docId/download', requireAdmin, async (req,
 app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
   const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
   if (!doc) return res.status(404).json({ error: 'Not found' });
-  if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+  // Only delete the physical file if no other record references the same file_path
+  if (doc.file_path) {
+    const otherWp = db.prepare('SELECT id FROM work_permit_docs WHERE file_path=? AND id!=?').get(doc.file_path, req.params.docId);
+    const otherAppl = db.prepare('SELECT id FROM applicant_docs WHERE file_path=?').get(doc.file_path);
+    if (!otherWp && !otherAppl) {
+      try { if (fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path); } catch {}
+    }
+  }
   db.prepare('DELETE FROM work_permit_docs WHERE id=?').run(req.params.docId);
   res.json({ success: true });
 });
