@@ -14516,18 +14516,6 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ADMIN: update a submission's status (used to mark applicant as hired after
-// the "+ Create Employee" flow so it drops out of the active inbox).
-app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (req, res) => {
-  try {
-    const status = String((req.body && req.body.status) || '').trim();
-    if (!status) return res.status(400).json({ error: 'status required' });
-    const r = db.prepare('UPDATE applicant_submissions SET status=? WHERE id=?').run(status, req.params.id);
-    if (!r.changes) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 // ADMIN: delete a submission and its documents.
 app.delete('/api/admin/applicant-submissions/:id', requireAdmin, requireRole('admin'), async (req, res) => {
   try {
