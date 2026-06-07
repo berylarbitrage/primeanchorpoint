@@ -13758,7 +13758,8 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
-function closeEmpModal() { _convertFromWorkerId = null; _pendingWorkerLink = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); guardClose('empModal'); }
+let _convertFromApplicantId = null;
+function closeEmpModal() { _convertFromWorkerId = null; _convertFromApplicantId = null; _pendingWorkerLink = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); guardClose('empModal'); }
 
 // ── Address verify helpers ──
 function _setAddrStatus(el, verified) {
@@ -14341,12 +14342,22 @@ async function saveEmployee() {
       const workerLink = (_pendingWorkerLink && id && String(id) === String(_pendingWorkerLink.empId))
         ? { ..._pendingWorkerLink } : null;
       const workerLinkNew = (!id && _convertFromWorkerId && r2.id) ? _convertFromWorkerId : null;
+      const applicantToLink = (!id && _convertFromApplicantId && r2.id) ? _convertFromApplicantId : null;
       clearModalState('empModal');
       closeEmpModal();
       await loadEmployees();
-      // Note: the applicant inbox now derives its stage from the matched
-      // employee's status (待入职 → stays in inbox, 在职 → History), so there's
-      // nothing to flag on the submission itself here.
+      // Link the submission to its new employee档案. The inbox archives the card
+      // only when THIS linked employee reaches 在职 (it starts 待入职), so a freshly
+      // created hire stays in 待处理 until onboarding is actually finished.
+      if (applicantToLink) {
+        try {
+          await api(`/admin/applicant-submissions/${applicantToLink}`, {
+            method: 'PATCH', body: JSON.stringify({ employee_id: r2.id })
+          });
+          const s = (_inboxSubmissions || []).find(x => x.id === applicantToLink);
+          if (s) s.employee_id = r2.id;
+        } catch (_) {}
+      }
       // If this was a "convert worker → new employee" action, link the account
       if (workerLinkNew && r2.id) {
         await api(`/admin/worker-accounts/${workerLinkNew}`, {
@@ -33349,9 +33360,9 @@ async function regenerateApplyQr() {
 
 // ── Applicant submissions inbox ──
 // `_inboxTab` is 'active' (待处理) or 'history'. Each applicant's stage is derived
-// from the matched employee档案 (see applicantStage): no employee → "创建员工"
-// button; employee 待入职 → button hidden but card stays in 待处理; employee 在职
-// → card moves to the History tab. We fetch submissions + docs once and re-render
+// by applicantStage(): no employee → "创建员工" button; employee created (待入职)
+// → button hidden but card stays in 待处理; the LINKED employee reaches 在职 →
+// card moves to the History tab. We fetch submissions + docs once and re-render
 // locally when switching tabs.
 let _inboxPartnerId = null, _inboxPartnerName = '', _inboxSubmissions = [], _inboxTab = 'active';
 async function openApplicantInbox(partnerId, partnerName) {
@@ -33421,14 +33432,22 @@ function matchEmployeeForApplicant(s) {
     return false;
   }) || null;
 }
+// The employee档案 explicitly linked to this submission (created via this flow).
+function linkedEmployeeForApplicant(s) {
+  if (!s.employee_id) return null;
+  return (allEmployees || []).find(e => e.id === s.employee_id) || null;
+}
 // Three states per applicant:
 //   'new'     — no employee档案 yet → show "创建员工" button (待处理)
-//   'created' — employee exists but not yet 在职 → button hidden, stays 待处理
-//   'history' — employee is 在职(已入职) → moves to History tab
+//   'created' — employee exists but onboarding not finished → button hidden, stays 待处理
+//   'history' — the LINKED employee reached 在职(已入职) → moves to History tab
+// History is driven only by the linked employee transitioning 待入职 → 在职. A
+// plain phone/email match (e.g. a legacy employee already 在职, with no link) just
+// hides the "创建员工" button — it never auto-archives the card.
 function applicantStage(s) {
-  const emp = matchEmployeeForApplicant(s);
-  if (!emp) return 'new';
-  return emp.status === 'active' ? 'history' : 'created';
+  const linked = linkedEmployeeForApplicant(s);
+  if (linked) return linked.status === 'active' ? 'history' : 'created';
+  return matchEmployeeForApplicant(s) ? 'created' : 'new';
 }
 function renderApplicantInbox() {
   const body = document.getElementById('applyInboxBody');
@@ -33476,10 +33495,12 @@ function renderApplicantInbox() {
     const del = USER_ROLE === 'admin'
       ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id})">删除</button>`
       : '';
+    const _linkedEmp = linkedEmployeeForApplicant(s);
+    const _createdLabel = (_linkedEmp && _linkedEmp.status !== 'active') ? '✓ 已创建 · 待入职' : '✓ 已创建员工';
     const mkEmp = stage === 'history'
       ? '<span style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600">✓ 已入职</span>'
       : stage === 'created'
-        ? '<span style="padding:.2rem .55rem;font-size:.72rem;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:6px;font-weight:600">✓ 已创建 · 待入职</span>'
+        ? `<span style="padding:.2rem .55rem;font-size:.72rem;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:6px;font-weight:600">${_createdLabel}</span>`
         : ((USER_ROLE === 'admin' || USER_ROLE === 'staff')
           ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0" onclick="createEmployeeFromApplicant(${s.id})">➕ 创建员工</button>`
           : '');
@@ -33538,6 +33559,7 @@ async function createEmployeeFromApplicant(id) {
   if (!s) { adminAlert('找不到该申请记录', '提示'); return; }
   closeApplicantInbox();
   openEmpModal(); // new-employee mode: clears fields + sets sensible defaults
+  _convertFromApplicantId = id; // link the new档案 back to this submission on save
   renderApplicantDocPanel(id); // fetch + show the uploaded ID photos for reference
   // Split the full name → first / middle-less last (first token is given name).
   const parts = String(s.name || '').trim().split(/\s+/).filter(Boolean);
