@@ -2005,6 +2005,10 @@ tr:hover td{background:var(--sky-light)}
     <h2 style="margin:0">📨 招工申请收件箱 <span id="applyInboxPartner" style="font-size:.85rem;color:var(--gray-500);font-weight:400"></span></h2>
     <button class="btn btn-sm btn-outline" onclick="closeApplicantInbox()">× 关闭</button>
   </div>
+  <div style="display:flex;gap:.4rem;border-bottom:1px solid var(--gray-200);margin-bottom:.5rem">
+    <button id="applyInboxTabActive" class="btn btn-sm" style="background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700" onclick="switchApplicantInboxTab('active')">📥 待处理 <span id="applyInboxCountActive" style="font-weight:600;color:var(--gray-500)"></span></button>
+    <button id="applyInboxTabHistory" class="btn btn-sm" style="background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600" onclick="switchApplicantInboxTab('history')">🗂️ 历史 <span id="applyInboxCountHistory" style="font-weight:600;color:var(--gray-400)"></span></button>
+  </div>
   <div id="applyInboxCount" style="font-size:.8rem;color:var(--gray-400);margin-bottom:.7rem"></div>
   <div id="applyInboxBody" style="overflow-y:auto;flex:1;margin:0 -.3rem;padding:0 .3rem">
     <div style="padding:1.2rem;color:var(--gray-400);text-align:center">加载中…</div>
@@ -13753,7 +13757,8 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
-function closeEmpModal() { _convertFromWorkerId = null; _pendingWorkerLink = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); guardClose('empModal'); }
+let _convertFromApplicantId = null;
+function closeEmpModal() { _convertFromWorkerId = null; _convertFromApplicantId = null; _pendingWorkerLink = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); guardClose('empModal'); }
 
 // ── Address verify helpers ──
 function _setAddrStatus(el, verified) {
@@ -14336,9 +14341,21 @@ async function saveEmployee() {
       const workerLink = (_pendingWorkerLink && id && String(id) === String(_pendingWorkerLink.empId))
         ? { ..._pendingWorkerLink } : null;
       const workerLinkNew = (!id && _convertFromWorkerId && r2.id) ? _convertFromWorkerId : null;
+      const applicantToHire = (!id && _convertFromApplicantId && r2.id) ? _convertFromApplicantId : null;
       clearModalState('empModal');
       closeEmpModal();
       await loadEmployees();
+      if (applicantToHire) {
+        try {
+          await api(`/admin/applicant-submissions/${applicantToHire}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'hired' })
+          });
+          // Reflect locally so the inbox shows it under "history" without a refetch.
+          const s = (_inboxSubmissions || []).find(x => x.id === applicantToHire);
+          if (s) s.status = 'hired';
+        } catch (_) {}
+      }
       // If this was a "convert worker → new employee" action, link the account
       if (workerLinkNew && r2.id) {
         await api(`/admin/worker-accounts/${workerLinkNew}`, {
@@ -33340,82 +33357,124 @@ async function regenerateApplyQr() {
 }
 
 // ── Applicant submissions inbox ──
-let _inboxPartnerId = null, _inboxPartnerName = '', _inboxSubmissions = [];
+// `_inboxTab` is 'active' (status != 'hired') or 'history' (status == 'hired').
+// We fetch every submission once and re-render locally when switching tabs so
+// that marking an applicant as hired moves the card across without a refetch.
+let _inboxPartnerId = null, _inboxPartnerName = '', _inboxSubmissions = [], _inboxTab = 'active';
 async function openApplicantInbox(partnerId, partnerName) {
   _inboxPartnerId = partnerId;
   _inboxPartnerName = partnerName || '';
+  _inboxTab = 'active';
   document.getElementById('applyInboxPartner').textContent = partnerName ? '· ' + partnerName : '';
   document.getElementById('applyInboxCount').textContent = '';
+  document.getElementById('applyInboxCountActive').textContent = '';
+  document.getElementById('applyInboxCountHistory').textContent = '';
   document.getElementById('applyInboxBody').innerHTML = '<div style="padding:1.2rem;color:var(--gray-400);text-align:center">加载中…</div>';
   document.getElementById('applyInboxModal').classList.add('show');
-  const body = document.getElementById('applyInboxBody');
+  _applyInboxTabStyles();
   try {
     const rows = await api('/admin/applicant-submissions?partner_id=' + encodeURIComponent(partnerId));
     const list = Array.isArray(rows) ? rows : [];
+    // Prefetch docs once so tab switches don't refetch.
+    await Promise.all(list.map(async s => {
+      try { s._docs = await api(`/admin/applicant-submissions/${s.id}/docs`); }
+      catch (_) { s._docs = []; }
+    }));
     _inboxSubmissions = list;
-    document.getElementById('applyInboxCount').textContent = list.length ? `共 ${list.length} 份申请` : '';
-    if (!list.length) { body.innerHTML = '<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">📭 暂无申请</div>'; return; }
-    const dl = (sid, did) => `/api/admin/applicant-submissions/${sid}/docs/${did}/download`;
-    const cardsHtml = await Promise.all(list.map(async s => {
-      let docs = [];
-      try { docs = await api(`/admin/applicant-submissions/${s.id}/docs`); } catch (_) {}
-      const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
-      const docThumbs = (Array.isArray(docs) ? docs : []).map(d => {
-        const url = dl(s.id, d.id);
-        const label = docLabel[d.doc_type] || d.doc_type;
-        const isPdf = /\.pdf$/i.test(d.file_name || '');
-        if (isPdf) {
-          return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.35rem .6rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${label}</a>`;
-        }
-        return `<a href="${url}" target="_blank" title="${label}（点击查看大图）" style="text-decoration:none">
-            <span style="display:block;position:relative">
-              <img src="${url}" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;display:block">
-              <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.64rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${label}</span>
-            </span>
-          </a>`;
-      }).join('') || '<span style="color:var(--gray-300);font-size:.8rem">无证件</span>';
-      const when = s.created_at ? new Date(s.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
-      const initial = esc((s.name || '?').trim().charAt(0).toUpperCase() || '?');
-      const addrLine = [
-        [s.address1, s.address2].filter(Boolean).join(', '),
-        [[s.city, s.state].filter(Boolean).join(', '), s.zip].filter(Boolean).join(' '),
-      ].filter(x => x && x.trim()).join(' · ');
-      const vBadge = ok => ok
-        ? '<span style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#15803d;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">✓ 已验证</span>'
-        : '<span style="background:#fef9c3;color:#a16207;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">未验证</span>';
-      const del = USER_ROLE === 'admin'
-        ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id})">删除</button>`
-        : '';
-      const mkEmp = (USER_ROLE === 'admin' || USER_ROLE === 'staff')
-        ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0" onclick="createEmployeeFromApplicant(${s.id})">➕ 创建员工</button>`
-        : '';
-      return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04)">
-        <div style="display:flex;align-items:flex-start;gap:.7rem">
-          <div style="flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#4A90D9,#1A3F7A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.05rem">${initial}</div>
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap">
-              <span style="font-weight:700;font-size:1rem;color:var(--ink,#0f172a)">${esc(s.name || '—')}</span>
-              ${s.position ? `<span style="font-size:.8rem;color:#1A3F7A;background:#eff6ff;border-radius:6px;padding:1px 8px">${esc(s.position)}</span>` : ''}
-            </div>
-            <div style="margin-top:.4rem;display:flex;flex-direction:column;gap:.2rem;font-size:.82rem;color:var(--gray-600)">
-              <div>📞 ${esc(s.phone || '—')} ${vBadge(s.phone_verified)}</div>
-              <div style="word-break:break-all">✉️ ${esc(s.email || '—')} ${vBadge(s.email_verified)}</div>
-              ${addrLine ? `<div style="word-break:break-word">📍 ${esc(addrLine)} ${s.address_verified ? vBadge(true) : ''}</div>` : ''}
-            </div>
+    renderApplicantInbox();
+  } catch (e) {
+    document.getElementById('applyInboxBody').innerHTML = `<div style="padding:1.2rem;color:#b91c1c;text-align:center">加载失败：${esc(e.message || e)}</div>`;
+  }
+}
+function _applyInboxTabStyles() {
+  const a = document.getElementById('applyInboxTabActive');
+  const h = document.getElementById('applyInboxTabHistory');
+  if (!a || !h) return;
+  const on = 'background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700';
+  const off = 'background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600';
+  a.style.cssText = _inboxTab === 'active' ? on : off;
+  h.style.cssText = _inboxTab === 'history' ? on : off;
+}
+function switchApplicantInboxTab(tab) {
+  if (tab !== 'active' && tab !== 'history') return;
+  _inboxTab = tab;
+  _applyInboxTabStyles();
+  renderApplicantInbox();
+}
+function renderApplicantInbox() {
+  const body = document.getElementById('applyInboxBody');
+  const all = _inboxSubmissions || [];
+  const active = all.filter(s => s.status !== 'hired');
+  const history = all.filter(s => s.status === 'hired');
+  document.getElementById('applyInboxCountActive').textContent = active.length ? `(${active.length})` : '';
+  document.getElementById('applyInboxCountHistory').textContent = history.length ? `(${history.length})` : '';
+  const shown = _inboxTab === 'history' ? history : active;
+  document.getElementById('applyInboxCount').textContent = shown.length
+    ? `共 ${shown.length} 份${_inboxTab === 'history' ? '（已创建员工）' : ''}`
+    : '';
+  if (!shown.length) {
+    body.innerHTML = `<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">${_inboxTab === 'history' ? '🗂️ 暂无历史' : '📭 暂无申请'}</div>`;
+    return;
+  }
+  const dl = (sid, did) => `/api/admin/applicant-submissions/${sid}/docs/${did}/download`;
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  body.innerHTML = shown.map(s => {
+    const docs = Array.isArray(s._docs) ? s._docs : [];
+    const docThumbs = docs.map(d => {
+      const url = dl(s.id, d.id);
+      const label = docLabel[d.doc_type] || d.doc_type;
+      const isPdf = /\.pdf$/i.test(d.file_name || '');
+      if (isPdf) {
+        return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.35rem .6rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${label}</a>`;
+      }
+      return `<a href="${url}" target="_blank" title="${label}（点击查看大图）" style="text-decoration:none">
+          <span style="display:block;position:relative">
+            <img src="${url}" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;display:block">
+            <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.64rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${label}</span>
+          </span>
+        </a>`;
+    }).join('') || '<span style="color:var(--gray-300);font-size:.8rem">无证件</span>';
+    const when = s.created_at ? new Date(s.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
+    const initial = esc((s.name || '?').trim().charAt(0).toUpperCase() || '?');
+    const addrLine = [
+      [s.address1, s.address2].filter(Boolean).join(', '),
+      [[s.city, s.state].filter(Boolean).join(', '), s.zip].filter(Boolean).join(' '),
+    ].filter(x => x && x.trim()).join(' · ');
+    const vBadge = ok => ok
+      ? '<span style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#15803d;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">✓ 已验证</span>'
+      : '<span style="background:#fef9c3;color:#a16207;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">未验证</span>';
+    const isHired = s.status === 'hired';
+    const del = USER_ROLE === 'admin'
+      ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id})">删除</button>`
+      : '';
+    const mkEmp = isHired
+      ? '<span style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600">✓ 已创建员工</span>'
+      : ((USER_ROLE === 'admin' || USER_ROLE === 'staff')
+          ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0" onclick="createEmployeeFromApplicant(${s.id})">➕ 创建员工</button>`
+          : '');
+    return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:${isHired ? '#fafafa' : '#fff'};box-shadow:0 1px 2px rgba(15,23,42,.04)">
+      <div style="display:flex;align-items:flex-start;gap:.7rem">
+        <div style="flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#4A90D9,#1A3F7A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.05rem">${initial}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:1rem;color:var(--ink,#0f172a)">${esc(s.name || '—')}</span>
+            ${s.position ? `<span style="font-size:.8rem;color:#1A3F7A;background:#eff6ff;border-radius:6px;padding:1px 8px">${esc(s.position)}</span>` : ''}
           </div>
-          <div style="flex:0 0 auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:.4rem">
-            <span style="font-size:.72rem;color:var(--gray-400);white-space:nowrap">🕒 ${esc(when)}</span>
-            ${mkEmp}
-            ${del}
+          <div style="margin-top:.4rem;display:flex;flex-direction:column;gap:.2rem;font-size:.82rem;color:var(--gray-600)">
+            <div>📞 ${esc(s.phone || '—')} ${vBadge(s.phone_verified)}</div>
+            <div style="word-break:break-all">✉️ ${esc(s.email || '—')} ${vBadge(s.email_verified)}</div>
+            ${addrLine ? `<div style="word-break:break-word">📍 ${esc(addrLine)} ${s.address_verified ? vBadge(true) : ''}</div>` : ''}
           </div>
         </div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem;padding-top:.7rem;border-top:1px dashed var(--gray-200)">${docThumbs}</div>
-      </div>`;
-    }));
-    body.innerHTML = cardsHtml.join('');
-  } catch (e) {
-    body.innerHTML = `<div style="padding:1.2rem;color:#b91c1c;text-align:center">加载失败：${esc(e.message || e)}</div>`;
-  }
+        <div style="flex:0 0 auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:.4rem">
+          <span style="font-size:.72rem;color:var(--gray-400);white-space:nowrap">🕒 ${esc(when)}</span>
+          ${mkEmp}
+          ${del}
+        </div>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem;padding-top:.7rem;border-top:1px dashed var(--gray-200)">${docThumbs}</div>
+    </div>`;
+  }).join('');
 }
 function closeApplicantInbox() { document.getElementById('applyInboxModal').classList.remove('show'); }
 async function deleteApplicant(id) {
@@ -33432,7 +33491,8 @@ async function deleteApplicant(id) {
   if (!step2) return;
   try {
     await api(`/admin/applicant-submissions/${id}`, { method: 'DELETE' });
-    openApplicantInbox(_inboxPartnerId, _inboxPartnerName);
+    _inboxSubmissions = (_inboxSubmissions || []).filter(s => s.id !== id);
+    renderApplicantInbox();
   } catch (e) {
     adminAlert('删除失败：' + (e.message || e), '错误');
   }
@@ -33447,6 +33507,7 @@ async function createEmployeeFromApplicant(id) {
   if (!s) { adminAlert('找不到该申请记录', '提示'); return; }
   closeApplicantInbox();
   openEmpModal(); // new-employee mode: clears fields + sets sensible defaults
+  _convertFromApplicantId = id; // remember so saveEmployee can mark the applicant hired
   renderApplicantDocPanel(id); // fetch + show the uploaded ID photos for reference
   // Split the full name → first / middle-less last (first token is given name).
   const parts = String(s.name || '').trim().split(/\s+/).filter(Boolean);
