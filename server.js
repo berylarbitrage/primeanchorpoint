@@ -10761,6 +10761,8 @@ app.post('/api/admin/worker-accounts/:id/copy-applicant-doc', requireAdmin, asyn
     const doc = db.prepare('SELECT * FROM applicant_docs WHERE id=? AND submission_id=?').get(doc_id, submission_id);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
     const workerId = parseInt(req.params.id);
+    const existing = db.prepare('SELECT id FROM work_permit_docs WHERE worker_account_id=? AND file_path=?').get(workerId, doc.file_path);
+    if (existing) return res.json({ success: true, id: existing.id, file_name: doc.file_name, duplicate: true });
     const uploadedBy = (req.session && req.session.username) || 'admin';
     const r = db.prepare('INSERT INTO work_permit_docs (worker_account_id, doc_label, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?)')
       .run(workerId, doc_label || doc.doc_type, doc.file_path, doc.file_name, uploadedBy);

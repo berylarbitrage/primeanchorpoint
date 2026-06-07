@@ -20261,23 +20261,34 @@ function wpDocFileHtml(docId, fileName) {
 }
 
 async function wpDeleteDoc(docId) {
-  if (!confirm('确认删除此文件？')) return;
-  try {
-    const res = await fetch(API + `/admin/work-permit-docs/${docId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${TOKEN}` }
-    });
-    const data = await res.json();
-    if (data.success) {
-      const el = document.getElementById(`wpDoc_${docId}`);
-      if (el) el.remove();
-      _wpUploadedDocs = _wpUploadedDocs.filter(id => id !== docId);
-      showToast('文件已删除', 'success');
-    }
-  } catch(e) { showToast('删除失败', 'error'); }
+  showConfirmModal(
+    '确认删除此文件',
+    '删除后不可恢复，是否继续？',
+    '🗑️ 删除',
+    'btn-red',
+    async () => {
+      try {
+        const res = await fetch(API + `/admin/work-permit-docs/${docId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${TOKEN}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+          const el = document.getElementById(`wpDoc_${docId}`);
+          if (el) el.remove();
+          _wpUploadedDocs = _wpUploadedDocs.filter(id => id !== docId);
+          showToast('文件已删除', 'success');
+        }
+      } catch(e) { showToast('删除失败', 'error'); }
+    },
+    'red'
+  );
 }
 
+let _wpCopyingDoc = false;
 async function wpCopyApplicantDoc(submissionId, docId, docType, fileName) {
+  if (_wpCopyingDoc) return;
+  _wpCopyingDoc = true;
   try {
     const DOC_LABELS = { ssn_front:'SSN 正面', ssn_back:'SSN 背面', ead_front:'EAD 正面', ead_back:'EAD 背面', id_front:'证件正面', id_back:'证件背面', drivers_license:'驾照', passport:'护照', photo:'照片' };
     const label = DOC_LABELS[docType] || docType;
@@ -20288,13 +20299,15 @@ async function wpCopyApplicantDoc(submissionId, docId, docType, fileName) {
     });
     if (r && r.success) {
       showToast(`✅ 已选用「${label}」文件`);
-      // Refresh the existing docs display
+      const btn = document.querySelector(`[onclick*="wpCopyApplicantDoc(${submissionId},${docId}"]`);
+      if (btn) { btn.disabled = true; btn.textContent = '✅ 已选用'; btn.style.background = '#d1fae5'; btn.style.color = '#065f46'; btn.style.borderColor = '#6ee7b7'; }
       const cat = document.getElementById('wpDocType')?.value || 'generic';
       await wpLoadExistingDocs(cat);
     } else {
       showToast(r?.error || '复制文件失败', 'error');
     }
   } catch (e) { showToast('复制文件失败: ' + e.message, 'error'); }
+  finally { _wpCopyingDoc = false; }
 }
 
 async function wpLoadExistingDocs(category) {
