@@ -5479,6 +5479,11 @@ tr:hover td{background:var(--sky-light)}
     <textarea id="wpNotes"></textarea>
   </div>
 
+  <div id="wpApplicantDocs" style="display:none;margin-bottom:.75rem">
+    <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.5rem">📋 申请表已上传的证件 Documents from Application</label>
+    <div id="wpApplicantDocsList" style="display:flex;flex-wrap:wrap;gap:.5rem"></div>
+  </div>
+
   <div id="wpDocUploads" style="margin-bottom:.75rem">
     <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.5rem">📎 上传证件文件 Upload Documents (PDF / 图片)</label>
     <div id="wpUploadZones"></div>
@@ -20272,6 +20277,26 @@ async function wpDeleteDoc(docId) {
   } catch(e) { showToast('删除失败', 'error'); }
 }
 
+async function wpCopyApplicantDoc(submissionId, docId, docType, fileName) {
+  try {
+    const DOC_LABELS = { ssn_front:'SSN 正面', ssn_back:'SSN 背面', ead_front:'EAD 正面', ead_back:'EAD 背面', id_front:'证件正面', id_back:'证件背面', drivers_license:'驾照', passport:'护照', photo:'照片' };
+    const label = DOC_LABELS[docType] || docType;
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/copy-applicant-doc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submission_id: submissionId, doc_id: docId, doc_label: label })
+    });
+    if (r && r.success) {
+      showToast(`✅ 已选用「${label}」文件`);
+      // Refresh the existing docs display
+      const cat = document.getElementById('wpDocType')?.value || 'generic';
+      await wpLoadExistingDocs(cat);
+    } else {
+      showToast(r?.error || '复制文件失败', 'error');
+    }
+  } catch (e) { showToast('复制文件失败: ' + e.message, 'error'); }
+}
+
 async function wpLoadExistingDocs(category) {
   try {
     const docs = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit-docs`);
@@ -20406,6 +20431,31 @@ async function openWorkPermitModal() {
   if (!isCash) wpShowRequiredDocs(wpCategory);
   wpRenderUploadZones(wpCategory, _wpTrData);
   wpLoadExistingDocs(wpCategory);
+
+  // Load applicant docs (uploaded during application form)
+  try {
+    const applDocs = await api(`/admin/worker-accounts/${_onboardingWorkerId}/applicant-docs`);
+    const container = document.getElementById('wpApplicantDocsList');
+    const section = document.getElementById('wpApplicantDocs');
+    if (applDocs && applDocs.length) {
+      const DOC_LABELS = { ssn_front:'SSN 正面', ssn_back:'SSN 背面', ead_front:'EAD 正面', ead_back:'EAD 背面', id_front:'证件正面', id_back:'证件背面', drivers_license:'驾照', passport:'护照', photo:'照片' };
+      container.innerHTML = applDocs.map(d => {
+        const label = DOC_LABELS[d.doc_type] || d.doc_type;
+        const url = `/api/admin/applicant-submissions/${d.submission_id}/docs/${d.id}/download`;
+        return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:.5rem;background:#fafafa;text-align:center;width:130px">
+          <a href="${url}" target="_blank" style="text-decoration:none">
+            <img src="${url}" style="width:110px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;display:block;margin:0 auto .35rem" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" alt="${esc(label)}">
+            <span style="display:none;font-size:1.5rem">📄</span>
+          </a>
+          <div style="font-size:.72rem;font-weight:600;color:#374151;margin-bottom:.35rem">${esc(label)}</div>
+          <button class="btn btn-sm" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;font-size:.7rem;padding:2px 8px" onclick="wpCopyApplicantDoc(${d.submission_id},${d.id},'${esc(d.doc_type)}','${esc(d.file_name||'')}')">📥 选用此文件</button>
+        </div>`;
+      }).join('');
+      section.style.display = 'block';
+    } else {
+      section.style.display = 'none';
+    }
+  } catch(e) { document.getElementById('wpApplicantDocs').style.display = 'none'; }
 
   // Load existing work permit data — pre-fill form fields from saved record
   try {

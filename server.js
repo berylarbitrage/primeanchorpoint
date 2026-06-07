@@ -10730,11 +10730,20 @@ app.post('/api/admin/worker-accounts/:id/work-permit-docs', requireAdmin, docUpl
   res.json({ success: true, id: result.lastInsertRowid, file_name: fileName });
 });
 
-app.get('/api/admin/work-permit-docs/:docId/download', requireAdmin, (req, res) => {
+app.get('/api/admin/work-permit-docs/:docId/download', requireAdmin, async (req, res) => {
   const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
-  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
-  res.download(doc.file_path, doc.file_name || 'document');
+  const key = storage.normalizeKey(doc.file_path);
+  if (!(await storage.exists(key))) return res.status(404).json({ error: 'File missing' });
+  if (storage.isR2()) {
+    try { return res.redirect(302, await storage.getDownloadUrl(key)); }
+    catch (e) { return res.status(404).json({ error: 'Not found' }); }
+  }
+  const ext = path.extname(key).toLowerCase();
+  const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+  if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
+  try { const s = await storage.getStream(key); s.on('error', () => { try { res.status(500).end(); } catch {} }); s.pipe(res); }
+  catch (e) { res.status(404).json({ error: 'Not found' }); }
 });
 
 app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
@@ -10743,6 +10752,37 @@ app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
   if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
   db.prepare('DELETE FROM work_permit_docs WHERE id=?').run(req.params.docId);
   res.json({ success: true });
+});
+
+// Copy an applicant doc to work-permit-docs for a worker
+app.post('/api/admin/worker-accounts/:id/copy-applicant-doc', requireAdmin, async (req, res) => {
+  try {
+    const { submission_id, doc_id, doc_label } = req.body;
+    const doc = db.prepare('SELECT * FROM applicant_docs WHERE id=? AND submission_id=?').get(doc_id, submission_id);
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+    const workerId = parseInt(req.params.id);
+    const uploadedBy = (req.session && req.session.username) || 'admin';
+    const r = db.prepare('INSERT INTO work_permit_docs (worker_account_id, doc_label, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?)')
+      .run(workerId, doc_label || doc.doc_type, doc.file_path, doc.file_name, uploadedBy);
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, uploadedBy, 'work_permit_doc', '', doc_label || doc.doc_type, `从申请表复制文件: ${doc.file_name}`);
+    res.json({ success: true, id: r.lastInsertRowid, file_name: doc.file_name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Find applicant submission docs for a worker (match by phone/email through employee link)
+app.get('/api/admin/worker-accounts/:id/applicant-docs', requireAdmin, (req, res) => {
+  const w = db.prepare('SELECT employee_id, phone, email FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.json([]);
+  const emp = w.employee_id ? db.prepare('SELECT phone, email FROM employees WHERE id=?').get(w.employee_id) : null;
+  const phone = w.phone || (emp && emp.phone) || '';
+  const email = w.email || (emp && emp.email) || '';
+  if (!phone && !email) return res.json([]);
+  const subs = db.prepare('SELECT id FROM applicant_submissions WHERE phone=? OR email=? ORDER BY id DESC LIMIT 5').all(phone || '__none__', email || '__none__');
+  if (!subs.length) return res.json([]);
+  const subIds = subs.map(s => s.id);
+  const docs = db.prepare(`SELECT d.id, d.submission_id, d.doc_type, d.file_name, d.uploaded_at FROM applicant_docs d WHERE d.submission_id IN (${subIds.join(',')}) ORDER BY d.id`).all();
+  res.json(docs);
 });
 
 // Update per-doc metadata (doc_type, doc_number, issue_date, expiry_date, notes)
