@@ -161,7 +161,7 @@ tr:hover td{background:var(--sky-light)}
 .search-bar input{flex:1;min-width:200px}
 .search-bar input:focus,.search-bar select:focus{border-color:var(--sky)}
 /* ─ Employee / HR extensions ─ */
-.badge-active{background:#E8F5E9;color:var(--green)}.badge-inactive{background:#FFF3E0;color:var(--accent)}.badge-terminated{background:var(--gray-200);color:var(--gray-600)}
+.badge-active{background:#E8F5E9;color:var(--green)}.badge-onboarding{background:#FEF9C3;color:#b45309}.badge-inactive{background:#FFF3E0;color:var(--accent)}.badge-terminated{background:var(--gray-200);color:var(--gray-600)}
 .badge-hourly{background:#E8F0FE;color:var(--sky)}.badge-salary{background:#F3E8FF;color:#7C3AED}
 .badge-open{background:#FFF3E0;color:var(--accent)}.badge-closed{background:#E8F5E9;color:var(--green)}
 .badge-ordered{background:#E8F0FE;color:var(--sky)}.badge-in_progress{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-failed{background:#FFEAEA;color:var(--red)}
@@ -1244,6 +1244,7 @@ tr:hover td{background:var(--sky-light)}
     <select id="empStatusFilter" onchange="filterEmployees()">
       <option value="">全部状态</option>
       <option value="active">在职</option>
+      <option value="onboarding">待入职</option>
       <option value="inactive">停职</option>
       <option value="terminated">已离职</option>
     </select>
@@ -7205,7 +7206,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="field-row">
       <div class="field"><label>入职日期</label><input id="eHire" type="date"></div>
       <div class="field"><label>状态</label><select id="eStatus">
-        <option value="active">在职</option><option value="inactive">停职</option><option value="terminated">已离职</option>
+        <option value="active">在职</option><option value="onboarding">待入职</option><option value="inactive">停职</option><option value="terminated">已离职</option>
       </select></div>
     </div>
     <div style="margin-top:.75rem">
@@ -13307,7 +13308,7 @@ async function runBackupNow() {
 let allEmployees = [];
 let currentEmpForDetail = null;
 
-const EMP_STATUS_LABEL = { active:'在职', inactive:'停职', terminated:'已离职' };
+const EMP_STATUS_LABEL = { active:'在职', onboarding:'待入职', inactive:'停职', terminated:'已离职' };
 const PAY_TYPE_LABEL   = { hourly:'小时工', salary:'固定薪资' };
 
 async function loadEmployees() {
@@ -13757,8 +13758,7 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
-let _convertFromApplicantId = null;
-function closeEmpModal() { _convertFromWorkerId = null; _convertFromApplicantId = null; _pendingWorkerLink = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); guardClose('empModal'); }
+function closeEmpModal() { _convertFromWorkerId = null; _pendingWorkerLink = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); guardClose('empModal'); }
 
 // ── Address verify helpers ──
 function _setAddrStatus(el, verified) {
@@ -14341,21 +14341,12 @@ async function saveEmployee() {
       const workerLink = (_pendingWorkerLink && id && String(id) === String(_pendingWorkerLink.empId))
         ? { ..._pendingWorkerLink } : null;
       const workerLinkNew = (!id && _convertFromWorkerId && r2.id) ? _convertFromWorkerId : null;
-      const applicantToHire = (!id && _convertFromApplicantId && r2.id) ? _convertFromApplicantId : null;
       clearModalState('empModal');
       closeEmpModal();
       await loadEmployees();
-      if (applicantToHire) {
-        try {
-          await api(`/admin/applicant-submissions/${applicantToHire}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ status: 'hired' })
-          });
-          // Reflect locally so the inbox shows it under "history" without a refetch.
-          const s = (_inboxSubmissions || []).find(x => x.id === applicantToHire);
-          if (s) s.status = 'hired';
-        } catch (_) {}
-      }
+      // Note: the applicant inbox now derives its stage from the matched
+      // employee's status (待入职 → stays in inbox, 在职 → History), so there's
+      // nothing to flag on the submission itself here.
       // If this was a "convert worker → new employee" action, link the account
       if (workerLinkNew && r2.id) {
         await api(`/admin/worker-accounts/${workerLinkNew}`, {
@@ -33357,9 +33348,11 @@ async function regenerateApplyQr() {
 }
 
 // ── Applicant submissions inbox ──
-// `_inboxTab` is 'active' (status != 'hired') or 'history' (status == 'hired').
-// We fetch every submission once and re-render locally when switching tabs so
-// that marking an applicant as hired moves the card across without a refetch.
+// `_inboxTab` is 'active' (待处理) or 'history'. Each applicant's stage is derived
+// from the matched employee档案 (see applicantStage): no employee → "创建员工"
+// button; employee 待入职 → button hidden but card stays in 待处理; employee 在职
+// → card moves to the History tab. We fetch submissions + docs once and re-render
+// locally when switching tabs.
 let _inboxPartnerId = null, _inboxPartnerName = '', _inboxSubmissions = [], _inboxTab = 'active';
 async function openApplicantInbox(partnerId, partnerName) {
   _inboxPartnerId = partnerId;
@@ -33375,11 +33368,10 @@ async function openApplicantInbox(partnerId, partnerName) {
   try {
     const rows = await api('/admin/applicant-submissions?partner_id=' + encodeURIComponent(partnerId));
     const list = Array.isArray(rows) ? rows : [];
-    // Need the employee roster to detect applicants who already have a档案
-    // (so their "创建员工" button is hidden even if they weren't hired via this flow).
-    if (!Array.isArray(allEmployees) || !allEmployees.length) {
-      try { allEmployees = await api('/admin/employees'); } catch (_) {}
-    }
+    // Refresh the employee roster so we can tell, per applicant, whether a档案
+    // already exists and whether that employee is 在职 (→ History) or still 待入职
+    // (→ stays in the inbox, just without the "创建员工" button).
+    try { const emps = await api('/admin/employees'); if (Array.isArray(emps)) allEmployees = emps; } catch (_) {}
     // Prefetch docs once so tab switches don't refetch.
     await Promise.all(list.map(async s => {
       try { s._docs = await api(`/admin/applicant-submissions/${s.id}/docs`); }
@@ -33406,20 +33398,18 @@ function switchApplicantInboxTab(tab) {
   _applyInboxTabStyles();
   renderApplicantInbox();
 }
-// True once an employee档案 exists for this applicant — either it was marked
-// 'hired' through the create flow, or an employee already matches by phone/email
-// (covers archives created before this feature, or via a different path).
+// Find the employee档案 that belongs to this applicant (match by phone/email).
+// Returns the employee object, or null if none has been created yet.
 function _normPhoneForMatch(p) {
   const d = String(p || '').replace(/\D/g, '');
   return d.length > 10 ? d.slice(-10) : d; // compare last 10 digits, ignore country code
 }
-function applicantHasEmployee(s) {
-  if (s.status === 'hired') return true;
+function matchEmployeeForApplicant(s) {
   const aPhone = _normPhoneForMatch(s.phone);
   const aEmail = String(s.email || '').trim().toLowerCase();
-  if (!aPhone && !aEmail) return false;
+  if (!aPhone && !aEmail) return null;
   const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
-  return (allEmployees || []).some(e => {
+  return (allEmployees || []).find(e => {
     if (aEmail) {
       if (String(e.email || '').trim().toLowerCase() === aEmail) return true;
       if (parseArr(e.extra_emails).some(em => String(em || '').trim().toLowerCase() === aEmail)) return true;
@@ -33429,18 +33419,27 @@ function applicantHasEmployee(s) {
       if (parseArr(e.extra_phones).some(p => _normPhoneForMatch(p) === aPhone)) return true;
     }
     return false;
-  });
+  }) || null;
+}
+// Three states per applicant:
+//   'new'     — no employee档案 yet → show "创建员工" button (待处理)
+//   'created' — employee exists but not yet 在职 → button hidden, stays 待处理
+//   'history' — employee is 在职(已入职) → moves to History tab
+function applicantStage(s) {
+  const emp = matchEmployeeForApplicant(s);
+  if (!emp) return 'new';
+  return emp.status === 'active' ? 'history' : 'created';
 }
 function renderApplicantInbox() {
   const body = document.getElementById('applyInboxBody');
   const all = _inboxSubmissions || [];
-  const active = all.filter(s => !applicantHasEmployee(s));
-  const history = all.filter(s => applicantHasEmployee(s));
+  const active = all.filter(s => applicantStage(s) !== 'history');
+  const history = all.filter(s => applicantStage(s) === 'history');
   document.getElementById('applyInboxCountActive').textContent = active.length ? `(${active.length})` : '';
   document.getElementById('applyInboxCountHistory').textContent = history.length ? `(${history.length})` : '';
   const shown = _inboxTab === 'history' ? history : active;
   document.getElementById('applyInboxCount').textContent = shown.length
-    ? `共 ${shown.length} 份${_inboxTab === 'history' ? '（已创建员工）' : ''}`
+    ? `共 ${shown.length} 份${_inboxTab === 'history' ? '（已入职）' : ''}`
     : '';
   if (!shown.length) {
     body.innerHTML = `<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">${_inboxTab === 'history' ? '🗂️ 暂无历史' : '📭 暂无申请'}</div>`;
@@ -33473,16 +33472,18 @@ function renderApplicantInbox() {
     const vBadge = ok => ok
       ? '<span style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#15803d;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">✓ 已验证</span>'
       : '<span style="background:#fef9c3;color:#a16207;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">未验证</span>';
-    const isHired = applicantHasEmployee(s);
+    const stage = applicantStage(s);
     const del = USER_ROLE === 'admin'
       ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id})">删除</button>`
       : '';
-    const mkEmp = isHired
-      ? '<span style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600">✓ 已创建员工</span>'
-      : ((USER_ROLE === 'admin' || USER_ROLE === 'staff')
+    const mkEmp = stage === 'history'
+      ? '<span style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600">✓ 已入职</span>'
+      : stage === 'created'
+        ? '<span style="padding:.2rem .55rem;font-size:.72rem;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:6px;font-weight:600">✓ 已创建 · 待入职</span>'
+        : ((USER_ROLE === 'admin' || USER_ROLE === 'staff')
           ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0" onclick="createEmployeeFromApplicant(${s.id})">➕ 创建员工</button>`
           : '');
-    return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:${isHired ? '#fafafa' : '#fff'};box-shadow:0 1px 2px rgba(15,23,42,.04)">
+    return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:${stage === 'history' ? '#fafafa' : '#fff'};box-shadow:0 1px 2px rgba(15,23,42,.04)">
       <div style="display:flex;align-items:flex-start;gap:.7rem">
         <div style="flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#4A90D9,#1A3F7A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.05rem">${initial}</div>
         <div style="flex:1;min-width:0">
@@ -33537,7 +33538,6 @@ async function createEmployeeFromApplicant(id) {
   if (!s) { adminAlert('找不到该申请记录', '提示'); return; }
   closeApplicantInbox();
   openEmpModal(); // new-employee mode: clears fields + sets sensible defaults
-  _convertFromApplicantId = id; // remember so saveEmployee can mark the applicant hired
   renderApplicantDocPanel(id); // fetch + show the uploaded ID photos for reference
   // Split the full name → first / middle-less last (first token is given name).
   const parts = String(s.name || '').trim().split(/\s+/).filter(Boolean);
@@ -33552,6 +33552,10 @@ async function createEmployeeFromApplicant(id) {
   document.getElementById('eCity').value = s.city || '';
   fillStateSelect(document.getElementById('eState'), s.state || '');
   document.getElementById('eZip').value = s.zip || '';
+  // Start as 待入职 (pending onboarding) — the applicant card stays in the inbox
+  // (just without the "创建员工" button) until the admin finishes everything and
+  // flips the employee to 在职, which moves the card to the History tab.
+  document.getElementById('eStatus').value = 'onboarding';
   // Position isn't a plain field (it lives in Job Records), so keep it as a note.
   if (s.position) {
     const notes = document.getElementById('eNotes');
