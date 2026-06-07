@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Worker Documents</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a;-webkit-text-size-adjust:100%}
+  .top{background:#0F2B5B;color:#fff;padding:.9rem 1.1rem .75rem;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .top-row{display:flex;align-items:flex-start;gap:.5rem}
+  .top h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.02em;flex:1}
+  .top .sub{margin-top:.2rem;font-size:.84rem;opacity:.92}
+  .lang{display:flex;gap:.25rem;background:rgba(255,255,255,.15);border-radius:999px;padding:.15rem;flex-shrink:0}
+  .lang button{background:transparent;color:#fff;border:none;padding:.25rem .55rem;border-radius:999px;font-size:.78rem;font-weight:600;cursor:pointer;opacity:.7}
+  .lang button.active{background:#fff;color:#0F2B5B;opacity:1}
+  .wrap{padding:1rem 1rem 6rem 1rem;max-width:520px;margin:0 auto}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.95rem;margin-bottom:.85rem;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card h2{margin:0 0 .7rem;font-size:.98rem;color:#0F2B5B}
+  label{display:block;font-size:.82rem;font-weight:600;color:#475569;margin:.55rem 0 .35rem}
+  label:first-child{margin-top:0}
+  .hint{font-size:.74rem;color:#94a3b8;margin-top:.25rem}
+  input[type=text],input[type=tel]{width:100%;padding:.65rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none;-webkit-appearance:none}
+  input:focus{border-color:#2E5BA0;box-shadow:0 0 0 3px rgba(46,91,160,.15)}
+  input:disabled{background:#f1f5f9;color:#64748b}
+  .verify-row{display:flex;gap:.5rem;align-items:stretch}
+  .verify-row input{flex:1}
+  .btn-code{flex:0 0 auto;padding:.5rem .8rem;background:#2E5BA0;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap}
+  .btn-code:disabled{background:#94a3b8;cursor:default}
+  .otp-box{display:none;margin-top:.5rem}
+  .otp-box.show{display:block}
+  .verified-tag{display:none;color:#15803d;font-size:.8rem;font-weight:700;margin-top:.3rem}
+  .verified-tag.show{display:block}
+  .doc-cap{font-size:.84rem;font-weight:700;color:#334155;margin-bottom:.3rem;display:block}
+  .req{color:#dc2626}
+  .opt{color:#94a3b8;font-weight:400}
+  .btn-submit{display:block;width:100%;padding:1rem;background:#0F2B5B;color:#fff;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;letter-spacing:.03em;margin-top:.4rem;box-shadow:0 4px 12px rgba(15,43,91,.3)}
+  .btn-submit:disabled{background:#94a3b8;box-shadow:none}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:.65rem .8rem;border-radius:8px;font-size:.88rem;margin-bottom:.85rem}
+  .msg{font-size:.8rem;margin-top:.3rem;min-height:1em}
+  .msg.ok{color:#15803d}
+  .msg.bad{color:#dc2626}
+  .privacy{font-size:.74rem;color:#94a3b8;text-align:center;margin-top:.5rem;line-height:1.5}
+  .ok-state{text-align:center;padding:2.5rem 1rem}
+  .ok-state .check{display:inline-flex;align-items:center;justify-content:center;width:76px;height:76px;background:#dcfce7;color:#15803d;border-radius:50%;font-size:2.4rem;margin-bottom:.8rem}
+  .ok-state h2{margin:.2rem 0;color:#15803d}
+  .ok-state .meta{color:#475569;margin:.4rem 0 1.5rem;font-size:.92rem}
+
+  /* Multi-image grid */
+  .img-grid{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.35rem}
+  .img-grid .thumb{position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;background:#000;flex-shrink:0}
+  .img-grid .thumb img{width:100%;height:100%;object-fit:cover}
+  .img-grid .thumb .del{position:absolute;top:2px;right:2px;background:rgba(15,23,42,.8);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .img-grid .thumb .pg{position:absolute;bottom:2px;left:2px;background:rgba(15,23,42,.7);color:#fff;font-size:.6rem;padding:1px 5px;border-radius:4px}
+  .add-btn{width:80px;height:80px;border:2px dashed #4A90D9;border-radius:8px;background:#f0f7ff;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:#1A3F7A;font-size:.7rem;font-weight:600;flex-shrink:0}
+  .add-btn:active{background:#e0efff}
+  .add-btn .plus{font-size:1.4rem;line-height:1}
+
+  /* Scan adjustment modal */
+  .scan-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:100;flex-direction:column}
+  .scan-modal.show{display:flex}
+  .scan-preview{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:.5rem}
+  .scan-preview canvas{max-width:100%;max-height:100%;border-radius:4px;background:#222}
+  .scan-bar{display:flex;align-items:center;justify-content:center;gap:1rem;padding:.8rem 1rem;background:#111}
+  .scan-bar button{background:#333;color:#fff;border:none;border-radius:10px;padding:.7rem 1.2rem;font-size:.9rem;font-weight:600;cursor:pointer;min-width:60px}
+  .scan-bar button.primary{background:#2E5BA0}
+  .scan-bar button.danger{background:#991b1b}
+
+  /* Payment radio */
+  .pay-choice{display:flex;gap:.5rem;margin-bottom:.7rem}
+  .pay-choice label{flex:1;display:flex;align-items:center;gap:.4rem;background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;padding:.7rem .65rem;margin:0;cursor:pointer;font-size:.82rem;font-weight:600;color:#334155;transition:border-color .15s,background .15s}
+  .pay-choice input{display:none}
+  .pay-choice input:checked+label{border-color:#2E5BA0;background:#eff6ff;color:#1A3F7A}
+  .pay-slots{display:none}
+  .pay-slots.show{display:block}
+  .pay-slot{margin-bottom:.65rem}
+  .pay-slot:last-child{margin-bottom:0}
+  .pay-slot{margin-bottom:.65rem}
+  .pay-slot:last-child{margin-bottom:0}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="top-row">
+    <div style="flex:1">
+      <h1 id="t-title">📎 Documentos del trabajador</h1>
+      <div class="sub" id="t-sub">Prime Anchor Workforce</div>
+    </div>
+    <div class="lang" role="tablist" aria-label="Language">
+      <button type="button" data-lang="es" onclick="setLang('es')">ES</button>
+      <button type="button" data-lang="en" onclick="setLang('en')">EN</button>
+      <button type="button" data-lang="zh" onclick="setLang('zh')">中</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="wrap">
+  <div id="errBox" class="err" style="display:none"></div>
+
+  <div id="formMain" style="display:none">
+    <!-- Phone verify -->
+    <div class="card">
+      <h2 id="t-secPhone">① Teléfono</h2>
+      <label id="t-lName">Nombre <span class="opt">(opcional)</span></label>
+      <input type="text" id="fName" autocomplete="name">
+      <label id="t-lPhone">Teléfono móvil <span class="req">*</span></label>
+      <div class="verify-row">
+        <input type="tel" id="fPhone" autocomplete="tel" inputmode="tel" placeholder="(555) 555-5555">
+        <button type="button" class="btn-code" id="phoneSendBtn" onclick="sendCode()">Enviar código</button>
+      </div>
+      <div class="otp-box" id="phoneOtpBox">
+        <div class="verify-row" style="margin-top:.5rem">
+          <input type="tel" id="fPhoneCode" inputmode="numeric" autocomplete="one-time-code" placeholder="••••••" maxlength="8">
+          <button type="button" class="btn-code" id="phoneCheckBtn" onclick="checkCode()">Verificar</button>
+        </div>
+      </div>
+      <div class="msg" id="phoneMsg"></div>
+      <div class="verified-tag" id="phoneVerified">✓ <span id="t-verified">Verificado</span></div>
+    </div>
+
+    <!-- Required documents: W9 + Contract (multi-image with scan adjust) -->
+    <div class="card">
+      <h2 id="t-secReq">② Documentos requeridos</h2>
+
+      <div class="doc-section" data-multi="w9">
+        <span class="doc-cap" id="t-w9">W-9 <span class="req">*</span></span>
+        <div class="img-grid" id="w9_grid">
+          <div class="add-btn" onclick="captureMulti('w9','cam')">
+            <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+          </div>
+          <div class="add-btn" onclick="captureMulti('w9','file')">
+            <span class="plus">📎</span><span class="t-gal">Archivo</span>
+          </div>
+        </div>
+        <input type="file" id="w9_cam_inp" accept="image/*" capture="environment" style="display:none">
+        <input type="file" id="w9_file_inp" accept="image/*,application/pdf" style="display:none">
+      </div>
+
+      <div class="doc-section" data-multi="contract" style="margin-top:.85rem">
+        <span class="doc-cap" id="t-contract">Contract / 合同 <span class="req">*</span></span>
+        <div class="img-grid" id="contract_grid">
+          <div class="add-btn" onclick="captureMulti('contract','cam')">
+            <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+          </div>
+          <div class="add-btn" onclick="captureMulti('contract','file')">
+            <span class="plus">📎</span><span class="t-gal">Archivo</span>
+          </div>
+        </div>
+        <input type="file" id="contract_cam_inp" accept="image/*" capture="environment" style="display:none">
+        <input type="file" id="contract_file_inp" accept="image/*,application/pdf" style="display:none">
+      </div>
+    </div>
+
+    <!-- Payment method -->
+    <div class="card">
+      <h2 id="t-secPay">③ Método de pago</h2>
+      <div class="hint" id="t-payHint" style="margin-bottom:.6rem">Selecciona tu método y sube la información (opcional).</div>
+
+      <div class="pay-choice">
+        <input type="radio" name="payType" id="payTypeSelf" value="self" onchange="togglePaySlots()">
+        <label for="payTypeSelf" id="t-paySelfLbl">💰 自己收款</label>
+        <input type="radio" name="payType" id="payTypeOther" value="other" onchange="togglePaySlots()">
+        <label for="payTypeOther" id="t-payOtherLbl">🤝 别人代收</label>
+      </div>
+
+      <div class="pay-slots" id="paySelfSlots">
+        <div class="doc-section" data-multi="pay_self_1">
+          <span class="doc-cap" id="t-paySelf1">信息 1 / Info 1</span>
+          <div class="img-grid" id="pay_self_1_grid">
+            <div class="add-btn" onclick="captureMulti('pay_self_1','cam')">
+              <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+            </div>
+            <div class="add-btn" onclick="captureMulti('pay_self_1','file')">
+              <span class="plus">📎</span><span class="t-gal">Archivo</span>
+            </div>
+          </div>
+          <input type="file" id="pay_self_1_cam_inp" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="pay_self_1_file_inp" accept="image/*,application/pdf" style="display:none">
+        </div>
+        <div class="doc-section" data-multi="pay_self_2" style="margin-top:.65rem">
+          <span class="doc-cap" id="t-paySelf2">信息 2 / Info 2</span>
+          <div class="img-grid" id="pay_self_2_grid">
+            <div class="add-btn" onclick="captureMulti('pay_self_2','cam')">
+              <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+            </div>
+            <div class="add-btn" onclick="captureMulti('pay_self_2','file')">
+              <span class="plus">📎</span><span class="t-gal">Archivo</span>
+            </div>
+          </div>
+          <input type="file" id="pay_self_2_cam_inp" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="pay_self_2_file_inp" accept="image/*,application/pdf" style="display:none">
+        </div>
+      </div>
+
+      <div class="pay-slots" id="payOtherSlots">
+        <div class="doc-section" data-multi="pay_other_1">
+          <span class="doc-cap" id="t-payOther1">信息 1 / Info 1</span>
+          <div class="img-grid" id="pay_other_1_grid">
+            <div class="add-btn" onclick="captureMulti('pay_other_1','cam')">
+              <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+            </div>
+            <div class="add-btn" onclick="captureMulti('pay_other_1','file')">
+              <span class="plus">📎</span><span class="t-gal">Archivo</span>
+            </div>
+          </div>
+          <input type="file" id="pay_other_1_cam_inp" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="pay_other_1_file_inp" accept="image/*,application/pdf" style="display:none">
+        </div>
+        <div class="doc-section" data-multi="pay_other_2" style="margin-top:.65rem">
+          <span class="doc-cap" id="t-payOther2">信息 2 / Info 2</span>
+          <div class="img-grid" id="pay_other_2_grid">
+            <div class="add-btn" onclick="captureMulti('pay_other_2','cam')">
+              <span class="plus">📷</span><span class="t-cam">Tomar foto</span>
+            </div>
+            <div class="add-btn" onclick="captureMulti('pay_other_2','file')">
+              <span class="plus">📎</span><span class="t-gal">Archivo</span>
+            </div>
+          </div>
+          <input type="file" id="pay_other_2_cam_inp" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="pay_other_2_file_inp" accept="image/*,application/pdf" style="display:none">
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-submit" id="submitBtn" onclick="submitForm()">✓ <span id="t-submitBtn">Enviar</span></button>
+    <div class="privacy" id="t-privacy">Tus documentos se transmiten de forma segura y solo los usa el equipo de RR. HH.</div>
+  </div>
+
+  <div id="okState" class="ok-state" style="display:none">
+    <div class="check">✓</div>
+    <h2 id="t-okTitle">¡Enviado!</h2>
+    <div class="meta" id="t-okMsg">Gracias. Hemos recibido tus documentos.</div>
+  </div>
+</div>
+
+<!-- Scan adjustment modal -->
+<div class="scan-modal" id="scanModal">
+  <div class="scan-preview"><canvas id="scanCanvas"></canvas></div>
+  <div class="scan-bar">
+    <button type="button" onclick="scanRotate(-90)">↺</button>
+    <button type="button" onclick="scanRotate(90)">↻</button>
+    <button type="button" class="danger" onclick="scanCancel()" id="scanCancelBtn">✕</button>
+    <button type="button" class="primary" onclick="scanConfirm()" id="scanConfirmBtn">✓</button>
+  </div>
+</div>
+
+<script>
+// ── i18n ──
+const I18N = {
+  es: {
+    title: '📎 Documentos del trabajador', sub: 'Prime Anchor Workforce',
+    secPhone: '① Teléfono', secReq: '② Documentos requeridos', secPay: '③ Método de pago',
+    lName: 'Nombre', lPhone: 'Teléfono móvil', optional: '(opcional)',
+    sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
+    w9: 'W-9', contract: 'Contract / 合同',
+    payHint: 'Selecciona tu método y sube la información (opcional).',
+    paySelf: '💰 Cobro propio', payOther: '🤝 Cobro por tercero',
+    paySelf1: 'Info 1', paySelf2: 'Info 2', payOther1: 'Info 1', payOther2: 'Info 2',
+    cam: 'Tomar foto', gal: 'Archivo',
+    scanRetake: 'Descartar', scanConfirm: 'Confirmar',
+    submitBtn: 'Enviar', submitting: 'Enviando…',
+    okTitle: '¡Enviado!', okMsg: 'Gracias. Hemos recibido tus documentos.',
+    privacy: 'Tus documentos se transmiten de forma segura y solo los usa el equipo de RR. HH.',
+    codeSent: 'Código enviado. Revisa tus mensajes.',
+    errNoToken: 'Escanea el código QR oficial para acceder a esta página.', invalid: 'Enlace inválido o expirado',
+    errPhone: 'Verifica tu teléfono primero.', errDocs: 'Sube W-9 y Contract (al menos 1 imagen cada uno).',
+    errSubmit: 'Error al enviar: ',
+  },
+  en: {
+    title: '📎 Worker Documents', sub: 'Prime Anchor Workforce',
+    secPhone: '① Phone', secReq: '② Required documents', secPay: '③ Payment method',
+    lName: 'Name', lPhone: 'Mobile phone', optional: '(optional)',
+    sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
+    w9: 'W-9', contract: 'Contract / 合同',
+    payHint: 'Select your method and upload info (optional).',
+    paySelf: '💰 Self-receive', payOther: '🤝 Someone else receives',
+    paySelf1: 'Info 1', paySelf2: 'Info 2', payOther1: 'Info 1', payOther2: 'Info 2',
+    cam: 'Take photo', gal: 'File',
+    scanRetake: 'Discard', scanConfirm: 'Confirm',
+    submitBtn: 'Submit', submitting: 'Submitting…',
+    okTitle: 'Submitted!', okMsg: 'Thank you. We have received your documents.',
+    privacy: 'Your documents are transmitted securely and used only by the HR team.',
+    codeSent: 'Code sent. Check your messages.',
+    errNoToken: 'Please scan the official QR code to access this page.', invalid: 'Link invalid or expired',
+    errPhone: 'Please verify your phone first.', errDocs: 'Please upload W-9 and Contract (at least 1 image each).',
+    errSubmit: 'Submit failed: ',
+  },
+  zh: {
+    title: '📎 员工文件上传', sub: 'Prime Anchor Workforce',
+    secPhone: '① 手机号', secReq: '② 必填文件', secPay: '③ 付款方式',
+    lName: '姓名', lPhone: '手机号', optional: '（选填）',
+    sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
+    w9: 'W-9', contract: 'Contract / 合同',
+    payHint: '选择收款方式并上传相关信息（选填）。',
+    paySelf: '💰 自己收款', payOther: '🤝 别人代收',
+    paySelf1: '信息 1', paySelf2: '信息 2', payOther1: '信息 1', payOther2: '信息 2',
+    cam: '拍照', gal: '选文件',
+    scanRetake: '丢弃', scanConfirm: '确认',
+    submitBtn: '提交', submitting: '提交中…',
+    okTitle: '提交成功', okMsg: '谢谢！我们已收到您的文件。',
+    privacy: '您的文件通过安全通道传输，仅供人力资源团队使用。',
+    codeSent: '验证码已发送，请查收。',
+    errNoToken: '请通过专属二维码访问此页面。', invalid: '链接无效或已失效',
+    errPhone: '请先完成手机验证。', errDocs: '请上传 W-9 和 Contract（每项至少1张图片）。',
+    errSubmit: '提交失败：',
+  },
+};
+
+function pickInitialLang() {
+  const stored = localStorage.getItem('wdoc_lang');
+  if (stored && I18N[stored]) return stored;
+  const nav = (navigator.language || navigator.userLanguage || '').toLowerCase();
+  if (nav.startsWith('zh')) return 'zh';
+  if (nav.startsWith('en')) return 'en';
+  return 'es';
+}
+let _lang = pickInitialLang();
+function txt(id, key) { const el = document.getElementById(id); if (el) el.textContent = I18N[_lang][key]; }
+function applyLang() {
+  const L = I18N[_lang];
+  document.documentElement.lang = _lang;
+  document.title = L.title;
+  txt('t-title', 'title'); txt('t-sub', 'sub');
+  txt('t-secPhone', 'secPhone'); txt('t-secReq', 'secReq'); txt('t-secPay', 'secPay');
+  txt('t-verified', 'verified'); txt('t-payHint', 'payHint');
+  txt('t-submitBtn', 'submitBtn'); txt('t-okTitle', 'okTitle'); txt('t-okMsg', 'okMsg'); txt('t-privacy', 'privacy');
+  document.getElementById('t-lName').innerHTML = L.lName + ' <span class="opt">' + L.optional + '</span>';
+  document.getElementById('t-lPhone').innerHTML = L.lPhone + ' <span class="req">*</span>';
+  document.getElementById('t-w9').innerHTML = L.w9 + ' <span class="req">*</span>';
+  document.getElementById('t-contract').innerHTML = L.contract + ' <span class="req">*</span>';
+  document.getElementById('t-paySelfLbl').innerHTML = L.paySelf;
+  document.getElementById('t-payOtherLbl').innerHTML = L.payOther;
+  txt('t-paySelf1', 'paySelf1'); txt('t-paySelf2', 'paySelf2');
+  txt('t-payOther1', 'payOther1'); txt('t-payOther2', 'payOther2');
+  document.querySelectorAll('.t-cam').forEach(el => { el.textContent = L.cam; });
+  document.querySelectorAll('.t-gal').forEach(el => { el.textContent = L.gal; });
+  document.getElementById('scanCancelBtn').textContent = L.scanRetake || '✕';
+  document.getElementById('scanConfirmBtn').textContent = L.scanConfirm || '✓';
+  const sb = document.getElementById('phoneSendBtn');
+  if (sb && !_verified) sb.textContent = _otpSent ? L.resend : L.sendCode;
+  document.getElementById('phoneCheckBtn').textContent = L.verify;
+  document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b.dataset.lang === _lang));
+}
+function setLang(lang) { if (!I18N[lang]) return; _lang = lang; localStorage.setItem('wdoc_lang', lang); applyLang(); }
+
+// ── token ──
+const params = new URLSearchParams(location.search);
+const _pathMatch = location.pathname.match(/^\/wd\/([a-f0-9A-F]{16,})/);
+const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
+
+// ── state ──
+const ALL_MULTI = ['w9', 'contract', 'pay_self_1', 'pay_self_2', 'pay_other_1', 'pay_other_2'];
+const _multiFiles = {};
+ALL_MULTI.forEach(k => { _multiFiles[k] = []; });
+let _verified = false, _otpSent = false, _verifiedTarget = '';
+
+// Scan adjustment state
+let _scan = { docType: null, img: null, rotation: 0, blob: null };
+
+function showErr(msg) { const b = document.getElementById('errBox'); b.textContent = msg; b.style.display = ''; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+function setMsg(text, ok) { const m = document.getElementById('phoneMsg'); m.textContent = text || ''; m.className = 'msg' + (text ? (ok ? ' ok' : ' bad') : ''); }
+
+async function init() {
+  applyLang();
+  if (!TOKEN) { showErr(I18N[_lang].errNoToken); return; }
+  try {
+    const r = await fetch('/api/worker-docs/info?t=' + encodeURIComponent(TOKEN));
+    if (!r.ok) { const j = await r.json().catch(() => ({})); showErr(j.error || I18N[_lang].invalid); return; }
+    document.getElementById('formMain').style.display = '';
+  } catch (e) { showErr('Error: ' + (e.message || e)); }
+}
+init();
+
+// ── OTP ──
+async function sendCode() {
+  const L = I18N[_lang];
+  const target = document.getElementById('fPhone').value;
+  if (!String(target || '').trim()) { setMsg(L.errPhone, false); return; }
+  const btn = document.getElementById('phoneSendBtn');
+  btn.disabled = true;
+  setMsg('…', true);
+  try {
+    const r = await fetch('/api/worker-docs/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: TOKEN, phone: target }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      document.getElementById('phoneOtpBox').classList.add('show');
+      setMsg(j.error || 'Error', false);
+      btn.disabled = false;
+      return;
+    }
+    _otpSent = true;
+    document.getElementById('phoneOtpBox').classList.add('show');
+    setMsg(L.codeSent, true);
+    btn.textContent = L.resend;
+    let n = 30;
+    const tick = () => { if (n > 0 && !_verified) { btn.textContent = L.resend + ' (' + n + ')'; n--; setTimeout(tick, 1000); } else if (!_verified) { btn.textContent = L.resend; btn.disabled = false; } };
+    tick();
+  } catch (e) { setMsg('Error: ' + (e.message || e), false); btn.disabled = false; }
+}
+
+async function checkCode() {
+  const L = I18N[_lang];
+  const code = document.getElementById('fPhoneCode').value.trim();
+  const target = document.getElementById('fPhone').value;
+  if (!code) { setMsg(L.verify, false); return; }
+  const btn = document.getElementById('phoneCheckBtn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/worker-docs/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: TOKEN, phone: target, code }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.verified) { setMsg(j.error || 'Error', false); btn.disabled = false; return; }
+    _verified = true;
+    _verifiedTarget = target;
+    setMsg('', true);
+    document.getElementById('phoneVerified').classList.add('show');
+    document.getElementById('phoneOtpBox').classList.remove('show');
+    document.getElementById('fPhone').disabled = true;
+    document.getElementById('phoneSendBtn').style.display = 'none';
+  } catch (e) { setMsg('Error: ' + (e.message || e), false); btn.disabled = false; }
+}
+
+document.getElementById('fPhone').addEventListener('input', () => {
+  if (_verified && document.getElementById('fPhone').value !== _verifiedTarget) {
+    _verified = false;
+    document.getElementById('phoneVerified').classList.remove('show');
+    document.getElementById('phoneSendBtn').style.display = '';
+  }
+});
+
+// ── Multi-image capture for W9 / Contract ──
+function captureMulti(docType, mode) {
+  const inp = document.getElementById(docType + '_' + mode + '_inp');
+  if (inp) inp.click();
+}
+
+ALL_MULTI.forEach(docType => {
+  ['cam', 'file'].forEach(mode => {
+    const inp = document.getElementById(docType + '_' + mode + '_inp');
+    if (!inp) return;
+    inp.addEventListener('change', e => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      inp.value = '';
+      const isPdf = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name || '');
+      if (isPdf) {
+        _multiFiles[docType].push({ file: f, thumb: null, isPdf: true, name: f.name });
+        renderMultiGrid(docType);
+      } else {
+        openScanModal(docType, f);
+      }
+    });
+  });
+});
+
+function openScanModal(docType, file) {
+  _scan.docType = docType;
+  _scan.rotation = 0;
+  _scan.blob = null;
+  const img = new Image();
+  img.onload = () => {
+    _scan.img = img;
+    drawScanCanvas();
+    document.getElementById('scanModal').classList.add('show');
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function drawScanCanvas() {
+  const canvas = document.getElementById('scanCanvas');
+  const ctx = canvas.getContext('2d');
+  const img = _scan.img;
+  const rot = _scan.rotation % 360;
+  const swap = (rot === 90 || rot === 270 || rot === -90 || rot === -270);
+  const w = swap ? img.naturalHeight : img.naturalWidth;
+  const h = swap ? img.naturalWidth : img.naturalHeight;
+  const maxW = window.innerWidth - 20;
+  const maxH = window.innerHeight - 120;
+  const scale = Math.min(1, maxW / w, maxH / h);
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((rot * Math.PI) / 180);
+  const dw = swap ? canvas.height : canvas.width;
+  const dh = swap ? canvas.width : canvas.height;
+  ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+  ctx.restore();
+}
+
+function scanRotate(deg) {
+  _scan.rotation = (_scan.rotation + deg + 360) % 360;
+  drawScanCanvas();
+}
+
+function scanCancel() {
+  document.getElementById('scanModal').classList.remove('show');
+  _scan.img = null;
+}
+
+function scanConfirm() {
+  const canvas = document.getElementById('scanCanvas');
+  // Render at full resolution
+  const img = _scan.img;
+  const rot = _scan.rotation % 360;
+  const swap = (rot === 90 || rot === 270);
+  const w = swap ? img.naturalHeight : img.naturalWidth;
+  const h = swap ? img.naturalWidth : img.naturalHeight;
+  const full = document.createElement('canvas');
+  full.width = w; full.height = h;
+  const fctx = full.getContext('2d');
+  fctx.translate(w / 2, h / 2);
+  fctx.rotate((rot * Math.PI) / 180);
+  const dw = swap ? h : w;
+  const dh = swap ? w : h;
+  fctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+  full.toBlob(blob => {
+    if (!blob) return;
+    const thumbUrl = canvas.toDataURL('image/jpeg', 0.5);
+    const file = new File([blob], 'scan-' + Date.now() + '.jpg', { type: 'image/jpeg' });
+    _multiFiles[_scan.docType].push({ file, thumb: thumbUrl, isPdf: false });
+    renderMultiGrid(_scan.docType);
+    document.getElementById('scanModal').classList.remove('show');
+    _scan.img = null;
+  }, 'image/jpeg', 0.92);
+}
+
+function renderMultiGrid(docType) {
+  const grid = document.getElementById(docType + '_grid');
+  const items = _multiFiles[docType];
+  // Remove old thumbs (keep the two add-buttons at the end)
+  grid.querySelectorAll('.thumb').forEach(el => el.remove());
+  items.forEach((item, i) => {
+    const div = document.createElement('div');
+    div.className = 'thumb';
+    if (item.isPdf) {
+      div.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:#f1f5f9;font-size:.7rem;color:#334155;text-align:center;padding:4px">📄 PDF</div>';
+    } else {
+      const imgEl = document.createElement('img');
+      imgEl.src = item.thumb || URL.createObjectURL(item.file);
+      div.appendChild(imgEl);
+    }
+    const pg = document.createElement('span');
+    pg.className = 'pg';
+    pg.textContent = (i + 1);
+    div.appendChild(pg);
+    const del = document.createElement('button');
+    del.className = 'del';
+    del.textContent = '×';
+    del.type = 'button';
+    del.addEventListener('click', () => { items.splice(i, 1); renderMultiGrid(docType); });
+    div.appendChild(del);
+    grid.insertBefore(div, grid.querySelector('.add-btn'));
+  });
+}
+
+// ── Payment type toggle ──
+function togglePaySlots() {
+  const self = document.getElementById('payTypeSelf').checked;
+  const other = document.getElementById('payTypeOther').checked;
+  document.getElementById('paySelfSlots').classList.toggle('show', self);
+  document.getElementById('payOtherSlots').classList.toggle('show', other);
+}
+
+// ── Submit ──
+async function submitForm() {
+  const L = I18N[_lang];
+  document.getElementById('errBox').style.display = 'none';
+  const name = document.getElementById('fName').value.trim();
+  const phone = document.getElementById('fPhone').value.trim();
+  if (!phone || !_verified) { showErr(L.errPhone); return; }
+  if (!_multiFiles.w9.length || !_multiFiles.contract.length) { showErr(L.errDocs); return; }
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  document.getElementById('t-submitBtn').textContent = L.submitting;
+  try {
+    const fd = new FormData();
+    fd.append('t', TOKEN);
+    fd.append('name', name);
+    fd.append('phone', phone);
+    _multiFiles.w9.forEach(item => fd.append('w9', item.file));
+    _multiFiles.contract.forEach(item => fd.append('contract', item.file));
+    const payType = document.querySelector('input[name="payType"]:checked');
+    if (payType) {
+      fd.append('pay_type', payType.value);
+      const prefix = payType.value === 'self' ? 'pay_self' : 'pay_other';
+      _multiFiles[prefix + '_1'].forEach(item => fd.append(prefix + '_1', item.file));
+      _multiFiles[prefix + '_2'].forEach(item => fd.append(prefix + '_2', item.file));
+    }
+    const r = await fetch('/api/worker-docs/submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || 'submit failed');
+    document.getElementById('formMain').style.display = 'none';
+    document.getElementById('okState').style.display = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (e) {
+    showErr(L.errSubmit + (e.message || e));
+    btn.disabled = false;
+    document.getElementById('t-submitBtn').textContent = L.submitBtn;
+  }
+}
+</script>
+</body>
+</html>

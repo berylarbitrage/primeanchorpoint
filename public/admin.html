@@ -545,6 +545,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('bgchecks')" data-tab="bgchecks" data-role="admin,staff">🔍 背景调查</a>
       <a onclick="showTab('compliance')" data-tab="compliance" data-role="admin,staff">📑 合规审核</a>
       <a onclick="showTab('documents')" data-tab="documents" data-role="admin,staff">📄 HR 文件</a>
+      <a onclick="showTab('worker-docs')" data-tab="worker-docs" data-role="admin,staff">📎 员工文件二维码</a>
       <a onclick="showTab('referrals')" data-tab="referrals" data-role="admin,staff">🎁 推荐奖励</a>
       <a onclick="showTab('referrers')" data-tab="referrers" data-role="admin,staff">👥 推荐人</a>
       <a onclick="showTab('scheduling')" data-tab="scheduling" data-role="admin,staff">📅 排班管理</a>
@@ -2354,8 +2355,28 @@ tr:hover td{background:var(--sky-light)}
     </div>
 
     <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
-      <button class="btn btn-outline" onclick="invpSaveDraft()" style="padding:.55rem 1.5rem;color:#92400e;border-color:#d97706" title="不生成预览直接保存草稿（包括已链接的员工）">💾 保存草稿</button>
-      <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
+      <button class="btn btn-outline" onclick="saveInvpInvoice('draft')" style="padding:.55rem 1.2rem;color:#92400e;border-color:#d97706">📝 保存草稿</button>
+      <button class="btn btn-green" onclick="saveInvpInvoice('saved')" style="padding:.55rem 1.2rem">💾 保存 Invoice</button>
+      <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem;background:#0369a1">🔍 预览 Invoice</button>
+    </div>
+  </div>
+</div>
+
+<!-- Container Number 重复提醒 Modal -->
+<div class="modal-bg" id="containerDupModal" style="z-index:9999">
+  <div class="modal" style="max-width:440px">
+    <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem">
+      <div style="width:42px;height:42px;border-radius:50%;background:#FEF3C7;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">⚠️</div>
+      <h2 style="margin:0;font-size:1.15rem;color:#92400e">Container 号重复</h2>
+    </div>
+    <p style="font-size:.9rem;color:var(--gray-600);line-height:1.6;margin-bottom:1rem">
+      Container Number <span id="cdupNo" style="font-family:monospace;font-weight:700;color:#b91c1c;background:#fef2f2;padding:.1rem .4rem;border-radius:5px"></span>
+      在 <span id="cdupCompany" style="font-weight:700"></span> 的记录中已存在。
+    </p>
+    <div id="cdupDetails" style="background:#fafafa;border:1px solid var(--gray-200);border-radius:8px;padding:.75rem 1rem;font-size:.85rem;color:var(--gray-700);line-height:1.7;margin-bottom:1.25rem"></div>
+    <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1.25rem">请确认是否为重复录入。重复的输入框已标红。</p>
+    <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:.5rem">
+      <button class="btn btn-accent" onclick="document.getElementById('containerDupModal').classList.remove('show')">知道了</button>
     </div>
   </div>
 </div>
@@ -2386,6 +2407,45 @@ tr:hover td{background:var(--sky-light)}
   <div class="card">
     <table><thead><tr><th>员工</th><th>文件类型</th><th>标签/描述</th><th>文件名</th><th>到期日</th><th>上传时间</th><th>操作</th></tr></thead>
     <tbody id="docTable"></tbody></table>
+  </div>
+</div>
+
+<!-- ════════════════════ WORKER DOCUMENTS QR TAB ════════════════════ -->
+<div id="tab-worker-docs" style="display:none">
+  <div class="top">
+    <h1>员工文件二维码</h1>
+  </div>
+  <div class="notice">📎 工人扫码后先验证手机号，再上传 W-9、Contract（必填）及 Direct Deposit / Zelle / Check 三种付款方式的签字文件（选填）。提交后会邮件通知并在下方收件箱显示。</div>
+
+  <div class="card" style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap">
+    <div id="wdocQrBox" style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;background:#f8fafc;border:1px solid var(--gray-200);border-radius:10px;flex-shrink:0">
+      <span style="color:var(--gray-400);font-size:.82rem">加载中…</span>
+    </div>
+    <div style="flex:1;min-width:240px">
+      <div style="font-weight:700;font-size:.95rem;margin-bottom:.4rem">通用上传二维码</div>
+      <p style="font-size:.83rem;color:var(--gray-500);margin:.2rem 0 .7rem;line-height:1.6">打印或分享此二维码 / 链接。所有工人共用同一个二维码，无需区分公司。</p>
+      <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.7rem;flex-wrap:wrap">
+        <input type="text" id="wdocUrl" readonly style="flex:1;min-width:220px;font-size:.8rem;font-family:monospace;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;background:#f8fafc">
+        <button class="btn btn-sm btn-outline" onclick="copyWdocUrl()">📋 复制链接</button>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-sm btn-outline" onclick="printWdocQr()">🖨️ 打印二维码</button>
+        <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:#fecaca" onclick="regenWdocQr()">🔄 重新生成（作废旧码）</button>
+      </div>
+      <div style="margin-top:.8rem;padding:.6rem .8rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e;line-height:1.6">
+        🔑 <strong>万能验证码</strong>：<span id="wdocMasterCode" style="font-family:monospace;font-size:1rem;font-weight:700;letter-spacing:1px">—</span>
+        <div style="color:#a16207;font-size:.76rem;margin-top:.2rem">当工作人员代填、收不到工人手机短信时，验证码处输入此码即可通过（适用于员工文件 / 申请表单）。可用环境变量 <code>MASTER_VERIFY_CODE</code> 修改或留空关闭。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;flex-wrap:wrap;gap:.5rem">
+      <h3 style="margin:0;font-size:.95rem">📥 收件箱</h3>
+      <button class="btn btn-sm btn-outline" onclick="loadWorkerDocsList()">🔄 刷新</button>
+    </div>
+    <table><thead><tr><th>姓名</th><th>手机号</th><th>文件</th><th>提交时间</th><th>操作</th></tr></thead>
+    <tbody id="wdocTable"><tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem">加载中…</td></tr></tbody></table>
   </div>
 </div>
 
@@ -8175,6 +8235,7 @@ function showTab(t) {
   if (t === 'company-payments') initCompanyPayPage();
   if (t === 'container-scans') initCsubScansPage();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
+  if (t === 'worker-docs') loadWorkerDocsTab();
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
   if (t === 'internal-staff') loadInternalStaff();
@@ -16258,6 +16319,119 @@ async function populateDocEmpFilter() {
     emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id||'')})</option>`).join('');
   sel.innerHTML  = opts;
   sel2.innerHTML = opts;
+}
+
+// ── Worker Documents QR + inbox ──
+const WDOC_LABELS = {
+  w9: 'W-9', contract: 'Contract', pay_direct_deposit: 'Direct Deposit', pay_zelle: 'Zelle', pay_check: 'Check',
+};
+window._wdocUrl = '';
+
+async function loadWorkerDocsTab() {
+  await renderWdocQr();
+  loadWorkerDocsList();
+}
+
+async function renderWdocQr() {
+  const box = document.getElementById('wdocQrBox');
+  try {
+    const res = await api('/admin/worker-doc-qr');
+    if (res && res.qr_data_url) {
+      window._wdocUrl = res.url || '';
+      box.innerHTML = `<img src="${res.qr_data_url}" alt="QR" style="width:100%;height:100%;object-fit:contain;border-radius:10px">`;
+      const urlEl = document.getElementById('wdocUrl');
+      if (urlEl) urlEl.value = res.url || '';
+      const mc = document.getElementById('wdocMasterCode');
+      if (mc) mc.textContent = res.master_code || '（已关闭）';
+    } else {
+      box.innerHTML = '<span style="color:var(--red);font-size:.82rem">生成失败</span>';
+    }
+  } catch (e) {
+    box.innerHTML = '<span style="color:var(--red);font-size:.82rem">生成失败</span>';
+  }
+}
+
+function copyWdocUrl() {
+  const el = document.getElementById('wdocUrl');
+  if (!el || !el.value) return;
+  navigator.clipboard.writeText(el.value).then(
+    () => showToast('链接已复制', 'success', 2000),
+    () => { el.select(); document.execCommand('copy'); showToast('链接已复制', 'success', 2000); }
+  );
+}
+
+function printWdocQr() {
+  const img = document.querySelector('#wdocQrBox img');
+  if (!img) { showToast('二维码尚未生成', 'error'); return; }
+  const w = window.open('', '_blank');
+  w.document.write(`<html><head><title>员工文件上传二维码</title></head>
+    <body style="text-align:center;font-family:sans-serif;padding:40px">
+    <h2 style="color:#0F2B5B">📎 员工文件上传 / Worker Documents</h2>
+    <p style="color:#475569">扫码上传 W-9、Contract 及付款方式签字文件<br>Scan to upload W-9, Contract & payment forms</p>
+    <img src="${img.src}" style="width:320px;height:320px">
+    <p style="font-family:monospace;font-size:12px;color:#64748b;word-break:break-all">${esc(window._wdocUrl || '')}</p>
+    </body></html>`);
+  w.document.close();
+  setTimeout(() => { w.print(); }, 300);
+}
+
+async function regenWdocQr() {
+  if (!confirm('重新生成会使旧二维码立即失效，已打印/分享的旧码将无法使用。确定继续？')) return;
+  try {
+    await api('/admin/worker-doc-qr/regenerate', { method: 'POST' });
+    await renderWdocQr();
+    showToast('已生成新二维码，旧码已失效', 'success', 3500);
+  } catch (e) { showToast('操作失败', 'error'); }
+}
+
+async function loadWorkerDocsList() {
+  const tb = document.getElementById('wdocTable');
+  tb.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem">加载中…</td></tr>';
+  try {
+    const rows = await api('/admin/worker-doc-submissions');
+    if (!Array.isArray(rows) || !rows.length) {
+      tb.innerHTML = '<tr><td colspan="5" style="color:var(--gray-400);font-size:.85rem">暂无提交</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(r => {
+      const when = r.created_at ? new Date(r.created_at.replace(' ', 'T') + 'Z').toLocaleString('zh-CN', { timeZone: 'America/Los_Angeles' }) : '';
+      return `<tr>
+        <td>${esc(r.worker_name || '—')}</td>
+        <td style="font-family:monospace;font-size:.82rem">${esc(r.worker_phone || '')} ${r.phone_verified ? '<span style="color:#15803d">✓</span>' : ''}</td>
+        <td><button class="btn btn-sm btn-outline" onclick="viewWdocFiles(${r.id})">📎 ${r.doc_count || 0} 个文件</button></td>
+        <td style="font-size:.82rem;color:var(--gray-500)">${esc(when)}</td>
+        <td><button class="btn btn-sm" style="color:var(--red);background:#fef2f2;border:1px solid #fecaca" onclick="deleteWdocSubmission(${r.id})">删除</button></td>
+      </tr>
+      <tr id="wdocFiles-${r.id}" style="display:none"><td colspan="5" style="background:#f8fafc"><div id="wdocFilesBody-${r.id}" style="padding:.4rem .2rem"></div></td></tr>`;
+    }).join('');
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="5" style="color:var(--red);font-size:.85rem">加载失败</td></tr>';
+  }
+}
+
+async function viewWdocFiles(subId) {
+  const row = document.getElementById('wdocFiles-' + subId);
+  const body = document.getElementById('wdocFilesBody-' + subId);
+  if (!row || !body) return;
+  if (row.style.display !== 'none') { row.style.display = 'none'; return; }
+  row.style.display = '';
+  body.innerHTML = '<span style="color:var(--gray-400);font-size:.82rem">加载中…</span>';
+  try {
+    const docs = await api(`/admin/worker-doc-submissions/${subId}/docs`);
+    if (!Array.isArray(docs) || !docs.length) { body.innerHTML = '<span style="color:var(--gray-400);font-size:.82rem">无文件</span>'; return; }
+    body.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:.5rem">' + docs.map(d =>
+      `<a class="btn btn-sm btn-outline" target="_blank" href="/api/admin/worker-doc-submissions/${subId}/docs/${d.id}/download">⬇ ${esc(WDOC_LABELS[d.doc_type] || d.doc_type)}</a>`
+    ).join('') + '</div>';
+  } catch (e) { body.innerHTML = '<span style="color:var(--red);font-size:.82rem">加载失败</span>'; }
+}
+
+async function deleteWdocSubmission(subId) {
+  if (!confirm('确定删除这条提交及其所有文件？此操作不可撤销。')) return;
+  try {
+    await api(`/admin/worker-doc-submissions/${subId}`, { method: 'DELETE' });
+    showToast('已删除', 'success', 2000);
+    loadWorkerDocsList();
+  } catch (e) { showToast('删除失败（需要管理员权限）', 'error'); }
 }
 
 async function loadDocuments() {
@@ -29178,6 +29352,7 @@ function openInvpBuilderModal() {
   _invpManualUidSeq = 1;
   window._invpContainerItems = [];
   _invpContainerUidSeq = 1;
+  window._invpDupHistorical = {};
   window._invpMode = 'hourly';
   document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === 'hourly'); });
   invpSwitchMode('hourly');
@@ -29240,6 +29415,7 @@ async function openInvpForEdit(id) {
   document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === mode); });
   window._invpContainerItems = [];
   _invpContainerUidSeq = 1;
+  window._invpDupHistorical = {};
   if (mode === 'container' && inv.profile && Array.isArray(inv.profile.container_items)) {
     window._invpContainerItems = inv.profile.container_items.map(c => ({
       uid: _invpContainerUidSeq++,
@@ -29718,6 +29894,10 @@ function onInvBillNameInput() {
     window._invpSelectedPartnerId = null;
     refreshInvpInboxBadge();
   }
+  // Company changed → historical duplicate verdicts no longer apply; clear cache
+  // and re-evaluate (local duplicates still highlight immediately).
+  window._invpDupHistorical = {};
+  if (typeof _invpRefreshDupHighlights === 'function') _invpRefreshDupHighlights();
   // Auto-refresh invoice number when company name changes (debounced)
   clearTimeout(window._invpBillNameTimer);
   if (billName) {
@@ -29827,6 +30007,9 @@ function renderInvpManualTable(skipSave) {
     const regHrs = Math.min(totalHrs, 40);
     const otHrs  = Math.max(totalHrs - 40, 0);
     const subtotal = regHrs * rate + otHrs * otRateVal;
+    const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
+    const empMarkup = parseFloat(emp.markup) || globalMk;
+    const empBilled = subtotal * empMarkup;
     const linkBadge = emp.linked_employee_id
       ? `<span style="display:inline-flex;align-items:center;background:#dcfce7;border:1px solid #86efac;border-radius:10px;font-size:.7rem;line-height:1.5;white-space:nowrap;flex-shrink:0;overflow:hidden">` +
         `<span title="点击重新选择系统员工" style="display:inline-flex;align-items:center;gap:2px;padding:0 5px;cursor:pointer;color:#166534" onclick="invpOpenLinkModal(${emp.uid})">🔗${emp.linked_employee_code ? ' '+esc(emp.linked_employee_code) : ''}</span>` +
@@ -29885,6 +30068,13 @@ function renderInvpManualTable(skipSave) {
       <td class="invp-man-othrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;${otHrs > 0 ? 'color:var(--accent);font-weight:600' : 'color:var(--gray-400)'}">${otHrs > 0 ? otHrs.toFixed(2) + 'h' : '—'}</td>
       <td class="invp-man-totalhrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${totalHrs.toFixed(1)}h</td>
       <td class="invp-man-subtotal" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;font-weight:600">$${subtotal.toFixed(2)}</td>
+      <td style="padding:3px 4px;text-align:right">
+        <input type="number" class="invp-man-markup" data-uid="${emp.uid}" value="${emp.markup || ''}"
+          min="1" step="0.01" placeholder="×mk"
+          style="width:58px;text-align:right;border:1px solid #bfdbfe;border-radius:4px;padding:2px 4px;font-size:.83rem;background:#eff6ff;color:#1d4ed8"
+          oninput="invpUpdateRowTotal(this.closest('tr'))">
+      </td>
+      <td class="invp-man-billed" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;font-weight:700;color:${emp.markup ? '#1d4ed8' : '#64748b'}">${'$'+empBilled.toFixed(2)}</td>
       <td style="padding:3px 4px;white-space:nowrap">
         <button onclick="invpOpenDistribute(${emp.uid})" style="background:none;border:none;cursor:pointer;color:var(--sky);font-size:.95rem;padding:0 4px" title="分配工时到所选日期">⇆</button>
         <button onclick="invpRemoveEmp(${emp.uid})" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.85rem;padding:0 4px" title="删除">✕</button>
@@ -30042,6 +30232,14 @@ function invpUpdateRowTotal(row) {
   otCell.style.color = otHrs > 0 ? 'var(--accent)' : 'var(--gray-400)';
   otCell.style.fontWeight = otHrs > 0 ? '600' : '';
   row.querySelector('.invp-man-subtotal').textContent = '$' + subtotal.toFixed(2);
+  const markupInp = row.querySelector('.invp-man-markup');
+  const globalMk2 = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
+  const markup = parseFloat(markupInp?.value) || globalMk2;
+  const billedCell = row.querySelector('.invp-man-billed');
+  if (billedCell) {
+    billedCell.textContent = '$' + (subtotal * markup).toFixed(2);
+    billedCell.style.color = markupInp?.value ? '#1d4ed8' : '#64748b';
+  }
 }
 
 function invpAddEmp() {
@@ -30160,7 +30358,7 @@ function renderInvpContainerTable(skipSave) {
     const staffBtnColor = staffSummary ? '#0f172a' : '#94a3b8';
     return `<tr class="invp-cont-row" data-uid="${it.uid}" style="${rowStyle}">
       <td style="padding:4px 6px;text-align:center;color:var(--gray-500);font-size:.85rem">${idx + 1}</td>
-      <td style="padding:3px 4px;position:sticky;left:0;background:${stickyBg};z-index:1;box-shadow:1px 0 0 var(--gray-200)"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase"></td>
+      <td style="padding:3px 4px"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase" oninput="invpOnContainerNoInput(this)" onblur="invpCheckDuplicateContainerNo(this)"></td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-week" value="${esc(it.week || defaultWeek || '')}" placeholder="MM.DD.YY - MM.DD.YY" style="width:140px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
       <td style="padding:3px 4px">
         <button type="button" onclick="invpOpenStaffDialog(${it.uid})" title="管理卸柜人员（最多5人）与介绍人" style="width:180px;text-align:left;border:1px solid var(--gray-200);border-radius:4px;padding:4px 8px;font-size:.82rem;background:#fff;cursor:pointer;color:${staffBtnColor};display:block">👥 ${esc(staffBtnLabel)}${staffNames.length ? ` <span style="color:#94a3b8;font-size:.74rem">(${staffNames.length}人)</span>` : ''}</button>
@@ -30202,6 +30400,8 @@ function renderInvpContainerTable(skipSave) {
       <td colspan="3"></td>
     </tr></tfoot>
   </table>`;
+  // Keep duplicate rows highlighted after every re-render.
+  _invpRefreshDupHighlights();
 }
 
 function invpUpdateContainerRowTotal(row) {
@@ -30417,6 +30617,102 @@ function invpRemoveContainer(uid) {
   _invpSaveContainerState();
   window._invpContainerItems = window._invpContainerItems.filter(i => i.uid !== uid);
   renderInvpContainerTable(true);
+}
+
+// Cache of container numbers known (via server) to clash with saved invoices /
+// submissions for the current company. upperCaseNo -> true. Cleared when company changes.
+window._invpDupHistorical = window._invpDupHistorical || {};
+
+// Re-scan every container-no input and keep duplicates highlighted red. A row is
+// flagged red if its number appears more than once in the current invoice (local
+// duplicate) OR the server reported it already exists in history. Stays red until
+// the conflict is gone.
+function _invpRefreshDupHighlights() {
+  const inputs = Array.from(document.querySelectorAll('.invp-cont-no'));
+  const counts = {};
+  inputs.forEach(inp => {
+    const v = (inp.value || '').trim().toUpperCase();
+    if (v) counts[v] = (counts[v] || 0) + 1;
+  });
+  inputs.forEach(inp => {
+    const v = (inp.value || '').trim().toUpperCase();
+    const isDup = !!v && ((counts[v] > 1) || window._invpDupHistorical[v]);
+    _invpMarkDupInput(inp, isDup);
+  });
+}
+
+// Live (every keystroke): update local-duplicate highlights instantly.
+function invpOnContainerNoInput(input) {
+  _invpRefreshDupHighlights();
+}
+
+async function invpCheckDuplicateContainerNo(input) {
+  const val = (input.value || '').trim().toUpperCase();
+  // Refresh local highlights immediately (covers same-invoice duplicates).
+  _invpRefreshDupHighlights();
+  if (!val) return;
+  const companyName = (document.getElementById('invPageBillName').value || '').trim();
+  if (!companyName) return;
+  const editId = document.getElementById('invPageEditId').value || '';
+
+  _invpSaveContainerState();
+  const localCount = (window._invpContainerItems || []).filter(i => (i.container_no || '').trim().toUpperCase() === val).length;
+
+  let historical = false;
+  let detailHtml = '';
+  try {
+    const params = new URLSearchParams({ container_no: val, company_name: companyName });
+    if (editId) params.set('exclude_invoice_id', editId);
+    const res = await api('/admin/container-no/check-duplicate?' + params.toString());
+    if (res && res.duplicate) {
+      historical = true;
+      const invoiceMatches = (res.matches || []).filter(m => m.invoice_number);
+      const submissionMatches = (res.matches || []).filter(m => m.source === 'submission');
+      if (invoiceMatches.length) {
+        detailHtml += `<div style="margin-bottom:.4rem">📄 已保存的 Invoice：</div>` +
+          invoiceMatches.map(m => `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• ${esc(m.invoice_number)}</div>`).join('');
+      }
+      if (submissionMatches.length) {
+        detailHtml += `<div style="margin-top:${invoiceMatches.length ? '.5rem' : '0'}">📦 Container 提交记录：<strong>${submissionMatches.length}</strong> 条</div>`;
+      }
+    }
+  } catch (e) {
+    // silently ignore check failures (keep whatever local state we have)
+  }
+
+  // Remember the server verdict so the row stays red across re-renders / edits.
+  if (historical) window._invpDupHistorical[val] = true;
+  else delete window._invpDupHistorical[val];
+  _invpRefreshDupHighlights();
+
+  // Pop the modal once when a conflict is detected.
+  if (localCount > 1 || historical) {
+    let html = '';
+    if (localCount > 1) html += `<div style="margin-bottom:${detailHtml ? '.5rem' : '0'}">📋 当前 Invoice 中出现了 <strong style="color:#b91c1c">${localCount}</strong> 次</div>`;
+    html += detailHtml;
+    _invpShowDupModal(val, companyName, html);
+  }
+}
+
+function _invpMarkDupInput(input, isDup) {
+  if (isDup) {
+    input.style.borderColor = '#ef4444';
+    input.style.background = '#fef2f2';
+    input.style.color = '#b91c1c';
+    input.style.fontWeight = '700';
+  } else {
+    input.style.borderColor = '';
+    input.style.background = '';
+    input.style.color = '';
+    input.style.fontWeight = '';
+  }
+}
+
+function _invpShowDupModal(containerNo, companyName, detailsHtml) {
+  document.getElementById('cdupNo').textContent = containerNo;
+  document.getElementById('cdupCompany').textContent = companyName;
+  document.getElementById('cdupDetails').innerHTML = detailsHtml || '<div style="color:var(--gray-400)">—</div>';
+  document.getElementById('containerDupModal').classList.add('show');
 }
 
 // ── Cash payment receipt PDF for a single container row ──
@@ -31319,9 +31615,10 @@ function getInvpManualItems() {
       const regHours = Math.min(totalHours, 40);
       const otHours  = Math.max(totalHours - 40, 0);
       const total = regHours * rate + otHours * otRate;
-      const rowMk = parseFloat(emp.markup);
-      const markup = (rowMk > 0) ? rowMk : 0; // 0 means "use global default"
-      return { name, category: emp.category || '', subcontractor: (emp.subcontractor || '').trim(), referrer: (emp.referrer || '').trim(), hours: totalHours, regHours, otHours, rate, otRate, total, markup, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
+      const markup = parseFloat(emp.markup) || globalMk;
+      const billed = Math.round(total * markup * 100) / 100;
+      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total, markup, billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
@@ -31444,16 +31741,16 @@ async function generateInvpPreview() {
     const hideOt = window._invpAllOtZero && window._invpHideOtCols;
     totalRowColspan = hasPosition ? 4 : 3;
     const tableRows = items.map((i, idx) => {
-      const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
+      const customMarkup = Math.abs((i.markup || markupRate) - markupRate) > 0.0001;
+      const rowBg = customMarkup ? '#bfdbfe' : (idx % 2 === 1 ? '#f8fafc' : '#ffffff');
       const posCell = hasPosition
         ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
-      const rowBilled = (i.total || 0) * effMks[idx];
-      return `<tr style="background:${stripe}">
+      return `<tr style="background:${rowBg}">
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}</td>
         ${posCell}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${(i.regHours||0).toFixed(2)}</td>
-        ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
+        ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? '' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>`}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${rowBilled.toFixed(2)}</td>
@@ -31480,10 +31777,10 @@ async function generateInvpPreview() {
         <tbody>
           ${tableRows}
           <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
-            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total${mkLabel}</td>
+            <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total</td>
             <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
             ${hideOt ? '' : `<td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>`}
-            <td style="padding:7px 7px;text-align:right" colspan="${hideOt ? 1 : 2}">$${billedAmt.toFixed(2)}</td>
+            <td style="padding:7px 7px;text-align:right" colspan="${hideOt ? 1 : 2}">$${baseAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>`;
