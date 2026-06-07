@@ -9609,12 +9609,22 @@ app.get('/api/admin/worker-accounts/:id/onboarding', requireAdmin, (req, res) =>
   // auto-init if no tasks yet
   const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(workerId);
   if (!existing) initWorkerOnboarding(workerId);
-  // Auto-complete phone/email verify if worker became active after onboarding was initialized
-  // (active=1 means both phone and email were verified during registration)
-  const wAcct = db.prepare('SELECT active FROM worker_accounts WHERE id=?').get(workerId);
-  if (wAcct && wAcct.active) {
-    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP) WHERE worker_account_id=? AND task_key='phone_verify' AND status='pending'`).run(workerId);
-    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP) WHERE worker_account_id=? AND task_key='email_verify' AND status='pending'`).run(workerId);
+  // Auto-complete phone/email verify if already verified
+  const wAcct = db.prepare('SELECT active, employee_id, phone, email FROM worker_accounts WHERE id=?').get(workerId);
+  if (wAcct) {
+    let phoneOk = !!wAcct.active, emailOk = !!wAcct.active;
+    // Also check applicant_submissions: the employee may have verified during the application form
+    if ((!phoneOk || !emailOk) && (wAcct.phone || wAcct.email)) {
+      const emp = wAcct.employee_id ? db.prepare('SELECT phone, email FROM employees WHERE id=?').get(wAcct.employee_id) : null;
+      const checkPhone = wAcct.phone || (emp && emp.phone) || '';
+      const checkEmail = wAcct.email || (emp && emp.email) || '';
+      if (checkPhone || checkEmail) {
+        const appl = db.prepare('SELECT phone_verified, email_verified FROM applicant_submissions WHERE (phone=? OR email=?) AND (phone_verified=1 OR email_verified=1) ORDER BY id DESC LIMIT 1').get(checkPhone || '__none__', checkEmail || '__none__');
+        if (appl) { phoneOk = phoneOk || !!appl.phone_verified; emailOk = emailOk || !!appl.email_verified; }
+      }
+    }
+    if (phoneOk) db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP) WHERE worker_account_id=? AND task_key='phone_verify' AND status='pending'`).run(workerId);
+    if (emailOk) db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP) WHERE worker_account_id=? AND task_key='email_verify' AND status='pending'`).run(workerId);
   }
   // Auto-verify W-9 address for completed W-9 tasks that haven't been verified yet
   const w9Task = db.prepare("SELECT status, ds_status, admin_note FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
