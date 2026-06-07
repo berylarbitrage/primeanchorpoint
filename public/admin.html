@@ -33626,12 +33626,13 @@ function openApplicantDocViewer(url, label) {
       `<div id="adVwHead" style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.45rem .35rem .45rem .65rem;background:#1A3F7A;color:#fff;cursor:move;user-select:none">
         <span id="adVwTitle" style="font-size:.8rem;font-weight:700">证件</span>
         <span style="display:flex;gap:.5rem;align-items:center">
+          <button type="button" id="adVwRotate" onclick="rotateApplicantDocViewer()" title="旋转 90°" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .25rem">⟳</button>
           <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap">原图 ↗</a>
           <button type="button" onclick="closeApplicantDocViewer()" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 .35rem">✕</button>
         </span>
       </div>
       <div style="background:#000;display:flex;align-items:center;justify-content:center;max-height:72vh;overflow:auto">
-        <img id="adVwImg" style="max-width:100%;display:block" alt="">
+        <img id="adVwImg" style="max-width:100%;display:block;transition:transform .15s ease" alt="">
       </div>`;
     document.body.appendChild(v);
     v.addEventListener('mousedown', e => e.stopPropagation());
@@ -33639,8 +33640,31 @@ function openApplicantDocViewer(url, label) {
   }
   v.style.display = 'block';
   v.querySelector('#adVwTitle').textContent = label || '证件';
-  v.querySelector('#adVwImg').src = url;
+  _adVwRotation = 0; // reset orientation for each newly opened document
+  const img = v.querySelector('#adVwImg');
+  img.src = url;
+  _applyApplicantDocRotation();
   v.querySelector('#adVwOpen').href = url;
+}
+let _adVwRotation = 0;
+function rotateApplicantDocViewer() {
+  _adVwRotation = (_adVwRotation + 90) % 360;
+  _applyApplicantDocRotation();
+}
+function _applyApplicantDocRotation() {
+  const img = document.getElementById('adVwImg');
+  if (!img) return;
+  const r = _adVwRotation;
+  img.style.transform = `rotate(${r}deg)`;
+  // When sideways, swap the fit constraints so the rotated image still fits the
+  // panel width instead of spilling out horizontally.
+  if (r === 90 || r === 270) {
+    img.style.maxWidth = '72vh';
+    img.style.maxHeight = '320px';
+  } else {
+    img.style.maxWidth = '100%';
+    img.style.maxHeight = '72vh';
+  }
 }
 function closeApplicantDocViewer() { const v = document.getElementById('applicantDocViewer'); if (v) v.style.display = 'none'; }
 
