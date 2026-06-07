@@ -92,9 +92,32 @@
       <input type="text" id="fPosition" autocomplete="organization-title">
     </div>
 
+    <!-- Address -->
+    <div class="card">
+      <h2 id="t-secAddr">② Dirección</h2>
+      <label id="t-lAddr1">Dirección <span class="req">*</span></label>
+      <input type="text" id="fAddr1" autocomplete="address-line1" placeholder="123 Main St">
+      <label id="t-lAddr2">Apt / Unidad <span class="opt">(opcional)</span></label>
+      <input type="text" id="fAddr2" autocomplete="address-line2" placeholder="Apt, Suite, Unit">
+      <label id="t-lCity">Ciudad <span class="req">*</span></label>
+      <input type="text" id="fCity" autocomplete="address-level2">
+      <div style="display:flex;gap:.6rem">
+        <div style="flex:1 1 0;min-width:0">
+          <label id="t-lState">Estado <span class="req">*</span></label>
+          <input type="text" id="fState" autocomplete="address-level1" maxlength="20" placeholder="CA">
+        </div>
+        <div style="flex:1 1 0;min-width:0">
+          <label id="t-lZip">Código postal <span class="req">*</span></label>
+          <input type="text" id="fZip" autocomplete="postal-code" inputmode="numeric" maxlength="10" placeholder="90001">
+        </div>
+      </div>
+      <div class="msg" id="addrMsg"></div>
+      <div class="verified-tag" id="addrVerified">✓ <span id="t-verified3">Verificado</span></div>
+    </div>
+
     <!-- Phone verify -->
     <div class="card">
-      <h2 id="t-secPhone">② Teléfono</h2>
+      <h2 id="t-secPhone">③ Teléfono</h2>
       <label id="t-lPhone">Teléfono móvil <span class="req">*</span></label>
       <div class="verify-row">
         <input type="tel" id="fPhone" autocomplete="tel" inputmode="tel" placeholder="(555) 555-5555">
@@ -112,7 +135,7 @@
 
     <!-- Email verify -->
     <div class="card">
-      <h2 id="t-secEmail">③ Correo electrónico</h2>
+      <h2 id="t-secEmail">④ Correo electrónico</h2>
       <label id="t-lEmail">Correo electrónico <span class="req">*</span></label>
       <div class="verify-row">
         <input type="email" id="fEmail" autocomplete="email" inputmode="email" placeholder="name@email.com">
@@ -130,7 +153,7 @@
 
     <!-- Documents -->
     <div class="card">
-      <h2 id="t-secDocs">④ Documentos</h2>
+      <h2 id="t-secDocs">⑤ Documentos</h2>
       <div class="doc-grid">
         <div class="doc-slot">
           <span class="doc-cap" id="t-ssnFront">SSN — Frente <span class="req">*</span></span>
@@ -190,9 +213,12 @@
 // ── i18n ──
 const I18N = {
   es: {
-    title: '📋 Solicitud de empleo', secInfo: '① Información personal', secPhone: '② Teléfono',
-    secEmail: '③ Correo electrónico', secDocs: '④ Documentos',
+    title: '📋 Solicitud de empleo', secInfo: '① Información personal', secAddr: '② Dirección', secPhone: '③ Teléfono',
+    secEmail: '④ Correo electrónico', secDocs: '⑤ Documentos',
     lName: 'Nombre completo', lPosition: 'Puesto solicitado', lPhone: 'Teléfono móvil', lEmail: 'Correo electrónico',
+    lAddr1: 'Dirección', lAddr2: 'Apt / Unidad', lCity: 'Ciudad', lState: 'Estado', lZip: 'Código postal',
+    addrVerifying: 'Verificando dirección…', addrVerifiedMsg: '✓ Dirección verificada', addrUnverified: 'No se pudo verificar la dirección',
+    errAddr: 'Completa dirección, ciudad, estado y código postal.',
     sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
     ssnFront: 'SSN — Frente', ssnBack: 'SSN — Reverso', eadFront: 'EAD — Frente', eadBack: 'EAD — Reverso',
     optional: '(opcional)', cam: 'Tomar foto', gal: 'Galería', submitBtn: 'Enviar solicitud', submitting: 'Enviando…',
@@ -205,9 +231,12 @@ const I18N = {
     errSubmit: 'Error al enviar: ', loading: 'Cargando…',
   },
   en: {
-    title: '📋 Job Application', secInfo: '① Personal information', secPhone: '② Phone',
-    secEmail: '③ Email', secDocs: '④ Documents',
+    title: '📋 Job Application', secInfo: '① Personal information', secAddr: '② Address', secPhone: '③ Phone',
+    secEmail: '④ Email', secDocs: '⑤ Documents',
     lName: 'Full name', lPosition: 'Position applying for', lPhone: 'Mobile phone', lEmail: 'Email address',
+    lAddr1: 'Street address', lAddr2: 'Apt / Unit', lCity: 'City', lState: 'State', lZip: 'ZIP code',
+    addrVerifying: 'Verifying address…', addrVerifiedMsg: '✓ Address verified', addrUnverified: 'Address could not be verified',
+    errAddr: 'Please fill in street, city, state and ZIP.',
     sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
     ssnFront: 'SSN — Front', ssnBack: 'SSN — Back', eadFront: 'EAD — Front', eadBack: 'EAD — Back',
     optional: '(optional)', cam: 'Take photo', gal: 'Album', submitBtn: 'Submit application', submitting: 'Submitting…',
@@ -220,9 +249,12 @@ const I18N = {
     errSubmit: 'Submit failed: ', loading: 'Loading…',
   },
   zh: {
-    title: '📋 入职申请', secInfo: '① 个人信息', secPhone: '② 手机号',
-    secEmail: '③ 邮箱', secDocs: '④ 证件',
+    title: '📋 入职申请', secInfo: '① 个人信息', secAddr: '② 地址',  secPhone: '③ 手机号',
+    secEmail: '④ 邮箱', secDocs: '⑤ 证件',
     lName: '姓名', lPosition: '申请职位', lPhone: '手机号', lEmail: '邮箱',
+    lAddr1: '街道地址', lAddr2: '公寓 / 单元号', lCity: '城市', lState: '州', lZip: '邮编',
+    addrVerifying: '正在验证地址…', addrVerifiedMsg: '✓ 地址已验证', addrUnverified: '地址无法验证',
+    errAddr: '请填写街道地址、城市、州和邮编。',
     sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
     ssnFront: 'SSN 正面', ssnBack: 'SSN 反面', eadFront: 'EAD 正面', eadBack: 'EAD 反面',
     optional: '（选填）', cam: '拍照', gal: '相册', submitBtn: '提交申请', submitting: '提交中…',
@@ -250,13 +282,18 @@ function applyLang() {
   const L = I18N[_lang];
   document.documentElement.lang = _lang;
   document.title = L.title;
-  txt('t-title', 'title'); txt('t-secInfo', 'secInfo'); txt('t-secPhone', 'secPhone');
+  txt('t-title', 'title'); txt('t-secInfo', 'secInfo'); txt('t-secAddr', 'secAddr'); txt('t-secPhone', 'secPhone');
   txt('t-secEmail', 'secEmail'); txt('t-secDocs', 'secDocs');
-  txt('t-verified1', 'verified'); txt('t-verified2', 'verified');
+  txt('t-verified1', 'verified'); txt('t-verified2', 'verified'); txt('t-verified3', 'verified');
   txt('t-submitBtn', 'submitBtn'); txt('t-okTitle', 'okTitle'); txt('t-okMsg', 'okMsg'); txt('t-privacy', 'privacy');
   // labels (keep the required asterisk markup)
   document.getElementById('t-lName').innerHTML = L.lName + ' <span class="req">*</span>';
   document.getElementById('t-lPosition').innerHTML = L.lPosition + ' <span class="req">*</span>';
+  document.getElementById('t-lAddr1').innerHTML = L.lAddr1 + ' <span class="req">*</span>';
+  document.getElementById('t-lAddr2').innerHTML = L.lAddr2 + ' <span class="opt">' + L.optional + '</span>';
+  document.getElementById('t-lCity').innerHTML = L.lCity + ' <span class="req">*</span>';
+  document.getElementById('t-lState').innerHTML = L.lState + ' <span class="req">*</span>';
+  document.getElementById('t-lZip').innerHTML = L.lZip + ' <span class="req">*</span>';
   document.getElementById('t-lPhone').innerHTML = L.lPhone + ' <span class="req">*</span>';
   document.getElementById('t-lEmail').innerHTML = L.lEmail + ' <span class="req">*</span>';
   document.getElementById('t-ssnFront').innerHTML = L.ssnFront + ' <span class="req">*</span>';
@@ -478,6 +515,44 @@ document.querySelectorAll('button[data-clear]').forEach(btn => {
   });
 });
 
+function setAddrMsg(text, ok) { const m = document.getElementById('addrMsg'); m.textContent = text || ''; m.className = 'msg' + (text ? (ok ? ' ok' : ' bad') : ''); }
+
+// Verify the address via Google Address Validation (USPS DPV). Soft gate:
+// auto-applies the USPS-standardized form when valid, but never blocks submission.
+// Returns 1 if verified, 0 otherwise.
+async function verifyAddressFields() {
+  const L = I18N[_lang];
+  const addr1 = document.getElementById('fAddr1').value.trim();
+  const addr2 = document.getElementById('fAddr2').value.trim();
+  const city = document.getElementById('fCity').value.trim();
+  const state = document.getElementById('fState').value.trim();
+  const zip = document.getElementById('fZip').value.trim();
+  document.getElementById('addrVerified').classList.remove('show');
+  setAddrMsg(L.addrVerifying, true);
+  try {
+    const r = await fetch('/api/validate-address', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ street: addr1, street2: addr2, city, state, zip, regionCode: 'US' })
+    });
+    if (!r.ok) { setAddrMsg('', true); return 0; }
+    const j = await r.json().catch(() => ({}));
+    if (j && j.valid) {
+      const s = j.standardized || {};
+      if (s.street) document.getElementById('fAddr1').value = s.street;
+      if (s.street2 !== undefined) document.getElementById('fAddr2').value = s.street2 || addr2;
+      if (s.city) document.getElementById('fCity').value = s.city;
+      if (s.state) document.getElementById('fState').value = s.state;
+      if (s.zip) document.getElementById('fZip').value = s.zip + (s.zip4 ? '-' + s.zip4 : '');
+      setAddrMsg(L.addrVerifiedMsg, true);
+      document.getElementById('addrVerified').classList.add('show');
+      return 1;
+    }
+    if (j && j.skipped) { setAddrMsg('', true); return 0; } // service not configured
+    setAddrMsg(L.addrUnverified, false);
+    return 0;
+  } catch (_) { setAddrMsg('', true); return 0; } // network failure is non-fatal
+}
+
 async function submitForm() {
   const L = I18N[_lang];
   document.getElementById('errBox').style.display = 'none';
@@ -485,7 +560,12 @@ async function submitForm() {
   const position = document.getElementById('fPosition').value.trim();
   const phone = document.getElementById('fPhone').value.trim();
   const email = document.getElementById('fEmail').value.trim();
+  const addr1 = document.getElementById('fAddr1').value.trim();
+  const city = document.getElementById('fCity').value.trim();
+  const state = document.getElementById('fState').value.trim();
+  const zip = document.getElementById('fZip').value.trim();
   if (!name || !position || !phone || !email) { showErr(L.errFields); return; }
+  if (!addr1 || !city || !state || !zip) { showErr(L.errAddr); return; }
   if (!_verified.phone) { showErr(L.errPhone); return; }
   if (!_verified.email) { showErr(L.errEmail); return; }
   if (!_files.ssn_front || !_files.ead_front || !_files.ead_back) { showErr(L.errDocs); return; }
@@ -493,12 +573,19 @@ async function submitForm() {
   btn.disabled = true;
   document.getElementById('t-submitBtn').textContent = L.submitting;
   try {
+    const addrVerified = await verifyAddressFields();
     const fd = new FormData();
     fd.append('t', TOKEN);
     fd.append('name', name);
     fd.append('position', position);
     fd.append('phone', phone);
     fd.append('email', email);
+    fd.append('address1', document.getElementById('fAddr1').value.trim());
+    fd.append('address2', document.getElementById('fAddr2').value.trim());
+    fd.append('city', document.getElementById('fCity').value.trim());
+    fd.append('state', document.getElementById('fState').value.trim());
+    fd.append('zip', document.getElementById('fZip').value.trim());
+    fd.append('address_verified', addrVerified ? '1' : '0');
     Object.entries(_files).forEach(([k, f]) => { if (f) fd.append(k, f); });
     const r = await fetch('/api/apply/submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
     const j = await r.json().catch(() => ({}));
