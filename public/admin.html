@@ -7130,6 +7130,7 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="empModal"><div class="modal modal-lg">
   <h2 id="empModalTitle">新增员工</h2>
   <input type="hidden" id="empId">
+  <div id="empApplicantDocs" style="display:none;margin:.25rem 0 .85rem;padding:.65rem .8rem;background:#f0f7ff;border:1px solid #bae6fd;border-radius:10px"></div>
   <div class="form-section">
     <h4>基本信息</h4>
     <div class="field-row3">
@@ -13653,6 +13654,7 @@ function getDobValue() {
 function openEmpModal(id) {
   document.getElementById('empModalTitle').textContent = id ? '编辑员工' : '新增员工';
   document.getElementById('empId').value = id || '';
+  { const _ad = document.getElementById('empApplicantDocs'); if (_ad) { _ad.style.display = 'none'; _ad.innerHTML = ''; } }
   if (id) {
     const e = allEmployees.find(x=>x.id===id) || {};
     document.getElementById('eFirst').value    = e.first_name||'';
@@ -33313,11 +33315,14 @@ async function deleteApplicant(id) {
 
 // Pre-fill the "新增员工" form with an applicant's submitted info, then open it
 // for review. DOB / SSN / pay details still need to be completed by hand.
-function createEmployeeFromApplicant(id) {
+// The applicant's uploaded SSN/EAD photos are shown in a reference panel so
+// the name can be cross-checked and corrected against the actual documents.
+async function createEmployeeFromApplicant(id) {
   const s = (_inboxSubmissions || []).find(x => x.id === id);
   if (!s) { adminAlert('找不到该申请记录', '提示'); return; }
   closeApplicantInbox();
   openEmpModal(); // new-employee mode: clears fields + sets sensible defaults
+  renderApplicantDocPanel(id); // fetch + show the uploaded ID photos for reference
   // Split the full name → first / middle-less last (first token is given name).
   const parts = String(s.name || '').trim().split(/\s+/).filter(Boolean);
   const first = parts.shift() || '';
@@ -33337,6 +33342,34 @@ function createEmployeeFromApplicant(id) {
     notes.value = (notes.value ? notes.value + '\n' : '') + '申请职位 / Applied position: ' + s.position;
   }
   if (typeof showToast === 'function') showToast('已用申请信息预填，请补充出生日期等必填项后保存', 'success', 4000);
+}
+
+// Fetch an applicant's uploaded docs and show them as a reference strip in the
+// employee modal (so the name can be verified against the real SSN/EAD).
+async function renderApplicantDocPanel(subId) {
+  const panel = document.getElementById('empApplicantDocs');
+  if (!panel) return;
+  panel.style.display = '';
+  panel.innerHTML = '<div style="font-size:.82rem;color:var(--gray-400)">加载证件中…</div>';
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  const dl = (did) => `/api/admin/applicant-submissions/${subId}/docs/${did}/download`;
+  let docs = [];
+  try { docs = await api(`/admin/applicant-submissions/${subId}/docs`); } catch (_) {}
+  const thumbs = (Array.isArray(docs) ? docs : []).map(d => {
+    const url = dl(d.id);
+    const label = docLabel[d.doc_type] || d.doc_type;
+    if (/\.pdf$/i.test(d.file_name || '')) {
+      return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.4rem .65rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${label}</a>`;
+    }
+    return `<a href="${url}" target="_blank" title="${label}（点击查看大图）" style="text-decoration:none">
+        <span style="display:block;position:relative">
+          <img src="${url}" loading="lazy" style="width:86px;height:86px;object-fit:cover;border-radius:8px;border:1px solid #bae6fd;background:#000;display:block">
+          <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.62rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${label}</span>
+        </span>
+      </a>`;
+  }).join('') || '<span style="color:var(--gray-400);font-size:.82rem">无证件 / No documents</span>';
+  panel.innerHTML = `<div style="font-size:.78rem;font-weight:700;color:#1A3F7A;margin-bottom:.5rem">📎 申请人上传的证件 · 请核对姓名 / Applicant's IDs — verify the name</div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start">${thumbs}</div>`;
 }
 
 // ── 扫码记录 page (all companies / statuses / types) ──
