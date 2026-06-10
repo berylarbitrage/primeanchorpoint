@@ -34506,8 +34506,9 @@ async function loadCpyList() {
     rows.forEach(r => {
       const key = `${r.partner_id == null ? '' : r.partner_id}|${r.worker_name || ''}`;
       let g = groups.get(key);
-      if (!g) { g = { partner_name: r.partner_name || '—', worker_name: r.worker_name || '', amount: 0, records: [] }; groups.set(key, g); }
+      if (!g) { g = { partner_name: r.partner_name || '—', worker_name: r.worker_name || '', amount: 0, hours: 0, records: [] }; groups.set(key, g); }
       g.amount += Number(r.amount) || 0;
+      g.hours += Number(r.hours) || 0;
       g.records.push(r);
     });
     const groupList = Array.from(groups.values()).sort((a, b) => {
@@ -34517,12 +34518,13 @@ async function loadCpyList() {
     });
 
     tbody.innerHTML = groupList.map((g, gIdx) => {
+      const hoursStr = g.hours > 0 ? `<strong style="color:#0369a1">${Math.round(g.hours * 100) / 100}h</strong> · ` : '';
       const header = `
       <tr style="cursor:pointer;background:#f8fafc" onclick="toggleCpyListGroup(${gIdx})" title="点击展开/收起明细">
         <td style="font-weight:600"><span id="cpyGrpCaret-${gIdx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(g.partner_name)}</td>
         <td style="font-weight:600">${_cpyEscape(g.worker_name)}</td>
         <td style="font-weight:700;color:#15803d"><span id="cpyGrpAmt-${gIdx}" data-amount="${g.amount}">${_cpyFmtMoney(g.amount)}</span></td>
-        <td colspan="8" style="color:var(--gray-500);font-size:.82rem">${g.records.length} 笔付款 · 点击展开</td>
+        <td colspan="8" style="color:var(--gray-500);font-size:.82rem">${hoursStr}${g.records.length} 笔付款 · 点击展开</td>
       </tr>
       <tr class="cpyGrpRows-${gIdx}" style="display:none">
         <td colspan="11" style="background:#f8fafc;padding:.75rem 1rem">${_cpyListGroupPanel(g, gIdx)}</td>
