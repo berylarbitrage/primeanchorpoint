@@ -2205,11 +2205,11 @@ tr:hover td{background:var(--sky-light)}
 </div>
 
 <!-- ════════════════════ INVOICE BUILDER MODAL ════════════════════ -->
-<div class="modal-bg" id="invpBuilderModal" style="display:none" onclick="if(event.target===this)closeInvpBuilderModal()">
+<div class="modal-bg" id="invpBuilderModal" style="display:none" onclick="if(event.target===this)attemptCloseInvpBuilder(true)">
   <div class="modal" style="max-width:900px;width:95vw;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
       <h2 style="margin:0" id="invpBuilderTitle">+ 新建 Invoice</h2>
-      <button class="btn btn-outline" onclick="closeInvpBuilderModal()">✕ 关闭</button>
+      <button class="btn btn-outline" onclick="attemptCloseInvpBuilder(false)">✕ 关闭</button>
     </div>
 
     <div class="card">
@@ -2362,7 +2362,7 @@ tr:hover td{background:var(--sky-light)}
     <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
       <button class="btn btn-outline" onclick="saveInvpInvoice('draft')" style="padding:.55rem 1.2rem;color:#92400e;border-color:#d97706">📝 保存草稿</button>
       <button class="btn btn-green" onclick="saveInvpInvoice('saved')" style="padding:.55rem 1.2rem">💾 保存 Invoice</button>
-      <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem;background:#0369a1">🔍 预览 Invoice</button>
+      <button class="btn btn-green" onclick="generateInvpPreviewSafe()" style="padding:.55rem 1.5rem;background:#0369a1">🔍 预览 Invoice</button>
     </div>
   </div>
 </div>
@@ -29501,6 +29501,7 @@ function openInvpBuilderModal() {
   _invpContainerUidSeq = 1;
   window._invpDupHistorical = {};
   window._invpDupIgnored = {};
+  window._invpDupPrompted = {};
   window._invpMode = 'hourly';
   document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === 'hourly'); });
   invpSwitchMode('hourly');
@@ -29519,6 +29520,7 @@ function openInvpBuilderModal() {
   document.getElementById('invpBuilderModal').style.display = 'flex';
   renderInvpProfilePreview();
   showInvpBuilder();
+  window._invpDirty = false;
 }
 
 async function openInvpForEdit(id) {
@@ -29565,6 +29567,7 @@ async function openInvpForEdit(id) {
   _invpContainerUidSeq = 1;
   window._invpDupHistorical = {};
   window._invpDupIgnored = {};
+  window._invpDupPrompted = {};
   if (mode === 'container' && inv.profile && Array.isArray(inv.profile.container_items)) {
     window._invpContainerItems = inv.profile.container_items.map(c => ({
       uid: _invpContainerUidSeq++,
@@ -29621,11 +29624,39 @@ async function openInvpForEdit(id) {
   await loadInvpPresets();
   renderInvpProfilePreview();
   renderInvpManualTable();
+  window._invpDirty = false;
 }
 
 function closeInvpBuilderModal() {
   document.getElementById('invpBuilderModal').style.display = 'none';
+  window._invpDirty = false;
 }
+
+// Guarded close: a backdrop click is accidental by definition, so it always asks.
+// The ✕ button asks only when there are unsaved edits.
+async function attemptCloseInvpBuilder(fromBackdrop) {
+  const dirty = !!window._invpDirty;
+  if (dirty || fromBackdrop) {
+    const ok = await showConfirm(
+      dirty
+        ? '⚠️ 有尚未保存的内容，关闭后将丢失。<br><br>确定要关闭吗？'
+        : '确定关闭 Invoice 编辑窗口吗？',
+      { confirmLabel: '关闭', cancelLabel: '继续编辑', danger: dirty }
+    );
+    if (!ok) return;
+  }
+  closeInvpBuilderModal();
+}
+
+// Any typing inside the builder marks it dirty; programmatic mutations
+// (add/remove rows, imports, staff dialog) set the flag explicitly.
+(function () {
+  const m = document.getElementById('invpBuilderModal');
+  if (m) {
+    m.addEventListener('input', () => { window._invpDirty = true; });
+    m.addEventListener('change', () => { window._invpDirty = true; });
+  }
+})();
 
 async function loadInvpList() {
   const wrap = document.getElementById('invpListWrap');
@@ -29872,7 +29903,7 @@ window._invpAllOtZero = false;
 
 function toggleInvpOtCols() {
   window._invpHideOtCols = !window._invpHideOtCols;
-  generateInvpPreview();
+  generateInvpPreviewSafe();
 }
 
 function updateInvpPreviewBtns() {
@@ -29983,6 +30014,7 @@ async function saveInvpInvoice(status) {
     if (res && res.success) {
       window._invpCurrentSavedId = parseInt(editId);
       window._invpPreviewSaved = (status === 'saved');
+      window._invpDirty = false;
       updateInvpPreviewBtns();
       showToast(status === 'draft' ? '草稿已保存' : `Invoice 已更新：${invNum}`, 'success', 4000);
       loadInvpList();
@@ -29995,6 +30027,7 @@ async function saveInvpInvoice(status) {
       window._invpCurrentSavedId = res.id;
       document.getElementById('invPageEditId').value = res.id; // now in edit mode
       window._invpPreviewSaved = (status === 'saved');
+      window._invpDirty = false;
       updateInvpPreviewBtns();
       showToast(status === 'draft' ? '草稿已保存' : `Invoice 已保存：${invNum}`, 'success', 4000);
       loadInvpList();
@@ -30078,6 +30111,7 @@ function onInvBillNameInput() {
   // and re-evaluate (local duplicates still highlight immediately).
   window._invpDupHistorical = {};
   window._invpDupIgnored = {};
+  window._invpDupPrompted = {};
   if (typeof _invpRefreshDupHighlights === 'function') _invpRefreshDupHighlights();
   // Auto-refresh invoice number when company name changes (debounced)
   clearTimeout(window._invpBillNameTimer);
@@ -30495,6 +30529,7 @@ function invpToggleContainerHighlight(uid) {
   _invpSaveContainerState();
   const item = (window._invpContainerItems || []).find(i => i.uid === uid);
   if (!item) return;
+  window._invpDirty = true;
   item.highlighted = !item.highlighted;
   renderInvpContainerTable(true);
 }
@@ -30752,6 +30787,7 @@ async function invpImportCsub(submissionId) {
       referrer: '',
       notes: submitterNote,
     });
+    window._invpDirty = true;
     renderInvpContainerTable(true);
     // Mark as imported on the server
     await api(`/admin/container-submissions/${submissionId}/import`, {
@@ -30769,7 +30805,11 @@ async function invpImportCsub(submissionId) {
         if (r.historical) {
           window._invpDupHistorical[impNo] = true;
           _invpRefreshDupHighlights();
-          _invpShowDupModal(impNo, (document.getElementById('invPageBillName').value || '').trim(), r.detailHtml);
+          window._invpDupPrompted = window._invpDupPrompted || {};
+          if (!window._invpDupPrompted[impNo]) {
+            window._invpDupPrompted[impNo] = true;
+            _invpShowDupModal(impNo, (document.getElementById('invPageBillName').value || '').trim(), r.detailHtml);
+          }
         }
       } catch (_) {}
     }
@@ -30788,6 +30828,7 @@ async function invpDiscardCsub(submissionId) {
 
 function invpAddContainer() {
   _invpSaveContainerState();
+  window._invpDirty = true;
   window._invpContainerItems.push({
     uid: _invpContainerUidSeq++,
     container_no: '',
@@ -30808,6 +30849,7 @@ function invpAddContainer() {
 
 function invpRemoveContainer(uid) {
   _invpSaveContainerState();
+  window._invpDirty = true;
   window._invpContainerItems = window._invpContainerItems.filter(i => i.uid !== uid);
   renderInvpContainerTable(true);
 }
@@ -30868,7 +30910,7 @@ async function _invpQueryDupHistory(val) {
           const sameNumWarn = (m.same_number_count || 0) > 1
             ? `<div style="padding-left:1.75rem;font-size:.74rem;color:#b45309;font-weight:600">⚠️ 该编号共有 ${m.same_number_count} 条记录，请务必点击上方链接打开（在列表里按编号找可能打开的是另一条）</div>`
             : '';
-          return `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• <a href="#" onclick="event.preventDefault();document.getElementById('containerDupModal').classList.remove('show');openInvpForEdit(${m.invoice_id})" style="color:#0369a1;text-decoration:underline;cursor:pointer">${esc(m.invoice_number)}</a>${tags}</div>${dateLine}${sameNumWarn}`;
+          return `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• <a href="#" onclick="event.preventDefault();_invpOpenMatchedInvoice(${m.invoice_id})" style="color:#0369a1;text-decoration:underline;cursor:pointer">${esc(m.invoice_number)}</a>${tags}</div>${dateLine}${sameNumWarn}`;
         }).join('');
     }
     if (submissionMatches.length) {
@@ -30907,8 +30949,12 @@ async function invpCheckDuplicateContainerNo(input) {
   else delete window._invpDupHistorical[val];
   _invpRefreshDupHighlights();
 
-  // Pop the modal once when a conflict is detected.
-  if (localCount > 1 || historical) {
+  // Pop the modal only the FIRST time a given number conflicts. Re-popping on
+  // every blur made it impossible to click back into the red input and fix the
+  // number — the red highlight stays as the persistent indicator.
+  window._invpDupPrompted = window._invpDupPrompted || {};
+  if ((localCount > 1 || historical) && !window._invpDupPrompted[val]) {
+    window._invpDupPrompted[val] = true;
     let html = '';
     if (localCount > 1) html += `<div style="margin-bottom:${detailHtml ? '.5rem' : '0'}">📋 当前 Invoice 中出现了 <strong style="color:#b91c1c">${localCount}</strong> 次</div>`;
     html += detailHtml;
@@ -30922,12 +30968,28 @@ function _invpMarkDupInput(input, isDup) {
     input.style.background = '#fef2f2';
     input.style.color = '#b91c1c';
     input.style.fontWeight = '700';
+    input.title = '此柜号疑似重复（历史记录中已存在或本单中重复）。可直接点击修改；保存时会再统一核对一次。';
   } else {
     input.style.borderColor = '';
     input.style.background = '';
     input.style.color = '';
     input.style.fontWeight = '';
+    input.title = '';
   }
+}
+
+// Open an invoice referenced from the duplicate popup. Opening replaces the
+// builder's current content, so warn first when there are unsaved edits.
+async function _invpOpenMatchedInvoice(id) {
+  document.getElementById('containerDupModal').classList.remove('show');
+  if (window._invpDirty) {
+    const ok = await showConfirm(
+      '⚠️ 打开该 Invoice 会替换当前正在编辑、尚未保存的内容。<br><br>建议先点「保存草稿」再打开核对。确定直接打开吗？',
+      { confirmLabel: '直接打开', cancelLabel: '留在当前', danger: true }
+    );
+    if (!ok) return;
+  }
+  openInvpForEdit(id);
 }
 
 function _invpShowDupModal(containerNo, companyName, detailsHtml) {
@@ -31081,6 +31143,7 @@ function invpSaveStaffDialog() {
   const uid = parseInt(document.getElementById('invpStaffUid').value, 10);
   const item = (window._invpContainerItems || []).find(i => i.uid === uid);
   if (!item) { invpCloseStaffDialog(); return; }
+  window._invpDirty = true;
   item.staff_list = _invpStaffDraft
     .map(s => ({ name: (s.name || '').trim(), employee_id: s.employee_id || null, employee_code: s.employee_code || '' }))
     .filter(s => s.name)
@@ -31709,6 +31772,7 @@ function invpImportEmpById(id, fullName, code) {
   _invpSaveTableState();
   const already = (window._invpManualEmps||[]).some(e => e.name.trim().toLowerCase() === fullName.trim().toLowerCase());
   if (already) return;
+  window._invpDirty = true;
   window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', subcontractor: '', referrer: '', rate: '', days: {}, linked_employee_id: id || null, linked_employee_code: code || '', linked_employee_name: fullName });
   renderInvpManualTable();
   const inp = document.getElementById('invpEmpImportInput');
@@ -31856,6 +31920,17 @@ function getInvpManualItems() {
     .filter(Boolean);
 }
 
+// Wrapper: surface any rendering error as a toast instead of failing silently
+// (an uncaught throw in an async onclick is invisible to the user).
+async function generateInvpPreviewSafe() {
+  try {
+    await generateInvpPreview();
+  } catch (e) {
+    console.error('invoice preview failed:', e);
+    showToast('预览生成失败：' + (e.message || e), 'error', 6000);
+  }
+}
+
 async function generateInvpPreview() {
   const invDate = document.getElementById('invPageDate').value;
   const ps      = document.getElementById('invPageStart').value;
@@ -31986,7 +32061,7 @@ async function generateInvpPreview() {
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? '' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>`}
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${rowBilled.toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
       </tr>`;
     }).join('');
     const mkLabel = anyMarkup
