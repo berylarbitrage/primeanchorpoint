@@ -29500,6 +29500,7 @@ function openInvpBuilderModal() {
   window._invpContainerItems = [];
   _invpContainerUidSeq = 1;
   window._invpDupHistorical = {};
+  window._invpDupIgnored = {};
   window._invpMode = 'hourly';
   document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === 'hourly'); });
   invpSwitchMode('hourly');
@@ -29563,6 +29564,7 @@ async function openInvpForEdit(id) {
   window._invpContainerItems = [];
   _invpContainerUidSeq = 1;
   window._invpDupHistorical = {};
+  window._invpDupIgnored = {};
   if (mode === 'container' && inv.profile && Array.isArray(inv.profile.container_items)) {
     window._invpContainerItems = inv.profile.container_items.map(c => ({
       uid: _invpContainerUidSeq++,
@@ -30044,6 +30046,7 @@ function onInvBillNameInput() {
   // Company changed → historical duplicate verdicts no longer apply; clear cache
   // and re-evaluate (local duplicates still highlight immediately).
   window._invpDupHistorical = {};
+  window._invpDupIgnored = {};
   if (typeof _invpRefreshDupHighlights === 'function') _invpRefreshDupHighlights();
   // Auto-refresh invoice number when company name changes (debounced)
   clearTimeout(window._invpBillNameTimer);
@@ -30805,9 +30808,12 @@ async function invpCheckDuplicateContainerNo(input) {
   _invpSaveContainerState();
   const localCount = (window._invpContainerItems || []).filter(i => (i.container_no || '').trim().toUpperCase() === val).length;
 
+  // User already confirmed this number is not a duplicate — skip the history check.
+  const ignored = !!(window._invpDupIgnored || {})[val];
+
   let historical = false;
   let detailHtml = '';
-  try {
+  if (!ignored) try {
     const params = new URLSearchParams({ container_no: val, company_name: companyName });
     if (editId) params.set('exclude_invoice_id', editId);
     const res = await api('/admin/container-no/check-duplicate?' + params.toString());
@@ -30816,8 +30822,8 @@ async function invpCheckDuplicateContainerNo(input) {
       const invoiceMatches = (res.matches || []).filter(m => m.invoice_number);
       const submissionMatches = (res.matches || []).filter(m => m.source === 'submission');
       if (invoiceMatches.length) {
-        detailHtml += `<div style="margin-bottom:.4rem">📄 已保存的 Invoice：</div>` +
-          invoiceMatches.map(m => `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• <a href="#" onclick="event.preventDefault();document.getElementById('containerDupModal').classList.remove('show');openInvpForEdit(${m.invoice_id})" style="color:#0369a1;text-decoration:underline;cursor:pointer">${esc(m.invoice_number)}</a></div>`).join('');
+        detailHtml += `<div style="margin-bottom:.4rem">📄 已保存的 Invoice（点击可打开核对）：</div>` +
+          invoiceMatches.map(m => `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• <a href="#" onclick="event.preventDefault();document.getElementById('containerDupModal').classList.remove('show');openInvpForEdit(${m.invoice_id})" style="color:#0369a1;text-decoration:underline;cursor:pointer">${esc(m.invoice_number)}</a>${m.status === 'draft' ? ' <span style="color:#b45309;font-size:.78rem;font-weight:600">（草稿）</span>' : ''}</div>`).join('');
       }
       if (submissionMatches.length) {
         detailHtml += `<div style="margin-top:${invoiceMatches.length ? '.5rem' : '0'}">📦 Container 提交记录：<strong>${submissionMatches.length}</strong> 条</div>`;
@@ -30864,7 +30870,11 @@ function _invpShowDupModal(containerNo, companyName, detailsHtml) {
 }
 function _invpDismissDup() {
   const no = window._invpDupModalNo;
-  if (no) delete window._invpDupHistorical[no];
+  if (no) {
+    delete window._invpDupHistorical[no];
+    window._invpDupIgnored = window._invpDupIgnored || {};
+    window._invpDupIgnored[no] = true; // don't re-flag this number again in this builder session
+  }
   _invpRefreshDupHighlights();
   document.getElementById('containerDupModal').classList.remove('show');
 }

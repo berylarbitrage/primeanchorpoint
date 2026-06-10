@@ -17441,7 +17441,7 @@ app.get('/api/admin/container-no/check-duplicate', requireAdmin, (req, res) => {
   if (!containerNo) return res.json({ duplicate: false });
 
   const allInvoices = db.prepare(
-    `SELECT id, invoice_number, company_name, profile_json FROM invoices WHERE company_name = ? COLLATE NOCASE`
+    `SELECT id, invoice_number, company_name, status, profile_json FROM invoices WHERE company_name = ? COLLATE NOCASE`
   ).all(companyName);
 
   const matches = [];
@@ -17449,10 +17449,14 @@ app.get('/api/admin/container-no/check-duplicate', requireAdmin, (req, res) => {
     if (excludeInvoiceId && inv.id === excludeInvoiceId) continue;
     try {
       const profile = JSON.parse(inv.profile_json || '{}');
+      // Only container-mode invoices count: hourly-mode invoices may carry stale
+      // container_items that are never displayed or billed, which caused false
+      // "duplicate" reports the user couldn't find when opening the invoice.
+      if ((profile.invoice_mode || '') !== 'container') continue;
       const items = Array.isArray(profile.container_items) ? profile.container_items : [];
       for (const item of items) {
         if ((item.container_no || '').trim().toUpperCase() === containerNo) {
-          matches.push({ invoice_id: inv.id, invoice_number: inv.invoice_number });
+          matches.push({ invoice_id: inv.id, invoice_number: inv.invoice_number, status: inv.status });
           break;
         }
       }
