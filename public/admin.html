@@ -2381,6 +2381,7 @@ tr:hover td{background:var(--sky-light)}
     <div id="cdupDetails" style="background:#fafafa;border:1px solid var(--gray-200);border-radius:8px;padding:.75rem 1rem;font-size:.85rem;color:var(--gray-700);line-height:1.7;margin-bottom:1.25rem"></div>
     <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1.25rem">请确认是否为重复录入。重复的输入框已标红。</p>
     <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:.5rem">
+      <button class="btn btn-outline" style="font-size:.82rem;color:var(--gray-500)" onclick="_invpDismissDup()">不是重复</button>
       <button class="btn btn-accent" onclick="document.getElementById('containerDupModal').classList.remove('show')">知道了</button>
     </div>
   </div>
@@ -30816,7 +30817,7 @@ async function invpCheckDuplicateContainerNo(input) {
       const submissionMatches = (res.matches || []).filter(m => m.source === 'submission');
       if (invoiceMatches.length) {
         detailHtml += `<div style="margin-bottom:.4rem">📄 已保存的 Invoice：</div>` +
-          invoiceMatches.map(m => `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• ${esc(m.invoice_number)}</div>`).join('');
+          invoiceMatches.map(m => `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• <a href="#" onclick="event.preventDefault();document.getElementById('containerDupModal').classList.remove('show');openInvpForEdit(${m.invoice_id})" style="color:#0369a1;text-decoration:underline;cursor:pointer">${esc(m.invoice_number)}</a></div>`).join('');
       }
       if (submissionMatches.length) {
         detailHtml += `<div style="margin-top:${invoiceMatches.length ? '.5rem' : '0'}">📦 Container 提交记录：<strong>${submissionMatches.length}</strong> 条</div>`;
@@ -30855,10 +30856,17 @@ function _invpMarkDupInput(input, isDup) {
 }
 
 function _invpShowDupModal(containerNo, companyName, detailsHtml) {
+  window._invpDupModalNo = containerNo;
   document.getElementById('cdupNo').textContent = containerNo;
   document.getElementById('cdupCompany').textContent = companyName;
   document.getElementById('cdupDetails').innerHTML = detailsHtml || '<div style="color:var(--gray-400)">—</div>';
   document.getElementById('containerDupModal').classList.add('show');
+}
+function _invpDismissDup() {
+  const no = window._invpDupModalNo;
+  if (no) delete window._invpDupHistorical[no];
+  _invpRefreshDupHighlights();
+  document.getElementById('containerDupModal').classList.remove('show');
 }
 
 // ── Cash payment receipt PDF for a single container row ──

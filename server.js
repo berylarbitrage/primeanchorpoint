@@ -17459,10 +17459,10 @@ app.get('/api/admin/container-no/check-duplicate', requireAdmin, (req, res) => {
     } catch {}
   }
 
-  // Also check container_submissions table
+  // Only check pending submissions (imported ones are already covered by the invoice check above)
   const submissions = db.prepare(
     `SELECT id, partner_name, container_no, created_at FROM container_submissions
-     WHERE UPPER(TRIM(container_no)) = ? AND partner_name = ? COLLATE NOCASE AND status NOT IN ('discarded')`
+     WHERE UPPER(TRIM(container_no)) = ? AND partner_name = ? COLLATE NOCASE AND status = 'pending'`
   ).all(containerNo, companyName);
   for (const sub of submissions) {
     matches.push({ submission_id: sub.id, source: 'submission', created_at: sub.created_at });
