@@ -34436,6 +34436,33 @@ function clearCpyFilter() {
   onCpyFilterChange();
 }
 
+// Empty-state hint: the month filter defaults to the current month, so a fresh
+// month looks "blank" even though records exist in earlier months. Spell out
+// which filter is active and offer one-click ways out.
+function _cpyEmptyHint() {
+  const month = document.getElementById('cpyFilterMonth').value;
+  const partnerSel = document.getElementById('cpyFilterPartner');
+  const partnerName = partnerSel.value ? (partnerSel.options[partnerSel.selectedIndex] || {}).text || '' : '';
+  if (!month && !partnerName) return '暂无付款记录';
+  const scope = [partnerName ? _cpyEscape(partnerName) : '', month ? _cpyEscape(month) + ' 月' : ''].filter(Boolean).join(' · ');
+  const prevBtn = month
+    ? `<button class="btn btn-sm btn-outline" style="margin-left:.6rem" onclick="_cpyGoPrevMonth()">← 查看上个月</button>`
+    : '';
+  return `${scope} 暂无付款记录（其他月份可能有数据）${prevBtn}
+    <button class="btn btn-sm btn-outline" style="margin-left:.4rem" onclick="clearCpyFilter()">查看全部</button>`;
+}
+
+function _cpyGoPrevMonth() {
+  const el = document.getElementById('cpyFilterMonth');
+  const parts = (el.value || '').split('-');
+  if (parts.length === 2) {
+    let y = Number(parts[0]), m = Number(parts[1]) - 1;
+    if (m < 1) { m = 12; y -= 1; }
+    el.value = `${y}-${String(m).padStart(2, '0')}`;
+  }
+  onCpyFilterChange();
+}
+
 function onCpyFilterChange() {
   if (_cpySubTab === 'summary') loadCpySummary();
   else if (_cpySubTab === 'weekly') loadCpyWeeklySummary();
@@ -34467,7 +34494,7 @@ async function loadCpyList() {
     ]);
     _cpyWeekProofs = Array.isArray(weekProofs) ? weekProofs.filter(x => x && x.proof_url) : [];
     if (!Array.isArray(rows) || !rows.length) {
-      tbody.innerHTML = '<tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="11" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">${_cpyEmptyHint()}</td></tr>`;
       document.getElementById('cpyFilterTotal').textContent = '';
       return;
     }
@@ -34759,7 +34786,7 @@ async function loadCpyWeeklySummary() {
   try {
     const rows = await api('/admin/company-payments' + (params.toString() ? '?' + params : ''));
     if (!Array.isArray(rows) || !rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">暂无付款记录</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="6" style="color:var(--gray-400);font-size:.85rem;padding:1rem;text-align:center">${_cpyEmptyHint()}</td></tr>`;
       document.getElementById('cpyFilterTotal').textContent = '';
       return;
     }
