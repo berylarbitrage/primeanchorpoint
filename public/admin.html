@@ -29939,6 +29939,37 @@ async function saveInvpInvoice(status) {
     }, 0);
     subtotal = Math.round(billed * 100) / 100;
   }
+
+  // Final-save safety net: re-check EVERY container row against the full history
+  // (rows imported from扫码 or pasted in bulk may never have fired the blur check).
+  // Numbers the user already dismissed via "不是重复" are skipped.
+  if (mode === 'container' && status !== 'draft') {
+    const ignoredMap = window._invpDupIgnored || {};
+    const counts = {};
+    containerItems.forEach(i => {
+      const n = (i.container_no || '').trim().toUpperCase();
+      if (n) counts[n] = (counts[n] || 0) + 1;
+    });
+    const allNos = Object.keys(counts).filter(n => !ignoredMap[n]);
+    const localDups = allNos.filter(n => counts[n] > 1);
+    let histDups = [];
+    try {
+      const results = await Promise.all(allNos.map(async no => ({ no, r: await _invpQueryDupHistory(no) })));
+      histDups = results.filter(x => x.r.historical).map(x => x.no);
+    } catch (_) { /* network failure → don't block saving */ }
+    const conflicts = [...new Set([...localDups, ...histDups])];
+    if (conflicts.length) {
+      histDups.forEach(no => { window._invpDupHistorical[no] = true; });
+      _invpRefreshDupHighlights();
+      const listHtml = conflicts.map(n => `<span style="font-family:monospace;font-weight:700;color:#b91c1c">${esc(n)}</span>`).join('、');
+      const ok = await showConfirm(
+        `⚠️ 保存前核对：发现 <strong>${conflicts.length}</strong> 个 container 号在历史记录中已存在或在本单中重复：<br><br>${listHtml}<br><br>重复的输入框已标红，可逐个点开核对。确定仍要保存吗？`,
+        { confirmLabel: '仍要保存', cancelLabel: '返回核对', danger: true }
+      );
+      if (!ok) return;
+    }
+  }
+
   const profileWithMode = { ...getInvpProfile(), invoice_mode: mode, container_items: containerItems };
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
@@ -30730,6 +30761,18 @@ async function invpImportCsub(submissionId) {
     showToast('已导入 ✓');
     loadInvpCsubInbox();
     refreshInvpInboxBadge();
+    // Imported rows never get a blur event — run the duplicate check on them now.
+    const impNo = (rec.container_no || '').trim().toUpperCase();
+    if (impNo && !(window._invpDupIgnored || {})[impNo]) {
+      try {
+        const r = await _invpQueryDupHistory(impNo);
+        if (r.historical) {
+          window._invpDupHistorical[impNo] = true;
+          _invpRefreshDupHighlights();
+          _invpShowDupModal(impNo, (document.getElementById('invPageBillName').value || '').trim(), r.detailHtml);
+        }
+      } catch (_) {}
+    }
   } catch (e) { showToast('导入失败：' + (e.message || e), 'error'); }
 }
 
@@ -30796,6 +30839,38 @@ function invpOnContainerNoInput(input) {
   _invpRefreshDupHighlights();
 }
 
+// Query the server for historical occurrences of a container number (saved
+// invoices of the current company + pending扫码 submissions). Returns
+// { historical, detailHtml } where detailHtml lists every match with a
+// clickable invoice link and labels for drafts / hourly-mode legacy data.
+async function _invpQueryDupHistory(val) {
+  const companyName = (document.getElementById('invPageBillName').value || '').trim();
+  if (!val || !companyName) return { historical: false, detailHtml: '' };
+  const editId = document.getElementById('invPageEditId').value || '';
+  const params = new URLSearchParams({ container_no: val, company_name: companyName });
+  if (editId) params.set('exclude_invoice_id', editId);
+  const res = await api('/admin/container-no/check-duplicate?' + params.toString());
+  let historical = false, detailHtml = '';
+  if (res && res.duplicate) {
+    historical = true;
+    const invoiceMatches = (res.matches || []).filter(m => m.invoice_number);
+    const submissionMatches = (res.matches || []).filter(m => m.source === 'submission');
+    if (invoiceMatches.length) {
+      detailHtml += `<div style="margin-bottom:.4rem">📄 已保存的 Invoice（点击可打开核对）：</div>` +
+        invoiceMatches.map(m => {
+          let tags = '';
+          if (m.status === 'draft') tags += ' <span style="color:#b45309;font-size:.78rem;font-weight:600">（草稿）</span>';
+          if (m.invoice_mode === 'hourly') tags += ' <span style="color:#6b7280;font-size:.78rem;font-weight:600" title="该 invoice 已是工时计费模式，container 数据为历史遗留，账单上不显示">（工时模式·遗留数据）</span>';
+          return `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• <a href="#" onclick="event.preventDefault();document.getElementById('containerDupModal').classList.remove('show');openInvpForEdit(${m.invoice_id})" style="color:#0369a1;text-decoration:underline;cursor:pointer">${esc(m.invoice_number)}</a>${tags}</div>`;
+        }).join('');
+    }
+    if (submissionMatches.length) {
+      detailHtml += `<div style="margin-top:${invoiceMatches.length ? '.5rem' : '0'}">📦 待处理的扫码提交记录：<strong>${submissionMatches.length}</strong> 条</div>`;
+    }
+  }
+  return { historical, detailHtml };
+}
+
 async function invpCheckDuplicateContainerNo(input) {
   const val = (input.value || '').trim().toUpperCase();
   // Refresh local highlights immediately (covers same-invoice duplicates).
@@ -30803,7 +30878,6 @@ async function invpCheckDuplicateContainerNo(input) {
   if (!val) return;
   const companyName = (document.getElementById('invPageBillName').value || '').trim();
   if (!companyName) return;
-  const editId = document.getElementById('invPageEditId').value || '';
 
   _invpSaveContainerState();
   const localCount = (window._invpContainerItems || []).filter(i => (i.container_no || '').trim().toUpperCase() === val).length;
@@ -30814,21 +30888,9 @@ async function invpCheckDuplicateContainerNo(input) {
   let historical = false;
   let detailHtml = '';
   if (!ignored) try {
-    const params = new URLSearchParams({ container_no: val, company_name: companyName });
-    if (editId) params.set('exclude_invoice_id', editId);
-    const res = await api('/admin/container-no/check-duplicate?' + params.toString());
-    if (res && res.duplicate) {
-      historical = true;
-      const invoiceMatches = (res.matches || []).filter(m => m.invoice_number);
-      const submissionMatches = (res.matches || []).filter(m => m.source === 'submission');
-      if (invoiceMatches.length) {
-        detailHtml += `<div style="margin-bottom:.4rem">📄 已保存的 Invoice（点击可打开核对）：</div>` +
-          invoiceMatches.map(m => `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• <a href="#" onclick="event.preventDefault();document.getElementById('containerDupModal').classList.remove('show');openInvpForEdit(${m.invoice_id})" style="color:#0369a1;text-decoration:underline;cursor:pointer">${esc(m.invoice_number)}</a>${m.status === 'draft' ? ' <span style="color:#b45309;font-size:.78rem;font-weight:600">（草稿）</span>' : ''}</div>`).join('');
-      }
-      if (submissionMatches.length) {
-        detailHtml += `<div style="margin-top:${invoiceMatches.length ? '.5rem' : '0'}">📦 Container 提交记录：<strong>${submissionMatches.length}</strong> 条</div>`;
-      }
-    }
+    const r = await _invpQueryDupHistory(val);
+    historical = r.historical;
+    detailHtml = r.detailHtml;
   } catch (e) {
     // silently ignore check failures (keep whatever local state we have)
   }

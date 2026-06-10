@@ -17449,14 +17449,15 @@ app.get('/api/admin/container-no/check-duplicate', requireAdmin, (req, res) => {
     if (excludeInvoiceId && inv.id === excludeInvoiceId) continue;
     try {
       const profile = JSON.parse(inv.profile_json || '{}');
-      // Only container-mode invoices count: hourly-mode invoices may carry stale
-      // container_items that are never displayed or billed, which caused false
-      // "duplicate" reports the user couldn't find when opening the invoice.
-      if ((profile.invoice_mode || '') !== 'container') continue;
       const items = Array.isArray(profile.container_items) ? profile.container_items : [];
       for (const item of items) {
         if ((item.container_no || '').trim().toUpperCase() === containerNo) {
-          matches.push({ invoice_id: inv.id, invoice_number: inv.invoice_number, status: inv.status });
+          // invoice_mode tells the client whether the match is on the visible bill
+          // (container mode) or legacy data carried by an hourly-mode invoice.
+          matches.push({
+            invoice_id: inv.id, invoice_number: inv.invoice_number, status: inv.status,
+            invoice_mode: profile.invoice_mode === 'container' ? 'container' : 'hourly',
+          });
           break;
         }
       }
