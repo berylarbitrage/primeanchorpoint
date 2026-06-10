@@ -17441,7 +17441,8 @@ app.get('/api/admin/container-no/check-duplicate', requireAdmin, (req, res) => {
   if (!containerNo) return res.json({ duplicate: false });
 
   const allInvoices = db.prepare(
-    `SELECT id, invoice_number, company_name, status, profile_json FROM invoices WHERE company_name = ? COLLATE NOCASE`
+    `SELECT id, invoice_number, company_name, status, invoice_date, period_start, period_end, profile_json
+     FROM invoices WHERE company_name = ? COLLATE NOCASE`
   ).all(companyName);
 
   const matches = [];
@@ -17454,9 +17455,14 @@ app.get('/api/admin/container-no/check-duplicate', requireAdmin, (req, res) => {
         if ((item.container_no || '').trim().toUpperCase() === containerNo) {
           // invoice_mode tells the client whether the match is on the visible bill
           // (container mode) or legacy data carried by an hourly-mode invoice.
+          // same_number_count > 1 means several invoice records share this
+          // displayed number — looking it up by number in the list may open a
+          // DIFFERENT record than the one containing the container.
           matches.push({
             invoice_id: inv.id, invoice_number: inv.invoice_number, status: inv.status,
+            invoice_date: inv.invoice_date || '', period_start: inv.period_start || '', period_end: inv.period_end || '',
             invoice_mode: profile.invoice_mode === 'container' ? 'container' : 'hourly',
+            same_number_count: db.prepare('SELECT COUNT(*) AS n FROM invoices WHERE invoice_number = ?').get(inv.invoice_number).n,
           });
           break;
         }

@@ -30861,7 +30861,14 @@ async function _invpQueryDupHistory(val) {
           let tags = '';
           if (m.status === 'draft') tags += ' <span style="color:#b45309;font-size:.78rem;font-weight:600">（草稿）</span>';
           if (m.invoice_mode === 'hourly') tags += ' <span style="color:#6b7280;font-size:.78rem;font-weight:600" title="该 invoice 已是工时计费模式，container 数据为历史遗留，账单上不显示">（工时模式·遗留数据）</span>';
-          return `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• <a href="#" onclick="event.preventDefault();document.getElementById('containerDupModal').classList.remove('show');openInvpForEdit(${m.invoice_id})" style="color:#0369a1;text-decoration:underline;cursor:pointer">${esc(m.invoice_number)}</a>${tags}</div>`;
+          const period = m.period_start && m.period_end ? `${m.period_start} ~ ${m.period_end}` : (m.invoice_date || '');
+          const dateLine = period ? `<div style="padding-left:1.75rem;font-size:.74rem;color:var(--gray-400)">${esc(period)}</div>` : '';
+          // Several records share this displayed number — searching the list by
+          // number may open a different record than the matching one.
+          const sameNumWarn = (m.same_number_count || 0) > 1
+            ? `<div style="padding-left:1.75rem;font-size:.74rem;color:#b45309;font-weight:600">⚠️ 该编号共有 ${m.same_number_count} 条记录，请务必点击上方链接打开（在列表里按编号找可能打开的是另一条）</div>`
+            : '';
+          return `<div style="padding-left:1rem;font-family:monospace;font-weight:600">• <a href="#" onclick="event.preventDefault();document.getElementById('containerDupModal').classList.remove('show');openInvpForEdit(${m.invoice_id})" style="color:#0369a1;text-decoration:underline;cursor:pointer">${esc(m.invoice_number)}</a>${tags}</div>${dateLine}${sameNumWarn}`;
         }).join('');
     }
     if (submissionMatches.length) {
