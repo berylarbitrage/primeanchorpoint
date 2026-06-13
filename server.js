@@ -17420,10 +17420,64 @@ app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
 app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
+
+  // Snapshot the previous state so we can record a field-level diff in history.
+  const prev = db.prepare('SELECT * FROM invoices WHERE id=?').get(req.params.id);
+
   db.prepare(`
     UPDATE invoices SET invoice_number=?, invoice_date=?, company_name=?, bill_to_addr=?, period_start=?, period_end=?, for_label=?, subtotal=?, items_json=?, profile_json=?, status=?, markup_rate=?
     WHERE id=?
   `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0, req.params.id);
+
+  // Log an 编辑 entry describing exactly what changed. Never let the history
+  // bookkeeping break the actual save.
+  if (prev) {
+    try {
+      const changes = [];
+      const money = v => '$' + (Number(v) || 0).toFixed(2);
+      const statusZh = s => s === 'saved' ? '已保存' : s === 'draft' ? '草稿' : (s || '空');
+      const cmp = (label, oldV, newV, fmt) => {
+        const o = oldV === null || oldV === undefined ? '' : String(oldV);
+        const n = newV === null || newV === undefined ? '' : String(newV);
+        if (o !== n) changes.push(`${label} ${fmt ? fmt(oldV) : (o || '空')} → ${fmt ? fmt(newV) : (n || '空')}`);
+      };
+      cmp('Invoice 编号', prev.invoice_number, invoice_number);
+      cmp('Invoice 日期', prev.invoice_date, invoice_date || null);
+      cmp('客户公司', prev.company_name, company_name);
+      cmp('账单地址', prev.bill_to_addr, bill_to_addr || null);
+      const oldPeriod = `${prev.period_start || ''} ~ ${prev.period_end || ''}`;
+      const newPeriod = `${period_start || ''} ~ ${period_end || ''}`;
+      if (oldPeriod !== newPeriod) changes.push(`服务周期 ${oldPeriod} → ${newPeriod}`);
+      cmp('金额', prev.subtotal, subtotal || 0, money);
+      cmp('状态', prev.status, status || 'saved', statusZh);
+      const oldMk = Number(prev.markup_rate) || 0, newMk = Number(markup_rate) || 0;
+      if (oldMk !== newMk) changes.push(`加价率 ${oldMk} → ${newMk}`);
+
+      const oldItems = prev.items_json ? JSON.parse(prev.items_json) : [];
+      const newItems = Array.isArray(items) ? items : [];
+      if (JSON.stringify(oldItems) !== JSON.stringify(newItems)) {
+        changes.push(oldItems.length === newItems.length
+          ? `员工明细已修改（${newItems.length} 项）`
+          : `员工明细 ${oldItems.length} 项 → ${newItems.length} 项`);
+      }
+      let oldProfile = {};
+      try { oldProfile = prev.profile_json ? JSON.parse(prev.profile_json) : {}; } catch (_) {}
+      const newProfile = profile || {};
+      const oldC = Array.isArray(oldProfile.container_items) ? oldProfile.container_items : [];
+      const newC = Array.isArray(newProfile.container_items) ? newProfile.container_items : [];
+      if (JSON.stringify(oldC) !== JSON.stringify(newC)) {
+        changes.push(oldC.length === newC.length
+          ? `集装箱明细已修改（${newC.length} 项）`
+          : `集装箱明细 ${oldC.length} 项 → ${newC.length} 项`);
+      }
+      const header = p => { const c = { ...p }; delete c.container_items; delete c.invoice_mode; return JSON.stringify(c); };
+      if (header(oldProfile) !== header(newProfile)) changes.push('抬头/银行/联系人信息已修改');
+
+      db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+        .run(req.params.id, '编辑', changes.length ? changes.join('；') : '（已保存，未检测到字段变化）');
+    } catch (_) { /* history logging is best-effort */ }
+  }
+
   res.json({ success: true });
 });
 
