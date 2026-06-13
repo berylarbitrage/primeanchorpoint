@@ -29509,6 +29509,7 @@ function openInvpBuilderModal() {
   window._invpSelectedPartnerId = null;
   refreshInvpInboxBadge();
   window._invpCurrentSavedId = null;
+  window._invpLoadedStatus = null;
   const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
@@ -29531,6 +29532,11 @@ async function openInvpForEdit(id) {
   window._invpManualEmps = [];
   _invpManualUidSeq = 1;
   document.getElementById('invPageEditId').value = inv.id;
+  // Re-point the shared builder state at the invoice being opened, so the
+  // print-history entry is logged against THIS invoice (not whichever one was
+  // saved last) and the save buttons reflect this invoice's real status.
+  window._invpCurrentSavedId = inv.id;
+  window._invpLoadedStatus = inv.status || 'saved';
   document.getElementById('invPageNumber').value = inv.invoice_number || '';
   document.getElementById('invPageDate').value = inv.invoice_date || '';
   document.getElementById('invPageStart').value = inv.period_start || '';
@@ -29898,6 +29904,7 @@ async function invpRefreshInvoiceNumber() {
 
 // Track whether current preview invoice has been saved
 window._invpPreviewSaved = false;
+window._invpLoadedStatus = null; // 'draft' | 'saved' | null(new) — status of the record currently open
 window._invpHideOtCols = false;
 window._invpAllOtZero = false;
 
@@ -29918,15 +29925,31 @@ function updateInvpPreviewBtns() {
     return;
   }
   const editId = document.getElementById('invPageEditId').value;
-  const isSaved = window._invpPreviewSaved || !!editId;
+  const hasRecord = !!editId;                                   // already persisted (draft or saved)
+  const isDraft = hasRecord && window._invpLoadedStatus === 'draft';
   const otToggle = window._invpAllOtZero
     ? `<button class="btn btn-outline" onclick="toggleInvpOtCols()" style="color:#0369a1;border-color:#7dd3fc;background:${window._invpHideOtCols ? '#e0f2fe' : '#fff'}">${window._invpHideOtCols ? '显示 OT 列' : '隐藏 OT 列'}</button>`
     : '';
+  // Saving preserves the record's current status, so previewing / printing /
+  // updating a 草稿 never silently promotes it to 已保存. Turning a draft into a
+  // final invoice is now an explicit button (it also triggers the duplicate-
+  // container final check inside saveInvpInvoice, which only runs for 'saved').
+  let saveBtns;
+  if (!hasRecord) {
+    saveBtns = `
+    <button class="btn btn-green" onclick="saveInvpInvoice('saved')">💾 保存 Invoice</button>
+    <button class="btn btn-outline" onclick="saveInvpInvoice('draft')" style="color:#92400e;border-color:#d97706">📝 保存草稿</button>`;
+  } else if (isDraft) {
+    saveBtns = `
+    <button class="btn btn-green" style="background:#d97706;border-color:#d97706" onclick="saveInvpInvoice('draft')">💾 更新草稿</button>
+    <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="saveInvpInvoice('saved')">✅ 保存为正式 Invoice</button>`;
+  } else {
+    saveBtns = `<button class="btn btn-green" onclick="saveInvpInvoice('saved')">💾 更新保存</button>`;
+  }
   wrap.innerHTML = `
     ${otToggle}
-    <button class="btn btn-green" onclick="saveInvpInvoice('saved')">${isSaved ? '💾 更新保存' : '💾 保存 Invoice'}</button>
-    <button class="btn btn-outline" style="${isSaved ? '' : 'opacity:.45;pointer-events:none;'}" onclick="printInvpInvoice()" ${isSaved ? '' : 'disabled'}>🖨️ 打印 / 另存为 PDF</button>
-    <button class="btn btn-outline" onclick="saveInvpInvoice('draft')" style="color:#92400e;border-color:#d97706">📝 保存草稿</button>
+    ${saveBtns}
+    <button class="btn btn-outline" style="${hasRecord ? '' : 'opacity:.45;pointer-events:none;'}" onclick="printInvpInvoice()" ${hasRecord ? '' : 'disabled'}>🖨️ 打印 / 另存为 PDF</button>
     <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
   `;
 }
@@ -30014,6 +30037,7 @@ async function saveInvpInvoice(status) {
     if (res && res.success) {
       window._invpCurrentSavedId = parseInt(editId);
       window._invpPreviewSaved = (status === 'saved');
+      window._invpLoadedStatus = status;
       window._invpDirty = false;
       updateInvpPreviewBtns();
       showToast(status === 'draft' ? '草稿已保存' : `Invoice 已更新：${invNum}`, 'success', 4000);
@@ -30027,6 +30051,7 @@ async function saveInvpInvoice(status) {
       window._invpCurrentSavedId = res.id;
       document.getElementById('invPageEditId').value = res.id; // now in edit mode
       window._invpPreviewSaved = (status === 'saved');
+      window._invpLoadedStatus = status;
       window._invpDirty = false;
       updateInvpPreviewBtns();
       showToast(status === 'draft' ? '草稿已保存' : `Invoice 已保存：${invNum}`, 'success', 4000);
