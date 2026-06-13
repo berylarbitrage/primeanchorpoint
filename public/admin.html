@@ -29580,10 +29580,15 @@ async function openInvpForEdit(id) {
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
 
-  // Restore profile from saved invoice
-  if (inv.profile && Object.keys(inv.profile).length) {
-    saveInvpProfileData(inv.profile);
-  }
+  // Restore profile from this invoice's own saved snapshot. ALWAYS overwrite the
+  // shared (localStorage-backed) profile slot — even when the snapshot is empty —
+  // otherwise an invoice with no saved profile silently keeps whatever
+  // sender/bank/contact identity the previously-opened invoice left behind. That
+  // leak makes one invoice "become" another on screen (e.g. a C-entity invoice
+  // showing the L-entity header) and, on save, bakes the wrong identity in for
+  // good (saveInvpInvoice builds its payload from getInvpProfile()). When empty,
+  // clearing to {} lets loadInvpPresets() below re-seed a consistent default.
+  saveInvpProfileData(inv.profile && Object.keys(inv.profile).length ? inv.profile : {});
 
   // Restore billing mode (container vs hourly)
   const mode = (inv.profile && inv.profile.invoice_mode) === 'container' ? 'container' : 'hourly';
