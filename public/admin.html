@@ -141,7 +141,7 @@ tr:hover td{background:var(--sky-light)}
 @keyframes toastOut{to{opacity:0;transform:translateY(-8px) scale(.96)}}
 .badge-pending{background:#FFF3E0;color:#b45309}.badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#f0fdf4;color:#16a34a}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-terminated{background:#fef2f2;color:#b91c1c}.badge-resigned{background:#fff7ed;color:#c2410c}.badge-no_show{background:#fafafa;color:#6b7280;border:1px solid #e5e7eb}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
 .assign-status-select{border:none;border-radius:10px;padding:2px 8px;font-size:.72rem;font-weight:700;cursor:pointer;outline:none;appearance:auto}
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:300}
 .modal-bg.show{display:flex}
 .modal{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
 #inqModal>.modal{overflow-y:hidden}
@@ -29580,10 +29580,15 @@ async function openInvpForEdit(id) {
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
 
-  // Restore profile from saved invoice
-  if (inv.profile && Object.keys(inv.profile).length) {
-    saveInvpProfileData(inv.profile);
-  }
+  // Restore profile from this invoice's own saved snapshot. ALWAYS overwrite the
+  // shared (localStorage-backed) profile slot — even when the snapshot is empty —
+  // otherwise an invoice with no saved profile silently keeps whatever
+  // sender/bank/contact identity the previously-opened invoice left behind. That
+  // leak makes one invoice "become" another on screen (e.g. a C-entity invoice
+  // showing the L-entity header) and, on save, bakes the wrong identity in for
+  // good (saveInvpInvoice builds its payload from getInvpProfile()). When empty,
+  // clearing to {} lets loadInvpPresets() below re-seed a consistent default.
+  saveInvpProfileData(inv.profile && Object.keys(inv.profile).length ? inv.profile : {});
 
   // Restore billing mode (container vs hourly)
   const mode = (inv.profile && inv.profile.invoice_mode) === 'container' ? 'container' : 'hourly';
