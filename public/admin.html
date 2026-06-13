@@ -306,6 +306,26 @@ tr:hover td{background:var(--sky-light)}
   .stats-row{grid-template-columns:1fr}
   .top-actions{width:100%}
 }
+/* ── Global mobile adaptation (phones ≤640px) ──────────────────────────────
+   The admin is built desktop-first with ~100 hard-coded multi-column grids
+   that don't fit a phone. Collapse them to a single column so forms/cards
+   stack instead of overflowing. auto-fit/auto-fill grids are already
+   responsive (they wrap on their own), so they're left untouched. */
+@media(max-width:640px){
+  [style*="grid-template-columns"]:not([style*="auto-fit"]):not([style*="auto-fill"]){
+    grid-template-columns:1fr !important;
+  }
+  /* Keep the invoice preview "paper" in its true printable layout (it mirrors
+     the generated PDF); it scrolls horizontally inside #invpPreviewContent. */
+  #invpPaper [style*="grid-template-columns"]{ grid-template-columns:1fr 1fr !important; }
+  /* Media & form controls must never push past the viewport width. */
+  img,svg,video,canvas{ max-width:100%; height:auto; }
+  input,select,textarea{ max-width:100%; box-sizing:border-box; }
+  /* Use the screen for modals; trim the desktop padding. */
+  .modal{ max-width:96vw !important; padding:1.1rem !important; }
+  /* Let the full invoice page be reached by scrolling from its left edge. */
+  #invpPreviewContent{ justify-content:flex-start !important; padding:.5rem !important; }
+}
 /* Day toggle buttons */
 .day-btn{padding:5px 9px;border:1.5px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-600);font-size:.78rem;cursor:pointer;transition:all .15s;font-weight:600;white-space:nowrap}
 .day-btn:hover{border-color:var(--sky);color:var(--sky)}
@@ -660,7 +680,7 @@ tr:hover td{background:var(--sky-light)}
 <!-- Dashboard -->
 <div id="tab-dashboard">
   <div class="top"><h1>仪表盘</h1></div>
-  <div class="stats-row" style="grid-template-columns:repeat(5,1fr)">
+  <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
     <div class="stat-card"><h3 id="statInq">0</h3><p>问卷总数</p></div>
     <div class="stat-card"><h3 id="statNew">0</h3><p>本周新增</p></div>
     <div class="stat-card"><h3 id="statAssign">0</h3><p>已派工</p></div>
