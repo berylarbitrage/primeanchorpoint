@@ -29900,7 +29900,7 @@ async function attemptCloseInvpBuilder(fromBackdrop) {
 // renderInvpList() re-applies the filters, recomputes the summary, and rebuilds
 // only the table — so typing in the search box never rebuilds the controls.
 let _invpAllRows = [];
-const _invpFilter = { q: '', company: '', bank: '', from: '', to: '', sort: 'date_desc' };
+const _invpFilter = { q: '', company: '', bank: '', type: '', from: '', to: '', sort: 'date_desc' };
 
 // "Chase ••9072" label for a list row, from the server-supplied bank_name /
 // bank_account_last4. Used for the 银行 column and the per-bank filter.
@@ -29910,6 +29910,17 @@ function invpBankLabel(r) {
   if (!name && !l4) return '';
   return (name || '账户') + (l4 ? ' ••' + l4 : '');
 }
+
+// Container vs labor is encoded in the invoice number's mode letter, the same
+// marker the server stamps at creation (INV-C-… = container, INV-L-… = labor;
+// see server.js). Anything else (legacy / unstamped) is treated as 其他.
+function invpType(r) {
+  const n = (r.invoice_number || '').toUpperCase();
+  if (n.startsWith('INV-C-')) return 'container';
+  if (n.startsWith('INV-L-')) return 'labor';
+  return 'other';
+}
+const _INVP_TYPE_META = { container: ['📦', 'Container'], labor: ['👷', 'Labor'], other: ['🧾', '其他'] };
 
 // Per-column sort definitions for the invoice list: each key maps a column to
 // the value it sorts on, its data type, and the direction a first click should
@@ -29986,6 +29997,14 @@ async function loadInvpList() {
           ${companies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
         </select>
       </div>
+      <div style="display:flex;flex-direction:column;gap:.2rem">
+        <label style="${lbl}">类型</label>
+        <select id="invpFltType" onchange="renderInvpList()" style="${fld};min-width:120px">
+          <option value="">全部类型</option>
+          <option value="container">📦 Container</option>
+          <option value="labor">👷 Labor</option>
+        </select>
+      </div>
       ${banks.length ? `<div style="display:flex;flex-direction:column;gap:.2rem">
         <label style="${lbl}">收款银行</label>
         <select id="invpFltBank" onchange="renderInvpList()" style="${fld};min-width:150px">
@@ -30014,6 +30033,7 @@ async function loadInvpList() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('invpFltCompany', _invpFilter.company);
   set('invpFltBank', _invpFilter.bank);
+  set('invpFltType', _invpFilter.type);
   set('invpFltFrom', _invpFilter.from);
   set('invpFltTo', _invpFilter.to);
   set('invpFltQ', _invpFilter.q);
@@ -30021,9 +30041,9 @@ async function loadInvpList() {
 }
 
 function resetInvpFilter() {
-  Object.assign(_invpFilter, { q: '', company: '', bank: '', from: '', to: '', sort: 'date_desc' });
+  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', from: '', to: '', sort: 'date_desc' });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltFrom', ''); set('invpFltTo', '');
+  set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltType', ''); set('invpFltFrom', ''); set('invpFltTo', '');
   set('invpFltQ', '');
   renderInvpList();
 }
@@ -30035,6 +30055,7 @@ function renderInvpList() {
   const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
   _invpFilter.company = val('invpFltCompany');
   _invpFilter.bank = val('invpFltBank');
+  _invpFilter.type = val('invpFltType');
   _invpFilter.from = val('invpFltFrom');
   _invpFilter.to = val('invpFltTo');
   _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
@@ -30042,6 +30063,7 @@ function renderInvpList() {
   let list = _invpAllRows.slice();
   if (_invpFilter.company) list = list.filter(r => (r.company_name || '') === _invpFilter.company);
   if (_invpFilter.bank) list = list.filter(r => invpBankLabel(r) === _invpFilter.bank);
+  if (_invpFilter.type) list = list.filter(r => invpType(r) === _invpFilter.type);
   // invoice_date is stored ISO (YYYY-MM-DD), so string compare = date compare.
   if (_invpFilter.from) list = list.filter(r => (r.invoice_date || '') >= _invpFilter.from);
   if (_invpFilter.to) list = list.filter(r => (r.invoice_date || '') <= _invpFilter.to);
@@ -30054,23 +30076,50 @@ function renderInvpList() {
   const totBill = list.reduce((s, r) => s + (r.subtotal || 0), 0);
   const totWage = list.reduce((s, r) => s + (r.wage_cost || 0), 0);
   const totProfit = totBill - totWage;
-  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.from || _invpFilter.to || _invpFilter.q);
+  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.from || _invpFilter.to || _invpFilter.q);
   const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const card = (label, value, color) => `
     <div style="flex:1 1 140px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
       <div style="font-size:.72rem;color:var(--gray-500)">${label}</div>
       <div style="font-size:1.15rem;font-weight:700;${color ? 'color:' + color : ''}">${value}</div>
     </div>`;
+
+  // Container vs labor breakdown of the same (filtered) set, so the 账单/工资/利润
+  // are split by type at a glance. Only shown when ≥2 types are present — when
+  // the type filter already isolates one type it would just repeat the cards.
+  const byType = {};
+  for (const r of list) {
+    const t = invpType(r);
+    const b = byType[t] || (byType[t] = { n: 0, bill: 0, wage: 0 });
+    b.n++; b.bill += (r.subtotal || 0); b.wage += (r.wage_cost || 0);
+  }
+  const breakdownRows = ['container', 'labor', 'other'].filter(t => byType[t]).map(t => {
+    const b = byType[t], [icon, label] = _INVP_TYPE_META[t], profit = b.bill - b.wage;
+    return `<div style="flex:1 1 280px;display:flex;align-items:center;gap:.6rem;background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:.45rem .75rem;font-size:.8rem">
+        <span style="font-weight:700;white-space:nowrap">${icon} ${label}</span>
+        <span style="color:var(--gray-400)">${b.n} 张</span>
+        <span style="margin-left:auto;display:flex;gap:.9rem;white-space:nowrap">
+          <span>账单 <b>${money(b.bill)}</b></span>
+          <span style="color:#b45309">工资 <b>${money(b.wage)}</b></span>
+          <span style="color:${profit >= 0 ? '#16a34a' : '#dc2626'}">利润 <b>${money(profit)}</b></span>
+        </span>
+      </div>`;
+  });
+  const breakdownHtml = breakdownRows.length >= 2
+    ? `<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.1rem">${breakdownRows.join('')}</div>`
+    : '';
+
   sumWrap.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem">
       <span style="font-weight:600;font-size:.9rem">📊 汇总${isFiltered ? '（按当前筛选）' : '（全部）'}</span>
       <span style="font-size:.78rem;color:var(--gray-500)">${isFiltered ? `${list.length} / ${_invpAllRows.length}` : list.length} 张 Invoice</span>
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.1rem">
+    <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:${breakdownHtml ? '.6rem' : '1.1rem'}">
       ${card('账单总额', money(totBill))}
       ${card('工资总额（发出）', money(totWage), '#b45309')}
       ${card('利润总额（赚取）', money(totProfit), totProfit >= 0 ? '#16a34a' : '#dc2626')}
-    </div>`;
+    </div>
+    ${breakdownHtml}`;
 
   const statusBadge = s => s === 'saved'
     ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#dcfce7;color:#166534">已保存</span>'
