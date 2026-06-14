@@ -32061,19 +32061,28 @@ async function invpBulkReceipts(mode) {
 // Carries the chosen subcontractor across the re-invocation triggered by the picker
 window._invpStmtSubFilter = null;
 
-// Lightweight chooser: shows one button per subcontractor; calls onPick(key)
-function invpPickSubcontractor(subs, onPick) {
+// Lightweight chooser: shows one button per subcontractor; calls onPick(key).
+// Each `s` is { key, label, sub?, count?, note? } — `sub` is a secondary line
+// (e.g. address), `count` shows "N 人", `note` shows a right-side tag (e.g. W-9 ✓).
+// opts: { title, sub } customize the heading.
+function invpPickSubcontractor(subs, onPick, opts = {}) {
   const existing = document.getElementById('invpSubPickOverlay');
   if (existing) existing.remove();
   const ov = document.createElement('div');
   ov.id = 'invpSubPickOverlay';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2300;display:flex;align-items:center;justify-content:center';
-  ov.innerHTML = `<div style="background:#fff;border-radius:10px;padding:1.1rem 1.25rem;max-width:380px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,.25)">
-    <div style="font-weight:700;font-size:1rem;margin-bottom:.25rem">选择分包商</div>
-    <div style="font-size:.8rem;color:#64748b;margin-bottom:.85rem">为该分包商生成对账单（只含其名下员工）</div>
+  ov.innerHTML = `<div style="background:#fff;border-radius:10px;padding:1.1rem 1.25rem;max-width:420px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,.25);max-height:80vh;overflow:auto">
+    <div style="font-weight:700;font-size:1rem;margin-bottom:.25rem">${esc(opts.title || '选择分包商')}</div>
+    <div style="font-size:.8rem;color:#64748b;margin-bottom:.85rem">${esc(opts.sub || '为该分包商生成对账单（只含其名下员工）')}</div>
     <div style="display:flex;flex-direction:column;gap:.45rem">
-      ${subs.map(s => `<button type="button" class="btn btn-outline" style="display:flex;justify-content:space-between;align-items:center;font-size:.88rem;padding:.5rem .9rem" data-key="${esc(s.key)}">
-        <span style="font-weight:600;color:#047857">${esc(s.label)}</span><span style="color:#94a3b8;font-size:.78rem">${s.count} 人</span></button>`).join('')}
+      ${subs.map(s => `<button type="button" class="btn btn-outline" style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;font-size:.88rem;padding:.5rem .9rem;text-align:left" data-key="${esc(s.key)}">
+        <span style="display:flex;flex-direction:column;gap:1px;min-width:0">
+          <span style="font-weight:600;color:#047857">${esc(s.label)}</span>
+          ${s.sub ? `<span style="font-weight:400;color:#94a3b8;font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.sub)}</span>` : ''}
+        </span>
+        ${s.count != null ? `<span style="color:#94a3b8;font-size:.78rem;white-space:nowrap">${s.count} 人</span>`
+          : (s.note ? `<span style="color:#16a34a;font-size:.72rem;white-space:nowrap">${esc(s.note)}</span>` : '')}
+      </button>`).join('')}
     </div>
     <div style="text-align:right;margin-top:1rem"><button type="button" class="btn btn-outline" id="invpSubPickCancel">取消</button></div>
   </div>`;
@@ -32083,8 +32092,29 @@ function invpPickSubcontractor(subs, onPick) {
   ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
 }
 
+// Find a managed 分包商 (labor company) by case-insensitive name / payee-name
+// match, so a statement's recipient can pull the entity's legal address + tax docs.
+function _invpFindLaborCompany(name) {
+  const n = (name || '').trim().toLowerCase();
+  if (!n) return null;
+  const list = window._invpLaborCompanies || _allLaborCompanies || [];
+  return list.find(c => c && ((c.name || '').trim().toLowerCase() === n || (c.payee_name || '').trim().toLowerCase() === n)) || null;
+}
+
+// Carries the chosen managed-subcontractor entity id across the re-invocation
+// triggered by the container picker (mirrors _invpStmtSubFilter for hourly mode).
+window._invpStmtSubEntityId = null;
+
 async function generateInvpSubcontractorStatement() {
   const mode = window._invpMode || 'hourly';
+
+  // Ensure the managed 分包商 list is available so the recipient can be picked
+  // from it. Hourly mode loads it lazily on table render; container mode may not
+  // have yet, so load it here before the picker logic runs.
+  if (!window._invpLaborCompanies) {
+    try { const r = await api('/admin/labor-companies'); window._invpLaborCompanies = Array.isArray(r) ? r : []; }
+    catch { window._invpLaborCompanies = (_allLaborCompanies && _allLaborCompanies.length) ? _allLaborCompanies : []; }
+  }
 
   const invNum  = document.getElementById('invPageNumber').value || '';
   const invDate = document.getElementById('invPageDate').value;
@@ -32106,17 +32136,34 @@ async function generateInvpSubcontractorStatement() {
   // Green palette (mirrors the blue invoice palette)
   const C = { main:'#047857', dark:'#065f46', soft:'#ecfdf5', band:'#d1fae5', border:'#6ee7b7' };
 
-  let recipientName, grandTotal, lineItemTableHtml, bannerText;
+  let recipientName, recipientEntity = null, grandTotal, lineItemTableHtml, bannerText;
 
   if (mode === 'container') {
     const containerItems = getInvpContainerItems();
     if (!containerItems.length) { alert('请至少添加一个 container 行'); return; }
+
+    // Pick the specific subcontractor (the PAY TO recipient) from the managed
+    // 分包商 list, so the statement carries its legal name + address + tax docs.
+    const mgd = (window._invpLaborCompanies || _allLaborCompanies || []).filter(c => c && c.active !== 0);
+    if (window._invpStmtSubEntityId != null) {
+      recipientEntity = mgd.find(c => String(c.id) === String(window._invpStmtSubEntityId)) || null;
+      window._invpStmtSubEntityId = null;
+    } else if (mgd.length) {
+      const subs = mgd
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .map(c => ({ key: String(c.id), label: c.payee_name || c.name, sub: c.address || '', note: (c.ein || c.w9_file_name) ? 'W-9 ✓' : '' }));
+      invpPickSubcontractor(subs, k => { window._invpStmtSubEntityId = k; generateInvpSubcontractorStatement(); },
+        { title: '选择分包商（收款方）', sub: '该分包商将作为本对账单的 PAY TO 收款方' });
+      return;
+    }
+
     if (!containerItems.some(i => (i.sub_price || 0) > 0)) {
       if (!await showConfirm('所有 container 的「分包价」都为 0，仍要生成对账单吗？', { confirmLabel: '仍要生成', cancelLabel: '取消' })) return;
     }
     const refCounts = {};
     containerItems.forEach(i => { const r = (i.referrer || '').trim(); if (r) refCounts[r] = (refCounts[r] || 0) + 1; });
-    recipientName = Object.keys(refCounts).sort((a, b) => refCounts[b] - refCounts[a])[0] || 'Subcontractor';
+    recipientName = (recipientEntity && (recipientEntity.payee_name || recipientEntity.name))
+      || Object.keys(refCounts).sort((a, b) => refCounts[b] - refCounts[a])[0] || 'Subcontractor';
     grandTotal = containerItems.reduce((s, i) => s + ((i.qty || 0) * (i.sub_price || 0)), 0);
     const totalQty = containerItems.reduce((s, i) => s + (i.qty || 0), 0);
     bannerText = `Container unloading services for the period ${servicePeriodLabel}`;
@@ -32196,6 +32243,8 @@ async function generateInvpSubcontractorStatement() {
       items.forEach(i => { const r = (i.referrer || '').trim(); if (r) refCounts[r] = (refCounts[r] || 0) + 1; });
       recipientName = Object.keys(refCounts).sort((a, b) => refCounts[b] - refCounts[a])[0] || 'Subcontractor';
     }
+    // If the chosen subcontractor name matches a managed 分包商, use its details.
+    recipientEntity = _invpFindLaborCompany(recipientName);
     grandTotal = items.reduce((s, i) => s + (i.total || 0), 0);
     const totalRegHrs = items.reduce((s, i) => s + (i.regHours || 0), 0);
     const totalOtHrs  = items.reduce((s, i) => s + (i.otHours || 0), 0);
@@ -32252,6 +32301,35 @@ async function generateInvpSubcontractorStatement() {
       For questions regarding this statement, please contact: <strong>${[profile.contact_name,profile.contact_phone,profile.contact_email].filter(Boolean).map(s=>esc(s)).join('&nbsp; | &nbsp;')}</strong>
     </div>` : '';
 
+  // Recipient identity for the PAY TO block + the tax-protective wording, pulled
+  // from the chosen 分包商 record when available (legal name / address / tax docs).
+  const legalName = (recipientEntity && (recipientEntity.payee_name || recipientEntity.name)) || recipientName || 'Subcontractor';
+  const recAddr = recipientEntity && (recipientEntity.address || '').trim();
+  const recHasTax = !!(recipientEntity && (((recipientEntity.ein || '') + '').trim() || recipientEntity.w9_file_name));
+  const svcEn = mode === 'container' ? 'container unloading services' : 'labor services';
+  const svcZh = mode === 'container' ? '卸柜服务' : '劳务服务';
+
+  // Subcontractor signature / acknowledgment — gives a self-billed statement its
+  // evidentiary weight (the subcontractor confirms the amount + independent status).
+  const signatureHtml = `
+    <div style="display:flex;gap:2.5rem;margin-top:1.6rem;margin-bottom:.5rem">
+      <div style="flex:1">
+        <div style="border-top:1px solid #94a3b8;padding-top:.35rem;font-size:.74rem;color:#475569">Prepared by / 出具方</div>
+        ${profile.sender_name ? `<div style="font-size:.72rem;color:#94a3b8;margin-top:.15rem">${esc(profile.sender_name)}</div>` : ''}
+      </div>
+      <div style="flex:1.3">
+        <div style="border-top:1px solid #94a3b8;padding-top:.35rem;font-size:.74rem;color:#475569">Subcontractor signature &amp; date / 分包商签字与日期</div>
+        <div style="font-size:.7rem;color:#94a3b8;margin-top:.15rem;line-height:1.5">I confirm the amounts above are correct and were earned as an independent contractor.<br>本人确认上述金额无误，且系以独立承包商身份完成。</div>
+      </div>
+    </div>`;
+
+  // Independent-contractor / 1099 disclaimer (B2B framing).
+  const disclaimerHtml = `
+    <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;font-size:.7rem;color:#94a3b8;line-height:1.55">
+      <div style="margin-bottom:.35rem">This statement reflects amounts payable to the above-named subcontractor for ${svcEn} rendered during the stated period.<br>本对账单为应付上述分包商在该周期内提供的${svcZh}费用。</div>
+      <div>${esc(legalName)} performed these services as an independent contractor and is solely responsible for its own taxes, insurance, and the manner and means of the work. A Form 1099-NEC will be issued for reportable amounts as required by law.<br>${esc(legalName)} 以独立承包商身份完成上述服务，自行承担其税务、保险及工作方式的全部责任；本公司将依法就应报告金额签发 1099-NEC 表。</div>
+    </div>`;
+
   const html = `
     <div id="invpPaper" style="background:#fff;width:8.5in;min-height:11in;padding:0.5in;box-shadow:0 4px 18px rgba(0,0,0,.12);box-sizing:border-box">
     <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b">
@@ -32295,7 +32373,11 @@ async function generateInvpSubcontractorStatement() {
       <table style="border-collapse:collapse;margin-bottom:.8rem;font-size:.85rem;line-height:1.55">
         <tr>
           <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">PAY TO:</td>
-          <td style="padding:2px 0;font-weight:700;color:${C.main};font-size:.95rem">${esc(recipientName)} <span style="font-weight:500;color:#64748b;font-size:.78rem">/ 分包商 Subcontractor</span></td>
+          <td style="padding:2px 0;color:${C.main}">
+            <span style="font-weight:700;font-size:.95rem">${esc(legalName)}</span> <span style="font-weight:500;color:#64748b;font-size:.78rem">/ 分包商 Subcontractor</span>
+            ${recAddr ? `<div style="font-weight:500;color:#475569;font-size:.8rem;margin-top:2px">${esc(recAddr)}</div>` : ''}
+            ${recHasTax ? `<div style="font-weight:500;color:#64748b;font-size:.72rem;margin-top:1px">Tax ID / W-9 on file · 税号 / W-9 已存档</div>` : ''}
+          </td>
         </tr>
         <tr>
           <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">SERVICE PERIOD:</td>
@@ -32322,12 +32404,11 @@ async function generateInvpSubcontractorStatement() {
 
       ${contactBlock}
 
-      <!-- Footer -->
-      <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;text-align:center;font-size:.72rem;color:#94a3b8;line-height:1.5">
-        ${mode === 'container'
-          ? 'This statement reflects amounts payable to the subcontractor for container unloading services.<br>本对账单为应付分包商的卸柜服务费用。'
-          : 'This statement reflects amounts payable to the subcontractor for labor services.<br>本对账单为应付分包商的劳务费用。'}
-      </div>
+      <!-- Subcontractor acknowledgment / signatures -->
+      ${signatureHtml}
+
+      <!-- Footer: independent-contractor / 1099 disclaimer -->
+      ${disclaimerHtml}
     </div>
     </div>`;
 
