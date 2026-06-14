@@ -2316,9 +2316,9 @@ tr:hover td{background:var(--sky-light)}
       <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">收款凭证（截图 / PDF）</label>
       <div id="invpReceiptDrop" style="border:2px dashed var(--gray-300);border-radius:10px;padding:1.1rem;text-align:center;cursor:pointer;color:var(--gray-500);font-size:.85rem;transition:all .15s">
         <div style="font-size:1.4rem;line-height:1">⬆️</div>
-        <div style="margin-top:.3rem">把截图拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span></div>
+        <div style="margin-top:.3rem">把截图拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span><span style="color:var(--gray-400)">（可多选）</span></div>
         <div id="invpReceiptFileName" style="margin-top:.4rem;font-weight:600;color:var(--gray-700)">未选择文件</div>
-        <input type="file" id="invpReceiptFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="display:none">
+        <input type="file" id="invpReceiptFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" multiple style="display:none">
       </div>
     </div>
 
@@ -2384,9 +2384,9 @@ tr:hover td{background:var(--sky-light)}
       <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款凭证（截图 / PDF）</label>
       <div id="invpSubPayDrop" style="border:2px dashed var(--gray-300);border-radius:10px;padding:1.1rem;text-align:center;cursor:pointer;color:var(--gray-500);font-size:.85rem;transition:all .15s">
         <div style="font-size:1.4rem;line-height:1">⬆️</div>
-        <div style="margin-top:.3rem">把截图拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span></div>
+        <div style="margin-top:.3rem">把截图拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span><span style="color:var(--gray-400)">（可多选）</span></div>
         <div id="invpSubPayFileName" style="margin-top:.4rem;font-weight:600;color:var(--gray-700)">未选择文件</div>
-        <input type="file" id="invpSubPayFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="display:none">
+        <input type="file" id="invpSubPayFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" multiple style="display:none">
       </div>
     </div>
 
@@ -30264,12 +30264,21 @@ function renderInvpList() {
           const payAcctCell = (isPaid && (r.payment_bank || r.payment_entity))
             ? `${esc(r.payment_bank || '')}${r.payment_entity ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(r.payment_entity)}</div>` : ''}`
             : dash;
-          const isImgReceipt = isPaid && r.payment_receipt_path && /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(r.payment_receipt_path);
-          const receiptCell = (isPaid && r.payment_receipt_path)
-            ? (isImgReceipt
-                ? `<a href="${r.payment_receipt_path}" target="_blank" title="查看回执"><img src="${r.payment_receipt_path}" alt="回执" loading="lazy" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block;margin:0 auto"></a>`
-                : `<a href="${r.payment_receipt_path}" target="_blank" style="font-size:.75rem;color:var(--green);text-decoration:underline">📄 查看回执</a>`)
-            : dash;
+          // Receipts can now be multiple files (…_receipt_paths JSON array);
+          // fall back to the legacy single path. Each renders as a thumbnail / 📄.
+          const rcptThumbs = (pathsJson, single, color) => {
+            let arr = [];
+            try { arr = pathsJson ? JSON.parse(pathsJson) : []; } catch (_) { arr = []; }
+            if (!Array.isArray(arr)) arr = [];
+            if (!arr.length && single) arr = [single];
+            arr = arr.filter(Boolean);
+            if (!arr.length) return dash;
+            const one = p => /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(p)
+              ? `<a href="${p}" target="_blank" title="查看回执"><img src="${p}" alt="回执" loading="lazy" style="width:42px;height:42px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block"></a>`
+              : `<a href="${p}" target="_blank" title="查看文件" style="font-size:.72rem;color:${color};text-decoration:underline">📄</a>`;
+            return `<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center;max-width:140px;margin:0 auto">${arr.map(one).join('')}</div>`;
+          };
+          const receiptCell = isPaid ? rcptThumbs(r.payment_receipt_paths, r.payment_receipt_path, 'var(--green)') : dash;
           // 分包付款: money paid OUT to the subcontractor. Compare to 工资
           // (wage_cost — what we owe them) and flag red on a mismatch. Amount and
           // receipt live in their own columns (subPayCell / subReceiptCell).
@@ -30289,11 +30298,7 @@ function renderInvpList() {
                  <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
                </div>`
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
-          const subReceiptCell = (subPaid && r.sub_payment_receipt_path)
-            ? (subIsImg
-                ? `<a href="${r.sub_payment_receipt_path}" target="_blank" title="查看分包付款回执"><img src="${r.sub_payment_receipt_path}" alt="回执" loading="lazy" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block;margin:0 auto"></a>`
-                : `<a href="${r.sub_payment_receipt_path}" target="_blank" style="font-size:.72rem;color:var(--sky);text-decoration:underline">📄 回执</a>`)
-            : dash;
+          const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)') : dash;
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
@@ -30433,6 +30438,15 @@ async function logInvpAction(invoiceId, action, detail) {
 let _invpReceiptInvoiceId = null;
 let _invpReceiptIsUpdate = false;
 
+// Parse a stored receipt list (JSON array), falling back to the single legacy path.
+function _invpReceiptArr(pathsJson, single) {
+  let arr = [];
+  try { arr = pathsJson ? JSON.parse(pathsJson) : []; } catch (_) { arr = []; }
+  if (!Array.isArray(arr)) arr = [];
+  if (!arr.length && single) arr = [single];
+  return arr.filter(Boolean);
+}
+
 function openInvpReceiptModal(invoiceId, isUpdate) {
   _invpReceiptInvoiceId = invoiceId;
   _invpReceiptIsUpdate = !!isUpdate;
@@ -30460,10 +30474,11 @@ function openInvpReceiptModal(invoiceId, isUpdate) {
   // Show current receipt link when updating and one exists.
   const currentWrap = document.getElementById('invpReceiptCurrentWrap');
   const currentLink = document.getElementById('invpReceiptCurrentLink');
-  if (isUpdate && row.payment_receipt_path) {
+  const curRcpts = _invpReceiptArr(row.payment_receipt_paths, row.payment_receipt_path);
+  if (isUpdate && curRcpts.length) {
     currentWrap.style.display = 'block';
-    currentLink.href = row.payment_receipt_path;
-    currentLink.textContent = '查看文件';
+    currentLink.href = curRcpts[0];
+    currentLink.textContent = curRcpts.length > 1 ? `查看文件（共 ${curRcpts.length} 个；重新上传将替换全部）` : '查看文件';
   } else {
     currentWrap.style.display = 'none';
   }
@@ -30479,7 +30494,7 @@ function _invpInitReceiptDrop() {
   const nameEl = document.getElementById('invpReceiptFileName');
   if (!drop || drop._wired) return;
   drop._wired = true;
-  const showName = () => { nameEl.textContent = input.files.length ? input.files[0].name : '未选择文件'; };
+  const showName = () => { nameEl.textContent = input.files.length ? (input.files.length === 1 ? input.files[0].name : input.files.length + ' 个文件') : '未选择文件'; };
   const lit = on => { drop.style.borderColor = on ? 'var(--green)' : ''; drop.style.background = on ? '#f0fdf4' : ''; };
   drop.addEventListener('click', () => input.click());
   input.addEventListener('change', showName);
@@ -30512,7 +30527,7 @@ async function submitInvpReceipt() {
   btn.textContent = '上传中…';
   try {
     const formData = new FormData();
-    if (fileInput.files.length) formData.append('receipt', fileInput.files[0]);
+    for (const f of fileInput.files) formData.append('receipts', f);
     const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
     formData.append('payment_entity', val('invpReceiptEntity'));
     formData.append('payment_bank', val('invpReceiptBank'));
@@ -30578,10 +30593,11 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
 
   const currentWrap = document.getElementById('invpSubPayCurrentWrap');
   const currentLink = document.getElementById('invpSubPayCurrentLink');
-  if (isUpdate && row.sub_payment_receipt_path) {
+  const curSubRcpts = _invpReceiptArr(row.sub_payment_receipt_paths, row.sub_payment_receipt_path);
+  if (isUpdate && curSubRcpts.length) {
     currentWrap.style.display = 'block';
-    currentLink.href = row.sub_payment_receipt_path;
-    currentLink.textContent = '查看文件';
+    currentLink.href = curSubRcpts[0];
+    currentLink.textContent = curSubRcpts.length > 1 ? `查看文件（共 ${curSubRcpts.length} 个；重新上传将替换全部）` : '查看文件';
   } else {
     currentWrap.style.display = 'none';
   }
@@ -30595,7 +30611,7 @@ function _invpInitSubPayDrop() {
   const nameEl = document.getElementById('invpSubPayFileName');
   if (!drop || drop._wired) return;
   drop._wired = true;
-  const showName = () => { nameEl.textContent = input.files.length ? input.files[0].name : '未选择文件'; };
+  const showName = () => { nameEl.textContent = input.files.length ? (input.files.length === 1 ? input.files[0].name : input.files.length + ' 个文件') : '未选择文件'; };
   const lit = on => { drop.style.borderColor = on ? 'var(--sky)' : ''; drop.style.background = on ? '#eff6ff' : ''; };
   drop.addEventListener('click', () => input.click());
   input.addEventListener('change', showName);
@@ -30626,7 +30642,7 @@ async function submitInvpSubPay() {
   btn.textContent = '上传中…';
   try {
     const formData = new FormData();
-    if (fileInput.files.length) formData.append('receipt', fileInput.files[0]);
+    for (const f of fileInput.files) formData.append('receipts', f);
     const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
     formData.append('sub_payment_entity', val('invpSubPayEntity'));
     formData.append('sub_payment_bank', val('invpSubPayMethod'));

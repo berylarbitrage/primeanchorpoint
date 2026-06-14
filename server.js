@@ -1019,6 +1019,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); }
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_paths TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
 // Payment-receipt details captured when an invoice is marked paid.
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_bank TEXT DEFAULT NULL`); } catch(e) {}
@@ -1030,6 +1031,7 @@ try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_date TEXT DEFAULT NULL`);
 // client-payment columns above, tracked independently per invoice.
 try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_receipt_paths TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_entity TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_bank TEXT DEFAULT NULL`); } catch(e) {}
@@ -17439,7 +17441,7 @@ function _invoiceWageCost(items_json, profile_json) {
 
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, payment_receipt_paths, sub_payment_receipt_paths, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
   for (const r of rows) {
     r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json);
     // Surface a lightweight bank label (bank name + account last-4) and the payee
@@ -17653,6 +17655,16 @@ app.get('/api/admin/container-no/check-duplicate', requireAdmin, (req, res) => {
 });
 
 // Upload payment receipt and mark invoice as paid
+// Parse an invoice's stored receipt list (JSON array column), falling back to
+// the legacy single-path column so older records still show their one receipt.
+function _invoiceReceiptList(pathsJson, single) {
+  let arr = [];
+  try { arr = pathsJson ? JSON.parse(pathsJson) : []; } catch (_) { arr = []; }
+  if (!Array.isArray(arr)) arr = [];
+  if (!arr.length && single) arr = [single];
+  return arr.filter(Boolean);
+}
+
 const receiptUpload = multer({
   storage: r2Storage({
     subdir: 'uploads',
@@ -17685,19 +17697,21 @@ const subReceiptUpload = multer({
   }
 });
 
-app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single('receipt'), (req, res) => {
-  const inv = db.prepare('SELECT id, payment_status, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array('receipts', 20), (req, res) => {
+  const inv = db.prepare('SELECT id, payment_status, payment_receipt_path, payment_receipt_paths FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-  // Replace the receipt only when a new file is uploaded; otherwise keep the
-  // existing one (lets "更新回执" edit amount/date/bank without re-uploading).
-  let receiptPath = inv.payment_receipt_path;
-  if (req.file) {
-    if (inv.payment_receipt_path) {
-      const oldPath = path.join(uploadsDir, path.basename(inv.payment_receipt_path));
+  // Replace the receipt set only when new files are uploaded; otherwise keep the
+  // existing ones (lets "更新回执" edit amount/date/bank without re-uploading).
+  let paths = _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path);
+  if (req.files && req.files.length) {
+    for (const old of paths) {
+      const oldPath = path.join(uploadsDir, path.basename(old));
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
-    receiptPath = `/uploads/${req.file.filename}`;
+    paths = req.files.map(f => `/uploads/${f.filename}`);
   }
+  const receiptPath = paths[0] || null;                  // first file → legacy single column
+  const pathsJson = paths.length ? JSON.stringify(paths) : null;
   const b = req.body || {};
   const bank = (b.payment_bank || '').trim() || null;
   const entity = (b.payment_entity || '').trim() || null;
@@ -17705,9 +17719,9 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single
   const amtNum = Number(b.payment_amount);
   const amount = (b.payment_amount != null && b.payment_amount !== '' && !isNaN(amtNum)) ? amtNum : null;
   const payDate = (b.payment_date || '').trim() || null;
-  db.prepare(`UPDATE invoices SET payment_status='paid', payment_receipt_path=?, paid_at=datetime('now'),
+  db.prepare(`UPDATE invoices SET payment_status='paid', payment_receipt_path=?, payment_receipt_paths=?, paid_at=datetime('now'),
               payment_bank=?, payment_entity=?, payment_handler=?, payment_amount=?, payment_date=? WHERE id=?`)
-    .run(receiptPath, bank, entity, handler, amount, payDate, req.params.id);
+    .run(receiptPath, pathsJson, bank, entity, handler, amount, payDate, req.params.id);
   // First "标记已付款" vs a later edit/re-upload — log distinctly so the history
   // shows when the payment info / receipt was updated (with its time), not just
   // a repeated "标记已付款".
@@ -17718,21 +17732,21 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single
   if (entity) parts.push(`收款公司: ${entity}`);
   if (bank) parts.push(`银行: ${bank}`);
   if (handler) parts.push(`经办人: ${handler}`);
-  if (receiptPath) parts.push(`${req.file ? '回执(已更新)' : '回执'}: ${path.basename(receiptPath)}`);
+  if (paths.length) parts.push(`回执${req.files && req.files.length ? '(已更新)' : ''}: ${paths.length} 个文件`);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, wasPaid ? '更新收款信息' : '标记已付款', parts.join(' · '));
-  res.json({ success: true, receipt_path: receiptPath });
+  res.json({ success: true, receipt_path: receiptPath, receipt_paths: paths });
 });
 
 // Mark invoice as unpaid (remove receipt)
 app.post('/api/admin/invoices/:id/mark-unpaid', requireAdmin, (req, res) => {
-  const inv = db.prepare('SELECT id, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  const inv = db.prepare('SELECT id, payment_receipt_path, payment_receipt_paths FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-  if (inv.payment_receipt_path) {
-    const oldPath = path.join(uploadsDir, path.basename(inv.payment_receipt_path));
+  for (const old of _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path)) {
+    const oldPath = path.join(uploadsDir, path.basename(old));
     if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
   }
-  db.prepare(`UPDATE invoices SET payment_status='unpaid', payment_receipt_path=NULL, paid_at=NULL WHERE id=?`)
+  db.prepare(`UPDATE invoices SET payment_status='unpaid', payment_receipt_path=NULL, payment_receipt_paths=NULL, paid_at=NULL WHERE id=?`)
     .run(req.params.id);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, '取消已付款', '');
@@ -17742,19 +17756,21 @@ app.post('/api/admin/invoices/:id/mark-unpaid', requireAdmin, (req, res) => {
 // Record a payment made OUT to the subcontractor for this invoice (the 工资/分包
 // side). Mirrors mark-paid: upload proof + amount/date/method/payee, kept
 // independent of the client-payment status.
-app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload.single('receipt'), (req, res) => {
-  const inv = db.prepare('SELECT id, sub_payment_status, sub_payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload.array('receipts', 20), (req, res) => {
+  const inv = db.prepare('SELECT id, sub_payment_status, sub_payment_receipt_path, sub_payment_receipt_paths FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-  // Replace the proof only when a new file is uploaded; otherwise keep the
-  // existing one (lets "更新" edit amount/date/payee without re-uploading).
-  let receiptPath = inv.sub_payment_receipt_path;
-  if (req.file) {
-    if (inv.sub_payment_receipt_path) {
-      const oldPath = path.join(uploadsDir, path.basename(inv.sub_payment_receipt_path));
+  // Replace the proof set only when new files are uploaded; otherwise keep the
+  // existing ones (lets "更新" edit amount/date/payee without re-uploading).
+  let paths = _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path);
+  if (req.files && req.files.length) {
+    for (const old of paths) {
+      const oldPath = path.join(uploadsDir, path.basename(old));
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
-    receiptPath = `/uploads/${req.file.filename}`;
+    paths = req.files.map(f => `/uploads/${f.filename}`);
   }
+  const receiptPath = paths[0] || null;
+  const pathsJson = paths.length ? JSON.stringify(paths) : null;
   const b = req.body || {};
   const payee = (b.sub_payment_entity || '').trim() || null;
   const method = (b.sub_payment_bank || '').trim() || null;
@@ -17762,9 +17778,9 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   const amtNum = Number(b.sub_payment_amount);
   const amount = (b.sub_payment_amount != null && b.sub_payment_amount !== '' && !isNaN(amtNum)) ? amtNum : null;
   const payDate = (b.sub_payment_date || '').trim() || null;
-  db.prepare(`UPDATE invoices SET sub_payment_status='paid', sub_payment_receipt_path=?, sub_paid_at=datetime('now'),
+  db.prepare(`UPDATE invoices SET sub_payment_status='paid', sub_payment_receipt_path=?, sub_payment_receipt_paths=?, sub_paid_at=datetime('now'),
               sub_payment_entity=?, sub_payment_bank=?, sub_payment_handler=?, sub_payment_amount=?, sub_payment_date=? WHERE id=?`)
-    .run(receiptPath, payee, method, handler, amount, payDate, req.params.id);
+    .run(receiptPath, pathsJson, payee, method, handler, amount, payDate, req.params.id);
   const wasSubPaid = inv.sub_payment_status === 'paid';
   const parts = [];
   if (amount != null) parts.push(`金额: $${amount.toFixed(2)}`);
@@ -17772,21 +17788,21 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   if (payee) parts.push(`分包商: ${payee}`);
   if (method) parts.push(`付款方式: ${method}`);
   if (handler) parts.push(`经办人: ${handler}`);
-  if (receiptPath) parts.push(`${req.file ? '回执(已更新)' : '回执'}: ${path.basename(receiptPath)}`);
+  if (paths.length) parts.push(`回执${req.files && req.files.length ? '(已更新)' : ''}: ${paths.length} 个文件`);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, wasSubPaid ? '更新分包付款' : '标记分包已付款', parts.join(' · '));
-  res.json({ success: true, receipt_path: receiptPath });
+  res.json({ success: true, receipt_path: receiptPath, receipt_paths: paths });
 });
 
 // Clear the subcontractor payment for this invoice (remove proof).
 app.post('/api/admin/invoices/:id/mark-sub-unpaid', requireAdmin, (req, res) => {
-  const inv = db.prepare('SELECT id, sub_payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  const inv = db.prepare('SELECT id, sub_payment_receipt_path, sub_payment_receipt_paths FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-  if (inv.sub_payment_receipt_path) {
-    const oldPath = path.join(uploadsDir, path.basename(inv.sub_payment_receipt_path));
+  for (const old of _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path)) {
+    const oldPath = path.join(uploadsDir, path.basename(old));
     if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
   }
-  db.prepare(`UPDATE invoices SET sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_paid_at=NULL WHERE id=?`)
+  db.prepare(`UPDATE invoices SET sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_payment_receipt_paths=NULL, sub_paid_at=NULL WHERE id=?`)
     .run(req.params.id);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, '取消分包已付款', '');
