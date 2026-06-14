@@ -30062,6 +30062,7 @@ function renderInvpList() {
         <th style="padding:8px 10px;text-align:right">利润</th>
         <th style="padding:8px 10px;text-align:left">Invoice 日期</th>
         <th style="padding:8px 10px;text-align:center">状态</th>
+        <th style="padding:8px 10px;text-align:center">收款回执</th>
         <th style="padding:8px 10px;text-align:center">操作</th>
       </tr></thead>
       <tbody>
@@ -30078,12 +30079,21 @@ function renderInvpList() {
           const paidBadge = isPaid
             ? `<span title="${esc(payInfo || '已付款')}" style="display:inline-flex;align-items:center;gap:4px;background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;margin-right:4px">&#10003; 已付款</span>`
             : '';
-          const receiptLink = isPaid && r.payment_receipt_path
-            ? `<a href="${r.payment_receipt_path}" target="_blank" style="font-size:.75rem;color:var(--green);text-decoration:underline;margin-right:6px">查看回执</a>`
-            : '';
           const paidBtn = isPaid
-            ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, true)">更新回执</button>`
-            : `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, false)">上传回执</button>`;
+            ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green)" onclick="openInvpReceiptModal(${r.id}, true)">更新回执</button>`
+            : `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green)" onclick="openInvpReceiptModal(${r.id}, false)">上传回执</button>`;
+          // Payment + receipt get their own column: 已付款 badge + an image
+          // thumbnail (PDFs fall back to a link). The 操作 column keeps only the
+          // action buttons, so paid rows no longer widen out of alignment.
+          const isImgReceipt = isPaid && r.payment_receipt_path && /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(r.payment_receipt_path);
+          const receiptThumb = isPaid && r.payment_receipt_path
+            ? (isImgReceipt
+                ? `<a href="${r.payment_receipt_path}" target="_blank" title="查看回执"><img src="${r.payment_receipt_path}" alt="回执" loading="lazy" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block"></a>`
+                : `<a href="${r.payment_receipt_path}" target="_blank" style="font-size:.75rem;color:var(--green);text-decoration:underline">📄 查看回执</a>`)
+            : '';
+          const receiptCell = isPaid
+            ? `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:4px">${paidBadge}${receiptThumb}</div>`
+            : '<span style="color:var(--gray-400);font-size:.78rem">未收款</span>';
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
@@ -30094,10 +30104,11 @@ function renderInvpList() {
           <td style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${profit>=0?'#16a34a':'#dc2626'}">$${profit.toFixed(2)}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
           <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
+          <td style="padding:8px 10px;text-align:center">${receiptCell}</td>
           <td style="padding:8px 10px;text-align:center">
             <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:nowrap">
               <button class="btn btn-sm btn-outline" onclick="openInvpForEdit(${r.id})">查看/编辑</button>
-              ${paidBadge}${receiptLink}${paidBtn}
+              ${paidBtn}
               <button class="btn btn-sm btn-outline" onclick="openInvpHistoryModal(${r.id}, '${esc(r.invoice_number)}')">历史</button>
               <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button>
             </div>
