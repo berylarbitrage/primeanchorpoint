@@ -30089,7 +30089,12 @@ function renderInvpList() {
           const paidStatusCell = isPaid
             ? `<span title="${esc(payInfo || '已付款')}" style="display:inline-flex;align-items:center;gap:4px;background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px">&#10003; 已付款</span>`
             : '<span style="color:var(--gray-400);font-size:.78rem">未收款</span>';
-          const payAmountCell = (isPaid && r.payment_amount != null) ? `$${Number(r.payment_amount).toFixed(2)}` : dash;
+          // Flag when the amount actually received differs from the billed total.
+          const billed = r.subtotal || 0;
+          const amtMismatch = isPaid && r.payment_amount != null && Math.abs(Number(r.payment_amount) - billed) > 0.005;
+          const payAmountCell = (isPaid && r.payment_amount != null)
+            ? `<span ${amtMismatch ? `title="账单 $${billed.toFixed(2)} · 实收 $${Number(r.payment_amount).toFixed(2)} · 差额 $${(Number(r.payment_amount) - billed).toFixed(2)}"` : ''} style="${amtMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${Number(r.payment_amount).toFixed(2)}${amtMismatch ? ' ⚠' : ''}</span>`
+            : dash;
           const payDateCell = (isPaid && r.payment_date) ? esc(r.payment_date) : dash;
           const payAcctCell = (isPaid && (r.payment_bank || r.payment_entity))
             ? `${esc(r.payment_bank || '')}${r.payment_entity ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(r.payment_entity)}</div>` : ''}`
@@ -30105,7 +30110,7 @@ function renderInvpList() {
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${esc(invpBankLabel(r) || '—')}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
-          <td style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap">$${(r.subtotal||0).toFixed(2)}</td>
+          <td style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap${amtMismatch ? ';color:#dc2626' : ''}" ${amtMismatch ? 'title="实收金额与账单不一致"' : ''}>$${(r.subtotal||0).toFixed(2)}</td>
           <td style="padding:8px 10px;text-align:right;color:var(--gray-600);white-space:nowrap">$${(r.wage_cost||0).toFixed(2)}</td>
           <td style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${profit>=0?'#16a34a':'#dc2626'}">$${profit.toFixed(2)}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
