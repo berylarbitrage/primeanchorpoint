@@ -17686,7 +17686,7 @@ const subReceiptUpload = multer({
 });
 
 app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single('receipt'), (req, res) => {
-  const inv = db.prepare('SELECT id, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  const inv = db.prepare('SELECT id, payment_status, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
   // Replace the receipt only when a new file is uploaded; otherwise keep the
   // existing one (lets "更新回执" edit amount/date/bank without re-uploading).
@@ -17708,15 +17708,19 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single
   db.prepare(`UPDATE invoices SET payment_status='paid', payment_receipt_path=?, paid_at=datetime('now'),
               payment_bank=?, payment_entity=?, payment_handler=?, payment_amount=?, payment_date=? WHERE id=?`)
     .run(receiptPath, bank, entity, handler, amount, payDate, req.params.id);
+  // First "标记已付款" vs a later edit/re-upload — log distinctly so the history
+  // shows when the payment info / receipt was updated (with its time), not just
+  // a repeated "标记已付款".
+  const wasPaid = inv.payment_status === 'paid';
   const parts = [];
   if (amount != null) parts.push(`金额: $${amount.toFixed(2)}`);
   if (payDate) parts.push(`日期: ${payDate}`);
   if (entity) parts.push(`收款公司: ${entity}`);
   if (bank) parts.push(`银行: ${bank}`);
   if (handler) parts.push(`经办人: ${handler}`);
-  if (receiptPath) parts.push(`回执: ${path.basename(receiptPath)}`);
+  if (receiptPath) parts.push(`${req.file ? '回执(已更新)' : '回执'}: ${path.basename(receiptPath)}`);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
-    .run(req.params.id, '标记已付款', parts.join(' · '));
+    .run(req.params.id, wasPaid ? '更新收款信息' : '标记已付款', parts.join(' · '));
   res.json({ success: true, receipt_path: receiptPath });
 });
 
@@ -17739,7 +17743,7 @@ app.post('/api/admin/invoices/:id/mark-unpaid', requireAdmin, (req, res) => {
 // side). Mirrors mark-paid: upload proof + amount/date/method/payee, kept
 // independent of the client-payment status.
 app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload.single('receipt'), (req, res) => {
-  const inv = db.prepare('SELECT id, sub_payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  const inv = db.prepare('SELECT id, sub_payment_status, sub_payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
   // Replace the proof only when a new file is uploaded; otherwise keep the
   // existing one (lets "更新" edit amount/date/payee without re-uploading).
@@ -17761,15 +17765,16 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   db.prepare(`UPDATE invoices SET sub_payment_status='paid', sub_payment_receipt_path=?, sub_paid_at=datetime('now'),
               sub_payment_entity=?, sub_payment_bank=?, sub_payment_handler=?, sub_payment_amount=?, sub_payment_date=? WHERE id=?`)
     .run(receiptPath, payee, method, handler, amount, payDate, req.params.id);
+  const wasSubPaid = inv.sub_payment_status === 'paid';
   const parts = [];
   if (amount != null) parts.push(`金额: $${amount.toFixed(2)}`);
   if (payDate) parts.push(`日期: ${payDate}`);
   if (payee) parts.push(`分包商: ${payee}`);
   if (method) parts.push(`付款方式: ${method}`);
   if (handler) parts.push(`经办人: ${handler}`);
-  if (receiptPath) parts.push(`回执: ${path.basename(receiptPath)}`);
+  if (receiptPath) parts.push(`${req.file ? '回执(已更新)' : '回执'}: ${path.basename(receiptPath)}`);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
-    .run(req.params.id, '标记分包已付款', parts.join(' · '));
+    .run(req.params.id, wasSubPaid ? '更新分包付款' : '标记分包已付款', parts.join(' · '));
   res.json({ success: true, receipt_path: receiptPath });
 });
 
