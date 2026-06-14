@@ -29911,6 +29911,59 @@ function invpBankLabel(r) {
   return (name || '账户') + (l4 ? ' ••' + l4 : '');
 }
 
+// Per-column sort definitions for the invoice list: each key maps a column to
+// the value it sorts on, its data type, and the direction a first click should
+// use (text → A→Z, money/dates → biggest/newest first). Keys never contain "_"
+// so the sort token "<key>_<dir>" parses unambiguously.
+const _invpSortDefs = {
+  num:       { get: r => r.invoice_number || '',                  type: 'text', first: 'asc'  },
+  company:   { get: r => r.company_name || '',                    type: 'text', first: 'asc'  },
+  bank:      { get: r => invpBankLabel(r),                        type: 'text', first: 'asc'  },
+  period:    { get: r => r.period_start || '',                    type: 'text', first: 'desc' },
+  bill:      { get: r => r.subtotal || 0,                         type: 'num',  first: 'desc' },
+  wage:      { get: r => r.wage_cost || 0,                        type: 'num',  first: 'desc' },
+  profit:    { get: r => (r.subtotal || 0) - (r.wage_cost || 0),  type: 'num',  first: 'desc' },
+  date:      { get: r => r.invoice_date || '',                    type: 'text', first: 'desc' },
+  status:    { get: r => r.status || '',                          type: 'text', first: 'asc'  },
+  paystatus: { get: r => r.payment_status === 'paid' ? 1 : 0,     type: 'num',  first: 'desc' },
+  payamt:    { get: r => (r.payment_status === 'paid' && r.payment_amount != null) ? Number(r.payment_amount) : null, type: 'num', first: 'desc' },
+  paydate:   { get: r => r.payment_date || '',                    type: 'text', first: 'desc' },
+  payacct:   { get: r => r.payment_bank || r.payment_entity || '', type: 'text', first: 'asc' },
+  receipt:   { get: r => (r.payment_status === 'paid' && r.payment_receipt_path) ? 1 : 0, type: 'num', first: 'desc' },
+};
+
+// Build a comparator from a "<key>_<dir>" token. Empty/missing values always
+// sink to the bottom regardless of direction; ties fall back to newest-first so
+// equal keys keep a stable, sensible order.
+function _invpComparator(token) {
+  const dir = token.endsWith('_asc') ? 'asc' : 'desc';
+  const key = token.replace(/_(asc|desc)$/, '');
+  const def = _invpSortDefs[key] || _invpSortDefs.date;
+  const mult = dir === 'asc' ? 1 : -1;
+  const tie = (a, b) => (b.invoice_date || '').localeCompare(a.invoice_date || '');
+  return (a, b) => {
+    const va = def.get(a), vb = def.get(b);
+    const ea = va === '' || va == null, eb = vb === '' || vb == null;
+    if (ea || eb) return (ea && eb) ? tie(a, b) : (ea ? 1 : -1);
+    const c = def.type === 'num'
+      ? va - vb
+      : String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' });
+    return c ? c * mult : tie(a, b);
+  };
+}
+
+// Header-click sort: clicking a column sorts by it; clicking the active column
+// again flips direction. A new column starts in its natural direction.
+function invpSetSort(key) {
+  if (!_invpSortDefs[key]) return;
+  const cur = _invpFilter.sort || 'date_desc';
+  const curKey = cur.replace(/_(asc|desc)$/, '');
+  const curDir = cur.endsWith('_asc') ? 'asc' : 'desc';
+  const dir = (curKey === key) ? (curDir === 'asc' ? 'desc' : 'asc') : _invpSortDefs[key].first;
+  _invpFilter.sort = key + '_' + dir;
+  renderInvpList();
+}
+
 async function loadInvpList() {
   const wrap = document.getElementById('invpListWrap');
   if (!wrap) return;
@@ -29948,17 +30001,7 @@ async function loadInvpList() {
         <label style="${lbl}">到</label>
         <input type="date" id="invpFltTo" onchange="renderInvpList()" style="${fld}">
       </div>
-      <div style="display:flex;flex-direction:column;gap:.2rem">
-        <label style="${lbl}">排序</label>
-        <select id="invpFltSort" onchange="renderInvpList()" style="${fld}">
-          <option value="date_desc">日期（新→旧）</option>
-          <option value="date_asc">日期（旧→新）</option>
-          <option value="company">公司名称</option>
-          <option value="bank">银行</option>
-          <option value="profit_desc">利润（高→低）</option>
-          <option value="bill_desc">账单（高→低）</option>
-        </select>
-      </div>
+      <div style="display:flex;align-items:center;gap:.3rem;font-size:.72rem;color:var(--gray-400);white-space:nowrap;padding-bottom:.45rem">💡 点击表头排序</div>
       <div style="display:flex;flex-direction:column;gap:.2rem;flex:1 1 160px">
         <label style="${lbl}">搜索（编号 / 公司）</label>
         <input type="text" id="invpFltQ" oninput="renderInvpList()" placeholder="输入关键字…" style="${fld}">
@@ -29973,7 +30016,6 @@ async function loadInvpList() {
   set('invpFltBank', _invpFilter.bank);
   set('invpFltFrom', _invpFilter.from);
   set('invpFltTo', _invpFilter.to);
-  set('invpFltSort', _invpFilter.sort);
   set('invpFltQ', _invpFilter.q);
   renderInvpList();
 }
@@ -29982,7 +30024,7 @@ function resetInvpFilter() {
   Object.assign(_invpFilter, { q: '', company: '', bank: '', from: '', to: '', sort: 'date_desc' });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltFrom', ''); set('invpFltTo', '');
-  set('invpFltSort', 'date_desc'); set('invpFltQ', '');
+  set('invpFltQ', '');
   renderInvpList();
 }
 
@@ -29995,7 +30037,6 @@ function renderInvpList() {
   _invpFilter.bank = val('invpFltBank');
   _invpFilter.from = val('invpFltFrom');
   _invpFilter.to = val('invpFltTo');
-  _invpFilter.sort = val('invpFltSort') || 'date_desc';
   _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
 
   let list = _invpAllRows.slice();
@@ -30006,16 +30047,7 @@ function renderInvpList() {
   if (_invpFilter.to) list = list.filter(r => (r.invoice_date || '') <= _invpFilter.to);
   if (_invpFilter.q) list = list.filter(r => ((r.invoice_number || '') + ' ' + (r.company_name || '')).toLowerCase().includes(_invpFilter.q));
 
-  const profitOf = r => (r.subtotal || 0) - (r.wage_cost || 0);
-  const sorters = {
-    date_desc:   (a, b) => (b.invoice_date || '').localeCompare(a.invoice_date || ''),
-    date_asc:    (a, b) => (a.invoice_date || '').localeCompare(b.invoice_date || ''),
-    company:     (a, b) => (a.company_name || '').localeCompare(b.company_name || '') || (b.invoice_date || '').localeCompare(a.invoice_date || ''),
-    bank:        (a, b) => invpBankLabel(a).localeCompare(invpBankLabel(b)) || (b.invoice_date || '').localeCompare(a.invoice_date || ''),
-    profit_desc: (a, b) => profitOf(b) - profitOf(a),
-    bill_desc:   (a, b) => (b.subtotal || 0) - (a.subtotal || 0),
-  };
-  list.sort(sorters[_invpFilter.sort] || sorters.date_desc);
+  list.sort(_invpComparator(_invpFilter.sort || 'date_desc'));
 
   // Summary reflects the currently-filtered set, so filtering by a company or a
   // date range shows that slice's totals (工资 = wages paid, 利润 = profit earned).
@@ -30049,25 +30081,38 @@ function renderInvpList() {
     return;
   }
 
+  // Clickable, sortable column headers. The active column shows ▲/▼; the rest
+  // show a faint ↕ to hint they're clickable. The header rebuilds with the table
+  // on every sort, so the indicator always tracks the live sort state.
+  const _sortKey = (_invpFilter.sort || 'date_desc').replace(/_(asc|desc)$/, '');
+  const _sortDir = (_invpFilter.sort || 'date_desc').endsWith('_asc') ? 'asc' : 'desc';
+  const th = (label, key, align) => {
+    if (!key) return `<th style="padding:8px 10px;text-align:${align}">${label}</th>`;
+    const on = key === _sortKey;
+    const ind = on ? (_sortDir === 'asc' ? '▲' : '▼') : '<span style="opacity:.3">↕</span>';
+    return `<th onclick="invpSetSort('${key}')" title="点击按此列排序"
+        style="padding:8px 10px;text-align:${align};cursor:pointer;user-select:none;white-space:nowrap${on ? ';color:var(--sky)' : ''}">${label} <span style="font-size:.72em">${ind}</span></th>`;
+  };
+
   tableWrap.innerHTML = `
     <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:.88rem;white-space:nowrap">
       <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
-        <th style="padding:8px 10px;text-align:left">Invoice 编号</th>
-        <th style="padding:8px 10px;text-align:left">客户公司</th>
-        <th style="padding:8px 10px;text-align:left">收款银行</th>
-        <th style="padding:8px 10px;text-align:left">服务周期</th>
-        <th style="padding:8px 10px;text-align:right">账单</th>
-        <th style="padding:8px 10px;text-align:right">工资</th>
-        <th style="padding:8px 10px;text-align:right">利润</th>
-        <th style="padding:8px 10px;text-align:left">Invoice 日期</th>
-        <th style="padding:8px 10px;text-align:center">状态</th>
-        <th style="padding:8px 10px;text-align:center">付款状态</th>
-        <th style="padding:8px 10px;text-align:right">实付金额</th>
-        <th style="padding:8px 10px;text-align:left">付款日期</th>
-        <th style="padding:8px 10px;text-align:left">收款账户</th>
-        <th style="padding:8px 10px;text-align:center">收款回执</th>
-        <th style="padding:8px 10px;text-align:center">操作</th>
+        ${th('Invoice 编号', 'num', 'left')}
+        ${th('客户公司', 'company', 'left')}
+        ${th('收款银行', 'bank', 'left')}
+        ${th('服务周期', 'period', 'left')}
+        ${th('账单', 'bill', 'right')}
+        ${th('工资', 'wage', 'right')}
+        ${th('利润', 'profit', 'right')}
+        ${th('Invoice 日期', 'date', 'left')}
+        ${th('状态', 'status', 'center')}
+        ${th('付款状态', 'paystatus', 'center')}
+        ${th('实付金额', 'payamt', 'right')}
+        ${th('付款日期', 'paydate', 'left')}
+        ${th('收款账户', 'payacct', 'left')}
+        ${th('收款回执', 'receipt', 'center')}
+        ${th('操作', null, 'center')}
       </tr></thead>
       <tbody>
         ${list.map(r => {
