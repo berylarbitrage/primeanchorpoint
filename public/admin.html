@@ -29351,7 +29351,51 @@ function openInvpPresetModal(section, editId) {
   }
   document.getElementById('invpPresetModal').style.display = 'flex';
   _invpPresetSnapshot = _invpPresetCurrentState();
+  // Snapshot first, then fill any missing bank constants — so a saved preset that
+  // predates a known bank gets its SWIFT / wire completed, and the fill counts as
+  // an unsaved change that nudges a 保存 rather than silently sitting unsaved.
+  if (section === 'bank') _invpApplyBankConstants(false);
 }
+
+// Per-bank constants that are identical for every account at that bank, so the
+// preset form auto-fills them when a bank is picked: the SWIFT/BIC code(s) and
+// the incoming-wire routing. Account-specific values (account no, ACH / paper
+// routing) differ per account and stay manually entered.
+const INVP_BANK_PRESETS = {
+  'Chase':           { swift: 'CHASUS33', wire: '021000021' },
+  'Bank of America': { swift: 'BOFAUS3N (USD) / BOFAUS6S (foreign currency)', wire: '026009593' },
+};
+
+// Keep the Bank Name <select> to Chase / BofA, but never drop a legacy value an
+// existing preset was saved with — inject it as an option so editing + re-saving
+// can't silently change the bank.
+function _ensureBankNameOption(sel, val) {
+  if (!sel) return;
+  if (val && ![...sel.options].some(o => o.value === val)) {
+    const o = document.createElement('option');
+    o.value = val; o.textContent = val;
+    sel.appendChild(o);
+  }
+  sel.value = val || '';
+}
+
+// Fill a bank's fixed SWIFT + wire routing. force=true (explicit bank pick)
+// overwrites; force=false (modal open) only fills blanks, so a saved preset's
+// gaps get completed without clobbering edits. Either way the generic "Routing
+// No" is cleared only when it merely repeats the wire number — kills the
+// duplication the user flagged without touching a routing that's actually unique.
+function _invpApplyBankConstants(force) {
+  const sel = document.getElementById('invpBankName');
+  const c = sel && INVP_BANK_PRESETS[sel.value];
+  if (!c) return;
+  const swift = document.getElementById('invpBankSwiftCode');
+  const wire = document.getElementById('invpBankWireRouting');
+  if (force || !swift.value.trim()) swift.value = c.swift;
+  if (force || !wire.value.trim()) wire.value = c.wire;
+  const rn = document.getElementById('invpBankRoutingNo');
+  if (rn && rn.value.replace(/\D/g, '') === c.wire.replace(/\D/g, '')) rn.value = '';
+}
+function onInvpBankNameChange() { _invpApplyBankConstants(true); }
 
 function fillPresetFields(section, data) {
   if (section === 'sender') {
@@ -29361,7 +29405,7 @@ function fillPresetFields(section, data) {
     document.getElementById('invpSenderEmail').value = data.sender_email || '';
   } else if (section === 'bank') {
     document.getElementById('invpBankAccountName').value = data.bank_account_name || '';
-    document.getElementById('invpBankName').value = data.bank_name || '';
+    _ensureBankNameOption(document.getElementById('invpBankName'), data.bank_name || '');
     document.getElementById('invpBankAccountNo').value = data.bank_account_no || '';
     document.getElementById('invpBankRoutingNo').value = data.bank_routing_no || '';
     document.getElementById('invpBankSwiftCode').value = data.bank_swift_code || '';
@@ -32396,7 +32440,7 @@ async function generateInvpPreview() {
     // set, so it never duplicates them (no need to manually clear it).
     (profile.bank_routing_no && !(profile.bank_wire_routing || profile.bank_paper_routing))
                                ? ['Routing No',      esc(profile.bank_routing_no)]                          : null,
-    profile.bank_swift_code    ? ['SWIFT / BIC',     esc(profile.bank_swift_code)]                          : null,
+    profile.bank_swift_code    ? ['SWIFT / BIC',     esc(profile.bank_swift_code), true]                    : null,
   ].filter(Boolean);
   const bankBlock = bankRows.length ? `
     <div style="margin-bottom:.7rem;padding:.6rem .9rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem;color:#1e293b">
@@ -32405,7 +32449,7 @@ async function generateInvpPreview() {
         <span style="font-size:.72rem;color:#64748b">Payment due upon receipt</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.25rem 1.25rem;line-height:1.55">
-        ${bankRows.map(([k,v]) => `<div style="display:flex;gap:.5rem"><span style="color:#64748b;min-width:78px">${k}:</span><span>${v}</span></div>`).join('')}
+        ${bankRows.map(([k,v,full]) => `<div style="display:flex;gap:.5rem${full ? ';grid-column:1/-1' : ''}"><span style="color:#64748b;min-width:78px">${k}:</span><span>${v}</span></div>`).join('')}
       </div>
     </div>` : '';
 
@@ -33128,13 +33172,22 @@ function printInvoice() {
     </div>
     <div id="invpPresetFieldsBank" style="display:none">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
-        <div class="field"><label>Account Name</label><input type="text" id="invpBankAccountName" placeholder="e.g. JC-SL Express Inc"></div>
-        <div class="field"><label>Bank Name</label><input type="text" id="invpBankName" placeholder="e.g. JPMorgan Bank"></div>
-        <div class="field"><label>Account No</label><input type="text" id="invpBankAccountNo" placeholder="2904088524"></div>
-        <div class="field"><label>Routing No</label><input type="text" id="invpBankRoutingNo" placeholder="322271627"></div>
-        <div class="field"><label>SWIFT / BIC</label><input type="text" id="invpBankSwiftCode" placeholder="e.g. BOFAUS3N"></div>
-        <div class="field"><label>Wire Routing</label><input type="text" id="invpBankWireRouting" placeholder="e.g. 021000021"></div>
-        <div class="field" style="grid-column:1/-1"><label>Paper / ACH Routing</label><input type="text" id="invpBankPaperRouting" placeholder="e.g. 322271627"></div>
+        <div class="field"><label>Bank Name</label>
+          <select id="invpBankName" onchange="onInvpBankNameChange()">
+            <option value="">-- 选择银行 --</option>
+            <option value="Chase">Chase</option>
+            <option value="Bank of America">Bank of America</option>
+          </select>
+        </div>
+        <div class="field"><label>Account Name</label><input type="text" id="invpBankAccountName" placeholder="e.g. Surplus Lane Inc"></div>
+        <div class="field"><label>Account No</label><input type="text" id="invpBankAccountNo" placeholder="291042157814"></div>
+        <div class="field"><label>Routing No <span style="font-weight:400;text-transform:none;color:var(--gray-400)">· 可留空</span></label><input type="text" id="invpBankRoutingNo" placeholder="一般留空，见下方电汇 / ACH"></div>
+        <div class="field" style="grid-column:1/-1"><label>SWIFT / BIC</label><input type="text" id="invpBankSwiftCode" placeholder="选银行后自动填，如 BOFAUS3N"></div>
+        <div class="field"><label>Wire Routing · 电汇</label><input type="text" id="invpBankWireRouting" placeholder="如 026009593（选银行后自动填）"></div>
+        <div class="field"><label>Paper / ACH Routing · 直存/支票</label><input type="text" id="invpBankPaperRouting" placeholder="如 081904808"></div>
+        <div style="grid-column:1/-1;font-size:.74rem;color:var(--gray-500);line-height:1.55;background:#f5f7ff;border:1px solid #e0e7ff;border-radius:6px;padding:.5rem .65rem">
+          选好银行后，<b>SWIFT / BIC</b> 和 <b>Wire Routing</b>（每家银行固定）会自动填好。<b>Wire Routing</b>＝收<b>电汇</b>用；<b>Paper / ACH Routing</b>＝<b>直接存款 / 支票 / ACH</b>用——两个号码不同、请勿互相重复。
+        </div>
       </div>
     </div>
     <div id="invpPresetFieldsContact" style="display:none">
