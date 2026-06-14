@@ -30300,9 +30300,9 @@ function renderInvpList() {
           // Status + action only; amount moved to subAmtCell. The 更新 button turns
           // green once a proof exists (the visible "已上传" colour change).
           const subPayCell = subPaid
-            ? `<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-                 <span title="${esc(subInfo || '已付分包')}" style="display:inline-flex;align-items:center;gap:4px;background:#dbeafe;color:#1e40af;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px">&#10003; 已付</span>
-                 <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem;color:var(--green);border-color:var(--green)" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
+            ? `<div style="display:flex;flex-direction:row;align-items:center;justify-content:center;gap:6px;flex-wrap:nowrap">
+                 <span title="${esc(subInfo || '已付分包')}" style="display:inline-flex;align-items:center;gap:4px;background:#dbeafe;color:#1e40af;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap">&#10003; 已付</span>
+                 <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
                </div>`
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
           const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)') : dash;
