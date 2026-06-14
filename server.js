@@ -723,6 +723,21 @@ db.exec(`
 try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_ids TEXT DEFAULT '[]'`); } catch(e) {}
+// Compensation / liability incidents logged per warehouse (what happened, how
+// much we paid, how it was resolved, and a receipt/invoice scan).
+try { db.exec(`CREATE TABLE IF NOT EXISTS warehouse_claims (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  warehouse_code TEXT DEFAULT '',
+  warehouse_name TEXT DEFAULT '',
+  incident_date TEXT DEFAULT '',
+  amount REAL DEFAULT NULL,
+  description TEXT DEFAULT '',
+  resolution TEXT DEFAULT '',
+  status TEXT DEFAULT 'open',
+  invoice_path TEXT DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -17701,6 +17716,76 @@ app.post('/api/admin/invoices/:id/history', requireAdmin, (req, res) => {
   if (!action) return res.status(400).json({ error: 'action required' });
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, action, detail || '');
+  res.json({ success: true });
+});
+
+// ─── WAREHOUSE CLAIMS (仓库赔偿事故) ───
+const claimUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `claim-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /\.(pdf|jpg|jpeg|png|gif|webp)$/i.test(path.extname(file.originalname)))
+});
+
+function _claimFields(req) {
+  const b = req.body || {};
+  const amtNum = Number(b.amount);
+  return {
+    warehouse_code: (b.warehouse_code || '').trim(),
+    warehouse_name: (b.warehouse_name || '').trim(),
+    incident_date: (b.incident_date || '').trim(),
+    amount: (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null,
+    description: (b.description || '').trim(),
+    resolution: (b.resolution || '').trim(),
+    status: (b.status || 'open').trim() || 'open',
+  };
+}
+
+app.get('/api/admin/warehouse-claims', requireAdmin, (req, res) => {
+  res.json(db.prepare(`SELECT * FROM warehouse_claims ORDER BY incident_date DESC, created_at DESC`).all());
+});
+
+app.post('/api/admin/warehouse-claims', requireAdmin, claimUpload.single('invoice'), (req, res) => {
+  const f = _claimFields(req);
+  const invoicePath = req.file ? `/uploads/${req.file.filename}` : null;
+  const r = db.prepare(`INSERT INTO warehouse_claims
+    (warehouse_code, warehouse_name, incident_date, amount, description, resolution, status, invoice_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status, invoicePath);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/warehouse-claims/:id', requireAdmin, claimUpload.single('invoice'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM warehouse_claims WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: 'Not found' });
+  const f = _claimFields(req);
+  // Replace the file only when a new one is uploaded; otherwise keep the old one.
+  let invoicePath = cur.invoice_path;
+  if (req.file) {
+    if (cur.invoice_path) {
+      const oldPath = path.join(uploadsDir, path.basename(cur.invoice_path));
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+    invoicePath = `/uploads/${req.file.filename}`;
+  }
+  db.prepare(`UPDATE warehouse_claims SET warehouse_code=?, warehouse_name=?, incident_date=?, amount=?,
+    description=?, resolution=?, status=?, invoice_path=?, updated_at=datetime('now') WHERE id=?`)
+    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status, invoicePath, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/warehouse-claims/:id', requireAdmin, (req, res) => {
+  const cur = db.prepare('SELECT invoice_path FROM warehouse_claims WHERE id=?').get(req.params.id);
+  if (cur && cur.invoice_path) {
+    const oldPath = path.join(uploadsDir, path.basename(cur.invoice_path));
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  db.prepare('DELETE FROM warehouse_claims WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 

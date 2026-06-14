@@ -629,6 +629,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
       <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商发票</a>
       <a onclick="showTab('ts-emp-invoice-history')" data-tab="ts-emp-invoice-history" data-role="admin,staff">📜 承包商历史发票</a>
+      <a onclick="showTab('warehouse-claims')" data-tab="warehouse-claims" data-role="admin,staff">⚠️ 仓库赔偿事故</a>
     </div>
   </div>
 
@@ -1457,6 +1458,79 @@ tr:hover td{background:var(--sky-light)}
       <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>客户付款时间</th><th>劳务付款时间</th><th>Staff 备注</th></tr></thead>
       <tbody id="tsHistoryTable"></tbody>
     </table>
+  </div>
+</div>
+
+<div id="tab-warehouse-claims" style="display:none">
+  <div class="top">
+    <h1>⚠️ 仓库赔偿事故</h1>
+    <div class="top-actions">
+      <button class="btn btn-green" onclick="openWhClaimModal()">+ 新建事故</button>
+      <button class="btn btn-outline" onclick="loadWarehouseClaims()">刷新</button>
+    </div>
+  </div>
+  <div class="card">
+    <div id="whClaimsWrap">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ WAREHOUSE CLAIM MODAL ════════════════════ -->
+<div class="modal-bg" id="whClaimModal" style="display:none" onclick="if(event.target===this)closeWhClaimModal()">
+  <div class="modal" style="max-width:620px;width:95vw;max-height:94vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
+      <h2 style="margin:0;font-size:1.15rem;line-height:1.35;min-width:0;flex:1 1 auto" id="whClaimModalTitle">新建赔偿事故</h2>
+      <button class="btn btn-outline" style="flex:0 0 auto;white-space:nowrap;padding:.4rem .85rem" onclick="closeWhClaimModal()">✕ 关闭</button>
+    </div>
+    <input type="hidden" id="whClaimEditId">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">仓库</label>
+        <select id="whClaimWarehouse" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">-- 选择仓库 --</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">事故日期</label>
+        <input type="date" id="whClaimDate" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">赔偿金额 (USD)</label>
+        <input type="number" id="whClaimAmount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">状态</label>
+        <select id="whClaimStatus" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="open">处理中</option>
+          <option value="resolved">已解决</option>
+        </select>
+      </div>
+      <div style="grid-column:1/-1">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">事故描述（发生了什么）</label>
+        <textarea id="whClaimDesc" rows="3" placeholder="描述事故经过…" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div style="grid-column:1/-1">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">解决方式（怎么解决的）</label>
+        <textarea id="whClaimResolution" rows="3" placeholder="如何处理、赔付给谁、结果如何…" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;font-family:inherit;resize:vertical"></textarea>
+      </div>
+    </div>
+
+    <div style="margin-bottom:1rem">
+      <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">发票 / 凭证（截图 / PDF）</label>
+      <div id="whClaimDrop" style="border:2px dashed var(--gray-300);border-radius:10px;padding:1.1rem;text-align:center;cursor:pointer;color:var(--gray-500);font-size:.85rem;transition:all .15s">
+        <div style="font-size:1.4rem;line-height:1">⬆️</div>
+        <div style="margin-top:.3rem">把发票拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span></div>
+        <div id="whClaimFileName" style="margin-top:.4rem;font-weight:600;color:var(--gray-700)">未选择文件</div>
+        <input type="file" id="whClaimFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="display:none">
+      </div>
+      <div id="whClaimCurrentWrap" style="display:none;margin-top:.5rem;font-size:.82rem">当前文件：<a id="whClaimCurrentLink" href="#" target="_blank" style="color:var(--green)">查看</a></div>
+    </div>
+
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeWhClaimModal()">取消</button>
+      <button class="btn btn-green" id="whClaimSaveBtn" onclick="saveWhClaim()">保存</button>
+    </div>
   </div>
 </div>
 
@@ -8269,7 +8343,7 @@ const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker', referrers:'sec-worker', scheduling:'sec-worker', warehouses:'sec-worker', 'warehouse-checkins':'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
-  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time', 'warehouse-claims':'sec-time',
   'company-payments':'sec-company-pay', 'container-scans':'sec-company-pay',
   'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
   approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
@@ -8314,6 +8388,7 @@ function showTab(t) {
   if (t === 'sys-dividend-history') loadSysDividendHistory();
   if (t === 'ts-history')  loadTsHistory();
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
+  if (t === 'warehouse-claims') loadWarehouseClaims();
   if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
   if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
   if (t === 'company-payments') initCompanyPayPage();
@@ -30235,6 +30310,190 @@ async function submitInvpReceipt() {
   } finally {
     btn.disabled = false;
     btn.textContent = origLabel;
+  }
+}
+
+// ════════════════════ WAREHOUSE CLAIMS (仓库赔偿事故) ════════════════════
+let _whClaims = [];
+let _whClaimWarehouses = [];
+
+async function loadWarehouseClaims() {
+  const wrap = document.getElementById('whClaimsWrap');
+  if (!wrap) return;
+  const [claims, whRes] = await Promise.all([
+    api('/admin/warehouse-claims').catch(() => []),
+    fetch('/api/admin/warehouses').then(r => r.json()).catch(() => ({ warehouses: [] })),
+  ]);
+  _whClaims = Array.isArray(claims) ? claims : [];
+  _whClaimWarehouses = (whRes && whRes.warehouses) || [];
+  renderWhClaims();
+}
+
+const _whClaimStatusBadge = s => s === 'resolved'
+  ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#dcfce7;color:#166534">已解决</span>'
+  : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fef3c7;color:#92400e">处理中</span>';
+
+function renderWhClaims() {
+  const wrap = document.getElementById('whClaimsWrap');
+  if (!wrap) return;
+  if (!_whClaims.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">暂无赔偿事故记录，点击「+ 新建事故」添加。</div>';
+    return;
+  }
+  const total = _whClaims.reduce((s, c) => s + (c.amount || 0), 0);
+  const open = _whClaims.filter(c => c.status !== 'resolved').length;
+  const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const summary = `
+    <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem">
+      <div style="flex:1 1 150px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
+        <div style="font-size:.72rem;color:var(--gray-500)">事故总数</div>
+        <div style="font-size:1.15rem;font-weight:700">${_whClaims.length}<span style="font-size:.72rem;color:var(--gray-500);font-weight:400"> · 处理中 ${open}</span></div>
+      </div>
+      <div style="flex:1 1 150px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
+        <div style="font-size:.72rem;color:var(--gray-500)">赔偿总额</div>
+        <div style="font-size:1.15rem;font-weight:700;color:#dc2626">${money(total)}</div>
+      </div>
+    </div>`;
+  const rows = _whClaims.map(c => {
+    const invoiceLink = c.invoice_path
+      ? `<a href="${c.invoice_path}" target="_blank" style="color:var(--green);text-decoration:underline">查看</a>`
+      : '<span style="color:var(--gray-400)">—</span>';
+    const desc = (c.description || '').length > 60 ? esc(c.description.slice(0, 60)) + '…' : esc(c.description || '');
+    return `<tr style="border-top:1px solid var(--gray-100)">
+      <td style="padding:8px 10px;font-weight:600">${esc(c.warehouse_name || c.warehouse_code || '—')}</td>
+      <td style="padding:8px 10px;color:var(--gray-500);white-space:nowrap">${esc(c.incident_date || '—')}</td>
+      <td style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap;color:#dc2626">${c.amount != null ? '$' + Number(c.amount).toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px;color:var(--gray-600);max-width:280px">${desc || '<span style="color:var(--gray-400)">—</span>'}</td>
+      <td style="padding:8px 10px;text-align:center">${_whClaimStatusBadge(c.status)}</td>
+      <td style="padding:8px 10px;text-align:center">${invoiceLink}</td>
+      <td style="padding:8px 10px;text-align:center;white-space:nowrap">
+        <button class="btn btn-sm btn-outline" onclick="openWhClaimModal(${c.id})">查看/编辑</button>
+        <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteWhClaim(${c.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = summary + `
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+      <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
+        <th style="padding:8px 10px;text-align:left">仓库</th>
+        <th style="padding:8px 10px;text-align:left">事故日期</th>
+        <th style="padding:8px 10px;text-align:right">赔偿金额</th>
+        <th style="padding:8px 10px;text-align:left">事故描述</th>
+        <th style="padding:8px 10px;text-align:center">状态</th>
+        <th style="padding:8px 10px;text-align:center">发票</th>
+        <th style="padding:8px 10px;text-align:center">操作</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+function openWhClaimModal(id) {
+  document.getElementById('whClaimEditId').value = id || '';
+  document.getElementById('whClaimModalTitle').textContent = id ? '查看 / 编辑赔偿事故' : '新建赔偿事故';
+  const whSel = document.getElementById('whClaimWarehouse');
+  whSel.innerHTML = '<option value="">-- 选择仓库 --</option>'
+    + _whClaimWarehouses.map(w => `<option value="${esc(w.warehouse_code)}" data-name="${esc(w.warehouse_name)}">${esc(w.warehouse_name)}${w.warehouse_code ? ' (' + esc(w.warehouse_code) + ')' : ''}</option>`).join('');
+  document.getElementById('whClaimFile').value = '';
+  document.getElementById('whClaimFileName').textContent = '未选择文件';
+  const currentWrap = document.getElementById('whClaimCurrentWrap');
+
+  const c = id ? _whClaims.find(x => x.id === id) : null;
+  if (c) {
+    whSel.value = c.warehouse_code || '';
+    // Keep a since-removed warehouse selectable so its record still shows it.
+    if (c.warehouse_code && whSel.value !== c.warehouse_code) {
+      const o = document.createElement('option');
+      o.value = c.warehouse_code; o.textContent = c.warehouse_name || c.warehouse_code;
+      o.dataset.name = c.warehouse_name || ''; whSel.appendChild(o); whSel.value = c.warehouse_code;
+    }
+    document.getElementById('whClaimDate').value = c.incident_date || '';
+    document.getElementById('whClaimAmount').value = c.amount != null ? c.amount : '';
+    document.getElementById('whClaimStatus').value = c.status || 'open';
+    document.getElementById('whClaimDesc').value = c.description || '';
+    document.getElementById('whClaimResolution').value = c.resolution || '';
+    if (c.invoice_path) {
+      currentWrap.style.display = 'block';
+      document.getElementById('whClaimCurrentLink').href = c.invoice_path;
+    } else { currentWrap.style.display = 'none'; }
+  } else {
+    whSel.value = '';
+    document.getElementById('whClaimDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('whClaimAmount').value = '';
+    document.getElementById('whClaimStatus').value = 'open';
+    document.getElementById('whClaimDesc').value = '';
+    document.getElementById('whClaimResolution').value = '';
+    currentWrap.style.display = 'none';
+  }
+  document.getElementById('whClaimModal').style.display = 'flex';
+  _whClaimInitDrop();
+}
+
+function _whClaimInitDrop() {
+  const drop = document.getElementById('whClaimDrop');
+  const input = document.getElementById('whClaimFile');
+  const nameEl = document.getElementById('whClaimFileName');
+  if (!drop || drop._wired) return;
+  drop._wired = true;
+  const showName = () => { nameEl.textContent = input.files.length ? input.files[0].name : '未选择文件'; };
+  const lit = on => { drop.style.borderColor = on ? 'var(--green)' : ''; drop.style.background = on ? '#f0fdf4' : ''; };
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', showName);
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(true); }));
+  ['dragleave', 'dragend'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(false); }));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); lit(false);
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) { input.files = files; showName(); }
+  });
+}
+
+function closeWhClaimModal() {
+  document.getElementById('whClaimModal').style.display = 'none';
+}
+
+async function saveWhClaim() {
+  const editId = document.getElementById('whClaimEditId').value;
+  const whSel = document.getElementById('whClaimWarehouse');
+  const opt = whSel.options[whSel.selectedIndex];
+  const warehouseName = (opt && (opt.dataset.name || opt.textContent)) || '';
+  const desc = document.getElementById('whClaimDesc').value.trim();
+  if (!whSel.value && !warehouseName) { alert('请选择仓库'); return; }
+  if (!desc) { alert('请填写事故描述'); return; }
+  const btn = document.getElementById('whClaimSaveBtn');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '保存中…';
+  try {
+    const fd = new FormData();
+    fd.append('warehouse_code', whSel.value || '');
+    fd.append('warehouse_name', warehouseName);
+    fd.append('incident_date', document.getElementById('whClaimDate').value || '');
+    fd.append('amount', document.getElementById('whClaimAmount').value || '');
+    fd.append('description', desc);
+    fd.append('resolution', document.getElementById('whClaimResolution').value || '');
+    fd.append('status', document.getElementById('whClaimStatus').value || 'open');
+    const fileInput = document.getElementById('whClaimFile');
+    if (fileInput.files.length) fd.append('invoice', fileInput.files[0]);
+    const url = editId ? '/api/admin/warehouse-claims/' + editId : '/api/admin/warehouse-claims';
+    const resp = await fetch(url, { method: editId ? 'PUT' : 'POST', body: fd });
+    if (!resp.ok) throw new Error(await resp.text());
+    closeWhClaimModal();
+    loadWarehouseClaims();
+  } catch (e) {
+    alert('保存失败：' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
+}
+
+async function deleteWhClaim(id) {
+  if (!confirm('确定删除这条赔偿事故记录？此操作不可撤销。')) return;
+  try {
+    const resp = await fetch('/api/admin/warehouse-claims/' + id, { method: 'DELETE' });
+    if (!resp.ok) throw new Error(await resp.text());
+    loadWarehouseClaims();
+  } catch (e) {
+    alert('删除失败：' + e.message);
   }
 }
 
