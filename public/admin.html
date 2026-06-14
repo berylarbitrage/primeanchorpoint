@@ -30282,8 +30282,8 @@ function renderInvpList() {
             arr = arr.filter(Boolean);
             if (!arr.length) return dash;
             const one = p => /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(p)
-              ? `<a href="${p}" target="_blank" title="查看回执"><img src="${p}" alt="回执" loading="lazy" style="width:42px;height:42px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block"></a>`
-              : `<a href="${p}" target="_blank" title="查看文件" style="font-size:.72rem;color:${color};text-decoration:underline">📄</a>`;
+              ? `<a href="${p}" onclick="invpOpenReceipt(this.href);return false" title="点击查看回执"><img src="${p}" alt="回执" loading="lazy" style="width:42px;height:42px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block;cursor:zoom-in"></a>`
+              : `<a href="${p}" onclick="invpOpenReceipt(this.href);return false" title="点击查看文件" style="font-size:.72rem;color:${color};text-decoration:underline;cursor:pointer">📄</a>`;
             return `<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center;max-width:140px;margin:0 auto">${arr.map(one).join('')}</div>`;
           };
           const receiptCell = isPaid ? rcptThumbs(r.payment_receipt_paths, r.payment_receipt_path, 'var(--green)') : dash;
@@ -31852,6 +31852,40 @@ function showImgLightbox(src) {
   }
   document.getElementById('imgLightboxImg').src = src;
   lb.style.display = 'flex';
+}
+
+// Open a receipt in-page instead of a new browser tab (mobile often blocks the
+// popup or navigates the page away). Images reuse the photo lightbox; PDFs and
+// other files load in an on-page iframe modal.
+function invpOpenReceipt(url) {
+  if (/\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(url)) { showImgLightbox(url); return; }
+  showFileLightbox(url);
+}
+function showFileLightbox(src) {
+  let lb = document.getElementById('fileLightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'fileLightbox';
+    lb.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:6000;align-items:center;justify-content:center;padding:1rem';
+    lb.onclick = e => { if (e.target === lb) closeFileLightbox(); };
+    lb.innerHTML =
+      '<div style="width:min(96vw,920px);height:92vh;background:#fff;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.5)">'
+      + '<div style="display:flex;justify-content:flex-end;padding:.35rem .5rem;background:#0f172a">'
+      + '<button onclick="closeFileLightbox()" title="关闭" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:.1rem .5rem">✕</button>'
+      + '</div>'
+      + '<iframe id="fileLightboxFrame" style="flex:1;border:none;width:100%"></iframe>'
+      + '</div>';
+    document.body.appendChild(lb);
+  }
+  document.getElementById('fileLightboxFrame').src = src;
+  lb.style.display = 'flex';
+}
+function closeFileLightbox() {
+  const lb = document.getElementById('fileLightbox');
+  if (!lb) return;
+  lb.style.display = 'none';
+  const f = document.getElementById('fileLightboxFrame');
+  if (f) f.src = 'about:blank';
 }
 
 async function invpImportCsub(submissionId) {
