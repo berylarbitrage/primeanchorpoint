@@ -57,6 +57,12 @@ table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 12px;font-size:.75rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--gray-200);white-space:nowrap}
 td{padding:10px 12px;font-size:.85rem;border-bottom:1px solid var(--gray-200);color:var(--gray-600)}
 tr:hover td{background:var(--sky-light)}
+/* Invoice list: freeze the leftmost identity/billing columns on horizontal
+   scroll. Position, background and stacking live here; the per-column `left`
+   offsets are assigned by applyInvpFreeze() since the columns are variable-width. */
+.invp-frz{position:sticky;background:#fff;z-index:2}
+thead .invp-frz{z-index:3;background:var(--gray-50,#fff)}
+tr:hover td.invp-frz{background:var(--sky-light)}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700}
 .badge-en{background:#fef3c7;color:#b45309}.badge-zh{background:#FFF3E0;color:#E67E22}.badge-es{background:#E8F5E9;color:#2D9D78}
 .badge-employer{background:#fef3c7;color:var(--blue)}.badge-seeker{background:#FFF3E0;color:#E67E22}.badge-other{background:var(--gray-200);color:var(--gray-600)}
@@ -30204,11 +30210,12 @@ function renderInvpList() {
   // on every sort, so the indicator always tracks the live sort state.
   const _sortKey = (_invpFilter.sort || 'date_desc').replace(/_(asc|desc)$/, '');
   const _sortDir = (_invpFilter.sort || 'date_desc').endsWith('_asc') ? 'asc' : 'desc';
-  const th = (label, key, align) => {
-    if (!key) return `<th style="padding:8px 10px;text-align:${align}">${label}</th>`;
+  const th = (label, key, align, freeze) => {
+    const cls = freeze ? ' class="invp-frz"' : '';
+    if (!key) return `<th${cls} style="padding:8px 10px;text-align:${align}">${label}</th>`;
     const on = key === _sortKey;
     const ind = on ? (_sortDir === 'asc' ? '▲' : '▼') : '<span style="opacity:.3">↕</span>';
-    return `<th onclick="invpSetSort('${key}')" title="点击按此列排序"
+    return `<th${cls} onclick="invpSetSort('${key}')" title="点击按此列排序"
         style="padding:8px 10px;text-align:${align};cursor:pointer;user-select:none;white-space:nowrap${on ? ';color:var(--sky)' : ''}">${label} <span style="font-size:.72em">${ind}</span></th>`;
   };
 
@@ -30216,14 +30223,14 @@ function renderInvpList() {
     <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:.88rem;white-space:nowrap">
       <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
-        ${th('Invoice 编号', 'num', 'left')}
-        ${th('客户公司', 'company', 'left')}
-        ${th('收款银行', 'bank', 'left')}
-        ${th('服务周期', 'period', 'left')}
-        ${th('账单', 'bill', 'right')}
-        ${th('工资', 'wage', 'right')}
-        ${th('利润', 'profit', 'right')}
-        ${th('Invoice 日期', 'date', 'left')}
+        ${th('Invoice 编号', 'num', 'left', true)}
+        ${th('客户公司', 'company', 'left', true)}
+        ${th('收款银行', 'bank', 'left', true)}
+        ${th('服务周期', 'period', 'left', true)}
+        ${th('账单', 'bill', 'right', true)}
+        ${th('工资', 'wage', 'right', true)}
+        ${th('利润', 'profit', 'right', true)}
+        ${th('Invoice 日期', 'date', 'left', true)}
         ${th('状态', 'status', 'center')}
         ${th('付款状态', 'paystatus', 'center')}
         ${th('实付金额', 'payamt', 'right')}
@@ -30307,14 +30314,14 @@ function renderInvpList() {
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
           const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)') : dash;
           return `<tr style="border-top:1px solid var(--gray-100)">
-          <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
-          <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
-          <td style="padding:8px 10px;color:var(--gray-500)">${esc(invpBankLabel(r) || '—')}</td>
-          <td style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
-          <td style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap${amtMismatch ? ';color:#dc2626' : ''}" ${amtMismatch ? 'title="实收金额与账单不一致"' : ''}>$${(r.subtotal||0).toFixed(2)}</td>
-          <td style="padding:8px 10px;text-align:right;color:var(--gray-600);white-space:nowrap">$${(r.wage_cost||0).toFixed(2)}</td>
-          <td style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${profit>=0?'#16a34a':'#dc2626'}">$${profit.toFixed(2)}</td>
-          <td style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
+          <td class="invp-frz" style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
+          <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}</td>
+          <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${esc(invpBankLabel(r) || '—')}</td>
+          <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
+          <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap${amtMismatch ? ';color:#dc2626' : ''}" ${amtMismatch ? 'title="实收金额与账单不一致"' : ''}>$${(r.subtotal||0).toFixed(2)}</td>
+          <td class="invp-frz" style="padding:8px 10px;text-align:right;color:var(--gray-600);white-space:nowrap">$${(r.wage_cost||0).toFixed(2)}</td>
+          <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${profit>=0?'#16a34a':'#dc2626'}">$${profit.toFixed(2)}</td>
+          <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
           <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
           <td style="padding:8px 10px;text-align:center">${paidStatusCell}</td>
           <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:600">${payAmountCell}</td>
@@ -30336,6 +30343,42 @@ function renderInvpList() {
         }).join('')}
       </tbody>
     </table></div>`;
+  // Keep the leftmost identity/billing columns pinned during horizontal scroll.
+  applyInvpFreeze();
+}
+
+// Freeze the first 8 invoice-list columns (编号 … Invoice 日期) on horizontal
+// scroll so identity + billing stay visible while the payment-tracking columns
+// to the right slide underneath. A multi-column freeze with variable widths can't
+// be expressed in pure CSS, so measure each frozen column's rendered width and pin
+// a cumulative `left` offset on every header + body cell. Re-runs on each render
+// (sort/filter rebuild the table) and, debounced, on window resize.
+function applyInvpFreeze() {
+  const wrap = document.getElementById('invpTableWrap');
+  const table = wrap && wrap.querySelector('table');
+  if (!table || !table.tHead || !table.tHead.rows[0] || !table.tBodies.length) return;
+  const headCells = table.tHead.rows[0].cells;
+  const n = Math.min(8, headCells.length);
+  // While the tab is hidden every offsetWidth is 0 — bail so we don't collapse
+  // every offset to left:0 (which would stack the columns). Next render fixes it.
+  if (!n || !headCells[0].offsetWidth) return;
+  const lefts = [];
+  let acc = 0;
+  for (let i = 0; i < n; i++) { lefts[i] = acc; acc += headCells[i].offsetWidth; }
+  const pin = (cell, i) => {
+    cell.style.left = lefts[i] + 'px';
+    // Soft divider on the last frozen column hints at the scrollable remainder.
+    cell.style.boxShadow = (i === n - 1) ? '2px 0 4px -1px rgba(0,0,0,.12)' : '';
+  };
+  for (let i = 0; i < n; i++) pin(headCells[i], i);
+  for (const row of table.tBodies[0].rows) {
+    for (let i = 0; i < n && i < row.cells.length; i++) pin(row.cells[i], i);
+  }
+  if (!applyInvpFreeze._bound) {
+    applyInvpFreeze._bound = true;
+    let t;
+    window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(applyInvpFreeze, 120); });
+  }
 }
 
 // Integrity check for the cross-invoice "bleed" bug: lists invoices whose worker
