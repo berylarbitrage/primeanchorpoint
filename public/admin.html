@@ -2228,9 +2228,9 @@ tr:hover td{background:var(--sky-light)}
 <!-- ════════════════════ INVOICE BUILDER MODAL ════════════════════ -->
 <div class="modal-bg" id="invpBuilderModal" style="display:none" onclick="if(event.target===this)attemptCloseInvpBuilder(true)">
   <div class="modal" style="max-width:900px;width:95vw;max-height:94vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
-      <h2 style="margin:0" id="invpBuilderTitle">+ 新建 Invoice</h2>
-      <button class="btn btn-outline" onclick="attemptCloseInvpBuilder(false)">✕ 关闭</button>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
+      <h2 style="margin:0;font-size:1.15rem;line-height:1.35;min-width:0;flex:1 1 auto;overflow-wrap:anywhere" id="invpBuilderTitle">+ 新建 Invoice</h2>
+      <button class="btn btn-outline" style="flex:0 0 auto;white-space:nowrap;padding:.4rem .85rem" onclick="attemptCloseInvpBuilder(false)">✕ 关闭</button>
     </div>
 
     <div class="card">
@@ -29718,19 +29718,139 @@ async function attemptCloseInvpBuilder(fromBackdrop) {
   }
 })();
 
+// All invoices fetched from the server, plus the current filter/sort state.
+// loadInvpList() (re)fetches and builds the persistent filter bar; the lighter
+// renderInvpList() re-applies the filters, recomputes the summary, and rebuilds
+// only the table — so typing in the search box never rebuilds the controls.
+let _invpAllRows = [];
+const _invpFilter = { q: '', company: '', from: '', to: '', sort: 'date_desc' };
+
 async function loadInvpList() {
   const wrap = document.getElementById('invpListWrap');
   if (!wrap) return;
   const rows = await api('/admin/invoices').catch(() => []);
-  if (!rows.length) {
-    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">暂无 Invoice 记录，点击「生成新 Invoice」创建。</div>';
+  _invpAllRows = Array.isArray(rows) ? rows : [];
+  if (!_invpAllRows.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">暂无 Invoice 记录，点击「+ 新建 Invoice」创建。</div>';
     return;
   }
-  const statusBadge = s => {
-    if (s === 'saved') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#dcfce7;color:#166534">已保存</span>';
-    return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fef3c7;color:#92400e">草稿</span>';
-  };
+  const companies = [...new Set(_invpAllRows.map(r => r.company_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const fld = 'font-size:.84rem;padding:.35rem .5rem;border-radius:6px;border:1px solid var(--gray-200)';
+  const lbl = 'font-size:.72rem;color:var(--gray-500);font-weight:600';
   wrap.innerHTML = `
+    <div id="invpFilterBar" style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:flex-end;margin-bottom:1rem">
+      <div style="display:flex;flex-direction:column;gap:.2rem">
+        <label style="${lbl}">客户公司</label>
+        <select id="invpFltCompany" onchange="renderInvpList()" style="${fld};min-width:150px">
+          <option value="">全部公司</option>
+          ${companies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.2rem">
+        <label style="${lbl}">日期 从</label>
+        <input type="date" id="invpFltFrom" onchange="renderInvpList()" style="${fld}">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.2rem">
+        <label style="${lbl}">到</label>
+        <input type="date" id="invpFltTo" onchange="renderInvpList()" style="${fld}">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.2rem">
+        <label style="${lbl}">排序</label>
+        <select id="invpFltSort" onchange="renderInvpList()" style="${fld}">
+          <option value="date_desc">日期（新→旧）</option>
+          <option value="date_asc">日期（旧→新）</option>
+          <option value="company">公司名称</option>
+          <option value="profit_desc">利润（高→低）</option>
+          <option value="bill_desc">账单（高→低）</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.2rem;flex:1 1 160px">
+        <label style="${lbl}">搜索（编号 / 公司）</label>
+        <input type="text" id="invpFltQ" oninput="renderInvpList()" placeholder="输入关键字…" style="${fld}">
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="resetInvpFilter()" style="white-space:nowrap">清除筛选</button>
+    </div>
+    <div id="invpSummaryBar"></div>
+    <div id="invpTableWrap"></div>`;
+  // Restore any active filter onto the freshly-built controls.
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('invpFltCompany', _invpFilter.company);
+  set('invpFltFrom', _invpFilter.from);
+  set('invpFltTo', _invpFilter.to);
+  set('invpFltSort', _invpFilter.sort);
+  set('invpFltQ', _invpFilter.q);
+  renderInvpList();
+}
+
+function resetInvpFilter() {
+  Object.assign(_invpFilter, { q: '', company: '', from: '', to: '', sort: 'date_desc' });
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('invpFltCompany', ''); set('invpFltFrom', ''); set('invpFltTo', '');
+  set('invpFltSort', 'date_desc'); set('invpFltQ', '');
+  renderInvpList();
+}
+
+function renderInvpList() {
+  const tableWrap = document.getElementById('invpTableWrap');
+  const sumWrap = document.getElementById('invpSummaryBar');
+  if (!tableWrap || !sumWrap) return;
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  _invpFilter.company = val('invpFltCompany');
+  _invpFilter.from = val('invpFltFrom');
+  _invpFilter.to = val('invpFltTo');
+  _invpFilter.sort = val('invpFltSort') || 'date_desc';
+  _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
+
+  let list = _invpAllRows.slice();
+  if (_invpFilter.company) list = list.filter(r => (r.company_name || '') === _invpFilter.company);
+  // invoice_date is stored ISO (YYYY-MM-DD), so string compare = date compare.
+  if (_invpFilter.from) list = list.filter(r => (r.invoice_date || '') >= _invpFilter.from);
+  if (_invpFilter.to) list = list.filter(r => (r.invoice_date || '') <= _invpFilter.to);
+  if (_invpFilter.q) list = list.filter(r => ((r.invoice_number || '') + ' ' + (r.company_name || '')).toLowerCase().includes(_invpFilter.q));
+
+  const profitOf = r => (r.subtotal || 0) - (r.wage_cost || 0);
+  const sorters = {
+    date_desc:   (a, b) => (b.invoice_date || '').localeCompare(a.invoice_date || ''),
+    date_asc:    (a, b) => (a.invoice_date || '').localeCompare(b.invoice_date || ''),
+    company:     (a, b) => (a.company_name || '').localeCompare(b.company_name || '') || (b.invoice_date || '').localeCompare(a.invoice_date || ''),
+    profit_desc: (a, b) => profitOf(b) - profitOf(a),
+    bill_desc:   (a, b) => (b.subtotal || 0) - (a.subtotal || 0),
+  };
+  list.sort(sorters[_invpFilter.sort] || sorters.date_desc);
+
+  // Summary reflects the currently-filtered set, so filtering by a company or a
+  // date range shows that slice's totals (工资 = wages paid, 利润 = profit earned).
+  const totBill = list.reduce((s, r) => s + (r.subtotal || 0), 0);
+  const totWage = list.reduce((s, r) => s + (r.wage_cost || 0), 0);
+  const totProfit = totBill - totWage;
+  const isFiltered = !!(_invpFilter.company || _invpFilter.from || _invpFilter.to || _invpFilter.q);
+  const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const card = (label, value, color) => `
+    <div style="flex:1 1 140px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
+      <div style="font-size:.72rem;color:var(--gray-500)">${label}</div>
+      <div style="font-size:1.15rem;font-weight:700;${color ? 'color:' + color : ''}">${value}</div>
+    </div>`;
+  sumWrap.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem">
+      <span style="font-weight:600;font-size:.9rem">📊 汇总${isFiltered ? '（按当前筛选）' : '（全部）'}</span>
+      <span style="font-size:.78rem;color:var(--gray-500)">${isFiltered ? `${list.length} / ${_invpAllRows.length}` : list.length} 张 Invoice</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.1rem">
+      ${card('账单总额', money(totBill))}
+      ${card('工资总额（发出）', money(totWage), '#b45309')}
+      ${card('利润总额（赚取）', money(totProfit), totProfit >= 0 ? '#16a34a' : '#dc2626')}
+    </div>`;
+
+  const statusBadge = s => s === 'saved'
+    ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#dcfce7;color:#166534">已保存</span>'
+    : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fef3c7;color:#92400e">草稿</span>';
+
+  if (!list.length) {
+    tableWrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.75rem">没有符合筛选条件的 Invoice。</div>';
+    return;
+  }
+
+  tableWrap.innerHTML = `
     <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:.88rem;white-space:nowrap">
       <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
@@ -29745,7 +29865,7 @@ async function loadInvpList() {
         <th style="padding:8px 10px;text-align:center">操作</th>
       </tr></thead>
       <tbody>
-        ${rows.map(r => {
+        ${list.map(r => {
           const isPaid = r.payment_status === 'paid';
           // 账单 = what the client pays (subtotal); 工资 = what we pay out
           // (wage_cost, from the server); 利润 = the difference we keep.
