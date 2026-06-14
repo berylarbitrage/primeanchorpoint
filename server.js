@@ -17411,6 +17411,15 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
   const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
   for (const r of rows) {
     r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json);
+    // Surface a lightweight bank label (bank name + account last-4) so the list
+    // can show/filter by which bank each invoice collects into, without shipping
+    // the whole profile_json to the client.
+    try {
+      const p = r.profile_json ? JSON.parse(r.profile_json) : {};
+      r.bank_name = p.bank_name || '';
+      const acct = String(p.bank_account_no || '').replace(/\D/g, '');
+      r.bank_account_last4 = acct ? acct.slice(-4) : '';
+    } catch (_) { r.bank_name = ''; r.bank_account_last4 = ''; }
     delete r.items_json; delete r.profile_json;
   }
   res.json(rows);
