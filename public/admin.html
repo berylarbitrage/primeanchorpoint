@@ -29725,7 +29725,9 @@ async function loadInvpList() {
         <th style="padding:8px 10px;text-align:left">Invoice 编号</th>
         <th style="padding:8px 10px;text-align:left">客户公司</th>
         <th style="padding:8px 10px;text-align:left">服务周期</th>
-        <th style="padding:8px 10px;text-align:right">金额<div style="font-weight:400;font-size:.7rem;color:var(--gray-400)">账单 / 工资 / 利润</div></th>
+        <th style="padding:8px 10px;text-align:right">账单</th>
+        <th style="padding:8px 10px;text-align:right">工资</th>
+        <th style="padding:8px 10px;text-align:right">利润</th>
         <th style="padding:8px 10px;text-align:left">Invoice 日期</th>
         <th style="padding:8px 10px;text-align:center">状态</th>
         <th style="padding:8px 10px;text-align:center">操作</th>
@@ -29749,11 +29751,9 @@ async function loadInvpList() {
           <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
-          <td style="padding:8px 10px;text-align:right;white-space:nowrap;line-height:1.45">
-            <div style="font-weight:700">账单 $${(r.subtotal||0).toFixed(2)}</div>
-            <div style="font-size:.74rem;color:var(--gray-500)">工资 $${(r.wage_cost||0).toFixed(2)}</div>
-            <div style="font-size:.74rem;font-weight:600;color:${profit>=0?'#16a34a':'#dc2626'}">利润 $${profit.toFixed(2)}</div>
-          </td>
+          <td style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap">$${(r.subtotal||0).toFixed(2)}</td>
+          <td style="padding:8px 10px;text-align:right;color:var(--gray-600);white-space:nowrap">$${(r.wage_cost||0).toFixed(2)}</td>
+          <td style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${profit>=0?'#16a34a':'#dc2626'}">$${profit.toFixed(2)}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
           <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
           <td style="padding:8px 10px;text-align:center">
