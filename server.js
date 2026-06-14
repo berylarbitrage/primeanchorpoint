@@ -17411,6 +17411,12 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
   const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
   for (const r of rows) {
     r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json);
+    let prof = {};
+    try { prof = r.profile_json ? JSON.parse(r.profile_json) : {}; } catch (_) {}
+    r.invoice_mode = prof.invoice_mode === 'container' ? 'container' : 'hourly';
+    r.bank_name = prof.bank_name || '';
+    r.bank_account_no = prof.bank_account_no || '';
+    r.bank_account_name = prof.bank_account_name || '';
     delete r.items_json; delete r.profile_json;
   }
   res.json(rows);
