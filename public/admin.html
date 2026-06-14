@@ -2329,6 +2329,74 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- ════════════════════ SUBCONTRACTOR PAYMENT MODAL (付给分包商) ════════════════════ -->
+<div class="modal-bg" id="invpSubPayModal" style="display:none" onclick="if(event.target===this)closeInvpSubPayModal()">
+  <div class="modal" style="max-width:560px;width:95vw;max-height:94vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
+      <h2 style="margin:0;font-size:1.15rem;line-height:1.35;min-width:0;flex:1 1 auto" id="invpSubPayModalTitle">记录分包付款</h2>
+      <button class="btn btn-outline" style="flex:0 0 auto;white-space:nowrap;padding:.4rem .85rem" onclick="closeInvpSubPayModal()">✕ 关闭</button>
+    </div>
+    <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">记录这笔<strong>付给分包商</strong>的款项并上传凭证（如转账截图、付款记录等），支持 PDF / 图片格式，最大 20MB。</p>
+    <div id="invpSubPayCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
+      当前回执：<a id="invpSubPayCurrentLink" href="#" target="_blank" style="color:var(--sky)">查看文件</a>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+      <div style="grid-column:1/-1">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">分包商（收款方）</label>
+        <select id="invpSubPayEntity" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">-- 选择分包商 --</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款方式 / 账户</label>
+        <select id="invpSubPayMethod" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">-- 选择方式 --</option>
+          <option value="银行转账 (ACH)">银行转账 (ACH)</option>
+          <option value="Zelle">Zelle</option>
+          <option value="支票 (Check)">支票 (Check)</option>
+          <option value="电汇 (Wire)">电汇 (Wire)</option>
+          <option value="现金 (Cash)">现金 (Cash)</option>
+          <option value="其他">其他</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">经办人</label>
+        <select id="invpSubPayHandler" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">-- 选择经办人 --</option>
+          <option value="Tiexiong Zhou">Tiexiong Zhou</option>
+          <option value="Niki Zhao">Niki Zhao</option>
+          <option value="Beryl Zhang">Beryl Zhang</option>
+          <option value="Jimmy Cai">Jimmy Cai</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款金额 (USD)</label>
+        <input type="number" id="invpSubPayAmount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款日期</label>
+        <input type="date" id="invpSubPayDate" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+    </div>
+
+    <div style="margin-bottom:1rem">
+      <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款凭证（截图 / PDF）</label>
+      <div id="invpSubPayDrop" style="border:2px dashed var(--gray-300);border-radius:10px;padding:1.1rem;text-align:center;cursor:pointer;color:var(--gray-500);font-size:.85rem;transition:all .15s">
+        <div style="font-size:1.4rem;line-height:1">⬆️</div>
+        <div style="margin-top:.3rem">把截图拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span></div>
+        <div id="invpSubPayFileName" style="margin-top:.4rem;font-weight:600;color:var(--gray-700)">未选择文件</div>
+        <input type="file" id="invpSubPayFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="display:none">
+      </div>
+    </div>
+
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeInvpSubPayModal()">取消</button>
+      <button class="btn btn-blue" id="invpSubPaySubmitBtn" onclick="submitInvpSubPay()">保存并确认</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════ INVOICE HISTORY MODAL ════════════════════ -->
 <div class="modal-bg" id="invpHistoryModal" style="display:none" onclick="if(event.target===this)closeInvpHistoryModal()">
   <div class="modal" style="max-width:600px;width:95vw;max-height:90vh;overflow-y:auto">
@@ -29941,6 +30009,7 @@ const _invpSortDefs = {
   paydate:   { get: r => r.payment_date || '',                    type: 'text', first: 'desc' },
   payacct:   { get: r => r.payment_bank || r.payment_entity || '', type: 'text', first: 'asc' },
   receipt:   { get: r => (r.payment_status === 'paid' && r.payment_receipt_path) ? 1 : 0, type: 'num', first: 'desc' },
+  subpay:    { get: r => r.sub_payment_status === 'paid' ? 1 : 0,    type: 'num', first: 'desc' },
 };
 
 // Build a comparator from a "<key>_<dir>" token. Empty/missing values always
@@ -30161,6 +30230,7 @@ function renderInvpList() {
         ${th('付款日期', 'paydate', 'left')}
         ${th('收款账户', 'payacct', 'left')}
         ${th('收款回执', 'receipt', 'center')}
+        ${th('分包付款', 'subpay', 'center')}
         ${th('操作', null, 'center')}
       </tr></thead>
       <tbody>
@@ -30199,6 +30269,23 @@ function renderInvpList() {
                 ? `<a href="${r.payment_receipt_path}" target="_blank" title="查看回执"><img src="${r.payment_receipt_path}" alt="回执" loading="lazy" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block;margin:0 auto"></a>`
                 : `<a href="${r.payment_receipt_path}" target="_blank" style="font-size:.75rem;color:var(--green);text-decoration:underline">📄 查看回执</a>`)
             : dash;
+          // 分包付款: money paid OUT to the subcontractor (independent of client payment).
+          const subPaid = r.sub_payment_status === 'paid';
+          const subInfo = subPaid ? [
+            r.sub_payment_amount != null ? `$${Number(r.sub_payment_amount).toFixed(2)}` : null,
+            r.sub_payment_date || null, r.sub_payment_entity || null,
+            r.sub_payment_bank || null, r.sub_payment_handler || null,
+          ].filter(Boolean).join(' · ') : '';
+          const subIsImg = subPaid && r.sub_payment_receipt_path && /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(r.sub_payment_receipt_path);
+          const subPayCell = subPaid
+            ? `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                 <span title="${esc(subInfo || '已付分包')}" style="display:inline-flex;align-items:center;gap:4px;background:#dbeafe;color:#1e40af;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px">&#10003; 已付${r.sub_payment_amount != null ? ' $' + Number(r.sub_payment_amount).toFixed(2) : ''}</span>
+                 ${r.sub_payment_receipt_path ? (subIsImg
+                     ? `<a href="${r.sub_payment_receipt_path}" target="_blank" title="查看分包付款回执"><img src="${r.sub_payment_receipt_path}" alt="回执" loading="lazy" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block"></a>`
+                     : `<a href="${r.sub_payment_receipt_path}" target="_blank" style="font-size:.72rem;color:var(--sky);text-decoration:underline">📄 回执</a>`) : ''}
+                 <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
+               </div>`
+            : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
@@ -30214,6 +30301,7 @@ function renderInvpList() {
           <td style="padding:8px 10px;color:var(--gray-500);white-space:nowrap">${payDateCell}</td>
           <td style="padding:8px 10px;color:var(--gray-600)">${payAcctCell}</td>
           <td style="padding:8px 10px;text-align:center">${receiptCell}</td>
+          <td style="padding:8px 10px;text-align:center">${subPayCell}</td>
           <td style="padding:8px 10px;text-align:center">
             <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:nowrap">
               <button class="btn btn-sm btn-outline" onclick="openInvpForEdit(${r.id})">查看/编辑</button>
@@ -30424,6 +30512,120 @@ async function submitInvpReceipt() {
     });
     if (!resp.ok) throw new Error(await resp.text());
     closeInvpReceiptModal();
+    loadInvpList();
+  } catch (e) {
+    alert('上传失败：' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origLabel;
+  }
+}
+
+// ── Subcontractor payment (付给分包商) — mirrors the client-receipt modal above ──
+let _invpSubPayInvoiceId = null;
+let _invpSubPayIsUpdate = false;
+
+// Fill the 分包商 (payee) dropdown from the managed labor-company list, keeping
+// any previously-saved value selectable even if that subcontractor is gone.
+function _invpFillSubPayEntities(selectedVal) {
+  const sel = document.getElementById('invpSubPayEntity');
+  if (!sel) return;
+  const mgd = (window._invpLaborCompanies || _allLaborCompanies || []).filter(c => c && c.active !== 0);
+  sel.innerHTML = '<option value="">-- 选择分包商 --</option>' +
+    mgd.map(c => { const n = c.payee_name || c.name; return `<option value="${esc(n)}">${esc(n)}</option>`; }).join('');
+  _ensureBankNameOption(sel, selectedVal || '');
+}
+
+function openInvpSubPayModal(invoiceId, isUpdate) {
+  _invpSubPayInvoiceId = invoiceId;
+  _invpSubPayIsUpdate = !!isUpdate;
+  document.getElementById('invpSubPayModalTitle').textContent = isUpdate ? '更新分包付款' : '记录分包付款';
+  document.getElementById('invpSubPaySubmitBtn').textContent = isUpdate ? '更新' : '保存并确认';
+  const fileInput = document.getElementById('invpSubPayFile');
+  fileInput.value = '';
+  const fileName = document.getElementById('invpSubPayFileName');
+  if (fileName) fileName.textContent = '未选择文件';
+
+  const row = (_invpAllRows || []).find(r => r.id === invoiceId) || {};
+  // Payee dropdown from the managed list; fetch it if not loaded yet, then refill.
+  _invpFillSubPayEntities(row.sub_payment_entity || '');
+  if (!window._invpLaborCompanies) {
+    api('/admin/labor-companies')
+      .then(r => { window._invpLaborCompanies = Array.isArray(r) ? r : []; _invpFillSubPayEntities(row.sub_payment_entity || ''); })
+      .catch(() => {});
+  }
+  _ensureBankNameOption(document.getElementById('invpSubPayMethod'),  row.sub_payment_bank || '');
+  _ensureBankNameOption(document.getElementById('invpSubPayHandler'), row.sub_payment_handler || '');
+  // Default amount ← what we owe out for this invoice (工资), date ← today.
+  document.getElementById('invpSubPayAmount').value =
+    (row.sub_payment_amount != null && row.sub_payment_amount !== '') ? row.sub_payment_amount
+    : (row.wage_cost != null ? row.wage_cost : '');
+  document.getElementById('invpSubPayDate').value =
+    row.sub_payment_date || new Date().toISOString().slice(0, 10);
+
+  const currentWrap = document.getElementById('invpSubPayCurrentWrap');
+  const currentLink = document.getElementById('invpSubPayCurrentLink');
+  if (isUpdate && row.sub_payment_receipt_path) {
+    currentWrap.style.display = 'block';
+    currentLink.href = row.sub_payment_receipt_path;
+    currentLink.textContent = '查看文件';
+  } else {
+    currentWrap.style.display = 'none';
+  }
+  document.getElementById('invpSubPayModal').style.display = 'flex';
+  _invpInitSubPayDrop();
+}
+
+function _invpInitSubPayDrop() {
+  const drop = document.getElementById('invpSubPayDrop');
+  const input = document.getElementById('invpSubPayFile');
+  const nameEl = document.getElementById('invpSubPayFileName');
+  if (!drop || drop._wired) return;
+  drop._wired = true;
+  const showName = () => { nameEl.textContent = input.files.length ? input.files[0].name : '未选择文件'; };
+  const lit = on => { drop.style.borderColor = on ? 'var(--sky)' : ''; drop.style.background = on ? '#eff6ff' : ''; };
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', showName);
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(true); }));
+  ['dragleave', 'dragend'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(false); }));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); lit(false);
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) { input.files = files; showName(); }
+  });
+}
+
+function closeInvpSubPayModal() {
+  document.getElementById('invpSubPayModal').style.display = 'none';
+  _invpSubPayInvoiceId = null;
+}
+
+async function submitInvpSubPay() {
+  if (!_invpSubPayInvoiceId) return;
+  const fileInput = document.getElementById('invpSubPayFile');
+  if (!fileInput.files.length && !_invpSubPayIsUpdate) {
+    alert('请选择或拖入分包付款凭证文件');
+    return;
+  }
+  const btn = document.getElementById('invpSubPaySubmitBtn');
+  const origLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '上传中…';
+  try {
+    const formData = new FormData();
+    if (fileInput.files.length) formData.append('receipt', fileInput.files[0]);
+    const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+    formData.append('sub_payment_entity', val('invpSubPayEntity'));
+    formData.append('sub_payment_bank', val('invpSubPayMethod'));
+    formData.append('sub_payment_handler', val('invpSubPayHandler'));
+    formData.append('sub_payment_amount', val('invpSubPayAmount'));
+    formData.append('sub_payment_date', val('invpSubPayDate'));
+    const resp = await fetch('/api/admin/invoices/' + _invpSubPayInvoiceId + '/mark-sub-paid', {
+      method: 'POST',
+      body: formData
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    closeInvpSubPayModal();
     loadInvpList();
   } catch (e) {
     alert('上传失败：' + e.message);

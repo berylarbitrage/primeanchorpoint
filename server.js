@@ -1026,6 +1026,16 @@ try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_entity TEXT DEFAULT NULL`
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_handler TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_amount REAL DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_date TEXT DEFAULT NULL`); } catch(e) {}
+// Subcontractor-payment (money paid OUT to the subcontractor) — mirrors the
+// client-payment columns above, tracked independently per invoice.
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_paid_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_entity TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_bank TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_handler TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_amount REAL DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_date TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`UPDATE employees SET employee_id = REPLACE(employee_id, 'STAFF-', 'WRK-') WHERE employee_id LIKE 'STAFF-%'`); } catch(e) {}
@@ -17429,7 +17439,7 @@ function _invoiceWageCost(items_json, profile_json) {
 
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
   for (const r of rows) {
     r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json);
     // Surface a lightweight bank label (bank name + account last-4) and the payee
@@ -17658,6 +17668,23 @@ const receiptUpload = multer({
   }
 });
 
+// Proof of payment made OUT to the subcontractor (filename prefixed to keep it
+// distinct from the client-side receipt for the same invoice).
+const subReceiptUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `subpay-${req.params.id}-${Date.now()}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(pdf|jpg|jpeg|png|gif|webp)$/i.test(path.extname(file.originalname));
+    cb(null, ok);
+  }
+});
+
 app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single('receipt'), (req, res) => {
   const inv = db.prepare('SELECT id, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
@@ -17705,6 +17732,59 @@ app.post('/api/admin/invoices/:id/mark-unpaid', requireAdmin, (req, res) => {
     .run(req.params.id);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, '取消已付款', '');
+  res.json({ success: true });
+});
+
+// Record a payment made OUT to the subcontractor for this invoice (the 工资/分包
+// side). Mirrors mark-paid: upload proof + amount/date/method/payee, kept
+// independent of the client-payment status.
+app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload.single('receipt'), (req, res) => {
+  const inv = db.prepare('SELECT id, sub_payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  // Replace the proof only when a new file is uploaded; otherwise keep the
+  // existing one (lets "更新" edit amount/date/payee without re-uploading).
+  let receiptPath = inv.sub_payment_receipt_path;
+  if (req.file) {
+    if (inv.sub_payment_receipt_path) {
+      const oldPath = path.join(uploadsDir, path.basename(inv.sub_payment_receipt_path));
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+    receiptPath = `/uploads/${req.file.filename}`;
+  }
+  const b = req.body || {};
+  const payee = (b.sub_payment_entity || '').trim() || null;
+  const method = (b.sub_payment_bank || '').trim() || null;
+  const handler = (b.sub_payment_handler || '').trim() || null;
+  const amtNum = Number(b.sub_payment_amount);
+  const amount = (b.sub_payment_amount != null && b.sub_payment_amount !== '' && !isNaN(amtNum)) ? amtNum : null;
+  const payDate = (b.sub_payment_date || '').trim() || null;
+  db.prepare(`UPDATE invoices SET sub_payment_status='paid', sub_payment_receipt_path=?, sub_paid_at=datetime('now'),
+              sub_payment_entity=?, sub_payment_bank=?, sub_payment_handler=?, sub_payment_amount=?, sub_payment_date=? WHERE id=?`)
+    .run(receiptPath, payee, method, handler, amount, payDate, req.params.id);
+  const parts = [];
+  if (amount != null) parts.push(`金额: $${amount.toFixed(2)}`);
+  if (payDate) parts.push(`日期: ${payDate}`);
+  if (payee) parts.push(`分包商: ${payee}`);
+  if (method) parts.push(`付款方式: ${method}`);
+  if (handler) parts.push(`经办人: ${handler}`);
+  if (receiptPath) parts.push(`回执: ${path.basename(receiptPath)}`);
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(req.params.id, '标记分包已付款', parts.join(' · '));
+  res.json({ success: true, receipt_path: receiptPath });
+});
+
+// Clear the subcontractor payment for this invoice (remove proof).
+app.post('/api/admin/invoices/:id/mark-sub-unpaid', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT id, sub_payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  if (inv.sub_payment_receipt_path) {
+    const oldPath = path.join(uploadsDir, path.basename(inv.sub_payment_receipt_path));
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  db.prepare(`UPDATE invoices SET sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_paid_at=NULL WHERE id=?`)
+    .run(req.params.id);
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(req.params.id, '取消分包已付款', '');
   res.json({ success: true });
 });
 
