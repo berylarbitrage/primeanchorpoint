@@ -30230,6 +30230,7 @@ function renderInvpList() {
         ${th('付款日期', 'paydate', 'left')}
         ${th('收款账户', 'payacct', 'left')}
         ${th('收款回执', 'receipt', 'center')}
+        ${th('分包付款金额', null, 'right')}
         ${th('分包付款', 'subpay', 'center')}
         ${th('分包回执', null, 'center')}
         ${th('操作', null, 'center')}
@@ -30292,10 +30293,16 @@ function renderInvpList() {
             r.sub_payment_bank || null, r.sub_payment_handler || null,
           ].filter(Boolean).join(' · ') : '';
           const subIsImg = subPaid && r.sub_payment_receipt_path && /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(r.sub_payment_receipt_path);
+          // 分包付款金额: its own column; red when it differs from 工资 (what we owe).
+          const subAmtCell = (subPaid && subAmt != null)
+            ? `<span ${subMismatch ? `title="工资 $${wageOwed.toFixed(2)} · 分包付款 $${subAmt.toFixed(2)} · 差额 $${(subAmt - wageOwed).toFixed(2)}"` : ''} style="${subMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${subAmt.toFixed(2)}${subMismatch ? ' ⚠' : ''}</span>`
+            : dash;
+          // Status + action only; amount moved to subAmtCell. The 更新 button turns
+          // green once a proof exists (the visible "已上传" colour change).
           const subPayCell = subPaid
             ? `<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-                 <span title="${esc(subInfo || '已付分包')}${subMismatch ? ` · 工资 $${wageOwed.toFixed(2)} · 差额 $${(subAmt - wageOwed).toFixed(2)}` : ''}" style="display:inline-flex;align-items:center;gap:4px;${subMismatch ? 'background:#fef2f2;color:#dc2626' : 'background:#dbeafe;color:#1e40af'};font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px">&#10003; 已付${subAmt != null ? ' $' + subAmt.toFixed(2) : ''}${subMismatch ? ' ⚠' : ''}</span>
-                 <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
+                 <span title="${esc(subInfo || '已付分包')}" style="display:inline-flex;align-items:center;gap:4px;background:#dbeafe;color:#1e40af;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px">&#10003; 已付</span>
+                 <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem;color:var(--green);border-color:var(--green)" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
                </div>`
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
           const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)') : dash;
@@ -30314,6 +30321,7 @@ function renderInvpList() {
           <td style="padding:8px 10px;color:var(--gray-500);white-space:nowrap">${payDateCell}</td>
           <td style="padding:8px 10px;color:var(--gray-600)">${payAcctCell}</td>
           <td style="padding:8px 10px;text-align:center">${receiptCell}</td>
+          <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:600">${subAmtCell}</td>
           <td style="padding:8px 10px;text-align:center">${subPayCell}</td>
           <td style="padding:8px 10px;text-align:center">${subReceiptCell}</td>
           <td style="padding:8px 10px;text-align:center">
