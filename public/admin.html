@@ -2189,19 +2189,65 @@ tr:hover td{background:var(--sky-light)}
 
 <!-- ════════════════════ PAYMENT RECEIPT MODAL ════════════════════ -->
 <div class="modal-bg" id="invpReceiptModal" style="display:none" onclick="if(event.target===this)closeInvpReceiptModal()">
-  <div class="modal" style="max-width:480px;width:95vw">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
-      <h2 style="margin:0" id="invpReceiptModalTitle">标记已付款</h2>
-      <button class="btn btn-outline" onclick="closeInvpReceiptModal()">✕ 关闭</button>
+  <div class="modal" style="max-width:560px;width:95vw;max-height:94vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
+      <h2 style="margin:0;font-size:1.15rem;line-height:1.35;min-width:0;flex:1 1 auto" id="invpReceiptModalTitle">标记已付款</h2>
+      <button class="btn btn-outline" style="flex:0 0 auto;white-space:nowrap;padding:.4rem .85rem" onclick="closeInvpReceiptModal()">✕ 关闭</button>
     </div>
-    <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">上传收到这笔款项的凭证（如银行到账截图、转账记录等），支持 PDF / 图片格式，最大 20MB。</p>
+    <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">记录这笔款项的收款信息并上传凭证（如银行到账截图、转账记录等），支持 PDF / 图片格式，最大 20MB。</p>
     <div id="invpReceiptCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
       当前回执：<a id="invpReceiptCurrentLink" href="#" target="_blank" style="color:var(--green)">查看文件</a>
     </div>
-    <div style="margin-bottom:1rem">
-      <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.4rem">选择文件</label>
-      <input type="file" id="invpReceiptFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;cursor:pointer">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+      <div style="grid-column:1/-1">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">收款公司</label>
+        <select id="invpReceiptEntity" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">-- 选择公司 --</option>
+          <option value="Prime Anchor Point LLC">Prime Anchor Point LLC</option>
+          <option value="Surplus Lane Inc">Surplus Lane Inc</option>
+          <option value="Prime Anchor Workforce Inc">Prime Anchor Workforce Inc</option>
+          <option value="Bintique Inc">Bintique Inc</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">收款银行</label>
+        <select id="invpReceiptBank" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">-- 选择银行 --</option>
+          <option value="Bank of America">Bank of America</option>
+          <option value="Chase">Chase</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">经办人</label>
+        <select id="invpReceiptHandler" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">-- 选择经办人 --</option>
+          <option value="Tiexiong Zhou">Tiexiong Zhou</option>
+          <option value="Niki Zhao">Niki Zhao</option>
+          <option value="Beryl Zhang">Beryl Zhang</option>
+          <option value="Jimmy Cai">Jimmy Cai</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">收款金额 (USD)</label>
+        <input type="number" id="invpReceiptAmount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">收款日期</label>
+        <input type="date" id="invpReceiptDate" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
     </div>
+
+    <div style="margin-bottom:1rem">
+      <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">收款凭证（截图 / PDF）</label>
+      <div id="invpReceiptDrop" style="border:2px dashed var(--gray-300);border-radius:10px;padding:1.1rem;text-align:center;cursor:pointer;color:var(--gray-500);font-size:.85rem;transition:all .15s">
+        <div style="font-size:1.4rem;line-height:1">⬆️</div>
+        <div style="margin-top:.3rem">把截图拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span></div>
+        <div id="invpReceiptFileName" style="margin-top:.4rem;font-weight:600;color:var(--gray-700)">未选择文件</div>
+        <input type="file" id="invpReceiptFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="display:none">
+      </div>
+    </div>
+
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeInvpReceiptModal()">取消</button>
       <button class="btn btn-green" id="invpReceiptSubmitBtn" onclick="submitInvpReceipt()">确认付款</button>
@@ -29949,8 +29995,13 @@ function renderInvpList() {
           // 账单 = what the client pays (subtotal); 工资 = what we pay out
           // (wage_cost, from the server); 利润 = the difference we keep.
           const profit = (r.subtotal || 0) - (r.wage_cost || 0);
+          const payInfo = isPaid ? [
+            r.payment_amount != null ? `$${Number(r.payment_amount).toFixed(2)}` : null,
+            r.payment_date || null, r.payment_bank || null,
+            r.payment_entity || null, r.payment_handler || null,
+          ].filter(Boolean).join(' · ') : '';
           const paidBadge = isPaid
-            ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;margin-right:4px">&#10003; 已付款</span>`
+            ? `<span title="${esc(payInfo || '已付款')}" style="display:inline-flex;align-items:center;gap:4px;background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;margin-right:4px">&#10003; 已付款</span>`
             : '';
           const receiptLink = isPaid && r.payment_receipt_path
             ? `<a href="${r.payment_receipt_path}" target="_blank" style="font-size:.75rem;color:var(--green);text-decoration:underline;margin-right:6px">查看回执</a>`
@@ -30084,24 +30135,65 @@ async function logInvpAction(invoiceId, action, detail) {
 }
 
 let _invpReceiptInvoiceId = null;
+let _invpReceiptIsUpdate = false;
 
 function openInvpReceiptModal(invoiceId, isUpdate) {
   _invpReceiptInvoiceId = invoiceId;
+  _invpReceiptIsUpdate = !!isUpdate;
   document.getElementById('invpReceiptModalTitle').textContent = isUpdate ? '更新付款回执' : '上传收款凭证';
   document.getElementById('invpReceiptSubmitBtn').textContent = isUpdate ? '更新回执' : '上传并确认收款';
-  document.getElementById('invpReceiptFile').value = '';
-  // Show current receipt link if updating
+  const fileInput = document.getElementById('invpReceiptFile');
+  fileInput.value = '';
+  const fileName = document.getElementById('invpReceiptFileName');
+  if (fileName) fileName.textContent = '未选择文件';
+
+  // Defaults from the cached row: prefer previously-saved payment info, else
+  // sensible fallbacks (收款公司 ← account holder, 收款银行 ← invoice bank,
+  // 金额 ← the invoice bill, 日期 ← today). _ensureBankNameOption keeps any
+  // saved value selectable even if it isn't in the fixed option list.
+  const row = (_invpAllRows || []).find(r => r.id === invoiceId) || {};
+  _ensureBankNameOption(document.getElementById('invpReceiptEntity'),  row.payment_entity  || row.bank_account_name || '');
+  _ensureBankNameOption(document.getElementById('invpReceiptBank'),    row.payment_bank    || row.bank_name || '');
+  _ensureBankNameOption(document.getElementById('invpReceiptHandler'), row.payment_handler || '');
+  document.getElementById('invpReceiptAmount').value =
+    (row.payment_amount != null && row.payment_amount !== '') ? row.payment_amount
+    : (row.subtotal != null ? row.subtotal : '');
+  document.getElementById('invpReceiptDate').value =
+    row.payment_date || new Date().toISOString().slice(0, 10);
+
+  // Show current receipt link when updating and one exists.
   const currentWrap = document.getElementById('invpReceiptCurrentWrap');
   const currentLink = document.getElementById('invpReceiptCurrentLink');
-  if (isUpdate) {
-    // Try to find receipt path from cached row data
+  if (isUpdate && row.payment_receipt_path) {
     currentWrap.style.display = 'block';
-    currentLink.href = '#';
+    currentLink.href = row.payment_receipt_path;
     currentLink.textContent = '查看文件';
   } else {
     currentWrap.style.display = 'none';
   }
   document.getElementById('invpReceiptModal').style.display = 'flex';
+  _invpInitReceiptDrop();
+}
+
+// Wire the drag-and-drop / click-to-pick zone once. Dropping a file assigns it
+// to the hidden <input type=file> so submit reads it the same as a click-pick.
+function _invpInitReceiptDrop() {
+  const drop = document.getElementById('invpReceiptDrop');
+  const input = document.getElementById('invpReceiptFile');
+  const nameEl = document.getElementById('invpReceiptFileName');
+  if (!drop || drop._wired) return;
+  drop._wired = true;
+  const showName = () => { nameEl.textContent = input.files.length ? input.files[0].name : '未选择文件'; };
+  const lit = on => { drop.style.borderColor = on ? 'var(--green)' : ''; drop.style.background = on ? '#f0fdf4' : ''; };
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', showName);
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(true); }));
+  ['dragleave', 'dragend'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(false); }));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); lit(false);
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) { input.files = files; showName(); }
+  });
 }
 
 function closeInvpReceiptModal() {
@@ -30112,16 +30204,25 @@ function closeInvpReceiptModal() {
 async function submitInvpReceipt() {
   if (!_invpReceiptInvoiceId) return;
   const fileInput = document.getElementById('invpReceiptFile');
-  if (!fileInput.files.length) {
-    alert('请选择付款回执文件');
+  // A file is required for the first upload; when updating, the existing receipt
+  // is kept if no new file is chosen.
+  if (!fileInput.files.length && !_invpReceiptIsUpdate) {
+    alert('请选择或拖入付款回执文件');
     return;
   }
   const btn = document.getElementById('invpReceiptSubmitBtn');
+  const origLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = '上传中…';
   try {
     const formData = new FormData();
-    formData.append('receipt', fileInput.files[0]);
+    if (fileInput.files.length) formData.append('receipt', fileInput.files[0]);
+    const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+    formData.append('payment_entity', val('invpReceiptEntity'));
+    formData.append('payment_bank', val('invpReceiptBank'));
+    formData.append('payment_handler', val('invpReceiptHandler'));
+    formData.append('payment_amount', val('invpReceiptAmount'));
+    formData.append('payment_date', val('invpReceiptDate'));
     const resp = await fetch('/api/admin/invoices/' + _invpReceiptInvoiceId + '/mark-paid', {
       method: 'POST',
       body: formData
@@ -30129,11 +30230,11 @@ async function submitInvpReceipt() {
     if (!resp.ok) throw new Error(await resp.text());
     closeInvpReceiptModal();
     loadInvpList();
-  } catch(e) {
+  } catch (e) {
     alert('上传失败：' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '确认付款';
+    btn.textContent = origLabel;
   }
 }
 
