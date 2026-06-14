@@ -29670,6 +29670,18 @@ async function openInvpForEdit(id) {
 
   document.getElementById('invpBuilderModal').style.display = 'flex';
   await loadInvpPresets();
+  // Refresh sender/bank/contact from their CURRENT presets, so editing a preset
+  // (e.g. adding SWIFT / ACH / Wire routing) flows onto every invoice that uses
+  // it — including already-saved ones — instead of staying frozen at the values
+  // captured when the invoice was first saved. A section whose preset was
+  // deleted (or that never used one) keeps this invoice's saved snapshot values.
+  ['sender', 'bank', 'contact'].forEach(section => {
+    const sel = document.getElementById({ sender: 'invpSenderSelect', bank: 'invpBankSelect', contact: 'invpContactSelect' }[section]);
+    if (sel && sel.value) {
+      onInvpPresetSelect._suppressApi = true;
+      try { onInvpPresetSelect(section); } finally { onInvpPresetSelect._suppressApi = false; }
+    }
+  });
   renderInvpProfilePreview();
   renderInvpManualTable();
   window._invpDirty = false;
