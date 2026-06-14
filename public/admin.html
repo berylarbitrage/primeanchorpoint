@@ -29514,12 +29514,25 @@ function closeInvpPageModal() {
   // no-op: Invoice is now a full tab, not a modal
 }
 
+// Drop any rendered worker/container rows left over from a previous builder
+// session. Both table renders start by reading the current DOM rows back into
+// state (_invpSaveTableState / _invpSaveContainerState), matched by uid — and
+// the uid counters reset to 1 per invoice, so a stale row and a freshly-loaded
+// row can share a uid. Clearing first makes those pre-saves no-ops, so one
+// invoice's crew can never be copied onto another's (which made invoices look
+// identical and baked the wrong data in on Save).
+function _invpClearRenderedRows() {
+  const e = document.getElementById('invPageEmpWrap'); if (e) e.innerHTML = '';
+  const c = document.getElementById('invpContainerWrap'); if (c) c.innerHTML = '';
+}
+
 function openInvpBuilderModal() {
   // Reset form state
   window._invpManualEmps = [];
   _invpManualUidSeq = 1;
   window._invpContainerItems = [];
   _invpContainerUidSeq = 1;
+  _invpClearRenderedRows(); // also protects the payments→builder import (sets rows after this)
   window._invpDupHistorical = {};
   window._invpDupIgnored = {};
   window._invpDupPrompted = {};
@@ -29552,16 +29565,9 @@ async function openInvpForEdit(id) {
   // Reset and populate builder
   window._invpManualEmps = [];
   _invpManualUidSeq = 1;
-  // Discard the PREVIOUSLY-opened invoice's rendered rows before doing anything
-  // else. Both table renders begin by reading the current DOM rows back into
-  // state (_invpSaveTableState / _invpSaveContainerState), matched by uid — and
-  // since the uid counters reset to 1 for every invoice, the prior invoice's
-  // rows carry the same uids (1,2,3…) as this one's. If we don't clear first,
-  // that pre-save copies the prior invoice's names/hours onto this invoice's
-  // freshly-loaded crew (making the two look identical, and baking the wrong
-  // data in on the next Save). Clearing makes both pre-saves harmless no-ops.
-  { const _eWrap = document.getElementById('invPageEmpWrap'); if (_eWrap) _eWrap.innerHTML = '';
-    const _cWrap = document.getElementById('invpContainerWrap'); if (_cWrap) _cWrap.innerHTML = ''; }
+  // Discard the previously-opened invoice's rendered rows before populating, so
+  // its crew can't bleed into this one (see _invpClearRenderedRows for why).
+  _invpClearRenderedRows();
   document.getElementById('invPageEditId').value = inv.id;
   // Re-point the shared builder state at the invoice being opened, so the
   // print-history entry is logged against THIS invoice (not whichever one was
