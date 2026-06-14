@@ -1466,6 +1466,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="top-actions">
       <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
       <button class="btn btn-outline" onclick="loadInvpList()">刷新</button>
+      <button class="btn btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="scanInvpDuplicates()">🔍 检查串单</button>
     </div>
   </div>
 
@@ -29718,7 +29719,7 @@ async function loadInvpList() {
         <th style="padding:8px 10px;text-align:left">Invoice 编号</th>
         <th style="padding:8px 10px;text-align:left">客户公司</th>
         <th style="padding:8px 10px;text-align:left">服务周期</th>
-        <th style="padding:8px 10px;text-align:right">金额</th>
+        <th style="padding:8px 10px;text-align:right">金额<div style="font-weight:400;font-size:.7rem;color:var(--gray-400)">账单 / 工资 / 利润</div></th>
         <th style="padding:8px 10px;text-align:left">Invoice 日期</th>
         <th style="padding:8px 10px;text-align:center">状态</th>
         <th style="padding:8px 10px;text-align:center">操作</th>
@@ -29726,6 +29727,9 @@ async function loadInvpList() {
       <tbody>
         ${rows.map(r => {
           const isPaid = r.payment_status === 'paid';
+          // 账单 = what the client pays (subtotal); 工资 = what we pay out
+          // (wage_cost, from the server); 利润 = the difference we keep.
+          const profit = (r.subtotal || 0) - (r.wage_cost || 0);
           const paidBadge = isPaid
             ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;margin-right:4px">&#10003; 已付款</span>`
             : '';
@@ -29739,7 +29743,11 @@ async function loadInvpList() {
           <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
-          <td style="padding:8px 10px;text-align:right;font-weight:600">$${(r.subtotal||0).toFixed(2)}</td>
+          <td style="padding:8px 10px;text-align:right;white-space:nowrap;line-height:1.45">
+            <div style="font-weight:700">账单 $${(r.subtotal||0).toFixed(2)}</div>
+            <div style="font-size:.74rem;color:var(--gray-500)">工资 $${(r.wage_cost||0).toFixed(2)}</div>
+            <div style="font-size:.74rem;font-weight:600;color:${profit>=0?'#16a34a':'#dc2626'}">利润 $${profit.toFixed(2)}</div>
+          </td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
           <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
           <td style="padding:8px 10px;text-align:center">
@@ -29755,6 +29763,49 @@ async function loadInvpList() {
       </tbody>
     </table></div>`;
 }
+
+// Integrity check for the cross-invoice "bleed" bug: lists invoices whose worker
+// rows (name + hours) are byte-identical to another invoice's — the fingerprint
+// of a clobbered save. Cross-client matches are flagged loudest. Read-only:
+// the user opens each flagged invoice to verify/correct it.
+async function scanInvpDuplicates() {
+  const res = await api('/admin/invoices/scan-duplicates').catch(() => null);
+  if (!res) { showToast('扫描失败', 'error'); return; }
+  const groups = res.groups || [];
+  const body = !groups.length
+    ? `<div style="padding:1rem;color:#166534;background:#dcfce7;border-radius:8px;font-size:.9rem">✓ 没有发现员工明细完全相同的发票，看起来没有被串单改坏的。</div>`
+    : groups.map(g => {
+        const flag = g.cross_company
+          ? `<span style="background:#fee2e2;color:#b91c1c;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px">⚠️ 跨客户相同 · 高度可疑</span>`
+          : `<span style="background:#fef3c7;color:#92400e;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px">员工+工时相同</span>`;
+        const invs = g.invoices.map(inv => `
+          <div style="display:flex;flex-wrap:wrap;gap:.4rem .75rem;align-items:baseline;padding:.35rem .6rem;border-top:1px solid #f1f5f9">
+            <a href="javascript:void(0)" onclick="closeInvpScanModal();openInvpForEdit(${inv.id})" style="color:var(--sky);text-decoration:underline;font-weight:600;font-family:monospace">${esc(inv.invoice_number)}</a>
+            <span style="color:#475569">${esc(inv.company_name)}</span>
+            <span style="color:#94a3b8;font-size:.8rem">${esc(inv.period_start)} ~ ${esc(inv.period_end)}</span>
+          </div>`).join('');
+        return `<div style="margin-bottom:.8rem;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+          <div style="padding:.45rem .6rem;background:#f8fafc;display:flex;justify-content:space-between;align-items:center;gap:.5rem">
+            <span style="font-size:.82rem;color:#334155">${g.count} 张发票明细相同（${g.employee_count} 名员工）</span>${flag}
+          </div>${invs}</div>`;
+      }).join('');
+  let ov = document.getElementById('invpScanOverlay');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'invpScanOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:400;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:680px;width:100%;max-height:88vh;overflow-y:auto;padding:1.25rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+        <h3 style="margin:0">🔍 重复 / 串单检查</h3>
+        <button class="btn btn-outline" onclick="closeInvpScanModal()">✕ 关闭</button>
+      </div>
+      <div style="font-size:.82rem;color:#64748b;margin-bottom:.9rem;line-height:1.5">共扫描 ${res.total_invoices} 张发票。下面每组的员工姓名和工时完全相同——很可能是被「串单」改坏的（尤其标 ⚠️ 的跨客户组）。点发票编号可直接打开核对，改正后重新保存。</div>
+      ${body}
+    </div>`;
+  document.body.appendChild(ov);
+}
+function closeInvpScanModal() { const o = document.getElementById('invpScanOverlay'); if (o) o.remove(); }
 
 async function deleteInvpRecord(id) {
   if (!await showConfirm('确定删除此 Invoice 记录？', { danger: true })) return;
@@ -32156,13 +32207,16 @@ async function generateInvpPreview() {
   }
 
   const bankRows = [
-    profile.bank_account_name  ? ['Payable To',    `<strong>${esc(profile.bank_account_name)}</strong>`] : null,
-    profile.bank_name          ? ['Bank',          esc(profile.bank_name)]                                : null,
-    profile.bank_routing_no    ? ['Routing No',    esc(profile.bank_routing_no)]                          : null,
-    profile.bank_account_no    ? ['Account No',    esc(profile.bank_account_no)]                          : null,
-    profile.bank_swift_code    ? ['SWIFT Code',    esc(profile.bank_swift_code)]                          : null,
-    profile.bank_wire_routing  ? ['Wire Routing',  esc(profile.bank_wire_routing)]                        : null,
-    profile.bank_paper_routing ? ['Paper Routing', esc(profile.bank_paper_routing)]                       : null,
+    profile.bank_account_name  ? ['Payable To',      `<strong>${esc(profile.bank_account_name)}</strong>`] : null,
+    profile.bank_name          ? ['Bank',            esc(profile.bank_name)]                                : null,
+    profile.bank_account_no    ? ['Account No',      esc(profile.bank_account_no)]                          : null,
+    profile.bank_paper_routing ? ['ACH / Electronic', esc(profile.bank_paper_routing)]                      : null,
+    profile.bank_wire_routing  ? ['Wire Routing',    esc(profile.bank_wire_routing)]                        : null,
+    // Generic single routing: shown only when no specific ACH/Wire routing is
+    // set, so it never duplicates them (no need to manually clear it).
+    (profile.bank_routing_no && !(profile.bank_wire_routing || profile.bank_paper_routing))
+                               ? ['Routing No',      esc(profile.bank_routing_no)]                          : null,
+    profile.bank_swift_code    ? ['SWIFT / BIC',     esc(profile.bank_swift_code)]                          : null,
   ].filter(Boolean);
   const bankBlock = bankRows.length ? `
     <div style="margin-bottom:.7rem;padding:.6rem .9rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem;color:#1e293b">
@@ -32357,9 +32411,9 @@ function renderInvpProfilePreview() {
       p.bank_name          ? `<div>Bank Name: ${esc(p.bank_name)}</div>` : '',
       p.bank_account_no    ? `<div>Account No: ${esc(p.bank_account_no)}</div>` : '',
       p.bank_routing_no    ? `<div>Routing No: ${esc(p.bank_routing_no)}</div>` : '',
-      p.bank_swift_code    ? `<div>SWIFT Code: ${esc(p.bank_swift_code)}</div>` : '',
+      p.bank_paper_routing ? `<div>ACH / Electronic: ${esc(p.bank_paper_routing)}</div>` : '',
       p.bank_wire_routing  ? `<div>Wire Routing: ${esc(p.bank_wire_routing)}</div>` : '',
-      p.bank_paper_routing ? `<div>Paper Routing: ${esc(p.bank_paper_routing)}</div>` : '',
+      p.bank_swift_code    ? `<div>SWIFT / BIC: ${esc(p.bank_swift_code)}</div>` : '',
     ].join('') || '<div style="color:var(--gray-400)">（请从下拉菜单选择预设，或点击「+ 新建」创建）</div>') + editBtn('bank', bid);
   }
 
@@ -32898,7 +32952,7 @@ function printInvoice() {
         <div class="field"><label>Bank Name</label><input type="text" id="invpBankName" placeholder="e.g. JPMorgan Bank"></div>
         <div class="field"><label>Account No</label><input type="text" id="invpBankAccountNo" placeholder="2904088524"></div>
         <div class="field"><label>Routing No</label><input type="text" id="invpBankRoutingNo" placeholder="322271627"></div>
-        <div class="field"><label>SWIFT Code</label><input type="text" id="invpBankSwiftCode" placeholder="e.g. CHASUS33"></div>
+        <div class="field"><label>SWIFT / BIC</label><input type="text" id="invpBankSwiftCode" placeholder="e.g. BOFAUS3N"></div>
         <div class="field"><label>Wire Routing</label><input type="text" id="invpBankWireRouting" placeholder="e.g. 021000021"></div>
         <div class="field" style="grid-column:1/-1"><label>Paper / ACH Routing</label><input type="text" id="invpBankPaperRouting" placeholder="e.g. 322271627"></div>
       </div>

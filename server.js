@@ -17387,10 +17387,85 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
   created_at TEXT DEFAULT (datetime('now'))
 )`);
 
+// Compute what we actually pay out for an invoice (our cost, pre-markup):
+//   hourly  → sum of each worker's wage (items[].total = hours × rate)
+//   container → sum of each line's subcontractor price (sub_price)
+// The bill (subtotal) minus this is our profit.
+function _invoiceWageCost(items_json, profile_json) {
+  let cost = 0;
+  try {
+    const profile = profile_json ? JSON.parse(profile_json) : {};
+    if (profile.invoice_mode === 'container') {
+      const cs = Array.isArray(profile.container_items) ? profile.container_items : [];
+      cost = cs.reduce((s, c) => s + (Number(c.sub_price) || 0), 0);
+    } else {
+      const items = items_json ? JSON.parse(items_json) : [];
+      cost = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
+    }
+  } catch (_) { /* malformed JSON → cost 0 */ }
+  return Math.round(cost * 100) / 100;
+}
+
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, created_at FROM invoices ORDER BY created_at DESC`).all();
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
+  for (const r of rows) {
+    r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json);
+    delete r.items_json; delete r.profile_json;
+  }
   res.json(rows);
+});
+
+// Scan for invoices whose worker rows look copied from another invoice (the
+// symptom of the cross-invoice "bleed" bug). Each invoice is signatured by its
+// sorted "name|hours" list; invoices sharing an identical non-trivial signature
+// are grouped. Identical crew AND identical hours across different
+// periods/companies is the tell-tale sign — legitimate weekly invoices almost
+// never have byte-identical hours. Returned for manual review, never auto-fixed.
+// (Registered before the /:id route so the path isn't swallowed as an id.)
+app.get('/api/admin/invoices/scan-duplicates', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, status, items_json FROM invoices ORDER BY created_at DESC`).all();
+  const meta = i => ({ id: i.id, invoice_number: i.invoice_number, company_name: i.company_name, period_start: i.period_start, period_end: i.period_end, status: i.status, employee_count: i.employee_count });
+  const list = [];
+  for (const r of rows) {
+    let items = [];
+    try { items = r.items_json ? JSON.parse(r.items_json) : []; } catch (_) {}
+    const names = items.map(it => (it.name || '').trim()).filter(Boolean);
+    if (names.length < 2) continue; // a 1-person list isn't a meaningful match
+    list.push({
+      id: r.id, invoice_number: r.invoice_number, company_name: r.company_name || '',
+      period_start: r.period_start || '', period_end: r.period_end || '', status: r.status,
+      employee_count: names.length,
+      name_sig: names.map(n => n.toLowerCase()).sort().join('~'),
+      full_sig: items.map(it => `${(it.name || '').trim().toLowerCase()}|${Number(it.hours) || 0}`).sort().join('~'),
+    });
+  }
+  const out = [];
+  // 1) Same crew under DIFFERENT clients. Different clients almost never share an
+  //    entire crew, so this is the clearest fingerprint of a bled-over save.
+  const byName = {};
+  for (const x of list) (byName[x.name_sig] = byName[x.name_sig] || []).push(x);
+  for (const g of Object.values(byName)) {
+    const companies = [...new Set(g.map(i => i.company_name))];
+    if (g.length > 1 && companies.length > 1) {
+      out.push({ count: g.length, companies, cross_company: true, employee_count: g[0].employee_count, invoices: g.map(meta) });
+    }
+  }
+  // 2) Same crew AND identical hours (any client). Legitimate weekly invoices
+  //    almost never have byte-identical hours, so this catches same-client bleed
+  //    too. Skip invoices already reported under (1).
+  const reported = new Set(out.flatMap(o => o.invoices.map(i => i.id)));
+  const byFull = {};
+  for (const x of list) { if (reported.has(x.id)) continue; (byFull[x.full_sig] = byFull[x.full_sig] || []).push(x); }
+  for (const g of Object.values(byFull)) {
+    if (g.length > 1) {
+      const companies = [...new Set(g.map(i => i.company_name))];
+      out.push({ count: g.length, companies, cross_company: companies.length > 1, employee_count: g[0].employee_count, invoices: g.map(meta) });
+    }
+  }
+  // Cross-client matches first (most likely corrupted), then the largest groups.
+  out.sort((a, b) => (Number(b.cross_company) - Number(a.cross_company)) || (b.count - a.count));
+  res.json({ total_invoices: rows.length, groups: out });
 });
 
 // Save invoice
