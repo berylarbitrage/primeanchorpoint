@@ -1005,6 +1005,12 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`)
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
+// Payment-receipt details captured when an invoice is marked paid.
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_bank TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_entity TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_handler TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_amount REAL DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_date TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`UPDATE employees SET employee_id = REPLACE(employee_id, 'STAFF-', 'WRK-') WHERE employee_id LIKE 'STAFF-%'`); } catch(e) {}
@@ -17408,18 +17414,19 @@ function _invoiceWageCost(items_json, profile_json) {
 
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
   for (const r of rows) {
     r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json);
-    // Surface a lightweight bank label (bank name + account last-4) so the list
-    // can show/filter by which bank each invoice collects into, without shipping
-    // the whole profile_json to the client.
+    // Surface a lightweight bank label (bank name + account last-4) and the payee
+    // entity (account name) so the list can show/filter by bank and the receipt
+    // dialog can default its dropdowns — without shipping the whole profile_json.
     try {
       const p = r.profile_json ? JSON.parse(r.profile_json) : {};
       r.bank_name = p.bank_name || '';
+      r.bank_account_name = p.bank_account_name || '';
       const acct = String(p.bank_account_no || '').replace(/\D/g, '');
       r.bank_account_last4 = acct ? acct.slice(-4) : '';
-    } catch (_) { r.bank_name = ''; r.bank_account_last4 = ''; }
+    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; }
     delete r.items_json; delete r.profile_json;
   }
   res.json(rows);
@@ -17639,16 +17646,35 @@ const receiptUpload = multer({
 app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single('receipt'), (req, res) => {
   const inv = db.prepare('SELECT id, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-  // Delete old receipt file if exists
-  if (inv.payment_receipt_path) {
-    const oldPath = path.join(uploadsDir, path.basename(inv.payment_receipt_path));
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  // Replace the receipt only when a new file is uploaded; otherwise keep the
+  // existing one (lets "更新回执" edit amount/date/bank without re-uploading).
+  let receiptPath = inv.payment_receipt_path;
+  if (req.file) {
+    if (inv.payment_receipt_path) {
+      const oldPath = path.join(uploadsDir, path.basename(inv.payment_receipt_path));
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+    receiptPath = `/uploads/${req.file.filename}`;
   }
-  const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
-  db.prepare(`UPDATE invoices SET payment_status='paid', payment_receipt_path=?, paid_at=datetime('now') WHERE id=?`)
-    .run(receiptPath, req.params.id);
+  const b = req.body || {};
+  const bank = (b.payment_bank || '').trim() || null;
+  const entity = (b.payment_entity || '').trim() || null;
+  const handler = (b.payment_handler || '').trim() || null;
+  const amtNum = Number(b.payment_amount);
+  const amount = (b.payment_amount != null && b.payment_amount !== '' && !isNaN(amtNum)) ? amtNum : null;
+  const payDate = (b.payment_date || '').trim() || null;
+  db.prepare(`UPDATE invoices SET payment_status='paid', payment_receipt_path=?, paid_at=datetime('now'),
+              payment_bank=?, payment_entity=?, payment_handler=?, payment_amount=?, payment_date=? WHERE id=?`)
+    .run(receiptPath, bank, entity, handler, amount, payDate, req.params.id);
+  const parts = [];
+  if (amount != null) parts.push(`金额: $${amount.toFixed(2)}`);
+  if (payDate) parts.push(`日期: ${payDate}`);
+  if (entity) parts.push(`收款公司: ${entity}`);
+  if (bank) parts.push(`银行: ${bank}`);
+  if (handler) parts.push(`经办人: ${handler}`);
+  if (receiptPath) parts.push(`回执: ${path.basename(receiptPath)}`);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
-    .run(req.params.id, '标记已付款', receiptPath ? `回执文件: ${path.basename(receiptPath)}` : '');
+    .run(req.params.id, '标记已付款', parts.join(' · '));
   res.json({ success: true, receipt_path: receiptPath });
 });
 
