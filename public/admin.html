@@ -32083,7 +32083,7 @@ function invpPickSubcontractor(subs, onPick) {
   ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
 }
 
-function generateInvpSubcontractorStatement() {
+async function generateInvpSubcontractorStatement() {
   const mode = window._invpMode || 'hourly';
 
   const invNum  = document.getElementById('invPageNumber').value || '';
@@ -32112,7 +32112,7 @@ function generateInvpSubcontractorStatement() {
     const containerItems = getInvpContainerItems();
     if (!containerItems.length) { alert('请至少添加一个 container 行'); return; }
     if (!containerItems.some(i => (i.sub_price || 0) > 0)) {
-      if (!confirm('所有 container 的「分包价」都为 0，仍要生成对账单吗？')) return;
+      if (!await showConfirm('所有 container 的「分包价」都为 0，仍要生成对账单吗？', { confirmLabel: '仍要生成', cancelLabel: '取消' })) return;
     }
     const refCounts = {};
     containerItems.forEach(i => { const r = (i.referrer || '').trim(); if (r) refCounts[r] = (refCounts[r] || 0) + 1; });
