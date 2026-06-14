@@ -29551,6 +29551,16 @@ async function openInvpForEdit(id) {
   // Reset and populate builder
   window._invpManualEmps = [];
   _invpManualUidSeq = 1;
+  // Discard the PREVIOUSLY-opened invoice's rendered rows before doing anything
+  // else. Both table renders begin by reading the current DOM rows back into
+  // state (_invpSaveTableState / _invpSaveContainerState), matched by uid — and
+  // since the uid counters reset to 1 for every invoice, the prior invoice's
+  // rows carry the same uids (1,2,3…) as this one's. If we don't clear first,
+  // that pre-save copies the prior invoice's names/hours onto this invoice's
+  // freshly-loaded crew (making the two look identical, and baking the wrong
+  // data in on the next Save). Clearing makes both pre-saves harmless no-ops.
+  { const _eWrap = document.getElementById('invPageEmpWrap'); if (_eWrap) _eWrap.innerHTML = '';
+    const _cWrap = document.getElementById('invpContainerWrap'); if (_cWrap) _cWrap.innerHTML = ''; }
   document.getElementById('invPageEditId').value = inv.id;
   // Re-point the shared builder state at the invoice being opened, so the
   // print-history entry is logged against THIS invoice (not whichever one was
