@@ -30231,6 +30231,7 @@ function renderInvpList() {
         ${th('收款账户', 'payacct', 'left')}
         ${th('收款回执', 'receipt', 'center')}
         ${th('分包付款', 'subpay', 'center')}
+        ${th('分包回执', null, 'center')}
         ${th('操作', null, 'center')}
       </tr></thead>
       <tbody>
@@ -30269,23 +30270,30 @@ function renderInvpList() {
                 ? `<a href="${r.payment_receipt_path}" target="_blank" title="查看回执"><img src="${r.payment_receipt_path}" alt="回执" loading="lazy" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block;margin:0 auto"></a>`
                 : `<a href="${r.payment_receipt_path}" target="_blank" style="font-size:.75rem;color:var(--green);text-decoration:underline">📄 查看回执</a>`)
             : dash;
-          // 分包付款: money paid OUT to the subcontractor (independent of client payment).
+          // 分包付款: money paid OUT to the subcontractor. Compare to 工资
+          // (wage_cost — what we owe them) and flag red on a mismatch. Amount and
+          // receipt live in their own columns (subPayCell / subReceiptCell).
           const subPaid = r.sub_payment_status === 'paid';
+          const wageOwed = r.wage_cost || 0;
+          const subAmt = r.sub_payment_amount != null ? Number(r.sub_payment_amount) : null;
+          const subMismatch = subPaid && subAmt != null && Math.abs(subAmt - wageOwed) > 0.005;
           const subInfo = subPaid ? [
-            r.sub_payment_amount != null ? `$${Number(r.sub_payment_amount).toFixed(2)}` : null,
+            subAmt != null ? `$${subAmt.toFixed(2)}` : null,
             r.sub_payment_date || null, r.sub_payment_entity || null,
             r.sub_payment_bank || null, r.sub_payment_handler || null,
           ].filter(Boolean).join(' · ') : '';
           const subIsImg = subPaid && r.sub_payment_receipt_path && /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(r.sub_payment_receipt_path);
           const subPayCell = subPaid
-            ? `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
-                 <span title="${esc(subInfo || '已付分包')}" style="display:inline-flex;align-items:center;gap:4px;background:#dbeafe;color:#1e40af;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px">&#10003; 已付${r.sub_payment_amount != null ? ' $' + Number(r.sub_payment_amount).toFixed(2) : ''}</span>
-                 ${r.sub_payment_receipt_path ? (subIsImg
-                     ? `<a href="${r.sub_payment_receipt_path}" target="_blank" title="查看分包付款回执"><img src="${r.sub_payment_receipt_path}" alt="回执" loading="lazy" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block"></a>`
-                     : `<a href="${r.sub_payment_receipt_path}" target="_blank" style="font-size:.72rem;color:var(--sky);text-decoration:underline">📄 回执</a>`) : ''}
+            ? `<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+                 <span title="${esc(subInfo || '已付分包')}${subMismatch ? ` · 工资 $${wageOwed.toFixed(2)} · 差额 $${(subAmt - wageOwed).toFixed(2)}` : ''}" style="display:inline-flex;align-items:center;gap:4px;${subMismatch ? 'background:#fef2f2;color:#dc2626' : 'background:#dbeafe;color:#1e40af'};font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px">&#10003; 已付${subAmt != null ? ' $' + subAmt.toFixed(2) : ''}${subMismatch ? ' ⚠' : ''}</span>
                  <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
                </div>`
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
+          const subReceiptCell = (subPaid && r.sub_payment_receipt_path)
+            ? (subIsImg
+                ? `<a href="${r.sub_payment_receipt_path}" target="_blank" title="查看分包付款回执"><img src="${r.sub_payment_receipt_path}" alt="回执" loading="lazy" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block;margin:0 auto"></a>`
+                : `<a href="${r.sub_payment_receipt_path}" target="_blank" style="font-size:.72rem;color:var(--sky);text-decoration:underline">📄 回执</a>`)
+            : dash;
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
@@ -30302,6 +30310,7 @@ function renderInvpList() {
           <td style="padding:8px 10px;color:var(--gray-600)">${payAcctCell}</td>
           <td style="padding:8px 10px;text-align:center">${receiptCell}</td>
           <td style="padding:8px 10px;text-align:center">${subPayCell}</td>
+          <td style="padding:8px 10px;text-align:center">${subReceiptCell}</td>
           <td style="padding:8px 10px;text-align:center">
             <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:nowrap">
               <button class="btn btn-sm btn-outline" onclick="openInvpForEdit(${r.id})">查看/编辑</button>
