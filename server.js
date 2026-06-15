@@ -6216,179 +6216,6 @@ function generateZelleAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildZelleA
 function generateZelleAuthHtmlTemplate_ES() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'a'); }
 function generateZelleAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'b'); }
 
-// Third-party authorized representative Zelle signature templates
-function _buildZelleAuthRepForm(lang) {
-  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
-  const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
-  const companyName = getCompanySignerName();
-  const zh = lang === 'zh-en';
-  const es = lang === 'en-es';
-  const L = (en, zhTxt, esTxt) => {
-    if (zh && zhTxt) return `${en} ${zhTxt}`;
-    if (es && esTxt) return `${en} / ${esTxt}`;
-    return en;
-  };
-
-  const formTitle = 'ZELLE PAYMENT AUTHORIZATION AND ACCOUNT CONFIRMATION';
-  const subtitle = zh
-    ? `Zelle 付款授权与账户确认 — ${companyName}`
-    : es ? `Autorización de Pago y Confirmación de Cuenta Zelle — ${companyName}`
-    : `Zelle Payment Authorization and Account Confirmation — ${companyName}`;
-
-  const intro = zh
-    ? `Please complete one of the two options below:\n• Option A: If you will receive Zelle payments directly, provide your own Zelle account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's Zelle account information and contact details. ${companyName} will send a separate authorization form to the third party.\n\n请填写以下两个选项之一：\n• 选项 A：如您本人直接通过 Zelle 收款，请提供您自己的 Zelle 账户信息并签名。\n• 选项 B：如您本人无法直接收款，需由第三方代为收款，请提供第三方的 Zelle 账户信息及联系方式。${companyName} 将向第三方另行发送授权表格。`
-    : es
-    ? `Please complete one of the two options below:\n• Option A: If you will receive Zelle payments directly, provide your own Zelle account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's Zelle account information and contact details. ${companyName} will send a separate authorization form to the third party.\n\nComplete una de las dos opciones a continuación:\n• Opción A: Si usted recibirá pagos por Zelle directamente, proporcione su propia información de cuenta Zelle y firme.\n• Opción B: Si no puede recibir pagos directamente y un tercero recibirá los pagos en su nombre, proporcione la información de la cuenta Zelle y los datos de contacto del tercero. ${companyName} enviará un formulario de autorización por separado al tercero.`
-    : `Please complete one of the two options below:\n• Option A: If you will receive Zelle payments directly, provide your own Zelle account information and sign.\n• Option B: If you cannot receive payments directly and a third party will receive payments on your behalf, provide the third party's Zelle account information and contact details. ${companyName} will send a separate authorization form to the third party.`;
-
-  // Section 1 — Signer Info (always required)
-  const s1 = L('1. YOUR INFORMATION', '您的信息', 'SU INFORMACIÓN');
-  const lEmpName = L('Full Legal Name', '法定全名', 'Nombre Legal Completo');
-
-  const disclaimer = zh
-    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认收款方式，不改变任何税务申报义务或承包关系性质。`
-    : es
-    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para fines de confirmación del método de pago y no altera ninguna obligación de declaración de impuestos ni el estatus del contratista.`
-    : `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status.`;
-
-  // ── Option A: Employee receives payment directly ──
-  const optAHeader = L(
-    'OPTION A — I WILL RECEIVE ZELLE PAYMENTS DIRECTLY',
-    '选项 A — 本人直接通过 Zelle 收款',
-    'OPCIÓN A — RECIBIRÉ PAGOS POR ZELLE DIRECTAMENTE'
-  );
-  const optANote = L(
-    'Complete this section if you will receive payments to your own Zelle account.',
-    '如您本人直接收款到自己的 Zelle 账户，请填写此部分。',
-    'Complete esta sección si usted recibirá pagos en su propia cuenta Zelle.'
-  );
-  const lMyZelle = L('My Zelle Registered Email Address or Mobile Number', '本人 Zelle 注册邮箱地址或手机号', 'Mi Correo Electrónico o Número de Teléfono Registrado en Zelle');
-  const optACert = zh
-    ? `I certify that the Zelle email address or phone number provided above is my own, is accurate, and is registered to an active Zelle account. I am responsible for ensuring that my account is active and able to receive payments. I agree to notify ${companyName} in writing before any change to my Zelle account information.\n\n本人确认以上提供的 Zelle 邮箱地址或手机号为本人所有，真实准确，已注册至有效的 Zelle 账户。本人负责确保账户已激活并能够接收付款。如 Zelle 收款信息发生任何变化，本人同意提前以书面形式通知 ${companyName}。`
-    : es
-    ? `I certify that the Zelle email address or phone number provided above is my own, is accurate, and is registered to an active Zelle account. I am responsible for ensuring that my account is active and able to receive payments. I agree to notify ${companyName} in writing before any change to my Zelle account information.\n\nCertifico que la dirección de correo electrónico o número de teléfono de Zelle proporcionado arriba es mío, es correcto y está registrado en una cuenta activa de Zelle. Soy responsable de asegurar que mi cuenta esté activa y pueda recibir pagos. Acepto notificar a ${companyName} por escrito antes de cualquier cambio en mi información de cuenta Zelle.`
-    : `I certify that the Zelle email address or phone number provided above is my own, is accurate, and is registered to an active Zelle account. I am responsible for ensuring that my account is active and able to receive payments. I agree to notify ${companyName} in writing before any change to my Zelle account information.`;
-
-  // ── Option B: Third party receives payment ──
-  const optBHeader = L(
-    'OPTION B — A THIRD PARTY WILL RECEIVE ZELLE PAYMENTS ON MY BEHALF',
-    '选项 B — 第三方代为通过 Zelle 收款',
-    'OPCIÓN B — UN TERCERO RECIBIRÁ PAGOS POR ZELLE EN MI NOMBRE'
-  );
-  const optBNote = L(
-    'Complete this section if you cannot receive Zelle payments directly and a third party will receive payments on your behalf.',
-    '如您本人无法直接通过 Zelle 收款，需由第三方代为收款，请填写此部分。',
-    'Complete esta sección si no puede recibir pagos por Zelle directamente y un tercero recibirá pagos en su nombre.'
-  );
-  const lThirdPartyName = L('Third Party Full Legal Name', '第三方法定全名', 'Nombre Legal Completo del Tercero');
-  const lThirdPartyZelle = L('Third Party Zelle Registered Email or Mobile Number', '第三方 Zelle 注册邮箱或手机号', 'Correo Electrónico o Teléfono Registrado en Zelle del Tercero');
-  const lRelationship = L('Relationship to You', '与您的关系', 'Relación con Usted');
-  const lThirdPartyPhone = L('Third Party Phone Number', '第三方电话号码', 'Número de Teléfono del Tercero');
-  const lThirdPartyEmail = L('Third Party Email Address', '第三方邮箱地址', 'Correo Electrónico del Tercero');
-  const optBContactNote = L(
-    `By providing the third party's contact information above, I authorize ${companyName} to contact the third party directly to verify this arrangement and send any required authorization forms for their signature.`,
-    `提供上述第三方联系方式即表示本人授权 ${companyName} 直接联系该第三方以核实本安排并发送任何所需的授权表格供其签署。`,
-    `Al proporcionar la información de contacto del tercero arriba, autorizo a ${companyName} a contactar directamente al tercero para verificar este acuerdo y enviar cualquier formulario de autorización requerido para su firma.`
-  );
-  const optBCert = zh
-    ? `I certify that I am unable to receive Zelle payments directly, and I authorize the third party named above to receive payments on my behalf. The Zelle account information provided belongs to the third party and is accurate. I understand that ${companyName} will send a separate authorization form to the third party for their signature before payments can be processed.\n\n本人确认本人无法直接通过 Zelle 收款，特此授权上方所列第三方代表本人接收付款。所提供的 Zelle 账户信息属于该第三方且真实准确。本人理解 ${companyName} 将向该第三方另行发送授权表格供其签署，签署完成后方可处理付款。`
-    : es
-    ? `I certify that I am unable to receive Zelle payments directly, and I authorize the third party named above to receive payments on my behalf. The Zelle account information provided belongs to the third party and is accurate. I understand that ${companyName} will send a separate authorization form to the third party for their signature before payments can be processed.\n\nCertifico que no puedo recibir pagos por Zelle directamente y autorizo al tercero mencionado arriba a recibir pagos en mi nombre. La información de cuenta Zelle proporcionada pertenece al tercero y es correcta. Entiendo que ${companyName} enviará un formulario de autorización por separado al tercero para su firma antes de que se puedan procesar los pagos.`
-    : `I certify that I am unable to receive Zelle payments directly, and I authorize the third party named above to receive payments on my behalf. The Zelle account information provided belongs to the third party and is accurate. I understand that ${companyName} will send a separate authorization form to the third party for their signature before payments can be processed.`;
-
-  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en Letra de Imprenta');
-  const lSig = L('Signature', '签名', 'Firma');
-  const lDate = L('Date', '日期', 'Fecha');
-
-  const today = new Date().toISOString().slice(0, 10);
-
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:12pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
-</div>
-
-<p style="font-size:8.5pt;white-space:pre-line">${intro}</p>
-
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-  <tr>
-    <td style="${c}width:100%"><b>${lEmpName}</b><br><text-field name="employee_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
-  </tr>
-</table>
-
-<p style="font-size:7.5pt;color:#666;font-style:italic">${disclaimer}</p>
-
-<div style="background:#e8f5e9;border:2px solid #4caf50;padding:10px;margin-top:14px;font-size:8.5pt;border-radius:4px">
-  <div style="font-weight:900;font-size:9.5pt;color:#2e7d32;margin-bottom:4px">${optAHeader}</div>
-  <p style="font-size:7.5pt;color:#2e7d32;margin:0 0 8px">${optANote}</p>
-
-  <table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
-    <tr>
-      <td style="${c}width:100%"><b>${lMyZelle}</b><br><text-field name="my_zelle_contact" role="First Party" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field></td>
-    </tr>
-  </table>
-
-  <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:10px;color:#333">${optACert}</div>
-
-  <div style="border-top:1px solid #4caf50;padding-top:8px;margin-top:4px">
-    <b>${L('YOUR SIGNATURE', '您的签名', 'SU FIRMA')}</b>
-    <table style="width:100%;margin-top:6px">
-      <tr>
-        <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="optA_printed_name" role="First Party" style="${w}"></text-field></td>
-      </tr>
-      <tr>
-        <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="optA_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-        <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="optA_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
-      </tr>
-    </table>
-  </div>
-</div>
-
-<div style="background:#f0f9ff;border:2px solid #1976d2;padding:10px;margin-top:14px;font-size:8.5pt;border-radius:4px">
-  <div style="font-weight:900;font-size:9.5pt;color:#1565c0;margin-bottom:4px">${optBHeader}</div>
-  <p style="font-size:7.5pt;color:#1565c0;margin:0 0 8px">${optBNote}</p>
-
-  <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:4px">
-    <tr>
-      <td style="${c}width:50%"><b>${lThirdPartyName}</b><br><text-field name="tp_legal_name" role="First Party" style="${w}"></text-field></td>
-      <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
-    </tr>
-    <tr>
-      <td style="${c}width:100%" colspan="2"><b>${lThirdPartyZelle}</b><br><text-field name="tp_zelle_contact" role="First Party" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field></td>
-    </tr>
-    <tr>
-      <td style="${c}width:50%"><b>${lThirdPartyPhone}</b><br><text-field name="tp_phone" role="First Party" style="${w}" placeholder="(xxx) xxx-xxxx"></text-field></td>
-      <td style="${c}width:50%"><b>${lThirdPartyEmail}</b><br><text-field name="tp_email" role="First Party" style="${w}" placeholder="email@example.com"></text-field></td>
-    </tr>
-  </table>
-  <div style="font-size:7pt;color:#555;margin-bottom:8px;font-style:italic">${optBContactNote}</div>
-
-  <div style="font-size:7.5pt;white-space:pre-line;margin-bottom:10px;color:#333">${optBCert}</div>
-
-  <div style="border-top:1px solid #1976d2;padding-top:8px;margin-top:4px">
-    <b>${L('YOUR SIGNATURE (authorizing third party)', '您的签名（授权第三方收款）', 'SU FIRMA (autorizando al tercero)')}</b>
-    <table style="width:100%;margin-top:6px">
-      <tr>
-        <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="optB_printed_name" role="First Party" style="${w}"></text-field></td>
-      </tr>
-      <tr>
-        <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="optB_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-        <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="optB_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
-      </tr>
-    </table>
-  </div>
-</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
-</div>`;
-}
-
-function generateZelleAuthRepTemplate()    { return _buildZelleAuthRepForm('zh-en'); }
-function generateZelleAuthRepTemplate_EN() { return _buildZelleAuthRepForm('en'); }
-function generateZelleAuthRepTemplate_ES() { return _buildZelleAuthRepForm('en-es'); }
-
-
 function _buildZelleThirdPartyForm_OLD(lang) {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
@@ -7062,9 +6889,6 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   zelle_auth:    { name: 'Zelle Payment Authorization and Account Confirmation (ZH+EN)', configKey: 'zelle_auth_template_id',    category: 'zelle_auth',    generator: generateZelleAuthHtmlTemplate },
   zelle_auth_en: { name: 'Zelle Payment Authorization and Account Confirmation (EN)',   configKey: 'zelle_auth_en_template_id', category: 'zelle_auth_en', generator: generateZelleAuthHtmlTemplate_EN },
   zelle_auth_es: { name: 'Zelle Payment Authorization and Account Confirmation (EN+ES)', configKey: 'zelle_auth_es_template_id', category: 'zelle_auth_es', generator: generateZelleAuthHtmlTemplate_ES },
-  zelle_auth_rep:    { name: 'Zelle Auth — Authorized Representative Signature (ZH+EN)', configKey: 'zelle_auth_rep_template_id',    category: 'zelle_auth_rep',    generator: generateZelleAuthRepTemplate },
-  zelle_auth_rep_en: { name: 'Zelle Auth — Authorized Representative Signature (EN)',    configKey: 'zelle_auth_rep_en_template_id', category: 'zelle_auth_rep_en', generator: generateZelleAuthRepTemplate_EN },
-  zelle_auth_rep_es: { name: 'Zelle Auth — Authorized Representative Signature (EN+ES)', configKey: 'zelle_auth_rep_es_template_id', category: 'zelle_auth_rep_es', generator: generateZelleAuthRepTemplate_ES },
   zelle_tp_auth:    { name: 'Zelle — Authorize Another to Receive · Option B (ZH+EN)', configKey: 'zelle_tp_auth_template_id',    category: 'zelle_tp_auth',    generator: generateZelleAuthHtmlTemplate_B },
   zelle_tp_auth_en: { name: 'Zelle — Authorize Another to Receive · Option B (EN)',    configKey: 'zelle_tp_auth_en_template_id', category: 'zelle_tp_auth_en', generator: generateZelleAuthHtmlTemplate_EN_B },
   zelle_tp_auth_es: { name: 'Zelle — Authorize Another to Receive · Option B (EN+ES)', configKey: 'zelle_tp_auth_es_template_id', category: 'zelle_tp_auth_es', generator: generateZelleAuthHtmlTemplate_ES_B },
@@ -7216,6 +7040,41 @@ function backfillDsCategorySlots() {
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
     if (changed) console.log(`[startup] Backfilled ${changed} DocuSeal category slot(s) from categorized templates`);
   } catch (e) { console.warn('[startup] DocuSeal category slot backfill failed:', e.message); }
+}
+
+// One-time cleanup: remove the redundant combined Zelle "Authorized Representative Signature"
+// template (Option A + Option B on a single document). The active flows use the split single-option
+// templates instead — zelle_auth = Option A (self-receive), zelle_tp_auth = Option B (authorize
+// another) — so the combined form is deleted from DocuSeal + local DB and its config slots cleared.
+async function cleanupZelleAuthRepTemplates() {
+  try {
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    if (!row) return;
+    const cfg = JSON.parse(row.config || '{}');
+    if (cfg._zelle_auth_rep_cleanup_v1) return;
+    const repCats = ['zelle_auth_rep', 'zelle_auth_rep_en', 'zelle_auth_rep_es'];
+    const tpls = db.prepare(
+      `SELECT * FROM docuseal_templates WHERE category IN (${repCats.map(() => '?').join(',')})`
+    ).all(...repCats);
+    let removed = 0;
+    for (const t of tpls) {
+      if (dsealEnabled() && t.docuseal_template_id) {
+        await dsealApiCall('DELETE', `/api/templates/${t.docuseal_template_id}`).catch(() => {});
+      }
+      db.prepare('DELETE FROM docuseal_templates WHERE id=?').run(t.id);
+      removed++;
+    }
+    // Clear any config slots that referenced the combined rep templates / rep config keys.
+    const removedIds = new Set(tpls.map(t => String(t.docuseal_template_id)));
+    Object.keys(cfg).forEach(k => {
+      if (k.endsWith('_template_id') && (k.startsWith('zelle_auth_rep') || removedIds.has(String(cfg[k])))) {
+        cfg[k] = null;
+      }
+    });
+    cfg._zelle_auth_rep_cleanup_v1 = true;
+    db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+    if (removed) console.log(`[startup] Removed ${removed} redundant combined Zelle Auth-Rep template(s)`);
+  } catch (e) { console.warn('[startup] Zelle auth-rep cleanup failed:', e.message); }
 }
 
 // Fetch field names from a DocuSeal template; returns a Set of field names, or null on failure
@@ -26605,6 +26464,8 @@ app.listen(PORT, () => {
   setTimeout(() => deduplicateDocusealTemplates().catch(e => console.error('[startup] Dedup error:', e.message)), 12000);
   // One-time: wire categorized-but-unassigned templates into their config slots (runs after dedup)
   setTimeout(() => { try { backfillDsCategorySlots(); } catch(e) { console.error('[startup] Category slot backfill error:', e.message); } }, 14000);
+  // One-time: remove the redundant combined Zelle Option A+B "Authorized Representative" template
+  setTimeout(() => { cleanupZelleAuthRepTemplates().catch(e => console.error('[startup] Zelle auth-rep cleanup error:', e.message)); }, 16000);
   // SMS Inbox: start auto re-reminder check every 5 minutes
   setInterval(smsAutoReremind, SMS_REREMIND_INTERVAL);
   console.log('[startup] SMS auto-rereminder started (every 5 min)');
