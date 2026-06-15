@@ -26624,6 +26624,22 @@ app.delete('/api/admin/company-payments/:id', requireAdmin, blockManager, (req, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Bulk-delete worker payment records by id. Used by "delete all records for a worker" in
+// the detail tab: the ids passed are exactly the records shown for that worker under the
+// current company/month filter, so this stays scoped to what the admin is looking at.
+app.post('/api/admin/company-payments/bulk-delete', requireAdmin, blockManager, (req, res) => {
+  try {
+    const ids = Array.isArray(req.body && req.body.ids)
+      ? [...new Set(req.body.ids.map(n => parseInt(n, 10)).filter(Number.isInteger))]
+      : [];
+    if (!ids.length) return res.status(400).json({ error: '没有要删除的记录 / No records to delete' });
+    if (ids.length > 5000) return res.status(400).json({ error: '一次最多删除 5000 条 / Too many records at once' });
+    const ph = ids.map(() => '?').join(',');
+    const r = db.prepare(`DELETE FROM company_worker_payments WHERE id IN (${ph})`).run(...ids);
+    res.json({ success: true, deleted: r.changes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/company-payments/export.csv?partner_id=&year_month=
 app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (req, res) => {
   try {

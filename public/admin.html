@@ -35712,6 +35712,7 @@ let _cpyInited = false;
 let _cpyBatchWorkers = []; // {id, name} for currently-selected partner in batch modal
 let _cpyAdHocSeq = 0;
 let _cpyWeeklyGroups = []; // weekly-summary groups (for expandable per-day detail)
+let _cpyListGroups = []; // detail-tab company+worker groups (for "delete all records for a worker")
 let _cpySummaryRows = []; // monthly-summary rows (for expandable in-month weekly breakdown)
 let _cpyMonthSegs = {}; // monthIdx -> in-month week segments (for nested per-week detail)
 let _cpyWeekPayMap = {}; // `${partner_id}|${week_start}` -> week payout record (method/entity/proof)
@@ -35902,6 +35903,7 @@ async function loadCpyList() {
       if (pn !== 0) return pn;
       return a.worker_name.localeCompare(b.worker_name);
     });
+    _cpyListGroups = groupList;
 
     tbody.innerHTML = groupList.map((g, gIdx) => {
       const hoursStr = g.hours > 0 ? `<strong style="color:#0369a1">${Math.round(g.hours * 100) / 100}h</strong> · ` : '';
@@ -35910,7 +35912,9 @@ async function loadCpyList() {
         <td style="font-weight:600"><span id="cpyGrpCaret-${gIdx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(g.partner_name)}</td>
         <td style="font-weight:600">${_cpyEscape(g.worker_name)}</td>
         <td style="font-weight:700;color:#15803d"><span id="cpyGrpAmt-${gIdx}" data-amount="${g.amount}">${_cpyFmtMoney(g.amount)}</span></td>
-        <td colspan="8" style="color:var(--gray-500);font-size:.82rem">${hoursStr}${g.records.length} 笔付款 · 点击展开</td>
+        <td colspan="8" style="color:var(--gray-500);font-size:.82rem">${hoursStr}${g.records.length} 笔付款 · 点击展开
+          <button class="btn btn-sm" style="float:right;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;padding:.1rem .55rem;font-size:.72rem" onclick="event.stopPropagation();cpyDeleteWorker(${gIdx})" title="删除该工人在当前筛选范围内的全部付款记录">🗑 删除该工人全部记录</button>
+        </td>
       </tr>
       <tr class="cpyGrpRows-${gIdx}" style="display:none">
         <td colspan="11" style="background:#f8fafc;padding:.75rem 1rem">${_cpyListGroupPanel(g, gIdx)}</td>
@@ -37202,6 +37206,24 @@ async function deleteCpy(id) {
     if (r && r.error) { alert('删除失败：' + r.error); return; }
     if (r && r.pending) return;
     showToast('已删除', 'success');
+    loadCpyList();
+  } catch (e) { alert('删除失败：' + (e.message || e)); }
+}
+
+// Delete every payment record for one worker, scoped to the current company/month filter.
+// The group's records are exactly what the filter is showing, so we just bulk-delete their ids.
+async function cpyDeleteWorker(gIdx) {
+  const g = _cpyListGroups[gIdx];
+  if (!g) return;
+  const ids = g.records.map(r => r.id).filter(Boolean);
+  if (!ids.length) return;
+  const month = document.getElementById('cpyFilterMonth').value;
+  const scope = month ? `${month}` : '所有月份';
+  if (!confirm(`确认删除工人「${g.worker_name}」（${g.partner_name}）在【${scope}】的全部 ${ids.length} 笔付款记录？\n\n此操作不可恢复。`)) return;
+  try {
+    const r = await api('/admin/company-payments/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+    if (r && r.error) { alert('删除失败：' + r.error); return; }
+    showToast(`已删除 ${r && r.deleted != null ? r.deleted : ids.length} 笔记录`, 'success');
     loadCpyList();
   } catch (e) { alert('删除失败：' + (e.message || e)); }
 }
