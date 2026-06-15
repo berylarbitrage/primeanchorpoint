@@ -560,7 +560,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 
   <a onclick="showTab('labor-companies')" data-tab="labor-companies" data-role="admin,staff">🏢 分包商</a>
 
-  <a href="/foremen" data-role="admin,staff">🦺 工头 / 二维码登记</a>
+  <a onclick="showTab('foremen')" data-tab="foremen" data-role="admin,staff">🦺 工头 / 二维码登记</a>
 
   <!-- 员工管理 -->
   <div class="nav-group open" id="sec-worker" data-role="admin,staff">
@@ -1118,6 +1118,30 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <p style="color:var(--gray-500);font-size:.85rem;margin:.5rem 0 1rem">用于"付款方式确认"任务中，将工人工资支付外包给指定的分包商。</p>
   <div class="card"><table><thead><tr><th>公司名称</th><th>联系人</th><th>电话</th><th>EIN</th><th>W-9</th><th>协议</th><th>付款方式</th><th>使用工人数</th><th>状态</th><th>操作</th></tr></thead><tbody id="laborCompaniesTable"></tbody></table></div>
 </div>
+
+<!-- Foremen (工头) -->
+<div id="tab-foremen" style="display:none">
+  <div class="top"><h1>🦺 工头 / Foremen</h1></div>
+  <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem">
+    <div>
+      <div style="font-weight:700">📇 工头登记二维码 / Foreman Registration QR</div>
+      <div style="color:var(--gray-500);font-size:.85rem">把这个码发给工头，让他们扫码登记自己（姓名/电话/仓库）。<br>Share this so foremen can register themselves.</div>
+    </div>
+    <button class="btn btn-blue" onclick="showForemanRegisterQr()">显示二维码 / Show QR</button>
+  </div>
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:.6rem">工头列表 / Foremen <span id="foremenCount" style="color:var(--gray-400);font-weight:400;font-size:.85rem"></span></div>
+    <div id="foremenList" style="overflow-x:auto"><div style="text-align:center;color:var(--gray-400);padding:1.5rem">加载中…</div></div>
+  </div>
+</div>
+
+<!-- Foreman QR Modal -->
+<div class="modal-bg" id="foremanQrModal"><div class="modal" style="max-width:360px;text-align:center">
+  <div id="foremanQrTitle" style="font-weight:700;color:var(--blue);margin-bottom:.7rem"></div>
+  <img id="foremanQrImg" style="width:100%;max-width:300px;height:auto" alt="QR">
+  <div id="foremanQrUrl" style="font-size:.74rem;color:var(--gray-400);word-break:break-all;margin:.7rem 0"></div>
+  <div class="modal-actions"><button class="btn" onclick="closeModal('foremanQrModal')">关闭 / Close</button></div>
+</div></div>
 
 <!-- Subcontractor Edit Modal -->
 <div class="modal-bg" id="laborCompanyModal"><div class="modal" style="max-width:600px">
@@ -8438,6 +8462,90 @@ function toggleNav(secId) {
 function openAdminSidebar()  { document.getElementById('sidebar').classList.add('open'); document.getElementById('adminSidebarOverlay').classList.add('show'); }
 function closeAdminSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('adminSidebarOverlay').classList.remove('show'); }
 
+// ── Foremen (工头) ──
+let _foremenList = [];
+async function loadForemen() {
+  const wrap = document.getElementById('foremenList');
+  wrap.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:1.5rem">加载中…</div>';
+  const data = await api('/admin/foremen');
+  _foremenList = Array.isArray(data) ? data : [];
+  renderForemen();
+}
+function renderForemen() {
+  document.getElementById('foremenCount').textContent = '· 共 ' + _foremenList.length + ' 位';
+  const wrap = document.getElementById('foremenList');
+  if (!_foremenList.length) { wrap.innerHTML = '<div style="text-align:center;color:var(--gray-400);padding:1.5rem">还没有工头登记 / No foremen yet</div>'; return; }
+  let h = '<table><thead><tr><th>姓名 Name</th><th>仓库 Warehouse</th><th>电话 Phone</th><th>工人 Workers</th><th>操作</th></tr></thead><tbody>';
+  for (const f of _foremenList) {
+    const nm = esc(f.name).replace(/'/g, "\\'");
+    h += `<tr>
+      <td><b>${esc(f.name)}</b>${f.email ? '<br><span style="color:var(--gray-400);font-size:.78rem">' + esc(f.email) + '</span>' : ''}</td>
+      <td>${esc(f.warehouse || '') || '<span style="color:var(--gray-400)">—</span>'}</td>
+      <td>${esc(f.phone || '') || '<span style="color:var(--gray-400)">—</span>'}</td>
+      <td><span style="background:#fff3e0;color:#9a3412;border-radius:12px;padding:2px 9px;font-size:.78rem;font-weight:700">${f.worker_count} 人</span></td>
+      <td><div style="display:flex;gap:.3rem;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="toggleForemanWorkers(${f.id})">查看工人</button>
+        <button class="btn btn-sm" onclick="showForemanIntakeQr(${f.id},'${nm}')">录入码</button>
+        <button class="btn btn-sm" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="delForeman(${f.id},'${nm}')">删除</button>
+      </div></td>
+    </tr>
+    <tr id="fwrow-${f.id}" style="display:none"><td colspan="5"><div id="fwbox-${f.id}" style="background:#fafafa;border-radius:8px;padding:.5rem .7rem"></div></td></tr>`;
+  }
+  h += '</tbody></table>';
+  wrap.innerHTML = h;
+}
+async function toggleForemanWorkers(id) {
+  const row = document.getElementById('fwrow-' + id);
+  if (row.style.display !== 'none') { row.style.display = 'none'; return; }
+  row.style.display = '';
+  const box = document.getElementById('fwbox-' + id);
+  box.innerHTML = '加载中…';
+  const ws = await api('/admin/foremen/' + id + '/workers');
+  if (!Array.isArray(ws) || !ws.length) { box.innerHTML = '<span style="color:var(--gray-400)">该工头还没录入工人 / No workers yet</span>'; return; }
+  let h = '<table><thead><tr><th>姓名</th><th>电话</th><th>语言</th><th>职位</th><th>时间</th><th></th></tr></thead><tbody>';
+  for (const w of ws) {
+    h += `<tr>
+      <td><b>${esc(w.name)}</b>${w.email ? '<br><span style="color:var(--gray-400);font-size:.78rem">' + esc(w.email) + '</span>' : ''}</td>
+      <td>${esc(w.phone || '') || '—'}</td>
+      <td>${esc(w.language || '') || '—'}</td>
+      <td>${esc(w.position || '') || '—'}</td>
+      <td style="color:var(--gray-400);font-size:.78rem">${esc((w.created_at || '').slice(0, 16).replace('T', ' '))}</td>
+      <td><button class="btn btn-sm" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="delForemanWorker(${w.id},${id})">删</button></td>
+    </tr>`;
+  }
+  h += '</tbody></table>';
+  box.innerHTML = h;
+}
+async function showForemanRegisterQr() {
+  const d = await api('/admin/foreman-register-qr');
+  if (!d || !d.qr) { showToast(d && d.error ? d.error : '生成失败', 'error'); return; }
+  openForemanQr('📇 工头登记二维码 / Foreman Registration', d.qr, d.url);
+}
+async function showForemanIntakeQr(id, name) {
+  const d = await api('/admin/foremen/' + id + '/intake-qr');
+  if (!d || !d.qr) { showToast(d && d.error ? d.error : '生成失败', 'error'); return; }
+  openForemanQr('📋 ' + name + ' 的工人录入码', d.qr, d.url);
+}
+function openForemanQr(title, qr, url) {
+  document.getElementById('foremanQrTitle').textContent = title;
+  document.getElementById('foremanQrImg').src = qr;
+  document.getElementById('foremanQrUrl').textContent = url;
+  document.getElementById('foremanQrModal').classList.add('show');
+}
+async function delForeman(id, name) {
+  if (!await showConfirm('删除工头「' + name + '」及其所有已录入工人？\nDelete this foreman and all their collected workers?')) return;
+  await api('/admin/foremen/' + id, { method: 'DELETE' });
+  showToast('已删除', 'success');
+  loadForemen();
+}
+async function delForemanWorker(id, fid) {
+  if (!await showConfirm('删除这位工人记录？/ Delete this worker record?')) return;
+  await api('/admin/foreman-workers/' + id, { method: 'DELETE' });
+  const f = _foremenList.find(x => x.id === fid); if (f) f.worker_count = Math.max(0, f.worker_count - 1);
+  renderForemen();
+  toggleForemanWorkers(fid);
+}
+
 function showTab(t) {
   document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
   document.getElementById('tab-' + t).style.display = 'block';
@@ -8458,6 +8566,7 @@ function showTab(t) {
   if (t === 'assignments') loadAssignments();
   if (t === 'partners')   loadPartners();
   if (t === 'labor-companies') loadLaborCompanies();
+  if (t === 'foremen')    loadForemen();
   if (t === 'backups')    loadBackups();
   if (t === 'employees')  { loadEmployees(); loadOnboardSubmissions(); }
   if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
