@@ -7123,8 +7123,14 @@ function getDsealConfigTemplateId(type) {
       w9: cfg.w9_template_id,
       contract: cfg.contract_template_id,          // legacy alias → company contract
       company_contract: cfg.company_contract_template_id || cfg.contract_template_id,
+      company_contract_en: cfg.company_contract_en_template_id,
+      company_contract_es: cfg.company_contract_es_template_id,
       worker_1099: cfg.worker_1099_template_id,
+      worker_1099_en: cfg.worker_1099_en_template_id,
+      worker_1099_es: cfg.worker_1099_es_template_id,
       worker_w2: cfg.worker_w2_template_id,
+      worker_w2_en: cfg.worker_w2_en_template_id,
+      worker_w2_es: cfg.worker_w2_es_template_id,
       w4: cfg.w4_template_id,
       w8ben: cfg.w8ben_template_id,
       w8bene: cfg.w8bene_template_id,
@@ -9983,7 +9989,16 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
   // Resolve the DocuSeal template that will actually be used when sending —
   // when set, the send flow uses the PDF template directly via POST /api/submissions
   // (the `content` field is only used as a legacy fallback when no template is configured).
-  const templateId = getDsealConfigTemplateId(empType === '1099' ? 'worker_1099' : 'worker_w2') || '';
+  // Resolve all configured language variants (中英 base / 英文 EN / 英西 EN+ES) so the admin
+  // can pick which language version to send. Default to ZH+EN to preserve prior behavior.
+  const baseCat = empType === '1099' ? 'worker_1099' : 'worker_w2';
+  const templateLangs = {
+    zh_en: String(getDsealConfigTemplateId(baseCat) || ''),
+    en:    String(getDsealConfigTemplateId(baseCat + '_en') || ''),
+    es:    String(getDsealConfigTemplateId(baseCat + '_es') || '')
+  };
+  const defaultLang = templateLangs.zh_en ? 'zh_en' : templateLangs.en ? 'en' : templateLangs.es ? 'es' : 'zh_en';
+  const templateId = templateLangs[defaultLang] || '';
   res.json({
     content,
     worker_name: workerName,
@@ -9995,7 +10010,9 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
     company_email: getCompanySignerEmail(),
     company_name: companyName,
     docuseal_enabled: dsealEnabled(),
-    template_id: templateId ? String(templateId) : ''
+    template_id: templateId ? String(templateId) : '',
+    template_langs: templateLangs,
+    template_lang: defaultLang
   });
 });
 
@@ -10026,8 +10043,13 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     // Use provided content or generate default — only matters when no DocuSeal template is configured
     const empType = w.employment_type || 'w2';
     const dateStr = new Date().toISOString().slice(0, 10);
-    // Send via DocuSeal — use configured PDF template if available, otherwise fall back to generated HTML
-    const workerTemplateId = getDsealConfigTemplateId(empType === '1099' ? 'worker_1099' : 'worker_w2');
+    // Send via DocuSeal — use the language version the admin selected (中英 base / 英文 EN / 英西 EN+ES),
+    // falling back to the ZH+EN base template when the requested variant isn't configured.
+    const baseCat = empType === '1099' ? 'worker_1099' : 'worker_w2';
+    const reqLang = ['zh_en', 'en', 'es'].includes(req.body.lang) ? req.body.lang : 'zh_en';
+    const langCat = reqLang === 'en' ? baseCat + '_en' : reqLang === 'es' ? baseCat + '_es' : baseCat;
+    const langLabel = reqLang === 'en' ? '英文 (EN)' : reqLang === 'es' ? '英西 (EN+ES)' : '中英 (ZH+EN)';
+    const workerTemplateId = getDsealConfigTemplateId(langCat) || getDsealConfigTemplateId(baseCat);
     const content = workerTemplateId
       ? '' // template PDF will be used directly; legacy content not needed
       : (req.body.content || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' }));
@@ -10046,7 +10068,7 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
       contract_content=?, visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
       WHERE worker_account_id=? AND task_key='contract'`)
-      .run(submissionId, content, `合同已创建，等待公司签署 (${new Date().toLocaleString('zh-CN')})`, workerSignUrl || '', workerId);
+      .run(submissionId, content, `合同已创建（${langLabel}），等待公司签署 (${new Date().toLocaleString('zh-CN')})`, workerSignUrl || '', workerId);
     // Save contract version
     const changedBy = req.session && req.session.username ? req.session.username : 'admin';
     const lastVer = db.prepare('SELECT MAX(version_num) AS v FROM worker_contract_versions WHERE worker_account_id=?').get(workerId);
@@ -10055,7 +10077,7 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
       .run(workerId, versionNum, content, submissionId, 'sent', changedBy);
     // Log contract send to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(workerId, changedBy, 'contract', '', '已发送', `合同 v${versionNum} 已创建并发送至 ${workerEmail}，等待公司签署`);
+      .run(workerId, changedBy, 'contract', '', '已发送', `合同 v${versionNum}（${langLabel}）已创建并发送至 ${workerEmail}，等待公司签署`);
     // Do NOT send email/SMS to worker yet — company must sign first
     // Worker will be notified after company signs (via webhook handler)
     const smsSent = false;
