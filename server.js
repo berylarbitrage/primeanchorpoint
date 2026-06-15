@@ -2344,6 +2344,10 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_cwp_partner_month ON company_worke
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_cwp_employee ON company_worker_payments(employee_id)`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN hours REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN hourly_rate REAL DEFAULT 0`); } catch(e) {}
+// Two-sided wage tracking: `amount`/`hourly_rate` is what we PAY the worker; the columns below
+// are what we BILL/collect from the company for that same work (bill_amount = hours × bill_rate).
+try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN bill_amount REAL DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN bill_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN week_start TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN clock_in_time TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN clock_out_time TEXT DEFAULT ''`); } catch(e) {}
@@ -26066,6 +26070,7 @@ app.get('/api/admin/company-payments/summary', requireAdmin, blockManager, (req,
     if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
     const sql = `SELECT year_month, partner_id, partner_name,
                    SUM(amount) AS total_amount,
+                   SUM(bill_amount) AS total_bill_amount,
                    COUNT(*) AS record_count,
                    COUNT(DISTINCT COALESCE(employee_id, worker_name)) AS worker_count
                  FROM company_worker_payments
@@ -26312,6 +26317,11 @@ app.post('/api/admin/company-payments', requireAdmin, blockManager, (req, res) =
     if (!d.worker_name || !d.payment_date || !(amount >= 0)) {
       return res.status(400).json({ error: 'worker_name, payment_date and amount required' });
     }
+    // What we collect from the company (bill side). bill_amount = hours × bill_rate when not given.
+    const billRate = Number(d.bill_rate) || 0;
+    let billAmount = Number(d.bill_amount);
+    if ((!billAmount || !isFinite(billAmount)) && hours > 0 && billRate > 0) billAmount = +(hours * billRate).toFixed(2);
+    if (!(billAmount >= 0) || !isFinite(billAmount)) billAmount = 0;
     const ym = d.year_month || String(d.payment_date).slice(0, 7);
     let partnerName = d.partner_name || '';
     if (d.partner_id && !partnerName) {
@@ -26319,8 +26329,8 @@ app.post('/api/admin/company-payments', requireAdmin, blockManager, (req, res) =
       if (p) partnerName = p.name;
     }
     const r = db.prepare(`INSERT INTO company_worker_payments
-      (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month, payment_method, notes, batch_id, created_by, hours, hourly_rate, week_start)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month, payment_method, notes, batch_id, created_by, hours, hourly_rate, week_start, bill_amount, bill_rate)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         d.partner_id ? parseInt(d.partner_id) : null,
         partnerName,
         d.employee_id ? parseInt(d.employee_id) : null,
@@ -26334,7 +26344,9 @@ app.post('/api/admin/company-payments', requireAdmin, blockManager, (req, res) =
         req.userName || '',
         hours,
         rate,
-        d.week_start || ''
+        d.week_start || '',
+        billAmount,
+        billRate
       );
     res.json({ success: true, id: r.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -26462,8 +26474,9 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
     const ins = db.prepare(`INSERT INTO company_worker_payments
       (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month,
        payment_method, notes, batch_id, created_by, hours, hourly_rate, week_start,
-       clock_in_time, clock_out_time, break_minutes, break_start_time, break_end_time)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+       clock_in_time, clock_out_time, break_minutes, break_start_time, break_end_time,
+       bill_amount, bill_rate)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const ids = [];
     const tx = db.transaction(() => {
       for (const it of items) {
@@ -26495,6 +26508,9 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
           const rate = Number(day.rate) || 0;
           if (!date || !(hours > 0) || !(rate > 0)) continue;
           const amount = +(hours * rate).toFixed(2);
+          // Bill side (collected from company): hours × company rate.
+          const billRate = Number(day.bill_rate) || 0;
+          const billAmount = billRate > 0 ? +(hours * billRate).toFixed(2) : 0;
           const ym = date.slice(0, 7);
           const r = ins.run(
             d.partner_id ? parseInt(d.partner_id) : null,
@@ -26515,7 +26531,9 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
             endT,
             dayBreak,
             breakStartT,
-            breakEndT
+            breakEndT,
+            billAmount,
+            billRate
           );
           ids.push(r.lastInsertRowid);
         }
@@ -26542,14 +26560,21 @@ app.post('/api/admin/company-payments/batch', requireAdmin, blockManager, (req, 
     }
     const batchId = `BATCH-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     const ins = db.prepare(`INSERT INTO company_worker_payments
-      (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month, payment_method, notes, batch_id, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+      (partner_id, partner_name, employee_id, worker_name, amount, payment_date, year_month, payment_method, notes, batch_id, created_by, bill_amount, bill_rate)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const ids = [];
     const tx = db.transaction(() => {
       for (const it of items) {
         const amt = Number(it.amount);
         const name = (it.worker_name || '').toString().trim();
         if (!name || !(amt > 0)) continue; // skip empties
+        // Bill side: explicit bill_amount, else derive from bill_rate if a per-record hours is given.
+        const billRate = Number(it.bill_rate) || 0;
+        let billAmount = Number(it.bill_amount);
+        if ((!billAmount || !isFinite(billAmount)) && billRate > 0 && Number(it.hours) > 0) {
+          billAmount = +(Number(it.hours) * billRate).toFixed(2);
+        }
+        if (!(billAmount >= 0) || !isFinite(billAmount)) billAmount = 0;
         const r = ins.run(
           d.partner_id ? parseInt(d.partner_id) : null,
           partnerName,
@@ -26561,7 +26586,9 @@ app.post('/api/admin/company-payments/batch', requireAdmin, blockManager, (req, 
           it.payment_method || d.payment_method || 'cash',
           it.notes || '',
           batchId,
-          req.userName || ''
+          req.userName || '',
+          billAmount,
+          billRate
         );
         ids.push(r.lastInsertRowid);
       }
@@ -26593,10 +26620,17 @@ app.put('/api/admin/company-payments/:id', requireAdmin, blockManager, (req, res
     if (d.amount == null && (d.hours != null || d.hourly_rate != null) && hours > 0 && rate > 0) {
       finalAmount = +(hours * rate).toFixed(2);
     }
+    // Bill side (collected from company).
+    const billRate = d.bill_rate != null ? (Number(d.bill_rate) || 0) : (cur.bill_rate || 0);
+    let billAmount = d.bill_amount != null ? Number(d.bill_amount) : (cur.bill_amount || 0);
+    if (d.bill_amount == null && (d.bill_rate != null || d.hours != null) && hours > 0 && billRate > 0) {
+      billAmount = +(hours * billRate).toFixed(2);
+    }
+    if (!(billAmount >= 0) || !isFinite(billAmount)) billAmount = 0;
     db.prepare(`UPDATE company_worker_payments SET
       partner_id=?, partner_name=?, employee_id=?, worker_name=?, amount=?,
       payment_date=?, year_month=?, payment_method=?, notes=?,
-      hours=?, hourly_rate=?, week_start=?
+      hours=?, hourly_rate=?, week_start=?, bill_amount=?, bill_rate=?
       WHERE id=?`).run(
         partnerId,
         partnerName || '',
@@ -26610,6 +26644,8 @@ app.put('/api/admin/company-payments/:id', requireAdmin, blockManager, (req, res
         hours,
         rate,
         d.week_start != null ? d.week_start : cur.week_start,
+        billAmount,
+        billRate,
         id
       );
     res.json({ success: true });
@@ -26649,6 +26685,7 @@ app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (r
     if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
     if (year_month) { where.push('year_month = ?'); params.push(String(year_month)); }
     const sql = `SELECT id, partner_name, worker_name, amount, hours, hourly_rate,
+                        bill_amount, bill_rate,
                         clock_in_time, clock_out_time, break_minutes, break_start_time, break_end_time,
                         payment_date, week_start, year_month,
                         payment_method, notes, batch_id, created_by, created_at
@@ -26661,11 +26698,13 @@ app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (r
       const s = String(v).replace(/"/g, '""');
       return /[",\n]/.test(s) ? `"${s}"` : s;
     };
-    const headers = ['ID', '公司', '工人姓名', '金额', '工时', '时薪', '上班', '下班', '午休开始', '午休结束', '午休(分)', '付款日期', '周起始日', '月份', '付款方式', '备注', '批次号', '操作人', '创建时间'];
+    const headers = ['ID', '公司', '工人姓名', '付给工人', '工时', '时薪', '从公司收', '公司时薪', '利润(收-付)', '上班', '下班', '午休开始', '午休结束', '午休(分)', '付款日期', '周起始日', '月份', '付款方式', '备注', '批次号', '操作人', '创建时间'];
     const lines = [headers.join(',')];
     for (const r of rows) {
+      const profit = +(((Number(r.bill_amount) || 0) - (Number(r.amount) || 0)).toFixed(2));
       lines.push([
         r.id, r.partner_name, r.worker_name, r.amount, r.hours, r.hourly_rate,
+        r.bill_amount, r.bill_rate, profit,
         r.clock_in_time, r.clock_out_time, r.break_start_time, r.break_end_time, r.break_minutes,
         r.payment_date, r.week_start, r.year_month,
         r.payment_method, r.notes, r.batch_id, r.created_by, r.created_at
