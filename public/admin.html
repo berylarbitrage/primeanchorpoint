@@ -4620,6 +4620,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <div class="modal-bg" id="contractSendModal"><div class="modal" style="max-width:720px">
   <h2>✍️ 发送合同 — <span id="contractWorkerName" style="color:var(--sky)"></span></h2>
   <div id="contractSendInfo" style="margin:.5rem 0"></div>
+  <div id="contractLangSelector" style="display:none;margin:.5rem 0;align-items:center;gap:.5rem;flex-wrap:wrap">
+    <span style="font-weight:700;font-size:.85rem;color:var(--gray-600)">📑 合同语言版本：</span>
+    <div id="contractLangBtns" style="display:inline-flex;gap:.4rem;flex-wrap:wrap"></div>
+  </div>
   <div id="contractEditorWrap" style="margin:.5rem 0">
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">合同内容（可编辑）：</label>
     <textarea id="contractContentEditor" style="width:100%;height:300px;font-family:monospace;font-size:.82rem;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;resize:vertical;line-height:1.5"></textarea>
@@ -20889,6 +20893,44 @@ async function sendCheckrFromOnboarding() {
 
 // ── Contract Send Modal Functions ──
 let _contractActiveTemplateId = '';
+let _contractTemplateLangs = { zh_en: '', en: '', es: '' };
+let _contractLang = 'zh_en';
+
+const CONTRACT_LANG_LABELS = { zh_en: '中英 (ZH+EN)', en: '英文 (EN)', es: '英西 (EN+ES)' };
+
+// Build the contract language-version picker from whatever variants are configured.
+// Only shown when 2+ language templates exist — otherwise there is nothing to choose.
+function renderContractLangSelector() {
+  const wrap = document.getElementById('contractLangSelector');
+  const btns = document.getElementById('contractLangBtns');
+  const available = ['zh_en', 'en', 'es'].filter(k => _contractTemplateLangs[k]);
+  if (available.length < 2) { wrap.style.display = 'none'; btns.innerHTML = ''; return; }
+  wrap.style.display = 'flex';
+  btns.innerHTML = available.map(k => {
+    const active = k === _contractLang;
+    const style = active
+      ? 'background:#1d4ed8;color:#fff;border:1px solid #1d4ed8;font-weight:700'
+      : 'background:#fff;color:#1d4ed8;border:1px solid #bfdbfe';
+    return `<button type="button" class="btn btn-sm" style="${style}" onclick="setContractLang('${k}')">${CONTRACT_LANG_LABELS[k]}</button>`;
+  }).join('');
+}
+
+// Switch the active contract language: updates the template id used for preview + send.
+function setContractLang(lang) {
+  if (!_contractTemplateLangs[lang]) return;
+  _contractLang = lang;
+  _contractActiveTemplateId = _contractTemplateLangs[lang];
+  const tmplFrame = document.getElementById('contractTemplatePreviewFrame');
+  if (tmplFrame) tmplFrame.src = `/api/admin/docuseal/templates/${_contractActiveTemplateId}/preview-pdf`;
+  const badge = document.getElementById('contractTemplateBadge');
+  if (badge) badge.textContent = `DocuSeal 模板 #${_contractActiveTemplateId}`;
+  // Keep the standalone PDF preview (if open) in sync with the selected language.
+  const pdfPreview = document.getElementById('contractPdfPreview');
+  if (pdfPreview && pdfPreview.style.display !== 'none') {
+    document.getElementById('contractPdfFrame').src = `/api/admin/docuseal/templates/${_contractActiveTemplateId}/preview-pdf`;
+  }
+  renderContractLangSelector();
+}
 
 async function openContractSendModal() {
   if (!_onboardingWorkerId) return;
@@ -20906,6 +20948,9 @@ async function openContractSendModal() {
   document.getElementById('contractPdfPreview').style.display = 'none';
   document.getElementById('contractSendBtn').style.display = '';
   document.getElementById('contractSendBtn').textContent = '📤 发送合同';
+  _contractTemplateLangs = { zh_en: '', en: '', es: '' };
+  _contractLang = 'zh_en';
+  document.getElementById('contractLangSelector').style.display = 'none';
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-preview`);
   if (!r) { document.getElementById('contractContentEditor').value = '加载失败'; return; }
   document.getElementById('contractContentEditor').value = r.content || '';
@@ -20914,6 +20959,8 @@ async function openContractSendModal() {
   // If a DocuSeal PDF template is configured for this employment type, that PDF is what
   // gets signed — hide the legacy editable textarea and show the actual template PDF inline.
   _contractActiveTemplateId = r.template_id || '';
+  _contractTemplateLangs = r.template_langs || { zh_en: '', en: '', es: '' };
+  _contractLang = r.template_lang || (_contractTemplateLangs.zh_en ? 'zh_en' : _contractTemplateLangs.en ? 'en' : _contractTemplateLangs.es ? 'es' : 'zh_en');
   const editorWrap = document.getElementById('contractEditorWrap');
   const tmplWrap = document.getElementById('contractTemplatePreviewWrap');
   const tmplFrame = document.getElementById('contractTemplatePreviewFrame');
@@ -20929,7 +20976,7 @@ async function openContractSendModal() {
   const empLabel = r.employment_type === '1099' ? '1099 承包商' : 'W-2 员工';
   let infoHtml = `<span style="font-size:.82rem;padding:2px 8px;border-radius:12px;background:#dbeafe;color:#1d4ed8;font-weight:600">${empLabel}</span>`;
   if (_contractActiveTemplateId) {
-    infoHtml += ` <span style="font-size:.82rem;padding:2px 8px;border-radius:12px;background:#dcfce7;color:#15803d;font-weight:600">DocuSeal 模板 #${_contractActiveTemplateId}</span>`;
+    infoHtml += ` <span id="contractTemplateBadge" style="font-size:.82rem;padding:2px 8px;border-radius:12px;background:#dcfce7;color:#15803d;font-weight:600">DocuSeal 模板 #${_contractActiveTemplateId}</span>`;
   }
   if (!r.docuseal_enabled) {
     infoHtml += ` <span style="font-size:.82rem;color:#dc2626;font-weight:600">⚠️ DocuSeal 未配置</span>`;
@@ -20938,6 +20985,7 @@ async function openContractSendModal() {
     infoHtml += ` <span style="font-size:.82rem;color:#dc2626;font-weight:600">⚠️ COMPANY_SIGNER_EMAIL 未设置</span>`;
   }
   document.getElementById('contractSendInfo').innerHTML = infoHtml;
+  renderContractLangSelector();
   // Show existing signing status if contract already sent
   if (r.ds_envelope_id && r.ds_status) {
     updateContractDsStatusUI(r.ds_status);
@@ -21015,11 +21063,12 @@ async function doSendContract() {
   // `content` is not used by the backend — so skip the empty-content check in that case.
   if (!_contractActiveTemplateId && !content) { showToast('合同内容不能为空', 'error'); return; }
   if (!workerEmail) { showToast('请填写工人邮箱', 'error'); return; }
-  if (!await showConfirm(`确认发送合同至 ${workerEmail}？\n\n公司方需先签署，之后工人方再完成签署。`)) return;
+  const langNote = (_contractActiveTemplateId && _contractTemplateLangs[_contractLang]) ? `\n\n合同语言版本：${CONTRACT_LANG_LABELS[_contractLang]}` : '';
+  if (!await showConfirm(`确认发送合同至 ${workerEmail}？${langNote}\n\n公司方需先签署，之后工人方再完成签署。`)) return;
   const btn = document.getElementById('contractSendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-contract`, {
-    method: 'POST', body: JSON.stringify({ content, worker_email: workerEmail })
+    method: 'POST', body: JSON.stringify({ content, worker_email: workerEmail, lang: _contractLang })
   });
   btn.disabled = false; btn.textContent = '📤 重新发送合同';
   if (r && r.success) {
