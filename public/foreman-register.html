@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>工头登记 / Foreman Registration</title>
+<style>
+  :root { --amber:#b45309; --amber-d:#92400e; --bg:#fffaf0; --line:#e7e0d2; --gray:#6b6256; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:#241f17; line-height:1.5; }
+  .wrap { max-width:480px; margin:0 auto; padding:1.25rem 1.1rem 3rem; }
+  .head { text-align:center; margin:.5rem 0 1.25rem; }
+  .head h1 { font-size:1.4rem; margin:.2rem 0; color:var(--amber-d); }
+  .head p { font-size:.85rem; color:var(--gray); margin:.2rem 0; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:1.1rem; box-shadow:0 2px 10px rgba(0,0,0,.04); }
+  label { display:block; font-size:.82rem; font-weight:700; margin:.85rem 0 .3rem; color:#3d3528; }
+  label .req { color:#dc2626; }
+  input, textarea { width:100%; padding:.7rem .8rem; border:1px solid #d8cfbe; border-radius:10px; font-size:1rem; background:#fffdf8; outline:none; font-family:inherit; }
+  input:focus, textarea:focus { border-color:var(--amber); box-shadow:0 0 0 3px rgba(180,83,9,.12); }
+  textarea { min-height:64px; resize:vertical; }
+  .hint { font-size:.74rem; color:var(--gray); margin-top:.25rem; }
+  .btn { width:100%; margin-top:1.3rem; padding:.85rem; border:none; border-radius:11px; background:var(--amber-d); color:#fff; font-size:1.02rem; font-weight:700; cursor:pointer; }
+  .btn:disabled { opacity:.6; }
+  .btn-ghost { background:#fff; color:var(--amber-d); border:1.5px solid var(--amber-d); }
+  .err { color:#dc2626; font-size:.85rem; margin-top:.6rem; text-align:center; min-height:1em; }
+  /* success */
+  #done { display:none; text-align:center; }
+  #done .ok { font-size:2.6rem; }
+  #done h2 { color:#15803d; margin:.3rem 0 .2rem; }
+  .qrbox { background:#fff; border:1px solid var(--line); border-radius:14px; padding:1rem; margin:1rem 0; }
+  .qrbox img { width:100%; max-width:280px; height:auto; }
+  .qr-cap { font-size:.9rem; font-weight:700; color:var(--amber-d); margin-bottom:.5rem; }
+  .qr-sub { font-size:.8rem; color:var(--gray); margin-top:.6rem; }
+  .urlrow { display:flex; gap:.4rem; margin-top:.7rem; }
+  .urlrow input { font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div style="font-size:2rem">🦺</div>
+    <h1>工头登记</h1>
+    <p>Foreman Registration</p>
+    <p>填写您的信息，提交后会生成您专属的「工人录入二维码」<br>Fill in your info — you'll get a personal QR code to add your workers.</p>
+  </div>
+
+  <div class="card" id="formCard">
+    <label>姓名 Name <span class="req">*</span></label>
+    <input id="f-name" autocomplete="name" placeholder="您的姓名 / Your full name">
+
+    <label>电话 Phone</label>
+    <input id="f-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(xxx) xxx-xxxx">
+
+    <label>邮箱 Email</label>
+    <input id="f-email" type="email" inputmode="email" autocomplete="email" placeholder="email@example.com">
+
+    <label>仓库 / 工地 Warehouse / Site</label>
+    <input id="f-warehouse" placeholder="您负责的仓库或工地 / Your warehouse or job site">
+
+    <label>备注 Notes</label>
+    <textarea id="f-notes" placeholder="选填 / Optional"></textarea>
+
+    <button class="btn" id="submitBtn" onclick="submitForeman()">提交登记 / Register</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="done">
+    <div class="ok">✅</div>
+    <h2>登记成功！Registered!</h2>
+    <p style="color:var(--gray);font-size:.88rem">下面是您专属的工人录入二维码<br>This is your personal worker-intake QR code</p>
+    <div class="qrbox">
+      <div class="qr-cap">📋 工人录入二维码 / Worker Intake QR</div>
+      <img id="qrImg" alt="QR">
+      <div class="qr-sub">让您仓库的每位工人扫这个码登记信息<br>Have each of your workers scan this to register</div>
+    </div>
+    <a id="openLink" class="btn" href="#" style="display:block;text-decoration:none;text-align:center">现在就录入工人 / Add workers now</a>
+    <div class="urlrow">
+      <input id="urlField" readonly>
+      <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:.7rem 1rem" onclick="copyUrl()">复制</button>
+    </div>
+    <p class="qr-sub" style="margin-top:1.2rem">建议截图保存此二维码 / Screenshot this QR to keep it</p>
+  </div>
+</div>
+
+<script>
+async function submitForeman() {
+  const name = document.getElementById('f-name').value.trim();
+  const err = document.getElementById('err');
+  err.textContent = '';
+  if (!name) { err.textContent = '请填写姓名 / Please enter your name'; return; }
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = '提交中… / Submitting…';
+  try {
+    const resp = await fetch('/api/public/foreman-register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        phone: document.getElementById('f-phone').value.trim(),
+        email: document.getElementById('f-email').value.trim(),
+        warehouse: document.getElementById('f-warehouse').value.trim(),
+        notes: document.getElementById('f-notes').value.trim()
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error || '提交失败 / Submit failed');
+    document.getElementById('qrImg').src = data.qr;
+    document.getElementById('urlField').value = data.intake_url;
+    document.getElementById('openLink').href = data.intake_url;
+    document.getElementById('formCard').style.display = 'none';
+    document.querySelector('.head p:last-child').style.display = 'none';
+    document.getElementById('done').style.display = 'block';
+    window.scrollTo(0, 0);
+  } catch (e) {
+    err.textContent = e.message;
+    btn.disabled = false; btn.textContent = '提交登记 / Register';
+  }
+}
+function copyUrl() {
+  const f = document.getElementById('urlField');
+  f.select(); f.setSelectionRange(0, 99999);
+  navigator.clipboard?.writeText(f.value).then(() => {}, () => {});
+  try { document.execCommand('copy'); } catch {}
+}
+</script>
+</body>
+</html>

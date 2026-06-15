@@ -485,6 +485,28 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS foremen (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    phone TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    warehouse TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    intake_token TEXT UNIQUE,
+    active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS foreman_workers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    foreman_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    language TEXT DEFAULT '',
+    position TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
   CREATE TABLE IF NOT EXISTS partner_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     partner_id INTEGER NOT NULL,
@@ -8985,6 +9007,107 @@ app.post('/api/public/manager-register/complete', async (req, res) => {
   const sessionToken = createSession(newUser, req);
   res.json({ success: true, token: sessionToken, role: newUser.role, username: newUser.username, display_name: newUser.display_name });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Foreman (工头) QR intake ───────────────────────────────────────────────────
+// Flow: a foreman scans the registration QR → fills their own info → gets a personal
+// QR. Workers (or the foreman) then scan that personal QR to add the workers under
+// that foreman's warehouse.
+// ═══════════════════════════════════════════════════════════════════════════════
+function _foremanBaseUrl(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  return (process.env.BASE_URL || '').replace(/\/$/, '') || `${proto}://${req.get('host')}`;
+}
+
+// Public: foreman registers themselves → returns their personal worker-intake QR
+app.post('/api/public/foreman-register', async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim();
+    if (!name) return res.status(400).json({ error: '请填写工头姓名 / Name required' });
+    const phone = String(req.body.phone || '').trim();
+    const email = String(req.body.email || '').trim();
+    const warehouse = String(req.body.warehouse || '').trim();
+    const notes = String(req.body.notes || '').trim();
+    const token = crypto.randomBytes(16).toString('hex');
+    const r = db.prepare('INSERT INTO foremen (name, phone, email, warehouse, notes, intake_token) VALUES (?,?,?,?,?,?)')
+      .run(name, phone, email, warehouse, notes, token);
+    const intakeUrl = `${_foremanBaseUrl(req)}/foreman-intake/${token}`;
+    const qr = await QRCode.toDataURL(intakeUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+    res.json({ success: true, id: r.lastInsertRowid, name, warehouse, intake_url: intakeUrl, qr });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Public: get a foreman's info for the worker-intake form header
+app.get('/api/public/foreman-intake/:token', (req, res) => {
+  const f = db.prepare('SELECT name, warehouse, active FROM foremen WHERE intake_token=?').get(req.params.token);
+  if (!f || !f.active) return res.status(404).json({ error: 'Invalid or expired link' });
+  res.json({ foreman_name: f.name, warehouse: f.warehouse || '' });
+});
+
+// Public: add a worker under a foreman (scanned from the foreman's personal QR)
+app.post('/api/public/foreman-intake/:token', (req, res) => {
+  try {
+    const f = db.prepare('SELECT id, active FROM foremen WHERE intake_token=?').get(req.params.token);
+    if (!f || !f.active) return res.status(404).json({ error: 'Invalid or expired link' });
+    const name = String(req.body.name || '').trim();
+    if (!name) return res.status(400).json({ error: '请填写工人姓名 / Name required' });
+    db.prepare('INSERT INTO foreman_workers (foreman_id, name, phone, email, language, position, notes) VALUES (?,?,?,?,?,?,?)')
+      .run(f.id, name, String(req.body.phone || '').trim(), String(req.body.email || '').trim(),
+           String(req.body.language || '').trim(), String(req.body.position || '').trim(), String(req.body.notes || '').trim());
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: list foremen with worker counts + their intake URLs
+app.get('/api/admin/foremen', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT f.*, (SELECT COUNT(*) FROM foreman_workers fw WHERE fw.foreman_id=f.id) AS worker_count
+    FROM foremen f ORDER BY f.active DESC, f.created_at DESC`).all();
+  const base = _foremanBaseUrl(req);
+  res.json(rows.map(r => ({ ...r, intake_url: `${base}/foreman-intake/${r.intake_token}` })));
+});
+
+// Admin: list the workers a foreman has collected
+app.get('/api/admin/foremen/:id/workers', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM foreman_workers WHERE foreman_id=? ORDER BY created_at DESC').all(req.params.id));
+});
+
+// Admin: QR for the global foreman-registration page
+app.get('/api/admin/foreman-register-qr', requireAdmin, async (req, res) => {
+  try {
+    const url = `${_foremanBaseUrl(req)}/foreman-register`;
+    const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 320 });
+    res.json({ url, qr });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: QR for a specific foreman's worker-intake page
+app.get('/api/admin/foremen/:id/intake-qr', requireAdmin, async (req, res) => {
+  try {
+    const f = db.prepare('SELECT intake_token FROM foremen WHERE id=?').get(req.params.id);
+    if (!f) return res.status(404).json({ error: 'Not found' });
+    const url = `${_foremanBaseUrl(req)}/foreman-intake/${f.intake_token}`;
+    const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 320 });
+    res.json({ url, qr });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: delete a collected worker
+app.delete('/api/admin/foreman-workers/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM foreman_workers WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Admin: delete a foreman (and their collected workers)
+app.delete('/api/admin/foremen/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM foreman_workers WHERE foreman_id=?').run(req.params.id);
+  db.prepare('DELETE FROM foremen WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Pages
+app.get('/foreman-register', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foreman-register.html')));
+app.get('/foreman-intake/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foreman-intake.html')));
+app.get('/foremen', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foremen.html')));
 
 // ─── Worker Accounts (admin manages) ───
 app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
