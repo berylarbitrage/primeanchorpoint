@@ -62,6 +62,17 @@
   .ok-state .check{display:inline-flex;align-items:center;justify-content:center;width:76px;height:76px;background:#dcfce7;color:#15803d;border-radius:50%;font-size:2.4rem;margin-bottom:.8rem}
   .ok-state h2{margin:.2rem 0;color:#15803d}
   .ok-state .meta{color:#475569;margin:.4rem 0 1.5rem;font-size:.92rem}
+  /* Foreman mode: distinct amber theme so the foreman flow is visually separate from the
+     company onboarding application (which stays navy). */
+  body.fm{background:#fffaf0}
+  body.fm .top{background:#b45309}
+  body.fm .lang button.active{color:#b45309}
+  body.fm .card h2{color:#92400e}
+  body.fm input:focus,body.fm select:focus,body.fm textarea:focus{border-color:#d97706;box-shadow:0 0 0 3px rgba(217,119,6,.18)}
+  body.fm .btn-code{background:#b45309}
+  body.fm .btn-submit{background:#92400e;box-shadow:0 4px 12px rgba(146,64,14,.3)}
+  body.fm .photo-zone{border-color:#e0b070;background:#fff7ed;color:#92400e}
+  body.fm .photo-zone:active{background:#ffedd5}
 </style>
 </head>
 <body>
@@ -355,6 +366,7 @@ const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
 const FOREMAN = location.pathname.replace(/\/+$/, '') === '/foreman-register';
 const FOREMAN_TOKEN = '__foreman_reg__';
 const OTP_T = FOREMAN ? FOREMAN_TOKEN : TOKEN;
+if (FOREMAN) document.body.classList.add('fm');
 
 let _partnerName = '';
 const _files = { ssn_front: null, ssn_back: null, ead_front: null, ead_back: null };
