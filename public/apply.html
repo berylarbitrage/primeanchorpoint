@@ -88,8 +88,14 @@
       <h2 id="t-secInfo">① Información personal</h2>
       <label id="t-lName">Nombre completo <span class="req">*</span></label>
       <input type="text" id="fName" autocomplete="name">
-      <label id="t-lPosition">Puesto solicitado <span class="req">*</span></label>
-      <input type="text" id="fPosition" autocomplete="organization-title">
+      <div id="positionRow">
+        <label id="t-lPosition">Puesto solicitado <span class="req">*</span></label>
+        <input type="text" id="fPosition" autocomplete="organization-title">
+      </div>
+      <div id="warehouseRow" style="display:none">
+        <label id="t-lWarehouse">仓库 / 工地 Warehouse / Site</label>
+        <input type="text" id="fWarehouse" placeholder="您负责的仓库或工地 / Your warehouse or site">
+      </div>
     </div>
 
     <!-- Address -->
@@ -208,6 +214,15 @@
     <h2 id="t-okTitle">¡Enviado!</h2>
     <div class="meta" id="t-okMsg">Gracias. Hemos recibido tu solicitud.</div>
   </div>
+
+  <div id="foremanDone" class="ok-state" style="display:none">
+    <div class="check">✓</div>
+    <h2>登记成功 / Registered!</h2>
+    <div class="meta">下面是您专属的「工人录入二维码」，让您仓库的工人扫码登记。<br>Your personal worker-intake QR — have your workers scan it to sign up.</div>
+    <img id="foremanQrImg" alt="QR" style="width:100%;max-width:260px;height:auto;margin:1rem auto;display:block;border:1px solid #e2e8f0;border-radius:10px;padding:8px;background:#fff">
+    <a id="foremanIntakeLink" href="#" style="display:inline-block;margin:.3rem 0 .6rem;background:#0F2B5B;color:#fff;text-decoration:none;padding:.65rem 1.3rem;border-radius:10px;font-weight:700">现在录入工人 / Add workers now</a>
+    <div class="meta">建议截图保存此二维码 / Screenshot this QR to keep it</div>
+  </div>
 </div>
 
 <script>
@@ -314,6 +329,20 @@ function applyLang() {
   });
   if (_partnerName) document.getElementById('partnerName').textContent = L.sendingTo + _partnerName;
   document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b.dataset.lang === _lang));
+  if (FOREMAN) applyForemanLang();
+}
+function applyForemanLang() {
+  const T = {
+    es: { title: '🦺 Registro de Capataz', sub: 'Complete su información para obtener su código QR de registro de trabajadores', wh: 'Almacén / Sitio' },
+    en: { title: '🦺 Foreman Registration', sub: "Fill in your info — you'll get a personal QR code to add your workers", wh: 'Warehouse / Site' },
+    zh: { title: '🦺 工头登记', sub: '填写您的信息，提交后生成您专属的「工人录入二维码」', wh: '仓库 / 工地' },
+  }[_lang] || {};
+  const title = document.getElementById('t-title'); if (title) title.textContent = T.title || '🦺 Foreman Registration';
+  document.title = T.title || 'Foreman Registration';
+  const pn = document.getElementById('partnerName'); if (pn) pn.textContent = T.sub || '';
+  const pr = document.getElementById('positionRow'); if (pr) pr.style.display = 'none';
+  const wr = document.getElementById('warehouseRow'); if (wr) wr.style.display = '';
+  const wl = document.getElementById('t-lWarehouse'); if (wl) wl.textContent = T.wh || 'Warehouse / Site';
 }
 function setLang(lang) { if (!I18N[lang]) return; _lang = lang; localStorage.setItem('apply_lang', lang); applyLang(); }
 
@@ -321,6 +350,11 @@ function setLang(lang) { if (!I18N[lang]) return; _lang = lang; localStorage.set
 const params = new URLSearchParams(location.search);
 const _pathMatch = location.pathname.match(/^\/apply\/([a-f0-9A-F]{16,})/);
 const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
+// "Foreman mode": same form served at /foreman-register — no partner token, no position field,
+// adds a warehouse field, and on submit creates a foreman + shows their worker-intake QR.
+const FOREMAN = location.pathname.replace(/\/+$/, '') === '/foreman-register';
+const FOREMAN_TOKEN = '__foreman_reg__';
+const OTP_T = FOREMAN ? FOREMAN_TOKEN : TOKEN;
 
 let _partnerName = '';
 const _files = { ssn_front: null, ssn_back: null, ead_front: null, ead_back: null };
@@ -333,6 +367,7 @@ function setMsg(ch, text, ok) { const m = document.getElementById(ch + 'Msg'); m
 
 async function init() {
   applyLang();
+  if (FOREMAN) { document.getElementById('formMain').style.display = ''; return; }
   if (!TOKEN) { showErr(I18N[_lang].errNoToken); document.getElementById('partnerName').textContent = '—'; return; }
   try {
     const r = await fetch('/api/apply/info?t=' + encodeURIComponent(TOKEN));
@@ -354,7 +389,7 @@ async function sendCode(ch) {
   btn.disabled = true;
   setMsg(ch, '…', true);
   try {
-    const body = { t: TOKEN, channel: ch };
+    const body = { t: OTP_T, channel: ch };
     if (ch === 'phone') body.phone = target; else body.email = target;
     const r = await fetch('/api/apply/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
@@ -378,7 +413,7 @@ async function checkCode(ch) {
   const btn = document.getElementById(ch + 'CheckBtn');
   btn.disabled = true;
   try {
-    const body = { t: TOKEN, channel: ch, code };
+    const body = { t: OTP_T, channel: ch, code };
     if (ch === 'phone') body.phone = target; else body.email = target;
     const r = await fetch('/api/apply/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
@@ -570,7 +605,7 @@ async function submitForm() {
   const city = document.getElementById('fCity').value.trim();
   const state = document.getElementById('fState').value.trim();
   const zip = document.getElementById('fZip').value.trim();
-  if (!name || !position || !phone || !email) { showErr(L.errFields); return; }
+  if (!name || (!FOREMAN && !position) || !phone || !email) { showErr(L.errFields); return; }
   if (!addr1 || !city || !state || !zip) { showErr(L.errAddr); return; }
   if (!_verified.phone) { showErr(L.errPhone); return; }
   if (!_verified.email) { showErr(L.errEmail); return; }
@@ -581,9 +616,10 @@ async function submitForm() {
   try {
     const addrVerified = await verifyAddressFields();
     const fd = new FormData();
-    fd.append('t', TOKEN);
+    fd.append('t', OTP_T);
     fd.append('name', name);
-    fd.append('position', position);
+    if (FOREMAN) fd.append('warehouse', document.getElementById('fWarehouse').value.trim());
+    else fd.append('position', position);
     fd.append('phone', phone);
     fd.append('email', email);
     fd.append('address1', document.getElementById('fAddr1').value.trim());
@@ -593,11 +629,18 @@ async function submitForm() {
     fd.append('zip', document.getElementById('fZip').value.trim());
     fd.append('address_verified', addrVerified ? '1' : '0');
     Object.entries(_files).forEach(([k, f]) => { if (f) fd.append(k, f); });
-    const r = await fetch('/api/apply/submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
+    const submitUrl = FOREMAN ? '/api/public/foreman-register' : ('/api/apply/submit?t=' + encodeURIComponent(TOKEN));
+    const r = await fetch(submitUrl, { method: 'POST', body: fd });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || 'submit failed');
     document.getElementById('formMain').style.display = 'none';
-    document.getElementById('okState').style.display = '';
+    if (FOREMAN) {
+      if (j.qr) document.getElementById('foremanQrImg').src = j.qr;
+      if (j.intake_url) document.getElementById('foremanIntakeLink').href = j.intake_url;
+      document.getElementById('foremanDone').style.display = '';
+    } else {
+      document.getElementById('okState').style.display = '';
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (e) {
     showErr(L.errSubmit + (e.message || e));

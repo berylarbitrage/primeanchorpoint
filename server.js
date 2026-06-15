@@ -943,6 +943,19 @@ db.exec(`CREATE TABLE IF NOT EXISTS applicant_otp (
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_aotp ON applicant_otp(form_token, type, target)`); } catch(e) {}
 
+// ── Foreman registration: documents + address columns (foremen table created earlier) ──
+db.exec(`CREATE TABLE IF NOT EXISTS foreman_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  foreman_id INTEGER NOT NULL,
+  doc_type TEXT NOT NULL,
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+for (const col of ["address1 TEXT DEFAULT ''", "address2 TEXT DEFAULT ''", "city TEXT DEFAULT ''", "state TEXT DEFAULT ''", "zip TEXT DEFAULT ''", "address_verified INTEGER DEFAULT 0"]) {
+  try { db.exec(`ALTER TABLE foremen ADD COLUMN ${col}`); } catch(e) {}
+}
+
 // ── Worker document self-upload (global QR) ──
 // One global QR for workers to upload W9 + Contract (required) and up to three
 // payment-method signature forms (Direct Deposit / Zelle / Check, optional).
@@ -9019,23 +9032,8 @@ function _foremanBaseUrl(req) {
   return (process.env.BASE_URL || '').replace(/\/$/, '') || `${proto}://${req.get('host')}`;
 }
 
-// Public: foreman registers themselves → returns their personal worker-intake QR
-app.post('/api/public/foreman-register', async (req, res) => {
-  try {
-    const name = String(req.body.name || '').trim();
-    if (!name) return res.status(400).json({ error: '请填写工头姓名 / Name required' });
-    const phone = String(req.body.phone || '').trim();
-    const email = String(req.body.email || '').trim();
-    const warehouse = String(req.body.warehouse || '').trim();
-    const notes = String(req.body.notes || '').trim();
-    const token = crypto.randomBytes(16).toString('hex');
-    const r = db.prepare('INSERT INTO foremen (name, phone, email, warehouse, notes, intake_token) VALUES (?,?,?,?,?,?)')
-      .run(name, phone, email, warehouse, notes, token);
-    const intakeUrl = `${_foremanBaseUrl(req)}/foreman-intake/${token}`;
-    const qr = await QRCode.toDataURL(intakeUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
-    res.json({ success: true, id: r.lastInsertRowid, name, warehouse, intake_url: intakeUrl, qr });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// Public: foreman self-registration submit lives further below (needs the multipart
+// upload middleware defined with the apply routes) — see /api/public/foreman-register.
 
 // Public: get a foreman's info for the worker-intake form header
 app.get('/api/public/foreman-intake/:token', (req, res) => {
@@ -9105,7 +9103,8 @@ app.delete('/api/admin/foremen/:id', requireAdmin, (req, res) => {
 });
 
 // Pages
-app.get('/foreman-register', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foreman-register.html')));
+// Foreman self-registration reuses the polished onboarding form (apply.html) in "foreman mode".
+app.get('/foreman-register', (req, res) => res.sendFile(path.join(__dirname, 'public', 'apply.html')));
 app.get('/foreman-intake/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foreman-intake.html')));
 app.get('/foremen', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foremen.html')));
 
@@ -14427,7 +14426,7 @@ app.get('/api/apply/info', (req, res) => {
 app.post('/api/apply/send-code', async (req, res) => {
   try {
     const token = String(req.body.t || '');
-    if (!_partnerByApplyToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
+    if (token !== '__foreman_reg__' && !_partnerByApplyToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
     const channel = req.body.channel === 'email' ? 'email' : 'phone';
     const target = channel === 'phone' ? _normApplyPhone(req.body.phone) : String(req.body.email || '').trim().toLowerCase();
     if (channel === 'phone' && target.replace(/\D/g, '').length < 10)
@@ -14491,7 +14490,7 @@ app.post('/api/apply/send-code', async (req, res) => {
 app.post('/api/apply/verify-code', async (req, res) => {
   try {
     const token = String(req.body.t || '');
-    if (!_partnerByApplyToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
+    if (token !== '__foreman_reg__' && !_partnerByApplyToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
     const channel = req.body.channel === 'email' ? 'email' : 'phone';
     const target = channel === 'phone' ? _normApplyPhone(req.body.phone || req.body.target) : String(req.body.email || req.body.target || '').trim().toLowerCase();
     const code = String(req.body.code || '').trim();
@@ -14575,6 +14574,53 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     const address = { address1, address2, city, state, zip, verified: addressVerified };
     notifyNewApplication({ subId, partner: p, name, position, phone, email, address, docMeta })
       .catch(e => console.error('[apply-notify] failed:', e.message));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: foreman self-registration (apply.html in "foreman mode"). Same fields as the onboarding
+// form minus position (plus warehouse). Requires phone+email OTP (form_token '__foreman_reg__')
+// and SSN/EAD photos; returns the foreman's personal worker-intake QR.
+app.post('/api/public/foreman-register', applicantDocUpload.fields([
+  { name: 'ssn_front', maxCount: 1 },
+  { name: 'ssn_back', maxCount: 1 },
+  { name: 'ead_front', maxCount: 1 },
+  { name: 'ead_back', maxCount: 1 },
+]), async (req, res) => {
+  try {
+    const FT = '__foreman_reg__';
+    const d = req.body || {};
+    const name = String(d.name || '').trim().slice(0, 120);
+    const warehouse = String(d.warehouse || '').trim().slice(0, 160);
+    const phone = _normApplyPhone(d.phone);
+    const email = String(d.email || '').trim().toLowerCase();
+    const address1 = String(d.address1 || '').trim().slice(0, 200);
+    const address2 = String(d.address2 || '').trim().slice(0, 200);
+    const city = String(d.city || '').trim().slice(0, 100);
+    const state = String(d.state || '').trim().slice(0, 60);
+    const zip = String(d.zip || '').trim().slice(0, 20);
+    const addressVerified = (d.address_verified === '1' || d.address_verified === 1 || d.address_verified === true) ? 1 : 0;
+    if (!name || !phone || !email) return res.status(400).json({ error: '请填写姓名、电话、邮箱 / Name, phone and email are required' });
+    if (!address1 || !city || !state || !zip) return res.status(400).json({ error: '请填写完整地址 / Street, city, state and ZIP are required' });
+    const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(FT, type, tgt);
+    if (!verified('phone', phone)) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone first' });
+    if (!verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
+    const files = req.files || {};
+    if (!files.ssn_front || !files.ead_front || !files.ead_back)
+      return res.status(400).json({ error: '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back' });
+    const token = crypto.randomBytes(16).toString('hex');
+    const r = db.prepare(`INSERT INTO foremen (name, phone, email, warehouse, intake_token, address1, address2, city, state, zip, address_verified)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(name, phone, email, warehouse, token, address1, address2, city, state, zip, addressVerified);
+    const foremanId = r.lastInsertRowid;
+    for (const [docType, arr] of Object.entries(files)) {
+      if (arr && arr[0]) {
+        const f = arr[0];
+        db.prepare('INSERT INTO foreman_files (foreman_id, doc_type, file_path, file_name) VALUES (?,?,?,?)')
+          .run(foremanId, docType, (f.key || f.filename || f.path), f.originalname || '');
+      }
+    }
+    const intakeUrl = `${_foremanBaseUrl(req)}/foreman-intake/${token}`;
+    const qr = await QRCode.toDataURL(intakeUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+    res.json({ success: true, id: foremanId, name, warehouse, intake_url: intakeUrl, qr });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
