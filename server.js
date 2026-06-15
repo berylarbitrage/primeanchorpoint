@@ -6925,9 +6925,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   cash_op_auth:     { name: 'Cash — Third-Party Payee Form · 第三方签字 (ZH+EN)', configKey: 'cash_op_auth_template_id',     category: 'cash_op_auth',     generator: generateCashTPAuthTemplate },
   cash_op_auth_en:  { name: 'Cash — Third-Party Payee Form · 第三方签字 (EN)',    configKey: 'cash_op_auth_en_template_id',  category: 'cash_op_auth_en',  generator: generateCashTPAuthTemplate_EN },
   cash_op_auth_es:  { name: 'Cash — Third-Party Payee Form · 第三方签字 (EN+ES)', configKey: 'cash_op_auth_es_template_id',  category: 'cash_op_auth_es',  generator: generateCashTPAuthTemplate_ES },
-  third_party_pay:    { name: 'Third-Party Payment Authorization / 第三方收款账户授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
-  third_party_pay_en: { name: 'Third-Party Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
-  third_party_pay_es: { name: 'Third-Party Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
+  third_party_pay:    { name: 'PayPal / Venmo / CashApp Payment Authorization / 在线支付平台收款授权 (ZH+EN)', configKey: 'third_party_pay_template_id',    category: 'third_party_pay',    generator: generateThirdPartyPayHtmlTemplate },
+  third_party_pay_en: { name: 'PayPal / Venmo / CashApp Payment Authorization (EN)',                          configKey: 'third_party_pay_en_template_id', category: 'third_party_pay_en', generator: generateThirdPartyPayHtmlTemplate_EN },
+  third_party_pay_es: { name: 'PayPal / Venmo / CashApp Payment Authorization (EN+ES)',                       configKey: 'third_party_pay_es_template_id', category: 'third_party_pay_es', generator: generateThirdPartyPayHtmlTemplate_ES },
   cash_receipt:    { name: 'Cash Payment Receipt (ZH+EN) / 现金付款签收',  configKey: 'cash_receipt_template_id',    category: 'cash_receipt',    generator: generateCashReceiptHtmlTemplate },
   cash_receipt_en: { name: 'Cash Payment Receipt (EN)',                   configKey: 'cash_receipt_en_template_id', category: 'cash_receipt_en', generator: generateCashReceiptEnHtmlTemplate },
   cash_receipt_es: { name: 'Cash Payment Receipt (EN+ES) / Recibo de Pago en Efectivo', configKey: 'cash_receipt_es_template_id', category: 'cash_receipt_es', generator: generateCashReceiptEsHtmlTemplate },
@@ -7098,6 +7098,40 @@ async function cleanupZelleAuthRepTemplates() {
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
     if (removed || generated) console.log(`[startup] Zelle auth-rep cleanup: removed ${removed} combined template(s), generated ${generated} self-receive template(s)`);
   } catch (e) { console.warn('[startup] Zelle auth-rep cleanup failed:', e.message); }
+}
+
+// One-time rename: the PayPal/Venmo/CashApp self-receive form was named "Third-Party Payment
+// Authorization", which collides with the 第三方(人) concept in 授权他人替自己收款 / 第三方签字 and made
+// the ① 自己收款 slot look like it was for someone else. Rename existing templates to name the actual
+// platforms so it's clear it's the worker's own account. Updates both the local DB (config dropdown)
+// and DocuSeal (builder title).
+const PLATFORM_PAY_RENAMES = {
+  third_party_pay:    'PayPal / Venmo / CashApp Payment Authorization / 在线支付平台收款授权 (ZH+EN)',
+  third_party_pay_en: 'PayPal / Venmo / CashApp Payment Authorization (EN)',
+  third_party_pay_es: 'PayPal / Venmo / CashApp Payment Authorization (EN+ES)'
+};
+async function renamePlatformPayTemplates() {
+  try {
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    if (!row) return;
+    const cfg = JSON.parse(row.config || '{}');
+    if (cfg._platform_pay_rename_v1) return;
+    let renamed = 0;
+    for (const [cat, newName] of Object.entries(PLATFORM_PAY_RENAMES)) {
+      const tpls = db.prepare('SELECT * FROM docuseal_templates WHERE category=?').all(cat);
+      for (const t of tpls) {
+        if (t.name === newName) continue;
+        db.prepare('UPDATE docuseal_templates SET name=? WHERE id=?').run(newName, t.id);
+        if (dsealEnabled() && t.docuseal_template_id) {
+          await dsealApiCall('PUT', `/api/templates/${t.docuseal_template_id}`, { name: newName }).catch(() => {});
+        }
+        renamed++;
+      }
+    }
+    cfg._platform_pay_rename_v1 = true;
+    db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+    if (renamed) console.log(`[startup] Renamed ${renamed} platform-pay template(s) → PayPal/Venmo/CashApp`);
+  } catch (e) { console.warn('[startup] platform-pay rename failed:', e.message); }
 }
 
 // Fetch field names from a DocuSeal template; returns a Set of field names, or null on failure
@@ -26489,6 +26523,8 @@ app.listen(PORT, () => {
   setTimeout(() => { try { backfillDsCategorySlots(); } catch(e) { console.error('[startup] Category slot backfill error:', e.message); } }, 14000);
   // One-time: remove the redundant combined Zelle Option A+B "Authorized Representative" template
   setTimeout(() => { cleanupZelleAuthRepTemplates().catch(e => console.error('[startup] Zelle auth-rep cleanup error:', e.message)); }, 16000);
+  // One-time: rename PayPal/Venmo/CashApp self-receive templates to name the platforms (clearer)
+  setTimeout(() => { renamePlatformPayTemplates().catch(e => console.error('[startup] platform-pay rename error:', e.message)); }, 18000);
   // SMS Inbox: start auto re-reminder check every 5 minutes
   setInterval(smsAutoReremind, SMS_REREMIND_INTERVAL);
   console.log('[startup] SMS auto-rereminder started (every 5 min)');
