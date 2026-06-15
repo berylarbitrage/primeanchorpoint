@@ -7166,6 +7166,58 @@ function getDsealConfigTemplateId(type) {
   } catch { return ''; }
 }
 
+// Wire a template into the config slot that actually drives the payment-form dropdowns and the
+// document send flows. A template's slot key is always `<category>_template_id`. Re-categorizing
+// a template moves it out of any slot it currently occupies and into its new category's slot.
+// No-op for categories that don't map to a known slot (e.g. legacy/custom labels).
+function dsWireTemplateToCategorySlot(dsTemplateId, category) {
+  if (!dsTemplateId) return;
+  try {
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse(row?.config || '{}');
+    const tid = String(dsTemplateId);
+    let changed = false;
+    // Remove this template from any slot it currently occupies — it's being (re)categorized.
+    Object.keys(cfg).forEach(k => {
+      if (k.endsWith('_template_id') && String(cfg[k]) === tid) { cfg[k] = null; changed = true; }
+    });
+    // Assign it to the new category's slot, when that category maps to a real config key.
+    const def = DOCUSEAL_AUTO_TEMPLATES[category];
+    if (def && def.configKey) { cfg[def.configKey] = tid; changed = true; }
+    if (changed) {
+      db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+    }
+  } catch (e) { console.warn('[DocuSeal] wire template → slot failed:', e.message); }
+}
+
+// One-time backfill: 改分类/改语言 historically set a template's `category` but never wired the
+// config slot, so payment-form slots (e.g. ③ 第三方签字) could show 未设置 even though a properly
+// categorized template existed. Fill any slot that is empty or points to a deleted template from
+// the categorized templates. Runs once (guarded by a flag); future categorizations wire the slot
+// directly via dsWireTemplateToCategorySlot.
+function backfillDsCategorySlots() {
+  try {
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    if (!row) return;
+    const cfg = JSON.parse(row.config || '{}');
+    if (cfg._cat_slot_backfill_v1) return;
+    let changed = 0;
+    const cats = db.prepare("SELECT DISTINCT category FROM docuseal_templates WHERE category IS NOT NULL AND category!=''").all();
+    for (const { category } of cats) {
+      const def = DOCUSEAL_AUTO_TEMPLATES[category];
+      if (!def || !def.configKey) continue;
+      const cur = cfg[def.configKey];
+      // Leave slots that already point to a still-existing template (respect manual choices).
+      if (cur && db.prepare('SELECT 1 FROM docuseal_templates WHERE docuseal_template_id=?').get(String(cur))) continue;
+      const pick = db.prepare("SELECT docuseal_template_id FROM docuseal_templates WHERE category=? AND hidden=0 ORDER BY confirmed DESC, created_at DESC LIMIT 1").get(category);
+      if (pick && pick.docuseal_template_id) { cfg[def.configKey] = String(pick.docuseal_template_id); changed++; }
+    }
+    cfg._cat_slot_backfill_v1 = true;
+    db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+    if (changed) console.log(`[startup] Backfilled ${changed} DocuSeal category slot(s) from categorized templates`);
+  } catch (e) { console.warn('[startup] DocuSeal category slot backfill failed:', e.message); }
+}
+
 // Fetch field names from a DocuSeal template; returns a Set of field names, or null on failure
 async function dsealGetTemplateFieldNames(templateId) {
   try {
@@ -24069,8 +24121,13 @@ app.put('/api/admin/docuseal/my-templates/:id/category', requireAdmin, (req, res
   if (!category || !category.trim()) return res.status(400).json({ error: '分类不能为空' });
   const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
   if (!local) return res.status(404).json({ error: '模板不存在' });
-  db.prepare('UPDATE docuseal_templates SET category=? WHERE id=?').run(category.trim(), req.params.id);
-  res.json({ success: true, category: category.trim() });
+  const cat = category.trim();
+  db.prepare('UPDATE docuseal_templates SET category=? WHERE id=?').run(cat, req.params.id);
+  // Also wire the template into the config slot the dropdowns + send flows read, so categorizing
+  // actually assigns it. Previously only the label changed → the slot stayed 未设置 and the send
+  // flow couldn't find the template.
+  dsWireTemplateToCategorySlot(local.docuseal_template_id, cat);
+  res.json({ success: true, category: cat });
 });
 
 // PUT /api/admin/docuseal/my-templates/:id/confirm — toggle confirmed status
@@ -26546,6 +26603,8 @@ app.listen(PORT, () => {
   setTimeout(() => autoRegenerateContractorInvoiceTemplates().catch(e => console.error('[startup] Invoice template regen error:', e.message)), 8000);
   // Deduplicate DocuSeal templates (keep latest per category+language)
   setTimeout(() => deduplicateDocusealTemplates().catch(e => console.error('[startup] Dedup error:', e.message)), 12000);
+  // One-time: wire categorized-but-unassigned templates into their config slots (runs after dedup)
+  setTimeout(() => { try { backfillDsCategorySlots(); } catch(e) { console.error('[startup] Category slot backfill error:', e.message); } }, 14000);
   // SMS Inbox: start auto re-reminder check every 5 minutes
   setInterval(smsAutoReremind, SMS_REREMIND_INTERVAL);
   console.log('[startup] SMS auto-rereminder started (every 5 min)');

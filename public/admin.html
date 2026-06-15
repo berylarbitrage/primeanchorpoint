@@ -27957,7 +27957,11 @@ async function dsApplyCategoryChanges(dsTemplateId) {
     await api(`/admin/docuseal/my-templates/${tpl.id}/category`, { method: 'PUT', body: JSON.stringify({ category: newCat }) });
     tpl.category = newCat;
     overlay.remove();
+    // Backend also wired this template into its config slot — refresh config so the payment-form
+    // dropdowns immediately reflect the new assignment (no page reload needed).
+    try { _dsConfig = await api('/admin/docuseal/config'); } catch {}
     _dsRenderMyTemplates();
+    _dsRefreshSelects();
     showToast('分类已更新', 'success');
   } catch(e) { showToast(e.message, 'error'); }
 }
@@ -28016,7 +28020,11 @@ async function dsApplyLanguageChanges(localId) {
       }
     }
     overlay.remove();
+    // A language change can shift the template's category suffix and re-wire its config slot —
+    // refresh config so the payment-form dropdowns reflect the new assignment.
+    try { _dsConfig = await api('/admin/docuseal/config'); } catch {}
     _dsRenderMyTemplates();
+    _dsRefreshSelects();
     showToast('语言已更新', 'success');
   } catch(e) { showToast(e.message, 'error'); }
 }
