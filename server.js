@@ -7051,7 +7051,7 @@ async function cleanupZelleAuthRepTemplates() {
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
     if (!row) return;
     const cfg = JSON.parse(row.config || '{}');
-    if (cfg._zelle_auth_rep_cleanup_v2) return;
+    if (cfg._zelle_auth_rep_cleanup_v3) return;
     const repCats = ['zelle_auth_rep', 'zelle_auth_rep_en', 'zelle_auth_rep_es'];
     // Match by category OR by the template's stable name, so the combined form is caught even if it
     // was renamed/recategorized (e.g. mis-categorized into another slot).
@@ -7073,9 +7073,30 @@ async function cleanupZelleAuthRepTemplates() {
         cfg[k] = null;
       }
     });
-    cfg._zelle_auth_rep_cleanup_v2 = true;
+    // The deleted combined form may have been serving as the ① 自己收款 template, leaving that slot
+    // empty. Generate the proper single-option Zelle self-receive template (Option A) for any now-empty
+    // zelle_auth slot so ① 自己收款 isn't left blank.
+    let generated = 0;
+    if (dsealEnabled()) {
+      for (const type of ['zelle_auth', 'zelle_auth_en', 'zelle_auth_es']) {
+        const def = DOCUSEAL_AUTO_TEMPLATES[type];
+        if (!def || cfg[def.configKey]) continue;
+        try {
+          const html = def.generator();
+          const r = await dsealApiCall('POST', '/api/templates/html', { name: def.name, documents: [{ name: def.name, html, size: 'Letter' }] });
+          const dsId = r.data?.id || r.data?.template_id;
+          if (dsId) {
+            const hash = crypto.createHash('md5').update(html).digest('hex');
+            db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category, content_hash) VALUES (?,?,?,?)').run(def.name, String(dsId), def.category, hash);
+            cfg[def.configKey] = String(dsId);
+            generated++;
+          }
+        } catch (e) { console.warn(`[startup] generate ${type} failed:`, e.message); }
+      }
+    }
+    cfg._zelle_auth_rep_cleanup_v3 = true;
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
-    if (removed) console.log(`[startup] Removed ${removed} redundant combined Zelle Auth-Rep template(s)`);
+    if (removed || generated) console.log(`[startup] Zelle auth-rep cleanup: removed ${removed} combined template(s), generated ${generated} self-receive template(s)`);
   } catch (e) { console.warn('[startup] Zelle auth-rep cleanup failed:', e.message); }
 }
 
