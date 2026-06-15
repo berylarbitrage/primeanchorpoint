@@ -7051,11 +7051,13 @@ async function cleanupZelleAuthRepTemplates() {
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
     if (!row) return;
     const cfg = JSON.parse(row.config || '{}');
-    if (cfg._zelle_auth_rep_cleanup_v1) return;
+    if (cfg._zelle_auth_rep_cleanup_v2) return;
     const repCats = ['zelle_auth_rep', 'zelle_auth_rep_en', 'zelle_auth_rep_es'];
+    // Match by category OR by the template's stable name, so the combined form is caught even if it
+    // was renamed/recategorized (e.g. mis-categorized into another slot).
     const tpls = db.prepare(
-      `SELECT * FROM docuseal_templates WHERE category IN (${repCats.map(() => '?').join(',')})`
-    ).all(...repCats);
+      `SELECT * FROM docuseal_templates WHERE category IN (${repCats.map(() => '?').join(',')}) OR name LIKE ?`
+    ).all(...repCats, '%Authorized Representative Signature%');
     let removed = 0;
     for (const t of tpls) {
       if (dsealEnabled() && t.docuseal_template_id) {
@@ -7071,7 +7073,7 @@ async function cleanupZelleAuthRepTemplates() {
         cfg[k] = null;
       }
     });
-    cfg._zelle_auth_rep_cleanup_v1 = true;
+    cfg._zelle_auth_rep_cleanup_v2 = true;
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
     if (removed) console.log(`[startup] Removed ${removed} redundant combined Zelle Auth-Rep template(s)`);
   } catch (e) { console.warn('[startup] Zelle auth-rep cleanup failed:', e.message); }
