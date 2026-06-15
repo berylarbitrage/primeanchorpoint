@@ -5,31 +5,38 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>工人登记 / Worker Sign-up</title>
 <style>
-  :root { --amber:#b45309; --amber-d:#92400e; --bg:#fffaf0; --line:#e7e0d2; --gray:#6b6256; }
-  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:#241f17; line-height:1.5; }
-  .wrap { max-width:480px; margin:0 auto; padding:1.25rem 1.1rem 3rem; }
-  .head { text-align:center; margin:.5rem 0 1.1rem; }
-  .head h1 { font-size:1.35rem; margin:.2rem 0; color:var(--amber-d); }
-  .head .fm { display:inline-block; margin-top:.4rem; padding:.35rem .9rem; background:#fff3e0; border:1px solid #f0d7a8; border-radius:20px; font-size:.85rem; font-weight:700; color:var(--amber-d); }
-  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:1.1rem; box-shadow:0 2px 10px rgba(0,0,0,.04); }
-  label { display:block; font-size:.82rem; font-weight:700; margin:.85rem 0 .3rem; color:#3d3528; }
-  label .req { color:#dc2626; }
-  input, select, textarea { width:100%; padding:.7rem .8rem; border:1px solid #d8cfbe; border-radius:10px; font-size:1rem; background:#fffdf8; outline:none; font-family:inherit; }
-  input:focus, select:focus, textarea:focus { border-color:var(--amber); box-shadow:0 0 0 3px rgba(180,83,9,.12); }
-  textarea { min-height:56px; resize:vertical; }
-  .btn { width:100%; margin-top:1.3rem; padding:.85rem; border:none; border-radius:11px; background:var(--amber-d); color:#fff; font-size:1.02rem; font-weight:700; cursor:pointer; }
-  .btn:disabled { opacity:.6; }
-  .btn-ghost { background:#fff; color:var(--amber-d); border:1.5px solid var(--amber-d); }
-  .err { color:#dc2626; font-size:.85rem; margin-top:.6rem; text-align:center; min-height:1em; }
-  #loading, #invalid { text-align:center; color:var(--gray); padding:2rem 1rem; }
-  #done { display:none; text-align:center; }
-  #done .ok { font-size:2.8rem; }
-  #done h2 { color:#15803d; margin:.3rem 0; }
-  .count { font-size:.8rem; color:var(--gray); margin-top:.4rem; }
+  *{box-sizing:border-box}
+  body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;background:#f1f5f9;color:#0f172a;-webkit-text-size-adjust:100%}
+  .top{background:#0F2B5B;color:#fff;padding:.9rem 1.1rem .75rem;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .top h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.02em}
+  .top .partner{margin-top:.25rem;font-size:.84rem;opacity:.92}
+  .wrap{padding:1rem 1rem 6rem 1rem;max-width:520px;margin:0 auto}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.95rem;margin-bottom:.85rem;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card h2{margin:0 0 .7rem;font-size:.98rem;color:#0F2B5B}
+  label{display:block;font-size:.82rem;font-weight:600;color:#475569;margin:.55rem 0 .35rem}
+  label:first-child{margin-top:0}
+  input,select,textarea{width:100%;padding:.65rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none;-webkit-appearance:none;font-family:inherit}
+  input:focus,select:focus,textarea:focus{border-color:#2E5BA0;box-shadow:0 0 0 3px rgba(46,91,160,.15)}
+  textarea{min-height:60px;resize:vertical}
+  .req{color:#dc2626}
+  .btn-submit{display:block;width:100%;padding:1rem;background:#0F2B5B;color:#fff;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;letter-spacing:.03em;margin-top:.6rem;box-shadow:0 4px 12px rgba(15,43,91,.3)}
+  .btn-submit:disabled{background:#94a3b8;box-shadow:none}
+  .btn-outline{display:inline-block;padding:.8rem 1.4rem;background:#fff;color:#0F2B5B;border:1.5px solid #0F2B5B;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:.65rem .8rem;border-radius:8px;font-size:.88rem;margin-top:.6rem;min-height:1em}
+  .err:empty{display:none;padding:0;border:0;margin:0}
+  #loading,#invalid{text-align:center;color:#475569;padding:2.5rem 1rem}
+  .ok-state{text-align:center;padding:2.5rem 1rem}
+  .ok-state .check{display:inline-flex;align-items:center;justify-content:center;width:76px;height:76px;background:#dcfce7;color:#15803d;border-radius:50%;font-size:2.4rem;margin-bottom:.8rem}
+  .ok-state h2{margin:.2rem 0;color:#15803d}
+  .ok-state .meta{color:#475569;margin:.4rem 0 1.5rem;font-size:.92rem}
 </style>
 </head>
 <body>
+<div class="top">
+  <h1>👷 工人登记 / Worker Sign-up</h1>
+  <div class="partner" id="fmBadge">…</div>
+</div>
+
 <div class="wrap">
   <div id="loading">加载中… / Loading…</div>
 
@@ -39,14 +46,8 @@
   </div>
 
   <div id="main" style="display:none">
-    <div class="head">
-      <div style="font-size:1.9rem">👷</div>
-      <h1>工人登记</h1>
-      <div style="font-size:.82rem;color:var(--gray)">Worker Sign-up</div>
-      <div class="fm" id="fmBadge"></div>
-    </div>
-
     <div class="card" id="formCard">
+      <h2>① 工人信息 / Worker Info</h2>
       <label>姓名 Name <span class="req">*</span></label>
       <input id="w-name" autocomplete="name" placeholder="工人姓名 / Worker's full name">
 
@@ -71,16 +72,16 @@
       <label>备注 Notes</label>
       <textarea id="w-notes" placeholder="选填 / Optional"></textarea>
 
-      <button class="btn" id="submitBtn" onclick="submitWorker()">提交 / Submit</button>
+      <button class="btn-submit" id="submitBtn" onclick="submitWorker()">提交 / Submit</button>
       <div class="err" id="err"></div>
     </div>
 
-    <div id="done">
-      <div class="ok">✅</div>
+    <div id="done" class="ok-state" style="display:none">
+      <div class="check">✓</div>
       <h2>已添加！Added!</h2>
-      <p style="color:var(--gray);font-size:.88rem" id="addedName"></p>
-      <button class="btn" onclick="addAnother()">➕ 继续添加下一个工人 / Add another</button>
-      <div class="count" id="countLine"></div>
+      <div class="meta" id="addedName"></div>
+      <button class="btn-outline" onclick="addAnother()">➕ 继续添加下一个工人 / Add another</button>
+      <div class="meta" id="countLine" style="margin-top:1rem"></div>
     </div>
   </div>
 </div>
@@ -100,6 +101,7 @@ async function init() {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('main').style.display = 'block';
   } catch {
+    document.getElementById('fmBadge').textContent = '—';
     document.getElementById('loading').style.display = 'none';
     document.getElementById('invalid').style.display = 'block';
   }
