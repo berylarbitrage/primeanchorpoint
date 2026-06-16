@@ -37717,6 +37717,9 @@ function renderCpyWeeklyRows() {
   const rateStyle = 'width:58px;padding:.18rem .25rem;border:1px solid #bbf7d0;border-radius:4px;font-size:.75rem;text-align:right;background:#f0fdf4';
   const billRateStyle = 'width:58px;padding:.18rem .25rem;border:1px solid #bfdbfe;border-radius:4px;font-size:.75rem;text-align:right;background:#eff6ff';
   const breakMinStyle = 'width:44px;padding:.1rem .15rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.66rem;text-align:center;color:var(--gray-600)';
+  // Top-of-modal "默认时薪" values act as a fallback so blank day cells still get a rate.
+  const defRate = Number(document.getElementById('cpyWkDefaultRate')?.value) || 0;
+  const defBillRate = Number(document.getElementById('cpyWkDefaultBillRate')?.value) || 0;
   tbody.innerHTML = _cpyWkWorkers.map((w, i) => {
     const dayCells = _cpyWkDays.map((d, j) => `
       <td style="text-align:center;padding:.3rem .25rem;background:#fff;vertical-align:top;position:relative" data-day-idx="${j}">
@@ -37766,14 +37769,14 @@ function renderCpyWeeklyRows() {
             <span style="font-size:.6rem;color:#15803d;font-weight:700" title="付给工人的时薪">付</span>
             <input type="number" class="cpyWkRate" data-row="${i}" data-day="${j}" step="0.01" min="0"
               autocomplete="off"
-              value="${_cpyEscape(w._rates[j] || '')}" placeholder="$/h"
+              value="${_cpyEscape(w._rates[j] || (defRate || ''))}" placeholder="$/h"
               style="${rateStyle}" oninput="onCpyWkCellChange()" title="付给工人的时薪 ($/h)">
           </div>
           <div style="display:flex;align-items:center;gap:2px;width:100%;justify-content:flex-end">
             <span style="font-size:.6rem;color:#1d4ed8;font-weight:700" title="从公司收的时薪">收</span>
             <input type="number" class="cpyWkBillRate" data-row="${i}" data-day="${j}" step="0.01" min="0"
               autocomplete="off"
-              value="${_cpyEscape((w._billRates && w._billRates[j]) || '')}" placeholder="$/h"
+              value="${_cpyEscape((w._billRates && w._billRates[j]) || (defBillRate || ''))}" placeholder="$/h"
               style="${billRateStyle}" oninput="onCpyWkCellChange()" title="从公司收的时薪 ($/h)">
           </div>
           <div class="cpyWkSubtotal" data-row="${i}" data-day="${j}" style="font-size:.66rem;color:var(--gray-400);line-height:1.3">—</div>
@@ -37922,6 +37925,9 @@ function updateCpyWkTotal() {
   let grandBill = 0;
   let grandHours = 0;
   let recCount = 0;
+  // Default rates act as a fallback when a day's per-cell rate is left blank.
+  const defRate = Number(document.getElementById('cpyWkDefaultRate')?.value) || 0;
+  const defBillRate = Number(document.getElementById('cpyWkDefaultBillRate')?.value) || 0;
   const rows = document.querySelectorAll('#cpyWkRows tr[data-cpy-wk-row]');
   rows.forEach(tr => {
     const i = parseInt(tr.getAttribute('data-cpy-wk-row'));
@@ -37933,8 +37939,10 @@ function updateCpyWkTotal() {
       const s = tr.querySelector(`.cpyWkStart[data-day="${j}"]`)?.value || '';
       const e = tr.querySelector(`.cpyWkEnd[data-day="${j}"]`)?.value || '';
       const b = _cpyEffectiveBreakMin(tr, j);
-      const r = Number(tr.querySelector(`.cpyWkRate[data-day="${j}"]`)?.value || 0);
-      const br = Number(tr.querySelector(`.cpyWkBillRate[data-day="${j}"]`)?.value || 0);
+      let r = Number(tr.querySelector(`.cpyWkRate[data-day="${j}"]`)?.value || 0);
+      if (!(r > 0)) r = defRate;
+      let br = Number(tr.querySelector(`.cpyWkBillRate[data-day="${j}"]`)?.value || 0);
+      if (!(br > 0)) br = defBillRate;
       const h = _cpyComputeHours(s, e, b);
       // Gray out minute input row when break time range is used
       const bs = tr.querySelector(`.cpyWkBreakStart[data-day="${j}"]`)?.value || '';
@@ -38413,6 +38421,9 @@ async function submitCpyWeekly() {
   const partnerId = document.getElementById('cpyWkPartner').value;
   const ws = document.getElementById('cpyWkStart').value;
   const defaultMethod = document.getElementById('cpyWkMethod').value || 'cash';
+  // Default rates fall back in when a day's per-cell rate was left blank.
+  const defRate = Number(document.getElementById('cpyWkDefaultRate')?.value) || 0;
+  const defBillRate = Number(document.getElementById('cpyWkDefaultBillRate')?.value) || 0;
   if (!partnerId) { alert('请选择公司'); return; }
   if (!ws || _cpyWkDays.length !== 7) { alert('请选择周起始日'); return; }
   const partnerName = _cpyPartners.find(p => String(p.id) === String(partnerId))?.name || '';
@@ -38433,8 +38444,10 @@ async function submitCpyWeekly() {
       let b;
       if (bs && be) b = Math.max(0, Math.round(_cpyComputeHours(bs, be, 0) * 60));
       else b = Math.max(0, Number(w._breaks[j]) || 0);
-      const r = Number(w._rates[j]) || 0;
-      const br = (w._billRates && Number(w._billRates[j])) || 0;
+      let r = Number(w._rates[j]) || 0;
+      if (!(r > 0)) r = defRate;
+      let br = (w._billRates && Number(w._billRates[j])) || 0;
+      if (!(br > 0)) br = defBillRate;
       const h = _cpyComputeHours(s, e, b);
       if (h > 0 && r > 0) {
         days.push({
