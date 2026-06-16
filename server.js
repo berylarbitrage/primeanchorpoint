@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 按月汇总可直接设公司时薪 + 按周默认时薪兜底',
+  tag: '2026-06-16 · 转发票自动带入从公司收(账单/利润两边分开) + 按月汇总可直接设公司时薪',
   started: new Date().toISOString(),
 };
 
@@ -17600,6 +17600,11 @@ function _invoiceWageCost(items_json, profile_json) {
   let cost = 0;
   try {
     const profile = profile_json ? JSON.parse(profile_json) : {};
+    // Invoices transferred from monthly worker payments bill the company rate (从公司收) on
+    // their line items but stash the real 付给工人 wage here, so trust it when present.
+    if (profile && profile.wage_cost != null && isFinite(Number(profile.wage_cost))) {
+      return Math.round(Number(profile.wage_cost) * 100) / 100;
+    }
     if (profile.invoice_mode === 'container') {
       const cs = Array.isArray(profile.container_items) ? profile.container_items : [];
       cost = cs.reduce((s, c) => s + (Number(c.sub_price) || 0), 0);
