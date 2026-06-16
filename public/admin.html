@@ -2086,6 +2086,24 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════════ Set Company (Bill) Rate Modal ════════ -->
+<div class="modal-bg" id="cpyBillRateModal"><div class="modal" style="max-width:460px">
+  <h2 style="margin-bottom:.5rem">🏢 设公司时薪</h2>
+  <input type="hidden" id="cpyBillRateGIdx">
+  <p id="cpyBillRateDesc" style="font-size:.85rem;color:var(--gray-500);line-height:1.5;margin-bottom:.75rem"></p>
+  <div class="field" style="margin-bottom:.4rem">
+    <label style="color:#1d4ed8">公司时薪（从公司收的时薪 $/h）</label>
+    <input type="number" id="cpyBillRateInput" step="0.01" min="0" placeholder="例 35.00"
+      style="border-color:#bfdbfe;background:#eff6ff"
+      onkeydown="if(event.key==='Enter')submitCpyBillRate()">
+  </div>
+  <div id="cpyBillRatePreview" style="font-size:.82rem;color:#7c3aed;font-weight:600;min-height:1.1em;margin-bottom:.5rem"></div>
+  <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.5rem">
+    <button class="btn btn-outline" onclick="document.getElementById('cpyBillRateModal').classList.remove('show')">取消</button>
+    <button class="btn btn-green" onclick="submitCpyBillRate()">确定</button>
+  </div>
+</div></div>
+
 <!-- ════════ Container Submission QR Modal ════════ -->
 <div class="modal-bg" id="csubQrModal"><div class="modal" style="max-width:520px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
@@ -37405,33 +37423,50 @@ async function cpyDeleteWorker(gIdx) {
 // Set one company (bill) rate on all of a worker's records in the current filter, recomputing
 // 从公司收 = 工时 × 公司时薪 for records that have hours. The quickest way to backfill the
 // company income on existing records (e.g. weekly batches entered before this field existed).
-async function cpySetWorkerBillRate(gIdx) {
+function cpySetWorkerBillRate(gIdx) {
   const g = _cpyListGroups[gIdx];
   if (!g) return;
   const ids = g.records.map(r => r.id).filter(Boolean);
   if (!ids.length) return;
   const withHours = g.records.filter(r => Number(r.hours) > 0).length;
+  const totalHours = g.records.reduce((s, r) => s + (Number(r.hours) || 0), 0);
   // Prefill with the existing rate if every record already shares one.
   const rates = [...new Set(g.records.map(r => Number(r.bill_rate) || 0))];
   const preset = rates.length === 1 && rates[0] > 0 ? String(rates[0]) : '';
   const month = document.getElementById('cpyFilterMonth').value;
   const scope = month ? month : '所有月份';
-  const input = prompt(
-    `给工人「${g.worker_name}」（${g.partner_name}）设公司时薪（从公司收的时薪 $/h）。\n` +
-    `适用范围：${scope}，共 ${ids.length} 笔；其中 ${withHours} 笔有工时，会自动按「工时×公司时薪」算出从公司收的金额。\n` +
-    (withHours < ids.length ? `（另有 ${ids.length - withHours} 笔无工时的记录只更新时薪、不改金额，请用「编辑」单独填收款金额）\n` : '') +
-    `\n请输入公司时薪：`,
-    preset
-  );
-  if (input == null) return;
-  const billRate = Number(input);
-  if (!(billRate >= 0) || !isFinite(billRate)) { alert('请输入有效的公司时薪'); return; }
+  document.getElementById('cpyBillRateGIdx').value = String(gIdx);
+  document.getElementById('cpyBillRateDesc').innerHTML =
+    `工人 <strong>${_cpyEscape(g.worker_name)}</strong>（${_cpyEscape(g.partner_name)}）· 适用范围 <strong>${_cpyEscape(scope)}</strong>` +
+    `<br>共 ${ids.length} 笔，其中 ${withHours} 笔有工时（合计 ${Math.round(totalHours * 100) / 100}h），会自动按「工时 × 公司时薪」算出从公司收的金额。` +
+    (withHours < ids.length ? `<br><span style="color:#b45309">另有 ${ids.length - withHours} 笔无工时的记录（按月/单条）只更新时薪、不改金额，请用「编辑」单独填收款金额。</span>` : '');
+  const input = document.getElementById('cpyBillRateInput');
+  input.value = preset;
+  // Live preview of total 从公司收 as the user types.
+  const preview = document.getElementById('cpyBillRatePreview');
+  const upd = () => {
+    const rate = Number(input.value) || 0;
+    preview.textContent = rate > 0 ? `预计从公司收合计：${_cpyFmtMoney(totalHours * rate)}（${Math.round(totalHours * 100) / 100}h × $${rate}/h）` : '';
+  };
+  input.oninput = upd; upd();
+  document.getElementById('cpyBillRateModal').classList.add('show');
+  setTimeout(() => input.focus(), 50);
+}
+
+async function submitCpyBillRate() {
+  const gIdx = document.getElementById('cpyBillRateGIdx').value;
+  const g = _cpyListGroups[gIdx];
+  if (!g) { document.getElementById('cpyBillRateModal').classList.remove('show'); return; }
+  const ids = g.records.map(r => r.id).filter(Boolean);
+  const billRate = Number(document.getElementById('cpyBillRateInput').value);
+  if (!(billRate >= 0) || !isFinite(billRate)) { showToast('请输入有效的公司时薪', 'error'); return; }
   try {
     const r = await api('/admin/company-payments/bulk-set-bill-rate', { method: 'POST', body: JSON.stringify({ ids, bill_rate: billRate }) });
-    if (r && r.error) { alert('设置失败：' + r.error); return; }
+    if (r && r.error) { showToast('设置失败：' + r.error, 'error'); return; }
+    document.getElementById('cpyBillRateModal').classList.remove('show');
     showToast(`已给 ${r && r.updated != null ? r.updated : ids.length} 笔记录设公司时薪 $${billRate}/h`, 'success');
     loadCpyList();
-  } catch (e) { alert('设置失败：' + (e.message || e)); }
+  } catch (e) { showToast('设置失败：' + (e.message || e), 'error'); }
 }
 
 // ════════════════════════════════════════════════════════════
