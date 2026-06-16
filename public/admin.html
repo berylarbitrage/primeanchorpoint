@@ -38457,5 +38457,15 @@ async function submitCpyWeekly() {
 }
 </script>
 
+<!-- Build badge: shows which server build is actually running (helps confirm a deploy landed). -->
+<div id="buildBadge" title="当前线上运行的代码版本（用于确认部署是否生效）"
+  style="position:fixed;right:8px;bottom:6px;z-index:99999;font-size:11px;color:#94a3b8;background:rgba(255,255,255,.9);border:1px solid #e2e8f0;border-radius:6px;padding:2px 7px;font-family:monospace;pointer-events:none;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">build …</div>
+<script>
+fetch('/api/build', { cache: 'no-store' }).then(r => r.json()).then(b => {
+  var el = document.getElementById('buildBadge'); if (!el) return;
+  el.textContent = 'build ' + (b.commit || '?') + (b.tag ? ' · ' + b.tag : '');
+}).catch(() => { var el = document.getElementById('buildBadge'); if (el) el.style.display = 'none'; });
+</script>
+
 </body>
 </html>

@@ -13,6 +13,15 @@ const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Render, Railway, etc.) for correct req.protocol
 const PORT = process.env.PORT || 3000;
 
+// Build/version info so the admin UI can show whether the *running* server is on the latest
+// code (handy for confirming a deploy actually took effect). `tag` is bumped by hand on
+// notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
+const BUILD_INFO = {
+  commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
+  tag: '2026-06-16 · 两笔工资·三列·设公司时薪',
+  started: new Date().toISOString(),
+};
+
 // ─── In-memory rate limiter for login endpoints ───
 const loginAttempts = new Map(); // key: ip -> { count, resetAt }
 const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
@@ -19244,6 +19253,12 @@ app.get('/ts', (req, res) => {
 app.get('/admin', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Public build/version probe — lets the admin page show which build is actually running.
+app.get('/api/build', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(BUILD_INFO);
 });
 
 // ─── Shift Scheduling API ───
