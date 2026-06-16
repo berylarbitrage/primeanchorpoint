@@ -26676,6 +26676,32 @@ app.post('/api/admin/company-payments/bulk-delete', requireAdmin, blockManager, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Bulk-set the company (bill) rate on a set of records by id, recomputing bill_amount =
+// hours × bill_rate for records that have hours. Records without hours (e.g. month-batch /
+// single entries) keep their existing bill_amount — only their bill_rate is updated — so a
+// manually-typed 从公司收 amount is never clobbered. Used by "设公司时薪" in the detail tab
+// to backfill the company income for a worker's existing records.
+app.post('/api/admin/company-payments/bulk-set-bill-rate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const d = req.body || {};
+    const ids = Array.isArray(d.ids)
+      ? [...new Set(d.ids.map(n => parseInt(n, 10)).filter(Number.isInteger))]
+      : [];
+    const billRate = Number(d.bill_rate);
+    if (!ids.length) return res.status(400).json({ error: '没有要更新的记录 / No records' });
+    if (ids.length > 5000) return res.status(400).json({ error: '一次最多更新 5000 条 / Too many records at once' });
+    if (!(billRate >= 0) || !isFinite(billRate)) return res.status(400).json({ error: '公司时薪无效 / Invalid bill rate' });
+    const ph = ids.map(() => '?').join(',');
+    const r = db.prepare(
+      `UPDATE company_worker_payments
+         SET bill_rate = ?,
+             bill_amount = CASE WHEN COALESCE(hours,0) > 0 THEN ROUND(hours * ?, 2) ELSE bill_amount END
+       WHERE id IN (${ph})`
+    ).run(billRate, billRate, ...ids);
+    res.json({ success: true, updated: r.changes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/company-payments/export.csv?partner_id=&year_month=
 app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (req, res) => {
   try {
