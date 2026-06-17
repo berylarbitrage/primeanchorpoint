@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 转发票自动带入从公司收(账单/利润两边分开) + 按月汇总可直接设公司时薪',
+  tag: '2026-06-16 · 转发票表格加「公司收/付工人」双时薪列 + 自动带入从公司收',
   started: new Date().toISOString(),
 };
 
