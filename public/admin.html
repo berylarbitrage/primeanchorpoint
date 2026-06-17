@@ -33495,7 +33495,10 @@ async function generateInvpPreview() {
     const anyMarkup = effMks.some(v => v > 1);
     hasPosition = items.some(i => i.category);
     window._invpAllOtZero = (totalOtHrs === 0);
-    const hideOt = window._invpAllOtZero && window._invpHideOtCols;
+    // 没有加班费(每行 OT 价 = 正常价,或本就没 OT)时,正常/加班拆分没意义 →
+    // 合并成一个「Hours 总工时」列、去掉 OT 两列。只有真有加班加价时才保留拆分。
+    const hideOt = !items.some(i => (i.otHours || 0) > 0 && (i.otRate || 0) > (i.rate || 0) + 0.001);
+    const totalAllHrs = totalRegHrs + totalOtHrs;
     totalRowColspan = hasPosition ? 4 : 3;
     const tableRows = items.map((i, idx) => {
       const customMarkup = Math.abs((i.markup || markupRate) - markupRate) > 0.0001;
@@ -33506,7 +33509,7 @@ async function generateInvpPreview() {
       return `<tr style="background:${rowBg}">
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}</td>
         ${posCell}
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${(i.regHours||0).toFixed(2)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${hideOt ? ((i.regHours||0)+(i.otHours||0)).toFixed(2) : (i.regHours||0).toFixed(2)}</td>
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? '' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>`}
@@ -33524,9 +33527,9 @@ async function generateInvpPreview() {
           <tr style="background:#f0f9ff;color:#075985;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
             <th style="padding:8px 8px;font-weight:700;text-align:left">Worker</th>
             ${hasPosition ? `<th style="padding:8px 8px;font-weight:700;text-align:left">Position</th>` : ''}
-            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Hours</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">${hideOt ? 'Hours' : 'Reg Hours'}</th>
             ${hideOt ? '' : `<th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Hours</th>`}
-            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Reg Rate</th>
+            <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">${hideOt ? 'Rate' : 'Reg Rate'}</th>
             ${hideOt ? '' : `<th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">OT Rate</th>`}
             <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
           </tr>
@@ -33535,7 +33538,7 @@ async function generateInvpPreview() {
           ${tableRows}
           <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
             <td style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em" colspan="${hideOt ? totalRowColspan - 1 : totalRowColspan}">Total</td>
-            <td style="padding:7px 7px;text-align:right">${totalRegHrs.toFixed(2)}h</td>
+            <td style="padding:7px 7px;text-align:right">${(hideOt ? totalAllHrs : totalRegHrs).toFixed(2)}h</td>
             ${hideOt ? '' : `<td style="padding:7px 7px;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>`}
             <td style="padding:7px 7px;text-align:right" colspan="${hideOt ? 1 : 2}">$${baseAmt.toFixed(2)}</td>
           </tr>
