@@ -31503,6 +31503,10 @@ function renderInvpManualTable(skipSave) {
     return;
   }
 
+  // 从「按月付款」转入的发票，每行带真实「付给工人」时薪 emp.wage_rate;此时多显示一列
+  // 「付工人 $/h」,与「公司收 $/h」(emp.rate)并排,方便看清两边价格不同。手工发票不显示。
+  const showWage = (window._invpManualEmps || []).some(e => Number(e.wage_rate) > 0);
+
   const fmtCol = d => {
     const [,m,day] = d.split('-');
     return `${parseInt(m)}/${parseInt(day)}`;
@@ -31593,6 +31597,7 @@ function renderInvpManualTable(skipSave) {
           style="width:70px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 5px;font-size:.83rem"
           oninput="invpUpdateRowTotal(this.closest('tr'))">
       </td>
+      ${showWage ? `<td style="padding:3px 6px;text-align:right;white-space:nowrap;font-size:.83rem;color:#15803d;font-weight:600" title="我们发给工人的时薪（来自工资记录，仅参考，不出现在客户发票上）">${Number(emp.wage_rate) > 0 ? '$' + Number(emp.wage_rate).toFixed(2) : '<span style="color:var(--gray-300);font-weight:400">—</span>'}</td>` : ''}
       <td style="padding:3px 4px;text-align:right">
         <input type="number" class="invp-man-ot-rate" data-uid="${emp.uid}" value="${otRateVal ? otRateVal.toFixed(2) : ''}"
           min="0" step="0.01" placeholder="OT $/h"
@@ -31643,7 +31648,8 @@ function renderInvpManualTable(skipSave) {
         <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#047857">分包商</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">介绍人</th>
         ${dayTh}
-        <th style="padding:5px 6px;text-align:right;white-space:nowrap">时薪($/h)</th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap${showWage ? ';color:#1d4ed8' : ''}">${showWage ? '公司收 $/h<br><span style="font-weight:400;font-size:.72rem">公司发我们</span>' : '时薪($/h)'}</th>
+        ${showWage ? '<th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#15803d">付工人 $/h<br><span style="font-weight:400;font-size:.72rem">我们发工人</span></th>' : ''}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fffbeb">加班时薪($/h) <span style="font-weight:400;font-size:.72rem;color:#92400e">×1.5 自动</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fff7ed;color:#9a3412">Markup × <span style="font-weight:400;font-size:.72rem">留空=默认</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">正常工时</th>
