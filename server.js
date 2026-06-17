@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 转发票表格加「公司收/付工人」双时薪列 + 自动带入从公司收',
+  tag: '2026-06-16 · 发票无加班费时合并为总工时列(去掉OT) + 转发票双时薪列/带入从公司收',
   started: new Date().toISOString(),
 };
 
