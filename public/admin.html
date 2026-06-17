@@ -2086,6 +2086,23 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════════ Set Company (Bill) Rate Modal ════════ -->
+<div class="modal-bg" id="cpyBillRateModal"><div class="modal" style="max-width:460px">
+  <h2 style="margin-bottom:.5rem">🏢 设公司时薪</h2>
+  <p id="cpyBillRateDesc" style="font-size:.85rem;color:var(--gray-500);line-height:1.5;margin-bottom:.75rem"></p>
+  <div class="field" style="margin-bottom:.4rem">
+    <label style="color:#1d4ed8">公司时薪（从公司收的时薪 $/h）</label>
+    <input type="number" id="cpyBillRateInput" step="0.01" min="0" placeholder="例 35.00"
+      style="border-color:#bfdbfe;background:#eff6ff"
+      onkeydown="if(event.key==='Enter')submitCpyBillRate()">
+  </div>
+  <div id="cpyBillRatePreview" style="font-size:.82rem;color:#7c3aed;font-weight:600;min-height:1.1em;margin-bottom:.5rem"></div>
+  <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.5rem">
+    <button class="btn btn-outline" onclick="document.getElementById('cpyBillRateModal').classList.remove('show')">取消</button>
+    <button class="btn btn-green" onclick="submitCpyBillRate()">确定</button>
+  </div>
+</div></div>
+
 <!-- ════════ Container Submission QR Modal ════════ -->
 <div class="modal-bg" id="csubQrModal"><div class="modal" style="max-width:520px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
@@ -29984,6 +30001,7 @@ function openInvpBuilderModal() {
   refreshInvpInboxBadge();
   window._invpCurrentSavedId = null;
   window._invpLoadedStatus = null;
+  window._invpLoadedWageCost = null;
   const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
@@ -30001,6 +30019,14 @@ function openInvpBuilderModal() {
 async function openInvpForEdit(id) {
   const inv = await api('/admin/invoices/' + id).catch(() => null);
   if (!inv) { showToast('加载失败', 'error'); return; }
+
+  // 沿用已存发票里记录的真实工资（从「按月付款」转入时存的），重存时不丢失工资/利润。
+  {
+    let _prof = inv.profile;
+    if (typeof _prof === 'string') { try { _prof = JSON.parse(_prof); } catch (_) { _prof = null; } }
+    const _wc = _prof && _prof.wage_cost;
+    window._invpLoadedWageCost = (_wc != null && isFinite(Number(_wc))) ? Number(_wc) : null;
+  }
 
   // Reset and populate builder
   window._invpManualEmps = [];
@@ -31217,6 +31243,21 @@ async function invpSaveDraft() {
   return saveInvpInvoice('draft');
 }
 
+// 汇总真实「付给工人」工资：用转入时留底的逐人工资时薪 emp.wage_rate × 工时。
+// 手动新增、没有工资时薪的行回退到其开票行额（利润算 0），避免虚增利润。
+// 没有任何行带工资时薪（即非「按月付款」转入的发票）时返回 null，让后端沿用按行额计的工资。
+function _invpComputeWageCost() {
+  const emps = window._invpManualEmps || [];
+  if (!emps.some(e => Number(e.wage_rate) > 0)) return null;
+  let cost = 0;
+  emps.forEach(e => {
+    const hrs = Object.values(e.days || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+    const wr = Number(e.wage_rate) || 0;
+    cost += hrs * (wr > 0 ? wr : (Number(e.rate) || 0));
+  });
+  return Math.round(cost * 100) / 100;
+}
+
 async function saveInvpInvoice(status) {
   status = status || 'saved';
   const invNum  = document.getElementById('invPageNumber').value.trim();
@@ -31281,6 +31322,12 @@ async function saveInvpInvoice(status) {
   }
 
   const profileWithMode = { ...getInvpProfile(), invoice_mode: mode, container_items: containerItems };
+  // 两边分开记账：从「按月付款」转来的发票，行项目按公司价（从公司收）开给客户，真实「付给
+  // 工人」工资单独存进 profile.wage_cost，后台列表才能正确显示工资/利润。由转入时留底的逐人
+  // 工资时薪重算；重新编辑已存发票（行项目里没有工资时薪）时沿用原值，避免利润被清零。
+  const _wageCost = _invpComputeWageCost();
+  if (_wageCost != null) profileWithMode.wage_cost = _wageCost;
+  else if (window._invpLoadedWageCost != null) profileWithMode.wage_cost = window._invpLoadedWageCost;
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
     period_start: ps, period_end: pe, subtotal, items, markup_rate: markupRate, profile: profileWithMode, status
@@ -33839,18 +33886,22 @@ async function loadInvoicePaymentWorkers() {
     let g = wmap.get(wkey);
     if (!g) {
       g = { worker_name: r.worker_name || '', employee_id: r.employee_id || null,
-            hours: 0, amount: 0, dayMap: new Map(), weekMap: new Map(),
+            hours: 0, amount: 0, billBase: 0, hasBill: false, dayMap: new Map(), weekMap: new Map(),
             bill: { month: null, week: {}, day: {} } };
       wmap.set(wkey, g);
     }
     const h = Number(r.hours) || 0, a = Number(r.amount) || 0;
-    g.hours += h; g.amount += a;
+    // 报价基数：设了「从公司收」(bill_amount) 就用它，否则回退到工资 amount。
+    const rb = Number(r.bill_amount) || 0;
+    const bb = rb > 0 ? rb : a;
+    if (rb > 0) g.hasBill = true;
+    g.hours += h; g.amount += a; g.billBase += bb;
     const date = r.payment_date;
-    let d = g.dayMap.get(date); if (!d) { d = { key: date, hours: 0, amount: 0 }; g.dayMap.set(date, d); }
-    d.hours += h; d.amount += a;
+    let d = g.dayMap.get(date); if (!d) { d = { key: date, hours: 0, amount: 0, billBase: 0 }; g.dayMap.set(date, d); }
+    d.hours += h; d.amount += a; d.billBase += bb;
     const mon = _cpyMondayOf(date); const wk = mon ? _cpyFmtDateKey(mon) : date;
-    let w = g.weekMap.get(wk); if (!w) { w = { key: wk, hours: 0, amount: 0 }; g.weekMap.set(wk, w); }
-    w.hours += h; w.amount += a;
+    let w = g.weekMap.get(wk); if (!w) { w = { key: wk, hours: 0, amount: 0, billBase: 0 }; g.weekMap.set(wk, w); }
+    w.hours += h; w.amount += a; w.billBase += bb;
   });
   _invPayRows = Array.from(wmap.values()).sort((a, b) => a.worker_name.localeCompare(b.worker_name));
   _invPayRows.forEach(g => {
@@ -33863,6 +33914,13 @@ async function loadInvoicePaymentWorkers() {
       const m = new Date(w.key + 'T00:00:00'); const s = new Date(m); s.setDate(s.getDate() + 6);
       w.label = `${_cpyFmtDateMD(m)}–${_cpyFmtDateMD(s)}`;
     });
+    // 默认把「报价」预填为「从公司收」(在「设公司时薪」里设的)，没设的工人保持回退到工资。
+    // 存成 overrides，编辑器里能看到、也能改；转发票时即按此金额开给客户。
+    if (g.hasBill) {
+      g.bill.month = _invR2(g.billBase);
+      g.weeks.forEach(w => { g.bill.week[w.key] = _invR2(w.billBase); });
+      g.days.forEach(d => { g.bill.day[d.key] = _invR2(d.billBase); });
+    }
   });
   if (!_invPayRows.length) {
     container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">该公司本月无付款记录</div>';
@@ -34077,15 +34135,16 @@ async function generateInvoiceFromPayments() {
     const wi = parseInt(chk.dataset.w);
     const g = _invPayRows[wi];
     if (!g) return;
-    const reported = _invWorkerTotal(wi);
+    const reported = _invWorkerTotal(wi);                              // 报价(账单)基数：默认 = 从公司收
     const hours = g.hours || 0;
     if (!(hours > 0) || !(reported > 0)) return;
-    const rate = Math.round((reported / hours) * 10000) / 10000;
+    const rate = Math.round((reported / hours) * 10000) / 10000;       // 账单时薪 = 从公司收 / 工时（客户看到的就是这个）
+    const wageRate = Math.round((g.amount / hours) * 10000) / 10000;   // 真实工资时薪，单独留底用于算利润，不出现在发票上
     const days = {};
     g.days.forEach(d => { if (d.hours) days[d.key] = String(d.hours); });
     emps.push({
       uid: uid++, name: g.worker_name, category: '', subcontractor: '', referrer: '',
-      rate: String(rate), otRate: String(rate), days,
+      rate: String(rate), otRate: String(rate), wage_rate: String(wageRate), days,
       linked_employee_id: g.employee_id || null, linked_employee_code: '', linked_employee_name: g.worker_name,
     });
   });
@@ -36942,7 +37001,7 @@ function toggleCpyMonthWeekDetail(idx, sIdx) {
       const hoursStr = p.hours > 0 ? (Math.round(p.hours * 100) / 100) + 'h' : '—';
       return `
         <tr style="cursor:pointer" onclick="toggleCpyMonthWeekPersonDetail(${idx},${sIdx},${pIdx})" title="点击查看 ${_cpyEscape(p.worker)} 本周每日明细">
-          <td style="padding:.3rem .6rem"><span id="cpyMoWkPCaret-${idx}-${sIdx}-${pIdx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(p.worker)}</td>
+          <td style="padding:.3rem .6rem"><span id="cpyMoWkPCaret-${idx}-${sIdx}-${pIdx}" style="display:inline-block;width:1em;color:var(--gray-400)">▶</span>${_cpyEscape(p.worker)}<button class="btn btn-sm" style="margin-left:.45rem;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:.04rem .45rem;font-size:.7rem;vertical-align:middle;white-space:nowrap" onclick="event.stopPropagation();cpyMonthSetWorkerBillRate(${idx},${sIdx},${pIdx})" title="给 ${_cpyEscape(p.worker)} 本周记录设公司时薪，自动按工时算出从公司收">🏢 设公司时薪</button></td>
           <td style="padding:.3rem .6rem">${p.days.size}</td>
           <td style="padding:.3rem .6rem">${hoursStr}</td>
           <td style="padding:.3rem .6rem;font-weight:600;text-align:right;white-space:nowrap;color:#15803d">${_cpyFmtMoney(p.amount)}</td>
@@ -37405,33 +37464,83 @@ async function cpyDeleteWorker(gIdx) {
 // Set one company (bill) rate on all of a worker's records in the current filter, recomputing
 // 从公司收 = 工时 × 公司时薪 for records that have hours. The quickest way to backfill the
 // company income on existing records (e.g. weekly batches entered before this field existed).
-async function cpySetWorkerBillRate(gIdx) {
+// Shared opener for the 🏢 设公司时薪 modal. Driven by a context object so it can be
+// triggered from either the 付款明细 per-worker list or the 按月汇总 weekly breakdown,
+// applying the rate to whatever set of records is passed in.
+let _cpyBillRateCtx = null; // { ids, totalHours, onDone }
+
+function _openCpyBillRateModal({ workerName, partnerName, records, scopeLabel, onDone }) {
+  const recs = records || [];
+  const ids = recs.map(r => r.id).filter(Boolean);
+  if (!ids.length) { showToast('该工人在此范围内没有可设置的记录', 'error'); return; }
+  const withHours = recs.filter(r => Number(r.hours) > 0).length;
+  const totalHours = recs.reduce((s, r) => s + (Number(r.hours) || 0), 0);
+  // Prefill with the existing rate if every record already shares one.
+  const rates = [...new Set(recs.map(r => Number(r.bill_rate) || 0))];
+  const preset = rates.length === 1 && rates[0] > 0 ? String(rates[0]) : '';
+  _cpyBillRateCtx = { ids, totalHours, onDone };
+  document.getElementById('cpyBillRateDesc').innerHTML =
+    `工人 <strong>${_cpyEscape(workerName)}</strong>（${_cpyEscape(partnerName)}）· 适用范围 <strong>${_cpyEscape(scopeLabel)}</strong>` +
+    `<br>共 ${ids.length} 笔，其中 ${withHours} 笔有工时（合计 ${Math.round(totalHours * 100) / 100}h），会自动按「工时 × 公司时薪」算出从公司收的金额。` +
+    (withHours < ids.length ? `<br><span style="color:#b45309">另有 ${ids.length - withHours} 笔无工时的记录（按月/单条）只更新时薪、不改金额，请用「编辑」单独填收款金额。</span>` : '');
+  const input = document.getElementById('cpyBillRateInput');
+  input.value = preset;
+  // Live preview of total 从公司收 as the user types.
+  const preview = document.getElementById('cpyBillRatePreview');
+  const upd = () => {
+    const rate = Number(input.value) || 0;
+    preview.textContent = rate > 0 ? `预计从公司收合计：${_cpyFmtMoney(totalHours * rate)}（${Math.round(totalHours * 100) / 100}h × $${rate}/h）` : '';
+  };
+  input.oninput = upd; upd();
+  document.getElementById('cpyBillRateModal').classList.add('show');
+  setTimeout(() => input.focus(), 50);
+}
+
+// 付款明细 (per-worker grouped list): set the rate across this worker's records within the
+// current company/month filter.
+function cpySetWorkerBillRate(gIdx) {
   const g = _cpyListGroups[gIdx];
   if (!g) return;
-  const ids = g.records.map(r => r.id).filter(Boolean);
-  if (!ids.length) return;
-  const withHours = g.records.filter(r => Number(r.hours) > 0).length;
-  // Prefill with the existing rate if every record already shares one.
-  const rates = [...new Set(g.records.map(r => Number(r.bill_rate) || 0))];
-  const preset = rates.length === 1 && rates[0] > 0 ? String(rates[0]) : '';
   const month = document.getElementById('cpyFilterMonth').value;
-  const scope = month ? month : '所有月份';
-  const input = prompt(
-    `给工人「${g.worker_name}」（${g.partner_name}）设公司时薪（从公司收的时薪 $/h）。\n` +
-    `适用范围：${scope}，共 ${ids.length} 笔；其中 ${withHours} 笔有工时，会自动按「工时×公司时薪」算出从公司收的金额。\n` +
-    (withHours < ids.length ? `（另有 ${ids.length - withHours} 笔无工时的记录只更新时薪、不改金额，请用「编辑」单独填收款金额）\n` : '') +
-    `\n请输入公司时薪：`,
-    preset
-  );
-  if (input == null) return;
-  const billRate = Number(input);
-  if (!(billRate >= 0) || !isFinite(billRate)) { alert('请输入有效的公司时薪'); return; }
+  _openCpyBillRateModal({
+    workerName: g.worker_name,
+    partnerName: g.partner_name,
+    records: g.records,
+    scopeLabel: month ? month : '所有月份',
+    onDone: () => loadCpyList(),
+  });
+}
+
+// 按月汇总 (month → week → worker): set the rate across this worker's records in this
+// in-month week, right where the empty 从公司收 is visible.
+function cpyMonthSetWorkerBillRate(idx, sIdx, pIdx) {
+  const seg = (_cpyMonthSegs[idx] || [])[sIdx];
+  const p = seg && seg.people ? seg.people[pIdx] : null;
+  if (!p || !p.records || !p.records.length) return;
+  const partnerName = (p.records.find(r => r.partner_name) || {}).partner_name || '—';
+  const scopeLabel = `${seg.label || '本周'}${seg.rangeStr ? '（' + seg.rangeStr + '）' : ''}`;
+  _openCpyBillRateModal({
+    workerName: p.worker,
+    partnerName,
+    records: p.records,
+    scopeLabel,
+    onDone: () => loadCpySummary(),
+  });
+}
+
+async function submitCpyBillRate() {
+  const ctx = _cpyBillRateCtx;
+  const ids = ctx && Array.isArray(ctx.ids) ? ctx.ids : [];
+  if (!ids.length) { document.getElementById('cpyBillRateModal').classList.remove('show'); return; }
+  const billRate = Number(document.getElementById('cpyBillRateInput').value);
+  if (!(billRate >= 0) || !isFinite(billRate)) { showToast('请输入有效的公司时薪', 'error'); return; }
   try {
     const r = await api('/admin/company-payments/bulk-set-bill-rate', { method: 'POST', body: JSON.stringify({ ids, bill_rate: billRate }) });
-    if (r && r.error) { alert('设置失败：' + r.error); return; }
+    if (r && r.error) { showToast('设置失败：' + r.error, 'error'); return; }
+    document.getElementById('cpyBillRateModal').classList.remove('show');
     showToast(`已给 ${r && r.updated != null ? r.updated : ids.length} 笔记录设公司时薪 $${billRate}/h`, 'success');
-    loadCpyList();
-  } catch (e) { alert('设置失败：' + (e.message || e)); }
+    if (ctx && typeof ctx.onDone === 'function') ctx.onDone();
+  } catch (e) { showToast('设置失败：' + (e.message || e), 'error'); }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -37682,6 +37791,9 @@ function renderCpyWeeklyRows() {
   const rateStyle = 'width:58px;padding:.18rem .25rem;border:1px solid #bbf7d0;border-radius:4px;font-size:.75rem;text-align:right;background:#f0fdf4';
   const billRateStyle = 'width:58px;padding:.18rem .25rem;border:1px solid #bfdbfe;border-radius:4px;font-size:.75rem;text-align:right;background:#eff6ff';
   const breakMinStyle = 'width:44px;padding:.1rem .15rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.66rem;text-align:center;color:var(--gray-600)';
+  // Top-of-modal "默认时薪" values act as a fallback so blank day cells still get a rate.
+  const defRate = Number(document.getElementById('cpyWkDefaultRate')?.value) || 0;
+  const defBillRate = Number(document.getElementById('cpyWkDefaultBillRate')?.value) || 0;
   tbody.innerHTML = _cpyWkWorkers.map((w, i) => {
     const dayCells = _cpyWkDays.map((d, j) => `
       <td style="text-align:center;padding:.3rem .25rem;background:#fff;vertical-align:top;position:relative" data-day-idx="${j}">
@@ -37731,14 +37843,14 @@ function renderCpyWeeklyRows() {
             <span style="font-size:.6rem;color:#15803d;font-weight:700" title="付给工人的时薪">付</span>
             <input type="number" class="cpyWkRate" data-row="${i}" data-day="${j}" step="0.01" min="0"
               autocomplete="off"
-              value="${_cpyEscape(w._rates[j] || '')}" placeholder="$/h"
+              value="${_cpyEscape(w._rates[j] || (defRate || ''))}" placeholder="$/h"
               style="${rateStyle}" oninput="onCpyWkCellChange()" title="付给工人的时薪 ($/h)">
           </div>
           <div style="display:flex;align-items:center;gap:2px;width:100%;justify-content:flex-end">
             <span style="font-size:.6rem;color:#1d4ed8;font-weight:700" title="从公司收的时薪">收</span>
             <input type="number" class="cpyWkBillRate" data-row="${i}" data-day="${j}" step="0.01" min="0"
               autocomplete="off"
-              value="${_cpyEscape((w._billRates && w._billRates[j]) || '')}" placeholder="$/h"
+              value="${_cpyEscape((w._billRates && w._billRates[j]) || (defBillRate || ''))}" placeholder="$/h"
               style="${billRateStyle}" oninput="onCpyWkCellChange()" title="从公司收的时薪 ($/h)">
           </div>
           <div class="cpyWkSubtotal" data-row="${i}" data-day="${j}" style="font-size:.66rem;color:var(--gray-400);line-height:1.3">—</div>
@@ -37887,6 +37999,9 @@ function updateCpyWkTotal() {
   let grandBill = 0;
   let grandHours = 0;
   let recCount = 0;
+  // Default rates act as a fallback when a day's per-cell rate is left blank.
+  const defRate = Number(document.getElementById('cpyWkDefaultRate')?.value) || 0;
+  const defBillRate = Number(document.getElementById('cpyWkDefaultBillRate')?.value) || 0;
   const rows = document.querySelectorAll('#cpyWkRows tr[data-cpy-wk-row]');
   rows.forEach(tr => {
     const i = parseInt(tr.getAttribute('data-cpy-wk-row'));
@@ -37898,8 +38013,10 @@ function updateCpyWkTotal() {
       const s = tr.querySelector(`.cpyWkStart[data-day="${j}"]`)?.value || '';
       const e = tr.querySelector(`.cpyWkEnd[data-day="${j}"]`)?.value || '';
       const b = _cpyEffectiveBreakMin(tr, j);
-      const r = Number(tr.querySelector(`.cpyWkRate[data-day="${j}"]`)?.value || 0);
-      const br = Number(tr.querySelector(`.cpyWkBillRate[data-day="${j}"]`)?.value || 0);
+      let r = Number(tr.querySelector(`.cpyWkRate[data-day="${j}"]`)?.value || 0);
+      if (!(r > 0)) r = defRate;
+      let br = Number(tr.querySelector(`.cpyWkBillRate[data-day="${j}"]`)?.value || 0);
+      if (!(br > 0)) br = defBillRate;
       const h = _cpyComputeHours(s, e, b);
       // Gray out minute input row when break time range is used
       const bs = tr.querySelector(`.cpyWkBreakStart[data-day="${j}"]`)?.value || '';
@@ -38378,6 +38495,9 @@ async function submitCpyWeekly() {
   const partnerId = document.getElementById('cpyWkPartner').value;
   const ws = document.getElementById('cpyWkStart').value;
   const defaultMethod = document.getElementById('cpyWkMethod').value || 'cash';
+  // Default rates fall back in when a day's per-cell rate was left blank.
+  const defRate = Number(document.getElementById('cpyWkDefaultRate')?.value) || 0;
+  const defBillRate = Number(document.getElementById('cpyWkDefaultBillRate')?.value) || 0;
   if (!partnerId) { alert('请选择公司'); return; }
   if (!ws || _cpyWkDays.length !== 7) { alert('请选择周起始日'); return; }
   const partnerName = _cpyPartners.find(p => String(p.id) === String(partnerId))?.name || '';
@@ -38398,8 +38518,10 @@ async function submitCpyWeekly() {
       let b;
       if (bs && be) b = Math.max(0, Math.round(_cpyComputeHours(bs, be, 0) * 60));
       else b = Math.max(0, Number(w._breaks[j]) || 0);
-      const r = Number(w._rates[j]) || 0;
-      const br = (w._billRates && Number(w._billRates[j])) || 0;
+      let r = Number(w._rates[j]) || 0;
+      if (!(r > 0)) r = defRate;
+      let br = (w._billRates && Number(w._billRates[j])) || 0;
+      if (!(br > 0)) br = defBillRate;
       const h = _cpyComputeHours(s, e, b);
       if (h > 0 && r > 0) {
         days.push({
