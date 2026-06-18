@@ -2245,12 +2245,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <textarea id="cpyWkPayNotes" rows="2" placeholder="可选"></textarea>
   </div>
 
-  <div class="field" style="margin-top:.2rem"><label>付款凭证（截图 / PDF，可拖拽上传）</label>
+  <div class="field" style="margin-top:.2rem"><label>付款凭证（截图 / PDF，可多张、可拖拽）</label>
     <div id="cpyWkPayDrop"
       style="border:2px dashed var(--sky);border-radius:10px;padding:1.1rem;text-align:center;color:var(--sky);background:#f0f9ff;cursor:pointer;font-size:.85rem"
       onclick="document.getElementById('cpyWkPayFile').click()">
-      把文件拖到这里，或点击选择
-      <input type="file" id="cpyWkPayFile" accept="image/*,application/pdf" style="display:none" onchange="onCpyWkPayFilePicked()">
+      把文件拖到这里，或点击选择（可多张）
+      <input type="file" id="cpyWkPayFile" accept="image/*,application/pdf" multiple style="display:none" onchange="onCpyWkPayFilePicked()">
     </div>
     <div id="cpyWkPayFileInfo" style="font-size:.8rem;color:var(--gray-600);margin-top:.4rem"></div>
   </div>
@@ -36259,8 +36259,9 @@ function _cpyDetailItem(r, gIdx) {
   const notesLine = r.notes ? `<div style="color:var(--gray-500);margin-top:.1rem">备注：${_cpyEscape(r.notes)}</div>` : '';
   // Read-only payment voucher: the matching week's uploaded proof. View only — no edit.
   const wp = _cpyWeekProofFor(r);
-  const voucherLine = wp
-    ? `<div style="margin-top:.1rem"><a href="${_cpyEscape(wp.proof_url)}" target="_blank" rel="noopener" style="color:#0E7BB8;text-decoration:none;font-weight:600" title="${_cpyEscape(wp.proof_file_name || '付款凭证')} · 只读">📎 付款凭证</a></div>`
+  const _wpUrls = wp ? ((wp.proof_urls && wp.proof_urls.length) ? wp.proof_urls : (wp.proof_url ? [wp.proof_url] : [])) : [];
+  const voucherLine = _wpUrls.length
+    ? `<div style="margin-top:.1rem;display:flex;gap:.4rem;flex-wrap:wrap">${_wpUrls.map((u, i) => `<a href="${_cpyEscape(u)}" target="_blank" rel="noopener" style="color:#0E7BB8;text-decoration:none;font-weight:600" title="付款凭证 · 只读">📎 凭证${_wpUrls.length > 1 ? (i + 1) : ''}</a>`).join('')}</div>`
     : `<div style="color:var(--gray-300);margin-top:.1rem">📎 无凭证</div>`;
   return `
     <div class="cpyDetItem" data-grp="${gIdx}" data-date="${_cpyEscape(r.payment_date)}"
@@ -36605,8 +36606,9 @@ function _cpyWkPayWorkerCtrl(g, weekStartKey, weekEndKey) {
     const methodStr = (rec.payment_method === 'thirdparty' && rec.third_party_platform)
       ? `${method}·${_cpyEscape(rec.third_party_platform)}` : method;
     const entity = _CPY_PAY_ENTITY_LABEL[rec.paying_entity] || rec.paying_entity || '—';
-    const proofBtn = rec.proof_url
-      ? `<button class="btn btn-sm btn-outline" style="padding:.02rem .35rem;font-size:.7rem" onclick="event.stopPropagation();viewCpyWkProof('${_cpyEscape(rec.proof_url)}')">凭证</button>`
+    const proofUrls = (rec.proof_urls && rec.proof_urls.length) ? rec.proof_urls : (rec.proof_url ? [rec.proof_url] : []);
+    const proofBtn = proofUrls.length
+      ? `<button class="btn btn-sm btn-outline" style="padding:.02rem .35rem;font-size:.7rem" onclick="event.stopPropagation();viewCpyWkProofsByKey('${_cpyEscape(ctxKey)}')">凭证${proofUrls.length > 1 ? ' ×' + proofUrls.length : ''}</button>`
       : '<span style="color:#b45309;font-size:.7rem">无凭证</span>';
     // 实付金额 vs 计算出的「付给工人」(g.amount):两者对不上就标红提醒。
     const paid = Number(rec.amount) || 0;
@@ -36645,10 +36647,21 @@ async function viewCpyWkProof(url) {
   } catch (e) { showToast('打开凭证失败：' + (e.message || e), 'error'); }
 }
 
-let _cpyWkPayFile = null;
+// Open every proof of a week-payout record (staggered to dodge popup blockers / blob opens).
+function viewCpyWkProofList(urls) {
+  (urls || []).forEach((u, i) => setTimeout(() => viewCpyWkProof(u), i * 250));
+}
+function viewCpyWkProofsByKey(ctxKey) {
+  const rec = _cpyWeekPayMap[ctxKey];
+  if (!rec) return;
+  const urls = (rec.proof_urls && rec.proof_urls.length) ? rec.proof_urls : (rec.proof_url ? [rec.proof_url] : []);
+  viewCpyWkProofList(urls);
+}
+
+let _cpyWkPayFiles = [];
 
 function openCpyWkPayModal(c) {
-  _cpyWkPayFile = null;
+  _cpyWkPayFiles = [];
   const partnerId = c.partner_id, partnerName = c.partner_name, workerName = c.worker_name || '';
   const weekStart = c.weekStart, weekEnd = c.weekEnd, subtotal = c.subtotal;
   const rec = (partnerId != null) ? _cpyWeekPayMap[`${partnerId}|${weekStart}|${workerName}`] : null;
@@ -36668,8 +36681,9 @@ function openCpyWkPayModal(c) {
   document.getElementById('cpyWkPayNotes').value = rec ? (rec.notes || '') : '';
   onCpyWkPayMethodChange();
   const info = document.getElementById('cpyWkPayFileInfo');
-  if (rec && rec.proof_file_name) {
-    info.innerHTML = `已有凭证：${_cpyEscape(rec.proof_file_name)}${rec.proof_url ? ` · <a href="#" onclick="event.preventDefault();viewCpyWkProof('${_cpyEscape(rec.proof_url)}')" style="color:var(--sky)">查看</a>` : ''}<br><span style="color:var(--gray-400)">重新上传会替换它</span>`;
+  window._cpyWkPayCurProofs = (rec && rec.proof_urls && rec.proof_urls.length) ? rec.proof_urls : (rec && rec.proof_url ? [rec.proof_url] : []);
+  if (window._cpyWkPayCurProofs.length) {
+    info.innerHTML = `已有 ${window._cpyWkPayCurProofs.length} 张凭证 · <a href="#" onclick="event.preventDefault();viewCpyWkProofList(window._cpyWkPayCurProofs)" style="color:var(--sky)">查看</a><br><span style="color:var(--gray-400)">重新上传会替换现有全部凭证</span>`;
   } else { info.textContent = ''; }
   document.getElementById('cpyWkPayFile').value = '';
   document.getElementById('cpyWkPayDeleteBtn').style.display = rec ? '' : 'none';
@@ -36678,7 +36692,7 @@ function openCpyWkPayModal(c) {
 
 function closeCpyWkPayModal() {
   document.getElementById('cpyWkPayModal').classList.remove('show');
-  _cpyWkPayFile = null;
+  _cpyWkPayFiles = [];
 }
 
 function onCpyWkPayMethodChange() {
@@ -36686,10 +36700,15 @@ function onCpyWkPayMethodChange() {
   document.getElementById('cpyWkPayTpWrap').style.display = (m === 'thirdparty') ? '' : 'none';
 }
 
-function onCpyWkPayFilePicked() {
-  const f = document.getElementById('cpyWkPayFile').files[0];
-  _cpyWkPayFile = f || null;
-  document.getElementById('cpyWkPayFileInfo').textContent = f ? `已选择：${f.name}（${(f.size / 1024).toFixed(0)} KB）` : '';
+function onCpyWkPayFilePicked() { _setCpyWkPayFiles(document.getElementById('cpyWkPayFile').files); }
+function onCpyWkPayFilesDropped(fileList) { _setCpyWkPayFiles(fileList); }
+function _setCpyWkPayFiles(fileList) {
+  _cpyWkPayFiles = Array.from(fileList || []);
+  const info = document.getElementById('cpyWkPayFileInfo');
+  if (_cpyWkPayFiles.length) {
+    const kb = _cpyWkPayFiles.reduce((s, f) => s + (f.size || 0), 0) / 1024;
+    info.textContent = `已选择 ${_cpyWkPayFiles.length} 个文件（共 ${kb.toFixed(0)} KB）：` + _cpyWkPayFiles.map(f => f.name).join('、');
+  } else { info.textContent = ''; }
 }
 
 async function submitCpyWkPay() {
@@ -36716,7 +36735,7 @@ async function submitCpyWkPay() {
   fd.append('paying_entity', entity);
   fd.append('amount', document.getElementById('cpyWkPayAmount').value || 0);
   fd.append('notes', document.getElementById('cpyWkPayNotes').value || '');
-  if (_cpyWkPayFile) fd.append('proof', _cpyWkPayFile);
+  _cpyWkPayFiles.forEach(f => fd.append('proof', f));
   try {
     const res = await fetch(API + '/admin/company-week-payments', {
       method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd,
@@ -36754,10 +36773,8 @@ async function deleteCpyWkPay() {
       e.preventDefault(); e.stopPropagation(); dz.style.background = '#f0f9ff';
     }));
     dz.addEventListener('drop', e => {
-      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (!f) return;
-      _cpyWkPayFile = f;
-      document.getElementById('cpyWkPayFileInfo').textContent = `已选择：${f.name}（${(f.size / 1024).toFixed(0)} KB）`;
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) _setCpyWkPayFiles(files);
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup);
