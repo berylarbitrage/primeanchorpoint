@@ -649,6 +649,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="nav-group-items">
       <a onclick="showTab('company-payments')" data-tab="company-payments" data-role="admin,staff">📒 月度付款记录</a>
       <a onclick="showTab('container-scans')" data-tab="container-scans" data-role="admin,staff">📦 扫码记录</a>
+      <a onclick="showTab('bank-statements')" data-tab="bank-statements" data-role="admin,staff">🏦 银行对账单</a>
     </div>
   </div>
 
@@ -1636,6 +1637,25 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 
     </div>
   </div>
+</div>
+
+<!-- ════════ 银行对账单 Tab ════════ -->
+<div id="tab-bank-statements" style="display:none">
+  <div class="top">
+    <h1>🏦 银行对账单</h1>
+    <div class="top-actions">
+      <label class="btn btn-green" style="cursor:pointer">+ 上传对账单 PDF
+        <input type="file" id="bsUploadInput" accept="application/pdf" style="display:none" onchange="bsUpload(this.files&&this.files[0])">
+      </label>
+      <button class="btn" onclick="loadBankStatements()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-500);font-size:.85rem;margin:.25rem 0 1rem">
+    上传银行 / Cash App 对账单 PDF,系统自动识别每笔交易;再给每笔标注「是不是付款 · 去向 · 备注（脚注）」并保存。
+  </p>
+  <div id="bsUploadHint" style="display:none;margin-bottom:.75rem;color:var(--sky);font-size:.85rem"></div>
+  <div id="bsListWrap" style="margin-bottom:1rem"></div>
+  <div id="bsDetailWrap"></div>
 </div>
 
 <!-- ════════ 工人付款记录 Tab ════════ -->
@@ -8488,7 +8508,7 @@ const _TAB_TO_SEC = {
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker', referrers:'sec-worker', scheduling:'sec-worker', warehouses:'sec-worker', 'warehouse-checkins':'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time', 'warehouse-claims':'sec-time',
-  'company-payments':'sec-company-pay', 'container-scans':'sec-company-pay',
+  'company-payments':'sec-company-pay', 'container-scans':'sec-company-pay', 'bank-statements':'sec-company-pay',
   'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
   approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
@@ -8622,6 +8642,7 @@ function showTab(t) {
   if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
   if (t === 'company-payments') initCompanyPayPage();
   if (t === 'container-scans') initCsubScansPage();
+  if (t === 'bank-statements') initBankStatementsPage();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'worker-docs') loadWorkerDocsTab();
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
@@ -36794,6 +36815,150 @@ async function deleteCpyWkPay() {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup);
   else setup();
 })();
+
+// ════════ 银行对账单（上传 → 解析 → 标注） ════════
+let _bsStatements = [];
+let _bsCurrent = null;
+const _BS_STATUS = {
+  paid:        { label: '已付款', color: '#15803d', bg: '#dcfce7' },
+  unchecked:   { label: '待核对', color: '#92400e', bg: '#fef3c7' },
+  not_payment: { label: '非付款', color: '#64748b', bg: '#f1f5f9' },
+  other:       { label: '其他',   color: '#1d4ed8', bg: '#eff6ff' },
+};
+
+function initBankStatementsPage() {
+  document.getElementById('bsDetailWrap').innerHTML = '';
+  loadBankStatements();
+}
+
+async function bsUpload(file) {
+  if (!file) return;
+  const hint = document.getElementById('bsUploadHint');
+  hint.style.display = ''; hint.textContent = `正在上传并解析「${file.name}」…`;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(API + '/admin/bank-statements', { method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd });
+    const r = await res.json();
+    if (!r.success) throw new Error(r.error || '上传失败');
+    showToast(`已解析出 ${r.txn_count} 笔交易`, 'success');
+    await loadBankStatements();
+    bsOpen(r.id);
+  } catch (e) {
+    showToast('上传/解析失败：' + (e.message || e), 'error');
+  } finally {
+    hint.style.display = 'none'; hint.textContent = '';
+    const inp = document.getElementById('bsUploadInput'); if (inp) inp.value = '';
+  }
+}
+
+async function loadBankStatements() {
+  const wrap = document.getElementById('bsListWrap');
+  wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>';
+  try { _bsStatements = await api('/admin/bank-statements') || []; }
+  catch (e) { wrap.innerHTML = `<div style="color:var(--red)">加载失败：${esc(e.message || e)}</div>`; return; }
+  if (!_bsStatements.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.9rem;padding:1rem;text-align:center;border:1px dashed var(--gray-200);border-radius:8px">还没有对账单。点右上角「上传对账单 PDF」开始。</div>';
+    return;
+  }
+  wrap.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem">
+    <thead><tr style="background:var(--gray-50);color:var(--gray-500);font-size:.8rem">
+      <th style="padding:6px 10px;text-align:left">来源 / 周期</th>
+      <th style="padding:6px 10px;text-align:left">文件</th>
+      <th style="padding:6px 10px;text-align:right">笔数</th>
+      <th style="padding:6px 10px;text-align:right">支出合计</th>
+      <th style="padding:6px 10px;text-align:right">收入合计</th>
+      <th style="padding:6px 10px;text-align:left">上传时间</th>
+      <th style="padding:6px 10px;text-align:center">操作</th>
+    </tr></thead><tbody>${_bsStatements.map(s => `
+      <tr style="border-top:1px solid var(--gray-100)">
+        <td style="padding:6px 10px"><strong>${esc((s.source || '其他').toUpperCase())}</strong>${s.period ? ' · ' + esc(s.period) : ''}${s.account_name ? '<br><span style="color:var(--gray-400);font-size:.78rem">' + esc(s.account_name) + '</span>' : ''}</td>
+        <td style="padding:6px 10px">${s.file_url ? `<a href="${esc(s.file_url)}" target="_blank" rel="noopener" style="color:var(--sky)">📄 ${esc(s.file_name || 'PDF')}</a>` : esc(s.file_name || '')}</td>
+        <td style="padding:6px 10px;text-align:right">${s.txn_count}</td>
+        <td style="padding:6px 10px;text-align:right;color:#b91c1c">${_cpyFmtMoney(s.total_out)}</td>
+        <td style="padding:6px 10px;text-align:right;color:#15803d">${_cpyFmtMoney(s.total_in)}</td>
+        <td style="padding:6px 10px;color:var(--gray-500)">${esc(String(s.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+        <td style="padding:6px 10px;text-align:center;white-space:nowrap">
+          <button class="btn btn-sm btn-blue" onclick="bsOpen(${s.id})">查看/标注</button>
+          <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fca5a5" onclick="bsDelete(${s.id})">删除</button>
+        </td>
+      </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function bsOpen(id) {
+  const wrap = document.getElementById('bsDetailWrap');
+  wrap.innerHTML = '<div style="color:var(--gray-400);padding:.5rem">加载中…</div>';
+  try { _bsCurrent = await api('/admin/bank-statements/' + id); }
+  catch (e) { wrap.innerHTML = `<div style="color:var(--red)">加载失败：${esc(e.message || e)}</div>`; return; }
+  bsRenderDetail();
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function bsOnStatusChange(sel) {
+  const v = _BS_STATUS[sel.value] || _BS_STATUS.unchecked;
+  sel.style.background = v.bg; sel.style.color = v.color;
+}
+
+function bsRenderDetail() {
+  const s = _bsCurrent; if (!s) return;
+  const wrap = document.getElementById('bsDetailWrap');
+  const statusOpts = (cur) => Object.entries(_BS_STATUS).map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${v.label}</option>`).join('');
+  const rows = (s.transactions || []).map(t => {
+    const st = _BS_STATUS[t.status] || _BS_STATUS.unchecked;
+    return `<tr data-txn="${t.id}" style="border-top:1px solid var(--gray-100)">
+      <td style="padding:5px 8px;white-space:nowrap">${esc(t.txn_date)}</td>
+      <td style="padding:5px 8px">${esc(t.description)}${t.details ? ` <span style="color:var(--gray-400);font-size:.78rem">${esc(t.details)}</span>` : ''}</td>
+      <td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:600;color:${t.direction === 'in' ? '#15803d' : '#b91c1c'}">${t.direction === 'in' ? '+' : '−'}${_cpyFmtMoney(t.amount)}</td>
+      <td style="padding:5px 8px"><select class="bs-status" onchange="bsOnStatusChange(this)" style="font-size:.8rem;padding:2px 4px;border:1px solid var(--gray-200);border-radius:4px;background:${st.bg};color:${st.color};font-weight:600">${statusOpts(t.status)}</select></td>
+      <td style="padding:5px 8px"><input type="text" class="bs-payee" value="${esc(t.payee || '')}" placeholder="收款人/去向" style="width:150px;padding:3px 6px;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem"></td>
+      <td style="padding:5px 8px"><input type="text" class="bs-note" value="${esc(t.note || '')}" placeholder="备注（脚注）" style="width:100%;min-width:170px;padding:3px 6px;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem"></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div style="border:1px solid var(--gray-200);border-radius:10px;padding:1rem;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:.6rem">
+        <div style="font-weight:700;font-size:1rem">🏦 ${esc((s.source || '其他').toUpperCase())}${s.period ? ' · ' + esc(s.period) : ''} <span style="color:var(--gray-400);font-weight:400;font-size:.85rem">（${(s.transactions || []).length} 笔 · 支出 ${_cpyFmtMoney(s.total_out)} · 收入 ${_cpyFmtMoney(s.total_in)}）</span></div>
+        <div style="display:flex;gap:.5rem">
+          ${s.file_url ? `<a class="btn btn-sm btn-outline" href="${esc(s.file_url)}" target="_blank" rel="noopener">📄 原始 PDF</a>` : ''}
+          <button class="btn btn-sm btn-green" onclick="bsSaveAnnotations()">💾 保存标注</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead><tr style="background:var(--gray-50);color:var(--gray-500);font-size:.78rem">
+          <th style="padding:6px 8px;text-align:left">日期</th>
+          <th style="padding:6px 8px;text-align:left">描述</th>
+          <th style="padding:6px 8px;text-align:right">金额</th>
+          <th style="padding:6px 8px;text-align:left">标记</th>
+          <th style="padding:6px 8px;text-align:left">收款人/去向</th>
+          <th style="padding:6px 8px;text-align:left">备注（脚注）</th>
+        </tr></thead><tbody>${rows}</tbody></table></div>
+    </div>`;
+}
+
+async function bsSaveAnnotations() {
+  if (!_bsCurrent) return;
+  const items = (_bsCurrent.transactions || []).map(t => {
+    const row = document.querySelector(`#bsDetailWrap tr[data-txn="${t.id}"]`);
+    if (!row) return null;
+    return { id: t.id, status: row.querySelector('.bs-status').value, payee: row.querySelector('.bs-payee').value, note: row.querySelector('.bs-note').value };
+  }).filter(Boolean);
+  try {
+    const r = await api(`/admin/bank-statements/${_bsCurrent.id}/txns`, { method: 'PUT', body: JSON.stringify({ items }) });
+    if (r && r.error) throw new Error(r.error);
+    items.forEach(it => { const t = (_bsCurrent.transactions || []).find(x => x.id === it.id); if (t) Object.assign(t, it); });
+    showToast('标注已保存 ✓', 'success');
+  } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+}
+
+async function bsDelete(id) {
+  if (!await showConfirm('确定删除这份对账单及其所有交易标注？（含已上传的 PDF）', { danger: true, confirmLabel: '删除' })) return;
+  try {
+    await api('/admin/bank-statements/' + id, { method: 'DELETE' });
+    showToast('已删除 ✓', 'success');
+    if (_bsCurrent && _bsCurrent.id === id) { _bsCurrent = null; document.getElementById('bsDetailWrap').innerHTML = ''; }
+    loadBankStatements();
+  } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
+}
 
 function toggleCpyWeekDetail(idx) {
   const detailRow = document.getElementById('cpyWkDetail-' + idx);
