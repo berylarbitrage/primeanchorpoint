@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 发票无加班费时合并为总工时列(去掉OT) + 转发票双时薪列/带入从公司收',
+  tag: '2026-06-16 · 按周编辑可改工人名字(改名替换本周旧记录) + 发票无加班费合并总工时列',
   started: new Date().toISOString(),
 };
 
@@ -26504,6 +26504,10 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
         if (!name) continue;
         if (replaceWeek && d.partner_id && weekEnd) {
           delWeek.run(parseInt(d.partner_id), name, d.week_start, weekEnd);
+          // If the worker was renamed in the editor, also clear the week's records under the
+          // original name so the rename replaces them instead of leaving duplicates.
+          const origName = (it.orig_worker_name || '').toString().trim();
+          if (origName && origName !== name) delWeek.run(parseInt(d.partner_id), origName, d.week_start, weekEnd);
         }
         const rowBreak = Math.max(0, Number(it.break_minutes) || 0);
         const days = Array.isArray(it.days) ? it.days : [];
