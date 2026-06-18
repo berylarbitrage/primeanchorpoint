@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 对账备注:列出付款记录→一键复制备注贴到对账单(不自动解析PDF)',
+  tag: '2026-06-16 · 对账备注:复制即标注、标注过的不再显示(可显示/撤销)',
   started: new Date().toISOString(),
 };
 
@@ -2429,6 +2429,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS bank_statement_txns (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_bstxn_stmt ON bank_statement_txns(statement_id)`); } catch(e) {}
+// Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
+// onto an external statement) — once marked they drop out of the 对账备注 list.
+db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
+  payment_id INTEGER PRIMARY KEY,
+  note TEXT DEFAULT '',
+  marked_by TEXT DEFAULT '',
+  marked_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 
 // ─── Per-month-per-company bill attachments (client payment proof + handwritten timesheet) ───
 db.exec(`CREATE TABLE IF NOT EXISTS company_month_bills (
@@ -26391,6 +26399,26 @@ app.delete('/api/admin/bank-statements/:id', requireAdmin, blockManager, (req, r
     db.prepare('DELETE FROM bank_statements WHERE id=?').run(s.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Reconciliation marks (对账备注：标注过的付款记录就不再出现) ───
+app.get('/api/admin/recon-marks', requireAdmin, blockManager, (req, res) => {
+  try { res.json(db.prepare('SELECT payment_id, note, marked_at FROM payment_recon_marks').all()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/admin/recon-marks', requireAdmin, blockManager, (req, res) => {
+  try {
+    const ids = Array.isArray(req.body && req.body.payment_ids) ? req.body.payment_ids : [];
+    const note = String((req.body && req.body.note) || '');
+    const up = db.prepare(`INSERT INTO payment_recon_marks (payment_id, note, marked_by) VALUES (?,?,?)
+      ON CONFLICT(payment_id) DO UPDATE SET note=excluded.note, marked_at=CURRENT_TIMESTAMP`);
+    db.transaction(() => { ids.forEach(id => { const n = parseInt(id); if (n) up.run(n, note, req.userName || ''); }); })();
+    res.json({ success: true, marked: ids.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/admin/recon-marks/:id', requireAdmin, blockManager, (req, res) => {
+  try { db.prepare('DELETE FROM payment_recon_marks WHERE payment_id=?').run(parseInt(req.params.id)); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/admin/partners/:id/payment-workers
