@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 对账备注:复制即标注、标注过的不再显示(可显示/撤销)',
+  tag: '2026-06-16 · 对账备注:可上传PDF存档/查看 + 复制备注(标注过隐藏)',
   started: new Date().toISOString(),
 };
 
@@ -26323,35 +26323,20 @@ function parseBankStatementText(text) {
   return out;
 }
 
-// Upload a statement PDF, parse it, store statement + transactions.
+// Upload a statement PDF — store + view only (no auto-parsing, per user's choice).
 app.post('/api/admin/bank-statements', requireAdmin, blockManager, bankStmtUpload.single('file'), async (req, res) => {
   try {
-    if (!pdfParse) return res.status(500).json({ error: 'PDF 解析库未安装（pdf-parse），请部署后重试' });
     if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 PDF 文件' });
-    let parsed;
-    try { const data = await pdfParse(req.file.buffer); parsed = parseBankStatementText(data.text); }
-    catch (e) { return res.status(400).json({ error: 'PDF 解析失败：' + (e.message || e) }); }
-    const txns = parsed.transactions || [];
     const fname = `bankstmt-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
     const key = `uploads/${fname}`;
     try { await storage.putObject(key, req.file.buffer, { contentType: 'application/pdf' }); }
     catch (e) { return res.status(500).json({ error: '保存文件失败：' + (e.message || e) }); }
-    let totalIn = 0, totalOut = 0;
-    txns.forEach(t => { if (t.direction === 'in') totalIn += t.amount; else totalOut += t.amount; });
-    const accountName = (req.body && req.body.account_name) || parsed.account_name || '';
     const ins = db.prepare(`INSERT INTO bank_statements
       (source, account_name, period, file_path, file_name, txn_count, total_in, total_out, notes, created_by)
       VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
-        parsed.source || '', accountName, parsed.period || '', key, req.file.originalname || 'statement.pdf',
-        txns.length, +totalIn.toFixed(2), +totalOut.toFixed(2), (req.body && req.body.notes) || '', req.userName || '');
-    const sid = ins.lastInsertRowid;
-    const insTxn = db.prepare(`INSERT INTO bank_statement_txns
-      (statement_id, txn_date, description, details, amount, direction, status, payee, note, sort_order)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`);
-    db.transaction(() => {
-      txns.forEach((t, i) => insTxn.run(sid, t.date, t.description, t.details, t.amount, t.direction, 'unchecked', t.payee || '', '', i));
-    })();
-    res.json({ success: true, id: sid, txn_count: txns.length });
+        'upload', String((req.body && req.body.label) || ''), String((req.body && req.body.period) || ''),
+        key, req.file.originalname || 'statement.pdf', 0, 0, 0, String((req.body && req.body.notes) || ''), req.userName || '');
+    res.json({ success: true, id: ins.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

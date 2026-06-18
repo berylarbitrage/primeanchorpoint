@@ -1643,10 +1643,19 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <div id="tab-bank-statements" style="display:none">
   <div class="top">
     <h1>🏦 对账备注</h1>
+    <div class="top-actions">
+      <label class="btn btn-green" style="cursor:pointer">+ 上传对账单 PDF
+        <input type="file" id="bsUploadInput" accept="application/pdf" style="display:none" onchange="bsUploadPdf(this.files&&this.files[0])">
+      </label>
+    </div>
   </div>
   <p style="color:var(--gray-500);font-size:.85rem;margin:.25rem 0 1rem">
-    列出系统里曾经的「付给工人」记录。对照你的对账单（Cash App / 银行 PDF），找到那笔金额对应的记录，点「复制备注」，再粘到你的 PDF 上即可 —— 系统不自动解析你的 PDF。
+    上传你的对账单 PDF 存档、随时在系统里点开查看；下面列出系统里的「付给工人」记录，找到对账单上那笔金额对应的记录，点「复制备注」，再用你自己的 PDF 工具把备注贴到 PDF 上。系统不自动解析 PDF。
   </p>
+  <div id="bsUploadHint" style="display:none;margin-bottom:.5rem;color:var(--sky);font-size:.85rem"></div>
+  <div style="font-weight:700;font-size:.9rem;margin:.25rem 0 .4rem;color:var(--gray-600)">📎 已上传的对账单</div>
+  <div id="bsPdfListWrap" style="margin-bottom:1.25rem"></div>
+  <div style="font-weight:700;font-size:.9rem;margin:.25rem 0 .4rem;color:var(--gray-600)">💵 付款记录（复制备注，贴到上面的 PDF）</div>
   <div style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:flex-end;margin-bottom:.75rem">
     <div class="field" style="margin:0"><label>公司</label>
       <select id="bsFilterCompany" onchange="loadBsRecords()"><option value="">全部公司</option></select>
@@ -36828,7 +36837,52 @@ let _bsShowMarked = false;
 
 function initBankStatementsPage() {
   bsPopulateCompanies();
+  loadBsPdfs();
   loadBsRecords();
+}
+
+// ── Uploaded statement PDFs (storage + view only; no parsing) ──
+async function bsUploadPdf(file) {
+  if (!file) return;
+  const hint = document.getElementById('bsUploadHint');
+  hint.style.display = ''; hint.textContent = `正在上传「${file.name}」…`;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(API + '/admin/bank-statements', { method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd });
+    const r = await res.json();
+    if (!r.success) throw new Error(r.error || '上传失败');
+    showToast('已上传 ✓', 'success');
+    loadBsPdfs();
+  } catch (e) { showToast('上传失败：' + (e.message || e), 'error'); }
+  finally { hint.style.display = 'none'; hint.textContent = ''; const inp = document.getElementById('bsUploadInput'); if (inp) inp.value = ''; }
+}
+
+async function loadBsPdfs() {
+  const wrap = document.getElementById('bsPdfListWrap');
+  if (!wrap) return;
+  let list = [];
+  try { list = await api('/admin/bank-statements') || []; } catch (_) { list = []; }
+  if (!Array.isArray(list) || !list.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.83rem;padding:.5rem .25rem">还没上传对账单。点右上角「+ 上传对账单 PDF」。</div>';
+    return;
+  }
+  wrap.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:.5rem">${list.map(s => `
+    <div style="display:flex;align-items:center;gap:.5rem;border:1px solid var(--gray-200);border-radius:8px;padding:.4rem .6rem;background:#fff">
+      <span style="font-size:1.1rem">📄</span>
+      <div style="min-width:0">
+        <div style="font-size:.84rem;font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.file_name || 'PDF')}</div>
+        <div style="font-size:.72rem;color:var(--gray-400)">${esc(String(s.created_at || '').replace('T', ' ').slice(0, 16))}</div>
+      </div>
+      ${s.file_url ? `<a class="btn btn-sm btn-blue" href="${esc(s.file_url)}" target="_blank" rel="noopener">查看</a>` : ''}
+      <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fca5a5" onclick="bsDeletePdf(${s.id})">删除</button>
+    </div>`).join('')}</div>`;
+}
+
+async function bsDeletePdf(id) {
+  if (!await showConfirm('删除这份已上传的对账单 PDF？', { danger: true, confirmLabel: '删除' })) return;
+  try { await api('/admin/bank-statements/' + id, { method: 'DELETE' }); showToast('已删除', 'success'); loadBsPdfs(); }
+  catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
 }
 
 async function bsPopulateCompanies() {
