@@ -1657,6 +1657,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="field" style="margin:0;flex:1;min-width:160px"><label>搜索（工人 / 金额 / 备注）</label>
       <input type="text" id="bsFilterQ" placeholder="如 Wilson 或 580" oninput="renderBsRecords()">
     </div>
+    <label style="display:flex;align-items:center;gap:.3rem;font-size:.82rem;color:var(--gray-600);white-space:nowrap"><input type="checkbox" id="bsShowMarked" onchange="bsToggleShowMarked(this)"> 显示已标注</label>
     <button class="btn btn-outline" onclick="copyBsSelected()">📋 复制所选备注</button>
   </div>
   <div id="bsRecordsWrap"></div>
@@ -36820,8 +36821,10 @@ async function deleteCpyWkPay() {
   else setup();
 })();
 
-// ════════ 银行对账单：列出付款记录 → 复制备注贴到对账单 PDF（不自动解析 PDF） ════════
+// ════════ 银行对账单：列出付款记录 → 复制备注贴到对账单 PDF（标注过即隐藏） ════════
 let _bsRecords = [];
+let _bsMarked = new Set();      // company_worker_payments ids that have been annotated
+let _bsShowMarked = false;
 
 function initBankStatementsPage() {
   bsPopulateCompanies();
@@ -36847,9 +36850,14 @@ async function loadBsRecords() {
   const mon = document.getElementById('bsFilterMonth').value;
   if (pid) params.set('partner_id', pid);
   if (mon) params.set('year_month', mon);
-  try { _bsRecords = await api('/admin/company-payments' + (params.toString() ? '?' + params : '')) || []; }
-  catch (e) { wrap.innerHTML = `<div style="color:var(--red)">加载失败：${esc(e.message || e)}</div>`; return; }
-  _bsRecords = (Array.isArray(_bsRecords) ? _bsRecords : []).sort((a, b) => String(b.payment_date || '').localeCompare(String(a.payment_date || '')));
+  try {
+    const [recs, marks] = await Promise.all([
+      api('/admin/company-payments' + (params.toString() ? '?' + params : '')),
+      api('/admin/recon-marks').catch(() => []),
+    ]);
+    _bsRecords = (Array.isArray(recs) ? recs : []).sort((a, b) => String(b.payment_date || '').localeCompare(String(a.payment_date || '')));
+    _bsMarked = new Set((Array.isArray(marks) ? marks : []).map(m => Number(m.payment_id)));
+  } catch (e) { wrap.innerHTML = `<div style="color:var(--red)">加载失败：${esc(e.message || e)}</div>`; return; }
   renderBsRecords();
 }
 
@@ -36859,16 +36867,20 @@ function _bsNote(r) {
   return [r.worker_name || '', r.partner_name || '', r.payment_date || '', `工资 $${amt}`].filter(Boolean).join(' · ');
 }
 
+function bsToggleShowMarked(cb) { _bsShowMarked = !!cb.checked; renderBsRecords(); }
+
 function renderBsRecords() {
   const wrap = document.getElementById('bsRecordsWrap');
   const q = (document.getElementById('bsFilterQ').value || '').trim().toLowerCase();
   let rows = _bsRecords;
   if (q) rows = rows.filter(r => `${r.worker_name || ''} ${r.partner_name || ''} ${r.payment_date || ''} ${r.amount} ${r.notes || ''}`.toLowerCase().includes(q));
+  const markedInView = rows.filter(r => _bsMarked.has(Number(r.id))).length;
+  if (!_bsShowMarked) rows = rows.filter(r => !_bsMarked.has(Number(r.id)));
   if (!rows.length) {
-    wrap.innerHTML = '<div style="color:var(--gray-400);padding:1rem;text-align:center;border:1px dashed var(--gray-200);border-radius:8px">没有匹配的付款记录。换个公司/月份/关键词试试。</div>';
+    wrap.innerHTML = `<div style="color:var(--gray-400);padding:1rem;text-align:center;border:1px dashed var(--gray-200);border-radius:8px">${markedInView && !_bsShowMarked ? `这批都已标注 ✓（${markedInView} 条已隐藏，勾选「显示已标注」可查看/撤销）` : '没有匹配的付款记录。换个公司/月份/关键词试试。'}</div>`;
     return;
   }
-  wrap.innerHTML = `<div style="color:var(--gray-400);font-size:.8rem;margin-bottom:.4rem">共 ${rows.length} 条 · 勾选可批量复制</div>
+  wrap.innerHTML = `<div style="color:var(--gray-400);font-size:.8rem;margin-bottom:.4rem">共 ${rows.length} 条 · 勾选可批量复制${markedInView && !_bsShowMarked ? ` · ${markedInView} 条已标注(隐藏)` : ''}</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem">
     <thead><tr style="background:var(--gray-50);color:var(--gray-500);font-size:.8rem">
       <th style="padding:6px 8px;width:30px"></th>
@@ -36880,14 +36892,17 @@ function renderBsRecords() {
       <th style="padding:6px 8px;text-align:center">操作</th>
     </tr></thead><tbody>${rows.map(r => {
       const note = _bsNote(r);
-      return `<tr style="border-top:1px solid var(--gray-100)">
-        <td style="padding:5px 8px;text-align:center"><input type="checkbox" class="bs-rec-chk" data-note="${esc(note)}"></td>
+      const marked = _bsMarked.has(Number(r.id));
+      return `<tr style="border-top:1px solid var(--gray-100)${marked ? ';opacity:.55;background:#f8fafc' : ''}">
+        <td style="padding:5px 8px;text-align:center">${marked ? '✓' : `<input type="checkbox" class="bs-rec-chk" data-id="${r.id}" data-note="${esc(note)}">`}</td>
         <td style="padding:5px 8px;white-space:nowrap">${esc(r.payment_date || '')}</td>
         <td style="padding:5px 8px">${esc(r.worker_name || '')}</td>
         <td style="padding:5px 8px">${esc(r.partner_name || '')}</td>
         <td style="padding:5px 8px;text-align:right;font-weight:600;color:#15803d">${_cpyFmtMoney(r.amount)}</td>
-        <td style="padding:5px 8px;color:var(--gray-600)">${esc(note)}</td>
-        <td style="padding:5px 8px;text-align:center"><button class="btn btn-sm btn-blue" data-note="${esc(note)}" onclick="copyBsNote(this)">📋 复制备注</button></td>
+        <td style="padding:5px 8px;color:var(--gray-600)">${esc(note)}${marked ? ' <span style="color:#15803d;font-size:.72rem">· 已标注</span>' : ''}</td>
+        <td style="padding:5px 8px;text-align:center;white-space:nowrap">${marked
+          ? `<button class="btn btn-sm btn-outline" onclick="bsUnmark(${r.id})">撤销标注</button>`
+          : `<button class="btn btn-sm btn-blue" data-id="${r.id}" data-note="${esc(note)}" onclick="copyBsNote(this)">📋 复制备注</button>`}</td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
 }
@@ -36903,16 +36918,45 @@ async function _bsCopy(text) {
   }
 }
 
+// Mark records as annotated (so they drop out of the list). Returns true on success.
+async function _bsMark(ids, note) {
+  try {
+    const r = await api('/admin/recon-marks', { method: 'POST', body: JSON.stringify({ payment_ids: ids, note: note || '' }) });
+    if (r && r.error) throw new Error(r.error);
+    ids.forEach(id => _bsMarked.add(Number(id)));
+    return true;
+  } catch (e) { showToast('标注保存失败：' + (e.message || e), 'error'); return false; }
+}
+
 async function copyBsNote(btn) {
-  const ok = await _bsCopy(btn.dataset.note || '');
-  showToast(ok ? '已复制备注，去 PDF 粘贴即可' : '复制失败，请手动选中复制', ok ? 'success' : 'error');
+  const id = Number(btn.dataset.id);
+  const note = btn.dataset.note || '';
+  const ok = await _bsCopy(note);
+  if (!ok) { showToast('复制失败，请手动选中复制', 'error'); return; }
+  await _bsMark([id], note);
+  renderBsRecords();
+  showToast('已复制并标注，已从列表隐藏（勾选「显示已标注」可撤销）', 'success');
 }
 
 async function copyBsSelected() {
-  const notes = Array.from(document.querySelectorAll('.bs-rec-chk:checked')).map(c => c.dataset.note);
-  if (!notes.length) { showToast('请先勾选要复制的记录', 'error'); return; }
+  const boxes = Array.from(document.querySelectorAll('.bs-rec-chk:checked'));
+  if (!boxes.length) { showToast('请先勾选要复制的记录', 'error'); return; }
+  const notes = boxes.map(c => c.dataset.note);
+  const ids = boxes.map(c => Number(c.dataset.id));
   const ok = await _bsCopy(notes.join('\n'));
-  showToast(ok ? `已复制 ${notes.length} 条备注` : '复制失败', ok ? 'success' : 'error');
+  if (!ok) { showToast('复制失败', 'error'); return; }
+  await _bsMark(ids, '');
+  renderBsRecords();
+  showToast(`已复制 ${notes.length} 条并标注（已隐藏）`, 'success');
+}
+
+async function bsUnmark(id) {
+  try {
+    await api('/admin/recon-marks/' + id, { method: 'DELETE' });
+    _bsMarked.delete(Number(id));
+    renderBsRecords();
+    showToast('已撤销标注', 'success');
+  } catch (e) { showToast('撤销失败：' + (e.message || e), 'error'); }
 }
 
 function toggleCpyWeekDetail(idx) {
