@@ -649,7 +649,16 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="nav-group-items">
       <a onclick="showTab('company-payments')" data-tab="company-payments" data-role="admin,staff">📒 月度付款记录</a>
       <a onclick="showTab('container-scans')" data-tab="container-scans" data-role="admin,staff">📦 扫码记录</a>
-      <a onclick="showTab('bank-statements')" data-tab="bank-statements" data-role="admin,staff">🏦 对账备注</a>
+    </div>
+  </div>
+
+  <!-- 公司帐单 -->
+  <div class="nav-group open" id="sec-company-statements" data-role="admin,staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-company-statements')">
+      🏦 公司帐单<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('bank-statements')" data-tab="bank-statements" data-role="admin,staff">📄 对账备注</a>
     </div>
   </div>
 
@@ -8522,7 +8531,8 @@ const _TAB_TO_SEC = {
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker', referrers:'sec-worker', scheduling:'sec-worker', warehouses:'sec-worker', 'warehouse-checkins':'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time', 'warehouse-claims':'sec-time',
-  'company-payments':'sec-company-pay', 'container-scans':'sec-company-pay', 'bank-statements':'sec-company-pay',
+  'company-payments':'sec-company-pay', 'container-scans':'sec-company-pay',
+  'bank-statements':'sec-company-statements',
   'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
   approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
