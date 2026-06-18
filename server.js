@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-18 · 按周汇总:付款行拆成缩略图/平台/实付分列 + PDF备注框更矮',
+  tag: '2026-06-18 · 贴备注:已贴的周显示「已贴于某对账单」可点开追溯 + 付款行分列',
   started: new Date().toISOString(),
 };
 
