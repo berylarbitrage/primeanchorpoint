@@ -36700,15 +36700,29 @@ function onCpyWkPayMethodChange() {
   document.getElementById('cpyWkPayTpWrap').style.display = (m === 'thirdparty') ? '' : 'none';
 }
 
-function onCpyWkPayFilePicked() { _setCpyWkPayFiles(document.getElementById('cpyWkPayFile').files); }
-function onCpyWkPayFilesDropped(fileList) { _setCpyWkPayFiles(fileList); }
-function _setCpyWkPayFiles(fileList) {
-  _cpyWkPayFiles = Array.from(fileList || []);
+function onCpyWkPayFilePicked() {
+  _addCpyWkPayFiles(document.getElementById('cpyWkPayFile').files);
+  document.getElementById('cpyWkPayFile').value = ''; // 清空原生输入,便于再次添加(含同名文件)
+}
+function onCpyWkPayFilesDropped(fileList) { _addCpyWkPayFiles(fileList); }
+// 累加(不是替换):一张张拖/选都会加进来;按名字+大小去重;可逐个移除。
+function _addCpyWkPayFiles(fileList) {
+  Array.from(fileList || []).forEach(f => {
+    if (!_cpyWkPayFiles.some(x => x.name === f.name && x.size === f.size)) _cpyWkPayFiles.push(f);
+  });
+  _renderCpyWkPayFiles();
+}
+function removeCpyWkPayFile(i) {
+  _cpyWkPayFiles.splice(i, 1);
+  _renderCpyWkPayFiles();
+}
+function _renderCpyWkPayFiles() {
   const info = document.getElementById('cpyWkPayFileInfo');
-  if (_cpyWkPayFiles.length) {
-    const kb = _cpyWkPayFiles.reduce((s, f) => s + (f.size || 0), 0) / 1024;
-    info.textContent = `已选择 ${_cpyWkPayFiles.length} 个文件（共 ${kb.toFixed(0)} KB）：` + _cpyWkPayFiles.map(f => f.name).join('、');
-  } else { info.textContent = ''; }
+  if (!info) return;
+  if (!_cpyWkPayFiles.length) { info.innerHTML = ''; return; }
+  const kb = _cpyWkPayFiles.reduce((s, f) => s + (f.size || 0), 0) / 1024;
+  info.innerHTML = `已选 ${_cpyWkPayFiles.length} 个文件（共 ${kb.toFixed(0)} KB），保存后一并上传：<br>` +
+    _cpyWkPayFiles.map((f, i) => `<span style="display:inline-flex;align-items:center;gap:4px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:1px 7px;margin:3px 4px 0 0;font-size:.78rem">${_cpyEscape(f.name)}<span style="cursor:pointer;color:#dc2626;font-weight:700;font-size:.9rem" onclick="removeCpyWkPayFile(${i})" title="移除">×</span></span>`).join('');
 }
 
 async function submitCpyWkPay() {
@@ -36774,7 +36788,7 @@ async function deleteCpyWkPay() {
     }));
     dz.addEventListener('drop', e => {
       const files = e.dataTransfer && e.dataTransfer.files;
-      if (files && files.length) _setCpyWkPayFiles(files);
+      if (files && files.length) _addCpyWkPayFiles(files);
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup);
