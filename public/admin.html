@@ -37101,17 +37101,43 @@ function bsAddNote(text, recIds) {
   note.className = 'bs-ed-note';
   note.dataset.recIds = Array.isArray(recIds) ? recIds.join(',') : (recIds || '');
   note.style.cssText = 'position:absolute;width:220px;left:' + (16 + (n % 6) * 14) + 'px;top:' + (16 + (n % 6) * 14) + 'px;' +
-    'background:rgba(255,251,235,.96);border:1px solid #f59e0b;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:5';
+    'display:flex;flex-direction:column;overflow:hidden;background:rgba(255,251,235,.96);border:1px solid #f59e0b;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:5';
   note.innerHTML =
-    '<div class="bs-ed-note-bar" style="display:flex;align-items:center;justify-content:space-between;cursor:move;background:#fde68a;border-radius:5px 5px 0 0;padding:1px 5px;font-size:11px;color:#92400e;user-select:none">' +
+    '<div class="bs-ed-note-bar" style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;cursor:move;background:#fde68a;border-radius:5px 5px 0 0;padding:1px 5px;font-size:11px;color:#92400e;user-select:none">' +
       '<span>⠿ 拖动</span><span class="bs-ed-note-del" title="删除" style="cursor:pointer;font-weight:700;padding:0 3px">✕</span>' +
     '</div>' +
-    '<div class="bs-ed-note-text" contenteditable="true" style="padding:5px 7px;line-height:1.35;outline:none;font-weight:700;color:#b91c1c;font-size:13px;white-space:pre-wrap;word-break:break-word"></div>';
+    '<div class="bs-ed-note-text" contenteditable="true" style="flex:1 1 auto;min-height:16px;overflow:auto;padding:5px 7px;line-height:1.35;outline:none;font-weight:700;color:#b91c1c;font-size:13px;white-space:pre-wrap;word-break:break-word"></div>' +
+    '<div class="bs-ed-note-rsz" title="拖动改变大小/形状" style="position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;color:#92400e;font-size:11px;line-height:14px;text-align:center;user-select:none">◢</div>';
   note.querySelector('.bs-ed-note-text').textContent = text || '';
   page.appendChild(note);
   note.querySelector('.bs-ed-note-del').onclick = () => note.remove();
   bsMakeDraggable(note, note.querySelector('.bs-ed-note-bar'), page);
+  bsMakeResizable(note, note.querySelector('.bs-ed-note-rsz'), page);
   if (!text) note.querySelector('.bs-ed-note-text').focus();
+}
+
+// Drag the bottom-right handle to change a note's width & height (size/shape).
+function bsMakeResizable(note, handle, page) {
+  let sx, sy, ow, oh, resizing = false;
+  handle.addEventListener('pointerdown', e => {
+    resizing = true;
+    e.preventDefault(); e.stopPropagation();
+    sx = e.clientX; sy = e.clientY;
+    const r = note.getBoundingClientRect();
+    ow = r.width; oh = r.height;
+    note.style.height = oh + 'px'; // lock current auto height so further drags are relative
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!resizing) return;
+    const maxW = page.clientWidth - (parseFloat(note.style.left) || 0);
+    const maxH = page.clientHeight - (parseFloat(note.style.top) || 0);
+    note.style.width = Math.max(80, Math.min(ow + (e.clientX - sx), maxW)) + 'px';
+    note.style.height = Math.max(28, Math.min(oh + (e.clientY - sy), maxH)) + 'px';
+  });
+  const end = e => { if (resizing) { resizing = false; try { handle.releasePointerCapture(e.pointerId); } catch (_) {} } };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
 }
 
 function bsMakeDraggable(el, handle, page) {
@@ -37137,7 +37163,8 @@ function bsMakeDraggable(el, handle, page) {
 }
 
 // Render a note's text to a PNG data URL (uses browser fonts → 支持中文), with wrapping.
-function bsNotePng(text, boxWcss) {
+// boxHcss: if given (>0), the box keeps that exact height (user-resized); else auto-fit text.
+function bsNotePng(text, boxWcss, boxHcss) {
   const padX = 7, padY = 5, fontPx = 13, lineH = 18, dpr = 3;
   const font = '700 ' + fontPx + 'px -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif';
   const meas = document.createElement('canvas').getContext('2d');
@@ -37160,7 +37187,8 @@ function bsNotePng(text, boxWcss) {
     }
     lines.push(line.replace(/\s+$/, ''));
   });
-  const cssW = boxWcss, cssH = padY * 2 + Math.max(1, lines.length) * lineH;
+  const cssW = boxWcss;
+  const cssH = boxHcss && boxHcss > 0 ? boxHcss : (padY * 2 + Math.max(1, lines.length) * lineH);
   const cv = document.createElement('canvas');
   cv.width = Math.ceil(cssW * dpr); cv.height = Math.ceil(cssH * dpr);
   const ctx = cv.getContext('2d');
@@ -37198,7 +37226,7 @@ async function bsEditorExport(mode) {
         const tr = textEl.getBoundingClientRect();
         const leftPx = tr.left - pr.left;
         const topPx = tr.top - pr.top;
-        const png = bsNotePng(txt, tr.width);
+        const png = bsNotePng(txt, tr.width, tr.height);
         const img = await doc.embedPng(png.dataUrl);
         const wPt = png.cssW / scale, hPt = png.cssH / scale;
         pdfPage.drawImage(img, { x: leftPx / scale, y: phPt - (topPx / scale) - hPt, width: wPt, height: hPt });
