@@ -38653,8 +38653,8 @@ async function submitCpyWeekly() {
   // Default rates fall back in when a day's per-cell rate was left blank.
   const defRate = Number(document.getElementById('cpyWkDefaultRate')?.value) || 0;
   const defBillRate = Number(document.getElementById('cpyWkDefaultBillRate')?.value) || 0;
-  if (!partnerId) { alert('请选择公司'); return; }
-  if (!ws || _cpyWkDays.length !== 7) { alert('请选择周起始日'); return; }
+  if (!partnerId) { showToast('请选择公司', 'error'); return; }
+  if (!ws || _cpyWkDays.length !== 7) { showToast('请选择周起始日', 'error'); return; }
   const partnerName = _cpyPartners.find(p => String(p.id) === String(partnerId))?.name || '';
 
   const items = [];
@@ -38704,13 +38704,13 @@ async function submitCpyWeekly() {
       days
     });
   }
-  if (!items.length) { alert('请勾选工人并填上下班时间和时薪（每天工时>0 且时薪>0 才会被记录）'); return; }
+  if (!items.length) { showToast('请勾选工人并填上下班时间和时薪（每天工时>0 且时薪>0 才会被记录）', 'error'); return; }
   const editing = _cpyWkReplaceWeek;
   const moneyLine = `付给工人 ${_cpyFmtMoney(totalAmount)} · 从公司收 ${_cpyFmtMoney(totalBill)} · 利润 ${_cpyFmtMoney(totalBill - totalAmount)}`;
   const confirmMsg = editing
     ? `确认覆盖 ${partnerName} · ${items.map(i => i.worker_name).join('、')} 本周的付款记录，重新生成 ${totalRecords} 条按日记录，${moneyLine}？（本周原有记录将被替换）`
     : `确认给 ${partnerName} 的 ${items.length} 名工人生成 ${totalRecords} 条按日付款记录，${moneyLine}？`;
-  if (!confirm(confirmMsg)) return;
+  if (!await showConfirm(confirmMsg, { confirmLabel: editing ? '覆盖本周' : '确认生成', cancelLabel: '取消', danger: !!editing })) return;
 
   try {
     const r = await api('/admin/company-payments/batch-weekly', {
@@ -38724,13 +38724,13 @@ async function submitCpyWeekly() {
         items
       })
     });
-    if (r && r.error) { alert('提交失败：' + r.error); return; }
+    if (r && r.error) { showToast('提交失败：' + r.error, 'error'); return; }
     if (r && r.pending) { closeCpyWeeklyModal(); return; }
     closeCpyWeeklyModal();
     showToast(editing ? `已更新本周，共 ${r.inserted} 条付款` : `已记录 ${r.inserted} 条付款`, 'success');
     if (_cpySubTab === 'weekly') loadCpyWeeklySummary(); else loadCpyList();
   } catch (e) {
-    alert('提交失败：' + (e.message || e));
+    showToast('提交失败：' + (e.message || e), 'error');
   }
 }
 </script>
