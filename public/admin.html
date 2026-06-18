@@ -2025,6 +2025,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </tbody>
     </table>
   </div>
+  <datalist id="cpyWkNameList"></datalist>
 
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;font-size:.9rem">
     <div style="color:var(--gray-500)">
@@ -37736,6 +37737,7 @@ function openCpyWeeklyEditWorker(idx) {
   if (h2) h2.textContent = `✏️ 按周编辑 — ${g.worker_name}（调整本周工时/金额，提交将覆盖本周）`;
   const sel = document.getElementById('cpyWkPartner');
   if (sel) sel.value = String(g.partner_id);
+  loadCpyWkNameSuggestions(g.partner_id);
   document.getElementById('cpyWkStart').value = _cpyFmtDateKey(g.weekStart);
   rebuildCpyWeekDays();
   // Build a single worker row pre-filled from existing records (mapped by day).
@@ -37844,6 +37846,7 @@ async function loadCpyWeeklyWorkers() {
     return;
   }
   rebuildCpyWeekDays();
+  loadCpyWkNameSuggestions(partnerId);
   if (!_cpyWkWorkers.length) {
     tbody.innerHTML = `<tr><td colspan="${3 + _cpyWkDays.length}" style="color:var(--gray-400);font-size:.85rem;padding:.7rem;text-align:center">加载该公司员工…</td></tr>`;
   }
@@ -37874,6 +37877,49 @@ async function loadCpyWeeklyWorkers() {
     if (gen !== _cpyWkLoadGen) return;
     tbody.innerHTML = `<tr><td colspan="${3 + _cpyWkDays.length}" style="color:#b91c1c;padding:.5rem">加载失败：${_cpyEscape(e.message || e)}</td></tr>`;
   }
+}
+
+let _cpyWkHistMap = new Map(); // nameLower -> {name,wageRate,billRate,employee_id} for current company
+// Load name suggestions (this company's historical workers) for the 按周 name autocomplete.
+async function loadCpyWkNameSuggestions(partnerId) {
+  _cpyWkHistMap = new Map();
+  const dl = document.getElementById('cpyWkNameList');
+  if (dl) dl.innerHTML = '';
+  if (!partnerId) return;
+  let recs = [];
+  try { recs = await api('/admin/company-payments?partner_id=' + partnerId); } catch (_) { recs = []; }
+  (Array.isArray(recs) ? recs : []).forEach(r => {
+    const name = (r.worker_name || '').trim();
+    if (!name) return;
+    const key = name.toLowerCase();
+    const prev = _cpyWkHistMap.get(key);
+    if (!prev || (r.payment_date || '') >= (prev.date || '')) {
+      _cpyWkHistMap.set(key, {
+        name, date: r.payment_date || '',
+        wageRate: Number(r.hourly_rate) || (prev ? prev.wageRate : 0),
+        billRate: Number(r.bill_rate) || (prev ? prev.billRate : 0),
+        employee_id: r.employee_id || (prev ? prev.employee_id : null),
+      });
+    }
+  });
+  if (dl) {
+    dl.innerHTML = Array.from(_cpyWkHistMap.values())
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(w => `<option value="${_cpyEscape(w.name)}">付$${(w.wageRate || 0).toFixed(2)} · 收$${(w.billRate || 0).toFixed(2)}</option>`)
+      .join('');
+  }
+}
+
+// When the typed/picked name matches a historical worker, fill that row's empty 付/收 rates.
+function onCpyWkNamePicked(input) {
+  const hit = _cpyWkHistMap.get((input.value || '').trim().toLowerCase());
+  if (!hit) return;
+  const tr = input.closest('tr[data-cpy-wk-row]');
+  if (!tr) return;
+  let filled = false;
+  if (hit.wageRate > 0) tr.querySelectorAll('.cpyWkRate').forEach(inp => { if (!inp.value) { inp.value = hit.wageRate; filled = true; } });
+  if (hit.billRate > 0) tr.querySelectorAll('.cpyWkBillRate').forEach(inp => { if (!inp.value) { inp.value = hit.billRate; filled = true; } });
+  if (filled && typeof onCpyWkCellChange === 'function') onCpyWkCellChange();
 }
 
 let _cpyWkLastRenderCause = '初始化';
@@ -37972,8 +38018,8 @@ function renderCpyWeeklyRows() {
         <td style="vertical-align:top;padding-top:.6rem"><input type="checkbox" class="cpyWkChk" ${w._selected ? 'checked' : ''} onchange="onCpyWkCellChange()"></td>
         <td style="vertical-align:top;padding-top:.5rem">
           ${w._adHoc
-            ? `<input type="text" class="cpyWkName" autocomplete="off" value="${_cpyEscape(w.name)}" placeholder="工人姓名" style="width:140px;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem">`
-            : `<input type="text" class="cpyWkName" autocomplete="off" value="${_cpyEscape(w.name)}" placeholder="工人姓名" title="可修改名字（改名后提交会把本周旧名字的记录替换成新名字）" style="width:140px;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem">
+            ? `<input type="text" class="cpyWkName" list="cpyWkNameList" onchange="onCpyWkNamePicked(this)" autocomplete="off" value="${_cpyEscape(w.name)}" placeholder="工人姓名（可搜历史）" style="width:140px;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem">`
+            : `<input type="text" class="cpyWkName" list="cpyWkNameList" onchange="onCpyWkNamePicked(this)" autocomplete="off" value="${_cpyEscape(w.name)}" placeholder="工人姓名（可搜历史）" title="可修改名字，或输入以搜索本公司历史工人（改名后提交会把本周旧名字的记录替换成新名字）" style="width:140px;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem">
                <div style="font-size:.7rem;color:var(--gray-500)">${_cpyEscape(w.position || '')}${w.phone ? ' · ' + _cpyEscape(w.phone) : ''}</div>
                <input type="hidden" class="cpyWkEmpId" value="${w.id}">`
           }
