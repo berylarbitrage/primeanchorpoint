@@ -1654,7 +1654,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <h1>🏦 对账备注</h1>
     <div class="top-actions">
       <label class="btn btn-green" style="cursor:pointer">+ 上传对账单 PDF
-        <input type="file" id="bsUploadInput" accept="application/pdf" style="display:none" onchange="bsUploadPdf(this.files&&this.files[0])">
+        <input type="file" id="bsUploadInput" accept="application/pdf" multiple style="display:none" onchange="bsUploadPdf(this.files)">
       </label>
     </div>
   </div>
@@ -1662,6 +1662,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     上传你的对账单 PDF 存档、随时在系统里点开查看；下面列出系统里的「付给工人」记录，找到对账单上那笔金额对应的记录，点「复制备注」，再用你自己的 PDF 工具把备注贴到 PDF 上。系统不自动解析 PDF。
   </p>
   <div id="bsUploadHint" style="display:none;margin-bottom:.5rem;color:var(--sky);font-size:.85rem"></div>
+  <div id="bsDropZone" onclick="document.getElementById('bsUploadInput').click()" style="border:2px dashed var(--gray-300);border-radius:10px;padding:.9rem 1rem;text-align:center;color:var(--gray-400);font-size:.85rem;margin-bottom:.9rem;cursor:pointer;transition:background .15s,border-color .15s,color .15s">⬇️ 把对账单 PDF 拖到这里上传（也可点此选择文件，支持一次多选）</div>
   <div style="font-weight:700;font-size:.9rem;margin:.25rem 0 .4rem;color:var(--gray-600)">📎 已上传的对账单</div>
   <div id="bsPdfListWrap" style="margin-bottom:1.25rem"></div>
   <div style="font-weight:700;font-size:.9rem;margin:.25rem 0 .4rem;color:var(--gray-600)">💵 付款记录（复制备注，贴到上面的 PDF）</div>
@@ -36847,25 +36848,50 @@ let _bsShowMarked = false;
 
 function initBankStatementsPage() {
   bsPopulateCompanies();
+  bsInitDropZone();
   loadBsPdfs();
   loadBsRecords();
 }
 
 // ── Uploaded statement PDFs (storage + view only; no parsing) ──
-async function bsUploadPdf(file) {
-  if (!file) return;
+// Accepts a single File, a FileList (button / drag-drop), supports多选/批量.
+async function bsUploadPdf(fileOrList) {
+  const arr = !fileOrList ? [] : (fileOrList.length !== undefined ? Array.from(fileOrList) : [fileOrList]);
+  const pdfs = arr.filter(f => f && (/\.pdf$/i.test(f.name || '') || f.type === 'application/pdf'));
+  if (!pdfs.length) { if (arr.length) showToast('只支持 PDF 文件', 'error'); return; }
   const hint = document.getElementById('bsUploadHint');
-  hint.style.display = ''; hint.textContent = `正在上传「${file.name}」…`;
-  const fd = new FormData();
-  fd.append('file', file);
-  try {
-    const res = await fetch(API + '/admin/bank-statements', { method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd });
-    const r = await res.json();
-    if (!r.success) throw new Error(r.error || '上传失败');
-    showToast('已上传 ✓', 'success');
-    loadBsPdfs();
-  } catch (e) { showToast('上传失败：' + (e.message || e), 'error'); }
-  finally { hint.style.display = 'none'; hint.textContent = ''; const inp = document.getElementById('bsUploadInput'); if (inp) inp.value = ''; }
+  let done = 0;
+  for (let i = 0; i < pdfs.length; i++) {
+    const file = pdfs[i];
+    if (hint) { hint.style.display = ''; hint.textContent = `正在上传「${file.name}」…（${i + 1}/${pdfs.length}）`; }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch(API + '/admin/bank-statements', { method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd });
+      const r = await res.json();
+      if (!r.success) throw new Error(r.error || '上传失败');
+      done++;
+    } catch (e) { showToast(`「${file.name}」上传失败：` + (e.message || e), 'error'); }
+  }
+  if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
+  const inp = document.getElementById('bsUploadInput'); if (inp) inp.value = '';
+  if (done) { showToast(done > 1 ? `已上传 ${done} 个 ✓` : '已上传 ✓', 'success'); loadBsPdfs(); }
+}
+
+// Wire drag-and-drop on the drop zone (idempotent — guarded by _wired).
+function bsInitDropZone() {
+  const dz = document.getElementById('bsDropZone');
+  if (!dz || dz._wired) return;
+  dz._wired = true;
+  const stop = e => { e.preventDefault(); e.stopPropagation(); };
+  const hi = on => {
+    dz.style.background = on ? '#ecfdf5' : '';
+    dz.style.borderColor = on ? '#16a34a' : 'var(--gray-300)';
+    dz.style.color = on ? '#16a34a' : 'var(--gray-400)';
+  };
+  ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { stop(e); hi(true); }));
+  ['dragleave', 'dragend'].forEach(ev => dz.addEventListener(ev, e => { stop(e); hi(false); }));
+  dz.addEventListener('drop', e => { stop(e); hi(false); bsUploadPdf(e.dataTransfer && e.dataTransfer.files); });
 }
 
 async function loadBsPdfs() {
