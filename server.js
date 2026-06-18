@@ -6,6 +6,9 @@ const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
+// PDF text extraction for bank-statement parsing (optional; server still boots without it).
+let pdfParse = null;
+try { pdfParse = require('pdf-parse/lib/pdf-parse.js'); } catch (_) { pdfParse = null; }
 
 const nodemailer = require('nodemailer');
 
@@ -18,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 付工资凭证多图改为累加(可逐个删) + 实付对不上标红',
+  tag: '2026-06-16 · 新增银行对账单上传+自动解析交易+逐笔标注(付款/去向/备注)',
   started: new Date().toISOString(),
 };
 
@@ -2394,6 +2397,38 @@ try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cwkp_partner_week_worker ON
 // store the full set as JSON arrays.
 try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN proof_file_paths TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN proof_file_names TEXT DEFAULT ''`); } catch(e) {}
+
+// ─── Bank statement annotation (upload a statement PDF → parse transactions → mark each) ───
+db.exec(`CREATE TABLE IF NOT EXISTS bank_statements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT DEFAULT '',
+  account_name TEXT DEFAULT '',
+  period TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  txn_count INTEGER DEFAULT 0,
+  total_in REAL DEFAULT 0,
+  total_out REAL DEFAULT 0,
+  notes TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS bank_statement_txns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  statement_id INTEGER NOT NULL,
+  txn_date TEXT DEFAULT '',
+  description TEXT DEFAULT '',
+  details TEXT DEFAULT '',
+  amount REAL DEFAULT 0,
+  direction TEXT DEFAULT 'out',
+  status TEXT DEFAULT 'unchecked',
+  payee TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_bstxn_stmt ON bank_statement_txns(statement_id)`); } catch(e) {}
 
 // ─── Per-month-per-company bill attachments (client payment proof + handwritten timesheet) ───
 db.exec(`CREATE TABLE IF NOT EXISTS company_month_bills (
@@ -26233,6 +26268,127 @@ app.delete('/api/admin/company-week-payments/:id', requireAdmin, blockManager, (
     if (!delPaths.length && row.proof_file_path) delPaths = [row.proof_file_path];
     delPaths.forEach(p => storage.deleteObject(storage.keyFrom(p, 'uploads')).catch(() => {}));
     db.prepare('DELETE FROM company_week_payments WHERE id=?').run(row.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ════════ Bank statement upload + transaction annotation ════════
+const bankStmtUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /pdf$/i.test(file.mimetype) || /\.pdf$/i.test(file.originalname || '')),
+});
+
+const _BSTMT_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+// Parse a bank-statement's extracted text into transactions. Tuned for Cash App
+// (columns get concatenated without spaces), with a generic date+amount fallback.
+function parseBankStatementText(text) {
+  const out = { account_name: '', period: '', source: '', transactions: [] };
+  const T = String(text || '');
+  if (/cash\s*app/i.test(T)) out.source = 'cashapp';
+  const ym = T.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})\b/i);
+  const year = ym ? ym[2] : String(new Date().getFullYear());
+  if (ym) out.period = `${ym[1]} ${ym[2]}`;
+  for (const raw of T.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    // <Mon><day><desc...>$<fee>$<amount>   OR   <Mon><day><desc...>$<amount>
+    let m = line.match(/^([A-Za-z]{3,9})\.?\s*(\d{1,2})(.+?)\$([\d,]+\.\d{2})\$([\d,]+\.\d{2})$/);
+    let desc, amt;
+    if (m) { desc = m[3]; amt = +m[5].replace(/,/g, ''); }
+    else { m = line.match(/^([A-Za-z]{3,9})\.?\s*(\d{1,2})(.+?)\$([\d,]+\.\d{2})$/); if (!m) continue; desc = m[3]; amt = +m[4].replace(/,/g, ''); }
+    const mon = _BSTMT_MONTHS[m[1].slice(0, 3).toLowerCase()]; if (!mon) continue;
+    const day = +m[2]; if (!(day >= 1 && day <= 31)) continue;
+    if (!(amt > 0)) continue;
+    const date = `${year}-${String(mon).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    desc = desc.replace(/\s+/g, ' ').trim();
+    let details = '';
+    const dm = desc.match(/(Cash App [A-Za-z ]+|Direct Deposit|Mobile Deposit|ATM[ A-Za-z]*|Card [A-Za-z]+|Transfer)$/i);
+    if (dm) { details = dm[1].trim(); desc = desc.slice(0, dm.index).trim(); }
+    let direction = 'out', payee = '';
+    const pm = desc.match(/^To\s+(.+?)\s+from\s+/i);
+    if (pm) { direction = 'out'; payee = pm[1].trim(); }
+    else if (/^From\s+/i.test(desc)) { direction = 'in'; const fm = desc.match(/^From\s+(.+?)(?:\s+to\s+|$)/i); payee = fm ? fm[1].trim() : ''; }
+    else if (/\b(refund|deposit|received|credit|cashback)\b/i.test(desc + ' ' + details)) direction = 'in';
+    out.transactions.push({ date, description: desc, details, amount: amt, direction, payee });
+  }
+  return out;
+}
+
+// Upload a statement PDF, parse it, store statement + transactions.
+app.post('/api/admin/bank-statements', requireAdmin, blockManager, bankStmtUpload.single('file'), async (req, res) => {
+  try {
+    if (!pdfParse) return res.status(500).json({ error: 'PDF 解析库未安装（pdf-parse），请部署后重试' });
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 PDF 文件' });
+    let parsed;
+    try { const data = await pdfParse(req.file.buffer); parsed = parseBankStatementText(data.text); }
+    catch (e) { return res.status(400).json({ error: 'PDF 解析失败：' + (e.message || e) }); }
+    const txns = parsed.transactions || [];
+    const fname = `bankstmt-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+    const key = `uploads/${fname}`;
+    try { await storage.putObject(key, req.file.buffer, { contentType: 'application/pdf' }); }
+    catch (e) { return res.status(500).json({ error: '保存文件失败：' + (e.message || e) }); }
+    let totalIn = 0, totalOut = 0;
+    txns.forEach(t => { if (t.direction === 'in') totalIn += t.amount; else totalOut += t.amount; });
+    const accountName = (req.body && req.body.account_name) || parsed.account_name || '';
+    const ins = db.prepare(`INSERT INTO bank_statements
+      (source, account_name, period, file_path, file_name, txn_count, total_in, total_out, notes, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+        parsed.source || '', accountName, parsed.period || '', key, req.file.originalname || 'statement.pdf',
+        txns.length, +totalIn.toFixed(2), +totalOut.toFixed(2), (req.body && req.body.notes) || '', req.userName || '');
+    const sid = ins.lastInsertRowid;
+    const insTxn = db.prepare(`INSERT INTO bank_statement_txns
+      (statement_id, txn_date, description, details, amount, direction, status, payee, note, sort_order)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`);
+    db.transaction(() => {
+      txns.forEach((t, i) => insTxn.run(sid, t.date, t.description, t.details, t.amount, t.direction, 'unchecked', t.payee || '', '', i));
+    })();
+    res.json({ success: true, id: sid, txn_count: txns.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// List statements.
+app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, source, account_name, period, file_name, file_path, txn_count, total_in, total_out, notes, created_at
+      FROM bank_statements ORDER BY created_at DESC`).all();
+    for (const r of rows) r.file_url = r.file_path ? `/uploads/${path.basename(r.file_path)}` : '';
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// One statement + its transactions.
+app.get('/api/admin/bank-statements/:id', requireAdmin, blockManager, (req, res) => {
+  try {
+    const s = db.prepare('SELECT * FROM bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s) return res.status(404).json({ error: 'not found' });
+    s.file_url = s.file_path ? `/uploads/${path.basename(s.file_path)}` : '';
+    s.transactions = db.prepare('SELECT * FROM bank_statement_txns WHERE statement_id=? ORDER BY sort_order ASC, id ASC').all(s.id);
+    res.json(s);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Save transaction annotations: body.items = [{id, status, payee, note}].
+app.put('/api/admin/bank-statements/:id/txns', requireAdmin, blockManager, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id);
+    const items = Array.isArray(req.body && req.body.items) ? req.body.items : [];
+    const upd = db.prepare(`UPDATE bank_statement_txns SET status=?, payee=?, note=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND statement_id=?`);
+    db.transaction(() => {
+      items.forEach(it => upd.run(String(it.status || 'unchecked'), String(it.payee || ''), String(it.note || ''), parseInt(it.id), sid));
+    })();
+    res.json({ success: true, updated: items.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delete a statement + its transactions + file.
+app.delete('/api/admin/bank-statements/:id', requireAdmin, blockManager, (req, res) => {
+  try {
+    const s = db.prepare('SELECT * FROM bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s) return res.status(404).json({ error: 'not found' });
+    if (s.file_path) storage.deleteObject(storage.keyFrom(s.file_path, 'uploads')).catch(() => {});
+    db.prepare('DELETE FROM bank_statement_txns WHERE statement_id=?').run(s.id);
+    db.prepare('DELETE FROM bank_statements WHERE id=?').run(s.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
