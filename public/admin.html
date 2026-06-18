@@ -37058,22 +37058,21 @@ function bsEdRenderRecs() {
   const box = document.getElementById('bsEdRecs');
   if (!box) return;
   const q = (document.getElementById('bsEdSearch').value || '').trim().toLowerCase();
-  let rows = _bsRecords || [];
-  if (q) rows = rows.filter(r => (`${r.worker_name || ''} ${r.partner_name || ''} ${r.payment_date || ''} ${r.amount}`).toLowerCase().includes(q));
-  if (!rows.length) { box.innerHTML = '<div style="color:var(--gray-400);font-size:.8rem;padding:.6rem">没有付款记录。关闭后在下方筛选公司/月份，再回来贴。</div>'; return; }
-  box.innerHTML = rows.slice(0, 400).map(r => {
-    const note = _bsNote(r);
-    const marked = _bsMarked.has(Number(r.id));
+  let groups = _bsWeeklyGroups(_bsRecords);
+  if (q) groups = groups.filter(g => (`${g.worker_name} ${g.partner_name} ${_cpyFmtDateKey(g.weekStart)} ${g.amount}`).toLowerCase().includes(q));
+  if (!groups.length) { box.innerHTML = '<div style="color:var(--gray-400);font-size:.8rem;padding:.6rem">没有付款记录。关闭后在下方筛选公司/月份，再回来贴。</div>'; return; }
+  box.innerHTML = groups.slice(0, 400).map(g => {
+    const note = _bsWeekNote(g);
+    const marked = _bsGroupMarked(g);
     return '<div style="display:flex;gap:.4rem;align-items:flex-start;padding:.3rem .15rem;border-bottom:1px solid var(--gray-100)' + (marked ? ';opacity:.5' : '') + '">' +
-      '<button class="btn btn-sm btn-blue" style="flex:0 0 auto" data-rid="' + r.id + '" onclick="bsAddNoteFromRec(this)">贴</button>' +
+      '<button class="btn btn-sm btn-blue" style="flex:0 0 auto" data-ids="' + g.ids.join(',') + '" data-note="' + esc(note) + '" onclick="bsAddNoteFromGroup(this)">贴</button>' +
       '<div style="font-size:.77rem;color:var(--gray-600);line-height:1.3">' + esc(note) + (marked ? ' <span style="color:#15803d">✓</span>' : '') + '</div>' +
     '</div>';
   }).join('');
 }
 
-function bsAddNoteFromRec(btn) {
-  const r = (_bsRecords || []).find(x => Number(x.id) === Number(btn.dataset.rid));
-  if (r) bsAddNote(_bsNote(r), r.id);
+function bsAddNoteFromGroup(btn) {
+  bsAddNote(btn.dataset.note || '', btn.dataset.ids || '');
 }
 
 function bsAddBlankNote() { bsAddNote('', ''); }
@@ -37094,13 +37093,13 @@ function bsCurrentPageEl() {
   return best;
 }
 
-function bsAddNote(text, recId) {
+function bsAddNote(text, recIds) {
   const page = bsCurrentPageEl();
   if (!page) { showToast('PDF 还没加载好', 'error'); return; }
   const n = page.querySelectorAll('.bs-ed-note').length;
   const note = document.createElement('div');
   note.className = 'bs-ed-note';
-  note.dataset.recId = recId || '';
+  note.dataset.recIds = Array.isArray(recIds) ? recIds.join(',') : (recIds || '');
   note.style.cssText = 'position:absolute;width:220px;left:' + (16 + (n % 6) * 14) + 'px;top:' + (16 + (n % 6) * 14) + 'px;' +
     'background:rgba(255,251,235,.96);border:1px solid #f59e0b;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:5';
   note.innerHTML =
@@ -37204,8 +37203,7 @@ async function bsEditorExport(mode) {
         const wPt = png.cssW / scale, hPt = png.cssH / scale;
         pdfPage.drawImage(img, { x: leftPx / scale, y: phPt - (topPx / scale) - hPt, width: wPt, height: hPt });
         noteCount++;
-        const rid = Number(noteEl.dataset.recId);
-        if (rid) usedRecIds.push(rid);
+        (noteEl.dataset.recIds || '').split(',').filter(Boolean).forEach(x => usedRecIds.push(Number(x)));
       }
     }
     if (!noteCount) { setStatus(''); showToast('还没有备注可贴。点右侧记录的「贴」或「+ 空白备注」。', 'error'); return; }
@@ -37263,48 +37261,86 @@ async function loadBsRecords() {
   renderBsRecords();
 }
 
-// The note text the user copies and pastes onto the bank-statement PDF.
+// The note text the user copies and pastes onto the bank-statement PDF (single day — legacy).
 function _bsNote(r) {
   const amt = (Number(r.amount) || 0).toFixed(2);
   return [r.worker_name || '', r.partner_name || '', r.payment_date || '', `工资 $${amt}`].filter(Boolean).join(' · ');
 }
+
+// MM-DD for a Date.
+function _bsMD(d) { return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+// Group daily payment records into natural weeks (周一–周日) per worker + company,
+// summing the wage. Reuses the same Monday-based week as 月度付款记录 (_cpyMondayOf).
+// Returns [{ key, worker_name, partner_name, weekStart, weekEnd, weekKey, amount, ids:[] }] newest first.
+function _bsWeeklyGroups(records) {
+  const groups = new Map();
+  (records || []).forEach(r => {
+    const mon = _cpyMondayOf(r.payment_date);
+    if (!mon) return;
+    const weekKey = _cpyFmtDateKey(mon);
+    const key = `${weekKey}|${r.partner_id || ''}|${r.worker_name || ''}`;
+    let g = groups.get(key);
+    if (!g) {
+      const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
+      g = { key, worker_name: r.worker_name || '', partner_name: r.partner_name || '', weekStart: mon, weekEnd: sun, weekKey, amount: 0, ids: [] };
+      groups.set(key, g);
+    }
+    g.amount += Number(r.amount) || 0;
+    if (r.id != null) g.ids.push(Number(r.id));
+  });
+  return Array.from(groups.values()).sort((a, b) =>
+    b.weekKey.localeCompare(a.weekKey) || a.worker_name.localeCompare(b.worker_name));
+}
+
+// Weekly note pasted onto the PDF. Editable afterwards (金额可改).
+function _bsWeekNote(g) {
+  const amt = (Number(g.amount) || 0).toFixed(2);
+  const range = `${_cpyFmtDateKey(g.weekStart)}~${_bsMD(g.weekEnd)}`;
+  return [g.worker_name, g.partner_name, range, `工资 $${amt}`].filter(Boolean).join(' · ');
+}
+
+// A weekly group is "annotated" only when every day in it is marked.
+function _bsGroupMarked(g) { return g.ids.length > 0 && g.ids.every(id => _bsMarked.has(Number(id))); }
 
 function bsToggleShowMarked(cb) { _bsShowMarked = !!cb.checked; renderBsRecords(); }
 
 function renderBsRecords() {
   const wrap = document.getElementById('bsRecordsWrap');
   const q = (document.getElementById('bsFilterQ').value || '').trim().toLowerCase();
-  let rows = _bsRecords;
-  if (q) rows = rows.filter(r => `${r.worker_name || ''} ${r.partner_name || ''} ${r.payment_date || ''} ${r.amount} ${r.notes || ''}`.toLowerCase().includes(q));
-  const markedInView = rows.filter(r => _bsMarked.has(Number(r.id))).length;
-  if (!_bsShowMarked) rows = rows.filter(r => !_bsMarked.has(Number(r.id)));
-  if (!rows.length) {
-    wrap.innerHTML = `<div style="color:var(--gray-400);padding:1rem;text-align:center;border:1px dashed var(--gray-200);border-radius:8px">${markedInView && !_bsShowMarked ? `这批都已标注 ✓（${markedInView} 条已隐藏，勾选「显示已标注」可查看/撤销）` : '没有匹配的付款记录。换个公司/月份/关键词试试。'}</div>`;
+  let groups = _bsWeeklyGroups(_bsRecords);
+  if (q) groups = groups.filter(g => `${g.worker_name} ${g.partner_name} ${_cpyFmtDateKey(g.weekStart)} ${_bsMD(g.weekEnd)} ${g.amount}`.toLowerCase().includes(q));
+  const markedInView = groups.filter(_bsGroupMarked).length;
+  if (!_bsShowMarked) groups = groups.filter(g => !_bsGroupMarked(g));
+  if (!groups.length) {
+    wrap.innerHTML = `<div style="color:var(--gray-400);padding:1rem;text-align:center;border:1px dashed var(--gray-200);border-radius:8px">${markedInView && !_bsShowMarked ? `这批都已标注 ✓（${markedInView} 周已隐藏，勾选「显示已标注」可查看/撤销）` : '没有匹配的付款记录。换个公司/月份/关键词试试。'}</div>`;
     return;
   }
-  wrap.innerHTML = `<div style="color:var(--gray-400);font-size:.8rem;margin-bottom:.4rem">共 ${rows.length} 条 · 勾选可批量复制${markedInView && !_bsShowMarked ? ` · ${markedInView} 条已标注(隐藏)` : ''}</div>
+  wrap.innerHTML = `<div style="color:var(--gray-400);font-size:.8rem;margin-bottom:.4rem">按自然周（周一–周日）汇总每人每周工资，共 ${groups.length} 周 · 勾选可批量复制${markedInView && !_bsShowMarked ? ` · ${markedInView} 周已标注(隐藏)` : ''}</div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem">
     <thead><tr style="background:var(--gray-50);color:var(--gray-500);font-size:.8rem">
       <th style="padding:6px 8px;width:30px"></th>
-      <th style="padding:6px 8px;text-align:left">日期</th>
+      <th style="padding:6px 8px;text-align:left">周（周一–周日）</th>
       <th style="padding:6px 8px;text-align:left">工人</th>
       <th style="padding:6px 8px;text-align:left">公司</th>
-      <th style="padding:6px 8px;text-align:right">付给工人</th>
+      <th style="padding:6px 8px;text-align:right">周工资合计</th>
       <th style="padding:6px 8px;text-align:left">备注（复制的内容）</th>
       <th style="padding:6px 8px;text-align:center">操作</th>
-    </tr></thead><tbody>${rows.map(r => {
-      const note = _bsNote(r);
-      const marked = _bsMarked.has(Number(r.id));
+    </tr></thead><tbody>${groups.map(g => {
+      const note = _bsWeekNote(g);
+      const ids = g.ids.join(',');
+      const marked = _bsGroupMarked(g);
+      const range = `${_cpyFmtDateKey(g.weekStart)} ~ ${_bsMD(g.weekEnd)}`;
       return `<tr style="border-top:1px solid var(--gray-100)${marked ? ';opacity:.55;background:#f8fafc' : ''}">
-        <td style="padding:5px 8px;text-align:center">${marked ? '✓' : `<input type="checkbox" class="bs-rec-chk" data-id="${r.id}" data-note="${esc(note)}">`}</td>
-        <td style="padding:5px 8px;white-space:nowrap">${esc(r.payment_date || '')}</td>
-        <td style="padding:5px 8px">${esc(r.worker_name || '')}</td>
-        <td style="padding:5px 8px">${esc(r.partner_name || '')}</td>
-        <td style="padding:5px 8px;text-align:right;font-weight:600;color:#15803d">${_cpyFmtMoney(r.amount)}</td>
+        <td style="padding:5px 8px;text-align:center">${marked ? '✓' : `<input type="checkbox" class="bs-rec-chk" data-ids="${ids}" data-note="${esc(note)}">`}</td>
+        <td style="padding:5px 8px;white-space:nowrap">${esc(range)}<div style="font-size:.7rem;color:var(--gray-400)">${g.ids.length} 天合计</div></td>
+        <td style="padding:5px 8px">${esc(g.worker_name)}</td>
+        <td style="padding:5px 8px">${esc(g.partner_name)}</td>
+        <td style="padding:5px 8px;text-align:right;font-weight:600;color:#15803d">${_cpyFmtMoney(g.amount)}</td>
         <td style="padding:5px 8px;color:var(--gray-600)">${esc(note)}${marked ? ' <span style="color:#15803d;font-size:.72rem">· 已标注</span>' : ''}</td>
         <td style="padding:5px 8px;text-align:center;white-space:nowrap">${marked
-          ? `<button class="btn btn-sm btn-outline" onclick="bsUnmark(${r.id})">撤销标注</button>`
-          : `<button class="btn btn-sm btn-blue" data-id="${r.id}" data-note="${esc(note)}" onclick="copyBsNote(this)">📋 复制备注</button>`}</td>
+          ? `<button class="btn btn-sm btn-outline" onclick="bsUnmarkGroup('${ids}')">撤销标注</button>`
+          : `<button class="btn btn-sm btn-blue" data-ids="${ids}" data-note="${esc(note)}" onclick="copyBsGroup(this)">📋 复制备注</button>`}</td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
 }
@@ -37330,12 +37366,12 @@ async function _bsMark(ids, note) {
   } catch (e) { showToast('标注保存失败：' + (e.message || e), 'error'); return false; }
 }
 
-async function copyBsNote(btn) {
-  const id = Number(btn.dataset.id);
+async function copyBsGroup(btn) {
+  const ids = (btn.dataset.ids || '').split(',').filter(Boolean).map(Number);
   const note = btn.dataset.note || '';
   const ok = await _bsCopy(note);
   if (!ok) { showToast('复制失败，请手动选中复制', 'error'); return; }
-  await _bsMark([id], note);
+  await _bsMark(ids, note);
   renderBsRecords();
   showToast('已复制并标注，已从列表隐藏（勾选「显示已标注」可撤销）', 'success');
 }
@@ -37344,18 +37380,20 @@ async function copyBsSelected() {
   const boxes = Array.from(document.querySelectorAll('.bs-rec-chk:checked'));
   if (!boxes.length) { showToast('请先勾选要复制的记录', 'error'); return; }
   const notes = boxes.map(c => c.dataset.note);
-  const ids = boxes.map(c => Number(c.dataset.id));
+  const ids = boxes.flatMap(c => (c.dataset.ids || '').split(',').filter(Boolean).map(Number));
   const ok = await _bsCopy(notes.join('\n'));
   if (!ok) { showToast('复制失败', 'error'); return; }
   await _bsMark(ids, '');
   renderBsRecords();
-  showToast(`已复制 ${notes.length} 条并标注（已隐藏）`, 'success');
+  showToast(`已复制 ${notes.length} 周并标注（已隐藏）`, 'success');
 }
 
-async function bsUnmark(id) {
+async function bsUnmarkGroup(idsStr) {
+  const ids = String(idsStr || '').split(',').filter(Boolean).map(Number);
+  if (!ids.length) return;
   try {
-    await api('/admin/recon-marks/' + id, { method: 'DELETE' });
-    _bsMarked.delete(Number(id));
+    await Promise.all(ids.map(id => api('/admin/recon-marks/' + id, { method: 'DELETE' })));
+    ids.forEach(id => _bsMarked.delete(Number(id)));
     renderBsRecords();
     showToast('已撤销标注', 'success');
   } catch (e) { showToast('撤销失败：' + (e.message || e), 'error'); }
