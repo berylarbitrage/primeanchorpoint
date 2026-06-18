@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 公司帐单:拖放/多选上传对账单PDF + 复制备注',
+  tag: '2026-06-18 · 公司帐单:PDF编辑器(拖放贴备注、导出新PDF) + 上传/复制备注',
   started: new Date().toISOString(),
 };
 
@@ -26359,6 +26359,19 @@ app.get('/api/admin/bank-statements/:id', requireAdmin, blockManager, (req, res)
     s.transactions = db.prepare('SELECT * FROM bank_statement_txns WHERE statement_id=? ORDER BY sort_order ASC, id ASC').all(s.id);
     res.json(s);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Raw PDF bytes, served same-origin (no R2 redirect) so the in-page editor
+// can fetch them for pdf.js / pdf-lib without cross-origin CORS issues.
+app.get('/api/admin/bank-statements/:id/file', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const s = db.prepare('SELECT file_path FROM bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s || !s.file_path) return res.status(404).json({ error: 'not found' });
+    const buf = await storage.getBuffer(storage.keyFrom(s.file_path, 'uploads'));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.send(buf);
+  } catch (e) { res.status(404).json({ error: 'File not found' }); }
 });
 
 // Save transaction annotations: body.items = [{id, status, payee, note}].
