@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 按周汇总显示实付金额,与付给工人对不上标红 + 提交改系统弹窗',
+  tag: '2026-06-16 · 付工资凭证支持多张照片 + 按周汇总显示实付金额对不上标红',
   started: new Date().toISOString(),
 };
 
@@ -2390,6 +2390,10 @@ try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN worker_name TEXT DEF
 try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN employee_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`DROP INDEX IF EXISTS idx_cwkp_partner_week`); } catch(e) {}
 try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cwkp_partner_week_worker ON company_week_payments(partner_id, week_start, worker_name)`); } catch(e) {}
+// Multi-file proof: keep legacy single proof_file_path/name (first file) for back-compat;
+// store the full set as JSON arrays.
+try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN proof_file_paths TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE company_week_payments ADD COLUMN proof_file_names TEXT DEFAULT ''`); } catch(e) {}
 
 // ─── Per-month-per-company bill attachments (client payment proof + handwritten timesheet) ───
 db.exec(`CREATE TABLE IF NOT EXISTS company_month_bills (
@@ -26142,15 +26146,23 @@ app.get('/api/admin/company-week-payments', requireAdmin, blockManager, async (r
     // The /uploads/:filename route serves files in both R2 (302 → presigned) and
     // local (stream) modes, so a uniform path-style URL works everywhere.
     for (const r of rows) {
-      r.proof_url = r.proof_file_path ? `/uploads/${path.basename(r.proof_file_path)}` : '';
+      let paths = [];
+      try { paths = r.proof_file_paths ? JSON.parse(r.proof_file_paths) : []; } catch (_) { paths = []; }
+      if (!paths.length && r.proof_file_path) paths = [r.proof_file_path];
+      let names = [];
+      try { names = r.proof_file_names ? JSON.parse(r.proof_file_names) : []; } catch (_) { names = []; }
+      if (!names.length && r.proof_file_name) names = [r.proof_file_name];
+      r.proof_urls = paths.map(p => `/uploads/${path.basename(p)}`);
+      r.proof_names = names;
+      r.proof_url = r.proof_urls[0] || '';   // legacy first-file field
     }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/admin/company-week-payments  (multipart; optional `proof` file)
+// POST /api/admin/company-week-payments  (multipart; optional `proof` files — multiple)
 //   Upsert by (partner_id, week_start, worker_name). Re-uploading replaces the prior proof file.
-app.post('/api/admin/company-week-payments', requireAdmin, blockManager, weekPayProofUpload.single('proof'), (req, res) => {
+app.post('/api/admin/company-week-payments', requireAdmin, blockManager, weekPayProofUpload.array('proof', 20), (req, res) => {
   try {
     const d = req.body || {};
     const partnerId = parseInt(d.partner_id);
@@ -26171,32 +26183,42 @@ app.post('/api/admin/company-week-payments', requireAdmin, blockManager, weekPay
     const thirdParty = method === 'thirdparty' ? String(d.third_party_platform || '').trim() : '';
     const amount = Number(d.amount) || 0;
     const notes = String(d.notes || '');
-    const newProofPath = req.file ? (req.file.key || req.file.path) : '';
-    const newProofName = req.file ? (req.file.originalname || '') : '';
+    const files = Array.isArray(req.files) ? req.files : [];
+    const newProofPaths = files.map(f => f.key || f.path).filter(Boolean);
+    const newProofNames = files.map(f => f.originalname || '');
+    const newProofPath = newProofPaths[0] || '';           // legacy first file
+    const newProofName = newProofNames[0] || '';
+    const newPathsJson = newProofPaths.length ? JSON.stringify(newProofPaths) : '';
+    const newNamesJson = newProofPaths.length ? JSON.stringify(newProofNames) : '';
 
     const existing = db.prepare('SELECT * FROM company_week_payments WHERE partner_id=? AND week_start=? AND worker_name=?')
       .get(partnerId, weekStart, workerName);
     if (existing) {
-      // If a new proof was uploaded, delete the old file.
-      if (newProofPath && existing.proof_file_path) {
-        storage.deleteObject(storage.keyFrom(existing.proof_file_path, 'uploads')).catch(() => {});
+      // If new proofs were uploaded, delete the old file set first.
+      if (newProofPaths.length) {
+        let oldPaths = [];
+        try { oldPaths = existing.proof_file_paths ? JSON.parse(existing.proof_file_paths) : []; } catch (_) { oldPaths = []; }
+        if (!oldPaths.length && existing.proof_file_path) oldPaths = [existing.proof_file_path];
+        oldPaths.forEach(p => storage.deleteObject(storage.keyFrom(p, 'uploads')).catch(() => {}));
       }
       db.prepare(`UPDATE company_week_payments SET
           partner_name=?, employee_id=?, week_end=?, payment_method=?, third_party_platform=?, paying_entity=?,
           amount=?, notes=?,
           proof_file_path=COALESCE(NULLIF(?,''), proof_file_path),
           proof_file_name=COALESCE(NULLIF(?,''), proof_file_name),
+          proof_file_paths=COALESCE(NULLIF(?,''), proof_file_paths),
+          proof_file_names=COALESCE(NULLIF(?,''), proof_file_names),
           updated_at=CURRENT_TIMESTAMP
         WHERE id=?`).run(
           partnerName, employeeId, weekEnd, method, thirdParty, entity,
-          amount, notes, newProofPath, newProofName, existing.id);
+          amount, notes, newProofPath, newProofName, newPathsJson, newNamesJson, existing.id);
       return res.json({ success: true, id: existing.id });
     }
     const r = db.prepare(`INSERT INTO company_week_payments
-      (partner_id, partner_name, worker_name, employee_id, week_start, week_end, payment_method, third_party_platform, paying_entity, amount, proof_file_path, proof_file_name, notes, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      (partner_id, partner_name, worker_name, employee_id, week_start, week_end, payment_method, third_party_platform, paying_entity, amount, proof_file_path, proof_file_name, proof_file_paths, proof_file_names, notes, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         partnerId, partnerName, workerName, employeeId, weekStart, weekEnd, method, thirdParty, entity, amount,
-        newProofPath, newProofName, notes, req.userName || '');
+        newProofPath, newProofName, newPathsJson, newNamesJson, notes, req.userName || '');
     res.json({ success: true, id: r.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -26206,7 +26228,10 @@ app.delete('/api/admin/company-week-payments/:id', requireAdmin, blockManager, (
   try {
     const row = db.prepare('SELECT * FROM company_week_payments WHERE id=?').get(parseInt(req.params.id));
     if (!row) return res.status(404).json({ error: 'not found' });
-    if (row.proof_file_path) storage.deleteObject(storage.keyFrom(row.proof_file_path, 'uploads')).catch(() => {});
+    let delPaths = [];
+    try { delPaths = row.proof_file_paths ? JSON.parse(row.proof_file_paths) : []; } catch (_) { delPaths = []; }
+    if (!delPaths.length && row.proof_file_path) delPaths = [row.proof_file_path];
+    delPaths.forEach(p => storage.deleteObject(storage.keyFrom(p, 'uploads')).catch(() => {}));
     db.prepare('DELETE FROM company_week_payments WHERE id=?').run(row.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
