@@ -37100,13 +37100,13 @@ function bsAddNote(text, recIds) {
   const note = document.createElement('div');
   note.className = 'bs-ed-note';
   note.dataset.recIds = Array.isArray(recIds) ? recIds.join(',') : (recIds || '');
-  note.style.cssText = 'position:absolute;width:220px;left:' + (16 + (n % 6) * 14) + 'px;top:' + (16 + (n % 6) * 14) + 'px;' +
+  note.style.cssText = 'position:absolute;width:330px;left:' + (16 + (n % 6) * 14) + 'px;top:' + (16 + (n % 6) * 14) + 'px;' +
     'display:flex;flex-direction:column;overflow:hidden;background:rgba(255,251,235,.96);border:1px solid #f59e0b;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.18);z-index:5';
   note.innerHTML =
     '<div class="bs-ed-note-bar" style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;cursor:move;background:#fde68a;border-radius:5px 5px 0 0;padding:1px 5px;font-size:11px;color:#92400e;user-select:none">' +
       '<span>⠿ 拖动</span><span class="bs-ed-note-del" title="删除" style="cursor:pointer;font-weight:700;padding:0 3px">✕</span>' +
     '</div>' +
-    '<div class="bs-ed-note-text" contenteditable="true" style="flex:1 1 auto;min-height:16px;overflow:auto;padding:5px 7px;line-height:1.35;outline:none;font-weight:700;color:#b91c1c;font-size:13px;white-space:pre-wrap;word-break:break-word"></div>' +
+    '<div class="bs-ed-note-text" contenteditable="true" style="flex:1 1 auto;min-height:14px;overflow:auto;padding:3px 7px;line-height:1.25;outline:none;font-weight:700;color:#b91c1c;font-size:13px;white-space:pre-wrap;word-break:break-word"></div>' +
     '<div class="bs-ed-note-rsz" title="拖动改变大小/形状" style="position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;color:#92400e;font-size:11px;line-height:14px;text-align:center;user-select:none">◢</div>';
   note.querySelector('.bs-ed-note-text').textContent = text || '';
   page.appendChild(note);
@@ -37165,7 +37165,7 @@ function bsMakeDraggable(el, handle, page) {
 // Render a note's text to a PNG data URL (uses browser fonts → 支持中文), with wrapping.
 // boxHcss: if given (>0), the box keeps that exact height (user-resized); else auto-fit text.
 function bsNotePng(text, boxWcss, boxHcss) {
-  const padX = 7, padY = 5, fontPx = 13, lineH = 18, dpr = 3;
+  const padX = 7, padY = 3, fontPx = 13, lineH = 16, dpr = 3;
   const font = '700 ' + fontPx + 'px -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif';
   const meas = document.createElement('canvas').getContext('2d');
   meas.font = font;
