@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 按周提交确认/提示改用系统弹窗(非浏览器原生) + 工人名字历史下拉搜索',
+  tag: '2026-06-16 · 按周汇总显示实付金额,与付给工人对不上标红 + 提交改系统弹窗',
   started: new Date().toISOString(),
 };
 

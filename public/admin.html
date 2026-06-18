@@ -36608,8 +36608,18 @@ function _cpyWkPayWorkerCtrl(g, weekStartKey, weekEndKey) {
     const proofBtn = rec.proof_url
       ? `<button class="btn btn-sm btn-outline" style="padding:.02rem .35rem;font-size:.7rem" onclick="event.stopPropagation();viewCpyWkProof('${_cpyEscape(rec.proof_url)}')">凭证</button>`
       : '<span style="color:#b45309;font-size:.7rem">无凭证</span>';
-    return `<span style="display:inline-flex;align-items:center;gap:.35rem;margin-left:.6rem;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:.05rem .5rem;font-size:.72rem;vertical-align:middle">
+    // 实付金额 vs 计算出的「付给工人」(g.amount):两者对不上就标红提醒。
+    const paid = Number(rec.amount) || 0;
+    const owed = Number(g.amount) || 0;
+    const mismatch = paid > 0 && Math.abs(paid - owed) > 0.005;
+    const amtStr = paid > 0
+      ? (mismatch
+          ? `<span title="应付(付给工人) ${_cpyFmtMoney(owed)} · 实付 ${_cpyFmtMoney(paid)} · 差额 ${_cpyFmtMoney(paid - owed)}" style="color:#dc2626;font-weight:700;background:#fee2e2;border-radius:4px;padding:0 5px">实付 ${_cpyFmtMoney(paid)} ⚠</span>`
+          : `<span style="color:#047857;font-weight:600">实付 ${_cpyFmtMoney(paid)}</span>`)
+      : '';
+    return `<span style="display:inline-flex;align-items:center;gap:.35rem;margin-left:.6rem;background:${mismatch ? '#fef2f2' : '#ecfdf5'};border:1px solid ${mismatch ? '#fca5a5' : '#a7f3d0'};border-radius:999px;padding:.05rem .5rem;font-size:.72rem;vertical-align:middle">
       <span style="color:#047857;font-weight:600">✓ ${_cpyEscape(methodStr)} · ${_cpyEscape(entity)}</span>
+      ${amtStr}
       ${proofBtn}
       ${openBtn('编辑', 'btn-outline')}
     </span>`;
