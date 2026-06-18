@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-18 · 公司帐单:PDF备注框默认更矮、可改大小/形状 + 按自然周汇总',
+  tag: '2026-06-18 · 按周汇总:付款行拆成缩略图/平台/实付分列 + PDF备注框更矮',
   started: new Date().toISOString(),
 };
 
