@@ -2582,6 +2582,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 手动添加员工</button>
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpToggleEmpImport()">📥 从系统导入员工</button>
+        <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#7c3aed;border-color:#ddd6fe" onclick="invpOpenCompanyHistoryPicker()" title="从这家客户公司的付款历史里勾选老员工，带入他们最近一次的 付/收 时薪">📋 从本公司历史选</button>
       </div>
       </div>
 
@@ -33228,6 +33229,105 @@ function invpImportEmpById(id, fullName, code) {
   if (inp) { inp.value = ''; }
   const sugg = document.getElementById('invpEmpImportSugg');
   if (sugg) sugg.style.display = 'none';
+}
+
+// ── Pick workers from THIS client company's payment history ──
+// Lists distinct workers ever paid under the invoice's client company (company_worker_payments)
+// so recurring workers can be added without re-typing — brings their most-recent 付给工人(wage)
+// and 从公司收(bill) rates into the new row (which also lights up the two-rate columns).
+async function invpOpenCompanyHistoryPicker() {
+  _invpSaveTableState();
+  let pid = window._invpSelectedPartnerId;
+  if (!pid) {
+    const nm = (document.getElementById('invPageBillName').value || '').trim().toLowerCase();
+    const hit = (window._invpPartners || []).find(p => (p.name || '').trim().toLowerCase() === nm);
+    pid = hit ? hit.id : null;
+  }
+  if (!pid) { showToast('请先在上方选择已登记的客户公司，才能从其历史里选员工', 'error'); return; }
+  let recs = [];
+  try { recs = await api('/admin/company-payments?partner_id=' + pid); } catch (_) { recs = []; }
+  recs = Array.isArray(recs) ? recs : [];
+  if (!recs.length) { showToast('这家公司还没有历史付款记录', 'error'); return; }
+  // Dedupe by worker; keep the most-recent record's rates.
+  const map = new Map();
+  recs.forEach(r => {
+    const name = (r.worker_name || '').trim();
+    if (!name) return;
+    const key = name.toLowerCase() + '|' + (r.employee_id || '');
+    const prev = map.get(key);
+    if (!prev || (r.payment_date || '') >= (prev.date || '')) {
+      map.set(key, {
+        name, employee_id: r.employee_id || null, date: r.payment_date || '',
+        wageRate: Number(r.hourly_rate) || (prev ? prev.wageRate : 0),
+        billRate: Number(r.bill_rate) || (prev ? prev.billRate : 0),
+      });
+    }
+  });
+  const workers = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  window._invpHistWorkers = workers;
+  const inInvoice = new Set((window._invpManualEmps || []).map(e => (e.name || '').trim().toLowerCase()));
+  const rowsHtml = workers.map((w, i) => {
+    const dup = inInvoice.has(w.name.toLowerCase());
+    return `<label style="display:flex;align-items:center;gap:.5rem;padding:.35rem .55rem;border-bottom:1px solid var(--gray-100);${dup ? 'opacity:.5' : 'cursor:pointer'}">
+      <input type="checkbox" class="invpHistChk" data-i="${i}" ${dup ? 'disabled' : ''}>
+      <span style="flex:1;font-size:.86rem">${esc(w.name)}${dup ? ' <span style="font-size:.7rem;color:var(--gray-400)">(已在发票里)</span>' : ''}</span>
+      <span style="font-size:.74rem;color:#15803d;white-space:nowrap">付 $${w.wageRate.toFixed(2)}</span>
+      <span style="font-size:.74rem;color:#1d4ed8;white-space:nowrap">收 $${w.billRate.toFixed(2)}</span>
+    </label>`;
+  }).join('');
+  const ov = document.createElement('div');
+  ov.id = 'invpHistOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2400;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML = `<div style="background:#fff;border-radius:10px;padding:1rem 1.1rem;max-width:460px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.25);display:flex;flex-direction:column;max-height:80vh">
+    <div style="font-weight:700;font-size:1rem;margin-bottom:.3rem">📋 从本公司历史选员工</div>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.5rem">勾选要加进发票的工人，会带入历史里最近一次的「付给工人 / 从公司收」时薪（加进来后可在表里再改工时/时薪）。</div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.4rem">
+      <input type="text" id="invpHistSearch" placeholder="搜索姓名…" autocomplete="off" oninput="invpHistFilter(this.value)" style="flex:1;padding:.35rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      <button type="button" class="btn btn-sm btn-outline" onclick="invpHistToggleAll(true)">全选</button>
+      <button type="button" class="btn btn-sm btn-outline" onclick="invpHistToggleAll(false)">清空</button>
+    </div>
+    <div id="invpHistList" style="overflow-y:auto;border:1px solid var(--gray-200);border-radius:6px;flex:1;min-height:120px">${rowsHtml}</div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.7rem">
+      <button type="button" class="btn btn-outline" onclick="document.getElementById('invpHistOverlay').remove()">取消</button>
+      <button type="button" class="btn btn-green" onclick="invpHistAddSelected()">添加所选</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  setTimeout(() => { const el = document.getElementById('invpHistSearch'); if (el) el.focus(); }, 50);
+}
+
+function invpHistFilter(q) {
+  q = (q || '').trim().toLowerCase();
+  document.querySelectorAll('#invpHistList label').forEach(l => {
+    l.style.display = (!q || l.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+}
+function invpHistToggleAll(on) {
+  document.querySelectorAll('#invpHistList .invpHistChk').forEach(c => {
+    if (!c.disabled && c.closest('label').style.display !== 'none') c.checked = on;
+  });
+}
+function invpHistAddSelected() {
+  const workers = window._invpHistWorkers || [];
+  _invpSaveTableState();
+  let n = 0;
+  document.querySelectorAll('#invpHistList .invpHistChk:checked').forEach(c => {
+    const w = workers[parseInt(c.dataset.i)];
+    if (!w) return;
+    if ((window._invpManualEmps || []).some(e => (e.name || '').trim().toLowerCase() === w.name.toLowerCase())) return;
+    window._invpManualEmps.push({
+      uid: _invpManualUidSeq++, name: w.name, category: '', subcontractor: '', referrer: '',
+      rate: w.billRate > 0 ? String(w.billRate) : '',
+      wage_rate: w.wageRate > 0 ? String(w.wageRate) : '',
+      days: {}, linked_employee_id: w.employee_id || null, linked_employee_code: '', linked_employee_name: w.name,
+    });
+    n++;
+  });
+  window._invpDirty = true;
+  const ov = document.getElementById('invpHistOverlay'); if (ov) ov.remove();
+  renderInvpManualTable();
+  showToast(n ? `已添加 ${n} 名工人，可在表里填工时（时薪已带入，可改）` : '没有新增（勾选的可能都已在发票里）', 'success');
 }
 
 // ── Per-row "link to system employee" feature ──
