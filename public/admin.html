@@ -1642,20 +1642,24 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <!-- ════════ 银行对账单 Tab ════════ -->
 <div id="tab-bank-statements" style="display:none">
   <div class="top">
-    <h1>🏦 银行对账单</h1>
-    <div class="top-actions">
-      <label class="btn btn-green" style="cursor:pointer">+ 上传对账单 PDF
-        <input type="file" id="bsUploadInput" accept="application/pdf" style="display:none" onchange="bsUpload(this.files&&this.files[0])">
-      </label>
-      <button class="btn" onclick="loadBankStatements()">刷新</button>
-    </div>
+    <h1>🏦 对账备注</h1>
   </div>
   <p style="color:var(--gray-500);font-size:.85rem;margin:.25rem 0 1rem">
-    上传银行 / Cash App 对账单 PDF,系统自动识别每笔交易;再给每笔标注「是不是付款 · 去向 · 备注（脚注）」并保存。
+    列出系统里曾经的「付给工人」记录。对照你的对账单（Cash App / 银行 PDF），找到那笔金额对应的记录，点「复制备注」，再粘到你的 PDF 上即可 —— 系统不自动解析你的 PDF。
   </p>
-  <div id="bsUploadHint" style="display:none;margin-bottom:.75rem;color:var(--sky);font-size:.85rem"></div>
-  <div id="bsListWrap" style="margin-bottom:1rem"></div>
-  <div id="bsDetailWrap"></div>
+  <div style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:flex-end;margin-bottom:.75rem">
+    <div class="field" style="margin:0"><label>公司</label>
+      <select id="bsFilterCompany" onchange="loadBsRecords()"><option value="">全部公司</option></select>
+    </div>
+    <div class="field" style="margin:0"><label>月份</label>
+      <input type="month" id="bsFilterMonth" onchange="loadBsRecords()">
+    </div>
+    <div class="field" style="margin:0;flex:1;min-width:160px"><label>搜索（工人 / 金额 / 备注）</label>
+      <input type="text" id="bsFilterQ" placeholder="如 Wilson 或 580" oninput="renderBsRecords()">
+    </div>
+    <button class="btn btn-outline" onclick="copyBsSelected()">📋 复制所选备注</button>
+  </div>
+  <div id="bsRecordsWrap"></div>
 </div>
 
 <!-- ════════ 工人付款记录 Tab ════════ -->
@@ -36816,148 +36820,99 @@ async function deleteCpyWkPay() {
   else setup();
 })();
 
-// ════════ 银行对账单（上传 → 解析 → 标注） ════════
-let _bsStatements = [];
-let _bsCurrent = null;
-const _BS_STATUS = {
-  paid:        { label: '已付款', color: '#15803d', bg: '#dcfce7' },
-  unchecked:   { label: '待核对', color: '#92400e', bg: '#fef3c7' },
-  not_payment: { label: '非付款', color: '#64748b', bg: '#f1f5f9' },
-  other:       { label: '其他',   color: '#1d4ed8', bg: '#eff6ff' },
-};
+// ════════ 银行对账单：列出付款记录 → 复制备注贴到对账单 PDF（不自动解析 PDF） ════════
+let _bsRecords = [];
 
 function initBankStatementsPage() {
-  document.getElementById('bsDetailWrap').innerHTML = '';
-  loadBankStatements();
+  bsPopulateCompanies();
+  loadBsRecords();
 }
 
-async function bsUpload(file) {
-  if (!file) return;
-  const hint = document.getElementById('bsUploadHint');
-  hint.style.display = ''; hint.textContent = `正在上传并解析「${file.name}」…`;
-  const fd = new FormData();
-  fd.append('file', file);
+async function bsPopulateCompanies() {
+  const sel = document.getElementById('bsFilterCompany');
+  if (!sel || sel.dataset.loaded) return;
   try {
-    const res = await fetch(API + '/admin/bank-statements', { method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd });
-    const r = await res.json();
-    if (!r.success) throw new Error(r.error || '上传失败');
-    showToast(`已解析出 ${r.txn_count} 笔交易`, 'success');
-    await loadBankStatements();
-    bsOpen(r.id);
-  } catch (e) {
-    showToast('上传/解析失败：' + (e.message || e), 'error');
-  } finally {
-    hint.style.display = 'none'; hint.textContent = '';
-    const inp = document.getElementById('bsUploadInput'); if (inp) inp.value = '';
-  }
+    const list = await api('/admin/partners');
+    const ps = Array.isArray(list) ? list : (list && list.partners) || [];
+    ps.forEach(p => { const o = document.createElement('option'); o.value = p.id; o.textContent = p.name; sel.appendChild(o); });
+    sel.dataset.loaded = '1';
+  } catch (_) {}
 }
 
-async function loadBankStatements() {
-  const wrap = document.getElementById('bsListWrap');
-  wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>';
-  try { _bsStatements = await api('/admin/bank-statements') || []; }
+async function loadBsRecords() {
+  const wrap = document.getElementById('bsRecordsWrap');
+  wrap.innerHTML = '<div style="color:var(--gray-400);padding:.5rem">加载中…</div>';
+  const params = new URLSearchParams();
+  const pid = document.getElementById('bsFilterCompany').value;
+  const mon = document.getElementById('bsFilterMonth').value;
+  if (pid) params.set('partner_id', pid);
+  if (mon) params.set('year_month', mon);
+  try { _bsRecords = await api('/admin/company-payments' + (params.toString() ? '?' + params : '')) || []; }
   catch (e) { wrap.innerHTML = `<div style="color:var(--red)">加载失败：${esc(e.message || e)}</div>`; return; }
-  if (!_bsStatements.length) {
-    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.9rem;padding:1rem;text-align:center;border:1px dashed var(--gray-200);border-radius:8px">还没有对账单。点右上角「上传对账单 PDF」开始。</div>';
+  _bsRecords = (Array.isArray(_bsRecords) ? _bsRecords : []).sort((a, b) => String(b.payment_date || '').localeCompare(String(a.payment_date || '')));
+  renderBsRecords();
+}
+
+// The note text the user copies and pastes onto the bank-statement PDF.
+function _bsNote(r) {
+  const amt = (Number(r.amount) || 0).toFixed(2);
+  return [r.worker_name || '', r.partner_name || '', r.payment_date || '', `工资 $${amt}`].filter(Boolean).join(' · ');
+}
+
+function renderBsRecords() {
+  const wrap = document.getElementById('bsRecordsWrap');
+  const q = (document.getElementById('bsFilterQ').value || '').trim().toLowerCase();
+  let rows = _bsRecords;
+  if (q) rows = rows.filter(r => `${r.worker_name || ''} ${r.partner_name || ''} ${r.payment_date || ''} ${r.amount} ${r.notes || ''}`.toLowerCase().includes(q));
+  if (!rows.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);padding:1rem;text-align:center;border:1px dashed var(--gray-200);border-radius:8px">没有匹配的付款记录。换个公司/月份/关键词试试。</div>';
     return;
   }
-  wrap.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem">
+  wrap.innerHTML = `<div style="color:var(--gray-400);font-size:.8rem;margin-bottom:.4rem">共 ${rows.length} 条 · 勾选可批量复制</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem">
     <thead><tr style="background:var(--gray-50);color:var(--gray-500);font-size:.8rem">
-      <th style="padding:6px 10px;text-align:left">来源 / 周期</th>
-      <th style="padding:6px 10px;text-align:left">文件</th>
-      <th style="padding:6px 10px;text-align:right">笔数</th>
-      <th style="padding:6px 10px;text-align:right">支出合计</th>
-      <th style="padding:6px 10px;text-align:right">收入合计</th>
-      <th style="padding:6px 10px;text-align:left">上传时间</th>
-      <th style="padding:6px 10px;text-align:center">操作</th>
-    </tr></thead><tbody>${_bsStatements.map(s => `
-      <tr style="border-top:1px solid var(--gray-100)">
-        <td style="padding:6px 10px"><strong>${esc((s.source || '其他').toUpperCase())}</strong>${s.period ? ' · ' + esc(s.period) : ''}${s.account_name ? '<br><span style="color:var(--gray-400);font-size:.78rem">' + esc(s.account_name) + '</span>' : ''}</td>
-        <td style="padding:6px 10px">${s.file_url ? `<a href="${esc(s.file_url)}" target="_blank" rel="noopener" style="color:var(--sky)">📄 ${esc(s.file_name || 'PDF')}</a>` : esc(s.file_name || '')}</td>
-        <td style="padding:6px 10px;text-align:right">${s.txn_count}</td>
-        <td style="padding:6px 10px;text-align:right;color:#b91c1c">${_cpyFmtMoney(s.total_out)}</td>
-        <td style="padding:6px 10px;text-align:right;color:#15803d">${_cpyFmtMoney(s.total_in)}</td>
-        <td style="padding:6px 10px;color:var(--gray-500)">${esc(String(s.created_at || '').replace('T', ' ').slice(0, 16))}</td>
-        <td style="padding:6px 10px;text-align:center;white-space:nowrap">
-          <button class="btn btn-sm btn-blue" onclick="bsOpen(${s.id})">查看/标注</button>
-          <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fca5a5" onclick="bsDelete(${s.id})">删除</button>
-        </td>
-      </tr>`).join('')}</tbody></table></div>`;
+      <th style="padding:6px 8px;width:30px"></th>
+      <th style="padding:6px 8px;text-align:left">日期</th>
+      <th style="padding:6px 8px;text-align:left">工人</th>
+      <th style="padding:6px 8px;text-align:left">公司</th>
+      <th style="padding:6px 8px;text-align:right">付给工人</th>
+      <th style="padding:6px 8px;text-align:left">备注（复制的内容）</th>
+      <th style="padding:6px 8px;text-align:center">操作</th>
+    </tr></thead><tbody>${rows.map(r => {
+      const note = _bsNote(r);
+      return `<tr style="border-top:1px solid var(--gray-100)">
+        <td style="padding:5px 8px;text-align:center"><input type="checkbox" class="bs-rec-chk" data-note="${esc(note)}"></td>
+        <td style="padding:5px 8px;white-space:nowrap">${esc(r.payment_date || '')}</td>
+        <td style="padding:5px 8px">${esc(r.worker_name || '')}</td>
+        <td style="padding:5px 8px">${esc(r.partner_name || '')}</td>
+        <td style="padding:5px 8px;text-align:right;font-weight:600;color:#15803d">${_cpyFmtMoney(r.amount)}</td>
+        <td style="padding:5px 8px;color:var(--gray-600)">${esc(note)}</td>
+        <td style="padding:5px 8px;text-align:center"><button class="btn btn-sm btn-blue" data-note="${esc(note)}" onclick="copyBsNote(this)">📋 复制备注</button></td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
 }
 
-async function bsOpen(id) {
-  const wrap = document.getElementById('bsDetailWrap');
-  wrap.innerHTML = '<div style="color:var(--gray-400);padding:.5rem">加载中…</div>';
-  try { _bsCurrent = await api('/admin/bank-statements/' + id); }
-  catch (e) { wrap.innerHTML = `<div style="color:var(--red)">加载失败：${esc(e.message || e)}</div>`; return; }
-  bsRenderDetail();
-  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+async function _bsCopy(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (__) {}
+    ta.remove(); return ok;
+  }
 }
 
-function bsOnStatusChange(sel) {
-  const v = _BS_STATUS[sel.value] || _BS_STATUS.unchecked;
-  sel.style.background = v.bg; sel.style.color = v.color;
+async function copyBsNote(btn) {
+  const ok = await _bsCopy(btn.dataset.note || '');
+  showToast(ok ? '已复制备注，去 PDF 粘贴即可' : '复制失败，请手动选中复制', ok ? 'success' : 'error');
 }
 
-function bsRenderDetail() {
-  const s = _bsCurrent; if (!s) return;
-  const wrap = document.getElementById('bsDetailWrap');
-  const statusOpts = (cur) => Object.entries(_BS_STATUS).map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${v.label}</option>`).join('');
-  const rows = (s.transactions || []).map(t => {
-    const st = _BS_STATUS[t.status] || _BS_STATUS.unchecked;
-    return `<tr data-txn="${t.id}" style="border-top:1px solid var(--gray-100)">
-      <td style="padding:5px 8px;white-space:nowrap">${esc(t.txn_date)}</td>
-      <td style="padding:5px 8px">${esc(t.description)}${t.details ? ` <span style="color:var(--gray-400);font-size:.78rem">${esc(t.details)}</span>` : ''}</td>
-      <td style="padding:5px 8px;text-align:right;white-space:nowrap;font-weight:600;color:${t.direction === 'in' ? '#15803d' : '#b91c1c'}">${t.direction === 'in' ? '+' : '−'}${_cpyFmtMoney(t.amount)}</td>
-      <td style="padding:5px 8px"><select class="bs-status" onchange="bsOnStatusChange(this)" style="font-size:.8rem;padding:2px 4px;border:1px solid var(--gray-200);border-radius:4px;background:${st.bg};color:${st.color};font-weight:600">${statusOpts(t.status)}</select></td>
-      <td style="padding:5px 8px"><input type="text" class="bs-payee" value="${esc(t.payee || '')}" placeholder="收款人/去向" style="width:150px;padding:3px 6px;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem"></td>
-      <td style="padding:5px 8px"><input type="text" class="bs-note" value="${esc(t.note || '')}" placeholder="备注（脚注）" style="width:100%;min-width:170px;padding:3px 6px;border:1px solid var(--gray-200);border-radius:4px;font-size:.82rem"></td>
-    </tr>`;
-  }).join('');
-  wrap.innerHTML = `
-    <div style="border:1px solid var(--gray-200);border-radius:10px;padding:1rem;background:#fff">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:.6rem">
-        <div style="font-weight:700;font-size:1rem">🏦 ${esc((s.source || '其他').toUpperCase())}${s.period ? ' · ' + esc(s.period) : ''} <span style="color:var(--gray-400);font-weight:400;font-size:.85rem">（${(s.transactions || []).length} 笔 · 支出 ${_cpyFmtMoney(s.total_out)} · 收入 ${_cpyFmtMoney(s.total_in)}）</span></div>
-        <div style="display:flex;gap:.5rem">
-          ${s.file_url ? `<a class="btn btn-sm btn-outline" href="${esc(s.file_url)}" target="_blank" rel="noopener">📄 原始 PDF</a>` : ''}
-          <button class="btn btn-sm btn-green" onclick="bsSaveAnnotations()">💾 保存标注</button>
-        </div>
-      </div>
-      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem">
-        <thead><tr style="background:var(--gray-50);color:var(--gray-500);font-size:.78rem">
-          <th style="padding:6px 8px;text-align:left">日期</th>
-          <th style="padding:6px 8px;text-align:left">描述</th>
-          <th style="padding:6px 8px;text-align:right">金额</th>
-          <th style="padding:6px 8px;text-align:left">标记</th>
-          <th style="padding:6px 8px;text-align:left">收款人/去向</th>
-          <th style="padding:6px 8px;text-align:left">备注（脚注）</th>
-        </tr></thead><tbody>${rows}</tbody></table></div>
-    </div>`;
-}
-
-async function bsSaveAnnotations() {
-  if (!_bsCurrent) return;
-  const items = (_bsCurrent.transactions || []).map(t => {
-    const row = document.querySelector(`#bsDetailWrap tr[data-txn="${t.id}"]`);
-    if (!row) return null;
-    return { id: t.id, status: row.querySelector('.bs-status').value, payee: row.querySelector('.bs-payee').value, note: row.querySelector('.bs-note').value };
-  }).filter(Boolean);
-  try {
-    const r = await api(`/admin/bank-statements/${_bsCurrent.id}/txns`, { method: 'PUT', body: JSON.stringify({ items }) });
-    if (r && r.error) throw new Error(r.error);
-    items.forEach(it => { const t = (_bsCurrent.transactions || []).find(x => x.id === it.id); if (t) Object.assign(t, it); });
-    showToast('标注已保存 ✓', 'success');
-  } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
-}
-
-async function bsDelete(id) {
-  if (!await showConfirm('确定删除这份对账单及其所有交易标注？（含已上传的 PDF）', { danger: true, confirmLabel: '删除' })) return;
-  try {
-    await api('/admin/bank-statements/' + id, { method: 'DELETE' });
-    showToast('已删除 ✓', 'success');
-    if (_bsCurrent && _bsCurrent.id === id) { _bsCurrent = null; document.getElementById('bsDetailWrap').innerHTML = ''; }
-    loadBankStatements();
-  } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
+async function copyBsSelected() {
+  const notes = Array.from(document.querySelectorAll('.bs-rec-chk:checked')).map(c => c.dataset.note);
+  if (!notes.length) { showToast('请先勾选要复制的记录', 'error'); return; }
+  const ok = await _bsCopy(notes.join('\n'));
+  showToast(ok ? `已复制 ${notes.length} 条备注` : '复制失败', ok ? 'success' : 'error');
 }
 
 function toggleCpyWeekDetail(idx) {
