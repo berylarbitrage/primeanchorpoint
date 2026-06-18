@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-16 · 付工资凭证支持多张照片 + 按周汇总显示实付金额对不上标红',
+  tag: '2026-06-16 · 付工资凭证多图改为累加(可逐个删) + 实付对不上标红',
   started: new Date().toISOString(),
 };
 
