@@ -32824,23 +32824,25 @@ async function generateInvpSubcontractorStatement() {
     let items = getInvpManualItems();
     if (!items.length) { alert('请至少添加一名员工并填写姓名'); return; }
 
-    // Group workers by subcontractor; let the admin pick one when there are several
+    // Group workers by subcontractor. A 分包商 statement only lists workers that actually
+    // have a 分包商 filled in — rows with an empty 分包商 are never included.
     const groupMap = {};
-    items.forEach(i => { const k = (i.subcontractor || '').trim() || '__none__'; (groupMap[k] = groupMap[k] || []).push(i); });
+    items.forEach(i => { const k = (i.subcontractor || '').trim(); if (k) (groupMap[k] = groupMap[k] || []).push(i); });
     const groupKeys = Object.keys(groupMap);
+    if (!groupKeys.length) { alert('没有员工填写「分包商」。请先在上方「分包商」列填好需要对账的员工，再生成分包商对账单。'); return; }
     let chosenKey = window._invpStmtSubFilter;
     window._invpStmtSubFilter = null;
-    if (!chosenKey) {
+    if (!chosenKey || !groupMap[chosenKey]) {
       if (groupKeys.length > 1) {
         const subs = groupKeys
-          .sort((a, b) => (a === '__none__' ? 1 : b === '__none__' ? -1 : a.localeCompare(b)))
-          .map(k => ({ key: k, label: k === '__none__' ? '未指定分包商' : k, count: groupMap[k].length }));
+          .sort((a, b) => a.localeCompare(b))
+          .map(k => ({ key: k, label: k, count: groupMap[k].length }));
         invpPickSubcontractor(subs, k => { window._invpStmtSubFilter = k; generateInvpSubcontractorStatement(); });
         return;
       }
       chosenKey = groupKeys[0];
     }
-    items = groupMap[chosenKey] || items;
+    items = groupMap[chosenKey];
 
     if (chosenKey && chosenKey !== '__none__') {
       recipientName = chosenKey;
