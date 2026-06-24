@@ -31419,6 +31419,28 @@ async function invpRegenerateNumber() {
   showToast('已按当前地址重新生成：' + numEl.value + (editId ? '，记得点「保存 / 更新保存」' : ''), 'success', 6000);
 }
 
+// Keep the invoice number's state in sync with the bill-to address. If the number's
+// state segment differs from the address's state, regenerate it. Called automatically
+// on preview & save so a saved invoice with a wrong-state number gets corrected
+// without hunting for the 重新生成 button. Returns true if the number changed.
+async function _invpSyncNumberToAddr() {
+  const numEl = document.getElementById('invPageNumber');
+  if (!numEl || !numEl.value) return false;
+  const m = numEl.value.match(/^INV-[A-Za-z]-([A-Za-z]{2})-/);
+  if (!m) return false;
+  const curState = m[1].toUpperCase();
+  const addrState = _parseStateFromAddrStr(document.getElementById('invPageBillAddr').value || '');
+  if (!addrState || addrState === curState) return false;
+  const before = numEl.value;
+  numEl.value = '';
+  await invpRefreshInvoiceNumber();
+  if (!numEl.value) { numEl.value = before; return false; }
+  if (numEl.value === before) return false;
+  window._invpDirty = true;
+  showToast(`发票号的州已按账单地址自动更新为 ${addrState}：${numEl.value}`, 'success', 5000);
+  return true;
+}
+
 // Track whether current preview invoice has been saved
 window._invpPreviewSaved = false;
 window._invpLoadedStatus = null; // 'draft' | 'saved' | null(new) — status of the record currently open
@@ -31495,6 +31517,8 @@ function _invpComputeWageCost() {
 
 async function saveInvpInvoice(status) {
   status = status || 'saved';
+  // Make sure the saved number's state matches the bill-to address.
+  await _invpSyncNumberToAddr();
   const invNum  = document.getElementById('invPageNumber').value.trim();
   const invDate = document.getElementById('invPageDate').value;
   const ps      = document.getElementById('invPageStart').value;
@@ -33878,6 +33902,9 @@ async function generateInvpPreview() {
   if (!ps || !pe)   { alert('请填写服务周期'); return; }
   // Auto-generate invoice number if not set
   if (!document.getElementById('invPageNumber').value) await invpRefreshInvoiceNumber();
+  // Keep the number's state matching the bill-to address (corrects saved invoices
+  // whose address is in a different state than the number).
+  await _invpSyncNumberToAddr();
   const invNum = document.getElementById('invPageNumber').value;
 
   const mode = window._invpMode || 'hourly';
