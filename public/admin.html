@@ -2604,6 +2604,16 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 
       <!-- ─── HOURLY MODE ─── -->
       <div id="invpHourlyMode">
+      <!-- Excel 自动填充 -->
+      <div style="margin-bottom:.85rem;padding:.7rem .85rem;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px">
+        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:.9rem;color:#065f46">📊 上传工资表 Excel 自动填充</span>
+          <button type="button" class="btn btn-green" style="font-size:.83rem;padding:.3rem .9rem" onclick="document.getElementById('invpExcelFile').click()">选择 Excel 文件</button>
+          <input type="file" id="invpExcelFile" accept=".xlsx" style="display:none" onchange="invpHandleExcelUpload(this)">
+          <span id="invpExcelStatus" style="font-size:.82rem;color:#047857"></span>
+        </div>
+        <div style="font-size:.76rem;color:#059669;margin-top:.35rem">上传后自动填入服务周期、Markup、员工与工时（正常/加班）；填好后可继续手动修改再保存。仅支持 .xlsx 格式。</div>
+      </div>
       <!-- Employee list -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem">
         <h3 style="margin:0">员工工时明细</h3>
@@ -31846,6 +31856,91 @@ function invpAddEmp() {
   // Focus the new name input
   const rows = document.querySelectorAll('.invp-manual-row');
   if (rows.length) rows[rows.length - 1].querySelector('.invp-man-name').focus();
+}
+
+// ── Excel 自动填充 (upload a payroll .xlsx → fill period / markup / employees) ──
+async function invpHandleExcelUpload(input) {
+  const file = input.files && input.files[0];
+  input.value = ''; // allow re-uploading the same file later
+  if (!file) return;
+  const statusEl = document.getElementById('invpExcelStatus');
+  const setStatus = (txt, color) => { if (statusEl) { statusEl.textContent = txt; statusEl.style.color = color || '#047857'; } };
+
+  // Don't silently wipe an in-progress crew.
+  const hasRows = (window._invpManualEmps || []).some(e => (e.name || '').trim() || Object.keys(e.days || {}).length);
+  if (hasRows) {
+    const ok = await showConfirm('上传 Excel 将覆盖当前已填写的员工工时明细。确定继续吗？', { confirmLabel: '覆盖并导入', cancelLabel: '取消' });
+    if (!ok) { setStatus('已取消', '#92400e'); return; }
+  }
+
+  setStatus('解析中…');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const resp = await fetch('/api/admin/invoices/parse-excel', { method: 'POST', body: fd });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + resp.status));
+    invpApplyExcelData(data);
+    setStatus(`✓ 已导入 ${data.employees.length} 名员工`, '#047857');
+    let msg = `已从 Excel 导入 ${data.employees.length} 名员工`;
+    if (data.periodStart) msg += `，周期 ${data.periodStart} ~ ${data.periodEnd}`;
+    if (data.markupMultiplier) msg += `，Markup ×${data.markupMultiplier}`;
+    showToast(msg + '。请核对后保存。', 'success', 5000);
+    (data.warnings || []).forEach(w => showToast('⚠️ ' + w, 'warning', 7000));
+  } catch (e) {
+    setStatus('✗ 解析失败', '#b91c1c');
+    showToast('Excel 导入失败：' + (e.message || e), 'error', 7000);
+  }
+}
+
+// Populate the builder from parsed Excel data. Hours go into per-day cells so the
+// form's normal 40h/week split reproduces the worksheet's reg/OT exactly.
+function invpApplyExcelData(data) {
+  // Excel is hourly payroll → make sure we're in hourly mode.
+  window._invpMode = 'hourly';
+  document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === 'hourly'); });
+  if (typeof invpSwitchMode === 'function') invpSwitchMode('hourly');
+
+  if (data.periodStart) document.getElementById('invPageStart').value = data.periodStart;
+  if (data.periodEnd) document.getElementById('invPageEnd').value = data.periodEnd;
+  if (data.markupMultiplier && data.markupMultiplier > 0) {
+    document.getElementById('invPageMarkupRate').value = data.markupMultiplier;
+  }
+
+  const dates = _invpGetDates();
+  const dflt = Number(data.markupMultiplier) || 0;
+  window._invpManualEmps = (data.employees || []).map(e => {
+    const emp = {
+      uid: _invpManualUidSeq++, name: e.name || '', category: '', subcontractor: '', referrer: '',
+      rate: (e.regRate || e.regRate === 0) ? String(e.regRate) : '', otRate: '', markup: '', days: {},
+      linked_employee_id: null, linked_employee_code: '', linked_employee_name: '',
+    };
+    // Keep an explicit OT rate only when it isn't the automatic 1.5× (so the form
+    // can keep auto-tracking the rate when it matches).
+    const reg = Number(e.regRate) || 0;
+    if (e.otRate != null && Number(e.otRate) > 0 && Math.abs(Number(e.otRate) - reg * 1.5) > 0.005) {
+      emp.otRate = String(e.otRate);
+    }
+    // Per-employee markup override when this row's markup ≠ the invoice default.
+    if (dflt > 0 && Math.abs((1 + (Number(e.markupRate) || 0)) - dflt) > 0.0001) {
+      emp.markup = String(Math.round((1 + (Number(e.markupRate) || 0)) * 10000) / 10000);
+    }
+    // Spread total hours across the period days; last day absorbs the rounding
+    // remainder so the per-day cells sum to the exact total.
+    const total = Number(e.totalHours) || 0;
+    if (dates.length && total > 0) {
+      const perDay = Math.round((total / dates.length) * 100) / 100;
+      let acc = 0;
+      dates.forEach((d, i) => {
+        if (i === dates.length - 1) emp.days[d] = (Math.round((total - acc) * 100) / 100).toFixed(2);
+        else { emp.days[d] = perDay.toFixed(2); acc += perDay; }
+      });
+    }
+    return emp;
+  });
+
+  renderInvpManualTable(true);
+  window._invpDirty = true;
 }
 
 // ── Container mode ──

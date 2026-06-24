@@ -17748,6 +17748,29 @@ app.post('/api/admin/invoices', requireAdmin, (req, res) => {
   res.json({ id: result.lastInsertRowid });
 });
 
+// Parse an uploaded payroll .xlsx and return structured data for the invoice
+// builder to auto-fill (period, markup, employees with reg/OT rates & hours).
+// Parsing only — nothing is persisted; the file is read from memory and dropped.
+const parseInvoiceWorkbook = require('./xlsx-invoice');
+const invoiceXlsxUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.xlsx$/i.test(file.originalname || '')
+      || /spreadsheetml\.sheet/i.test(file.mimetype || '');
+    cb(null, ok);
+  },
+});
+app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.single('file'), (req, res) => {
+  if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 .xlsx 文件' });
+  try {
+    const data = parseInvoiceWorkbook(req.file.buffer);
+    res.json(data);
+  } catch (e) {
+    res.status(400).json({ error: 'Excel 解析失败：' + (e && e.message ? e.message : String(e)) });
+  }
+});
+
 // Get single invoice (with full details)
 app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   const row = db.prepare(`SELECT * FROM invoices WHERE id=?`).get(req.params.id);
