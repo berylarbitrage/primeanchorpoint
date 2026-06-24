@@ -2577,7 +2577,8 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <input type="text" id="invPageBillName" placeholder="客户公司名称" oninput="onInvBillNameInput()">
         </div>
         <div class="field">
-          <label>地址</label>
+          <label>地址 <span id="invPageAddrHint" style="display:none;font-size:.72rem;color:var(--sky);font-weight:600">· 该公司有多个地址，请选择</span></label>
+          <select id="invPageAddrSelect" onchange="onInvPageAddrSelect()" style="display:none;width:100%;margin-bottom:.4rem;padding:.5rem;border:1px solid var(--sky);border-radius:6px;font-size:.85rem;background:#f0f9ff"></select>
           <input type="text" id="invPageBillAddr" placeholder="客户地址">
         </div>
         <div class="field" id="invPageMarkupRateWrap">
@@ -30149,6 +30150,7 @@ function openInvpBuilderModal() {
   const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
+  _invpSetupAddrPicker([]); // hide the multi-address picker for a fresh invoice
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
   const ii = document.getElementById('invpEmpImportInput'); if (ii) ii.value = '';
   document.getElementById('invpBuilderTitle').textContent = '+ 新建 Invoice';
@@ -30205,6 +30207,7 @@ async function openInvpForEdit(id) {
   document.getElementById('invPageUniformRate').value = '';
   document.getElementById('invPageMarkupRate').value = inv.markup_rate || '';
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
+  _invpSetupAddrPicker([]); // editing a saved invoice keeps its stored address; no picker
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
 
   // Restore profile from this invoice's own saved snapshot. ALWAYS overwrite the
@@ -31540,33 +31543,73 @@ function onInvPageCompanySearch(val) {
   }).join('');
 }
 
+// Format one partner address (object or legacy string) into a one-line string.
+function _invpFmtAddr(a) {
+  if (!a) return '';
+  if (typeof a === 'string') return a;
+  if (a.address) return a.address;
+  return [a.street, a.street2, a.city, (a.state || '') + (a.zip ? ' ' + a.zip : '')]
+    .map(s => (s || '').trim()).filter(Boolean).join(', ');
+}
+
+// Two-letter state for an address (used by the invoice-number generator).
+function _invpAddrState(a) {
+  if (a && typeof a === 'object' && a.state) return String(a.state).toUpperCase().slice(0, 2);
+  return _parseStateFromAddrStr(_invpFmtAddr(a)) || null;
+}
+
+// Apply one chosen address to the Bill-To line + state + invoice number.
+function _invpApplyBillAddr(a) {
+  document.getElementById('invPageBillAddr').value = _invpFmtAddr(a);
+  window._invpSelectedPartnerState = _invpAddrState(a) || null;
+  const numEl = document.getElementById('invPageNumber');
+  if (numEl) { numEl.value = ''; invpRefreshInvoiceNumber(); }
+}
+
+// User picked a different address from the dropdown.
+function onInvPageAddrSelect() {
+  const sel = document.getElementById('invPageAddrSelect');
+  const addrs = window._invpSelectedPartnerAddrs || [];
+  const idx = parseInt(sel && sel.value, 10) || 0;
+  _invpApplyBillAddr(addrs[idx] || '');
+}
+
+// Show/populate the address dropdown when a partner has more than one address.
+function _invpSetupAddrPicker(addrs) {
+  window._invpSelectedPartnerAddrs = addrs;
+  const sel = document.getElementById('invPageAddrSelect');
+  const hint = document.getElementById('invPageAddrHint');
+  if (!sel) return;
+  if (addrs.length > 1) {
+    sel.innerHTML = addrs.map((a, i) => `<option value="${i}">${esc(_invpFmtAddr(a) || ('地址 ' + (i + 1)))}</option>`).join('');
+    sel.value = '0';
+    sel.style.display = '';
+    if (hint) hint.style.display = '';
+  } else {
+    sel.innerHTML = '';
+    sel.style.display = 'none';
+    if (hint) hint.style.display = 'none';
+  }
+}
+
 function selectInvPartner(id) {
   const partner = (window._invpPartners || []).find(p => p.id === id);
   if (!partner) return;
   const sr = document.getElementById('invPageCompanySearch');
   if (sr) sr.value = partner.name;
   document.getElementById('invPageBillName').value = partner.name;
-  // Extract address and state
-  let addrLine = partner.address || '';
-  let stateAbbr = null;
-  try {
-    const addrs = JSON.parse(partner.addresses || '[]');
-    if (addrs.length) {
-      if (addrs[0].state) stateAbbr = addrs[0].state.toUpperCase().slice(0,2);
-      if (addrs[0].street) addrLine = [addrs[0].street, addrs[0].city, addrs[0].state, addrs[0].zip].filter(Boolean).join(', ');
-    }
-  } catch {}
-  // Fallback: parse state from address string
-  if (!stateAbbr) stateAbbr = _parseStateFromAddrStr(addrLine) || _parseStateFromAddrStr(partner.address);
-  document.getElementById('invPageBillAddr').value = addrLine;
+  // Parse this partner's addresses (fall back to the legacy single string).
+  let addrs = [];
+  try { addrs = JSON.parse(partner.addresses || '[]'); } catch {}
+  if (!Array.isArray(addrs)) addrs = [];
+  if (!addrs.length && partner.address) addrs = [partner.address];
+  _invpSetupAddrPicker(addrs);
   const sugg = document.getElementById('invCompanySuggestions');
   if (sugg) sugg.style.display = 'none';
-  // Update invoice number with customer state
-  window._invpSelectedPartnerState = stateAbbr || null;
   window._invpSelectedPartnerId = partner.id;
   refreshInvpInboxBadge();
-  const numEl = document.getElementById('invPageNumber');
-  if (numEl) { numEl.value = ''; invpRefreshInvoiceNumber(); }
+  // Default to the first address (also sets state + refreshes invoice number).
+  _invpApplyBillAddr(addrs[0] || partner.address || '');
 }
 
 function onInvBillNameInput() {
