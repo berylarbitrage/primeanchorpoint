@@ -31415,8 +31415,16 @@ async function invpRegenerateNumber() {
   if (!numEl.value) { numEl.value = before; showToast('重新生成失败，请检查公司名 / 地址', 'error'); return; }
   window._invpDirty = true;
   if (numEl.value === before) { showToast('发票号未变化（州相同）：' + numEl.value, 'success'); return; }
+  _invpReplaceTitleNumber(before, numEl.value);
   const editId = document.getElementById('invPageEditId').value;
   showToast('已按当前地址重新生成：' + numEl.value + (editId ? '，记得点「保存 / 更新保存」' : ''), 'success', 6000);
+}
+
+// When the invoice number changes in the open editor, refresh the modal title so it
+// doesn't keep showing the old number. (The list reflects the DB and only updates on save.)
+function _invpReplaceTitleNumber(oldNum, newNum) {
+  const t = document.getElementById('invpBuilderTitle');
+  if (t && oldNum && newNum && t.textContent.includes(oldNum)) t.textContent = t.textContent.replace(oldNum, newNum);
 }
 
 // Keep the invoice number's state in sync with the bill-to address. If the number's
@@ -31437,7 +31445,8 @@ async function _invpSyncNumberToAddr() {
   if (!numEl.value) { numEl.value = before; return false; }
   if (numEl.value === before) return false;
   window._invpDirty = true;
-  showToast(`发票号的州已按账单地址自动更新为 ${addrState}：${numEl.value}`, 'success', 5000);
+  _invpReplaceTitleNumber(before, numEl.value);
+  showToast(`发票号州已改为 ${addrState}：${numEl.value} —— 点「保存 / 更新保存」才会写入列表`, 'success', 7000);
   return true;
 }
 
