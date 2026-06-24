@@ -1583,6 +1583,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
       <button class="btn btn-outline" onclick="loadInvpList()">刷新</button>
       <button class="btn btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="scanInvpDuplicates()">🔍 检查串单</button>
+      <button class="btn btn-outline" style="color:#0369a1;border-color:#7dd3fc" onclick="fixInvpNumberStates()" title="批量检查并修正：发票号里的州与账单地址所在州不一致的发票">🔧 修正发票号州</button>
     </div>
   </div>
 
@@ -30750,6 +30751,66 @@ function applyInvpFreeze() {
 // rows (name + hours) are byte-identical to another invoice's — the fingerprint
 // of a clobbered save. Cross-client matches are flagged loudest. Read-only:
 // the user opens each flagged invoice to verify/correct it.
+// Batch-fix invoices whose number's state doesn't match the bill-to address.
+// Previews the changes first, applies only on confirm.
+async function fixInvpNumberStates() {
+  const btns = document.querySelectorAll('button[onclick="fixInvpNumberStates()"]');
+  const btn = btns[btns.length - 1];
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
+  const data = await api('/admin/invoices/fix-number-states', { method: 'POST', body: JSON.stringify({ apply: false }) }).catch(e => ({ error: e.message }));
+  if (btn) { btn.disabled = false; btn.textContent = orig; }
+  if (!data || data.error) { showToast('检查失败：' + ((data && data.error) || '网络错误'), 'error'); return; }
+  if (!data.changeCount) {
+    showToast(`✓ 无需修正：${data.total} 张发票的州都与账单地址一致` + (data.skippedCount ? `（${data.skippedCount} 张无法判断已跳过）` : ''), 'success', 5000);
+    return;
+  }
+  const rowsHtml = data.changes.map(c => `
+    <tr>
+      <td style="padding:4px 8px;font-size:.8rem;white-space:nowrap">${esc(c.company_name)}</td>
+      <td style="padding:4px 8px;font-family:monospace;font-size:.77rem;color:#b91c1c;text-decoration:line-through;white-space:nowrap">${esc(c.old_number)}</td>
+      <td style="padding:4px 8px;font-family:monospace;font-size:.77rem;color:#047857;font-weight:700;white-space:nowrap">${esc(c.new_number)}</td>
+      <td style="padding:4px 8px;font-size:.78rem;color:var(--gray-500);white-space:nowrap">${esc(c.from_state)} → ${esc(c.to_state)}</td>
+    </tr>`).join('');
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:780px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(0,0,0,.3)">
+    <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--gray-200)">
+      <div style="font-weight:700;font-size:1.05rem">🔧 修正发票号州 — 预览</div>
+      <div style="font-size:.85rem;color:var(--gray-500);margin-top:.35rem">共 ${data.total} 张发票，其中 <b style="color:#0369a1">${data.changeCount}</b> 张的发票号州与账单地址不一致，将按下表修正${data.skippedCount ? `；另有 ${data.skippedCount} 张无法判断州，已跳过` : ''}。</div>
+    </div>
+    <div style="overflow:auto;padding:.4rem 1.25rem">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--gray-50)">
+          <th style="padding:5px 8px;text-align:left;font-size:.74rem;color:var(--gray-500)">公司</th>
+          <th style="padding:5px 8px;text-align:left;font-size:.74rem;color:var(--gray-500)">原发票号</th>
+          <th style="padding:5px 8px;text-align:left;font-size:.74rem;color:var(--gray-500)">新发票号</th>
+          <th style="padding:5px 8px;text-align:left;font-size:.74rem;color:var(--gray-500)">州</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+    <div style="padding:1rem 1.25rem;border-top:1px solid var(--gray-200);display:flex;gap:.6rem;justify-content:flex-end;align-items:center">
+      <span style="font-size:.78rem;color:var(--gray-400);margin-right:auto">修正后请通知相关客户更新发票号</span>
+      <button class="btn btn-outline" id="fixNumCancel">取消</button>
+      <button class="btn btn-green" id="fixNumApply">确认修正 ${data.changeCount} 张</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  document.getElementById('fixNumCancel').onclick = close;
+  document.getElementById('fixNumApply').onclick = async () => {
+    const ab = document.getElementById('fixNumApply');
+    ab.disabled = true; ab.textContent = '修正中…';
+    const res = await api('/admin/invoices/fix-number-states', { method: 'POST', body: JSON.stringify({ apply: true }) }).catch(e => ({ error: e.message }));
+    if (!res || res.error) { ab.disabled = false; ab.textContent = `确认修正 ${data.changeCount} 张`; showToast('修正失败：' + ((res && res.error) || '网络错误'), 'error'); return; }
+    close();
+    showToast(`✓ 已修正 ${res.changeCount} 张发票的发票号`, 'success', 5000);
+    loadInvpList();
+  };
+}
+
 async function scanInvpDuplicates() {
   const res = await api('/admin/invoices/scan-duplicates').catch(() => null);
   if (!res) { showToast('扫描失败', 'error'); return; }
