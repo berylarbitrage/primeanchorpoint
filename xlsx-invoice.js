@@ -157,19 +157,41 @@ function toISO(m, d, y) {
   return `${y}-${String(+m).padStart(2, '0')}-${String(+d).padStart(2, '0')}`;
 }
 
-// rows → structured invoice data for the builder to auto-fill.
+// Parse "HH:MM:SS" / "H:MM", an Excel time fraction (e.g. 0.3646 of a 24h day),
+// or a plain hours number into hours.
+function parseDuration(v) {
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number') {
+    let h = v * 24;        // Excel stores clock durations as a fraction of a day
+    if (h > 24.5) h = v;   // already in hours (defensive for non-Excel-time files)
+    return h;
+  }
+  const s = String(v).trim();
+  const m = s.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
+  if (m) return (+m[1]) + (+m[2]) / 60 + (m[3] ? (+m[3]) / 3600 : 0);
+  const num = parseFloat(s);
+  if (Number.isFinite(num)) { let h = num * 24; if (h > 24.5) h = num; return h; }
+  return 0;
+}
+
+// rows → structured invoice data for the builder to auto-fill. Auto-detects two
+// worksheet shapes: a finished payroll/billing worksheet (rates + markup), or a
+// raw time-clock attendance report (one row per person per day, hours only).
 function buildInvoiceData(rows) {
   const warnings = [];
-  // Find the header row: the row containing "employee" and a rate/hours header.
+
+  // Locate the header row — accept either the payroll layout (Employee + rate/pay)
+  // or the attendance layout (Person Name + Clock / 工作时长).
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rows.length, 15); i++) {
     const cells = (rows[i] || []).map(norm);
-    if (cells.some(c => c.includes('employee')) &&
-        cells.some(c => c.includes('pay') || c.includes('rate') || c.includes('hour'))) {
-      headerIdx = i; break;
-    }
+    const hasEmp = cells.some(c => c.includes('employee'));
+    const hasPerson = cells.some(c => c.includes('person'));
+    const hasRateish = cells.some(c => c.includes('pay') || c.includes('rate') || c.includes('hour'));
+    const hasClock = cells.some(c => c.includes('clock') || c.includes('工作时长') || c.includes('工时'));
+    if ((hasEmp && hasRateish) || (hasPerson && hasClock)) { headerIdx = i; break; }
   }
-  if (headerIdx < 0) throw new Error('找不到表头行（需要含 "Employee" 列）');
+  if (headerIdx < 0) throw new Error('找不到表头行（需要含 "Employee" 或 "Person Name" 列）');
   const headers = (rows[headerIdx] || []).map(norm);
 
   // Map a logical field → column index by matching header keywords.
@@ -181,6 +203,19 @@ function buildInvoiceData(rows) {
     }
     return -1;
   };
+  const cellNum = (row, c) => { if (c < 0) return null; const v = row[c]; const n = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
+  const cellStr = (row, c) => { if (c < 0) return ''; const v = row[c]; return v == null ? '' : String(v).trim(); };
+
+  const isAttendance = headers.some(h => h.includes('person'))
+    && headers.some(h => h.includes('clock') || h.includes('工作时长') || h.includes('工时'));
+
+  return isAttendance
+    ? buildFromAttendance({ rows, headerIdx, find, cellStr, warnings })
+    : buildFromPayroll({ rows, headerIdx, find, cellNum, cellStr, warnings });
+}
+
+// Finished payroll/billing worksheet → invoice line items (rates + markup baked in).
+function buildFromPayroll({ rows, headerIdx, find, cellNum, cellStr, warnings }) {
   const col = {
     warehouse: find('warehouse'),
     name: find('employee'),
@@ -198,9 +233,6 @@ function buildInvoiceData(rows) {
     afterMarkup: find('after mark'),
   };
   if (col.name < 0) throw new Error('找不到 "Employee" 列');
-
-  const cellNum = (row, c) => { if (c < 0) return null; const v = row[c]; const n = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
-  const cellStr = (row, c) => { if (c < 0) return ''; const v = row[c]; return v == null ? '' : String(v).trim(); };
 
   let warehouse = '', period = '', periodStart = '', periodEnd = '';
   const employees = [];
@@ -241,6 +273,7 @@ function buildInvoiceData(rows) {
       regHours,
       otHours,
       totalHours: Math.round((regHours + otHours) * 1000) / 1000,
+      days: null,
       reimbursement: reimb,
       markupRate: markupFrac,
       regPay: cellNum(row, col.regPay),
@@ -263,7 +296,66 @@ function buildInvoiceData(rows) {
   if (employees.some(e => e.reimbursement && e.reimbursement !== 0))
     warnings.push('表格含「Reimbursement」报销金额，发票生成器暂不支持报销项，已忽略；如需请手动添加一行。');
 
-  return { ok: true, warehouse, period, periodStart, periodEnd, defaultMarkupRate: topMarkup, markupMultiplier, employees, warnings };
+  return { ok: true, format: 'payroll', warehouse, period, periodStart, periodEnd, defaultMarkupRate: topMarkup, markupMultiplier, employees, warnings };
+}
+
+// Raw time-clock attendance report (one row per person per day) → per-person totals.
+// Aggregates each person's daily worked hours into a days map; rates/markup aren't
+// in this file, so they're left blank for the user to fill before saving.
+function buildFromAttendance({ rows, headerIdx, find, cellStr, warnings }) {
+  const col = {
+    name: find(h => h.includes('person')),
+    date: find(h => h === '日期' || h.includes('日期') || h.includes('date')),
+    clockTime: find(h => h.includes('clock time')),
+    worked: find(h => h.includes('工作时长') || h.includes('总工时')),
+  };
+  if (col.name < 0) throw new Error('找不到 "Person Name" 列');
+  // Prefer the explicit 总工作时长 (net worked) column; fall back to gross Clock Time.
+  const hoursCol = col.worked >= 0 ? col.worked : col.clockTime;
+  if (hoursCol < 0) throw new Error('找不到工时列（Clock Time / 总工作时长）');
+
+  const order = [];          // preserve first-seen person order
+  const byName = new Map();   // key → { name, total, days: {iso: hours} }
+  const allDates = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const name = cellStr(row, col.name);
+    if (!name || /^total$/i.test(name)) continue;
+    const dRaw = cellStr(row, col.date);
+    const dm = dRaw.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    const iso = dm ? toISO(dm[1], dm[2], dm[3].length === 2 ? '20' + dm[3] : dm[3]) : '';
+    const hrs = Math.round(parseDuration(row[hoursCol]) * 1000) / 1000;
+    const key = name.toLowerCase();
+    if (!byName.has(key)) { byName.set(key, { name, total: 0, days: {} }); order.push(key); }
+    const rec = byName.get(key);
+    if (iso) { rec.days[iso] = Math.round(((rec.days[iso] || 0) + hrs) * 1000) / 1000; allDates.push(iso); }
+    rec.total = Math.round((rec.total + hrs) * 1000) / 1000;
+  }
+
+  if (!order.length) throw new Error('考勤表中没有打卡数据行');
+
+  let periodStart = '', periodEnd = '';
+  if (allDates.length) { const s = [...allDates].sort(); periodStart = s[0]; periodEnd = s[s.length - 1]; }
+
+  const employees = order.map(key => {
+    const rec = byName.get(key);
+    return {
+      name: rec.name, type: '', regRate: null, otRate: null,
+      regHours: null, otHours: null, totalHours: rec.total, days: rec.days,
+      reimbursement: 0, markupRate: null,
+      regPay: null, otPay: null, totalPay: null, afterMarkup: null,
+    };
+  });
+
+  const usedNet = col.worked >= 0;
+  warnings.push('这是考勤工时报表（只含工时），已按' + (usedNet ? '「总工作时长」' : '「Clock Time」') + '列汇总每人工时；时薪与 Markup 需要手动填写后再保存。');
+
+  return {
+    ok: true, format: 'attendance', warehouse: '',
+    period: (periodStart && periodEnd) ? `${periodStart} ~ ${periodEnd}` : '',
+    periodStart, periodEnd, defaultMarkupRate: null, markupMultiplier: null, employees, warnings,
+  };
 }
 
 module.exports = function parseInvoiceWorkbook(buf) {
