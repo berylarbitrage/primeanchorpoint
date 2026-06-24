@@ -31313,7 +31313,11 @@ async function invpRefreshInvoiceNumber() {
   const partnerState = await _getPartnerStateFromData(billName);
   const billAddr = (document.getElementById('invPageBillAddr').value || '');
   const addrState = _parseStateFromAddrStr(billAddr);
-  const state = (partnerState || window._invpSelectedPartnerState || addrState || 'XX').toUpperCase().slice(0,2);
+  // The number's state must match the address ACTUALLY on this invoice (the
+  // Bill-To line) — not the partner's default/first address. So the displayed
+  // address and the explicitly-picked address win over the partner default
+  // (fixes multi-address companies showing the wrong state in the number).
+  const state = (addrState || window._invpSelectedPartnerState || partnerState || 'XX').toUpperCase().slice(0,2);
   const companyAbbr = billName.split(/[\s\-&,]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
   const mm = String(today.getMonth()+1).padStart(2,'0');
   const dd = String(today.getDate()).padStart(2,'0');
