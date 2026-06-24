@@ -7214,12 +7214,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="form-section"><h4>联系人 * (至少一个，姓名必填)</h4>
-    <div class="dyn-list" id="pContactsList"></div>
-    <button class="btn-add-sm" onclick="addPartnerContact()">+ 添加联系人</button>
-  </div>
-
-  <div class="form-section"><h4>地址 * (至少一个)</h4>
+  <div class="form-section"><h4>地址与联系人 * (至少一个地址；联系人挂在地址下，每个地址可有一个或多个)</h4>
     <div class="dyn-list" id="pAddrList"></div>
     <button class="btn-add-sm" onclick="addPartnerAddr()">+ 添加地址</button>
   </div>
@@ -12720,49 +12715,105 @@ async function sendLegalDocDocuSign() {
 }
 
 // ── Dynamic contacts list ──
-function addPartnerContact(c) {
-  const div = document.createElement('div');
-  div.className = 'dyn-item';
+// ── Contacts now live INSIDE each address card (联系人跟着地址走) ──
+// Field block for one contact, reused for every address-nested contact row.
+function _partnerContactRowHtml(c) {
   // Support both new {first_name, last_name} and legacy {name} formats
   const fname = c?.first_name || (c?.name && !c.last_name ? c.name : '');
   const lname = c?.last_name || '';
-  div.innerHTML = `
-    <div style="flex:1;min-width:0">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
-        <div class="field"><label>名 First *</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
-        <div class="field"><label>姓 Last *</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
-        <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
-        <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
-        <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
-        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
-        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WeChat 微信</label><input class="pc-wechat" value="${esc(c?.wechat||'')}" placeholder="微信号" style="font-size:.82rem;padding:6px 8px"></div>
-        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">Telegram</label><input class="pc-telegram" value="${esc(c?.telegram||'')}" placeholder="@username" style="font-size:.82rem;padding:6px 8px"></div>
-        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">其他通讯</label><input class="pc-other_comm" value="${esc(c?.other_comm||'')}" placeholder="Line / Zalo..." style="font-size:.82rem;padding:6px 8px"></div>
-      </div>
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem">
+      <span style="font-size:.7rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em">👤 联系人</span>
+      <button class="btn-rm" onclick="this.closest('.pa-contact').remove()" title="删除联系人">✕</button>
     </div>
-    <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
-  document.getElementById('pContactsList').appendChild(div);
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem">
+      <div class="field"><label>名 First *</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
+      <div class="field"><label>姓 Last *</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
+      <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-top:.3rem">
+      <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
+      <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.4rem;margin-top:.3rem">
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WeChat 微信</label><input class="pc-wechat" value="${esc(c?.wechat||'')}" placeholder="微信号" style="font-size:.82rem;padding:6px 8px"></div>
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">Telegram</label><input class="pc-telegram" value="${esc(c?.telegram||'')}" placeholder="@username" style="font-size:.82rem;padding:6px 8px"></div>
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">其他通讯</label><input class="pc-other_comm" value="${esc(c?.other_comm||'')}" placeholder="Line / Zalo..." style="font-size:.82rem;padding:6px 8px"></div>
+    </div>`;
 }
 
-function getPartnerContacts() {
-  return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>{
-    const fn = (el.querySelector('.pc-first')?.value || '').trim();
-    const ln = (el.querySelector('.pc-last')?.value || '').trim();
-    return {
-      first_name: fn, last_name: ln,
-      name: [fn, ln].filter(Boolean).join(' '),
-      role: el.querySelector('.pc-role').value,
-      phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
-      whatsapp: el.querySelector('.pc-whatsapp').value,
-      wechat: el.querySelector('.pc-wechat').value,
-      telegram: el.querySelector('.pc-telegram').value,
-      other_comm: el.querySelector('.pc-other_comm').value
-    };
-  }).filter(c=>c.name||c.phone||c.email);
+// Append a contact row into an address card. `target` may be the address row,
+// a button inside it, or the row itself.
+function addAddrContact(target, c) {
+  const addrRow = (target && target.closest) ? target.closest('.pa-addr-row') : target;
+  if (!addrRow) return;
+  const wrap = addrRow.querySelector('.pa-contacts');
+  if (!wrap) return;
+  const div = document.createElement('div');
+  div.className = 'pa-contact';
+  div.style.cssText = 'border:1px solid var(--gray-200);border-radius:6px;padding:.5rem .6rem;background:#fff';
+  div.innerHTML = _partnerContactRowHtml(c);
+  wrap.appendChild(div);
+  if (!c) { const f = div.querySelector('.pc-first'); if (f) f.focus(); }
+  return div;
+}
+
+// Read one contact row's fields into an object.
+function _readContactEl(el) {
+  const fn = (el.querySelector('.pc-first')?.value || '').trim();
+  const ln = (el.querySelector('.pc-last')?.value || '').trim();
+  return {
+    first_name: fn, last_name: ln, name: [fn, ln].filter(Boolean).join(' '),
+    role: el.querySelector('.pc-role')?.value || '',
+    phone: el.querySelector('.pc-phone')?.value || '', email: el.querySelector('.pc-email')?.value || '',
+    whatsapp: el.querySelector('.pc-whatsapp')?.value || '', wechat: el.querySelector('.pc-wechat')?.value || '',
+    telegram: el.querySelector('.pc-telegram')?.value || '', other_comm: el.querySelector('.pc-other_comm')?.value || '',
+  };
+}
+
+// All non-empty contacts of one address card.
+function getAddrContacts(addrRow) {
+  return Array.from(addrRow.querySelectorAll('.pa-contact'))
+    .map(_readContactEl).filter(c => c.name || c.phone || c.email);
+}
+
+// Unique contacts already entered anywhere in this modal — for "从已有选择".
+function _allModalContacts() {
+  const seen = new Set(); const out = [];
+  document.querySelectorAll('#pAddrList .pa-contact').forEach(el => {
+    const c = _readContactEl(el);
+    if (!(c.name || c.phone || c.email)) return;
+    const key = (c.name + '|' + c.phone + '|' + c.email).toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key); out.push(c);
+  });
+  return out;
+}
+
+// "从已有选择" — toggle an inline panel of this company's existing contacts;
+// clicking one copies it into this address (联系人可重复).
+function pickExistingContact(btn) {
+  const addrRow = btn.closest('.pa-addr-row');
+  const wrap = addrRow.querySelector('.pa-contacts');
+  const open = addrRow.querySelector('.pa-contact-picker');
+  document.querySelectorAll('.pa-contact-picker').forEach(d => d.remove());
+  if (open) return; // toggle off
+  const list = _allModalContacts();
+  if (!list.length) { showToast('还没有可复用的联系人，请先新建一个', 'warning'); return; }
+  const panel = document.createElement('div');
+  panel.className = 'pa-contact-picker';
+  panel.style.cssText = 'border:1px dashed var(--sky);border-radius:8px;padding:.4rem;background:#f8fbff;margin-top:.4rem';
+  panel.innerHTML = `<div style="font-size:.76rem;color:var(--gray-500);margin-bottom:.3rem;padding:0 .2rem">点选一个已有联系人，复制到本地址：</div>` +
+    list.map((c, i) => `<div data-i="${i}" class="pa-pick-item" style="padding:7px 10px;cursor:pointer;border-radius:6px;font-size:.85rem"
+       onmouseover="this.style.background='#e0f2fe'" onmouseout="this.style.background=''">
+       <div style="font-weight:600">${esc(c.name || '(未填姓名)')}${c.role ? ` <span style="font-weight:400;color:var(--gray-400)">· ${esc(c.role)}</span>` : ''}</div>
+       ${(c.phone || c.email) ? `<div style="font-size:.76rem;color:var(--gray-500)">${esc([c.phone, c.email].filter(Boolean).join(' · '))}</div>` : ''}
+     </div>`).join('');
+  panel.querySelectorAll('.pa-pick-item').forEach(row => {
+    row.addEventListener('click', () => { addAddrContact(addrRow, list[+row.dataset.i]); panel.remove(); });
+  });
+  wrap.appendChild(panel);
 }
 
 // ── Dynamic addresses list ──
@@ -12836,8 +12887,19 @@ function addPartnerAddr(addr) {
         </div>
       </div>
     </div>
+    <div class="pa-contacts-section" style="border-top:1px dashed var(--gray-200);padding-top:.55rem;margin-top:.15rem">
+      <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem">本地址联系人 * (一个或多个)</div>
+      <div class="pa-contacts" style="display:flex;flex-direction:column;gap:.4rem"></div>
+      <div style="display:flex;gap:.5rem;margin-top:.4rem;flex-wrap:wrap">
+        <button type="button" class="btn-add-sm" onclick="addAddrContact(this)">+ 新建联系人</button>
+        <button type="button" class="btn-add-sm" style="background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE" onclick="pickExistingContact(this)">📋 从已有选择</button>
+      </div>
+    </div>
     <div class="pa-err" style="color:var(--red);font-size:.78rem;display:none"></div>`;
   document.getElementById('pAddrList').appendChild(div);
+  // Render this address's own contacts (联系人跟着地址走)
+  const _addrContacts = (addr && Array.isArray(addr.contacts)) ? addr.contacts : [];
+  _addrContacts.forEach(c => addAddrContact(div, c));
   // Auto-render map if coords exist
   if (lat && lng) setTimeout(() => updatePartnerAddrMap(div), 120);
 }
@@ -12887,7 +12949,7 @@ function getPartnerAddrs() {
     const address = parts.filter(Boolean).join(', ');
     const lat = parseFloat(row.querySelector('.pa-lat')?.value) || null;
     const lng = parseFloat(row.querySelector('.pa-lng')?.value) || null;
-    return { address, street, street2, city, state, zip, lat, lng };
+    return { address, street, street2, city, state, zip, lat, lng, contacts: getAddrContacts(row) };
   }).filter(Boolean);
 }
 
@@ -12996,18 +13058,34 @@ function openPartnerModal(p) {
   document.getElementById('pIndustry').value = p ? (p.industry||'') : '';
   document.getElementById('pNotes').value = p ? p.notes : '';
   document.getElementById('pActive').checked = p ? !!p.active : true;
-  // Contacts
-  document.getElementById('pContactsList').innerHTML = '';
-  const contacts = p ? safeJSON(p.contacts,[]) : [];
-  if (contacts.length) contacts.forEach(c=>addPartnerContact(c));
-  else if (p && (p.contact_person||p.phone||p.email)) addPartnerContact({first_name:p.contact_person,phone:p.phone,email:p.email});
-  else addPartnerContact();
-  // Addresses
+  // Addresses (each carries its own contacts now). Legacy data stays compatible:
+  // a flat company-level contacts array is migrated onto the FIRST address.
   document.getElementById('pAddrList').innerHTML = '';
-  const addresses = p ? safeJSON(p.addresses,[]) : [];
-  if (addresses.length) addresses.forEach(a=>addPartnerAddr(a));
-  else if (p && p.address) addPartnerAddr(p.address);
-  else addPartnerAddr();
+  const addresses = p ? safeJSON(p.addresses, []) : [];
+  const flatContacts = p ? safeJSON(p.contacts, []) : [];
+  if (!flatContacts.length && p && (p.contact_person || p.phone || p.email)) {
+    flatContacts.push({ first_name: p.contact_person, phone: p.phone, email: p.email });
+  }
+  const addrsHaveContacts = addresses.some(a => a && Array.isArray(a.contacts) && a.contacts.length);
+  if (addresses.length) {
+    addresses.forEach((a, idx) => {
+      let aa = a;
+      // Migrate company-level contacts onto the first address — only when no
+      // address already carries its own contacts (already-migrated data).
+      if (!addrsHaveContacts && idx === 0 && flatContacts.length) {
+        aa = Object.assign({}, (a && typeof a === 'object') ? a : { address: a }, { contacts: flatContacts });
+      }
+      addPartnerAddr(aa);
+    });
+  } else if (p && p.address) {
+    addPartnerAddr({ address: p.address, contacts: flatContacts });
+  } else {
+    addPartnerAddr();
+  }
+  // Guarantee every address shows at least one (empty) contact row.
+  document.querySelectorAll('#pAddrList .pa-addr-row').forEach(row => {
+    if (!row.querySelector('.pa-contact')) addAddrContact(row);
+  });
   // Links
   const links = p ? safeJSON(p.links,{}) : {};
   document.getElementById('pWebsite').value = links.Website||'';
@@ -13580,19 +13658,29 @@ async function savePartner() {
   const id = document.getElementById('partnerId').value;
   // Collect services
   const allSvcs = Array.from(document.querySelectorAll('#pSvcTags .svc-tag.active')).map(t=>t.dataset.v);
-  const contacts = getPartnerContacts();
+  const addrs = getPartnerAddrs();
+  // Flatten every address's contacts into one company-level list (deduped) so
+  // existing consumers (partner list display, DocuSeal signing-email lookup)
+  // keep working. The per-address contacts live inside `addresses`.
+  const seenC = new Set();
+  const contacts = [];
+  addrs.forEach(a => (a.contacts || []).forEach(c => {
+    const k = (c.name + '|' + c.phone + '|' + c.email).toLowerCase();
+    if (seenC.has(k)) return;
+    seenC.add(k); contacts.push(c);
+  }));
   const data = {
     name: document.getElementById('pName').value,
     contact_person: contacts.length ? `${contacts[0].first_name||''} ${contacts[0].last_name||''}`.trim() : '',
     phone: contacts.length ? contacts[0].phone : '',
     email: contacts.length ? contacts[0].email : '',
-    address: _addrStr(getPartnerAddrs()[0]) || '',
+    address: _addrStr(addrs[0]) || '',
     industry: document.getElementById('pIndustry').value,
     services: JSON.stringify(allSvcs),
     notes: document.getElementById('pNotes').value,
     active: document.getElementById('pActive').checked,
     contacts: JSON.stringify(contacts),
-    addresses: JSON.stringify(getPartnerAddrs()),
+    addresses: JSON.stringify(addrs),
     social_media: '{}',
     links: JSON.stringify({
       Website: document.getElementById('pWebsite').value,
@@ -13603,11 +13691,10 @@ async function savePartner() {
   };
   if (!data.name) return alert('请填写公司名称');
   if (!data.industry) return alert('请选择行业');
-  // Validate first contact: name + phone + email required
+  // Validate: at least one named contact across all addresses
   const firstContact = contacts[0];
-  if (!firstContact || !(`${firstContact.first_name||''} ${firstContact.last_name||''}`.trim())) return alert('请填写联系人姓名（名 + 姓）');
+  if (!firstContact || !(`${firstContact.first_name||''} ${firstContact.last_name||''}`.trim())) return alert('请至少填写一名联系人姓名（名 + 姓）');
   // Validate at least one address
-  const addrs = getPartnerAddrs();
   if (!addrs.length || !addrs.some(a => (a.street||a.address||'').trim())) return alert('请至少填写一个公司地址');
   // Validate at least one service
   if (!allSvcs.length) return alert('请至少选择一项合作服务');
@@ -14483,27 +14570,24 @@ function randomFillPartner() {
   document.getElementById('pIndustry').value = company.industry;
   document.getElementById('pActive').checked = Math.random() > 0.15;
 
-  // ── 联系人：清空旧的，添加1~2个 ──
-  document.getElementById('pContactsList').innerHTML = '';
+  // ── 联系人数据：1~2个（稍后挂到地址下）──
   const firstNames = ['Michael','Jennifer','David','Lisa','Robert','Sandra','Kevin','Jessica','Brian','Monica','Wei','Carlos','Mei','Jose','Anna'];
   const lastNames  = ['Thompson','Williams','Garcia','Chen','Johnson','Martinez','Lee','Davis','Brown','Wang','Smith','Nguyen','Lopez','Kim','Patel'];
   const roles      = ['Operations Manager','Warehouse Manager','HR Director','Logistics Coordinator','Plant Manager','Purchasing Manager','Site Supervisor','Director of Operations'];
   const otherComms = ['Line: line_biz88','Zalo: +84909123456','KakaoTalk: biz_korea','Signal: +13125550000','Viber: +17085550000'];
   const count = rnd(1, 2);
+  const rndContacts = [];
   for (let i = 0; i < count; i++) {
-    addPartnerContact();
-    const items = document.querySelectorAll('#pContactsList .dyn-item');
-    const el = items[items.length - 1];
     const fn = pick(firstNames), ln = pick(lastNames);
-    el.querySelector('.pc-first').value      = fn;
-    el.querySelector('.pc-last').value       = ln;
-    el.querySelector('.pc-role').value       = pick(roles);
-    el.querySelector('.pc-phone').value      = `(${area}) ${rnd(200,999)}-${rnd(1000,9999)}`;
-    el.querySelector('.pc-email').value      = `${fn.toLowerCase()}.${ln.toLowerCase()}@${slug}.com`;
-    el.querySelector('.pc-whatsapp').value   = `+1 ${area}-${rnd(200,999)}-${rnd(1000,9999)}`;
-    if (Math.random() > 0.5) el.querySelector('.pc-wechat').value    = `${fn.toLowerCase()}${rnd(100,999)}`;
-    if (Math.random() > 0.6) el.querySelector('.pc-telegram').value  = `@${fn.toLowerCase()}${rnd(10,99)}`;
-    if (Math.random() > 0.7) el.querySelector('.pc-other_comm').value = pick(otherComms);
+    rndContacts.push({
+      first_name: fn, last_name: ln, role: pick(roles),
+      phone: `(${area}) ${rnd(200,999)}-${rnd(1000,9999)}`,
+      email: `${fn.toLowerCase()}.${ln.toLowerCase()}@${slug}.com`,
+      whatsapp: `+1 ${area}-${rnd(200,999)}-${rnd(1000,9999)}`,
+      wechat: Math.random() > 0.5 ? `${fn.toLowerCase()}${rnd(100,999)}` : '',
+      telegram: Math.random() > 0.6 ? `@${fn.toLowerCase()}${rnd(10,99)}` : '',
+      other_comm: Math.random() > 0.7 ? pick(otherComms) : '',
+    });
   }
 
   // ── 地址：清空旧的，添加1个 ──
@@ -14531,6 +14615,8 @@ function randomFillPartner() {
     const stateEl = addrRow.querySelector('.pa-state');
     if (stateEl) { for (const opt of stateEl.options) { if (opt.value === city.s) { opt.selected = true; break; } } }
     addrRow.querySelector('.pa-zip').value = zip;
+    // 把随机联系人挂到这个地址下（联系人跟着地址走）
+    rndContacts.forEach(c => addAddrContact(addrRow, c));
   }
 
   // ── 公司链接 ──
