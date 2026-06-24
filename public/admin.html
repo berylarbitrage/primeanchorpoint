@@ -2609,15 +2609,17 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 
       <!-- ─── HOURLY MODE ─── -->
       <div id="invpHourlyMode">
-      <!-- Excel 自动填充 -->
-      <div style="margin-bottom:.85rem;padding:.7rem .85rem;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px">
+      <!-- Excel 自动填充 (支持拖拽) -->
+      <div id="invpExcelDrop" style="margin-bottom:.85rem;padding:.7rem .85rem;background:#ecfdf5;border:1.5px dashed #6ee7b7;border-radius:8px;transition:background .12s,border-color .12s"
+        ondragover="invpExcelDragOver(event,true)" ondragenter="invpExcelDragOver(event,true)"
+        ondragleave="invpExcelDragOver(event,false)" ondrop="invpExcelDrop(event)">
         <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
           <span style="font-weight:700;font-size:.9rem;color:#065f46">📊 上传工资表 Excel 自动填充</span>
           <button type="button" class="btn btn-green" style="font-size:.83rem;padding:.3rem .9rem" onclick="document.getElementById('invpExcelFile').click()">选择 Excel 文件</button>
           <input type="file" id="invpExcelFile" accept=".xlsx" style="display:none" onchange="invpHandleExcelUpload(this)">
           <span id="invpExcelStatus" style="font-size:.82rem;color:#047857"></span>
         </div>
-        <div style="font-size:.76rem;color:#059669;margin-top:.35rem">上传后自动填入服务周期、Markup、员工与工时（正常/加班）；填好后可继续手动修改再保存。仅支持 .xlsx 格式。</div>
+        <div style="font-size:.76rem;color:#059669;margin-top:.35rem">把 .xlsx 文件 <b>直接拖到这个框里</b>，或点「选择 Excel 文件」。上传后自动填入服务周期、Markup、员工与工时（正常/加班）；填好后可继续手动修改再保存。</div>
       </div>
       <!-- Employee list -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem">
@@ -32074,12 +32076,32 @@ function invpAddEmp() {
 }
 
 // ── Excel 自动填充 (upload a payroll .xlsx → fill period / markup / employees) ──
-async function invpHandleExcelUpload(input) {
+// File picker → process the chosen file.
+function invpHandleExcelUpload(input) {
   const file = input.files && input.files[0];
   input.value = ''; // allow re-uploading the same file later
+  invpProcessExcelFile(file);
+}
+
+// Drag-and-drop onto the green box: highlight on dragover, import on drop.
+function invpExcelDragOver(e, on) {
+  e.preventDefault(); e.stopPropagation();
+  const box = document.getElementById('invpExcelDrop');
+  if (box) { box.style.background = on ? '#d1fae5' : '#ecfdf5'; box.style.borderColor = on ? '#10b981' : '#6ee7b7'; }
+}
+function invpExcelDrop(e) {
+  invpExcelDragOver(e, false);
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  invpProcessExcelFile(file);
+}
+
+// Validate + upload one .xlsx file, then auto-fill the builder. Shared by the
+// file picker and drag-and-drop.
+async function invpProcessExcelFile(file) {
   if (!file) return;
   const statusEl = document.getElementById('invpExcelStatus');
   const setStatus = (txt, color) => { if (statusEl) { statusEl.textContent = txt; statusEl.style.color = color || '#047857'; } };
+  if (!/\.xlsx$/i.test(file.name || '')) { setStatus('✗ 只支持 .xlsx 文件', '#b91c1c'); showToast('只支持 .xlsx 格式的 Excel 文件', 'error'); return; }
 
   // Don't silently wipe an in-progress crew.
   const hasRows = (window._invpManualEmps || []).some(e => (e.name || '').trim() || Object.keys(e.days || {}).length);
