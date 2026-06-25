@@ -30759,12 +30759,60 @@ function applyInvpFreeze() {
 // the user opens each flagged invoice to verify/correct it.
 // Batch-fix invoices whose number's state doesn't match the bill-to address.
 // Previews the changes first, applies only on confirm.
+// Client-side equivalent of the server's fix-number-states endpoint, using the
+// already-deployed GET/PUT endpoints so it works even if the backend wasn't
+// restarted. Same rule: each invoice's number state = its bill-to address state.
+async function _fixInvpNumberStatesClient(apply) {
+  const list = await api('/admin/invoices').catch(() => []);
+  const ids = (Array.isArray(list) ? list : []).map(r => r.id);
+  // Pull full invoices (for bill_to_addr + items/profile) in small parallel batches.
+  const full = [];
+  for (let i = 0; i < ids.length; i += 8) {
+    const batch = await Promise.all(ids.slice(i, i + 8).map(id => api('/admin/invoices/' + id).catch(() => null)));
+    batch.forEach(inv => { if (inv && inv.id) full.push(inv); });
+  }
+  const NUM_RE = /^(INV)-([A-Za-z])-([A-Za-z]{2})-([A-Za-z0-9]+)-(\d{6})-(\d+)$/;
+  const maxSeq = {};
+  full.forEach(inv => { const m = NUM_RE.exec(inv.invoice_number || ''); if (!m) return; const p = `INV-${m[2]}-${m[3]}-${m[4]}-${m[5]}-`; const s = parseInt(m[6], 10) || 0; if (!(p in maxSeq) || s > maxSeq[p]) maxSeq[p] = s; });
+  const changes = [], skipped = [];
+  full.forEach(inv => {
+    const num = inv.invoice_number || '';
+    const m = NUM_RE.exec(num);
+    if (!m) { skipped.push({ id: inv.id, invoice_number: num, company_name: inv.company_name || '', reason: '发票号格式无法解析' }); return; }
+    const cur = m[3].toUpperCase();
+    const as = _parseStateFromAddrStr(inv.bill_to_addr || '');
+    if (!as) { skipped.push({ id: inv.id, invoice_number: num, company_name: inv.company_name || '', reason: '账单地址无法解析出州' }); return; }
+    if (as === cur) return;
+    const np = `INV-${m[2]}-${as}-${m[4]}-${m[5]}-`;
+    const ns = (maxSeq[np] || 0) + 1; maxSeq[np] = ns;
+    changes.push({ id: inv.id, company_name: inv.company_name || '', from_state: cur, to_state: as, old_number: num, new_number: np + String(ns).padStart(4, '0'), _inv: inv });
+  });
+  if (apply) {
+    for (const c of changes) {
+      const inv = c._inv;
+      await api('/admin/invoices/' + c.id, { method: 'PUT', body: JSON.stringify({
+        invoice_number: c.new_number, invoice_date: inv.invoice_date, company_name: inv.company_name,
+        bill_to_addr: inv.bill_to_addr, period_start: inv.period_start, period_end: inv.period_end,
+        for_label: inv.for_label, subtotal: inv.subtotal, items: inv.items, profile: inv.profile,
+        status: inv.status, markup_rate: inv.markup_rate,
+      }) }).catch(() => {});
+    }
+  }
+  return { applied: apply, total: full.length, changeCount: changes.length, skippedCount: skipped.length,
+    changes: changes.map(c => ({ id: c.id, company_name: c.company_name, from_state: c.from_state, to_state: c.to_state, old_number: c.old_number, new_number: c.new_number })),
+    skipped: skipped.slice(0, 100) };
+}
+
 async function fixInvpNumberStates() {
   const btns = document.querySelectorAll('button[onclick="fixInvpNumberStates()"]');
   const btn = btns[btns.length - 1];
   const orig = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
-  const data = await api('/admin/invoices/fix-number-states', { method: 'POST', body: JSON.stringify({ apply: false }) }).catch(e => ({ error: e.message }));
+  // Prefer the server endpoint (fast, transactional); fall back to a client-side
+  // pass via existing GET/PUT endpoints if it isn't available (backend not
+  // restarted) — so the button works without a server restart.
+  let data = await api('/admin/invoices/fix-number-states', { method: 'POST', body: JSON.stringify({ apply: false }) }).catch(() => null);
+  if (!data || data.error) data = await _fixInvpNumberStatesClient(false).catch(e => ({ error: e.message }));
   if (btn) { btn.disabled = false; btn.textContent = orig; }
   if (!data || data.error) { showToast('检查失败：' + ((data && data.error) || '网络错误'), 'error'); return; }
   if (!data.changeCount) {
@@ -30809,7 +30857,8 @@ async function fixInvpNumberStates() {
   document.getElementById('fixNumApply').onclick = async () => {
     const ab = document.getElementById('fixNumApply');
     ab.disabled = true; ab.textContent = '修正中…';
-    const res = await api('/admin/invoices/fix-number-states', { method: 'POST', body: JSON.stringify({ apply: true }) }).catch(e => ({ error: e.message }));
+    let res = await api('/admin/invoices/fix-number-states', { method: 'POST', body: JSON.stringify({ apply: true }) }).catch(() => null);
+    if (!res || res.error) res = await _fixInvpNumberStatesClient(true).catch(e => ({ error: e.message }));
     if (!res || res.error) { ab.disabled = false; ab.textContent = `确认修正 ${data.changeCount} 张`; showToast('修正失败：' + ((res && res.error) || '网络错误'), 'error'); return; }
     close();
     showToast(`✓ 已修正 ${res.changeCount} 张发票的发票号`, 'success', 5000);
