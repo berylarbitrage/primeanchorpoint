@@ -1346,6 +1346,43 @@ try {
   }
 } catch(e) { console.error('[migration] Letter backfill error:', e.message); }
 
+// ─── Auto-correct invoice numbers whose embedded state ≠ the bill-to address's
+// state (runs every boot; idempotent — once everything matches, it does nothing).
+// Number format: INV-{mode}-{ST}-{abbr}-{date}-{seq}. The corrected state comes
+// from each invoice's own bill_to_addr (the address printed on the invoice), NOT
+// the partner's default address. Keeps mode / abbr / DATE; only the state segment
+// changes and the sequence is reassigned per target prefix to avoid collisions.
+try {
+  const NUM_RE = /^(INV)-([A-Za-z])-([A-Za-z]{2})-([A-Za-z0-9]+)-(\d{6})-(\d+)$/;
+  const stOf = s => { const mm = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return mm ? mm[1].toUpperCase() : null; };
+  const invs = db.prepare('SELECT id, invoice_number, bill_to_addr FROM invoices ORDER BY created_at ASC').all();
+  const maxSeqByPrefix = {};
+  for (const r of invs) {
+    const m = NUM_RE.exec(r.invoice_number || ''); if (!m) continue;
+    const prefix = `INV-${m[2]}-${m[3]}-${m[4]}-${m[5]}-`;
+    const seq = parseInt(m[6], 10) || 0;
+    if (!(prefix in maxSeqByPrefix) || seq > maxSeqByPrefix[prefix]) maxSeqByPrefix[prefix] = seq;
+  }
+  const updSt = db.prepare('UPDATE invoices SET invoice_number=? WHERE id=?');
+  const insSt = db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)');
+  let stFixed = 0;
+  for (const r of invs) {
+    const m = NUM_RE.exec(r.invoice_number || ''); if (!m) continue;
+    const cur = m[3].toUpperCase();
+    const want = stOf(r.bill_to_addr);
+    if (!want || want === cur) continue;
+    const newPrefix = `INV-${m[2]}-${want}-${m[4]}-${m[5]}-`;
+    const nextSeq = (maxSeqByPrefix[newPrefix] || 0) + 1;
+    maxSeqByPrefix[newPrefix] = nextSeq;
+    const newNum = newPrefix + String(nextSeq).padStart(4, '0');
+    updSt.run(newNum, r.id);
+    try { insSt.run(r.id, '修正发票号', `州 ${cur}→${want}：${r.invoice_number} → ${newNum}`); } catch {}
+    console.log(`[migration] State fix: ${r.invoice_number} → ${newNum}`);
+    stFixed++;
+  }
+  if (stFixed) console.log(`[migration] Auto-corrected ${stFixed} invoice number state(s) to match bill-to address.`);
+} catch (e) { console.error('[migration] Invoice state fix error:', e.message); }
+
 // ─── New tables for worker / customer / job-application portals ───
 db.exec(`
   CREATE TABLE IF NOT EXISTS worker_accounts (
