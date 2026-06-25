@@ -33937,7 +33937,7 @@ function getInvpManualItems() {
       const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
       const markup = parseFloat(emp.markup) || globalMk;
       const billed = Math.round(total * markup * 100) / 100;
-      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total, markup, billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      return { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', hours: totalHours, regHours, otHours, rate, otRate, total, markup, billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
