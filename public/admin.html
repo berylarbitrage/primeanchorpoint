@@ -30304,6 +30304,10 @@ async function openInvpForEdit(id) {
   renderInvpProfilePreview();
   renderInvpManualTable();
   window._invpDirty = false;
+  // Correct the number's state to match the bill-to address right on open, so a
+  // saved invoice whose address is in a different state shows the right number
+  // immediately (marks dirty → save to persist it to the list).
+  await _invpSyncNumberToAddr();
 }
 
 function closeInvpBuilderModal() {
