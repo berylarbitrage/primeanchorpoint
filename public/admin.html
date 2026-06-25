@@ -31454,23 +31454,47 @@ async function invpRefreshInvoiceNumber() {
   numEl.value = prefix + String(nextSeq).padStart(4, '0');
 }
 
-// Re-number the invoice to match the CURRENT bill-to address's state. Useful on a
-// saved invoice (its stored number loads read-only) after switching to a different
-// address/state — generates a fresh number; user then 保存 to persist it.
+// Re-number an EXISTING invoice number to a different state, keeping mode / company
+// abbr / DATE intact — only the state segment changes, and the sequence is reassigned
+// collision-safely for the new prefix. Returns the new number, or null if the current
+// number can't be parsed. (Unlike invpRefreshInvoiceNumber, this never changes the date.)
+async function _invpRenumberStateOnly(newState) {
+  const cur = (document.getElementById('invPageNumber').value || '');
+  const m = cur.match(/^(INV)-([A-Za-z])-([A-Za-z]{2})-([A-Za-z0-9]+)-(\d{6})-(\d+)$/);
+  if (!m) return null;
+  const prefix = `INV-${m[2]}-${String(newState).toUpperCase().slice(0,2)}-${m[4]}-${m[5]}-`;
+  const existing = await api('/admin/invoices').catch(() => []);
+  let maxSeq = 0;
+  (Array.isArray(existing) ? existing : []).forEach(r => {
+    const n = r.invoice_number || '';
+    if (n.startsWith(prefix)) { const s = parseInt(n.slice(prefix.length)) || 0; if (s > maxSeq) maxSeq = s; }
+  });
+  return prefix + String(maxSeq + 1).padStart(4, '0');
+}
+
+// Re-number the invoice so its state matches the current bill-to address. Keeps the
+// invoice's original date (only swaps the state); falls back to a full regenerate
+// only when there's no existing number / parseable address state.
 async function invpRegenerateNumber() {
   const numEl = document.getElementById('invPageNumber');
   if (!numEl) return;
   const billName = (document.getElementById('invPageBillName').value || '').trim();
   if (!billName) { showToast('请先填写客户公司名称', 'warning'); return; }
   const before = numEl.value;
-  numEl.value = '';
-  await invpRefreshInvoiceNumber();
-  if (!numEl.value) { numEl.value = before; showToast('重新生成失败，请检查公司名 / 地址', 'error'); return; }
+  const addrState = _parseStateFromAddrStr(document.getElementById('invPageBillAddr').value || '');
+  let newNum = (before && addrState) ? await _invpRenumberStateOnly(addrState) : null;
+  if (!newNum) {
+    numEl.value = '';
+    await invpRefreshInvoiceNumber();
+    newNum = numEl.value;
+    if (!newNum) { numEl.value = before; showToast('重新生成失败，请检查公司名 / 地址', 'error'); return; }
+  }
+  numEl.value = newNum;
   window._invpDirty = true;
-  if (numEl.value === before) { showToast('发票号未变化（州相同）：' + numEl.value, 'success'); return; }
-  _invpReplaceTitleNumber(before, numEl.value);
+  if (newNum === before) { showToast('发票号未变化（州相同）：' + newNum, 'success'); return; }
+  _invpReplaceTitleNumber(before, newNum);
   const editId = document.getElementById('invPageEditId').value;
-  showToast('已按当前地址重新生成：' + numEl.value + (editId ? '，记得点「保存 / 更新保存」' : ''), 'success', 6000);
+  showToast('已按当前地址重新生成：' + newNum + (editId ? '，记得点「保存 / 更新保存」' : ''), 'success', 6000);
 }
 
 // When the invoice number changes in the open editor, refresh the modal title so it
@@ -31493,13 +31517,14 @@ async function _invpSyncNumberToAddr() {
   const addrState = _parseStateFromAddrStr(document.getElementById('invPageBillAddr').value || '');
   if (!addrState || addrState === curState) return false;
   const before = numEl.value;
-  numEl.value = '';
-  await invpRefreshInvoiceNumber();
-  if (!numEl.value) { numEl.value = before; return false; }
-  if (numEl.value === before) return false;
+  // State-only renumber — keeps the invoice's original date (does NOT regenerate
+  // with today's date).
+  const newNum = await _invpRenumberStateOnly(addrState);
+  if (!newNum || newNum === before) return false;
+  numEl.value = newNum;
   window._invpDirty = true;
-  _invpReplaceTitleNumber(before, numEl.value);
-  showToast(`发票号州已改为 ${addrState}：${numEl.value} —— 点「保存 / 更新保存」才会写入列表`, 'success', 7000);
+  _invpReplaceTitleNumber(before, newNum);
+  showToast(`发票号州已改为 ${addrState}（日期不变）：${newNum} —— 点「保存 / 更新保存」才会写入列表`, 'success', 7000);
   return true;
 }
 
