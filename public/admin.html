@@ -30346,7 +30346,7 @@ async function attemptCloseInvpBuilder(fromBackdrop) {
 // renderInvpList() re-applies the filters, recomputes the summary, and rebuilds
 // only the table — so typing in the search box never rebuilds the controls.
 let _invpAllRows = [];
-const _invpFilter = { q: '', company: '', bank: '', type: '', from: '', to: '', sort: 'date_desc' };
+const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', sort: 'date_desc' };
 
 // "Chase ••9072" label for a list row, from the server-supplied bank_name /
 // bank_account_last4. Used for the 银行 column and the per-bank filter.
@@ -30365,6 +30365,11 @@ function invpType(r) {
   if (n.startsWith('INV-C-')) return 'container';
   if (n.startsWith('INV-L-')) return 'labor';
   return 'other';
+}
+// Two-letter state from the invoice number (INV-{mode}-{ST}-…).
+function invpState(r) {
+  const m = (r.invoice_number || '').match(/^INV-[A-Za-z]-([A-Za-z]{2})-/);
+  return m ? m[1].toUpperCase() : '';
 }
 const _INVP_TYPE_META = { container: ['📦', 'Container'], labor: ['👷', 'Labor'], other: ['🧾', '其他'] };
 
@@ -30433,6 +30438,7 @@ async function loadInvpList() {
   }
   const companies = [...new Set(_invpAllRows.map(r => r.company_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const banks = [...new Set(_invpAllRows.map(invpBankLabel).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const states = [...new Set(_invpAllRows.map(invpState).filter(Boolean))].sort();
   const fld = 'font-size:.84rem;padding:.35rem .5rem;border-radius:6px;border:1px solid var(--gray-200)';
   const lbl = 'font-size:.72rem;color:var(--gray-500);font-weight:600';
   wrap.innerHTML = `
@@ -30452,6 +30458,13 @@ async function loadInvpList() {
           <option value="labor">👷 Labor</option>
         </select>
       </div>
+      ${states.length ? `<div style="display:flex;flex-direction:column;gap:.2rem">
+        <label style="${lbl}">州 State</label>
+        <select id="invpFltState" onchange="renderInvpList()" style="${fld};min-width:90px">
+          <option value="">全部州</option>
+          ${states.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}
+        </select>
+      </div>` : ''}
       ${banks.length ? `<div style="display:flex;flex-direction:column;gap:.2rem">
         <label style="${lbl}">收款银行</label>
         <select id="invpFltBank" onchange="renderInvpList()" style="${fld};min-width:150px">
@@ -30481,6 +30494,7 @@ async function loadInvpList() {
   set('invpFltCompany', _invpFilter.company);
   set('invpFltBank', _invpFilter.bank);
   set('invpFltType', _invpFilter.type);
+  set('invpFltState', _invpFilter.state);
   set('invpFltFrom', _invpFilter.from);
   set('invpFltTo', _invpFilter.to);
   set('invpFltQ', _invpFilter.q);
@@ -30488,9 +30502,9 @@ async function loadInvpList() {
 }
 
 function resetInvpFilter() {
-  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', from: '', to: '', sort: 'date_desc' });
+  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', sort: 'date_desc' });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltType', ''); set('invpFltFrom', ''); set('invpFltTo', '');
+  set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltType', ''); set('invpFltState', ''); set('invpFltFrom', ''); set('invpFltTo', '');
   set('invpFltQ', '');
   renderInvpList();
 }
@@ -30503,6 +30517,7 @@ function renderInvpList() {
   _invpFilter.company = val('invpFltCompany');
   _invpFilter.bank = val('invpFltBank');
   _invpFilter.type = val('invpFltType');
+  _invpFilter.state = val('invpFltState');
   _invpFilter.from = val('invpFltFrom');
   _invpFilter.to = val('invpFltTo');
   _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
@@ -30511,6 +30526,7 @@ function renderInvpList() {
   if (_invpFilter.company) list = list.filter(r => (r.company_name || '') === _invpFilter.company);
   if (_invpFilter.bank) list = list.filter(r => invpBankLabel(r) === _invpFilter.bank);
   if (_invpFilter.type) list = list.filter(r => invpType(r) === _invpFilter.type);
+  if (_invpFilter.state) list = list.filter(r => invpState(r) === _invpFilter.state);
   // invoice_date is stored ISO (YYYY-MM-DD), so string compare = date compare.
   if (_invpFilter.from) list = list.filter(r => (r.invoice_date || '') >= _invpFilter.from);
   if (_invpFilter.to) list = list.filter(r => (r.invoice_date || '') <= _invpFilter.to);
@@ -30523,7 +30539,7 @@ function renderInvpList() {
   const totBill = list.reduce((s, r) => s + (r.subtotal || 0), 0);
   const totWage = list.reduce((s, r) => s + (r.wage_cost || 0), 0);
   const totProfit = totBill - totWage;
-  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.from || _invpFilter.to || _invpFilter.q);
+  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q);
   const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const card = (label, value, color) => `
     <div style="flex:1 1 140px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
