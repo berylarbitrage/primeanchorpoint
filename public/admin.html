@@ -30262,7 +30262,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', note: item.note || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
@@ -31884,6 +31884,8 @@ function _invpSaveTableState() {
     if (subInp) emp.subcontractor = subInp.value;
     const refInp = row.querySelector('.invp-man-ref');
     if (refInp) emp.referrer = refInp.value;
+    const noteInp = row.querySelector('.invp-man-note');
+    if (noteInp) emp.note = noteInp.value;
     emp.rate = row.querySelector('.invp-man-rate').value;
     const otRateInp = row.querySelector('.invp-man-ot-rate');
     emp.otRate = (otRateInp && otRateInp.dataset.auto !== 'false') ? '' : (otRateInp?.value || '');
@@ -31992,6 +31994,12 @@ function renderInvpManualTable(skipSave) {
           style="width:100px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"
           onchange="_invpSaveTableState()">
       </td>
+      <td style="padding:3px 4px">
+        <input type="text" class="invp-man-note" data-uid="${emp.uid}" value="${esc(emp.note||'')}"
+          placeholder="备注 / 离职日期" title="备注（如离职日期）——会作为备注出现在发票里该员工名字下方"
+          style="width:120px;border:1px solid #fcd34d;border-radius:4px;padding:3px 6px;font-size:.84rem;background:#fffdf5"
+          onchange="_invpSaveTableState()">
+      </td>
       ${dayInputs}
       <td style="padding:3px 4px;text-align:right">
         <input type="number" class="invp-man-rate" data-uid="${emp.uid}" value="${rate ? rate.toFixed(2) : ''}"
@@ -32049,6 +32057,7 @@ function renderInvpManualTable(skipSave) {
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">工种类别</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#047857">分包商</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">介绍人</th>
+        <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#b45309">备注</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap${showWage ? ';color:#1d4ed8' : ''}">${showWage ? '公司收 $/h<br><span style="font-weight:400;font-size:.72rem">公司发我们</span>' : '时薪($/h)'}</th>
         ${showWage ? '<th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#15803d">付工人 $/h<br><span style="font-weight:400;font-size:.72rem">我们发工人</span></th>' : ''}
@@ -33462,14 +33471,19 @@ async function generateInvpSubcontractorStatement() {
     const workerRows = items.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
       const referrer = (i.referrer || '').trim();
-      const metaRow = referrer
+      const note = (i.note || '').trim();
+      const metaParts = [];
+      if (referrer) metaParts.push(`<span style="color:#94a3b8">介绍人:</span> <span style="color:#475569">${esc(referrer)}</span>`);
+      if (note) metaParts.push(`<span style="color:#94a3b8">备注:</span> <span style="color:#475569">${esc(note)}</span>`);
+      const hasMeta = metaParts.length > 0;
+      const metaRow = hasMeta
         ? `<tr style="background:${stripe}">
             <td></td>
-            <td colspan="${showOt ? 5 : 4}" style="padding:0 8px 8px 8px;border-bottom:1px solid #e2e8f0;font-size:.72rem;line-height:1.5"><span style="color:#94a3b8">介绍人:</span> <span style="color:#475569">${esc(referrer)}</span></td>
+            <td colspan="${showOt ? 5 : 4}" style="padding:0 8px 8px 8px;border-bottom:1px solid #e2e8f0;font-size:.72rem;line-height:1.5">${metaParts.join('&nbsp;&nbsp;·&nbsp;&nbsp;')}</td>
           </tr>`
         : '';
-      const pad = referrer ? '2px' : '9px';
-      const bb = referrer ? '' : 'border-bottom:1px solid #e2e8f0;';
+      const pad = hasMeta ? '2px' : '9px';
+      const bb = hasMeta ? '' : 'border-bottom:1px solid #e2e8f0;';
       return `<tr style="background:${stripe}">
         <td style="padding:9px 8px ${pad} 8px;${bb}text-align:center;color:#64748b;vertical-align:top">${idx + 1}</td>
         <td style="padding:9px 8px ${pad} 8px;${bb}text-align:left;font-weight:500;text-transform:capitalize;vertical-align:top">${esc(i.name)}</td>
@@ -34113,7 +34127,7 @@ function getInvpManualItems() {
       const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
       const markup = parseFloat(emp.markup) || globalMk;
       const billed = Math.round(total * markup * 100) / 100;
-      return { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', hours: totalHours, regHours, otHours, rate, otRate, total, markup, billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      return { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', note: emp.note || '', hours: totalHours, regHours, otHours, rate, otRate, total, markup, billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
@@ -34259,7 +34273,7 @@ async function generateInvpPreview() {
         ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
       return `<tr style="background:${rowBg}">
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}${(i.note||'').trim() ? `<div style="font-weight:400;font-size:.72rem;color:#64748b;text-transform:none;white-space:normal;max-width:220px">${esc((i.note||'').trim())}</div>` : ''}</td>
         ${posCell}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${hideOt ? ((i.regHours||0)+(i.otHours||0)).toFixed(2) : (i.regHours||0).toFixed(2)}</td>
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? '' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
