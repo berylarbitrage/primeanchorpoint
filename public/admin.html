@@ -30262,7 +30262,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', note: item.note || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', note: item.note || '', noteType: item.noteType || '', noteDate: item.noteDate || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
@@ -31872,6 +31872,18 @@ function _invpGetDates() {
   return dates;
 }
 
+// A per-worker onboarding/termination note shown on invoices: type (入职/离职) + date.
+function _invpFmtNoteDate(d) {
+  const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${parseInt(m[2])}/${parseInt(m[3])}/${m[1]}` : String(d || '').trim();
+}
+function _invpNoteStr(type, date) {
+  type = (type || '').trim();
+  const d = _invpFmtNoteDate(date);
+  if (type && d) return `${type} ${d}`;
+  return type || d || '';
+}
+
 function _invpSaveTableState() {
   // Save current input values back to _invpManualEmps before re-render
   document.querySelectorAll('.invp-manual-row').forEach(row => {
@@ -31884,8 +31896,13 @@ function _invpSaveTableState() {
     if (subInp) emp.subcontractor = subInp.value;
     const refInp = row.querySelector('.invp-man-ref');
     if (refInp) emp.referrer = refInp.value;
-    const noteInp = row.querySelector('.invp-man-note');
-    if (noteInp) emp.note = noteInp.value;
+    const ntSel = row.querySelector('.invp-man-notetype');
+    const ndInp = row.querySelector('.invp-man-notedate');
+    if (ntSel || ndInp) {
+      if (ntSel) emp.noteType = ntSel.value;
+      if (ndInp) emp.noteDate = ndInp.value;
+      emp.note = _invpNoteStr(emp.noteType, emp.noteDate);
+    }
     emp.rate = row.querySelector('.invp-man-rate').value;
     const otRateInp = row.querySelector('.invp-man-ot-rate');
     emp.otRate = (otRateInp && otRateInp.dataset.auto !== 'false') ? '' : (otRateInp?.value || '');
@@ -31995,10 +32012,18 @@ function renderInvpManualTable(skipSave) {
           onchange="_invpSaveTableState()">
       </td>
       <td style="padding:3px 4px">
-        <input type="text" class="invp-man-note" data-uid="${emp.uid}" value="${esc(emp.note||'')}"
-          placeholder="备注 / 离职日期" title="备注（如离职日期）——会作为备注出现在发票里该员工名字下方"
-          style="width:120px;border:1px solid #fcd34d;border-radius:4px;padding:3px 6px;font-size:.84rem;background:#fffdf5"
-          onchange="_invpSaveTableState()">
+        <div style="display:flex;gap:3px;align-items:center">
+          <select class="invp-man-notetype" data-uid="${emp.uid}" onchange="_invpSaveTableState()"
+            style="border:1px solid #fcd34d;border-radius:4px;padding:3px 2px;font-size:.8rem;background:#fffdf5">
+            <option value=""${!emp.noteType ? ' selected' : ''}>—</option>
+            <option value="入职"${emp.noteType === '入职' ? ' selected' : ''}>入职</option>
+            <option value="离职"${emp.noteType === '离职' ? ' selected' : ''}>离职</option>
+          </select>
+          <input type="date" class="invp-man-notedate" data-uid="${emp.uid}" value="${esc(emp.noteDate||'')}"
+            title="入职/离职日期——会作为备注出现在发票里该员工名字下方"
+            style="width:132px;border:1px solid #fcd34d;border-radius:4px;padding:3px 4px;font-size:.8rem;background:#fffdf5"
+            onchange="_invpSaveTableState()">
+        </div>
       </td>
       ${dayInputs}
       <td style="padding:3px 4px;text-align:right">
@@ -32057,7 +32082,7 @@ function renderInvpManualTable(skipSave) {
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">工种类别</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#047857">分包商</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">介绍人</th>
-        <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#b45309">备注</th>
+        <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#b45309">入职/离职</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap${showWage ? ';color:#1d4ed8' : ''}">${showWage ? '公司收 $/h<br><span style="font-weight:400;font-size:.72rem">公司发我们</span>' : '时薪($/h)'}</th>
         ${showWage ? '<th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#15803d">付工人 $/h<br><span style="font-weight:400;font-size:.72rem">我们发工人</span></th>' : ''}
@@ -33474,7 +33499,7 @@ async function generateInvpSubcontractorStatement() {
       const note = (i.note || '').trim();
       const metaParts = [];
       if (referrer) metaParts.push(`<span style="color:#94a3b8">介绍人:</span> <span style="color:#475569">${esc(referrer)}</span>`);
-      if (note) metaParts.push(`<span style="color:#94a3b8">备注:</span> <span style="color:#475569">${esc(note)}</span>`);
+      if (note) metaParts.push(`<span style="color:#475569">${esc(note)}</span>`);
       const hasMeta = metaParts.length > 0;
       const metaRow = hasMeta
         ? `<tr style="background:${stripe}">
@@ -34127,7 +34152,7 @@ function getInvpManualItems() {
       const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
       const markup = parseFloat(emp.markup) || globalMk;
       const billed = Math.round(total * markup * 100) / 100;
-      return { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', note: emp.note || '', hours: totalHours, regHours, otHours, rate, otRate, total, markup, billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      return { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', note: emp.note || '', noteType: emp.noteType || '', noteDate: emp.noteDate || '', hours: totalHours, regHours, otHours, rate, otRate, total, markup, billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
