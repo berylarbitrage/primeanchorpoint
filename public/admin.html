@@ -31711,6 +31711,7 @@ function renderInvpManualTable(skipSave) {
     </div>
     <div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap">
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 添加员工</button>
+      <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#7c3aed;border-color:#c4b5fd" onclick="invpOpenPasteImport()" title="粘贴一份名单（每行：姓名 时薪$ 工时H）一次性导入并自动填好时薪与工时">📋 粘贴名单</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpOpenDistribute(0)" title="一次给所有员工分配工时">⇆ 批量分配工时</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#dc2626;border-color:#fca5a5" onclick="invpClearAllHours()" title="一键清空所有员工的所有工时格子">🗑 清空全部工时</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#6ee7b7" onclick="invpBulkSetSubcontractor()" title="一次给多名员工填写同一个分包商">👥 批量填写分包商</button>
@@ -31775,6 +31776,140 @@ function invpBulkSetSubcontractor() {
   document.getElementById('invpBulkSubCancel').addEventListener('click', () => ov.remove());
   ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
   setTimeout(() => { const el = document.getElementById('invpBulkSubInput'); if (el) el.focus(); }, 50);
+}
+
+// ── 粘贴名单批量导入 ──
+// Parse pasted lines like "Jimmerly Chirino 17$ 40H" → {name, rate, hours}.
+// Order-tolerant: hours = number before h/H; rate = number next to $ (else the
+// first leftover number); the rest is the name. Both $ and H are optional.
+function _invpParsePasteLines(text) {
+  const rows = [], bad = [];
+  String(text || '').split(/\r?\n/).forEach(raw => {
+    const line = raw.trim();
+    if (!line) return;
+    let s = ' ' + line + ' ';
+    let hours = null, rate = null;
+    // hours: a number immediately followed by h / hr / hrs / hour(s) / 小时
+    let m = s.match(/(\d+(?:\.\d+)?)\s*(?:h(?:rs?|ours?)?|小时)\b/i);
+    if (m) { hours = parseFloat(m[1]); s = s.replace(m[0], ' '); }
+    // rate: a number adjacent to $ (either side)
+    m = s.match(/\$\s*(\d+(?:\.\d+)?)/) || s.match(/(\d+(?:\.\d+)?)\s*\$/);
+    if (m) { rate = parseFloat(m[1] != null ? m[1] : m[2]); s = s.replace(m[0], ' '); }
+    // fall back to bare numbers for whichever value is still missing (rate first, then hours)
+    if (rate === null || hours === null) {
+      const nums = s.match(/\d+(?:\.\d+)?/g) || [];
+      let idx = 0;
+      if (rate === null && nums[idx] != null) { rate = parseFloat(nums[idx]); s = s.replace(nums[idx], ' '); idx++; }
+      if (hours === null && nums[idx] != null) { hours = parseFloat(nums[idx]); s = s.replace(nums[idx], ' '); }
+    }
+    // name = leftover text, minus stray $ and surrounding punctuation
+    const name = s.replace(/\$/g, ' ').replace(/\s+/g, ' ').trim().replace(/^[,;·、]+|[,;·、]+$/g, '').trim();
+    if (!name) { bad.push({ raw: line }); return; }
+    rows.push({ name, rate: (rate != null && isFinite(rate)) ? rate : null, hours: (hours != null && isFinite(hours)) ? hours : null, raw: line });
+  });
+  return { rows, bad };
+}
+
+// Spread a weekly total evenly across the period days (remainder on the last day),
+// mirroring 批量分配工时 so the summed total stays exact.
+function _invpDistributeHours(emp, totalH, dates) {
+  emp.days = {};
+  const n = dates.length;
+  if (!n || !(totalH > 0)) return;
+  const per = Math.round((totalH / n) * 100) / 100;
+  let acc = 0;
+  dates.forEach((d, i) => {
+    const v = (i === n - 1) ? Math.round((totalH - acc) * 100) / 100 : per;
+    if (i !== n - 1) acc += per;
+    emp.days[d] = v.toFixed(2);
+  });
+}
+
+function invpOpenPasteImport() {
+  _invpSaveTableState();
+  const existing = document.getElementById('invpPasteOverlay');
+  if (existing) existing.remove();
+  const emps = window._invpManualEmps || [];
+  const hasReal = emps.some(e => (e.name || '').trim());
+  const ov = document.createElement('div');
+  ov.id = 'invpPasteOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2300;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.innerHTML = `<div style="background:#fff;border-radius:10px;padding:1.1rem 1.25rem;max-width:640px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.25)">
+    <div style="font-weight:700;font-size:1rem;margin-bottom:.35rem">📋 粘贴名单批量导入</div>
+    <div style="font-size:.8rem;color:#64748b;line-height:1.55;margin-bottom:.6rem">
+      每行一个工人，格式：<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px">姓名　时薪$　工时H</code>
+      &nbsp;例如&nbsp;<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px">Jimmerly Chirino 17$ 40H</code>。
+      <span style="color:#94a3b8">$ 和 H 可省略；工时会按服务周期天数平均分到每天（合计不变，&gt;40h 自动算加班）。</span>
+    </div>
+    <textarea id="invpPasteText" rows="8" placeholder="Jimmerly Chirino 17$ 40H&#10;Isabella Chirino 22$ 40H&#10;Yoseli Briceno 18$ 40H" oninput="invpRenderPastePreview()"
+      style="width:100%;box-sizing:border-box;border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .7rem;font-size:.9rem;font-family:'Menlo','Consolas',monospace;resize:vertical;margin-bottom:.6rem"></textarea>
+    <div id="invpPastePreview" style="flex:1;overflow:auto;min-height:60px;border:1px solid var(--gray-100);border-radius:8px;padding:.5rem .6rem;background:#f8fafc;margin-bottom:.7rem"></div>
+    <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;margin-bottom:.75rem;cursor:pointer">
+      <input type="checkbox" id="invpPasteReplace" ${hasReal ? '' : 'checked'}>
+      导入前先清空现有${emps.length ? ' ' + emps.length + ' ' : ''}名员工${hasReal ? '（不勾选＝追加到现有名单后面）' : ''}
+    </label>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;flex-wrap:wrap">
+      <button type="button" class="btn btn-outline" id="invpPasteCancel">取消</button>
+      <button type="button" class="btn btn-green" id="invpPasteDo">导入</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('invpPasteCancel').addEventListener('click', () => ov.remove());
+  document.getElementById('invpPasteDo').addEventListener('click', invpDoPasteImport);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  invpRenderPastePreview();
+  setTimeout(() => { const el = document.getElementById('invpPasteText'); if (el) el.focus(); }, 50);
+}
+
+function invpRenderPastePreview() {
+  const box = document.getElementById('invpPastePreview');
+  if (!box) return;
+  const { rows, bad } = _invpParsePasteLines(document.getElementById('invpPasteText').value);
+  if (!rows.length && !bad.length) {
+    box.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem">在上方粘贴名单，这里会显示识别结果…</div>';
+    return;
+  }
+  const warn = [];
+  const rowsHtml = rows.map((r, i) => {
+    const noRate = r.rate == null || !(r.rate > 0);
+    const noHrs = r.hours == null || !(r.hours > 0);
+    if (noRate) warn.push(`${r.name}：没识别到时薪`);
+    if (noHrs) warn.push(`${r.name}：没识别到工时`);
+    return `<tr style="border-top:1px solid var(--gray-100)">
+      <td style="padding:2px 6px;color:var(--gray-400);text-align:right">${i + 1}</td>
+      <td style="padding:2px 6px;font-weight:500">${esc(r.name)}</td>
+      <td style="padding:2px 6px;text-align:right;${noRate ? 'color:#dc2626' : ''}">${r.rate != null ? '$' + r.rate : '—'}</td>
+      <td style="padding:2px 6px;text-align:right;${noHrs ? 'color:#dc2626' : ''}">${r.hours != null ? r.hours + 'h' : '—'}</td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div style="font-size:.8rem;color:#0f766e;margin-bottom:.35rem">识别到 <b>${rows.length}</b> 名工人${bad.length ? ` · <span style="color:#dc2626">${bad.length} 行无法识别</span>` : ''}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:.83rem">
+      <thead><tr style="color:var(--gray-500);font-size:.76rem"><th style="padding:2px 6px;text-align:right">#</th><th style="padding:2px 6px;text-align:left">姓名</th><th style="padding:2px 6px;text-align:right">时薪</th><th style="padding:2px 6px;text-align:right">工时</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    ${warn.length ? `<div style="font-size:.76rem;color:#b45309;margin-top:.4rem">⚠ ${esc(warn.slice(0, 6).join('；'))}${warn.length > 6 ? ' …' : ''}（仍可导入，之后可手动补）</div>` : ''}
+    ${bad.length ? `<div style="font-size:.76rem;color:#dc2626;margin-top:.3rem">无法识别：${esc(bad.map(b => b.raw).slice(0, 4).join(' / '))}${bad.length > 4 ? ' …' : ''}</div>` : ''}`;
+}
+
+function invpDoPasteImport() {
+  const { rows } = _invpParsePasteLines(document.getElementById('invpPasteText').value);
+  if (!rows.length) { showToast('没识别到任何工人，请检查粘贴内容', 'error'); return; }
+  const dates = _invpGetDates();
+  if (!dates.length) { showToast('请先在上方填写服务周期（开始/结束日期），再导入', 'error'); return; }
+  const replace = document.getElementById('invpPasteReplace').checked;
+  _invpSaveTableState();
+  if (replace) window._invpManualEmps = [];
+  rows.forEach(r => {
+    const emp = { uid: _invpManualUidSeq++, name: r.name, category: '', subcontractor: '', referrer: '',
+      rate: r.rate != null ? String(r.rate) : '', days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' };
+    _invpDistributeHours(emp, r.hours != null ? r.hours : 0, dates);
+    window._invpManualEmps.push(emp);
+  });
+  const ov = document.getElementById('invpPasteOverlay');
+  if (ov) ov.remove();
+  renderInvpManualTable(true);
+  showToast(`已导入 ${rows.length} 名工人${replace ? '（已替换原名单）' : '（追加）'}`, 'success');
 }
 
 function invpClearAllHours() {
