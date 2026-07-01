@@ -31877,11 +31877,15 @@ function _invpFmtNoteDate(d) {
   const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${parseInt(m[2])}/${parseInt(m[3])}/${m[1]}` : String(d || '').trim();
 }
+// The 入职/离职 dropdown stays Chinese for the admin, but the note shown ON the
+// (English, client-facing) invoice is rendered in English.
+const _INVP_NOTE_EN = { '入职': 'Start date', '离职': 'End date' };
 function _invpNoteStr(type, date) {
   type = (type || '').trim();
+  const label = _INVP_NOTE_EN[type] || type;
   const d = _invpFmtNoteDate(date);
-  if (type && d) return `${type} ${d}`;
-  return type || d || '';
+  if (label && d) return `${label}: ${d}`;
+  return label || d || '';
 }
 
 function _invpSaveTableState() {
