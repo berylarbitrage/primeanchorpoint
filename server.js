@@ -1346,6 +1346,43 @@ try {
   }
 } catch(e) { console.error('[migration] Letter backfill error:', e.message); }
 
+// ─── Auto-correct invoice numbers whose embedded state ≠ the bill-to address's
+// state (runs every boot; idempotent — once everything matches, it does nothing).
+// Number format: INV-{mode}-{ST}-{abbr}-{date}-{seq}. The corrected state comes
+// from each invoice's own bill_to_addr (the address printed on the invoice), NOT
+// the partner's default address. Keeps mode / abbr / DATE; only the state segment
+// changes and the sequence is reassigned per target prefix to avoid collisions.
+try {
+  const NUM_RE = /^(INV)-([A-Za-z])-([A-Za-z]{2})-([A-Za-z0-9]+)-(\d{6})-(\d+)$/;
+  const stOf = s => { const mm = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return mm ? mm[1].toUpperCase() : null; };
+  const invs = db.prepare('SELECT id, invoice_number, bill_to_addr FROM invoices ORDER BY created_at ASC').all();
+  const maxSeqByPrefix = {};
+  for (const r of invs) {
+    const m = NUM_RE.exec(r.invoice_number || ''); if (!m) continue;
+    const prefix = `INV-${m[2]}-${m[3]}-${m[4]}-${m[5]}-`;
+    const seq = parseInt(m[6], 10) || 0;
+    if (!(prefix in maxSeqByPrefix) || seq > maxSeqByPrefix[prefix]) maxSeqByPrefix[prefix] = seq;
+  }
+  const updSt = db.prepare('UPDATE invoices SET invoice_number=? WHERE id=?');
+  const insSt = db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)');
+  let stFixed = 0;
+  for (const r of invs) {
+    const m = NUM_RE.exec(r.invoice_number || ''); if (!m) continue;
+    const cur = m[3].toUpperCase();
+    const want = stOf(r.bill_to_addr);
+    if (!want || want === cur) continue;
+    const newPrefix = `INV-${m[2]}-${want}-${m[4]}-${m[5]}-`;
+    const nextSeq = (maxSeqByPrefix[newPrefix] || 0) + 1;
+    maxSeqByPrefix[newPrefix] = nextSeq;
+    const newNum = newPrefix + String(nextSeq).padStart(4, '0');
+    updSt.run(newNum, r.id);
+    try { insSt.run(r.id, '修正发票号', `州 ${cur}→${want}：${r.invoice_number} → ${newNum}`); } catch {}
+    console.log(`[migration] State fix: ${r.invoice_number} → ${newNum}`);
+    stFixed++;
+  }
+  if (stFixed) console.log(`[migration] Auto-corrected ${stFixed} invoice number state(s) to match bill-to address.`);
+} catch (e) { console.error('[migration] Invoice state fix error:', e.message); }
+
 // ─── New tables for worker / customer / job-application portals ───
 db.exec(`
   CREATE TABLE IF NOT EXISTS worker_accounts (
@@ -17735,6 +17772,63 @@ app.get('/api/admin/invoices/scan-duplicates', requireAdmin, (req, res) => {
   res.json({ total_invoices: rows.length, groups: out });
 });
 
+// Audit (and optionally fix) invoices whose number's embedded state doesn't match
+// the state of the bill-to address actually printed on the invoice. Number format:
+// INV-{mode}-{ST}-{abbr}-{date}-{seq}. The corrected state comes from bill_to_addr
+// (the address on the invoice), not the partner's default address. New sequence
+// numbers are assigned per target prefix so a renumber never collides.
+// POST body { apply: true } writes the changes; otherwise it's a dry-run preview.
+// (Registered before /:id so the path isn't swallowed as an id.)
+app.post('/api/admin/invoices/fix-number-states', requireAdmin, (req, res) => {
+  const apply = !!(req.body && req.body.apply);
+  const parseState = s => { const m = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return m ? m[1].toUpperCase() : null; };
+  const NUM_RE = /^(INV)-([A-Za-z])-([A-Za-z]{2})-([A-Za-z0-9]+)-(\d{6})-(\d+)$/;
+  const rows = db.prepare(`SELECT id, invoice_number, company_name, bill_to_addr FROM invoices ORDER BY created_at ASC`).all();
+
+  // Highest seq already used per prefix → new numbers start above it (no collisions).
+  const maxSeqByPrefix = {};
+  for (const r of rows) {
+    const m = NUM_RE.exec(r.invoice_number || '');
+    if (!m) continue;
+    const prefix = `INV-${m[2]}-${m[3]}-${m[4]}-${m[5]}-`;
+    const seq = parseInt(m[6], 10) || 0;
+    if (!(prefix in maxSeqByPrefix) || seq > maxSeqByPrefix[prefix]) maxSeqByPrefix[prefix] = seq;
+  }
+
+  const changes = [];
+  const skipped = [];
+  for (const r of rows) {
+    const num = r.invoice_number || '';
+    const m = NUM_RE.exec(num);
+    if (!m) { skipped.push({ id: r.id, invoice_number: num, company_name: r.company_name || '', reason: '发票号格式无法解析' }); continue; }
+    const curState = m[3].toUpperCase();
+    const addrState = parseState(r.bill_to_addr);
+    if (!addrState) { skipped.push({ id: r.id, invoice_number: num, company_name: r.company_name || '', reason: '账单地址无法解析出州' }); continue; }
+    if (addrState === curState) continue; // already correct
+    const newPrefix = `INV-${m[2]}-${addrState}-${m[4]}-${m[5]}-`;
+    const nextSeq = (maxSeqByPrefix[newPrefix] || 0) + 1;
+    maxSeqByPrefix[newPrefix] = nextSeq;
+    changes.push({
+      id: r.id, company_name: r.company_name || '', bill_to_addr: r.bill_to_addr || '',
+      from_state: curState, to_state: addrState,
+      old_number: num, new_number: newPrefix + String(nextSeq).padStart(4, '0'),
+    });
+  }
+
+  if (apply && changes.length) {
+    const upd = db.prepare(`UPDATE invoices SET invoice_number=? WHERE id=?`);
+    const hist = db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`);
+    db.transaction(() => {
+      for (const c of changes) {
+        upd.run(c.new_number, c.id);
+        hist.run(c.id, '修正发票号', `州 ${c.from_state}→${c.to_state}：${c.old_number} → ${c.new_number}`);
+      }
+    })();
+  }
+
+  res.json({ applied: apply, total: rows.length, changeCount: changes.length, skippedCount: skipped.length, changes, skipped: skipped.slice(0, 100) });
+});
+
 // Save invoice
 app.post('/api/admin/invoices', requireAdmin, (req, res) => {
   const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
@@ -17746,6 +17840,29 @@ app.post('/api/admin/invoices', requireAdmin, (req, res) => {
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(result.lastInsertRowid, '创建', `Invoice 编号: ${invoice_number}`);
   res.json({ id: result.lastInsertRowid });
+});
+
+// Parse an uploaded payroll .xlsx and return structured data for the invoice
+// builder to auto-fill (period, markup, employees with reg/OT rates & hours).
+// Parsing only — nothing is persisted; the file is read from memory and dropped.
+const parseInvoiceWorkbook = require('./xlsx-invoice');
+const invoiceXlsxUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.xlsx$/i.test(file.originalname || '')
+      || /spreadsheetml\.sheet/i.test(file.mimetype || '');
+    cb(null, ok);
+  },
+});
+app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.single('file'), (req, res) => {
+  if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 .xlsx 文件' });
+  try {
+    const data = parseInvoiceWorkbook(req.file.buffer);
+    res.json(data);
+  } catch (e) {
+    res.status(400).json({ error: 'Excel 解析失败：' + (e && e.message ? e.message : String(e)) });
+  }
 });
 
 // Get single invoice (with full details)
