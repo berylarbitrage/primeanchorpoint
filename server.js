@@ -18172,12 +18172,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoice_line_payments (
   amount REAL DEFAULT NULL,
   paid_date TEXT DEFAULT NULL,
   payee TEXT DEFAULT '',
+  bank TEXT DEFAULT '',
   note TEXT DEFAULT '',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   UNIQUE(invoice_id, line_type, line_key)
 )`);
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_line_pay_inv ON invoice_line_payments(invoice_id)'); } catch (e) {}
+// bank added after the table shipped — backfill on existing DBs.
+try { db.exec("ALTER TABLE invoice_line_payments ADD COLUMN bank TEXT DEFAULT ''"); } catch (e) {}
 
 const linePayUpload = multer({
   storage: r2Storage({
@@ -18221,7 +18224,7 @@ app.get('/api/admin/invoices/:id/line-payments', requireAdmin, (req, res) => {
   const inv = db.prepare('SELECT id, invoice_number, items_json, profile_json FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
   const lines = _invoicePayableLines(inv);
-  const rows = db.prepare('SELECT line_type, line_key, receipt_paths, amount, paid_date, payee, note FROM invoice_line_payments WHERE invoice_id=?').all(inv.id);
+  const rows = db.prepare('SELECT line_type, line_key, receipt_paths, amount, paid_date, payee, bank, note FROM invoice_line_payments WHERE invoice_id=?').all(inv.id);
   const byKey = {};
   for (const r of rows) byKey[`${r.line_type} ${r.line_key}`] = r;
   const mode = (lines.length && lines[0].line_type === 'container') ? 'container' : 'worker';
@@ -18229,7 +18232,7 @@ app.get('/api/admin/invoices/:id/line-payments', requireAdmin, (req, res) => {
     const r = byKey[`${l.line_type} ${l.line_key}`];
     return { ...l, receipt_paths: r ? _linePayParse(r.receipt_paths) : [],
       amount: r ? r.amount : null, paid_date: r ? r.paid_date : null,
-      payee: r ? (r.payee || '') : '', note: r ? (r.note || '') : '' };
+      payee: r ? (r.payee || '') : '', bank: r ? (r.bank || '') : '', note: r ? (r.note || '') : '' };
   });
   res.json({ invoice_number: inv.invoice_number, mode, lines: out });
 });
@@ -18246,21 +18249,23 @@ app.post('/api/admin/invoices/:id/line-payments', requireAdmin, linePayUpload.ar
   try { keys = JSON.parse(b.line_keys || '[]'); } catch (_) { keys = String(b.line_keys || '').split(',').map(s => s.trim()).filter(Boolean); }
   if (!Array.isArray(keys) || !keys.length) return res.status(400).json({ error: '未选择任何条目' });
   const newPaths = (req.files || []).map(f => `/uploads/${f.filename}`);
-  if (!newPaths.length && !(b.amount || b.paid_date || b.payee || b.note)) return res.status(400).json({ error: '请上传凭证文件或填写付款信息' });
+  if (!newPaths.length && !(b.amount || b.paid_date || b.payee || b.bank || b.note)) return res.status(400).json({ error: '请上传凭证文件或填写付款信息' });
   // Only keys that actually belong to this invoice (server is authoritative).
   const valid = new Map(_invoicePayableLines(inv).map(l => [`${l.line_type} ${l.line_key}`, l]));
   const amtNum = Number(b.amount);
   const amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
   const paidDate = (b.paid_date || '').trim() || null;
   const payee = (b.payee || '').trim();
+  const bank = (b.bank || '').trim();
   const note = (b.note || '').trim();
   const upsert = db.prepare(`INSERT INTO invoice_line_payments
-      (invoice_id, line_type, line_key, line_label, receipt_paths, amount, paid_date, payee, note, created_at, updated_at)
-    VALUES (@invoice_id, @line_type, @line_key, @line_label, @receipt_paths, @amount, @paid_date, @payee, @note, datetime('now'), datetime('now'))
+      (invoice_id, line_type, line_key, line_label, receipt_paths, amount, paid_date, payee, bank, note, created_at, updated_at)
+    VALUES (@invoice_id, @line_type, @line_key, @line_label, @receipt_paths, @amount, @paid_date, @payee, @bank, @note, datetime('now'), datetime('now'))
     ON CONFLICT(invoice_id, line_type, line_key) DO UPDATE SET
       receipt_paths=@receipt_paths, line_label=@line_label,
       amount=COALESCE(@amount, amount), paid_date=COALESCE(@paid_date, paid_date),
       payee=CASE WHEN @payee='' THEN payee ELSE @payee END,
+      bank=CASE WHEN @bank='' THEN bank ELSE @bank END,
       note=CASE WHEN @note='' THEN note ELSE @note END,
       updated_at=datetime('now')`);
   const getExisting = db.prepare('SELECT receipt_paths FROM invoice_line_payments WHERE invoice_id=? AND line_type=? AND line_key=?');
@@ -18271,7 +18276,7 @@ app.post('/api/admin/invoices/:id/line-payments', requireAdmin, linePayUpload.ar
     const prior = getExisting.get(inv.id, lineType, key);
     const merged = [..._linePayParse(prior && prior.receipt_paths), ...newPaths];
     upsert.run({ invoice_id: inv.id, line_type: lineType, line_key: key, line_label: line.line_label,
-      receipt_paths: JSON.stringify(merged), amount, paid_date: paidDate, payee, note });
+      receipt_paths: JSON.stringify(merged), amount, paid_date: paidDate, payee, bank, note });
     affected.push(line.line_label);
   }
   if (!affected.length) return res.status(400).json({ error: '所选条目不属于该发票' });
@@ -18279,6 +18284,7 @@ app.post('/api/admin/invoices/:id/line-payments', requireAdmin, linePayUpload.ar
   if (newPaths.length) parts.push(`凭证 ${newPaths.length} 个文件`);
   if (amount != null) parts.push(`金额 $${amount.toFixed(2)}`);
   if (paidDate) parts.push(`日期 ${paidDate}`);
+  if (bank) parts.push(`银行 ${bank}`);
   db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)')
     .run(inv.id, '上传分项付款凭证', `${parts.join(' · ')}：${affected.join('、')}`);
   res.json({ success: true, affected: affected.length, paths: newPaths });
