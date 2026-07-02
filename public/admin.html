@@ -30346,7 +30346,19 @@ async function attemptCloseInvpBuilder(fromBackdrop) {
 // renderInvpList() re-applies the filters, recomputes the summary, and rebuilds
 // only the table — so typing in the search box never rebuilds the controls.
 let _invpAllRows = [];
-const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', sort: 'date_desc' };
+const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', sort: 'date_desc' };
+
+// Container numbers on a row that match the active 柜号 search, rendered as small
+// highlighted chips under the invoice number so it's obvious which container put
+// this invoice in the results. q is already lowercased/trimmed by the caller.
+function invpMatchedContainers(r, q) {
+  if (!q) return '';
+  const hits = (r.container_nos || []).filter(cn => cn.toLowerCase().includes(q));
+  if (!hits.length) return '';
+  return `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${hits.map(cn =>
+    `<span style="font-family:monospace;font-size:.72rem;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:6px">📦 ${esc(cn)}</span>`
+  ).join('')}</div>`;
+}
 
 // "Chase ••9072" label for a list row, from the server-supplied bank_name /
 // bank_account_last4. Used for the 银行 column and the per-bank filter.
@@ -30485,6 +30497,10 @@ async function loadInvpList() {
         <label style="${lbl}">搜索（编号 / 公司）</label>
         <input type="text" id="invpFltQ" oninput="renderInvpList()" placeholder="输入关键字…" style="${fld}">
       </div>
+      <div style="display:flex;flex-direction:column;gap:.2rem;flex:1 1 180px">
+        <label style="${lbl}">📦 搜索 Container 号</label>
+        <input type="text" id="invpFltContainer" oninput="renderInvpList()" placeholder="输入柜号，如 TCNU2960705…" style="${fld};font-family:monospace;text-transform:uppercase">
+      </div>
       <button class="btn btn-sm btn-outline" onclick="resetInvpFilter()" style="white-space:nowrap">清除筛选</button>
     </div>
     <div id="invpSummaryBar"></div>
@@ -30498,14 +30514,15 @@ async function loadInvpList() {
   set('invpFltFrom', _invpFilter.from);
   set('invpFltTo', _invpFilter.to);
   set('invpFltQ', _invpFilter.q);
+  set('invpFltContainer', _invpFilter.container);
   renderInvpList();
 }
 
 function resetInvpFilter() {
-  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', sort: 'date_desc' });
+  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', sort: 'date_desc' });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltType', ''); set('invpFltState', ''); set('invpFltFrom', ''); set('invpFltTo', '');
-  set('invpFltQ', '');
+  set('invpFltQ', ''); set('invpFltContainer', '');
   renderInvpList();
 }
 
@@ -30521,6 +30538,7 @@ function renderInvpList() {
   _invpFilter.from = val('invpFltFrom');
   _invpFilter.to = val('invpFltTo');
   _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
+  _invpFilter.container = (val('invpFltContainer') || '').trim().toLowerCase();
 
   let list = _invpAllRows.slice();
   if (_invpFilter.company) list = list.filter(r => (r.company_name || '') === _invpFilter.company);
@@ -30531,6 +30549,9 @@ function renderInvpList() {
   if (_invpFilter.from) list = list.filter(r => (r.invoice_date || '') >= _invpFilter.from);
   if (_invpFilter.to) list = list.filter(r => (r.invoice_date || '') <= _invpFilter.to);
   if (_invpFilter.q) list = list.filter(r => ((r.invoice_number || '') + ' ' + (r.company_name || '')).toLowerCase().includes(_invpFilter.q));
+  // Container search: keep invoices billing a 柜号 that contains the query (partial
+  // match, case-insensitive). container_nos comes from the list endpoint.
+  if (_invpFilter.container) list = list.filter(r => (r.container_nos || []).some(cn => cn.toLowerCase().includes(_invpFilter.container)));
 
   list.sort(_invpComparator(_invpFilter.sort || 'date_desc'));
 
@@ -30539,7 +30560,7 @@ function renderInvpList() {
   const totBill = list.reduce((s, r) => s + (r.subtotal || 0), 0);
   const totWage = list.reduce((s, r) => s + (r.wage_cost || 0), 0);
   const totProfit = totBill - totWage;
-  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q);
+  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q || _invpFilter.container);
   const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const card = (label, value, color) => `
     <div style="flex:1 1 140px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
@@ -30589,9 +30610,17 @@ function renderInvpList() {
     : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fef3c7;color:#92400e">草稿</span>';
 
   if (!list.length) {
-    tableWrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.75rem">没有符合筛选条件的 Invoice。</div>';
+    tableWrap.innerHTML = _invpFilter.container
+      ? `<div style="color:#92400e;background:#fef3c7;border:1px solid #fcd34d;font-size:.85rem;padding:.75rem;border-radius:8px">📦 未找到包含 container「<b style="font-family:monospace">${esc(_invpFilter.container.toUpperCase())}</b>」的 invoice。请检查柜号是否输入正确。</div>`
+      : '<div style="color:var(--gray-400);font-size:.85rem;padding:.75rem">没有符合筛选条件的 Invoice。</div>';
     return;
   }
+
+  // When searching by 柜号, lead with a banner naming how many invoices hold it —
+  // the table below highlights the exact matching container(s) per row.
+  const containerNote = _invpFilter.container
+    ? `<div style="margin-bottom:.6rem;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;font-size:.83rem;padding:.5rem .75rem;border-radius:8px">📦 找到 <b>${list.length}</b> 张包含 container「<b style="font-family:monospace">${esc(_invpFilter.container.toUpperCase())}</b>」的 invoice（下表已高亮匹配柜号）。</div>`
+    : '';
 
   // Clickable, sortable column headers. The active column shows ▲/▼; the rest
   // show a faint ↕ to hint they're clickable. The header rebuilds with the table
@@ -30608,6 +30637,7 @@ function renderInvpList() {
   };
 
   tableWrap.innerHTML = `
+    ${containerNote}
     <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:.88rem;white-space:nowrap">
       <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
@@ -30702,7 +30732,7 @@ function renderInvpList() {
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
           const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)') : dash;
           return `<tr style="border-top:1px solid var(--gray-100)">
-          <td class="invp-frz" style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
+          <td class="invp-frz" style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
           <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${esc(invpBankLabel(r) || '—')}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>

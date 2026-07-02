@@ -17714,7 +17714,13 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
       r.bank_account_name = p.bank_account_name || '';
       const acct = String(p.bank_account_no || '').replace(/\D/g, '');
       r.bank_account_last4 = acct ? acct.slice(-4) : '';
-    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; }
+      // Container numbers billed on this invoice, so the list can be searched by
+      // 柜号. Only the numbers are shipped (not the whole container_items objects)
+      // to keep the list payload light. Same source the duplicate check reads, so
+      // a number found here belongs to the record that actually holds it.
+      const citems = Array.isArray(p.container_items) ? p.container_items : [];
+      r.container_nos = [...new Set(citems.map(c => String(c.container_no || '').trim().toUpperCase()).filter(Boolean))];
+    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; }
     delete r.items_json; delete r.profile_json;
   }
   res.json(rows);
