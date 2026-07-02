@@ -17714,7 +17714,15 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
       r.bank_account_name = p.bank_account_name || '';
       const acct = String(p.bank_account_no || '').replace(/\D/g, '');
       r.bank_account_last4 = acct ? acct.slice(-4) : '';
-    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; }
+      // Surface the container numbers on this invoice (container-mode invoices
+      // stash them in profile.container_items) so the list can be searched by
+      // container number to find which invoice a container is on. Kept as a
+      // short deduped array of the raw numbers — no need to ship whole items.
+      const cItems = Array.isArray(p.container_items) ? p.container_items : [];
+      r.container_nos = [...new Set(
+        cItems.map(c => String((c && c.container_no) || '').trim().toUpperCase()).filter(Boolean)
+      )];
+    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; }
     delete r.items_json; delete r.profile_json;
   }
   res.json(rows);

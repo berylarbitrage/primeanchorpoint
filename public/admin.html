@@ -30346,7 +30346,7 @@ async function attemptCloseInvpBuilder(fromBackdrop) {
 // renderInvpList() re-applies the filters, recomputes the summary, and rebuilds
 // only the table — so typing in the search box never rebuilds the controls.
 let _invpAllRows = [];
-const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', sort: 'date_desc' };
+const _invpFilter = { q: '', container: '', company: '', bank: '', type: '', state: '', from: '', to: '', sort: 'date_desc' };
 
 // "Chase ••9072" label for a list row, from the server-supplied bank_name /
 // bank_account_last4. Used for the 银行 column and the per-bank filter.
@@ -30485,6 +30485,10 @@ async function loadInvpList() {
         <label style="${lbl}">搜索（编号 / 公司）</label>
         <input type="text" id="invpFltQ" oninput="renderInvpList()" placeholder="输入关键字…" style="${fld}">
       </div>
+      <div style="display:flex;flex-direction:column;gap:.2rem;flex:1 1 160px">
+        <label style="${lbl}">📦 搜索 Container 号</label>
+        <input type="text" id="invpFltContainer" oninput="renderInvpList()" placeholder="如 TCNU2960705…" style="${fld};font-family:monospace;text-transform:uppercase">
+      </div>
       <button class="btn btn-sm btn-outline" onclick="resetInvpFilter()" style="white-space:nowrap">清除筛选</button>
     </div>
     <div id="invpSummaryBar"></div>
@@ -30498,14 +30502,15 @@ async function loadInvpList() {
   set('invpFltFrom', _invpFilter.from);
   set('invpFltTo', _invpFilter.to);
   set('invpFltQ', _invpFilter.q);
+  set('invpFltContainer', _invpFilter.container);
   renderInvpList();
 }
 
 function resetInvpFilter() {
-  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', sort: 'date_desc' });
+  Object.assign(_invpFilter, { q: '', container: '', company: '', bank: '', type: '', state: '', from: '', to: '', sort: 'date_desc' });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltType', ''); set('invpFltState', ''); set('invpFltFrom', ''); set('invpFltTo', '');
-  set('invpFltQ', '');
+  set('invpFltQ', ''); set('invpFltContainer', '');
   renderInvpList();
 }
 
@@ -30521,6 +30526,7 @@ function renderInvpList() {
   _invpFilter.from = val('invpFltFrom');
   _invpFilter.to = val('invpFltTo');
   _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
+  _invpFilter.container = (val('invpFltContainer') || '').trim().toUpperCase();
 
   let list = _invpAllRows.slice();
   if (_invpFilter.company) list = list.filter(r => (r.company_name || '') === _invpFilter.company);
@@ -30531,6 +30537,10 @@ function renderInvpList() {
   if (_invpFilter.from) list = list.filter(r => (r.invoice_date || '') >= _invpFilter.from);
   if (_invpFilter.to) list = list.filter(r => (r.invoice_date || '') <= _invpFilter.to);
   if (_invpFilter.q) list = list.filter(r => ((r.invoice_number || '') + ' ' + (r.company_name || '')).toLowerCase().includes(_invpFilter.q));
+  // Container search: keep invoices carrying a container number that contains the
+  // query (server ships r.container_nos for container-mode invoices). A substring
+  // match lets a partial number still find its invoice.
+  if (_invpFilter.container) list = list.filter(r => (r.container_nos || []).some(c => c.includes(_invpFilter.container)));
 
   list.sort(_invpComparator(_invpFilter.sort || 'date_desc'));
 
@@ -30539,7 +30549,7 @@ function renderInvpList() {
   const totBill = list.reduce((s, r) => s + (r.subtotal || 0), 0);
   const totWage = list.reduce((s, r) => s + (r.wage_cost || 0), 0);
   const totProfit = totBill - totWage;
-  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q);
+  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q || _invpFilter.container);
   const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const card = (label, value, color) => `
     <div style="flex:1 1 140px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
@@ -30702,7 +30712,14 @@ function renderInvpList() {
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
           const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)') : dash;
           return `<tr style="border-top:1px solid var(--gray-100)">
-          <td class="invp-frz" style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
+          <td class="invp-frz" style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${(() => {
+            // When searching by container number, show the matched container(s)
+            // right under the invoice number so it's obvious which invoice has it.
+            if (!_invpFilter.container) return '';
+            const hits = (r.container_nos || []).filter(c => c.includes(_invpFilter.container));
+            if (!hits.length) return '';
+            return `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${hits.map(c => `<span style="font-family:monospace;font-size:.72rem;font-weight:600;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:6px">📦 ${esc(c)}</span>`).join('')}</div>`;
+          })()}</td>
           <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${esc(invpBankLabel(r) || '—')}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
