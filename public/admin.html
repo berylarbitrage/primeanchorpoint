@@ -2513,6 +2513,66 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- ════════════════════ 分项付款凭证 · 上传小弹窗 (per-line proof upload) ════════════════════ -->
+<div class="modal-bg" id="invpLpUploadModal" style="display:none" onclick="if(event.target===this)closeInvpLpUploadModal()">
+  <div class="modal" style="max-width:560px;width:95vw;max-height:94vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:1rem">
+      <h2 style="margin:0;font-size:1.15rem" id="invpLpUploadTitle">上传付款凭证</h2>
+      <button class="btn btn-outline" style="flex:0 0 auto;white-space:nowrap;padding:.4rem .85rem" onclick="closeInvpLpUploadModal()">✕ 关闭</button>
+    </div>
+    <p style="color:var(--gray-500);font-size:.85rem;margin:0 0 1rem">记录这笔<strong>付给分包商 / 工人</strong>的款项并上传凭证（如转账截图、付款记录等），支持 PDF / 图片，最大 20MB。<span id="invpLpUploadTarget" style="color:#7c3aed;font-weight:600"></span></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款银行</label>
+        <select id="invpLpBank" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">-- 选择银行 --</option>
+          <option value="Bank of America">Bank of America</option>
+          <option value="Chase">Chase</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">经办人</label>
+        <select id="invpLpHandler" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">-- 选择经办人 --</option>
+          <option value="Tiexiong Zhou">Tiexiong Zhou</option>
+          <option value="Niki Zhao">Niki Zhao</option>
+          <option value="Beryl Zhang">Beryl Zhang</option>
+          <option value="Jimmy Cai">Jimmy Cai</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款金额 (USD)</label>
+        <input type="number" id="invpLpAmount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款日期</label>
+        <input type="date" id="invpLpDate" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div style="grid-column:1/-1">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">收款方（可选）</label>
+        <input type="text" id="invpLpPayee" placeholder="分包商 / 工人姓名" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+      <div style="grid-column:1/-1">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">备注（可选）</label>
+        <input type="text" id="invpLpNote" placeholder="备注" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      </div>
+    </div>
+    <div style="margin-bottom:1rem">
+      <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款凭证（截图 / PDF）</label>
+      <div id="invpLpDrop" style="border:2px dashed var(--gray-300);border-radius:10px;padding:1.1rem;text-align:center;cursor:pointer;color:var(--gray-500);font-size:.85rem;transition:all .15s">
+        <div style="font-size:1.4rem;line-height:1">⬆️</div>
+        <div style="margin-top:.3rem">把截图拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span><span style="color:var(--gray-400)">（可多选）</span></div>
+        <div id="invpLpFileName" style="margin-top:.4rem;font-weight:600;color:var(--gray-700)">未选择文件</div>
+        <input type="file" id="invpLpFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" multiple style="display:none">
+      </div>
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeInvpLpUploadModal()">取消</button>
+      <button class="btn btn-blue" id="invpLpUploadSubmitBtn" onclick="submitInvpLpUpload()">上传并确认</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════ INVOICE HISTORY MODAL ════════════════════ -->
 <div class="modal-bg" id="invpHistoryModal" style="display:none" onclick="if(event.target===this)closeInvpHistoryModal()">
   <div class="modal" style="max-width:600px;width:95vw;max-height:90vh;overflow-y:auto">
@@ -31305,13 +31365,14 @@ function renderInvpLinePay() {
     const meta = [];
     if (l.amount != null) meta.push('金额 ' + _invpLinePayMoney(l.amount));
     if (l.paid_date) meta.push('日期 ' + esc(l.paid_date));
-    if (l.payee) meta.push('收款方 ' + esc(l.payee));
     if (l.bank) meta.push('银行 ' + esc(l.bank));
+    if (l.handler) meta.push('经办 ' + esc(l.handler));
+    if (l.payee) meta.push('收款方 ' + esc(l.payee));
     if (l.note) meta.push(esc(l.note));
     const paidTag = paths.length
       ? `<span style="background:#dcfce7;color:#166534;font-size:.7rem;font-weight:700;padding:1px 7px;border-radius:999px">✓ ${paths.length} 凭证</span>`
       : `<span style="background:#f1f5f9;color:#94a3b8;font-size:.7rem;padding:1px 7px;border-radius:999px">未上传</span>`;
-    return `<tr style="border-top:1px solid var(--gray-100)" title="可将文件直接拖到此行上传" ondragover="invpLinePayRowDragOver(event)" ondragleave="invpLinePayRowDragLeave(event)" ondrop="invpLinePayRowDrop(event,'${esc(l.line_key)}')">
+    return `<tr style="border-top:1px solid var(--gray-100)">
       <td style="padding:6px 8px;text-align:center"><input type="checkbox" class="invp-lp-chk" value="${esc(l.line_key)}"></td>
       <td style="padding:6px 8px">
         <div style="font-weight:600;font-family:${isCont ? 'monospace' : 'inherit'}">${esc(l.line_label)}</div>
@@ -31320,27 +31381,15 @@ function renderInvpLinePay() {
       </td>
       <td style="padding:6px 8px;text-align:right;white-space:nowrap;color:var(--gray-600)">${_invpLinePayMoney(l.billed)}</td>
       <td style="padding:6px 8px">${paidTag}<div style="display:flex;flex-wrap:wrap;align-items:center;margin-top:3px">${paths.map(p => invpLinePayThumb(l, p)).join('')}</div></td>
-      <td style="padding:6px 8px;text-align:center"><button class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd;white-space:nowrap" onclick="invpLinePayPickFile('${esc(l.line_key)}')">⬆ 上传</button></td>
+      <td style="padding:6px 8px;text-align:center"><button class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd;white-space:nowrap" onclick="openInvpLpUpload('${esc(l.line_key)}')">⬆ 上传</button></td>
     </tr>`;
   }).join('');
 
   body.innerHTML = `
-    <p style="margin:0 0 .75rem;font-size:.82rem;color:#64748b;line-height:1.5">给每个${noun}上传<strong>付给分包商 / 工人的付款凭证</strong>（转账截图 / PDF）。可逐条上传，或勾选多个后用下方「上传到所选」一次性把同一张凭证贴到所选条目。此处与整张发票的「分包付款」互不影响。</p>
-    <div id="invpLinePayBatchZone" style="background:#faf5ff;border:1.5px dashed #d8b4fe;border-radius:10px;padding:.7rem .85rem;margin-bottom:.9rem" ondragover="invpLinePayBatchDragOver(event)" ondragleave="invpLinePayBatchDragLeave(event)" ondrop="invpLinePayBatchDrop(event)">
-      <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
-        <label style="font-size:.78rem;font-weight:700;color:#6b21a8">批量：勾选条目后 →</label>
-        <input type="file" id="invpLinePayBatchFile" multiple accept="image/*,application/pdf" style="font-size:.8rem" onchange="invpLinePayBatchFileHint()">
-        <button class="btn btn-sm" style="background:#7c3aed;color:#fff;border-color:#7c3aed" onclick="invpLinePayUploadBatch()">⬆ 上传到所选</button>
-        <span id="invpLinePayBatchHint" style="font-size:.72rem;color:#7c3aed;font-weight:600"></span>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.55rem">
-        <input id="invpLinePayDate" type="date" title="付款日期" style="font-size:.8rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px">
-        <input id="invpLinePayBank" type="text" placeholder="付款银行" title="从哪个银行付的款" style="width:160px;font-size:.8rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px">
-        <input id="invpLinePayAmount" type="number" step="0.01" min="0" placeholder="金额(可选)" style="width:110px;font-size:.8rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px">
-        <input id="invpLinePayPayee" type="text" placeholder="收款方(可选)" style="width:140px;font-size:.8rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px">
-        <input id="invpLinePayNote" type="text" placeholder="备注(可选)" style="flex:1 1 120px;font-size:.8rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px">
-      </div>
-      <div style="font-size:.72rem;color:#a78bfa;margin-top:.4rem">💡 可把文件<strong>拖拽</strong>到某个${isCont ? '柜号' : '工人'}行（单条上传），或拖到此紫色区域后点「上传到所选」（批量）。日期 / 银行 / 金额 / 收款方 / 备注会写到所选条目（留空则不改动）。</div>
+    <p style="margin:0 0 .75rem;font-size:.82rem;color:#64748b;line-height:1.5">给每个${noun}上传<strong>付给分包商 / 工人的付款凭证</strong>（转账截图 / PDF）。点每行「上传」单条处理，或勾选多个后点「批量上传所选」——都会弹出上传窗口（可填银行 / 经办人 / 日期 / 金额，并拖拽或点击选择文件）。此处与整张发票的「分包付款」互不影响。</p>
+    <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.75rem;flex-wrap:wrap">
+      <button class="btn btn-sm" style="background:#7c3aed;color:#fff;border-color:#7c3aed" onclick="openInvpLpUpload('batch')">⬆ 批量上传所选</button>
+      <span style="font-size:.75rem;color:var(--gray-400)">先勾选左侧条目，再点此按钮，把同一张凭证 / 同一笔付款信息贴到多条。</span>
     </div>
     <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:.85rem">
@@ -31352,72 +31401,82 @@ function renderInvpLinePay() {
         <th style="padding:6px 8px;text-align:center">操作</th>
       </tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>
-    <input type="file" id="invpLinePayLineFile" multiple accept="image/*,application/pdf" style="display:none" onchange="invpLinePayLineFileChosen()">`;
+    </table></div>`;
 }
 
 function invpLinePayToggleAll(cb) { document.querySelectorAll('.invp-lp-chk').forEach(c => { c.checked = cb.checked; }); }
 function _invpLinePaySelectedKeys() { return [...document.querySelectorAll('.invp-lp-chk')].filter(c => c.checked).map(c => c.value); }
 
-function _invpLinePayBatchMeta() {
-  const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-  return { amount: gv('invpLinePayAmount'), paid_date: gv('invpLinePayDate'), payee: gv('invpLinePayPayee'), bank: gv('invpLinePayBank'), note: gv('invpLinePayNote') };
-}
-
-async function invpLinePayUploadBatch() {
-  const keys = _invpLinePaySelectedKeys();
-  if (!keys.length) { alert('请先勾选要上传凭证的条目'); return; }
-  const fileInput = document.getElementById('invpLinePayBatchFile');
-  const files = (fileInput && fileInput.files && fileInput.files.length) ? fileInput.files : (_invpLinePay.batchFiles || []);
-  const meta = _invpLinePayBatchMeta();
-  if (!files.length && !meta.amount && !meta.paid_date && !meta.payee && !meta.bank && !meta.note) {
-    alert('请选择 / 拖入凭证文件，或至少填写日期 / 银行 / 金额等信息'); return;
+// Open the small upload sub-modal (styled like 分包付款). scope = a single
+// line_key, or 'batch' to target every checked row. When one line is chosen the
+// form is prefilled from that line's saved payment info.
+let _invpLpUploadKeys = [];
+function openInvpLpUpload(scope) {
+  let keys, targetText;
+  const unit = _invpLinePay.mode === 'container' ? '柜号' : '工人';
+  if (scope === 'batch') {
+    keys = _invpLinePaySelectedKeys();
+    if (!keys.length) { alert('请先勾选要上传凭证的条目'); return; }
+    targetText = `已选 ${keys.length} 个${unit}`;
+  } else {
+    keys = [scope];
+    const l = _invpLinePay.lines.find(x => x.line_key === scope);
+    targetText = l ? l.line_label : scope;
   }
-  await _invpLinePayDoUpload(keys, files, meta);
-  _invpLinePay.batchFiles = null;
+  _invpLpUploadKeys = keys;
+  const single = keys.length === 1 ? _invpLinePay.lines.find(x => x.line_key === keys[0]) : null;
+  const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); };
+  document.getElementById('invpLpUploadTarget').textContent = '记录到：' + targetText;
+  setV('invpLpBank', single && single.bank);
+  setV('invpLpHandler', single && single.handler);
+  setV('invpLpPayee', single && single.payee);
+  setV('invpLpNote', single && single.note);
+  setV('invpLpAmount', (single && single.amount != null) ? single.amount : '');
+  setV('invpLpDate', (single && single.paid_date) || new Date().toISOString().slice(0, 10));
+  const fi = document.getElementById('invpLpFile'); if (fi) fi.value = '';
+  const fn = document.getElementById('invpLpFileName'); if (fn) fn.textContent = '未选择文件';
+  document.getElementById('invpLpUploadSubmitBtn').textContent = '上传并确认';
+  document.getElementById('invpLpUploadModal').style.display = 'flex';
+  _invpInitLpDrop();
+}
+function closeInvpLpUploadModal() { const m = document.getElementById('invpLpUploadModal'); if (m) m.style.display = 'none'; }
+
+// Wire the drop zone once (click / drag). Dropping assigns files to the hidden
+// <input type=file> so submit reads them the same as a click-pick.
+function _invpInitLpDrop() {
+  const drop = document.getElementById('invpLpDrop');
+  const input = document.getElementById('invpLpFile');
+  const nameEl = document.getElementById('invpLpFileName');
+  if (!drop || drop._wired) return;
+  drop._wired = true;
+  const showName = () => { nameEl.textContent = input.files.length ? (input.files.length === 1 ? input.files[0].name : input.files.length + ' 个文件') : '未选择文件'; };
+  const lit = on => { drop.style.borderColor = on ? 'var(--sky)' : ''; drop.style.background = on ? '#eff6ff' : ''; };
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', showName);
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(true); }));
+  ['dragleave', 'dragend'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(false); }));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); lit(false);
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) { input.files = files; showName(); }
+  });
 }
 
-// Drag-and-drop: drop file(s) onto a worker/container row → upload to that line
-// (also applying whatever meta is filled in the batch bar). Drop onto the purple
-// zone → stage files for a batch "上传到所选".
-function invpLinePayRowDragOver(ev) { ev.preventDefault(); ev.currentTarget.style.background = '#f5f3ff'; }
-function invpLinePayRowDragLeave(ev) { ev.currentTarget.style.background = ''; }
-async function invpLinePayRowDrop(ev, key) {
-  ev.preventDefault();
-  ev.currentTarget.style.background = '';
-  const files = ev.dataTransfer && ev.dataTransfer.files;
-  if (!files || !files.length) return;
-  await _invpLinePayDoUpload([key], files, _invpLinePayBatchMeta());
-}
-function invpLinePayBatchDragOver(ev) { ev.preventDefault(); const z = document.getElementById('invpLinePayBatchZone'); if (z) z.style.background = '#f3e8ff'; }
-function invpLinePayBatchDragLeave(ev) { const z = document.getElementById('invpLinePayBatchZone'); if (z) z.style.background = '#faf5ff'; }
-function invpLinePayBatchDrop(ev) {
-  ev.preventDefault();
-  const z = document.getElementById('invpLinePayBatchZone'); if (z) z.style.background = '#faf5ff';
-  const files = ev.dataTransfer && ev.dataTransfer.files;
-  if (!files || !files.length) return;
-  const input = document.getElementById('invpLinePayBatchFile');
-  try { input.files = files; } catch (_) { _invpLinePay.batchFiles = files; }
-  invpLinePayBatchFileHint();
-}
-function invpLinePayBatchFileHint() {
-  const input = document.getElementById('invpLinePayBatchFile');
-  const n = (input && input.files && input.files.length) || (_invpLinePay.batchFiles && _invpLinePay.batchFiles.length) || 0;
-  const hint = document.getElementById('invpLinePayBatchHint');
-  if (hint) hint.textContent = n ? `已选 ${n} 个文件，勾选条目后点「上传到所选」` : '';
-}
-
-function invpLinePayPickFile(key) {
-  _invpLinePay.targetKey = key;
-  const input = document.getElementById('invpLinePayLineFile');
-  input.value = '';
-  input.click();
-}
-async function invpLinePayLineFileChosen() {
-  const input = document.getElementById('invpLinePayLineFile');
-  if (!input.files.length || !_invpLinePay.targetKey) return;
-  await _invpLinePayDoUpload([_invpLinePay.targetKey], input.files, {});
-  _invpLinePay.targetKey = null;
+async function submitInvpLpUpload() {
+  const keys = _invpLpUploadKeys;
+  if (!keys || !keys.length) { closeInvpLpUploadModal(); return; }
+  const fileInput = document.getElementById('invpLpFile');
+  const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const meta = { amount: gv('invpLpAmount'), paid_date: gv('invpLpDate'), payee: gv('invpLpPayee'),
+    bank: gv('invpLpBank'), handler: gv('invpLpHandler'), note: gv('invpLpNote') };
+  if (!fileInput.files.length && !meta.amount && !meta.paid_date && !meta.payee && !meta.bank && !meta.handler && !meta.note) {
+    alert('请上传凭证文件，或至少填写银行 / 日期等付款信息'); return;
+  }
+  const btn = document.getElementById('invpLpUploadSubmitBtn');
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = '上传中…';
+  const ok = await _invpLinePayDoUpload(keys, fileInput.files, meta);
+  btn.disabled = false; btn.textContent = orig;
+  if (ok) closeInvpLpUploadModal();
 }
 
 async function _invpLinePayDoUpload(keys, files, meta) {
@@ -31425,21 +31484,19 @@ async function _invpLinePayDoUpload(keys, files, meta) {
   for (const f of files) fd.append('receipts', f);
   fd.append('line_type', _invpLinePay.mode);
   fd.append('line_keys', JSON.stringify(keys));
-  if (meta.amount) fd.append('amount', meta.amount);
-  if (meta.paid_date) fd.append('paid_date', meta.paid_date);
-  if (meta.payee) fd.append('payee', meta.payee);
-  if (meta.bank) fd.append('bank', meta.bank);
-  if (meta.note) fd.append('note', meta.note);
+  ['amount', 'paid_date', 'payee', 'bank', 'handler', 'note'].forEach(k => { if (meta[k]) fd.append(k, meta[k]); });
   try {
     const resp = await fetch('/api/admin/invoices/' + _invpLinePay.invoiceId + '/line-payments', {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd
     });
     if (!resp.ok) throw new Error(await resp.text());
     const r = await resp.json();
-    if (typeof showToast === 'function') showToast(`已上传到 ${r.affected} 个条目`, 'success');
+    if (typeof showToast === 'function') showToast(`已保存到 ${r.affected} 个条目`, 'success');
     await reloadInvpLinePay();
+    return true;
   } catch (e) {
     alert('上传失败：' + e.message);
+    return false;
   }
 }
 
