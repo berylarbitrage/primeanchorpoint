@@ -18156,6 +18156,161 @@ app.post('/api/admin/invoices/:id/mark-sub-unpaid', requireAdmin, (req, res) => 
   res.json({ success: true });
 });
 
+// ─── PER-LINE (container / worker) PAYMENT PROOFS ───
+// Coexists with the per-invoice 分包付款: this attaches proof-of-payment file(s) to
+// an individual container (keyed by 柜号) or an individual worker (keyed by row
+// index) on an invoice, so each line can be paid/tracked separately. A batch upload
+// applies the same file(s) to every selected line. Files live in uploadsDir like
+// the other receipts. The per-invoice sub-payment fields are left untouched.
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_line_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL,
+  line_type TEXT NOT NULL,
+  line_key TEXT NOT NULL,
+  line_label TEXT DEFAULT '',
+  receipt_paths TEXT DEFAULT '[]',
+  amount REAL DEFAULT NULL,
+  paid_date TEXT DEFAULT NULL,
+  payee TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(invoice_id, line_type, line_key)
+)`);
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_line_pay_inv ON invoice_line_payments(invoice_id)'); } catch (e) {}
+
+const linePayUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `linepay-${req.params.id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /\.(pdf|jpg|jpeg|png|gif|webp)$/i.test(path.extname(file.originalname)))
+});
+
+// Derive the payable lines of an invoice from its stored JSON. Container mode →
+// one line per container (billed = 分包价 sub_price); hourly mode → one line per
+// worker (billed = that worker's wage total). Keys are stable within the invoice
+// and authoritative — the client echoes them back on upload/remove, and the server
+// only accepts keys that actually belong to the invoice.
+function _invoicePayableLines(inv) {
+  let profile = {}, items = [];
+  try { profile = inv.profile_json ? JSON.parse(inv.profile_json) : {}; } catch (_) {}
+  try { items = inv.items_json ? JSON.parse(inv.items_json) : []; } catch (_) {}
+  if (profile.invoice_mode === 'container') {
+    const cs = Array.isArray(profile.container_items) ? profile.container_items : [];
+    return cs.map((c, i) => {
+      const no = String(c.container_no || '').trim().toUpperCase();
+      return { line_type: 'container', line_key: no || `#${i}`,
+        line_label: c.container_no || `第 ${i + 1} 个 container`,
+        billed: Number(c.sub_price) || 0, hint: c.staffing || '' };
+    });
+  }
+  return (Array.isArray(items) ? items : []).map((it, i) => ({
+    line_type: 'worker', line_key: `w${i}`,
+    line_label: it.name || `工人 ${i + 1}`,
+    billed: Number(it.total) || 0, hint: (it.hours != null ? `${it.hours} 工时` : '') }));
+}
+function _linePayParse(paths) { try { const a = JSON.parse(paths || '[]'); return Array.isArray(a) ? a.filter(Boolean) : []; } catch (_) { return []; } }
+
+// List an invoice's payable lines merged with any stored payment proofs.
+app.get('/api/admin/invoices/:id/line-payments', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT id, invoice_number, items_json, profile_json FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  const lines = _invoicePayableLines(inv);
+  const rows = db.prepare('SELECT line_type, line_key, receipt_paths, amount, paid_date, payee, note FROM invoice_line_payments WHERE invoice_id=?').all(inv.id);
+  const byKey = {};
+  for (const r of rows) byKey[`${r.line_type} ${r.line_key}`] = r;
+  const mode = (lines.length && lines[0].line_type === 'container') ? 'container' : 'worker';
+  const out = lines.map(l => {
+    const r = byKey[`${l.line_type} ${l.line_key}`];
+    return { ...l, receipt_paths: r ? _linePayParse(r.receipt_paths) : [],
+      amount: r ? r.amount : null, paid_date: r ? r.paid_date : null,
+      payee: r ? (r.payee || '') : '', note: r ? (r.note || '') : '' };
+  });
+  res.json({ invoice_number: inv.invoice_number, mode, lines: out });
+});
+
+// Upload proof file(s) and attach them to one or more selected lines (batch). The
+// same files are appended to every line in line_keys. Optional amount/date/payee/
+// note are set on each affected line (blank = keep existing).
+app.post('/api/admin/invoices/:id/line-payments', requireAdmin, linePayUpload.array('receipts', 20), (req, res) => {
+  const inv = db.prepare('SELECT id, items_json, profile_json FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  const b = req.body || {};
+  const lineType = (b.line_type || '').trim();
+  let keys = [];
+  try { keys = JSON.parse(b.line_keys || '[]'); } catch (_) { keys = String(b.line_keys || '').split(',').map(s => s.trim()).filter(Boolean); }
+  if (!Array.isArray(keys) || !keys.length) return res.status(400).json({ error: '未选择任何条目' });
+  const newPaths = (req.files || []).map(f => `/uploads/${f.filename}`);
+  if (!newPaths.length && !(b.amount || b.paid_date || b.payee || b.note)) return res.status(400).json({ error: '请上传凭证文件或填写付款信息' });
+  // Only keys that actually belong to this invoice (server is authoritative).
+  const valid = new Map(_invoicePayableLines(inv).map(l => [`${l.line_type} ${l.line_key}`, l]));
+  const amtNum = Number(b.amount);
+  const amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
+  const paidDate = (b.paid_date || '').trim() || null;
+  const payee = (b.payee || '').trim();
+  const note = (b.note || '').trim();
+  const upsert = db.prepare(`INSERT INTO invoice_line_payments
+      (invoice_id, line_type, line_key, line_label, receipt_paths, amount, paid_date, payee, note, created_at, updated_at)
+    VALUES (@invoice_id, @line_type, @line_key, @line_label, @receipt_paths, @amount, @paid_date, @payee, @note, datetime('now'), datetime('now'))
+    ON CONFLICT(invoice_id, line_type, line_key) DO UPDATE SET
+      receipt_paths=@receipt_paths, line_label=@line_label,
+      amount=COALESCE(@amount, amount), paid_date=COALESCE(@paid_date, paid_date),
+      payee=CASE WHEN @payee='' THEN payee ELSE @payee END,
+      note=CASE WHEN @note='' THEN note ELSE @note END,
+      updated_at=datetime('now')`);
+  const getExisting = db.prepare('SELECT receipt_paths FROM invoice_line_payments WHERE invoice_id=? AND line_type=? AND line_key=?');
+  const affected = [];
+  for (const key of keys) {
+    const line = valid.get(`${lineType} ${key}`);
+    if (!line) continue;
+    const prior = getExisting.get(inv.id, lineType, key);
+    const merged = [..._linePayParse(prior && prior.receipt_paths), ...newPaths];
+    upsert.run({ invoice_id: inv.id, line_type: lineType, line_key: key, line_label: line.line_label,
+      receipt_paths: JSON.stringify(merged), amount, paid_date: paidDate, payee, note });
+    affected.push(line.line_label);
+  }
+  if (!affected.length) return res.status(400).json({ error: '所选条目不属于该发票' });
+  const parts = [`${affected.length} 个条目`];
+  if (newPaths.length) parts.push(`凭证 ${newPaths.length} 个文件`);
+  if (amount != null) parts.push(`金额 $${amount.toFixed(2)}`);
+  if (paidDate) parts.push(`日期 ${paidDate}`);
+  db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)')
+    .run(inv.id, '上传分项付款凭证', `${parts.join(' · ')}：${affected.join('、')}`);
+  res.json({ success: true, affected: affected.length, paths: newPaths });
+});
+
+// Remove one proof file from a line (dereference). Deletes the physical file only
+// if no other line still references it (batch uploads share one file across lines).
+app.post('/api/admin/invoices/:id/line-payments/remove', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT id FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  const b = req.body || {};
+  const lineType = (b.line_type || '').trim();
+  const lineKey = String(b.line_key || '');
+  const target = String(b.path || '');
+  if (!lineType || !lineKey || !target) return res.status(400).json({ error: '参数不完整' });
+  const row = db.prepare('SELECT id, receipt_paths FROM invoice_line_payments WHERE invoice_id=? AND line_type=? AND line_key=?').get(inv.id, lineType, lineKey);
+  if (!row) return res.status(404).json({ error: 'Line not found' });
+  const remaining = _linePayParse(row.receipt_paths).filter(p => p !== target);
+  if (remaining.length) db.prepare("UPDATE invoice_line_payments SET receipt_paths=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(remaining), row.id);
+  else db.prepare('DELETE FROM invoice_line_payments WHERE id=?').run(row.id);
+  // Physical file is shared across lines on a batch upload — only unlink it when
+  // no remaining line-payment row references it.
+  const stillUsed = db.prepare('SELECT COUNT(*) AS n FROM invoice_line_payments WHERE receipt_paths LIKE ?').get('%' + target + '%').n;
+  if (!stillUsed) {
+    const fp = path.join(uploadsDir, path.basename(target));
+    if (fs.existsSync(fp)) { try { fs.unlinkSync(fp); } catch (_) {} }
+  }
+  db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)')
+    .run(inv.id, '删除分项付款凭证', `${lineType === 'container' ? '柜号' : '工人'} ${lineKey}`);
+  res.json({ success: true });
+});
+
 // ─── INVOICE HISTORY ───
 
 // Log an invoice action

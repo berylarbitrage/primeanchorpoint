@@ -30753,6 +30753,7 @@ function renderInvpList() {
             <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:nowrap">
               <button class="btn btn-sm btn-outline" onclick="openInvpForEdit(${r.id})">查看/编辑</button>
               ${paidBtn}
+              <button class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="openInvpLinePayModal(${r.id}, '${esc(r.invoice_number)}')" title="按 container / 工人逐条或批量上传付款凭证">📎 分项凭证</button>
               <button class="btn btn-sm btn-outline" onclick="openInvpHistoryModal(${r.id}, '${esc(r.invoice_number)}')">历史</button>
               <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button>
             </div>
@@ -31240,6 +31241,175 @@ async function submitInvpSubPay() {
     btn.disabled = false;
     btn.textContent = origLabel;
   }
+}
+
+// ════════════════════ 分项付款凭证 (per-container / per-worker payment proofs) ════════════════════
+// Attach proof-of-payment files to individual containers (by 柜号) or workers (by
+// row) on an invoice — one at a time, or by selecting several and uploading one
+// proof to all of them. Coexists with the per-invoice 分包付款. Backed by
+// /api/admin/invoices/:id/line-payments (GET / POST upload / POST remove).
+let _invpLinePay = { invoiceId: null, invoiceNumber: '', mode: 'container', lines: [], targetKey: null };
+
+async function openInvpLinePayModal(invoiceId, invoiceNumber) {
+  _invpLinePay.invoiceId = invoiceId;
+  _invpLinePay.invoiceNumber = invoiceNumber || '';
+  let ov = document.getElementById('invpLinePayOverlay');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'invpLinePayOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) closeInvpLinePayModal(); };
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:840px;width:100%;max-height:90vh;overflow-y:auto;padding:1.25rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+        <h3 style="margin:0">📎 分项付款凭证 · <span style="font-family:monospace;color:var(--sky)">${esc(_invpLinePay.invoiceNumber)}</span></h3>
+        <button class="btn btn-outline" onclick="closeInvpLinePayModal()">✕ 关闭</button>
+      </div>
+      <div id="invpLinePayBody" style="font-size:.9rem;color:#475569;padding:1rem 0">加载中…</div>
+    </div>`;
+  document.body.appendChild(ov);
+  await reloadInvpLinePay();
+}
+function closeInvpLinePayModal() { const o = document.getElementById('invpLinePayOverlay'); if (o) o.remove(); }
+
+async function reloadInvpLinePay() {
+  const data = await api('/admin/invoices/' + _invpLinePay.invoiceId + '/line-payments').catch(() => null);
+  const body = document.getElementById('invpLinePayBody');
+  if (!body) return;
+  if (!data || data.error) { body.innerHTML = '<div style="color:#dc2626">加载失败，请重试。</div>'; return; }
+  _invpLinePay.mode = data.mode;
+  _invpLinePay.lines = data.lines || [];
+  renderInvpLinePay();
+}
+
+function _invpLinePayMoney(n) { return '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+function invpLinePayThumb(line, p) {
+  const isImg = /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(p);
+  const view = isImg
+    ? `<img src="${p}" loading="lazy" style="width:38px;height:38px;object-fit:cover;border-radius:5px;border:1px solid var(--gray-200);cursor:zoom-in" onclick="invpOpenReceipt('${p}')">`
+    : `<span onclick="invpOpenReceipt('${p}')" title="查看文件" style="cursor:pointer;font-size:1.2rem">📄</span>`;
+  return `<span style="display:inline-flex;align-items:center;margin:2px 4px 2px 0">${view}<button title="删除此凭证" onclick="invpLinePayRemove('${line.line_type}','${esc(line.line_key)}','${p}')" style="margin-left:2px;border:none;background:#fee2e2;color:#b91c1c;border-radius:50%;width:16px;height:16px;line-height:14px;font-size:.7rem;cursor:pointer;padding:0">✕</button></span>`;
+}
+
+function renderInvpLinePay() {
+  const body = document.getElementById('invpLinePayBody');
+  if (!body) return;
+  const isCont = _invpLinePay.mode === 'container';
+  const noun = isCont ? 'container' : '工人';
+  if (!_invpLinePay.lines.length) {
+    body.innerHTML = `<div style="color:var(--gray-400);padding:.5rem">这张发票没有${isCont ? ' container 明细' : '工人明细'}，无法上传分项凭证。</div>`;
+    return;
+  }
+  const rows = _invpLinePay.lines.map(l => {
+    const paths = l.receipt_paths || [];
+    const meta = [];
+    if (l.amount != null) meta.push('金额 ' + _invpLinePayMoney(l.amount));
+    if (l.paid_date) meta.push('日期 ' + esc(l.paid_date));
+    if (l.payee) meta.push('收款方 ' + esc(l.payee));
+    if (l.note) meta.push(esc(l.note));
+    const paidTag = paths.length
+      ? `<span style="background:#dcfce7;color:#166534;font-size:.7rem;font-weight:700;padding:1px 7px;border-radius:999px">✓ ${paths.length} 凭证</span>`
+      : `<span style="background:#f1f5f9;color:#94a3b8;font-size:.7rem;padding:1px 7px;border-radius:999px">未上传</span>`;
+    return `<tr style="border-top:1px solid var(--gray-100)">
+      <td style="padding:6px 8px;text-align:center"><input type="checkbox" class="invp-lp-chk" value="${esc(l.line_key)}"></td>
+      <td style="padding:6px 8px">
+        <div style="font-weight:600;font-family:${isCont ? 'monospace' : 'inherit'}">${esc(l.line_label)}</div>
+        ${l.hint ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(l.hint)}</div>` : ''}
+        ${meta.length ? `<div style="font-size:.72rem;color:#0369a1;margin-top:2px">${meta.join(' · ')}</div>` : ''}
+      </td>
+      <td style="padding:6px 8px;text-align:right;white-space:nowrap;color:var(--gray-600)">${_invpLinePayMoney(l.billed)}</td>
+      <td style="padding:6px 8px">${paidTag}<div style="display:flex;flex-wrap:wrap;align-items:center;margin-top:3px">${paths.map(p => invpLinePayThumb(l, p)).join('')}</div></td>
+      <td style="padding:6px 8px;text-align:center"><button class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd;white-space:nowrap" onclick="invpLinePayPickFile('${esc(l.line_key)}')">⬆ 上传</button></td>
+    </tr>`;
+  }).join('');
+
+  body.innerHTML = `
+    <p style="margin:0 0 .75rem;font-size:.82rem;color:#64748b;line-height:1.5">给每个${noun}上传<strong>付给分包商 / 工人的付款凭证</strong>（转账截图 / PDF）。可逐条上传，或勾选多个后用下方「上传到所选」一次性把同一张凭证贴到所选条目。此处与整张发票的「分包付款」互不影响。</p>
+    <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:.7rem .85rem;margin-bottom:.9rem">
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+        <label style="font-size:.78rem;font-weight:700;color:#6b21a8">批量：勾选条目后 →</label>
+        <input type="file" id="invpLinePayBatchFile" multiple accept="image/*,application/pdf" style="font-size:.8rem">
+        <button class="btn btn-sm" style="background:#7c3aed;color:#fff;border-color:#7c3aed" onclick="invpLinePayUploadBatch()">⬆ 上传到所选</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.55rem">
+        <input id="invpLinePayAmount" type="number" step="0.01" min="0" placeholder="金额(可选)" style="width:120px;font-size:.8rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px">
+        <input id="invpLinePayDate" type="date" style="font-size:.8rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px">
+        <input id="invpLinePayPayee" type="text" placeholder="收款方(可选)" style="width:150px;font-size:.8rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px">
+        <input id="invpLinePayNote" type="text" placeholder="备注(可选)" style="flex:1 1 120px;font-size:.8rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px">
+      </div>
+      <div style="font-size:.72rem;color:#a78bfa;margin-top:.4rem">金额 / 日期 / 收款方 / 备注均可选，会写到所选条目（留空则不改动）。</div>
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+      <thead><tr style="background:var(--gray-50);font-size:.75rem;color:var(--gray-500)">
+        <th style="padding:6px 8px;text-align:center"><input type="checkbox" id="invpLinePayAll" onchange="invpLinePayToggleAll(this)"></th>
+        <th style="padding:6px 8px;text-align:left">${isCont ? '柜号 Container' : '工人 Worker'}</th>
+        <th style="padding:6px 8px;text-align:right">${isCont ? '分包价' : '工资'}</th>
+        <th style="padding:6px 8px;text-align:left">付款凭证</th>
+        <th style="padding:6px 8px;text-align:center">操作</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <input type="file" id="invpLinePayLineFile" multiple accept="image/*,application/pdf" style="display:none" onchange="invpLinePayLineFileChosen()">`;
+}
+
+function invpLinePayToggleAll(cb) { document.querySelectorAll('.invp-lp-chk').forEach(c => { c.checked = cb.checked; }); }
+function _invpLinePaySelectedKeys() { return [...document.querySelectorAll('.invp-lp-chk')].filter(c => c.checked).map(c => c.value); }
+
+async function invpLinePayUploadBatch() {
+  const keys = _invpLinePaySelectedKeys();
+  if (!keys.length) { alert('请先勾选要上传凭证的条目'); return; }
+  const fileInput = document.getElementById('invpLinePayBatchFile');
+  const gv = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const meta = { amount: gv('invpLinePayAmount'), paid_date: gv('invpLinePayDate'), payee: gv('invpLinePayPayee'), note: gv('invpLinePayNote') };
+  if (!fileInput.files.length && !meta.amount && !meta.paid_date && !meta.payee && !meta.note) {
+    alert('请选择凭证文件，或至少填写金额 / 日期等信息'); return;
+  }
+  await _invpLinePayDoUpload(keys, fileInput.files, meta);
+}
+
+function invpLinePayPickFile(key) {
+  _invpLinePay.targetKey = key;
+  const input = document.getElementById('invpLinePayLineFile');
+  input.value = '';
+  input.click();
+}
+async function invpLinePayLineFileChosen() {
+  const input = document.getElementById('invpLinePayLineFile');
+  if (!input.files.length || !_invpLinePay.targetKey) return;
+  await _invpLinePayDoUpload([_invpLinePay.targetKey], input.files, {});
+  _invpLinePay.targetKey = null;
+}
+
+async function _invpLinePayDoUpload(keys, files, meta) {
+  const fd = new FormData();
+  for (const f of files) fd.append('receipts', f);
+  fd.append('line_type', _invpLinePay.mode);
+  fd.append('line_keys', JSON.stringify(keys));
+  if (meta.amount) fd.append('amount', meta.amount);
+  if (meta.paid_date) fd.append('paid_date', meta.paid_date);
+  if (meta.payee) fd.append('payee', meta.payee);
+  if (meta.note) fd.append('note', meta.note);
+  try {
+    const resp = await fetch('/api/admin/invoices/' + _invpLinePay.invoiceId + '/line-payments', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const r = await resp.json();
+    if (typeof showToast === 'function') showToast(`已上传到 ${r.affected} 个条目`, 'success');
+    await reloadInvpLinePay();
+  } catch (e) {
+    alert('上传失败：' + e.message);
+  }
+}
+
+async function invpLinePayRemove(lineType, lineKey, filePath) {
+  if (!await showConfirm('确定删除这张凭证？', { danger: true })) return;
+  const r = await api('/admin/invoices/' + _invpLinePay.invoiceId + '/line-payments/remove', {
+    method: 'POST', body: JSON.stringify({ line_type: lineType, line_key: lineKey, path: filePath })
+  }).catch(() => null);
+  if (!r || r.error) { alert('删除失败'); return; }
+  await reloadInvpLinePay();
 }
 
 // ════════════════════ WAREHOUSE CLAIMS (仓库赔偿事故) ════════════════════
