@@ -929,6 +929,11 @@ try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN city TEXT DEFAULT ''
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN state TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN zip TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN address_verified INTEGER DEFAULT 0`); } catch(e) {}
+// Which company-location STATE this application came in through. Companies that
+// operate in several states (e.g. IL + GA) hand out one QR per state; the state
+// marker rides the apply URL (?st=IL) so the resulting application is tagged with
+// the location it was for. Empty for legacy / single-location companies.
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN apply_state TEXT DEFAULT ''`); } catch(e) {}
 // Links an applicant to the employee档案 created from it. History/archival in the
 // inbox is driven by this linked employee reaching 在职 (after starting 待入职) —
 // NOT by any matching employee being active, which would archive legacy records.
@@ -14482,7 +14487,7 @@ function _normApplyPhone(raw) {
 app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, async (req, res) => {
   try {
     const partnerId = parseInt(req.params.id);
-    const p = db.prepare('SELECT id, name, applicant_form_token FROM partners WHERE id=?').get(partnerId);
+    const p = db.prepare('SELECT id, name, applicant_form_token, addresses, address FROM partners WHERE id=?').get(partnerId);
     if (!p) return res.status(404).json({ error: 'partner not found' });
     let token = p.applicant_form_token;
     if (!token) {
@@ -14491,9 +14496,40 @@ app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, asyn
     }
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
-    const url = `${proto}://${host}/apply/${token}`;
-    const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
-    res.json({ token, url, qr_data_url: qrDataUrl, partner_name: p.name });
+    const base = `${proto}://${host}/apply/${token}`;
+    // Distinct 2-letter states the company has an address in, in first-seen order.
+    // A company operating in more than one state gets one QR per state so each
+    // location's applicants can be told apart (the state rides the URL as ?st=XX).
+    // Handles structured addresses ({state:'IL'}) AND legacy shapes where the state
+    // only lives inside a formatted string ('…, IL 60601') or a bare-string entry —
+    // mirroring the fallbacks the invoice-number migration relies on.
+    const states = [];
+    const seen = new Set();
+    const stateFromStr = s => { const m = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return m ? m[1] : ''; };
+    const addSt = raw => {
+      const st = String(raw || '').trim().toUpperCase();
+      if (/^[A-Z]{2}$/.test(st) && !seen.has(st)) { seen.add(st); states.push(st); }
+    };
+    const stateOfEntry = a => {
+      if (typeof a === 'string') return stateFromStr(a);
+      if (!a || typeof a !== 'object') return '';
+      const s = String(a.state || '').trim().toUpperCase();
+      return /^[A-Z]{2}$/.test(s) ? s : stateFromStr(a.address);
+    };
+    try {
+      const addrs = JSON.parse(p.addresses || '[]');
+      if (Array.isArray(addrs)) for (const a of addrs) addSt(stateOfEntry(a));
+    } catch (_) { /* malformed JSON → fall through to the legacy single-address field */ }
+    // Legacy single-address column as a last resort when the array yielded nothing.
+    if (!states.length && p.address) addSt(stateFromStr(p.address));
+    // One QR per state; when the company has no usable state, a single plain QR
+    // (unchanged legacy behaviour). URLs with ?st=XX tag the resulting application.
+    const qrs = states.length
+      ? states.map(st => ({ state: st, url: `${base}?st=${st}` }))
+      : [{ state: '', url: base }];
+    // qr_data_url kept for the first QR so any existing single-QR consumer still works.
+    const qrDataUrl = await QRCode.toDataURL(qrs[0].url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
+    res.json({ token, url: qrs[0].url, base_url: base, states, qrs, qr_data_url: qrDataUrl, partner_name: p.name });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -14637,6 +14673,10 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     const state = String(d.state || '').trim().slice(0, 60);
     const zip = String(d.zip || '').trim().slice(0, 20);
     const addressVerified = (d.address_verified === '1' || d.address_verified === 1 || d.address_verified === true) ? 1 : 0;
+    // Company-location state this application came in through (from the QR's ?st=XX).
+    // Only a well-formed 2-letter code is kept; anything else is treated as unset.
+    const rawSt = String(d.st || d.apply_state || req.query.st || '').trim().toUpperCase();
+    const applyState = /^[A-Z]{2}$/.test(rawSt) ? rawSt : '';
     if (!name || !phone || !email || !position)
       return res.status(400).json({ error: '请填写姓名、电话、邮箱和职位 / Name, phone, email and position are required' });
     if (!address1 || !city || !state || !zip)
@@ -14650,10 +14690,10 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
       return res.status(400).json({ error: '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back' });
     const r = db.prepare(`INSERT INTO applicant_submissions
       (partner_id, partner_name, name, phone, email, position, phone_verified, email_verified,
-       address1, address2, city, state, zip, address_verified, user_agent)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+       address1, address2, city, state, zip, address_verified, apply_state, user_agent)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         p.id, p.name, name, phone, email, position, 1, 1,
-        address1, address2, city, state, zip, addressVerified,
+        address1, address2, city, state, zip, addressVerified, applyState,
         String(req.headers['user-agent'] || '').slice(0, 250));
     const subId = r.lastInsertRowid;
     const docMeta = [];
@@ -14669,7 +14709,7 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     res.json({ success: true, id: subId });
     // Fire-and-forget: notify the company inbox with all applicant details + photo attachments.
     const address = { address1, address2, city, state, zip, verified: addressVerified };
-    notifyNewApplication({ subId, partner: p, name, position, phone, email, address, docMeta })
+    notifyNewApplication({ subId, partner: p, name, position, phone, email, address, applyState, docMeta })
       .catch(e => console.error('[apply-notify] failed:', e.message));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -14724,7 +14764,7 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
 // Send the company a notification email for a new applicant submission.
 // Includes all form fields + attaches the uploaded SSN/EAD photos.
 const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@primeanchorpoint.com';
-async function notifyNewApplication({ subId, partner, name, position, phone, email, address, docMeta }) {
+async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta }) {
   const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
   const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
   // Read each uploaded photo back from storage to attach.
@@ -14743,6 +14783,7 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
   ].filter(s => s && s.trim()).join('  ') : '';
   const rows = [
     ['应聘公司 / Company', partner.name || ''],
+    ...(applyState ? [['申请地点 / Location', applyState]] : []),
     ['姓名 / Name', name],
     ['职位 / Position', position],
     ['电话 / Phone', phone + ' ✓ 已验证 / verified'],
