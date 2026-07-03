@@ -361,6 +361,10 @@ function setLang(lang) { if (!I18N[lang]) return; _lang = lang; localStorage.set
 const params = new URLSearchParams(location.search);
 const _pathMatch = location.pathname.match(/^\/apply\/([a-f0-9A-F]{16,})/);
 const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
+// Company-location state carried by multi-state companies' per-state QR (?st=IL).
+// Kept only if it's a clean 2-letter code; passed back on submit to tag the app.
+const APPLY_STATE = (params.get('st') || '').trim().toUpperCase().match(/^[A-Z]{2}$/)
+  ? (params.get('st') || '').trim().toUpperCase() : '';
 // "Foreman mode": same form served at /foreman-register — no partner token, no position field,
 // adds a warehouse field, and on submit creates a foreman + shows their worker-intake QR.
 const FOREMAN = location.pathname.replace(/\/+$/, '') === '/foreman-register';
@@ -386,7 +390,7 @@ async function init() {
     if (!r.ok) { const j = await r.json().catch(() => ({})); showErr(j.error || I18N[_lang].invalid); document.getElementById('partnerName').textContent = '—'; return; }
     const info = await r.json();
     _partnerName = info.partner_name || '';
-    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName;
+    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName + (APPLY_STATE ? ' · 📍 ' + APPLY_STATE : '');
     document.getElementById('formMain').style.display = '';
   } catch (e) { showErr('Error: ' + (e.message || e)); }
 }
@@ -640,6 +644,7 @@ async function submitForm() {
     fd.append('state', document.getElementById('fState').value.trim());
     fd.append('zip', document.getElementById('fZip').value.trim());
     fd.append('address_verified', addrVerified ? '1' : '0');
+    if (!FOREMAN && APPLY_STATE) fd.append('st', APPLY_STATE);
     Object.entries(_files).forEach(([k, f]) => { if (f) fd.append(k, f); });
     const submitUrl = FOREMAN ? '/api/public/foreman-register' : ('/api/apply/submit?t=' + encodeURIComponent(TOKEN));
     const r = await fetch(submitUrl, { method: 'POST', body: fd });

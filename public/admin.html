@@ -2187,7 +2187,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 </div></div>
 
 <!-- ════════ Applicant Onboarding QR Modal (招工申请) ════════ -->
-<div class="modal-bg" id="applyQrModal"><div class="modal" style="max-width:420px;text-align:center">
+<div class="modal-bg" id="applyQrModal"><div class="modal" style="max-width:460px;text-align:center;max-height:92vh;overflow-y:auto">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
     <h2 id="aqrTitle" style="margin:0">🪪 招工申请二维码</h2>
     <button id="aqrClose" class="btn btn-sm btn-outline" onclick="closeApplicantQrModal()">× 关闭</button>
@@ -2198,12 +2198,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <button type="button" data-qrlang="es" onclick="setApplyQrLang('es')" style="cursor:pointer;border:1px solid #c7d2fe;border-radius:999px;padding:.15rem .7rem;font-size:.82rem;font-weight:600">Español</button>
   </div>
   <div id="applyQrPartner" style="font-size:.92rem;color:var(--gray-600);margin-bottom:.6rem"></div>
+  <div id="applyQrMultiNote" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.5rem .7rem;font-size:.78rem;color:#92400e;text-align:left;margin-bottom:.6rem"></div>
   <div id="applyQrLoading" style="text-align:center;color:var(--gray-500);font-size:.85rem;margin-bottom:.4rem">生成中…</div>
-  <div id="applyQrBox" style="display:inline-block;padding:12px;background:#fff;border:2px solid var(--gray-200);border-radius:12px;margin-bottom:.6rem;min-height:120px"></div>
-  <div id="applyQrUrl" style="font-family:monospace;font-size:.66rem;color:var(--gray-500);word-break:break-all;margin-bottom:.6rem"></div>
+  <div id="applyQrList" style="display:flex;flex-wrap:wrap;gap:.8rem;justify-content:center;margin-bottom:.7rem"></div>
   <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap;margin-bottom:.7rem">
-    <button id="aqrCopy" class="btn btn-sm btn-outline" onclick="copyApplyUrl()">📋 复制链接</button>
-    <button id="aqrDownload" class="btn btn-sm btn-outline" onclick="downloadApplyQr()">⬇ 下载二维码</button>
     <button id="aqrRegen" class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="regenerateApplyQr()" title="作废旧二维码并生成新的">↻ 重新生成</button>
   </div>
   <div id="aqrNote" style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:.7rem .85rem;font-size:.82rem;color:#3730a3;text-align:left">
@@ -35725,6 +35723,7 @@ const APPLY_QR_I18N = {
     loading: '生成中…', copy: '📋 复制链接', download: '⬇ 下载二维码', regen: '↻ 重新生成',
     regenTitle: '作废旧二维码并生成新的', loadFail: '加载失败：',
     copied: '已复制链接', regenConfirm: '重新生成后，旧二维码将立即失效。确定继续？', regenFail: '失败：',
+    multiNote: '📍 该公司在多个州设有地址，已按州分别生成二维码，请按地点分发。应聘者扫描哪个州的码，其申请就归入该地点。',
     note: '📲 应聘者扫码后填写<strong>姓名 / 电话 / 邮箱 / 职位</strong>，需通过<strong>短信 + 邮箱验证码</strong>验证，并上传 <strong>SSN 正反面</strong> 与 <strong>EAD 正反面</strong>。支持中文 / English / Español。所有申请进入「📨 申请收件箱」。',
   },
   en: {
@@ -35732,6 +35731,7 @@ const APPLY_QR_I18N = {
     loading: 'Generating…', copy: '📋 Copy link', download: '⬇ Download QR', regen: '↻ Regenerate',
     regenTitle: 'Void the old QR code and generate a new one', loadFail: 'Load failed: ',
     copied: 'Link copied', regenConfirm: 'Regenerating will immediately invalidate the old QR code. Continue?', regenFail: 'Failed: ',
+    multiNote: '📍 This company has addresses in multiple states — a separate QR was generated per state. Distribute by location; whichever state code an applicant scans, their application is filed under that location.',
     note: '📲 After scanning, the applicant fills in <strong>name / phone / email / position</strong>, verifies via <strong>SMS + email code</strong>, and uploads <strong>SSN (front & back)</strong> and <strong>EAD (front & back)</strong>. Available in 中文 / English / Español. All submissions go to the “📨 Applicant Inbox”.',
   },
   es: {
@@ -35739,6 +35739,7 @@ const APPLY_QR_I18N = {
     loading: 'Generando…', copy: '📋 Copiar enlace', download: '⬇ Descargar QR', regen: '↻ Regenerar',
     regenTitle: 'Anular el QR anterior y generar uno nuevo', loadFail: 'Error al cargar: ',
     copied: 'Enlace copiado', regenConfirm: 'Al regenerar, el QR anterior quedará invalidado de inmediato. ¿Continuar?', regenFail: 'Error: ',
+    multiNote: '📍 Esta empresa tiene direcciones en varios estados: se generó un QR por estado. Distribúyalos por ubicación; el estado del código que escanee el solicitante determina la ubicación de su solicitud.',
     note: '📲 Tras escanear, el solicitante completa <strong>nombre / teléfono / correo / puesto</strong>, verifica con <strong>código por SMS + correo</strong> y sube <strong>SSN (frente y reverso)</strong> y <strong>EAD (frente y reverso)</strong>. Disponible en 中文 / English / Español. Todas las solicitudes llegan a «📨 Bandeja de solicitudes».',
   },
 };
@@ -35747,11 +35748,15 @@ function setApplyQrLang(lang) {
   const t = APPLY_QR_I18N[_applyQrLang];
   document.getElementById('aqrTitle').textContent = t.title;
   document.getElementById('aqrClose').textContent = t.close;
-  document.getElementById('aqrCopy').textContent = t.copy;
-  document.getElementById('aqrDownload').textContent = t.download;
   const rg = document.getElementById('aqrRegen'); rg.textContent = t.regen; rg.title = t.regenTitle;
   document.getElementById('aqrNote').innerHTML = t.note;
   document.getElementById('applyQrPartner').innerHTML = `${t.company}<strong>${esc(_applyQrState.partnerName || '—')}</strong>`;
+  const mn = document.getElementById('applyQrMultiNote');
+  if (mn) {
+    const multi = (_applyQrState.qrs || []).length > 1;
+    mn.style.display = multi ? '' : 'none';
+    if (multi) mn.textContent = t.multiNote;
+  }
   const ld = document.getElementById('applyQrLoading');
   if (ld.style.display !== 'none' && ld.dataset.failed !== '1') ld.textContent = t.loading;
   document.querySelectorAll('#applyQrLangSw [data-qrlang]').forEach(b => {
@@ -35759,11 +35764,13 @@ function setApplyQrLang(lang) {
     b.style.background = on ? '#4338ca' : '#fff';
     b.style.color = on ? '#fff' : '#3730a3';
   });
+  // Re-render the QR cards so their copy/download button labels follow the language
+  // (no-op before the QR data has loaded — qrs is still empty).
+  if ((_applyQrState.qrs || []).length && typeof QRCode !== 'undefined') renderApplyQrList();
 }
 async function openApplicantQrModal(partnerId, partnerName) {
-  _applyQrState = { partnerId, partnerName, url: '' };
-  document.getElementById('applyQrBox').innerHTML = '';
-  document.getElementById('applyQrUrl').textContent = '';
+  _applyQrState = { partnerId, partnerName, qrs: [] };
+  document.getElementById('applyQrList').innerHTML = '';
   const ld = document.getElementById('applyQrLoading');
   ld.dataset.failed = '0';
   ld.style.display = '';
@@ -35771,31 +35778,64 @@ async function openApplicantQrModal(partnerId, partnerName) {
   document.getElementById('applyQrModal').classList.add('show');
   try {
     const r = await api(`/admin/partners/${partnerId}/applicant-qr`);
-    if (!r || !r.url) throw new Error(r && r.error || 'failed');
-    _applyQrState.url = r.url;
+    // Prefer the per-state list; fall back to the legacy single-URL shape.
+    let qrs = Array.isArray(r && r.qrs) ? r.qrs.filter(q => q && q.url) : [];
+    if (!qrs.length && r && r.url) qrs = [{ state: '', url: r.url }];
+    if (!qrs.length) throw new Error(r && r.error || 'failed');
+    _applyQrState.qrs = qrs;
     await _loadQRLib();
     ld.style.display = 'none';
-    const box = document.getElementById('applyQrBox');
-    box.innerHTML = '';
-    new QRCode(box, { text: r.url, width: 220, height: 220, colorDark: '#3730A3', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-    document.getElementById('applyQrUrl').textContent = r.url;
+    setApplyQrLang(_applyQrLang); // now that qrs is loaded, this also renders the cards + multi-note
   } catch (e) {
     ld.dataset.failed = '1';
     ld.textContent = APPLY_QR_I18N[_applyQrLang].loadFail + (e.message || e);
   }
 }
-function closeApplicantQrModal() { document.getElementById('applyQrModal').classList.remove('show'); }
-function copyApplyUrl() {
-  if (!_applyQrState.url) return;
-  navigator.clipboard.writeText(_applyQrState.url).then(() => { if (typeof toast === 'function') toast(APPLY_QR_I18N[_applyQrLang].copied); }).catch(() => {});
+// Render one QR card per state (or a single card when the company has one/no state).
+// Each card carries its own copy + download buttons; multi-state cards get a 📍 header.
+function renderApplyQrList() {
+  const wrap = document.getElementById('applyQrList');
+  if (!wrap) return;
+  const qrs = _applyQrState.qrs || [];
+  if (!qrs.length) { wrap.innerHTML = ''; return; }
+  const t = APPLY_QR_I18N[_applyQrLang];
+  const multi = qrs.length > 1;
+  const size = multi ? 170 : 220;
+  wrap.innerHTML = qrs.map((q, i) => `
+    <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:.4rem;border:1px solid var(--gray-200);border-radius:12px;padding:.7rem;background:#fff">
+      ${q.state ? `<div style="font-weight:700;color:#3730a3;font-size:1rem">📍 ${esc(q.state)}</div>` : ''}
+      <div id="applyQrBox-${i}" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
+      <div style="font-family:monospace;font-size:.62rem;color:var(--gray-500);word-break:break-all;max-width:${size + 24}px">${esc(q.url)}</div>
+      <div style="display:flex;gap:.35rem;flex-wrap:wrap;justify-content:center">
+        <button class="btn btn-sm btn-outline" onclick="copyApplyUrlFor(${i})">${esc(t.copy)}</button>
+        <button class="btn btn-sm btn-outline" onclick="downloadApplyQrFor(${i})">${esc(t.download)}</button>
+      </div>
+    </div>`).join('');
+  qrs.forEach((q, i) => {
+    const box = document.getElementById(`applyQrBox-${i}`);
+    if (box && typeof QRCode !== 'undefined') {
+      box.innerHTML = '';
+      new QRCode(box, { text: q.url, width: size, height: size, colorDark: '#3730A3', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    }
+  });
 }
-function downloadApplyQr() {
-  const img = document.querySelector('#applyQrBox img') || document.querySelector('#applyQrBox canvas');
+function closeApplicantQrModal() { document.getElementById('applyQrModal').classList.remove('show'); }
+function copyApplyUrlFor(i) {
+  const q = (_applyQrState.qrs || [])[i];
+  if (!q || !q.url) return;
+  navigator.clipboard.writeText(q.url).then(() => { if (typeof toast === 'function') toast(APPLY_QR_I18N[_applyQrLang].copied); }).catch(() => {});
+}
+function downloadApplyQrFor(i) {
+  const box = document.getElementById(`applyQrBox-${i}`);
+  if (!box) return;
+  const img = box.querySelector('img') || box.querySelector('canvas');
   if (!img) return;
   const src = img.tagName === 'CANVAS' ? img.toDataURL('image/png') : img.src;
+  const q = (_applyQrState.qrs || [])[i] || {};
+  const stateSuffix = q.state ? '-' + q.state : '';
   const a = document.createElement('a');
   a.href = src;
-  a.download = `招工二维码-${(_applyQrState.partnerName || 'company').replace(/[^\w一-龥-]/g, '_')}.png`;
+  a.download = `招工二维码-${(_applyQrState.partnerName || 'company').replace(/[^\w一-龥-]/g, '_')}${stateSuffix}.png`;
   a.click();
 }
 async function regenerateApplyQr() {
@@ -35960,6 +36000,7 @@ function renderApplicantInbox() {
           <div style="display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap">
             <span style="font-weight:700;font-size:1rem;color:var(--ink,#0f172a)">${esc(s.name || '—')}</span>
             ${s.position ? `<span style="font-size:.8rem;color:#1A3F7A;background:#eff6ff;border-radius:6px;padding:1px 8px">${esc(s.position)}</span>` : ''}
+            ${s.apply_state ? `<span title="申请地点 / Applied location" style="font-size:.78rem;font-weight:600;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:1px 8px">📍 ${esc(s.apply_state)}</span>` : ''}
           </div>
           <div style="margin-top:.4rem;display:flex;flex-direction:column;gap:.2rem;font-size:.82rem;color:var(--gray-600)">
             <div>📞 ${esc(s.phone || '—')} ${vBadge(s.phone_verified)}</div>
