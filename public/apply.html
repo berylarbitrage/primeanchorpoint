@@ -338,7 +338,7 @@ function applyLang() {
     const cb = document.getElementById(ch + 'CheckBtn');
     if (cb) cb.textContent = L.verify;
   });
-  if (_partnerName) document.getElementById('partnerName').textContent = L.sendingTo + _partnerName;
+  if (_partnerName) document.getElementById('partnerName').textContent = L.sendingTo + _partnerName + (APPLY_STATE ? ' · 📍 ' + APPLY_STATE : '');
   document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b.dataset.lang === _lang));
   if (FOREMAN) applyForemanLang();
 }

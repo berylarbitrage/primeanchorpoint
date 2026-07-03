@@ -14487,7 +14487,7 @@ function _normApplyPhone(raw) {
 app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, async (req, res) => {
   try {
     const partnerId = parseInt(req.params.id);
-    const p = db.prepare('SELECT id, name, applicant_form_token, addresses FROM partners WHERE id=?').get(partnerId);
+    const p = db.prepare('SELECT id, name, applicant_form_token, addresses, address FROM partners WHERE id=?').get(partnerId);
     if (!p) return res.status(404).json({ error: 'partner not found' });
     let token = p.applicant_form_token;
     if (!token) {
@@ -14500,17 +14500,28 @@ app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, asyn
     // Distinct 2-letter states the company has an address in, in first-seen order.
     // A company operating in more than one state gets one QR per state so each
     // location's applicants can be told apart (the state rides the URL as ?st=XX).
-    let states = [];
+    // Handles structured addresses ({state:'IL'}) AND legacy shapes where the state
+    // only lives inside a formatted string ('…, IL 60601') or a bare-string entry —
+    // mirroring the fallbacks the invoice-number migration relies on.
+    const states = [];
+    const seen = new Set();
+    const stateFromStr = s => { const m = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return m ? m[1] : ''; };
+    const addSt = raw => {
+      const st = String(raw || '').trim().toUpperCase();
+      if (/^[A-Z]{2}$/.test(st) && !seen.has(st)) { seen.add(st); states.push(st); }
+    };
+    const stateOfEntry = a => {
+      if (typeof a === 'string') return stateFromStr(a);
+      if (!a || typeof a !== 'object') return '';
+      const s = String(a.state || '').trim().toUpperCase();
+      return /^[A-Z]{2}$/.test(s) ? s : stateFromStr(a.address);
+    };
     try {
       const addrs = JSON.parse(p.addresses || '[]');
-      if (Array.isArray(addrs)) {
-        const seen = new Set();
-        for (const a of addrs) {
-          const st = String((a && a.state) || '').trim().toUpperCase();
-          if (/^[A-Z]{2}$/.test(st) && !seen.has(st)) { seen.add(st); states.push(st); }
-        }
-      }
-    } catch (_) { states = []; }
+      if (Array.isArray(addrs)) for (const a of addrs) addSt(stateOfEntry(a));
+    } catch (_) { /* malformed JSON → fall through to the legacy single-address field */ }
+    // Legacy single-address column as a last resort when the array yielded nothing.
+    if (!states.length && p.address) addSt(stateFromStr(p.address));
     // One QR per state; when the company has no usable state, a single plain QR
     // (unchanged legacy behaviour). URLs with ?st=XX tag the resulting application.
     const qrs = states.length
