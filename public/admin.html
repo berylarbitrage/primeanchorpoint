@@ -2190,34 +2190,46 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 
 <!-- ════════ Weekly Container Sheet QR Modal (周柜登记) ════════ -->
 <div class="modal-bg" id="cwQrModal"><div class="modal" style="max-width:460px;text-align:center">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-    <h2 style="margin:0">📅 周柜登记二维码</h2>
-    <button class="btn btn-sm btn-outline" onclick="closeContainerWeekQrModal()">× 关闭</button>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.5rem">
+    <h2 id="cwTitle" style="margin:0;flex:1;text-align:left">📅 周柜登记二维码</h2>
+    <div style="display:flex;gap:.2rem;background:#ede9fe;border-radius:999px;padding:.12rem">
+      <button type="button" class="cw-lang" data-lang="zh" onclick="setCwLang('zh')" style="border:none;background:transparent;border-radius:999px;padding:.2rem .5rem;font-size:.78rem;font-weight:700;cursor:pointer;color:#6d28d9">中</button>
+      <button type="button" class="cw-lang" data-lang="en" onclick="setCwLang('en')" style="border:none;background:transparent;border-radius:999px;padding:.2rem .5rem;font-size:.78rem;font-weight:700;cursor:pointer;color:#6d28d9">EN</button>
+      <button type="button" class="cw-lang" data-lang="es" onclick="setCwLang('es')" style="border:none;background:transparent;border-radius:999px;padding:.2rem .5rem;font-size:.78rem;font-weight:700;cursor:pointer;color:#6d28d9">ES</button>
+    </div>
+    <button class="btn btn-sm btn-outline" id="cwCloseBtn" onclick="closeContainerWeekQrModal()">× 关闭</button>
   </div>
-  <div id="cwQrPartner" style="font-size:.92rem;color:var(--gray-600);margin-bottom:.6rem"></div>
+  <div id="cwQrPartner" style="font-size:.92rem;color:var(--gray-600);margin-bottom:.6rem;text-align:left"></div>
   <div id="cwQrLoading" style="text-align:center;color:var(--gray-500);font-size:.85rem;margin-bottom:.4rem">生成中…</div>
-  <!-- Per-person names → one dedicated QR each (submitter name baked into the link). -->
+  <!-- Saved submitter names (persisted per company) → dropdown; each = its own QR (?who=NAME). -->
   <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:.7rem .75rem;margin-bottom:.6rem;text-align:left">
-    <label style="display:block;font-size:.84rem;font-weight:700;color:#6d28d9;margin-bottom:.35rem">🙋 提交人名字（每人生成一个专属二维码）</label>
+    <label id="cwNamesLabel" style="display:block;font-size:.84rem;font-weight:700;color:#6d28d9;margin-bottom:.35rem">🙋 提交人名字（每人一个专属二维码）</label>
     <div style="display:flex;gap:.4rem">
       <input type="text" id="cwNameInput" placeholder="输入名字，回车添加" autocomplete="off"
         style="flex:1;padding:.5rem .65rem;border:1px solid #cbd5e1;border-radius:8px;font-size:.9rem"
         onkeydown="if(event.key==='Enter'){event.preventDefault();cwAddName()}">
-      <button class="btn btn-sm" style="background:#7c3aed;color:#fff;border:none" onclick="cwAddName()">＋ 加</button>
+      <button class="btn btn-sm" id="cwAddBtn" style="background:#7c3aed;color:#fff;border:none" onclick="cwAddName()">＋ 加</button>
     </div>
-    <div id="cwNameChips" style="display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.5rem"></div>
-    <div style="font-size:.74rem;color:#94a3b8;margin-top:.4rem">留空不加名字 = 只生成一个通用码（谁扫都行，需手填名字）。加了名字 = 每人一个码，扫码后自动带上他的名字，直接发给对应的人即可。</div>
+    <div style="display:flex;gap:.4rem;margin-top:.5rem;align-items:center">
+      <select id="cwNameSelect" onchange="cwOnSelect()" style="flex:1;padding:.5rem .65rem;border:1px solid #cbd5e1;border-radius:8px;font-size:.9rem;background:#fff"></select>
+      <button class="btn btn-sm" id="cwDeleteBtn" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="cwDeleteSelected()">🗑 删除</button>
+    </div>
+    <div id="cwNamesHint" style="font-size:.74rem;color:#94a3b8;margin-top:.4rem">选「通用码」= 谁扫都行、需手填名字。选一个名字 = 扫码后自动带上他的名字，直接发给对应的人。名字会记住，不删就一直在。</div>
   </div>
-  <div id="cwQrCards" style="display:flex;flex-direction:column;gap:.6rem;margin-bottom:.6rem"></div>
+  <div id="cwCardWrap" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:.7rem .6rem;margin-bottom:.6rem">
+    <div id="cwCardTitle" style="font-weight:700;color:#6d28d9;margin-bottom:.4rem;font-size:.9rem"></div>
+    <div id="cwCardBox" style="width:200px;max-width:100%;min-height:200px;margin:0 auto;display:flex;align-items:center;justify-content:center"></div>
+    <div id="cwCardUrl" style="margin-top:.35rem;font-family:monospace;font-size:.62rem;color:var(--gray-500);word-break:break-all"></div>
+    <div style="margin-top:.45rem;display:flex;gap:.35rem;justify-content:center">
+      <button class="btn btn-sm btn-outline" id="cwCopyBtn" onclick="cwCopyUrl()">📋 复制</button>
+      <button class="btn btn-sm btn-outline" id="cwDownloadBtn" onclick="cwDownloadQr()">⬇ 下载</button>
+    </div>
+  </div>
   <div style="display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.7rem">
-    <button class="btn btn-sm btn-outline" onclick="downloadAllCwQr()" title="逐个下载全部二维码">⬇ 下载全部</button>
-    <button class="btn btn-sm" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;margin-left:auto" onclick="regenerateCwQr()" title="作废旧二维码并生成新的（与扫码录入共用同一个码）">↻ 重新生成（旧码失效）</button>
+    <button class="btn btn-sm btn-outline" id="cwDownloadAllBtn" onclick="downloadAllCwQr()" title="下载全部二维码">⬇ 下载全部</button>
+    <button class="btn btn-sm" id="cwRegenBtn" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;margin-left:auto" onclick="regenerateCwQr()" title="作废旧二维码并生成新的（与扫码录入共用同一个码）">↻ 重新生成（旧码失效）</button>
   </div>
-  <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.7rem .85rem;font-size:.82rem;color:#5b21b6;text-align:left">
-    🔒 扫码后需输入密码：<strong style="font-size:1rem">123456</strong>。<br>
-    💡 工头扫码后，顶部填<strong>周期</strong>，下面一行一个柜子填<strong>日期 + Container 号</strong>，可一次把<strong>一整周的柜子</strong>都登记完再提交。带名字的码扫开后<strong>提交人已自动填好</strong>。所有记录进入<strong>待审核区</strong>，制作发票时一键导入。<br>
-    <span style="color:#7c3aed">注：本码与「📱 扫码录入」是同一个公司密钥，重新生成会同时作废两者的旧码。</span>
-  </div>
+  <div id="cwNote" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.7rem .85rem;font-size:.82rem;color:#5b21b6;text-align:left"></div>
 </div></div>
 
 <!-- ════════ Applicant Onboarding QR Modal (招工申请) ════════ -->
@@ -36815,27 +36827,109 @@ async function regenerateCsubQr() {
 }
 
 // ── Weekly container sheet QR (周柜登记) — shares the same per-company token ──
-// Admin can add several submitter names; each gets its own QR with the name baked
-// into the link (?who=NAME), so scanning that code pre-fills 提交人 = that person.
-let _cwQrState = { partnerId: null, partnerName: '', token: '', names: [] };
+// Admin keeps a saved list of submitter names (persisted per company). Each name
+// gets its own QR with the name baked into the link (?who=NAME), so scanning that
+// code pre-fills 提交人 = that person. The modal is available in zh / en / es.
+const CW_I18N = {
+  zh: {
+    title: '📅 周柜登记二维码', close: '× 关闭', company: '公司：', loading: '生成中…',
+    namesLabel: '🙋 提交人名字（每人一个专属二维码）', inputPh: '输入名字，回车添加', addBtn: '＋ 加',
+    generic: '通用码（不带名字）', person: n => `🙋 ${n}`, deleteBtn: '🗑 删除',
+    hint: '选「通用码」= 谁扫都行、需手填名字。选一个名字 = 扫码后自动带上他的名字，直接发给对应的人。名字会记住，不删就一直在。',
+    copy: '📋 复制', download: '⬇ 下载', downloadAll: '⬇ 下载全部', regen: '↻ 重新生成（旧码失效）',
+    copied: '链接已复制 ✓', copyFail: '复制失败，请手动选择 URL', maxNames: '最多 30 个名字', dup: '该名字已添加',
+    regenConfirm: '重新生成会让现场已经打印/扫过的旧二维码失效（与「扫码录入」共用同一码，两者旧码都会失效），确定继续？',
+    regenDone: '已重新生成 ✓', regenFail: '重新生成失败：', loadFail: '加载失败：', delConfirm: n => `删除「${n}」？该名字的二维码将不再列出。`,
+    note: '🔒 扫码后需输入密码：<strong style="font-size:1rem">123456</strong>。<br>💡 工头扫码后，顶部填<strong>周期</strong>，下面一行一个柜子填<strong>日期 + Container 号</strong>，可一次把<strong>一整周的柜子</strong>都登记完再提交。带名字的码扫开后<strong>提交人已自动填好</strong>。所有记录进入<strong>待审核区</strong>，制作发票时一键导入。<br><span style="color:#7c3aed">注：本码与「📱 扫码录入」是同一个公司密钥，重新生成会同时作废两者的旧码。</span>',
+  },
+  en: {
+    title: '📅 Weekly Container QR', close: '× Close', company: 'Company: ', loading: 'Generating…',
+    namesLabel: '🙋 Submitter names (a dedicated QR per person)', inputPh: 'Type a name, press Enter', addBtn: '＋ Add',
+    generic: 'Generic code (no name)', person: n => `🙋 ${n}`, deleteBtn: '🗑 Delete',
+    hint: '"Generic code" = anyone can scan, must type their name. Pick a name = scanning auto-fills that person\'s name; just send them their own code. Names are remembered until you delete them.',
+    copy: '📋 Copy', download: '⬇ Download', downloadAll: '⬇ Download all', regen: '↻ Regenerate (old code dies)',
+    copied: 'Link copied ✓', copyFail: 'Copy failed, please select the URL manually', maxNames: 'Max 30 names', dup: 'Name already added',
+    regenConfirm: 'Regenerating invalidates any code already printed/scanned on site (shared with "Scan Entry" — both old codes die). Continue?',
+    regenDone: 'Regenerated ✓', regenFail: 'Regenerate failed: ', loadFail: 'Load failed: ', delConfirm: n => `Delete "${n}"? Its QR will no longer be listed.`,
+    note: '🔒 Password after scanning: <strong style="font-size:1rem">123456</strong>.<br>💡 After scanning, the foreman fills the <strong>cycle</strong> up top, then one container per row with <strong>date + Container #</strong> — a whole week logged at once, then submit. A named code auto-fills the <strong>submitter</strong>. All records go to the <strong>review queue</strong> and import in one click when invoicing.<br><span style="color:#7c3aed">Note: this code shares the company key with "📱 Scan Entry"; regenerating invalidates both old codes.</span>',
+  },
+  es: {
+    title: '📅 QR de Contenedores Semanal', close: '× Cerrar', company: 'Empresa: ', loading: 'Generando…',
+    namesLabel: '🙋 Nombres (un QR dedicado por persona)', inputPh: 'Escriba un nombre, Enter', addBtn: '＋ Agregar',
+    generic: 'Código genérico (sin nombre)', person: n => `🙋 ${n}`, deleteBtn: '🗑 Eliminar',
+    hint: '«Código genérico» = cualquiera puede escanear, debe escribir su nombre. Elija un nombre = al escanear se completa el nombre de esa persona; envíele su propio código. Los nombres se guardan hasta que los elimine.',
+    copy: '📋 Copiar', download: '⬇ Descargar', downloadAll: '⬇ Descargar todo', regen: '↻ Regenerar (anula el anterior)',
+    copied: 'Enlace copiado ✓', copyFail: 'Error al copiar, seleccione la URL manualmente', maxNames: 'Máx. 30 nombres', dup: 'Nombre ya agregado',
+    regenConfirm: 'Regenerar anula cualquier código ya impreso/escaneado (compartido con «Escaneo» — ambos anteriores se anulan). ¿Continuar?',
+    regenDone: 'Regenerado ✓', regenFail: 'Error al regenerar: ', loadFail: 'Error al cargar: ', delConfirm: n => `¿Eliminar «${n}»? Su QR ya no se mostrará.`,
+    note: '🔒 Contraseña al escanear: <strong style="font-size:1rem">123456</strong>.<br>💡 Tras escanear, el capataz llena el <strong>ciclo</strong> arriba y un contenedor por fila con <strong>fecha + N.º de Container</strong> — toda una semana de una vez, y envía. Un código con nombre completa el <strong>remitente</strong>. Todo va a la <strong>cola de revisión</strong> y se importa con un clic al facturar.<br><span style="color:#7c3aed">Nota: este código comparte la clave de la empresa con «📱 Escaneo»; regenerar anula ambos códigos anteriores.</span>',
+  },
+};
+let _cwLang = (function () { try { const s = localStorage.getItem('cwLang'); return CW_I18N[s] ? s : 'zh'; } catch { return 'zh'; } })();
+let _cwQrState = { partnerId: null, partnerName: '', token: '', names: [], selected: '' };
+
+function _cwT() { return CW_I18N[_cwLang] || CW_I18N.zh; }
+function setCwLang(lang) {
+  if (!CW_I18N[lang]) return;
+  _cwLang = lang;
+  try { localStorage.setItem('cwLang', lang); } catch {}
+  applyCwLang();
+}
+function applyCwLang() {
+  const T = _cwT();
+  document.getElementById('cwTitle').textContent = T.title;
+  document.getElementById('cwCloseBtn').textContent = T.close;
+  document.getElementById('cwNamesLabel').textContent = T.namesLabel;
+  document.getElementById('cwNameInput').placeholder = T.inputPh;
+  document.getElementById('cwAddBtn').textContent = T.addBtn;
+  document.getElementById('cwDeleteBtn').textContent = T.deleteBtn;
+  document.getElementById('cwNamesHint').textContent = T.hint;
+  document.getElementById('cwDownloadAllBtn').textContent = T.downloadAll;
+  document.getElementById('cwRegenBtn').textContent = T.regen;
+  document.getElementById('cwNote').innerHTML = T.note;
+  document.getElementById('cwQrPartner').innerHTML = `${esc(T.company)}<strong>${esc(_cwQrState.partnerName || '—')}</strong>`;
+  document.querySelectorAll('#cwQrModal .cw-lang').forEach(b => {
+    const on = b.dataset.lang === _cwLang;
+    b.style.background = on ? '#7c3aed' : 'transparent';
+    b.style.color = on ? '#fff' : '#6d28d9';
+  });
+  _cwRenderDropdown();
+  _cwRenderCard();
+}
+
+// Persisted saved-name list, keyed per company (survives reopen/reload).
+function _cwStorageKey() { return 'cwNames_' + _cwQrState.partnerId; }
+function _cwLoadNames() {
+  try {
+    const raw = localStorage.getItem(_cwStorageKey());
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter(n => typeof n === 'string' && n.trim()).slice(0, 30) : [];
+  } catch { return []; }
+}
+function _cwSaveNames() {
+  try { localStorage.setItem(_cwStorageKey(), JSON.stringify(_cwQrState.names)); } catch {}
+}
+
 async function openContainerWeekQrModal(partnerId, partnerName) {
-  _cwQrState = { partnerId, partnerName, token: '', names: [] };
-  document.getElementById('cwQrPartner').innerHTML = `公司：<strong>${esc(partnerName || '—')}</strong>`;
+  _cwQrState = { partnerId, partnerName, token: '', names: [], selected: '' };
   document.getElementById('cwNameInput').value = '';
-  document.getElementById('cwNameChips').innerHTML = '';
-  document.getElementById('cwQrCards').innerHTML = '';
+  document.getElementById('cwCardBox').innerHTML = '';
+  document.getElementById('cwCardUrl').textContent = '';
+  document.getElementById('cwCardTitle').textContent = '';
   document.getElementById('cwQrLoading').style.display = '';
   document.getElementById('cwQrModal').classList.add('show');
+  applyCwLang();
   try {
     const r = await api(`/admin/partners/${partnerId}/container-qr`);
     if (!r || !r.token) throw new Error(r && r.error || '生成失败');
     _cwQrState.token = r.token;
+    _cwQrState.names = _cwLoadNames();
     await _loadQRLib();
     document.getElementById('cwQrLoading').style.display = 'none';
-    _cwRenderChips();
-    _cwRenderCards();
+    _cwRenderDropdown();
+    _cwRenderCard();
   } catch (e) {
-    document.getElementById('cwQrLoading').textContent = '加载失败：' + (e.message || e);
+    document.getElementById('cwQrLoading').textContent = _cwT().loadFail + (e.message || e);
   }
 }
 function closeContainerWeekQrModal() {
@@ -36850,88 +36944,107 @@ function cwAddName() {
   const inp = document.getElementById('cwNameInput');
   const name = (inp.value || '').trim();
   if (!name) return;
-  if (_cwQrState.names.length >= 30) { showToast('最多 30 个名字', 'error'); return; }
-  if (_cwQrState.names.some(n => n.toLowerCase() === name.toLowerCase())) { showToast('该名字已添加', 'error'); inp.value = ''; return; }
+  if (_cwQrState.names.length >= 30) { showToast(_cwT().maxNames, 'error'); return; }
+  if (_cwQrState.names.some(n => n.toLowerCase() === name.toLowerCase())) { showToast(_cwT().dup, 'error'); inp.value = ''; return; }
   _cwQrState.names.push(name);
+  _cwSaveNames();
   inp.value = '';
-  _cwRenderChips();
-  _cwRenderCards();
+  _cwQrState.selected = name;
+  _cwRenderDropdown();
+  _cwRenderCard();
 }
-function cwRemoveName(idx) {
-  _cwQrState.names.splice(idx, 1);
-  _cwRenderChips();
-  _cwRenderCards();
+async function cwDeleteSelected() {
+  const name = _cwQrState.selected;
+  if (!name) return; // generic can't be deleted
+  if (!await showConfirm(_cwT().delConfirm(name), { danger: true })) return;
+  _cwQrState.names = _cwQrState.names.filter(n => n !== name);
+  _cwSaveNames();
+  _cwQrState.selected = '';
+  _cwRenderDropdown();
+  _cwRenderCard();
 }
-function _cwRenderChips() {
-  const wrap = document.getElementById('cwNameChips');
-  if (!_cwQrState.names.length) { wrap.innerHTML = ''; return; }
-  wrap.innerHTML = _cwQrState.names.map((n, i) =>
-    `<span style="display:inline-flex;align-items:center;gap:.3rem;background:#ede9fe;border:1px solid #ddd6fe;color:#5b21b6;border-radius:999px;padding:.15rem .55rem;font-size:.82rem;font-weight:600">${esc(n)}<button onclick="cwRemoveName(${i})" style="background:transparent;border:none;color:#7c3aed;cursor:pointer;font-size:.95rem;line-height:1;padding:0">×</button></span>`
-  ).join('');
+function cwOnSelect() {
+  _cwQrState.selected = document.getElementById('cwNameSelect').value;
+  _cwUpdateDeleteBtn();
+  _cwRenderCard();
 }
-// One card per entry: generic first (only when no names), then one per name.
-function _cwRenderCards() {
-  const wrap = document.getElementById('cwQrCards');
-  if (!_cwQrState.token) { wrap.innerHTML = ''; return; }
-  const entries = _cwQrState.names.length
-    ? _cwQrState.names.map(n => ({ name: n }))
-    : [{ name: '' }];
-  wrap.innerHTML = entries.map((e, i) => {
-    const label = e.name
-      ? `🙋 ${esc(e.name)}`
-      : '通用码（不带名字）';
-    const url = _cwUrlFor(e.name);
-    return `<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:.7rem .6rem">
-      <div style="font-weight:700;color:#6d28d9;margin-bottom:.4rem;font-size:.9rem">${label}</div>
-      <div id="cwQrBox_${i}" style="width:200px;max-width:100%;min-height:200px;margin:0 auto;display:flex;align-items:center;justify-content:center"></div>
-      <div style="margin-top:.35rem;font-family:monospace;font-size:.62rem;color:var(--gray-500);word-break:break-all">${esc(url)}</div>
-      <div style="margin-top:.45rem;display:flex;gap:.35rem;justify-content:center">
-        <button class="btn btn-sm btn-outline" onclick="cwCopyUrl(${i})">📋 复制</button>
-        <button class="btn btn-sm btn-outline" onclick="cwDownloadQr(${i})">⬇ 下载</button>
-      </div>
-    </div>`;
-  }).join('');
-  // Render the QR bitmaps into each box.
-  entries.forEach((e, i) => {
-    const box = document.getElementById('cwQrBox_' + i);
-    if (!box) return;
-    box.innerHTML = '';
-    new QRCode(box, { text: _cwUrlFor(e.name), width: 200, height: 200, colorDark: '#6d28d9', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-  });
+// Generic ('' selection) can't be deleted → disable the delete button for it.
+function _cwUpdateDeleteBtn() {
+  const btn = document.getElementById('cwDeleteBtn');
+  btn.disabled = !_cwQrState.selected;
+  btn.style.opacity = _cwQrState.selected ? '1' : '.45';
 }
-function _cwEntryName(idx) {
-  return _cwQrState.names.length ? (_cwQrState.names[idx] || '') : '';
+function _cwRenderDropdown() {
+  const T = _cwT();
+  const sel = document.getElementById('cwNameSelect');
+  const opts = [`<option value="">${esc(T.generic)}</option>`]
+    .concat(_cwQrState.names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`));
+  sel.innerHTML = opts.join('');
+  sel.value = _cwQrState.selected || '';
+  _cwUpdateDeleteBtn();
 }
-function cwCopyUrl(idx) {
-  const url = _cwUrlFor(_cwEntryName(idx));
+function _cwRenderCard() {
+  if (!_cwQrState.token) return;
+  const T = _cwT();
+  const name = _cwQrState.selected || '';
+  document.getElementById('cwCardTitle').textContent = name ? T.person(name) : T.generic;
+  const url = _cwUrlFor(name);
+  document.getElementById('cwCardUrl').textContent = url;
+  document.getElementById('cwCopyBtn').textContent = T.copy;
+  document.getElementById('cwDownloadBtn').textContent = T.download;
+  const box = document.getElementById('cwCardBox');
+  box.innerHTML = '';
+  new QRCode(box, { text: url, width: 200, height: 200, colorDark: '#6d28d9', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+}
+function cwCopyUrl() {
+  const url = _cwUrlFor(_cwQrState.selected || '');
   navigator.clipboard.writeText(url)
-    .then(() => showToast('链接已复制 ✓'))
-    .catch(() => showToast('复制失败，请手动选择 URL', 'error'));
+    .then(() => showToast(_cwT().copied))
+    .catch(() => showToast(_cwT().copyFail, 'error'));
 }
 function _cwSafe(name) { return String(name || 'generic').replace(/[^\w一-龥-]+/g, '_').slice(0, 24); }
-function cwDownloadQr(idx) {
-  const box = document.getElementById('cwQrBox_' + idx);
-  const canvas = box && box.querySelector('canvas');
-  const img = box && box.querySelector('img');
+// Render a QR into a throwaway offscreen box and return its PNG data URL.
+function _cwQrDataUrl(url) {
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
+  document.body.appendChild(holder);
+  new QRCode(holder, { text: url, width: 200, height: 200, colorDark: '#6d28d9', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  const canvas = holder.querySelector('canvas');
+  const img = holder.querySelector('img');
   const dataUrl = canvas ? canvas.toDataURL('image/png') : (img && img.src);
+  holder.remove();
+  return dataUrl;
+}
+function _cwTriggerDownload(dataUrl, name) {
   if (!dataUrl) return;
   const a = document.createElement('a');
   a.href = dataUrl;
-  a.download = `zhougui-qr-${_cwQrState.partnerId}-${_cwSafe(_cwEntryName(idx))}.png`;
+  a.download = `zhougui-qr-${_cwQrState.partnerId}-${_cwSafe(name)}.png`;
   document.body.appendChild(a); a.click(); a.remove();
 }
+function cwDownloadQr() {
+  const name = _cwQrState.selected || '';
+  const box = document.getElementById('cwCardBox');
+  const canvas = box && box.querySelector('canvas');
+  const img = box && box.querySelector('img');
+  const dataUrl = canvas ? canvas.toDataURL('image/png') : (img && img.src);
+  _cwTriggerDownload(dataUrl, name);
+}
 function downloadAllCwQr() {
-  const count = _cwQrState.names.length || 1;
-  for (let i = 0; i < count; i++) cwDownloadQr(i);
+  const entries = _cwQrState.names.length ? ['', ..._cwQrState.names] : [''];
+  entries.forEach((name, i) => {
+    // Stagger slightly so the browser doesn't drop rapid-fire downloads.
+    setTimeout(() => _cwTriggerDownload(_cwQrDataUrl(_cwUrlFor(name)), name), i * 250);
+  });
 }
 async function regenerateCwQr() {
   if (!_cwQrState.partnerId) return;
-  if (!await showConfirm('重新生成会让现场已经打印/扫过的旧二维码失效（与「扫码录入」共用同一码，两者旧码都会失效），确定继续？', { danger: true })) return;
+  if (!await showConfirm(_cwT().regenConfirm, { danger: true })) return;
   try {
     await api(`/admin/partners/${_cwQrState.partnerId}/container-qr/regenerate`, { method: 'POST' });
-    showToast('已重新生成 ✓');
+    showToast(_cwT().regenDone);
     openContainerWeekQrModal(_cwQrState.partnerId, _cwQrState.partnerName);
-  } catch (e) { showToast('重新生成失败：' + (e.message || e), 'error'); }
+  } catch (e) { showToast(_cwT().regenFail + (e.message || e), 'error'); }
 }
 
 // ── Partner blank-worksheet print + returns viewer ──
