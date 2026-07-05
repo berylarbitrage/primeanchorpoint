@@ -15272,6 +15272,14 @@ app.get('/c/:token', (req, res) => {
 app.get(['/container-submit', '/container-submit.html'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'container-submit.html'));
 });
+// GET /cw/:token — public short URL for the weekly container sheet (fill a whole
+// week of containers at once). Shares the same per-company token & password gate.
+app.get('/cw/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'container-week.html'));
+});
+app.get(['/container-week', '/container-week.html'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'container-week.html'));
+});
 
 // GET /c-submit/info?t=TOKEN — public: minimal info so the mobile page knows which company it's for
 app.get('/c-submit/info', (req, res) => {
@@ -15329,6 +15337,43 @@ app.post('/c-submit', containerSubmitPhotoUpload.single('photo'), (req, res) => 
         workDate
       );
     res.json({ success: true, id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /cw-submit?t=TOKEN — public: submit a whole week of containers at once (JSON).
+//   body: { password, service_period, submitter_name, rows: [{ container_no, work_date }] }
+// Each row becomes its own container_submissions record (submit_type='week') so it
+// flows through the same 待审核 / 发票导入 pipeline as single scan entries.
+app.post('/cw-submit', (req, res) => {
+  try {
+    const p = _partnerByCsubToken(String(req.query.t || (req.body && req.body.t) || ''));
+    if (!p) return res.status(403).json({ error: '链接无效' });
+    const d = req.body || {};
+    if (String(d.password || '') !== CONTAINER_SUBMIT_PASSWORD) {
+      return res.status(401).json({ error: '密码错误 / Wrong password', code: 'bad_password' });
+    }
+    const servicePeriod = String(d.service_period || '').trim().slice(0, 100);
+    const submitterName = String(d.submitter_name || '').trim().slice(0, 100);
+    const rawRows = Array.isArray(d.rows) ? d.rows : [];
+    const rows = rawRows
+      .map(r => ({
+        container_no: String((r && r.container_no) || '').trim().toUpperCase().slice(0, 40),
+        work_date: String((r && r.work_date) || '').trim().slice(0, 40),
+      }))
+      .filter(r => r.container_no)
+      .slice(0, 200);
+    if (!rows.length) return res.status(400).json({ error: '请至少填写一个 container 号' });
+    const ua = String(req.headers['user-agent'] || '').slice(0, 250);
+    const stmt = db.prepare(`INSERT INTO container_submissions
+      (partner_id, partner_name, container_no, qty, unit_price, photo_path, participants, submitter_name, submitter_phone, notes, user_agent, submit_type, service_period, work_date)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const insertMany = db.transaction((list) => {
+      for (const r of list) {
+        stmt.run(p.id, p.name, r.container_no, 1, 0, '', '[]', submitterName, '', '', ua, 'week', servicePeriod, r.work_date);
+      }
+    });
+    insertMany(rows);
+    res.json({ success: true, count: rows.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
