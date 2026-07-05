@@ -188,6 +188,9 @@ function setLang(lang) {
 const params = new URLSearchParams(location.search);
 const _pathMatch = location.pathname.match(/^\/cw\/([a-f0-9A-F]{16,})/);
 const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
+// Optional submitter name baked into a per-person QR (?who=NAME). When present the
+// 提交人 field is pre-filled and locked so this person's records are auto-tagged.
+const WHO = (params.get('who') || '').trim().slice(0, 100);
 
 let _partnerName = '';
 let _pw = '';
@@ -290,9 +293,22 @@ async function verifyGate() {
 
 function openForm() {
   document.getElementById('formMain').style.display = '';
+  applyWho();
   if (!document.querySelector('#rowsBody tr')) {
     for (let i = 0; i < 5; i++) addRow(todayStr());
   }
+}
+
+// If a name came from the QR (?who=), pre-fill and lock the 提交人 field.
+function applyWho() {
+  if (!WHO) return;
+  const inp = document.getElementById('submitterName');
+  if (!inp) return;
+  inp.value = WHO;
+  inp.readOnly = true;
+  inp.style.background = '#f1f5f9';
+  inp.style.color = '#334155';
+  inp.style.fontWeight = '700';
 }
 
 async function init() {
