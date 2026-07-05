@@ -22,7 +22,7 @@
   .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.85rem;margin-bottom:.85rem;box-shadow:0 1px 2px rgba(0,0,0,.03)}
   label{display:block;font-size:.82rem;font-weight:600;color:#475569;margin:.1rem 0 .35rem}
   .hint{font-size:.74rem;color:#94a3b8;margin-top:.2rem}
-  input[type=text],input[type=number]{width:100%;padding:.65rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none;-webkit-appearance:none}
+  input[type=text],input[type=number],input[type=date]{width:100%;padding:.65rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none;-webkit-appearance:none}
   input:focus{border-color:#0E7BB8;box-shadow:0 0 0 3px rgba(14,123,184,.15)}
   .row{display:flex;gap:.55rem}
   .row > *{flex:1}
@@ -94,6 +94,19 @@
       <div class="hint" id="t-noHint">Letras + números; se convierte a mayúsculas automáticamente</div>
     </div>
 
+    <div class="card">
+      <div class="row">
+        <div>
+          <label id="t-periodLabel">Ciclo</label>
+          <input type="text" id="servicePeriod" placeholder="—" autocomplete="off">
+        </div>
+        <div>
+          <label id="t-dateLabel">Fecha</label>
+          <input type="date" id="workDate">
+        </div>
+      </div>
+    </div>
+
     <div class="card" id="priceCard">
       <label id="t-priceLabel">Precio ($ por unidad)</label>
       <div class="price-prefix">
@@ -132,6 +145,9 @@ const I18N = {
     photoHint: 'Enfoca claramente el número del contenedor',
     noLabel: 'Número de Container',
     noHint: 'Letras + números; se convierte a mayúsculas',
+    periodLabel: '🗓️ Ciclo',
+    periodPh: 'Ej. quincenal / semana 1',
+    dateLabel: '📅 Fecha',
     qtyLabel: 'Cantidad',
     priceLabel: 'Precio ($ por unidad)',
     partLabel: '👥 Personas que participaron',
@@ -157,6 +173,9 @@ const I18N = {
     photoHint: 'Aim clearly at the container number',
     noLabel: 'Container Number',
     noHint: 'Letters + numbers; auto-uppercased',
+    periodLabel: '🗓️ Cycle',
+    periodPh: 'e.g. bi-weekly / week 1',
+    dateLabel: '📅 Date',
     qtyLabel: 'Quantity',
     priceLabel: 'Price ($/unit)',
     partLabel: '👥 People involved',
@@ -182,6 +201,9 @@ const I18N = {
     photoHint: '对准箱号正面拍清楚',
     noLabel: 'Container 号',
     noHint: '字母数字混合；输入后自动转大写',
+    periodLabel: '🗓️ 周期',
+    periodPh: '如：双周 / 第1周',
+    dateLabel: '📅 日期',
     qtyLabel: '数量',
     priceLabel: '价格 ($/箱)',
     partLabel: '👥 参与的人',
@@ -222,6 +244,9 @@ function applyLang() {
   document.getElementById('t-photoHint').textContent = L.photoHint;
   document.getElementById('t-noLabel').textContent = L.noLabel;
   document.getElementById('t-noHint').textContent = L.noHint;
+  document.getElementById('t-periodLabel').textContent = L.periodLabel;
+  document.getElementById('servicePeriod').placeholder = L.periodPh;
+  document.getElementById('t-dateLabel').textContent = L.dateLabel;
   document.getElementById('t-priceLabel').textContent = L.priceLabel;
   document.getElementById('t-partLabel').textContent = L.partLabel;
   document.getElementById('partName').placeholder = L.partNamePh;
@@ -306,6 +331,13 @@ async function verifyGate() {
 
 function openForm() {
   document.getElementById('formMain').style.display = '';
+  // Default the work date to today (local) so the field is pre-filled on scan.
+  const wd = document.getElementById('workDate');
+  if (wd && !wd.value) {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    wd.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }
   showTypeBanner();
 }
 
@@ -431,6 +463,8 @@ async function submitForm() {
   try {
     const fd = new FormData();
     fd.append('container_no', cno);
+    fd.append('service_period', document.getElementById('servicePeriod').value.trim());
+    fd.append('work_date', document.getElementById('workDate').value || '');
     fd.append('unit_price', document.getElementById('unitPrice').value || '0');
     fd.append('participants', JSON.stringify(_participants));
     fd.append('submit_type', SUBMIT_TYPE);
@@ -461,12 +495,20 @@ async function submitForm() {
 
 function resetForm() {
   document.getElementById('containerNo').value = '';
+  document.getElementById('servicePeriod').value = '';
   document.getElementById('unitPrice').value = '';
   _participants = [];
   renderChips();
   clearPhoto();
   document.getElementById('okState').style.display = 'none';
   document.getElementById('formMain').style.display = '';
+  // Keep the same date for the next entry (re-default if it was cleared).
+  const wd = document.getElementById('workDate');
+  if (wd && !wd.value) {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    wd.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 </script>
