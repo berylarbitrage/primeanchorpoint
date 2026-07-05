@@ -885,6 +885,9 @@ try { db.exec(`ALTER TABLE container_submissions ADD COLUMN reviewed_at DATETIME
 // Customer-confirmed price (kept separate from unit_price) and foreman's per-container worker price.
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN customer_price REAL`); } catch(e) {}
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN worker_price REAL`); } catch(e) {}
+// On-site logged service period (周期, e.g. "双周" or a date range) and work date (日期).
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN service_period TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN work_date TEXT DEFAULT ''`); } catch(e) {}
 
 // Per-date-range review links (one each for customer & foreman). The link covers a
 // company's container records in [date_from, date_to]; submitting updates those records.
@@ -15307,9 +15310,11 @@ app.post('/c-submit', containerSubmitPhotoUpload.single('photo'), (req, res) => 
     }
     const photoPath = req.file ? (req.file.key || req.file.path) : '';
     const submitType = (d.submit_type === 'end') ? 'end' : 'start';
+    const servicePeriod = String(d.service_period || '').trim().slice(0, 100);
+    const workDate = String(d.work_date || '').trim().slice(0, 40);
     const r = db.prepare(`INSERT INTO container_submissions
-      (partner_id, partner_name, container_no, qty, unit_price, photo_path, participants, submitter_name, submitter_phone, notes, user_agent, submit_type)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      (partner_id, partner_name, container_no, qty, unit_price, photo_path, participants, submitter_name, submitter_phone, notes, user_agent, submit_type, service_period, work_date)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         p.id, p.name, containerNo,
         Math.max(parseInt(d.qty) || 1, 1),
         Math.max(parseFloat(d.unit_price) || 0, 0),
@@ -15319,7 +15324,9 @@ app.post('/c-submit', containerSubmitPhotoUpload.single('photo'), (req, res) => 
         String(d.submitter_phone || '').trim().slice(0, 50),
         String(d.notes || '').trim().slice(0, 500),
         String(req.headers['user-agent'] || '').slice(0, 250),
-        submitType
+        submitType,
+        servicePeriod,
+        workDate
       );
     res.json({ success: true, id: r.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
