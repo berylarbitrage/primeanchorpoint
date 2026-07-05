@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Container · 周柜登记</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a;-webkit-text-size-adjust:100%}
+  .top{background:#7c3aed;color:#fff;padding:.9rem 1.1rem .75rem;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .top-row{display:flex;align-items:flex-start;gap:.5rem}
+  .top h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.02em;flex:1}
+  .top .partner{margin-top:.2rem;font-size:.84rem;opacity:.92}
+  .lang{display:flex;gap:.25rem;background:rgba(255,255,255,.15);border-radius:999px;padding:.15rem;flex-shrink:0}
+  .lang button{background:transparent;color:#fff;border:none;padding:.25rem .55rem;border-radius:999px;font-size:.78rem;font-weight:600;cursor:pointer;opacity:.7}
+  .lang button.active{background:#fff;color:#7c3aed;opacity:1}
+  .wrap{padding:1rem 1rem 6rem 1rem;max-width:640px;margin:0 auto}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:.85rem;margin-bottom:.85rem;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  label{display:block;font-size:.82rem;font-weight:600;color:#475569;margin:.1rem 0 .35rem}
+  .hint{font-size:.74rem;color:#94a3b8;margin-top:.2rem}
+  input[type=text],input[type=date]{width:100%;padding:.6rem .7rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none;-webkit-appearance:none}
+  input:focus{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.15)}
+  .row2{display:flex;gap:.55rem}
+  .row2 > *{flex:1}
+  table.grid{width:100%;border-collapse:collapse;margin-top:.4rem}
+  table.grid th{font-size:.74rem;color:#64748b;font-weight:700;text-align:left;padding:.2rem .3rem}
+  table.grid td{padding:.2rem .25rem;vertical-align:top}
+  table.grid .cno input{font-family:'Menlo',ui-monospace,SFMono-Regular,monospace;text-transform:uppercase;letter-spacing:.02em;font-weight:700}
+  .idx{width:1.6rem;text-align:center;color:#94a3b8;font-size:.8rem;padding-top:.7rem!important}
+  .del{width:2rem}
+  .del button{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;width:2rem;height:2.5rem;font-size:1rem;cursor:pointer;line-height:1}
+  .add-row-btn{margin-top:.55rem;width:100%;padding:.65rem;background:#f5f3ff;color:#6d28d9;border:1px dashed #c4b5fd;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer}
+  .add-row-btn:active{background:#ede9fe}
+  .btn-submit{display:block;width:100%;padding:1rem;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;letter-spacing:.04em;margin-top:.6rem;box-shadow:0 4px 12px rgba(124,58,237,.3)}
+  .btn-submit:disabled{background:#94a3b8;box-shadow:none}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:.65rem .8rem;border-radius:8px;font-size:.88rem;margin-bottom:.85rem}
+  .ok-state{text-align:center;padding:2rem 1rem}
+  .ok-state .check{display:inline-flex;align-items:center;justify-content:center;width:76px;height:76px;background:#ede9fe;color:#6d28d9;border-radius:50%;font-size:2.4rem;margin-bottom:.8rem}
+  .ok-state h2{margin:.2rem 0;color:#6d28d9}
+  .ok-state .meta{color:#475569;margin:.4rem 0 1.5rem;font-size:.92rem}
+  .ok-state button{padding:.85rem 1.4rem;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer}
+  @media(max-width:520px){.wrap{padding:.75rem .6rem 5rem}.card{padding:.7rem}}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="top-row">
+    <div style="flex:1">
+      <h1 id="t-title">📅 Container · 周柜登记</h1>
+      <div class="partner" id="partnerName">…</div>
+    </div>
+    <div class="lang" role="tablist" aria-label="Language">
+      <button type="button" data-lang="es" onclick="setLang('es')">ES</button>
+      <button type="button" data-lang="en" onclick="setLang('en')">EN</button>
+      <button type="button" data-lang="zh" onclick="setLang('zh')">中</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="wrap">
+  <div id="errBox" class="err" style="display:none"></div>
+
+  <div id="formMain" style="display:none">
+    <div class="card">
+      <div class="row2">
+        <div>
+          <label id="t-periodLabel">🗓️ 周期</label>
+          <input type="text" id="servicePeriod" placeholder="如：07/01–07/07 / 双周" autocomplete="off">
+        </div>
+        <div>
+          <label id="t-submitterLabel">🙋 提交人</label>
+          <input type="text" id="submitterName" placeholder="名字（选填）" autocomplete="off">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <label id="t-listLabel" style="font-size:.9rem">📦 本周柜子（一行一个）</label>
+      <table class="grid">
+        <thead><tr>
+          <th class="idx">#</th>
+          <th id="t-thDate" style="width:9.5rem">日期</th>
+          <th id="t-thCno">Container 号</th>
+          <th class="del"></th>
+        </tr></thead>
+        <tbody id="rowsBody"></tbody>
+      </table>
+      <button type="button" class="add-row-btn" id="t-addRowBtn" onclick="addRow()">＋ 加一行</button>
+    </div>
+
+    <button class="btn-submit" id="submitBtn" onclick="submitForm()">✓ <span id="t-submitBtn">提交本周柜子</span></button>
+  </div>
+
+  <div id="okState" class="ok-state" style="display:none">
+    <div class="check">✓</div>
+    <h2 id="t-okTitle">提交成功</h2>
+    <div class="meta"><span id="t-okFor">已发送给</span> <strong id="okPartner"></strong> · <span id="okCount"></span></div>
+    <button onclick="resetForm()" id="t-okAgain">再登记一批</button>
+  </div>
+</div>
+
+<script>
+// ── i18n ──
+const I18N = {
+  es: {
+    title: '📅 Container · Registro semanal',
+    periodLabel: '🗓️ Ciclo', periodPh: 'Ej. 07/01–07/07 / quincenal',
+    submitterLabel: '🙋 Enviado por', submitterPh: 'Nombre (opcional)',
+    listLabel: '📦 Contenedores de la semana (uno por fila)',
+    thDate: 'Fecha', thCno: 'N.º de Container',
+    addRowBtn: '＋ Agregar fila', submitBtn: 'Enviar contenedores', submitting: 'Enviando…',
+    okTitle: '¡Enviado!', okFor: 'Enviado a', okAgain: 'Registrar otro lote',
+    countUnit: n => `${n} contenedor(es)`,
+    errNoToken: 'Por favor escanee el código QR oficial para acceder a esta página.',
+    errAtLeastOne: 'Ingrese al menos un número de container.',
+    errSubmit: 'Error al enviar: ', sendingTo: 'Enviar a: ',
+    invalid: 'Enlace inválido o expirado',
+  },
+  en: {
+    title: '📅 Container · Weekly Entry',
+    periodLabel: '🗓️ Cycle', periodPh: 'e.g. 07/01–07/07 / bi-weekly',
+    submitterLabel: '🙋 Submitted by', submitterPh: 'Name (optional)',
+    listLabel: '📦 Containers this week (one per row)',
+    thDate: 'Date', thCno: 'Container Number',
+    addRowBtn: '＋ Add row', submitBtn: 'Submit containers', submitting: 'Submitting…',
+    okTitle: 'Submitted!', okFor: 'Sent to', okAgain: 'Log another batch',
+    countUnit: n => `${n} container(s)`,
+    errNoToken: 'Please scan the official QR code to access this page.',
+    errAtLeastOne: 'Enter at least one container number.',
+    errSubmit: 'Submit failed: ', sendingTo: 'Submitting to: ',
+    invalid: 'Link invalid or expired',
+  },
+  zh: {
+    title: '📅 Container · 周柜登记',
+    periodLabel: '🗓️ 周期', periodPh: '如：07/01–07/07 / 双周',
+    submitterLabel: '🙋 提交人', submitterPh: '名字（选填）',
+    listLabel: '📦 本周柜子（一行一个）',
+    thDate: '日期', thCno: 'Container 号',
+    addRowBtn: '＋ 加一行', submitBtn: '提交本周柜子', submitting: '提交中…',
+    okTitle: '提交成功', okFor: '已发送给', okAgain: '再登记一批',
+    countUnit: n => `${n} 个柜子`,
+    errNoToken: '请通过专属二维码访问此页面。',
+    errAtLeastOne: '请至少填写一个 container 号。',
+    errSubmit: '提交失败：', sendingTo: '提交给：',
+    invalid: '链接无效或已失效',
+  },
+};
+
+function pickInitialLang() {
+  const stored = localStorage.getItem('csub_lang');
+  if (stored && I18N[stored]) return stored;
+  const nav = (navigator.language || navigator.userLanguage || '').toLowerCase();
+  if (nav.startsWith('zh')) return 'zh';
+  if (nav.startsWith('en')) return 'en';
+  return 'es';
+}
+
+let _lang = pickInitialLang();
+function applyLang() {
+  const L = I18N[_lang];
+  document.documentElement.lang = _lang;
+  document.title = L.title;
+  document.getElementById('t-title').textContent = L.title;
+  document.getElementById('t-periodLabel').textContent = L.periodLabel;
+  document.getElementById('servicePeriod').placeholder = L.periodPh;
+  document.getElementById('t-submitterLabel').textContent = L.submitterLabel;
+  document.getElementById('submitterName').placeholder = L.submitterPh;
+  document.getElementById('t-listLabel').textContent = L.listLabel;
+  document.getElementById('t-thDate').textContent = L.thDate;
+  document.getElementById('t-thCno').textContent = L.thCno;
+  document.getElementById('t-addRowBtn').textContent = L.addRowBtn;
+  document.getElementById('t-submitBtn').textContent = L.submitBtn;
+  document.getElementById('t-okTitle').textContent = L.okTitle;
+  document.getElementById('t-okFor').textContent = L.okFor;
+  document.getElementById('t-okAgain').textContent = L.okAgain;
+  document.querySelectorAll('#rowsBody input.cnoInput').forEach(i => { i.placeholder = 'TCNU1234567'; });
+  if (_partnerName) document.getElementById('partnerName').textContent = L.sendingTo + _partnerName;
+  document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b.dataset.lang === _lang));
+}
+function setLang(lang) {
+  if (!I18N[lang]) return;
+  _lang = lang;
+  localStorage.setItem('csub_lang', lang);
+  applyLang();
+}
+
+// ── token: path /cw/TOKEN or query ?t=TOKEN ──
+const params = new URLSearchParams(location.search);
+const _pathMatch = location.pathname.match(/^\/cw\/([a-f0-9A-F]{16,})/);
+const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
+
+let _partnerName = '';
+let _pw = '';
+const _PW_KEY = 'csub_pw_' + TOKEN + '_start'; // share the gate with the entry form
+
+function todayStr() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function showErr(msg) {
+  const box = document.getElementById('errBox');
+  box.textContent = msg;
+  box.style.display = '';
+}
+
+// ── dynamic rows ──
+function rowHtml(dateVal) {
+  return `<tr>
+    <td class="idx"></td>
+    <td><input type="date" class="dateInput" value="${dateVal || ''}"></td>
+    <td class="cno"><input type="text" class="cnoInput" placeholder="TCNU1234567" autocomplete="off" inputmode="text"></td>
+    <td class="del"><button type="button" onclick="removeRow(this)" aria-label="×">×</button></td>
+  </tr>`;
+}
+function reindexRows() {
+  document.querySelectorAll('#rowsBody tr').forEach((tr, i) => {
+    tr.querySelector('.idx').textContent = i + 1;
+  });
+}
+function addRow(dateVal) {
+  const body = document.getElementById('rowsBody');
+  // Default the new row's date to the last row's date, else today.
+  let d = dateVal;
+  if (!d) {
+    const dates = body.querySelectorAll('.dateInput');
+    d = dates.length ? (dates[dates.length - 1].value || todayStr()) : todayStr();
+  }
+  body.insertAdjacentHTML('beforeend', rowHtml(d));
+  const newInput = body.querySelector('tr:last-child .cnoInput');
+  if (newInput) {
+    newInput.addEventListener('input', e => {
+      const up = e.target.value.toUpperCase();
+      if (e.target.value !== up) e.target.value = up;
+    });
+  }
+  reindexRows();
+}
+function removeRow(btn) {
+  const rows = document.querySelectorAll('#rowsBody tr');
+  if (rows.length <= 1) {
+    // keep at least one row; just clear it
+    const tr = btn.closest('tr');
+    tr.querySelector('.cnoInput').value = '';
+    return;
+  }
+  btn.closest('tr').remove();
+  reindexRows();
+}
+
+// Password gate (shared access code, same as the entry form).
+function showGate() {
+  document.getElementById('formMain').style.display = 'none';
+  let g = document.getElementById('pwGate');
+  if (!g) {
+    g = document.createElement('div');
+    g.id = 'pwGate';
+    g.style.cssText = 'margin:1rem 0;text-align:center';
+    g.innerHTML = `
+      <div style="font-weight:700;margin-bottom:.5rem">🔒 请输入密码 / Password / Contraseña</div>
+      <input id="pwInput" type="tel" inputmode="numeric" autocomplete="off"
+        style="width:100%;max-width:240px;padding:.7rem;border:1px solid #cbd5e1;border-radius:10px;font-size:1.3rem;text-align:center;letter-spacing:.3em">
+      <div style="margin-top:.7rem"><button id="pwBtn" type="button"
+        style="padding:.7rem 1.6rem;border:none;border-radius:10px;background:#7c3aed;color:#fff;font-size:1.05rem;font-weight:700;cursor:pointer">进入 / Enter</button></div>
+      <div id="pwErr" style="color:#dc2626;margin-top:.6rem;min-height:1.1em;font-size:.9rem"></div>`;
+    const fm = document.getElementById('formMain');
+    fm.parentNode.insertBefore(g, fm);
+    document.getElementById('pwBtn').onclick = verifyGate;
+    document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') verifyGate(); });
+  }
+  g.style.display = '';
+  setTimeout(() => { const i = document.getElementById('pwInput'); if (i) i.focus(); }, 100);
+}
+async function verifyGate() {
+  const pw = (document.getElementById('pwInput').value || '').trim();
+  document.getElementById('pwErr').textContent = '';
+  try {
+    const r = await fetch('/c-submit/verify?t=' + encodeURIComponent(TOKEN), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) { document.getElementById('pwErr').textContent = '密码错误 / Wrong password'; return; }
+    _pw = pw;
+    sessionStorage.setItem(_PW_KEY, pw);
+    document.getElementById('pwGate').style.display = 'none';
+    openForm();
+  } catch (e) { document.getElementById('pwErr').textContent = 'Error: ' + (e.message || e); }
+}
+
+function openForm() {
+  document.getElementById('formMain').style.display = '';
+  if (!document.querySelector('#rowsBody tr')) {
+    for (let i = 0; i < 5; i++) addRow(todayStr());
+  }
+}
+
+async function init() {
+  applyLang();
+  if (!TOKEN) {
+    showErr(I18N[_lang].errNoToken);
+    document.getElementById('partnerName').textContent = '—';
+    return;
+  }
+  try {
+    const r = await fetch('/c-submit/info?t=' + encodeURIComponent(TOKEN));
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      showErr(j.error || I18N[_lang].invalid);
+      document.getElementById('partnerName').textContent = '—';
+      return;
+    }
+    const info = await r.json();
+    _partnerName = info.partner_name || '';
+    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName;
+    const saved = sessionStorage.getItem(_PW_KEY);
+    if (saved) { _pw = saved; openForm(); } else { showGate(); }
+  } catch (e) {
+    showErr('Error: ' + (e.message || e));
+  }
+}
+init();
+
+function collectRows() {
+  const out = [];
+  document.querySelectorAll('#rowsBody tr').forEach(tr => {
+    const cno = (tr.querySelector('.cnoInput').value || '').trim().toUpperCase();
+    const wd = tr.querySelector('.dateInput').value || '';
+    if (cno) out.push({ container_no: cno, work_date: wd });
+  });
+  return out;
+}
+
+async function submitForm() {
+  const rows = collectRows();
+  if (!rows.length) { showErr(I18N[_lang].errAtLeastOne); return; }
+  document.getElementById('errBox').style.display = 'none';
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  document.getElementById('t-submitBtn').textContent = I18N[_lang].submitting;
+  try {
+    const payload = {
+      password: _pw || '',
+      service_period: document.getElementById('servicePeriod').value.trim(),
+      submitter_name: document.getElementById('submitterName').value.trim(),
+      rows,
+    };
+    const resp = await fetch('/cw-submit?t=' + encodeURIComponent(TOKEN), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    const j = await resp.json().catch(() => ({}));
+    if (j && j.code === 'bad_password') {
+      sessionStorage.removeItem(_PW_KEY); _pw = '';
+      btn.disabled = false; document.getElementById('t-submitBtn').textContent = I18N[_lang].submitBtn;
+      showGate();
+      document.getElementById('pwErr').textContent = '密码已变更，请重新输入 / Password changed';
+      return;
+    }
+    if (!resp.ok || !j.success) throw new Error(j.error || 'submit failed');
+    document.getElementById('formMain').style.display = 'none';
+    document.getElementById('okState').style.display = '';
+    document.getElementById('okPartner').textContent = _partnerName;
+    document.getElementById('okCount').textContent = I18N[_lang].countUnit(j.count || rows.length);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (e) {
+    showErr(I18N[_lang].errSubmit + (e.message || e));
+  } finally {
+    btn.disabled = false;
+    document.getElementById('t-submitBtn').textContent = I18N[_lang].submitBtn;
+  }
+}
+
+function resetForm() {
+  document.getElementById('servicePeriod').value = '';
+  document.getElementById('rowsBody').innerHTML = '';
+  for (let i = 0; i < 5; i++) addRow(todayStr());
+  document.getElementById('okState').style.display = 'none';
+  document.getElementById('formMain').style.display = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
