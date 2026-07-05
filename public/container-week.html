@@ -31,6 +31,14 @@
   .del button{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;width:2rem;height:2.5rem;font-size:1rem;cursor:pointer;line-height:1}
   .add-row-btn{margin-top:.55rem;width:100%;padding:.65rem;background:#f5f3ff;color:#6d28d9;border:1px dashed #c4b5fd;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer}
   .add-row-btn:active{background:#ede9fe}
+  .photo-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed #c4b5fd;background:#faf5ff;color:#6d28d9;padding:1.1rem .75rem;border-radius:10px;cursor:pointer;text-align:center;font-size:.9rem;font-weight:600;margin-top:.35rem}
+  .photo-zone:active{background:#ede9fe}
+  .photo-zone .emoji{font-size:1.9rem;display:block;margin-bottom:.3rem}
+  .photo-zone input{display:none}
+  .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:.45rem;margin-top:.55rem}
+  .photo-grid .thumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;background:#000}
+  .photo-grid .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .photo-grid .thumb button{position:absolute;top:.15rem;right:.15rem;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:22px;height:22px;font-size:.8rem;cursor:pointer;line-height:1}
   .btn-submit{display:block;width:100%;padding:1rem;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;letter-spacing:.04em;margin-top:.6rem;box-shadow:0 4px 12px rgba(124,58,237,.3)}
   .btn-submit:disabled{background:#94a3b8;box-shadow:none}
   .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:.65rem .8rem;border-radius:8px;font-size:.88rem;margin-bottom:.85rem}
@@ -62,15 +70,20 @@
 
   <div id="formMain" style="display:none">
     <div class="card">
-      <div class="row2">
+      <label id="t-periodLabel" style="font-size:.9rem">🗓️ 周期</label>
+      <div class="row2" style="margin-top:.35rem">
         <div>
-          <label id="t-periodLabel">🗓️ 周期</label>
-          <input type="text" id="servicePeriod" placeholder="如：07/01–07/07 / 双周" autocomplete="off">
+          <label id="t-periodFromLabel" style="font-size:.76rem;color:#64748b">开始</label>
+          <input type="date" id="periodFrom">
         </div>
         <div>
-          <label id="t-submitterLabel">🙋 提交人</label>
-          <input type="text" id="submitterName" placeholder="名字（选填）" autocomplete="off">
+          <label id="t-periodToLabel" style="font-size:.76rem;color:#64748b">结束</label>
+          <input type="date" id="periodTo">
         </div>
+      </div>
+      <div style="margin-top:.6rem">
+        <label id="t-submitterLabel">🙋 提交人</label>
+        <input type="text" id="submitterName" placeholder="名字（选填）" autocomplete="off">
       </div>
     </div>
 
@@ -86,6 +99,16 @@
         <tbody id="rowsBody"></tbody>
       </table>
       <button type="button" class="add-row-btn" id="t-addRowBtn" onclick="addRow()">＋ 加一行</button>
+    </div>
+
+    <div class="card">
+      <label id="t-photoLabel" style="font-size:.9rem">📷 核对照片（可选，可多张）</label>
+      <label for="photoInput" class="photo-zone" id="photoZone">
+        <span class="emoji">📸</span>
+        <span id="t-photoCta">点击拍照 / 选择照片（可多张）</span>
+        <input type="file" id="photoInput" accept="image/*" capture="environment" multiple>
+      </label>
+      <div class="photo-grid" id="photoGrid"></div>
     </div>
 
     <button class="btn-submit" id="submitBtn" onclick="submitForm()">✓ <span id="t-submitBtn">提交本周柜子</span></button>
@@ -104,8 +127,9 @@
 const I18N = {
   es: {
     title: '📅 Container · Registro semanal',
-    periodLabel: '🗓️ Ciclo', periodPh: 'Ej. 07/01–07/07 / quincenal',
+    periodLabel: '🗓️ Ciclo', periodFrom: 'Desde', periodTo: 'Hasta',
     submitterLabel: '🙋 Enviado por', submitterPh: 'Nombre (opcional)',
+    photoLabel: '📷 Fotos de verificación (opcional, varias)', photoCta: 'Tocar para tomar / elegir fotos (varias)',
     listLabel: '📦 Contenedores de la semana (uno por fila)',
     thDate: 'Fecha', thCno: 'N.º de Container',
     addRowBtn: '＋ Agregar fila', submitBtn: 'Enviar contenedores', submitting: 'Enviando…',
@@ -118,8 +142,9 @@ const I18N = {
   },
   en: {
     title: '📅 Container · Weekly Entry',
-    periodLabel: '🗓️ Cycle', periodPh: 'e.g. 07/01–07/07 / bi-weekly',
+    periodLabel: '🗓️ Cycle', periodFrom: 'From', periodTo: 'To',
     submitterLabel: '🙋 Submitted by', submitterPh: 'Name (optional)',
+    photoLabel: '📷 Verification photos (optional, multiple)', photoCta: 'Tap to take / choose photos (multiple)',
     listLabel: '📦 Containers this week (one per row)',
     thDate: 'Date', thCno: 'Container Number',
     addRowBtn: '＋ Add row', submitBtn: 'Submit containers', submitting: 'Submitting…',
@@ -132,8 +157,9 @@ const I18N = {
   },
   zh: {
     title: '📅 Container · 周柜登记',
-    periodLabel: '🗓️ 周期', periodPh: '如：07/01–07/07 / 双周',
+    periodLabel: '🗓️ 周期', periodFrom: '开始', periodTo: '结束',
     submitterLabel: '🙋 提交人', submitterPh: '名字（选填）',
+    photoLabel: '📷 核对照片（可选，可多张）', photoCta: '点击拍照 / 选择照片（可多张）',
     listLabel: '📦 本周柜子（一行一个）',
     thDate: '日期', thCno: 'Container 号',
     addRowBtn: '＋ 加一行', submitBtn: '提交本周柜子', submitting: '提交中…',
@@ -162,9 +188,12 @@ function applyLang() {
   document.title = L.title;
   document.getElementById('t-title').textContent = L.title;
   document.getElementById('t-periodLabel').textContent = L.periodLabel;
-  document.getElementById('servicePeriod').placeholder = L.periodPh;
+  document.getElementById('t-periodFromLabel').textContent = L.periodFrom;
+  document.getElementById('t-periodToLabel').textContent = L.periodTo;
   document.getElementById('t-submitterLabel').textContent = L.submitterLabel;
   document.getElementById('submitterName').placeholder = L.submitterPh;
+  document.getElementById('t-photoLabel').textContent = L.photoLabel;
+  document.getElementById('t-photoCta').textContent = L.photoCta;
   document.getElementById('t-listLabel').textContent = L.listLabel;
   document.getElementById('t-thDate').textContent = L.thDate;
   document.getElementById('t-thCno').textContent = L.thCno;
@@ -347,6 +376,36 @@ function collectRows() {
   return out;
 }
 
+// Combine the two date pickers into a single 周期 string ("from ~ to").
+function servicePeriodStr() {
+  const from = document.getElementById('periodFrom').value || '';
+  const to = document.getElementById('periodTo').value || '';
+  if (from && to) return `${from} ~ ${to}`;
+  return from || to || '';
+}
+
+// ── verification photos (multiple) ──
+let _photos = [];
+document.getElementById('photoInput').addEventListener('change', e => {
+  const files = Array.from(e.target.files || []);
+  for (const f of files) {
+    if (_photos.length >= 12) break;
+    _photos.push(f);
+  }
+  e.target.value = '';
+  renderPhotos();
+});
+function renderPhotos() {
+  const grid = document.getElementById('photoGrid');
+  grid.innerHTML = _photos.map((f, i) =>
+    `<div class="thumb"><img src="${URL.createObjectURL(f)}" alt=""><button type="button" onclick="removePhoto(${i})" aria-label="×">×</button></div>`
+  ).join('');
+}
+function removePhoto(idx) {
+  _photos.splice(idx, 1);
+  renderPhotos();
+}
+
 async function submitForm() {
   const rows = collectRows();
   if (!rows.length) { showErr(I18N[_lang].errAtLeastOne); return; }
@@ -355,15 +414,13 @@ async function submitForm() {
   btn.disabled = true;
   document.getElementById('t-submitBtn').textContent = I18N[_lang].submitting;
   try {
-    const payload = {
-      password: _pw || '',
-      service_period: document.getElementById('servicePeriod').value.trim(),
-      submitter_name: document.getElementById('submitterName').value.trim(),
-      rows,
-    };
-    const resp = await fetch('/cw-submit?t=' + encodeURIComponent(TOKEN), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-    });
+    const fd = new FormData();
+    fd.append('password', _pw || '');
+    fd.append('service_period', servicePeriodStr());
+    fd.append('submitter_name', document.getElementById('submitterName').value.trim());
+    fd.append('rows', JSON.stringify(rows));
+    _photos.forEach(f => fd.append('photos', f));
+    const resp = await fetch('/cw-submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });
     const j = await resp.json().catch(() => ({}));
     if (j && j.code === 'bad_password') {
       sessionStorage.removeItem(_PW_KEY); _pw = '';
@@ -387,9 +444,12 @@ async function submitForm() {
 }
 
 function resetForm() {
-  document.getElementById('servicePeriod').value = '';
+  document.getElementById('periodFrom').value = '';
+  document.getElementById('periodTo').value = '';
   document.getElementById('rowsBody').innerHTML = '';
   for (let i = 0; i < 5; i++) addRow(todayStr());
+  _photos = [];
+  renderPhotos();
   document.getElementById('okState').style.display = 'none';
   document.getElementById('formMain').style.display = '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
