@@ -888,6 +888,9 @@ try { db.exec(`ALTER TABLE container_submissions ADD COLUMN worker_price REAL`);
 // On-site logged service period (周期, e.g. "双周" or a date range) and work date (日期).
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN service_period TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN work_date TEXT DEFAULT ''`); } catch(e) {}
+// Extra verification photos (JSON array of storage keys) attached to a batch — the
+// weekly sheet lets a foreman upload several photos for the admin to cross-check.
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN photos TEXT DEFAULT '[]'`); } catch(e) {}
 
 // Per-date-range review links (one each for customer & foreman). The link covers a
 // company's container records in [date_from, date_to]; submitting updates those records.
@@ -15340,11 +15343,13 @@ app.post('/c-submit', containerSubmitPhotoUpload.single('photo'), (req, res) => 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /cw-submit?t=TOKEN — public: submit a whole week of containers at once (JSON).
-//   body: { password, service_period, submitter_name, rows: [{ container_no, work_date }] }
-// Each row becomes its own container_submissions record (submit_type='week') so it
-// flows through the same 待审核 / 发票导入 pipeline as single scan entries.
-app.post('/cw-submit', (req, res) => {
+// POST /cw-submit?t=TOKEN — public: submit a whole week of containers at once.
+//   multipart form: password, service_period, submitter_name, rows (JSON string),
+//   photos[] (optional verification photos). Each row becomes its own
+//   container_submissions record (submit_type='week') so it flows through the same
+//   待审核 / 发票导入 pipeline as single scan entries; the uploaded photos are
+//   attached to every row of the batch as a shared verification gallery.
+app.post('/cw-submit', containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
   try {
     const p = _partnerByCsubToken(String(req.query.t || (req.body && req.body.t) || ''));
     if (!p) return res.status(403).json({ error: '链接无效' });
@@ -15354,8 +15359,11 @@ app.post('/cw-submit', (req, res) => {
     }
     const servicePeriod = String(d.service_period || '').trim().slice(0, 100);
     const submitterName = String(d.submitter_name || '').trim().slice(0, 100);
-    const rawRows = Array.isArray(d.rows) ? d.rows : [];
-    const rows = rawRows
+    let rawRows = [];
+    try {
+      rawRows = typeof d.rows === 'string' ? JSON.parse(d.rows) : (Array.isArray(d.rows) ? d.rows : []);
+    } catch { rawRows = []; }
+    const rows = (Array.isArray(rawRows) ? rawRows : [])
       .map(r => ({
         container_no: String((r && r.container_no) || '').trim().toUpperCase().slice(0, 40),
         work_date: String((r && r.work_date) || '').trim().slice(0, 40),
@@ -15363,17 +15371,20 @@ app.post('/cw-submit', (req, res) => {
       .filter(r => r.container_no)
       .slice(0, 200);
     if (!rows.length) return res.status(400).json({ error: '请至少填写一个 container 号' });
+    const photoKeys = (req.files || []).map(f => f.key || f.path).filter(Boolean);
+    const photosJson = JSON.stringify(photoKeys);
+    const firstPhoto = photoKeys[0] || '';
     const ua = String(req.headers['user-agent'] || '').slice(0, 250);
     const stmt = db.prepare(`INSERT INTO container_submissions
-      (partner_id, partner_name, container_no, qty, unit_price, photo_path, participants, submitter_name, submitter_phone, notes, user_agent, submit_type, service_period, work_date)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (partner_id, partner_name, container_no, qty, unit_price, photo_path, photos, participants, submitter_name, submitter_phone, notes, user_agent, submit_type, service_period, work_date)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const insertMany = db.transaction((list) => {
       for (const r of list) {
-        stmt.run(p.id, p.name, r.container_no, 1, 0, '', '[]', submitterName, '', '', ua, 'week', servicePeriod, r.work_date);
+        stmt.run(p.id, p.name, r.container_no, 1, 0, firstPhoto, photosJson, '[]', submitterName, '', '', ua, 'week', servicePeriod, r.work_date);
       }
     });
     insertMany(rows);
-    res.json({ success: true, count: rows.length });
+    res.json({ success: true, count: rows.length, photos: photoKeys.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -15392,6 +15403,10 @@ app.get('/api/admin/container-submissions', requireAdmin, blockManager, (req, re
     for (const r of rows) {
       try { r.participants = JSON.parse(r.participants || '[]'); } catch { r.participants = []; }
       r.photo_url = r.photo_path ? `/uploads/${path.basename(r.photo_path)}` : '';
+      let photoKeys = [];
+      try { photoKeys = JSON.parse(r.photos || '[]'); } catch { photoKeys = []; }
+      r.photos_urls = (Array.isArray(photoKeys) ? photoKeys : [])
+        .filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
     }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }

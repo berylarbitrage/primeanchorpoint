@@ -33079,8 +33079,8 @@ function _invpCsubRow(r) {
   const partsHtml = parts.length
     ? parts.map(n => `<span style="display:inline-block;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;border-radius:999px;padding:.1rem .5rem;font-size:.74rem;margin:1px 2px 1px 0">${esc(n)}</span>`).join('')
     : '<span style="color:var(--gray-300)">—</span>';
-  const photoCell = r.photo_url
-    ? `<a href="#" onclick="event.preventDefault();invpOpenCsubPhoto('${esc(r.photo_url)}')" title="点击查看大图"><img src="${esc(r.photo_url)}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200)"></a>`
+  const photoCell = _csubPhotoUrls(r).length
+    ? _csubPhotoCell(r, 64)
     : '<span style="color:var(--gray-300);font-size:.78rem">无照片</span>';
   const submitter = (r.submitter_name ? esc(r.submitter_name) : '') +
     (r.submitter_phone ? `<br><span style="color:var(--gray-400);font-size:.74rem">${esc(r.submitter_phone)}</span>` : '');
@@ -36583,6 +36583,24 @@ function _csubTypeText(type) {
   if (type === 'week') return '📅 周柜';
   return '🟢 开始';
 }
+// All photos for a submission (multi verification gallery + legacy single photo).
+function _csubPhotoUrls(r) {
+  const arr = Array.isArray(r.photos_urls) ? r.photos_urls.slice() : [];
+  if (!arr.length && r.photo_url) arr.push(r.photo_url);
+  // De-dup in case photo_url is also the first of photos_urls.
+  return arr.filter((u, i) => u && arr.indexOf(u) === i);
+}
+// Thumbnail gallery cell (clickable). size = px edge.
+function _csubPhotoCell(r, size) {
+  const urls = _csubPhotoUrls(r);
+  if (!urls.length) return '<span style="color:var(--gray-300)">—</span>';
+  const px = size || 46;
+  const thumbs = urls.slice(0, 6).map(u =>
+    `<a href="#" onclick="event.preventDefault();invpOpenCsubPhoto('${esc(u)}')"><img src="${esc(u)}" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200)"></a>`
+  ).join('');
+  const more = urls.length > 6 ? `<span style="font-size:.72rem;color:var(--gray-500)">+${urls.length - 6}</span>` : '';
+  return `<div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center">${thumbs}${more}</div>`;
+}
 // Pill badge for a submission's type.
 function _csubTypeBadge(type, fontSize) {
   const fs = fontSize || '.72rem';
@@ -36597,9 +36615,7 @@ function _csubScanRowHtml(r) {
   const parts = Array.isArray(r.participants) ? r.participants : [];
   const partsHtml = parts.length ? parts.map(n => esc(n)).join('、') : '<span style="color:var(--gray-300)">—</span>';
   const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
-  const photo = r.photo_url
-    ? `<a href="#" onclick="event.preventDefault();invpOpenCsubPhoto('${esc(r.photo_url)}')"><img src="${esc(r.photo_url)}" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200)"></a>`
-    : '<span style="color:var(--gray-300)">—</span>';
+  const photo = _csubPhotoCell(r, 46);
   const canReview = r.status === 'pending';
   const reviewBtn = canReview
     ? `<button class="btn btn-sm btn-green" style="padding:.05rem .45rem;font-size:.72rem" onclick="openCsubReview(${r.id})">审核</button>`
@@ -36661,8 +36677,9 @@ function openCsubReview(id) {
   if (!r) return;
   _csubReviewId = id;
   document.getElementById('csubReviewSub').innerHTML = `${esc(r.partner_name || '')} · ${_csubTypeText(r.submit_type)} · 提交 ${esc(r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '')}`;
-  document.getElementById('csubReviewPhoto').innerHTML = r.photo_url
-    ? `<img src="${esc(r.photo_url)}" onclick="invpOpenCsubPhoto('${esc(r.photo_url)}')" style="max-width:100%;max-height:180px;object-fit:contain;border:1px solid var(--gray-200);border-radius:8px;cursor:zoom-in;background:#f8fafc" alt="">`
+  const _rvPhotos = _csubPhotoUrls(r);
+  document.getElementById('csubReviewPhoto').innerHTML = _rvPhotos.length
+    ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${_rvPhotos.map(u => `<img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="max-width:100%;max-height:160px;object-fit:contain;border:1px solid var(--gray-200);border-radius:8px;cursor:zoom-in;background:#f8fafc" alt="">`).join('')}</div>`
     : '';
   document.getElementById('csubReviewName').value = '';
   document.getElementById('csubReviewCno').value = r.container_no || '';
