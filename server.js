@@ -26742,11 +26742,20 @@ app.post('/api/admin/bank-statements', requireAdmin, blockManager, bankStmtUploa
     const key = `uploads/${fname}`;
     try { await storage.putObject(key, req.file.buffer, { contentType: 'application/pdf' }); }
     catch (e) { return res.status(500).json({ error: '保存文件失败：' + (e.message || e) }); }
+    const b = req.body || {};
+    // Tagging chosen at upload time; file_name is the renamed display/download name.
+    const fileName = String(b.file_name || req.file.originalname || 'statement.pdf').slice(0, 200);
     const ins = db.prepare(`INSERT INTO bank_statements
-      (source, account_name, period, file_path, file_name, txn_count, total_in, total_out, notes, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
-        'upload', String((req.body && req.body.label) || ''), String((req.body && req.body.period) || ''),
-        key, req.file.originalname || 'statement.pdf', 0, 0, 0, String((req.body && req.body.notes) || ''), req.userName || '');
+      (source, bank, account_name, operator, period, period_start, period_end, file_path, file_name, txn_count, total_in, total_out, notes, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        'upload',
+        String(b.bank || '').slice(0, 40),
+        String(b.account_name || b.label || '').slice(0, 80),
+        String(b.operator || '').slice(0, 80),
+        String(b.period || '').slice(0, 80),
+        String(b.period_start || '').slice(0, 40),
+        String(b.period_end || '').slice(0, 40),
+        key, fileName, 0, 0, 0, String(b.notes || ''), req.userName || '');
     res.json({ success: true, id: ins.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -1656,18 +1656,40 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <h1>🏦 银行账单</h1>
     <div class="top-actions">
       <label class="btn btn-green" style="cursor:pointer">+ 上传账单 PDF
-        <input type="file" id="bsUploadInput" accept="application/pdf" multiple style="display:none" onchange="bsUploadPdf(this.files)">
+        <input type="file" id="bsUploadInput" accept="application/pdf" multiple style="display:none" onchange="bsOpenUploadModal(this.files)">
       </label>
     </div>
   </div>
   <p style="color:var(--gray-500);font-size:.85rem;margin:.25rem 0 1rem">
-    上传银行账单 PDF 存档。给每份标注<strong>银行</strong>（Chase / BoA / Cash App）、<strong>账户名</strong>与<strong>操作人</strong>；点「✏️ 标注」打开 PDF，开启<strong>框选标注</strong>后在页面上<strong>拖动画框</strong>并填写<strong>日期</strong>和<strong>金额</strong>，标注会显示在每一行的右侧。
+    上传时先选好<strong>银行</strong>（Chase / BoA / Cash App）、<strong>账户名</strong>、<strong>操作人</strong>与<strong>账单起止日期</strong>，系统会据此<strong>自动重命名</strong>文件。上传后点「✏️ 标注」打开 PDF，开启<strong>框选标注</strong>可在页面上拖动画框并填写<strong>日期/金额</strong>。
   </p>
   <div id="bsUploadHint" style="display:none;margin-bottom:.5rem;color:var(--sky);font-size:.85rem"></div>
-  <div id="bsDropZone" onclick="document.getElementById('bsUploadInput').click()" style="border:2px dashed var(--gray-300);border-radius:10px;padding:.9rem 1rem;text-align:center;color:var(--gray-400);font-size:.85rem;margin-bottom:.9rem;cursor:pointer;transition:background .15s,border-color .15s,color .15s">⬇️ 把账单 PDF 拖到这里上传（也可点此选择文件，支持一次多选）</div>
+  <div id="bsDropZone" onclick="document.getElementById('bsUploadInput').click()" style="border:2px dashed var(--gray-300);border-radius:10px;padding:.9rem 1rem;text-align:center;color:var(--gray-400);font-size:.85rem;margin-bottom:.9rem;cursor:pointer;transition:background .15s,border-color .15s,color .15s">⬇️ 把账单 PDF 拖到这里（会弹出窗口让你选银行/账户/操作人/起止日期，再上传）</div>
   <div style="font-weight:700;font-size:.9rem;margin:.25rem 0 .4rem;color:var(--gray-600)">📎 已上传的账单</div>
   <div id="bsPdfListWrap"></div>
 </div>
+
+<!-- ════════ 上传银行账单 · 选信息 + 重命名 Modal ════════ -->
+<div class="modal-bg" id="bsUploadModal"><div class="modal" style="max-width:480px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+    <h2 style="margin:0">🏦 上传银行账单</h2>
+    <button class="btn btn-sm btn-outline" onclick="bsCloseUploadModal()">× 关闭</button>
+  </div>
+  <div id="bsUpFiles" style="font-size:.82rem;color:var(--gray-600);background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem .65rem;margin-bottom:.7rem"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.55rem .7rem">
+    <div><label style="font-size:.8rem;font-weight:600;color:#475569;display:block;margin-bottom:.2rem">🏦 银行</label><select id="bsUpBank" onchange="bsUpdateNamePreview()" style="width:100%;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem"></select></div>
+    <div><label style="font-size:.8rem;font-weight:600;color:#475569;display:block;margin-bottom:.2rem">🙋 操作人</label><select id="bsUpOperator" onchange="bsUpdateNamePreview()" style="width:100%;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem"></select></div>
+    <div style="grid-column:1/3"><label style="font-size:.8rem;font-weight:600;color:#475569;display:block;margin-bottom:.2rem">🏢 账户名</label><select id="bsUpEntity" onchange="bsUpdateNamePreview()" style="width:100%;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem"></select></div>
+    <div><label style="font-size:.8rem;font-weight:600;color:#475569;display:block;margin-bottom:.2rem">账单起始</label><input type="date" id="bsUpStart" onchange="bsUpdateNamePreview()" style="width:100%;padding:.35rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem"></div>
+    <div><label style="font-size:.8rem;font-weight:600;color:#475569;display:block;margin-bottom:.2rem">账单结束</label><input type="date" id="bsUpEnd" onchange="bsUpdateNamePreview()" style="width:100%;padding:.35rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem"></div>
+  </div>
+  <div style="margin-top:.75rem;font-size:.8rem;color:var(--gray-500)">重命名后：<span id="bsUpNamePreview" style="font-family:monospace;color:#0369a1;word-break:break-all"></span></div>
+  <div id="bsUpErr" style="color:#dc2626;font-size:.82rem;min-height:1em;margin-top:.35rem"></div>
+  <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.7rem">
+    <button class="btn btn-outline" onclick="bsCloseUploadModal()">取消</button>
+    <button class="btn btn-green" id="bsUpConfirmBtn" onclick="bsDoUpload()">上传</button>
+  </div>
+</div></div>
 
 <!-- ════════ 对账备注 Tab（付款记录 → 复制备注） ════════ -->
 <div id="tab-bank-statements" style="display:none">
@@ -38256,29 +38278,95 @@ async function bsSaveMeta(id) {
   } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
 }
 
-// ── Uploaded statement PDFs (storage + view only; no parsing) ──
-// Accepts a single File, a FileList (button / drag-drop), supports多选/批量.
-async function bsUploadPdf(fileOrList) {
+// ── Upload flow: pick metadata first, then rename the file on upload ──
+let _bsUpFiles = [];
+function _bsUpFillSelect(id, options) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = '<option value="">—</option>' + options.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
+  sel.value = '';
+}
+function bsOpenUploadModal(fileOrList) {
   const arr = !fileOrList ? [] : (fileOrList.length !== undefined ? Array.from(fileOrList) : [fileOrList]);
   const pdfs = arr.filter(f => f && (/\.pdf$/i.test(f.name || '') || f.type === 'application/pdf'));
   if (!pdfs.length) { if (arr.length) showToast('只支持 PDF 文件', 'error'); return; }
-  const hint = document.getElementById('bsUploadHint');
+  _bsUpFiles = pdfs;
+  _bsUpFillSelect('bsUpBank', BS_BANKS);
+  _bsUpFillSelect('bsUpEntity', BS_ENTITIES);
+  _bsUpFillSelect('bsUpOperator', BS_OPERATORS);
+  document.getElementById('bsUpStart').value = '';
+  document.getElementById('bsUpEnd').value = '';
+  document.getElementById('bsUpErr').textContent = '';
+  document.getElementById('bsUpFiles').innerHTML = '📄 ' + pdfs.map(f => esc(f.name)).join('<br>📄 ') +
+    (pdfs.length > 1 ? `<div style="color:var(--gray-400);margin-top:.25rem">共 ${pdfs.length} 个文件，将套用相同标注（文件名自动加序号）</div>` : '');
+  bsUpdateNamePreview();
+  document.getElementById('bsUploadModal').classList.add('show');
+  const inp = document.getElementById('bsUploadInput'); if (inp) inp.value = '';
+}
+function bsCloseUploadModal() {
+  document.getElementById('bsUploadModal').classList.remove('show');
+  _bsUpFiles = [];
+}
+function _bsCurrentUpMeta() {
+  return {
+    bank: document.getElementById('bsUpBank').value,
+    account_name: document.getElementById('bsUpEntity').value,
+    operator: document.getElementById('bsUpOperator').value,
+    period_start: document.getElementById('bsUpStart').value,
+    period_end: document.getElementById('bsUpEnd').value,
+  };
+}
+// Build a renamed file name from the chosen metadata.
+function bsBuildFileName(meta, origName, idx) {
+  const parts = [meta.bank, meta.account_name, meta.operator].filter(Boolean);
+  const period = (meta.period_start && meta.period_end) ? (meta.period_start + '_' + meta.period_end)
+    : (meta.period_start || meta.period_end || '');
+  if (period) parts.push(period);
+  let base = parts.join('_').replace(/\s+/g, '');
+  if (!base) base = String(origName || 'statement').replace(/\.pdf$/i, '');
+  if (idx != null) base += '_' + (idx + 1);
+  base = base.replace(/[\/\\:*?"<>|]+/g, '-');
+  return base + '.pdf';
+}
+function bsUpdateNamePreview() {
+  const meta = _bsCurrentUpMeta();
+  const multi = _bsUpFiles.length > 1;
+  const name = bsBuildFileName(meta, _bsUpFiles[0] && _bsUpFiles[0].name, multi ? 0 : null);
+  document.getElementById('bsUpNamePreview').textContent = name;
+}
+async function bsDoUpload() {
+  if (!_bsUpFiles.length) return;
+  const meta = _bsCurrentUpMeta();
+  const btn = document.getElementById('bsUpConfirmBtn');
+  const err = document.getElementById('bsUpErr');
+  err.textContent = '';
+  btn.disabled = true;
+  const multi = _bsUpFiles.length > 1;
   let done = 0;
-  for (let i = 0; i < pdfs.length; i++) {
-    const file = pdfs[i];
-    if (hint) { hint.style.display = ''; hint.textContent = `正在上传「${file.name}」…（${i + 1}/${pdfs.length}）`; }
+  for (let i = 0; i < _bsUpFiles.length; i++) {
+    const file = _bsUpFiles[i];
+    btn.textContent = `上传中…（${i + 1}/${_bsUpFiles.length}）`;
     const fd = new FormData();
     fd.append('file', file);
+    fd.append('bank', meta.bank);
+    fd.append('account_name', meta.account_name);
+    fd.append('operator', meta.operator);
+    fd.append('period_start', meta.period_start);
+    fd.append('period_end', meta.period_end);
+    fd.append('file_name', bsBuildFileName(meta, file.name, multi ? i : null));
     try {
       const res = await fetch(API + '/admin/bank-statements', { method: 'POST', headers: { 'Authorization': `Bearer ${TOKEN}` }, body: fd });
       const r = await res.json();
       if (!r.success) throw new Error(r.error || '上传失败');
       done++;
-    } catch (e) { showToast(`「${file.name}」上传失败：` + (e.message || e), 'error'); }
+    } catch (e) { err.textContent = `「${file.name}」上传失败：` + (e.message || e); }
   }
-  if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
-  const inp = document.getElementById('bsUploadInput'); if (inp) inp.value = '';
-  if (done) { showToast(done > 1 ? `已上传 ${done} 个 ✓` : '已上传 ✓', 'success'); loadBsPdfs(); }
+  btn.disabled = false;
+  btn.textContent = '上传';
+  if (done) {
+    showToast(done > 1 ? `已上传 ${done} 个 ✓` : '已上传并重命名 ✓', 'success');
+    bsCloseUploadModal();
+    loadBsPdfs();
+  }
 }
 
 // Wire drag-and-drop on the drop zone (idempotent — guarded by _wired).
@@ -38294,7 +38382,7 @@ function bsInitDropZone() {
   };
   ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { stop(e); hi(true); }));
   ['dragleave', 'dragend'].forEach(ev => dz.addEventListener(ev, e => { stop(e); hi(false); }));
-  dz.addEventListener('drop', e => { stop(e); hi(false); bsUploadPdf(e.dataTransfer && e.dataTransfer.files); });
+  dz.addEventListener('drop', e => { stop(e); hi(false); bsOpenUploadModal(e.dataTransfer && e.dataTransfer.files); });
 }
 
 async function loadBsPdfs() {
