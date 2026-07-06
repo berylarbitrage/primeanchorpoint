@@ -38936,9 +38936,40 @@ function _bsRenderBoxOverlay(page, box, num) {
   el.className = 'bs-box';
   el.dataset.id = box.id;
   el.style.cssText = `position:absolute;left:${box.box_x * pw}px;top:${box.box_y * ph}px;width:${box.box_w * pw}px;height:${box.box_h * ph}px;` +
-    `border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'};box-sizing:border-box;z-index:6;cursor:pointer`;
-  el.innerHTML = `<span style="position:absolute;left:-2px;top:-18px;background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px">${num}</span>`;
-  el.onclick = () => bsFocusBoxItem(box.id);
+    `border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'};box-sizing:border-box;z-index:6;cursor:move`;
+  el.innerHTML = `<span style="position:absolute;left:-2px;top:-18px;background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px">⠿${num}</span>`;
+  // Drag to reposition (up/down/left/right); a plain click still jumps to its panel row.
+  let sx, sy, ox, oy, moved = false, dragging = false;
+  el.addEventListener('pointerdown', e => {
+    if (e.button != null && e.button !== 0) return;
+    e.stopPropagation(); // don't let the page start drawing a new box
+    dragging = true; moved = false;
+    sx = e.clientX; sy = e.clientY;
+    ox = parseFloat(el.style.left) || 0; oy = parseFloat(el.style.top) || 0;
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  el.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+    const bw = el.offsetWidth, bh = el.offsetHeight;
+    el.style.left = Math.max(0, Math.min(ox + dx, page.clientWidth - bw)) + 'px';
+    el.style.top = Math.max(0, Math.min(oy + dy, page.clientHeight - bh)) + 'px';
+  });
+  el.addEventListener('pointerup', async e => {
+    if (!dragging) return;
+    dragging = false;
+    try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (!moved) { bsFocusBoxItem(box.id); return; } // treat as click
+    const nx = (parseFloat(el.style.left) || 0) / page.clientWidth;
+    const ny = (parseFloat(el.style.top) || 0) / page.clientHeight;
+    const b = _bsBoxList.find(x => x.id === box.id);
+    if (b) { b.box_x = nx; b.box_y = ny; }
+    try {
+      await api(`/admin/bank-statements/${_bsEdId}/boxes/${box.id}`, { method: 'PUT', body: JSON.stringify({ box_x: nx, box_y: ny }) });
+      const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
+    } catch (err) { showToast('保存位置失败：' + (err.message || err), 'error'); }
+  });
   page.appendChild(el);
 }
 
