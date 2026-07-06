@@ -2480,6 +2480,9 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_bstxn_stmt ON bank_statement_txns(
 // Statement tagging: which bank (Chase / BoA / Cash App) and who operated it.
 try { db.exec(`ALTER TABLE bank_statements ADD COLUMN bank TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE bank_statements ADD COLUMN operator TEXT DEFAULT ''`); } catch(e) {}
+// Statement period: the account statement's own start & end date.
+try { db.exec(`ALTER TABLE bank_statements ADD COLUMN period_start TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE bank_statements ADD COLUMN period_end TEXT DEFAULT ''`); } catch(e) {}
 // Box annotations drawn on the PDF: a normalized rectangle (0..1) on a page plus a
 // labelled date + amount. Stored as bank_statement_txns rows with kind='box'.
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN kind TEXT DEFAULT ''`); } catch(e) {}
@@ -26751,7 +26754,7 @@ app.post('/api/admin/bank-statements', requireAdmin, blockManager, bankStmtUploa
 // List statements (with tagging + their box annotations for the row-side summary).
 app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
+    const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
       FROM bank_statements ORDER BY created_at DESC`).all();
     const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page FROM bank_statement_txns
       WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
@@ -26770,10 +26773,12 @@ app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req,
     const s = db.prepare('SELECT id FROM bank_statements WHERE id=?').get(id);
     if (!s) return res.status(404).json({ error: 'not found' });
     const b = req.body || {};
-    db.prepare('UPDATE bank_statements SET bank=?, account_name=?, operator=? WHERE id=?').run(
+    db.prepare('UPDATE bank_statements SET bank=?, account_name=?, operator=?, period_start=?, period_end=? WHERE id=?').run(
       String(b.bank || '').slice(0, 40),
       String(b.account_name || '').slice(0, 80),
       String(b.operator || '').slice(0, 80),
+      String(b.period_start || '').slice(0, 40),
+      String(b.period_end || '').slice(0, 40),
       id
     );
     res.json({ success: true });
