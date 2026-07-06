@@ -658,6 +658,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       🏦 公司帐单<span class="chev">▾</span>
     </div>
     <div class="nav-group-items">
+      <a onclick="showTab('bank-statement-files')" data-tab="bank-statement-files" data-role="admin,staff">🏦 银行账单</a>
       <a onclick="showTab('bank-statements')" data-tab="bank-statements" data-role="admin,staff">📄 对账备注</a>
     </div>
   </div>
@@ -1649,24 +1650,34 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════════ 银行对账单 Tab ════════ -->
-<div id="tab-bank-statements" style="display:none">
+<!-- ════════ 银行账单 Tab（独立：只上传账单 + 标注） ════════ -->
+<div id="tab-bank-statement-files" style="display:none">
   <div class="top">
-    <h1>🏦 对账备注</h1>
+    <h1>🏦 银行账单</h1>
     <div class="top-actions">
-      <label class="btn btn-green" style="cursor:pointer">+ 上传对账单 PDF
+      <label class="btn btn-green" style="cursor:pointer">+ 上传账单 PDF
         <input type="file" id="bsUploadInput" accept="application/pdf" multiple style="display:none" onchange="bsUploadPdf(this.files)">
       </label>
     </div>
   </div>
   <p style="color:var(--gray-500);font-size:.85rem;margin:.25rem 0 1rem">
-    上传对账单 PDF 后，给每份标注<strong>银行</strong>（Chase / BoA / Cash App）、<strong>账户名</strong>与<strong>操作人</strong>；点「✏️ 标注」在 PDF 上<strong>拖动画框</strong>并填写<strong>日期</strong>和<strong>金额</strong>，标注会显示在每一行的右侧。也可把系统里的付款记录当备注贴到 PDF 上。系统不自动解析 PDF。
+    上传银行账单 PDF 存档。给每份标注<strong>银行</strong>（Chase / BoA / Cash App）、<strong>账户名</strong>与<strong>操作人</strong>；点「✏️ 标注」打开 PDF，开启<strong>框选标注</strong>后在页面上<strong>拖动画框</strong>并填写<strong>日期</strong>和<strong>金额</strong>，标注会显示在每一行的右侧。
   </p>
   <div id="bsUploadHint" style="display:none;margin-bottom:.5rem;color:var(--sky);font-size:.85rem"></div>
-  <div id="bsDropZone" onclick="document.getElementById('bsUploadInput').click()" style="border:2px dashed var(--gray-300);border-radius:10px;padding:.9rem 1rem;text-align:center;color:var(--gray-400);font-size:.85rem;margin-bottom:.9rem;cursor:pointer;transition:background .15s,border-color .15s,color .15s">⬇️ 把对账单 PDF 拖到这里上传（也可点此选择文件，支持一次多选）</div>
-  <div style="font-weight:700;font-size:.9rem;margin:.25rem 0 .4rem;color:var(--gray-600)">📎 已上传的对账单</div>
-  <div id="bsPdfListWrap" style="margin-bottom:1.25rem"></div>
-  <div style="font-weight:700;font-size:.9rem;margin:.25rem 0 .4rem;color:var(--gray-600)">💵 付款记录（复制备注，贴到上面的 PDF）</div>
+  <div id="bsDropZone" onclick="document.getElementById('bsUploadInput').click()" style="border:2px dashed var(--gray-300);border-radius:10px;padding:.9rem 1rem;text-align:center;color:var(--gray-400);font-size:.85rem;margin-bottom:.9rem;cursor:pointer;transition:background .15s,border-color .15s,color .15s">⬇️ 把账单 PDF 拖到这里上传（也可点此选择文件，支持一次多选）</div>
+  <div style="font-weight:700;font-size:.9rem;margin:.25rem 0 .4rem;color:var(--gray-600)">📎 已上传的账单</div>
+  <div id="bsPdfListWrap"></div>
+</div>
+
+<!-- ════════ 对账备注 Tab（付款记录 → 复制备注） ════════ -->
+<div id="tab-bank-statements" style="display:none">
+  <div class="top">
+    <h1>📄 对账备注</h1>
+  </div>
+  <p style="color:var(--gray-500);font-size:.85rem;margin:.25rem 0 1rem">
+    下面列出系统里的「付给工人」记录，找到对账单上那笔金额对应的记录，点「复制备注」，再用你自己的 PDF 工具把备注贴到 PDF 上。系统不自动解析 PDF。
+  </p>
+  <div style="font-weight:700;font-size:.9rem;margin:.25rem 0 .4rem;color:var(--gray-600)">💵 付款记录（复制备注）</div>
   <div style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:flex-end;margin-bottom:.75rem">
     <div class="field" style="margin:0"><label>公司</label>
       <select id="bsFilterCompany" onchange="loadBsRecords()"><option value="">全部公司</option></select>
@@ -8649,7 +8660,7 @@ const _TAB_TO_SEC = {
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time', 'warehouse-claims':'sec-time',
   'company-payments':'sec-company-pay', 'container-scans':'sec-company-pay',
-  'bank-statements':'sec-company-statements',
+  'bank-statements':'sec-company-statements', 'bank-statement-files':'sec-company-statements',
   'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
   approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
@@ -8784,6 +8795,7 @@ function showTab(t) {
   if (t === 'company-payments') initCompanyPayPage();
   if (t === 'container-scans') initCsubScansPage();
   if (t === 'bank-statements') initBankStatementsPage();
+  if (t === 'bank-statement-files') initBankStatementFilesPage();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'worker-docs') loadWorkerDocsTab();
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
@@ -38201,11 +38213,15 @@ const BS_BANKS = ['Chase', 'BoA', 'Cash App'];
 const BS_ENTITIES = ['Prime Anchor Point', 'Prime Anchor Workforce', 'Bintique', 'Surplus Lane'];
 const BS_OPERATORS = ['Niki Zhao', 'Beryl Zhang', 'Tiexiong Zhou', 'Yizhao Cai'];
 
+// 对账备注 tab = payment records → copy notes (statement upload lives on its own tab now).
 function initBankStatementsPage() {
   bsPopulateCompanies();
+  loadBsRecords();
+}
+// 银行账单 tab = upload statement PDFs + tag + box annotate.
+function initBankStatementFilesPage() {
   bsInitDropZone();
   loadBsPdfs();
-  loadBsRecords();
 }
 
 function _bsSelect(cls, id, options, current, placeholder) {
