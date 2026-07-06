@@ -38553,6 +38553,7 @@ function bsCloseEditor() {
 let _bsBoxList = [];   // current statement's boxes, kept in sync with the panel + overlays
 let _bsCompanies = []; // cached partner company names for the payee dropdown
 const BS_PAYEE_BANKFEE = '银行费用';
+const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang'];
 async function bsEnsureCompanies() {
   if (_bsCompanies.length) return;
   try {
@@ -38561,14 +38562,18 @@ async function bsEnsureCompanies() {
     _bsCompanies = ps.map(p => p.name).filter(Boolean).sort((a, b) => a.localeCompare(b));
   } catch (_) { _bsCompanies = []; }
 }
-// Options for the payee <select>: 银行费用 + existing companies (+ keep any custom current value).
+// Options for the payee <select>: 银行费用 + people + existing companies
+// (+ keep any custom current value that isn't in those lists).
 function _bsPayeeOptions(current) {
-  const opts = [`<option value="">— 选择付给谁 —</option>`,
+  const opt = n => `<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`;
+  const parts = [`<option value="">— 选择付给谁 —</option>`,
     `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`];
-  const names = _bsCompanies.slice();
-  if (current && current !== BS_PAYEE_BANKFEE && !names.includes(current)) names.push(current);
-  names.forEach(n => { opts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`); });
-  return opts.join('');
+  parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
+  if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
+  // Preserve a previously-saved custom value that matches none of the known options.
+  const known = [BS_PAYEE_BANKFEE, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
+  return parts.join('');
 }
 function bsSetBoxMode(on) {
   _bsBoxMode = !!on;
