@@ -38599,17 +38599,22 @@ function bsCloseEditor() {
 
 // ── Box annotations: draw a rectangle on the PDF, fill details in the right panel ──
 let _bsBoxList = [];   // current statement's boxes, kept in sync with the panel + overlays
-let _bsCompanies = []; // cached partner company names for the payee dropdown
+let _bsCompanies = []; // cached company names (partners + extras) for the payee dropdown
+// Extra vendor companies that aren't partner records but should appear in the picker.
+const BS_EXTRA_COMPANIES = ['Dando Chemicals US LLC'];
 const BS_PAYEE_BANKFEE = '银行费用';
 const BS_PAYEE_CLAIM = 'Claim';
 const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang'];
 async function bsEnsureCompanies() {
   if (_bsCompanies.length) return;
+  let names = [];
   try {
     const list = await api('/admin/partners');
     const ps = Array.isArray(list) ? list : (list && list.partners) || [];
-    _bsCompanies = ps.map(p => p.name).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  } catch (_) { _bsCompanies = []; }
+    names = ps.map(p => p.name).filter(Boolean);
+  } catch (_) { names = []; }
+  BS_EXTRA_COMPANIES.forEach(n => { if (n && !names.includes(n)) names.push(n); });
+  _bsCompanies = names.sort((a, b) => a.localeCompare(b));
 }
 // Options for the payee <select>: 银行费用 + people + existing companies
 // (+ keep any custom current value that isn't in those lists).
