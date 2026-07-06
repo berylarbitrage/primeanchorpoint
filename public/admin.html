@@ -38271,8 +38271,10 @@ function _bsBoxSummary(boxes) {
     const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     const bits = [dirLabel]; if (payee) bits.push(payee); if (amt) bits.push('<b>' + amt + '</b>'); if (b.txn_date) bits.push(esc(b.txn_date));
     const reason = b.note ? esc(b.note) : '';
-    const titleAttr = reason ? ` title="原因：${reason}"` : '';
-    return `<span${titleAttr} style="display:inline-flex;gap:.3rem;align-items:center;background:${bg};border:1px solid ${bd};color:${fg};border-radius:999px;padding:.1rem .55rem;font-size:.76rem;white-space:nowrap">${bits.join(' · ')}${reason ? ' · <span style="opacity:.75">' + reason + '</span>' : ''}</span>`;
+    const needR = !(b.note && String(b.note).trim());
+    const titleAttr = needR ? ' title="待补原因"' : (reason ? ` title="原因：${reason}"` : '');
+    const warn = needR ? '<span style="color:#dc2626;font-weight:700">⚠️</span> ' : '';
+    return `<span${titleAttr} style="display:inline-flex;gap:.3rem;align-items:center;background:${bg};border:1px solid ${bd};color:${fg};border-radius:999px;padding:.1rem .55rem;font-size:.76rem;white-space:nowrap">${warn}${bits.join(' · ')}${reason ? ' · <span style="opacity:.75">' + reason + '</span>' : ''}</span>`;
   }).join('');
   return `<div style="display:flex;flex-wrap:wrap;gap:.3rem;justify-content:flex-end">${chips}</div>`;
 }
@@ -38560,6 +38562,7 @@ function bsCloseEditor() {
 let _bsBoxList = [];   // current statement's boxes, kept in sync with the panel + overlays
 let _bsCompanies = []; // cached partner company names for the payee dropdown
 const BS_PAYEE_BANKFEE = '银行费用';
+const BS_PAYEE_CLAIM = 'Claim';
 const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang'];
 async function bsEnsureCompanies() {
   if (_bsCompanies.length) return;
@@ -38577,11 +38580,12 @@ function _bsPayeeOptions(current) {
   const opt = n => `<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`;
   const parts = [`<option value="">— 选择付给谁 —</option>`,
     `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`,
+    `<option value="${esc(BS_PAYEE_CLAIM)}"${current === BS_PAYEE_CLAIM ? ' selected' : ''}>📋 Claim</option>`,
     `<option value="${BS_PAYEE_EMP}"${current === BS_PAYEE_EMP ? ' selected' : ''}>👷 公司员工（填姓名）</option>`];
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_EMP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_CLAIM, BS_PAYEE_EMP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
@@ -38726,7 +38730,7 @@ function _bsRenderBoxPanel() {
         <span style="color:#94a3b8;font-size:.82rem">$</span>
         <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
-      <input type="text" class="bs-bx-note" placeholder="原因 / 备注" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      <input type="text" class="bs-bx-note" placeholder="原因 / 备注（需补上）" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="var f=!!this.value.trim();this.style.borderColor=f?'var(--gray-200)':'#dc2626';this.style.background=f?'':'#fff5f5'" style="width:100%;padding:.32rem .4rem;border:1px solid ${(box.note && box.note.trim()) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${(box.note && box.note.trim()) ? '' : 'background:#fff5f5'}">
     </div>`;
   }).join('');
 }
