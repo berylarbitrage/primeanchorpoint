@@ -26765,7 +26765,7 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
       FROM bank_statements ORDER BY created_at DESC`).all();
-    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page FROM bank_statement_txns
+    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction FROM bank_statement_txns
       WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
     for (const r of rows) {
       r.file_url = r.file_path ? `/uploads/${path.basename(r.file_path)}` : '';
@@ -26798,7 +26798,7 @@ app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req,
 // GET the boxes for one statement.
 app.get('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note
+    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction
       FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`)
       .all(parseInt(req.params.id));
     res.json(rows);
@@ -26812,12 +26812,14 @@ app.post('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (re
     if (!s) return res.status(404).json({ error: 'not found' });
     const b = req.body || {};
     const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
+    const dir = b.direction === 'in' ? 'in' : 'out';
     const ins = db.prepare(`INSERT INTO bank_statement_txns
-      (statement_id, kind, page, box_x, box_y, box_w, box_h, txn_date, amount, note, direction)
-      VALUES (?, 'box', ?,?,?,?,?,?,?,?, 'out')`).run(
+      (statement_id, kind, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction)
+      VALUES (?, 'box', ?,?,?,?,?,?,?,?,?,?)`).run(
         sid, Math.max(1, parseInt(b.page) || 1),
         clamp01(b.box_x), clamp01(b.box_y), clamp01(b.box_w), clamp01(b.box_h),
-        String(b.txn_date || '').slice(0, 40), parseFloat(b.amount) || 0, String(b.note || '').slice(0, 200)
+        String(b.txn_date || '').slice(0, 40), parseFloat(b.amount) || 0, String(b.note || '').slice(0, 200),
+        String(b.payee || '').slice(0, 120), dir
       );
     res.json({ success: true, id: ins.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -26832,7 +26834,7 @@ app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManage
     const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
     const has = k => Object.prototype.hasOwnProperty.call(b, k);
     db.prepare(`UPDATE bank_statement_txns SET
-        page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, note=?, updated_at=CURRENT_TIMESTAMP
+        page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, note=?, payee=?, direction=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND statement_id=?`).run(
         has('page') ? Math.max(1, parseInt(b.page) || 1) : row.page,
         has('box_x') ? clamp01(b.box_x) : row.box_x,
@@ -26842,6 +26844,8 @@ app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManage
         has('txn_date') ? String(b.txn_date || '').slice(0, 40) : row.txn_date,
         has('amount') ? (parseFloat(b.amount) || 0) : row.amount,
         has('note') ? String(b.note || '').slice(0, 200) : row.note,
+        has('payee') ? String(b.payee || '').slice(0, 120) : row.payee,
+        has('direction') ? (b.direction === 'in' ? 'in' : 'out') : row.direction,
         tid, sid
       );
     res.json({ success: true });
