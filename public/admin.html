@@ -38956,7 +38956,7 @@ function _bsRenderBoxOverlay(page, box, num) {
   el.dataset.id = box.id;
   el.style.cssText = `position:absolute;left:${box.box_x * pw}px;top:${box.box_y * ph}px;width:${box.box_w * pw}px;height:${box.box_h * ph}px;` +
     `border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'};box-sizing:border-box;z-index:6;cursor:move`;
-  el.innerHTML = `<span style="position:absolute;left:-22px;top:50%;transform:translateY(-50%);background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px;white-space:nowrap">⠿${num}</span>`;
+  el.innerHTML = `<span style="position:absolute;left:2px;top:50%;transform:translateY(-50%);background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px;white-space:nowrap;z-index:1">⠿${num}</span>`;
   // Drag to reposition (up/down/left/right); a plain click still jumps to its panel row.
   let sx, sy, ox, oy, moved = false, dragging = false;
   el.addEventListener('pointerdown', e => {
