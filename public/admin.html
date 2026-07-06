@@ -38857,6 +38857,7 @@ const BS_EXTRA_COMPANIES = ['Dando Chemicals US LLC'];
 const BS_PAYEE_BANKFEE = '银行费用';
 const BS_PAYEE_CLAIM = 'Claim';
 const BS_PAYEE_CC = '还 Prime Anchor Point 信用卡'; // credit-card repayment (not a bank fee)
+const BS_PAYEE_CASH = '取现金'; // ATM/cash withdrawal — no extra sub-section
 // Common bank-fee types shown when 付给谁 = 银行费用 (datalist; free text still allowed).
 const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', '账户维护费 Maintenance Fee', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
 // Category options when paying an individual (个人：拿回家那部分).
@@ -38867,8 +38868,8 @@ function _bsPayeeKind(box) {
   if (p === BS_PAYEE_BANKFEE) return 'bankfee';
   if (_bsIsEmp(p)) return 'employee';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
-  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC) return 'company';
-  return 'none'; // Claim / credit-card repayment: no extra sub-section
+  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH) return 'company';
+  return 'none'; // Claim / credit-card repayment / cash withdrawal: no extra sub-section
 }
 // The invoice/账期 block applies to employee wages and to company income.
 function _bsWantsInvoice(box) {
@@ -38897,11 +38898,12 @@ function _bsPayeeOptions(current) {
     `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`,
     `<option value="${esc(BS_PAYEE_CLAIM)}"${current === BS_PAYEE_CLAIM ? ' selected' : ''}>📋 Claim</option>`,
     `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
+    `<option value="${esc(BS_PAYEE_CASH)}"${current === BS_PAYEE_CASH ? ' selected' : ''}>💵 取现金</option>`,
     `<option value="${BS_PAYEE_EMP}"${current === BS_PAYEE_EMP ? ' selected' : ''}>👷 公司员工（填姓名）</option>`];
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_EMP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_CASH, BS_PAYEE_EMP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
