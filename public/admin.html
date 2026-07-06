@@ -38227,7 +38227,7 @@ function initBankStatementFilesPage() {
 function _bsSelect(cls, id, options, current, placeholder) {
   const opts = [`<option value="">${esc(placeholder)}</option>`]
     .concat(options.map(o => `<option value="${esc(o)}"${o === current ? ' selected' : ''}>${esc(o)}</option>`)).join('');
-  return `<select class="${cls}" onchange="bsSaveMeta(${id})" style="padding:.28rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:#fff">${opts}</select>`;
+  return `<select class="${cls}" onchange="bsSaveMeta(${id})" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:#fff">${opts}</select>`;
 }
 // Right-side annotation summary for a statement row (date · $amount chips).
 function _bsBoxSummary(boxes) {
@@ -38306,27 +38306,36 @@ async function loadBsPdfs() {
   }
   _bsPdfNames = {};
   list.forEach(s => { _bsPdfNames[s.id] = s.file_name || 'PDF'; });
-  wrap.innerHTML = `<div style="display:flex;flex-direction:column;gap:.55rem">${list.map(s => `
-    <div class="bs-stmt-row" data-id="${s.id}" style="display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;border:1px solid var(--gray-200);border-radius:8px;padding:.55rem .7rem;background:#fff">
-      <div style="display:flex;align-items:center;gap:.5rem;min-width:210px;flex:0 0 auto">
-        <span style="font-size:1.15rem">📄</span>
-        <div style="min-width:0">
-          <div style="font-size:.84rem;font-weight:600;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.file_name || 'PDF')}">${esc(s.file_name || 'PDF')}</div>
-          <div style="font-size:.72rem;color:var(--gray-400)">${esc(String(s.created_at || '').replace('T', ' ').slice(0, 16))}</div>
+  const th = (t, extra) => `<th style="padding:.45rem .55rem;font-size:.78rem;font-weight:700;color:var(--gray-500);text-align:left;white-space:nowrap;${extra || ''}">${t}</th>`;
+  const rows = list.map(s => `
+    <tr class="bs-stmt-row" data-id="${s.id}" style="border-top:1px solid var(--gray-100)">
+      <td style="padding:.5rem .55rem;vertical-align:middle">
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <span style="font-size:1.1rem">📄</span>
+          <div style="min-width:0">
+            <div style="font-size:.84rem;font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.file_name || 'PDF')}">${esc(s.file_name || 'PDF')}</div>
+            <div style="font-size:.72rem;color:var(--gray-400)">${esc(String(s.created_at || '').replace('T', ' ').slice(0, 16))}</div>
+          </div>
         </div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;flex:0 0 auto">
-        ${_bsSelect('bs-meta-bank', s.id, BS_BANKS, s.bank || '', '🏦 银行')}
-        ${_bsSelect('bs-meta-entity', s.id, BS_ENTITIES, s.account_name || '', '🏢 账户名')}
-        ${_bsSelect('bs-meta-operator', s.id, BS_OPERATORS, s.operator || '', '🙋 操作人')}
-      </div>
-      <div style="display:flex;gap:.35rem;align-items:center;flex:0 0 auto">
+      </td>
+      <td style="padding:.5rem .4rem;vertical-align:middle">${_bsSelect('bs-meta-bank', s.id, BS_BANKS, s.bank || '', '🏦 银行')}</td>
+      <td style="padding:.5rem .4rem;vertical-align:middle">${_bsSelect('bs-meta-entity', s.id, BS_ENTITIES, s.account_name || '', '🏢 账户名')}</td>
+      <td style="padding:.5rem .4rem;vertical-align:middle">${_bsSelect('bs-meta-operator', s.id, BS_OPERATORS, s.operator || '', '🙋 操作人')}</td>
+      <td style="padding:.5rem .4rem;vertical-align:middle;white-space:nowrap">
         <button class="btn btn-sm btn-blue" onclick="bsOpenEditor(${s.id})" title="框选标注日期/金额，或贴付款备注">✏️ 标注</button>
         ${s.file_url ? `<a class="btn btn-sm btn-outline" href="${esc(s.file_url)}" target="_blank" rel="noopener">查看</a>` : ''}
         <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fca5a5" onclick="bsDeletePdf(${s.id})">删除</button>
-      </div>
-      <div class="bs-stmt-boxes" style="flex:1 1 240px;min-width:200px;display:flex;justify-content:flex-end">${_bsBoxSummary(s.boxes)}</div>
-    </div>`).join('')}</div>`;
+      </td>
+      <td class="bs-stmt-boxes" style="padding:.5rem .55rem;vertical-align:middle;text-align:right">${_bsBoxSummary(s.boxes)}</td>
+    </tr>`).join('');
+  wrap.innerHTML = `<div style="overflow-x:auto;border:1px solid var(--gray-200);border-radius:8px;background:#fff">
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="border-bottom:2px solid var(--gray-200)">
+        ${th('文件')}${th('🏦 银行', 'min-width:130px')}${th('🏢 账户名', 'min-width:170px')}${th('🙋 操作人', 'min-width:130px')}${th('操作')}${th('标注', 'text-align:right')}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
 }
 
 async function bsDeletePdf(id) {
