@@ -38247,8 +38247,10 @@ async function bsSaveMeta(id) {
   const bank = row.querySelector('.bs-meta-bank').value;
   const account_name = row.querySelector('.bs-meta-entity').value;
   const operator = row.querySelector('.bs-meta-operator').value;
+  const period_start = row.querySelector('.bs-meta-pstart').value;
+  const period_end = row.querySelector('.bs-meta-pend').value;
   try {
-    const r = await api('/admin/bank-statements/' + id + '/meta', { method: 'PUT', body: JSON.stringify({ bank, account_name, operator }) });
+    const r = await api('/admin/bank-statements/' + id + '/meta', { method: 'PUT', body: JSON.stringify({ bank, account_name, operator, period_start, period_end }) });
     if (r && r.error) throw new Error(r.error);
     showToast('已保存标注 ✓');
   } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
@@ -38321,6 +38323,8 @@ async function loadBsPdfs() {
       <td style="padding:.5rem .4rem;vertical-align:middle">${_bsSelect('bs-meta-bank', s.id, BS_BANKS, s.bank || '', '🏦 银行')}</td>
       <td style="padding:.5rem .4rem;vertical-align:middle">${_bsSelect('bs-meta-entity', s.id, BS_ENTITIES, s.account_name || '', '🏢 账户名')}</td>
       <td style="padding:.5rem .4rem;vertical-align:middle">${_bsSelect('bs-meta-operator', s.id, BS_OPERATORS, s.operator || '', '🙋 操作人')}</td>
+      <td style="padding:.5rem .4rem;vertical-align:middle"><input type="date" class="bs-meta-pstart" value="${esc(s.period_start || '')}" onchange="bsSaveMeta(${s.id})" style="width:100%;padding:.3rem .35rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem;background:#fff"></td>
+      <td style="padding:.5rem .4rem;vertical-align:middle"><input type="date" class="bs-meta-pend" value="${esc(s.period_end || '')}" onchange="bsSaveMeta(${s.id})" style="width:100%;padding:.3rem .35rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem;background:#fff"></td>
       <td style="padding:.5rem .4rem;vertical-align:middle;white-space:nowrap">
         <button class="btn btn-sm btn-blue" onclick="bsOpenEditor(${s.id})" title="框选标注日期/金额，或贴付款备注">✏️ 标注</button>
         ${s.file_url ? `<a class="btn btn-sm btn-outline" href="${esc(s.file_url)}" target="_blank" rel="noopener">查看</a>` : ''}
@@ -38331,7 +38335,7 @@ async function loadBsPdfs() {
   wrap.innerHTML = `<div style="overflow-x:auto;border:1px solid var(--gray-200);border-radius:8px;background:#fff">
     <table style="width:100%;border-collapse:collapse">
       <thead><tr style="border-bottom:2px solid var(--gray-200)">
-        ${th('文件')}${th('🏦 银行', 'min-width:130px')}${th('🏢 账户名', 'min-width:170px')}${th('🙋 操作人', 'min-width:130px')}${th('操作')}${th('标注', 'text-align:right')}
+        ${th('文件')}${th('🏦 银行', 'min-width:130px')}${th('🏢 账户名', 'min-width:170px')}${th('🙋 操作人', 'min-width:130px')}${th('账单起始', 'min-width:140px')}${th('账单结束', 'min-width:140px')}${th('操作')}${th('标注', 'text-align:right')}
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
