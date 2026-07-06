@@ -1691,6 +1691,18 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════════ 账单标注明细 Modal ════════ -->
+<div class="modal-bg" id="bsBoxDetailModal"><div class="modal" style="max-width:660px;max-height:85vh;overflow:auto">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.6rem">
+    <h2 style="margin:0;font-size:1.05rem">🧾 标注明细 <span id="bsBoxDetailTitle" style="font-size:.85rem;color:var(--gray-500);font-weight:400"></span></h2>
+    <div style="display:flex;gap:.4rem">
+      <button class="btn btn-sm btn-blue" id="bsBoxDetailEditBtn">✏️ 编辑标注</button>
+      <button class="btn btn-sm btn-outline" onclick="bsCloseBoxDetail()">× 关闭</button>
+    </div>
+  </div>
+  <div id="bsBoxDetailBody"></div>
+</div></div>
+
 <!-- ════════ 对账备注 Tab（付款记录 → 复制备注） ════════ -->
 <div id="tab-bank-statements" style="display:none">
   <div class="top">
@@ -38229,6 +38241,7 @@ let _bsMarked = new Set();      // company_worker_payments ids that have been an
 let _bsMarkInfo = {};           // payment_id -> {sid, sname} back-ref to the statement it was quoted on (or null)
 let _bsShowMarked = false;
 let _bsPdfNames = {};           // id -> file_name (for the PDF editor title / output name)
+let _bsStmtById = {};           // id -> full statement row (for the annotation detail popup)
 
 // Tagging option lists for uploaded statements.
 const BS_BANKS = ['Chase', 'BoA', 'Cash App'];
@@ -38251,33 +38264,58 @@ function _bsSelect(cls, id, options, current, placeholder) {
     .concat(options.map(o => `<option value="${esc(o)}"${o === current ? ' selected' : ''}>${esc(o)}</option>`)).join('');
   return `<select class="${cls}" onchange="bsSaveMeta(${id})" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:#fff">${opts}</select>`;
 }
-// Right-side annotation summary for a statement row (date · $amount chips).
-function _bsBoxSummary(boxes) {
-  if (!Array.isArray(boxes) || !boxes.length) {
-    return '<span style="color:var(--gray-300);font-size:.8rem">还没有标注</span>';
+// Format a stored payee for display (handles the 员工:公司|姓名 encoding).
+function _bsPayeeDisplay(payee) {
+  if (!payee) return '';
+  const p = String(payee);
+  if (p.indexOf('员工:') === 0) {
+    const rest = p.slice(3); const i = rest.indexOf('|');
+    const co = i < 0 ? '' : rest.slice(0, i); const nm = i < 0 ? rest : rest.slice(i + 1);
+    return '👷 ' + [co, nm].filter(Boolean).join(' · ');
   }
-  const chips = boxes.map(b => {
-    const isIn = b.direction === 'in';
-    const dirLabel = isIn ? '收入' : '支出';
-    const bg = isIn ? '#ecfdf5' : '#fef2f2', bd = isIn ? '#a7f3d0' : '#fecaca', fg = isIn ? '#047857' : '#b91c1c';
-    let payee = '';
-    if (b.payee) {
-      if (String(b.payee).indexOf('员工:') === 0) {
-        const rest = String(b.payee).slice(3); const pi = rest.indexOf('|');
-        const co = pi < 0 ? '' : rest.slice(0, pi); const nm = pi < 0 ? rest : rest.slice(pi + 1);
-        payee = '👷 ' + esc([co, nm].filter(Boolean).join(' · '));
-      } else { payee = esc(b.payee); }
-    }
-    const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
-    const bits = [dirLabel]; if (payee) bits.push(payee); if (amt) bits.push('<b>' + amt + '</b>'); if (b.txn_date) bits.push(esc(b.txn_date));
-    const reason = b.note ? esc(b.note) : '';
-    const needR = !(b.note && String(b.note).trim());
-    const titleAttr = needR ? ' title="待补原因"' : (reason ? ` title="原因：${reason}"` : '');
-    const warn = needR ? '<span style="color:#dc2626;font-weight:700">⚠️</span> ' : '';
-    return `<span${titleAttr} style="display:inline-flex;gap:.3rem;align-items:center;background:${bg};border:1px solid ${bd};color:${fg};border-radius:999px;padding:.1rem .55rem;font-size:.76rem;white-space:nowrap">${warn}${bits.join(' · ')}${reason ? ' · <span style="opacity:.75">' + reason + '</span>' : ''}</span>`;
-  }).join('');
-  return `<div style="display:flex;flex-wrap:wrap;gap:.3rem;justify-content:flex-end">${chips}</div>`;
+  return p;
 }
+// Right-side cell: a compact button (count + missing-reason warning). Click to open details.
+function _bsBoxSummary(s) {
+  const boxes = Array.isArray(s.boxes) ? s.boxes : [];
+  if (!boxes.length) return '<span style="color:var(--gray-300);font-size:.8rem">还没有标注</span>';
+  const missing = boxes.filter(b => !(b.note && String(b.note).trim())).length;
+  const warn = missing ? `<span style="color:#dc2626;font-weight:700" title="${missing} 条待补原因">⚠️ ${missing}</span>` : '';
+  return `<button onclick="bsOpenBoxDetail(${s.id})" style="display:inline-flex;gap:.4rem;align-items:center;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:999px;padding:.2rem .75rem;font-size:.8rem;cursor:pointer;white-space:nowrap">🧾 ${boxes.length} 条标注 ${warn}<span style="opacity:.6">点开查看</span></button>`;
+}
+// Detail popup: full annotation list for one statement.
+function bsOpenBoxDetail(id) {
+  const s = _bsStmtById[id];
+  if (!s) return;
+  document.getElementById('bsBoxDetailTitle').textContent = s.file_name || '';
+  document.getElementById('bsBoxDetailEditBtn').onclick = () => { bsCloseBoxDetail(); bsOpenEditor(id); };
+  const boxes = Array.isArray(s.boxes) ? s.boxes : [];
+  const body = document.getElementById('bsBoxDetailBody');
+  if (!boxes.length) {
+    body.innerHTML = '<div style="color:var(--gray-400);padding:1rem">还没有标注。点「✏️ 编辑标注」在 PDF 上框选。</div>';
+  } else {
+    const rows = boxes.map((b, i) => {
+      const isIn = b.direction === 'in';
+      const col = isIn ? '#047857' : '#b91c1c';
+      const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+      const reason = (b.note && String(b.note).trim()) ? esc(b.note) : '<span style="color:#dc2626">⚠️ 待补</span>';
+      return `<tr style="border-top:1px solid var(--gray-100)">
+        <td style="padding:.4rem .5rem;color:var(--gray-400)">${i + 1}</td>
+        <td style="padding:.4rem .5rem;color:${col};font-weight:600;white-space:nowrap">${isIn ? '收入' : '支出'}</td>
+        <td style="padding:.4rem .5rem;white-space:nowrap">${esc(b.txn_date || '—')}</td>
+        <td style="padding:.4rem .5rem">${esc(_bsPayeeDisplay(b.payee)) || '—'}</td>
+        <td style="padding:.4rem .5rem;text-align:right;font-weight:600;color:${col};white-space:nowrap">${amt}</td>
+        <td style="padding:.4rem .5rem">${reason}</td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem">
+      <thead><tr style="color:var(--gray-500);text-align:left;border-bottom:2px solid var(--gray-200)">
+        <th style="padding:.4rem .5rem">#</th><th style="padding:.4rem .5rem">收支</th><th style="padding:.4rem .5rem">日期</th><th style="padding:.4rem .5rem">付给谁</th><th style="padding:.4rem .5rem;text-align:right">金额</th><th style="padding:.4rem .5rem">原因</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  document.getElementById('bsBoxDetailModal').classList.add('show');
+}
+function bsCloseBoxDetail() { document.getElementById('bsBoxDetailModal').classList.remove('show'); }
 async function bsSaveMeta(id) {
   const row = document.querySelector(`.bs-stmt-row[data-id="${id}"]`);
   if (!row) return;
@@ -38410,7 +38448,8 @@ async function loadBsPdfs() {
     return;
   }
   _bsPdfNames = {};
-  list.forEach(s => { _bsPdfNames[s.id] = s.file_name || 'PDF'; });
+  _bsStmtById = {};
+  list.forEach(s => { _bsPdfNames[s.id] = s.file_name || 'PDF'; _bsStmtById[s.id] = s; });
   const th = (t, extra) => `<th style="padding:.45rem .55rem;font-size:.78rem;font-weight:700;color:var(--gray-500);text-align:left;white-space:nowrap;${extra || ''}">${t}</th>`;
   const rows = list.map(s => `
     <tr class="bs-stmt-row" data-id="${s.id}" style="border-top:1px solid var(--gray-100)">
@@ -38433,7 +38472,7 @@ async function loadBsPdfs() {
         ${s.file_url ? `<a class="btn btn-sm btn-outline" href="${esc(s.file_url)}" target="_blank" rel="noopener">查看</a>` : ''}
         <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fca5a5" onclick="bsDeletePdf(${s.id})">删除</button>
       </td>
-      <td class="bs-stmt-boxes" style="padding:.5rem .55rem;vertical-align:middle;text-align:right">${_bsBoxSummary(s.boxes)}</td>
+      <td class="bs-stmt-boxes" style="padding:.5rem .55rem;vertical-align:middle;text-align:right">${_bsBoxSummary(s)}</td>
     </tr>`).join('');
   wrap.innerHTML = `<div style="overflow-x:auto;border:1px solid var(--gray-200);border-radius:8px;background:#fff">
     <table style="width:100%;border-collapse:collapse">
