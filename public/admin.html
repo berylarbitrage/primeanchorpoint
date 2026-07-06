@@ -38264,6 +38264,20 @@ function _bsSelect(cls, id, options, current, placeholder) {
     .concat(options.map(o => `<option value="${esc(o)}"${o === current ? ' selected' : ''}>${esc(o)}</option>`)).join('');
   return `<select class="${cls}" onchange="bsSaveMeta(${id})" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:#fff">${opts}</select>`;
 }
+// Muted extra line for the detail popup: fee type / category / invoice+period.
+function _bsBoxExtraInfo(b) {
+  const kind = _bsPayeeKind(b);
+  if (kind === 'bankfee') return b.purpose ? '费用类型：' + esc(b.purpose) : '';
+  if (kind === 'personal') return b.purpose ? '类别：' + esc(b.purpose) : '';
+  if (kind === 'employee' || (kind === 'company' && b.direction === 'in')) {
+    const bits = [];
+    if (kind !== 'employee' && b.purpose) bits.push(esc(b.purpose));
+    if (b.invoice_number) bits.push('Inv ' + esc(b.invoice_number));
+    if (b.period_start || b.period_end) bits.push('账期 ' + esc((b.period_start || '') + '~' + (b.period_end || '')));
+    return bits.join('<br>');
+  }
+  return '';
+}
 // Format a stored payee for display (handles the 员工:公司|姓名 encoding).
 function _bsPayeeDisplay(payee) {
   if (!payee) return '';
@@ -38279,8 +38293,14 @@ function _bsPayeeDisplay(payee) {
 // explain the transaction: a bank-fee type is chosen, or all income details are filled.
 function _bsNoteSatisfied(box) {
   if (box.note && String(box.note).trim()) return true;
-  if (box.payee === BS_PAYEE_BANKFEE && box.purpose && String(box.purpose).trim()) return true;
-  if (box.direction === 'in'
+  const kind = _bsPayeeKind(box);
+  // Bank fee type chosen, or personal category chosen.
+  if ((kind === 'bankfee' || kind === 'personal') && String(box.purpose || '').trim()) return true;
+  // Employee wage: invoice + billing period filled.
+  if (kind === 'employee' && String(box.invoice_number || '').trim()
+    && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
+  // Company income: purpose + invoice + period all filled.
+  if (kind === 'company' && box.direction === 'in'
     && String(box.purpose || '').trim() && String(box.invoice_number || '').trim()
     && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
   return false;
@@ -38317,9 +38337,7 @@ function bsOpenBoxDetail(id) {
         <td style="padding:.4rem .5rem;color:var(--gray-400)">${i + 1}</td>
         <td style="padding:.4rem .5rem;color:${col};font-weight:600;white-space:nowrap">${isIn ? '收入' : '支出'}</td>
         <td style="padding:.4rem .5rem;white-space:nowrap">${esc(b.txn_date || '—')}</td>
-        <td style="padding:.4rem .5rem">${esc(_bsPayeeDisplay(b.payee)) || '—'}${(b.payee === '银行费用' && b.purpose)
-          ? `<div style="font-size:.74rem;color:var(--gray-500);margin-top:.15rem">费用类型：${esc(b.purpose)}</div>`
-          : ((isIn && (b.purpose || b.invoice_number || b.period_start || b.period_end)) ? `<div style="font-size:.74rem;color:var(--gray-500);margin-top:.15rem">${[b.purpose ? esc(b.purpose) : '', b.invoice_number ? 'Inv ' + esc(b.invoice_number) : '', (b.period_start || b.period_end) ? '账期 ' + esc((b.period_start || '') + '~' + (b.period_end || '')) : ''].filter(Boolean).join('<br>')}</div>` : '')}</td>
+        <td style="padding:.4rem .5rem">${esc(_bsPayeeDisplay(b.payee)) || '—'}${(() => { const x = _bsBoxExtraInfo(b); return x ? `<div style="font-size:.74rem;color:var(--gray-500);margin-top:.15rem">${x}</div>` : ''; })()}</td>
         <td style="padding:.4rem .5rem;text-align:right;font-weight:600;color:${col};white-space:nowrap">${amt}</td>
         <td style="padding:.4rem .5rem">${reason}</td>
         <td style="padding:.4rem .5rem"><div style="display:flex;flex-wrap:wrap;max-width:140px">${photos}</div></td>
@@ -38623,6 +38641,22 @@ const BS_PAYEE_BANKFEE = '银行费用';
 const BS_PAYEE_CLAIM = 'Claim';
 // Common bank-fee types shown when 付给谁 = 银行费用 (datalist; free text still allowed).
 const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', '账户维护费 Maintenance Fee', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
+// Category options when paying an individual (个人：拿回家那部分).
+const BS_PERSONAL_CATS = ['换汇 FX', '自己工资 Own Salary', '公司转账 Company Transfer'];
+// Classify the payee to decide which detail sub-section to show.
+function _bsPayeeKind(box) {
+  const p = (box && box.payee) || '';
+  if (p === BS_PAYEE_BANKFEE) return 'bankfee';
+  if (_bsIsEmp(p)) return 'employee';
+  if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
+  if (p && p !== BS_PAYEE_CLAIM) return 'company';
+  return 'none';
+}
+// The invoice/账期 block applies to employee wages and to company income.
+function _bsWantsInvoice(box) {
+  const k = _bsPayeeKind(box);
+  return k === 'employee' || (k === 'company' && box.direction === 'in');
+}
 const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang'];
 async function bsEnsureCompanies() {
   if (_bsCompanies.length) return;
@@ -38793,9 +38827,15 @@ function _bsRenderBoxPanel() {
         <div style="font-size:.72rem;color:#92400e;margin-bottom:.3rem">银行费用类型</div>
         <input type="text" class="bs-bx-fee" list="bsFeeList" placeholder="如：服务费 / 支票费" value="${esc(box.payee === BS_PAYEE_BANKFEE ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
-      <div class="bs-income-wrap" style="display:${(isIn && box.payee !== BS_PAYEE_BANKFEE) ? '' : 'none'};background:#f0fdf4;border:1px dashed #bbf7d0;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
-        <div style="font-size:.72rem;color:#059669;margin-bottom:.3rem">收入明细</div>
-        <input type="text" class="bs-bx-purpose" list="bsPurposeList" placeholder="用途（如：劳务工资）" value="${esc(box.purpose || '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
+      <div class="bs-personal-wrap" style="display:${_bsPayeeKind(box) === 'personal' ? '' : 'none'};background:#eff6ff;border:1px dashed #bfdbfe;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#1d4ed8;margin-bottom:.3rem">类别（拿回家）</div>
+        <input type="text" class="bs-bx-cat" list="bsPersonalCatList" placeholder="换汇 / 自己工资 / 公司转账" value="${esc(_bsPayeeKind(box) === 'personal' ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
+      <div class="bs-income-wrap" style="display:${_bsWantsInvoice(box) ? '' : 'none'};background:#f0fdf4;border:1px dashed #bbf7d0;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#059669;margin-bottom:.3rem">Invoice / 账期</div>
+        <div class="bs-purpose-row" style="display:${(isIn && _bsPayeeKind(box) === 'company') ? '' : 'none'}">
+          <input type="text" class="bs-bx-purpose" list="bsPurposeList" placeholder="用途（如：劳务工资）" value="${esc(box.purpose || '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
+        </div>
         <input type="text" class="bs-bx-inv" placeholder="Invoice number" value="${esc(box.invoice_number || '')}" onchange="bsUpdateBoxField(${box.id},'invoice_number',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
         <input type="text" class="bs-bx-period" placeholder="账期：可粘贴 2026-03-16 ~ 2026-03-22" value="${(box.period_start || box.period_end) ? esc((box.period_start || '') + ' ~ ' + (box.period_end || '')) : ''}" oninput="bsParsePeriod(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem">
         <div style="display:flex;gap:.3rem">
@@ -38819,19 +38859,24 @@ function _bsRenderBoxPanel() {
     </div>`;
   }).join('')
     + '<datalist id="bsPurposeList"><option value="劳务工资"></option></datalist>'
-    + '<datalist id="bsFeeList">' + BS_FEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>';
+    + '<datalist id="bsFeeList">' + BS_FEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
+    + '<datalist id="bsPersonalCatList">' + BS_PERSONAL_CATS.map(c => `<option value="${esc(c)}"></option>`).join('') + '</datalist>';
 }
-// Show/hide the fee (银行费用) and income (收入明细) sub-sections based on payee + direction.
+// Show/hide the fee / personal / invoice sub-sections based on payee + direction.
 function bsUpdateBoxSections(id) {
   const box = _bsBoxList.find(b => b.id === id);
   const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
   if (!box || !item) return;
-  const isFee = box.payee === BS_PAYEE_BANKFEE;
+  const kind = _bsPayeeKind(box);
   const isIn = box.direction === 'in';
   const fw = item.querySelector('.bs-fee-wrap');
+  const pw = item.querySelector('.bs-personal-wrap');
   const iw = item.querySelector('.bs-income-wrap');
-  if (fw) fw.style.display = isFee ? '' : 'none';
-  if (iw) iw.style.display = (isIn && !isFee) ? '' : 'none';
+  const pr = item.querySelector('.bs-purpose-row');
+  if (fw) fw.style.display = kind === 'bankfee' ? '' : 'none';
+  if (pw) pw.style.display = kind === 'personal' ? '' : 'none';
+  if (iw) iw.style.display = _bsWantsInvoice(box) ? '' : 'none';
+  if (pr) pr.style.display = (kind === 'company' && isIn) ? '' : 'none'; // 用途 only for company income
 }
 
 function _bsIsEmp(payee) { return typeof payee === 'string' && payee.indexOf(BS_EMP_PREFIX) === 0; }
