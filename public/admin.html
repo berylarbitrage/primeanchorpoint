@@ -38824,8 +38824,11 @@ async function bsViewerDownload() {
     if (_bsViewBoxes.length) {
       const legendW = 612, legendH = 792, margin = 40, gap = 8;
       let lp = doc.addPage([legendW, legendH]);
-      lp.drawText('Annotations / 标注清单', { x: margin, y: legendH - margin - 4, size: 13, font: numFont, color: PDFLib.rgb(0.1, 0.12, 0.17) });
-      let cy = legendH - margin - 28;
+      // Title has CJK, so render it as an image (Helvetica can't encode CJK).
+      const titlePng = bsLabelPng('标注清单 Annotations', '#0f172a', legendW - margin * 2);
+      const titleImg = await doc.embedPng(titlePng.dataUrl);
+      lp.drawImage(titleImg, { x: margin, y: legendH - margin - titlePng.cssH, width: titlePng.cssW, height: titlePng.cssH });
+      let cy = legendH - margin - titlePng.cssH - 12;
       for (let i = 0; i < _bsViewBoxes.length; i++) {
         const box = _bsViewBoxes[i];
         const isIn = box.direction === 'in';
