@@ -38306,7 +38306,7 @@ function bsOpenBoxDetail(id) {
         <td style="padding:.4rem .5rem;color:var(--gray-400)">${i + 1}</td>
         <td style="padding:.4rem .5rem;color:${col};font-weight:600;white-space:nowrap">${isIn ? '收入' : '支出'}</td>
         <td style="padding:.4rem .5rem;white-space:nowrap">${esc(b.txn_date || '—')}</td>
-        <td style="padding:.4rem .5rem">${esc(_bsPayeeDisplay(b.payee)) || '—'}</td>
+        <td style="padding:.4rem .5rem">${esc(_bsPayeeDisplay(b.payee)) || '—'}${(isIn && (b.purpose || b.invoice_number || b.period_start || b.period_end)) ? `<div style="font-size:.74rem;color:var(--gray-500);margin-top:.15rem">${[b.purpose ? esc(b.purpose) : '', b.invoice_number ? 'Inv ' + esc(b.invoice_number) : '', (b.period_start || b.period_end) ? '账期 ' + esc((b.period_start || '') + '~' + (b.period_end || '')) : ''].filter(Boolean).join('<br>')}</div>` : ''}</td>
         <td style="padding:.4rem .5rem;text-align:right;font-weight:600;color:${col};white-space:nowrap">${amt}</td>
         <td style="padding:.4rem .5rem">${reason}</td>
         <td style="padding:.4rem .5rem"><div style="display:flex;flex-wrap:wrap;max-width:140px">${photos}</div></td>
@@ -38774,6 +38774,16 @@ function _bsRenderBoxPanel() {
         <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
         <input type="text" class="bs-bx-emp-name" placeholder="员工姓名" value="${esc(_bsEmpParse(box.payee).name)}" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
+      <div class="bs-income-wrap" style="display:${isIn ? '' : 'none'};background:#f0fdf4;border:1px dashed #bbf7d0;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#059669;margin-bottom:.3rem">收入明细</div>
+        <input type="text" class="bs-bx-purpose" list="bsPurposeList" placeholder="用途（如：劳务工资）" value="${esc(box.purpose || '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
+        <input type="text" class="bs-bx-inv" placeholder="Invoice number" value="${esc(box.invoice_number || '')}" onchange="bsUpdateBoxField(${box.id},'invoice_number',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
+        <input type="text" class="bs-bx-period" placeholder="账期：可粘贴 2026-03-16 ~ 2026-03-22" value="${(box.period_start || box.period_end) ? esc((box.period_start || '') + ' ~ ' + (box.period_end || '')) : ''}" oninput="bsParsePeriod(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem">
+        <div style="display:flex;gap:.3rem">
+          <input type="date" class="bs-bx-pstart" title="账期开始" value="${esc(box.period_start || '')}" onchange="bsPeriodDate(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+          <input type="date" class="bs-bx-pend" title="账期结束" value="${esc(box.period_end || '')}" onchange="bsPeriodDate(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+        </div>
+      </div>
       <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.35rem">
         <span style="color:#94a3b8;font-size:.82rem">$</span>
         <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
@@ -38788,7 +38798,7 @@ function _bsRenderBoxPanel() {
         <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px"><img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);cursor:zoom-in"><button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
       </div>
     </div>`;
-  }).join('');
+  }).join('') + '<datalist id="bsPurposeList"><option value="劳务工资"></option></datalist>';
 }
 
 function _bsIsEmp(payee) { return typeof payee === 'string' && payee.indexOf(BS_EMP_PREFIX) === 0; }
@@ -38841,8 +38851,34 @@ async function bsUpdateBoxField(id, field, value) {
     const ov = document.querySelector(`.bs-box[data-id="${id}"]`);
     if (ov) { ov.style.borderColor = color; ov.style.background = isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'; const n = ov.querySelector('span'); if (n) n.style.background = color; }
     const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
-    if (item) item.style.borderLeftColor = color;
+    if (item) {
+      item.style.borderLeftColor = color;
+      const iw = item.querySelector('.bs-income-wrap'); // income-only fields
+      if (iw) iw.style.display = isIn ? '' : 'none';
+    }
   }
+}
+// Paste a range like "2026-03-16 ~ 2026-03-22" → fill the two 账期 date pickers.
+function bsParsePeriod(id, el) {
+  const dates = (el.value.match(/\d{4}-\d{2}-\d{2}/g) || []);
+  if (dates.length < 2) return;
+  const wrap = el.closest('.bs-income-wrap');
+  if (!wrap) return;
+  wrap.querySelector('.bs-bx-pstart').value = dates[0];
+  wrap.querySelector('.bs-bx-pend').value = dates[1];
+  bsUpdateBoxField(id, 'period_start', dates[0]);
+  bsUpdateBoxField(id, 'period_end', dates[1]);
+}
+// Date pickers changed → save both and reflect the combined range in the paste box.
+function bsPeriodDate(id) {
+  const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+  if (!item) return;
+  const from = item.querySelector('.bs-bx-pstart').value;
+  const to = item.querySelector('.bs-bx-pend').value;
+  bsUpdateBoxField(id, 'period_start', from);
+  bsUpdateBoxField(id, 'period_end', to);
+  const pf = item.querySelector('.bs-bx-period');
+  if (pf && (from || to)) pf.value = `${from || ''} ~ ${to || ''}`;
 }
 
 function bsPhotoDragOver(e, el) { e.preventDefault(); e.stopPropagation(); el.style.background = '#eff6ff'; el.style.borderColor = '#2563eb'; }
