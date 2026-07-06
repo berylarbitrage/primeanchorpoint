@@ -38504,7 +38504,7 @@ async function loadBsPdfs() {
       <td style="padding:.5rem .4rem;vertical-align:middle"><input type="date" class="bs-meta-pend" value="${esc(s.period_end || '')}" onchange="bsSaveMeta(${s.id})" style="width:100%;padding:.3rem .35rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem;background:#fff"></td>
       <td style="padding:.5rem .4rem;vertical-align:middle;white-space:nowrap">
         <button class="btn btn-sm btn-blue" onclick="bsOpenEditor(${s.id})" title="框选标注日期/金额，或贴付款备注">✏️ 标注</button>
-        ${s.file_url ? `<a class="btn btn-sm btn-outline" href="${esc(s.file_url)}" target="_blank" rel="noopener">查看</a>` : ''}
+        <button class="btn btn-sm btn-outline" onclick="bsOpenViewer(${s.id})" title="弹窗查看带标注的 PDF，可下载">查看</button>
         <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fca5a5" onclick="bsDeletePdf(${s.id})">删除</button>
       </td>
       <td class="bs-stmt-boxes" style="padding:.5rem .55rem;vertical-align:middle;text-align:right">${_bsBoxSummary(s)}</td>
@@ -38630,6 +38630,154 @@ function bsCloseEditor() {
   _bsBoxMode = false;
   // Refresh the list so each row's right-side annotation summary is up to date.
   try { loadBsPdfs(); } catch (_) {}
+}
+
+// ── Read-only viewer: PDF + annotation overlays in a popup, with download ──
+let _bsViewId = null, _bsViewBytes = null, _bsViewName = 'statement.pdf', _bsViewBoxes = [];
+function bsEnsureViewer() {
+  if (document.getElementById('bsViewerModal')) return;
+  const m = document.createElement('div');
+  m.id = 'bsViewerModal';
+  m.style.cssText = 'display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55)';
+  m.innerHTML =
+    '<div style="position:absolute;inset:3%;background:#eef2f7;border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)">' +
+      '<div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--gray-200)">' +
+        '<strong id="bsViewerTitle" style="font-size:.92rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">查看对账单</strong>' +
+        '<span id="bsViewerStatus" style="font-size:.78rem;color:var(--gray-400);white-space:nowrap"></span>' +
+        '<button class="btn btn-sm btn-green" id="bsViewerDlBtn" onclick="bsViewerDownload()">⬇️ 下载带标注 PDF</button>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsCloseViewer()">✕ 关闭</button>' +
+      '</div>' +
+      '<div id="bsViewerPages" style="flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;align-items:center;gap:1rem;background:#e2e8f0"></div>' +
+    '</div>';
+  document.body.appendChild(m);
+}
+function bsCloseViewer() { const m = document.getElementById('bsViewerModal'); if (m) m.style.display = 'none'; }
+
+// Plain-text label for a box (used both on-screen and stamped into the PDF).
+function _bsBoxLabelText(box, num) {
+  const bits = ['#' + num + ' ' + (box.direction === 'in' ? '收入' : '支出')];
+  const payee = _bsPayeeDisplay(box.payee); if (payee) bits.push(payee);
+  if (box.amount != null && box.amount !== 0) bits.push('$' + Number(box.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  const line1 = bits.join(' ');
+  const l2 = [];
+  if (box.txn_date) l2.push(box.txn_date);
+  if (box.purpose) l2.push(box.purpose);
+  if (box.invoice_number) l2.push('Inv ' + box.invoice_number);
+  if (box.period_start || box.period_end) l2.push((box.period_start || '') + '~' + (box.period_end || ''));
+  if (box.note) l2.push(box.note);
+  return l2.length ? line1 + '\n' + l2.join(' · ') : line1;
+}
+
+async function bsOpenViewer(id) {
+  bsEnsureViewer();
+  _bsViewId = id;
+  _bsViewName = _bsPdfNames[id] || 'statement.pdf';
+  document.getElementById('bsViewerTitle').textContent = '👁 ' + _bsViewName;
+  document.getElementById('bsViewerModal').style.display = 'block';
+  const pagesEl = document.getElementById('bsViewerPages');
+  const setStatus = t => { const s = document.getElementById('bsViewerStatus'); if (s) s.textContent = t || ''; };
+  pagesEl.innerHTML = '<div style="color:var(--gray-400);padding:2rem">加载中…</div>';
+  setStatus('加载组件…');
+  try {
+    await bsLoadLibs();
+    setStatus('下载 PDF…');
+    const res = await fetch(API + '/admin/bank-statements/' + id + '/file', { headers: { Authorization: 'Bearer ' + TOKEN } });
+    if (!res.ok) throw new Error('下载 PDF 失败 (' + res.status + ')');
+    _bsViewBytes = new Uint8Array(await res.arrayBuffer());
+    setStatus('渲染页面…');
+    await bsRenderPages(_bsViewBytes, pagesEl);
+    try { _bsViewBoxes = await api(`/admin/bank-statements/${id}/boxes`) || []; } catch (_) { _bsViewBoxes = []; }
+    if (!Array.isArray(_bsViewBoxes)) _bsViewBoxes = [];
+    _bsViewBoxes.sort((a, b) => (a.page - b.page) || (a.box_y - b.box_y) || (a.id - b.id));
+    bsDrawViewerBoxes();
+    setStatus('');
+  } catch (e) {
+    pagesEl.innerHTML = '<div style="color:var(--red);padding:2rem">打开失败：' + esc(e.message || String(e)) + '</div>';
+    setStatus('');
+  }
+}
+
+// Read-only labeled rectangles over the rendered pages.
+function bsDrawViewerBoxes() {
+  const cont = document.getElementById('bsViewerPages');
+  if (!cont) return;
+  const pages = {};
+  cont.querySelectorAll('.bs-ed-page').forEach(p => { pages[parseInt(p.dataset.page)] = p; });
+  _bsViewBoxes.forEach((box, i) => {
+    const page = pages[box.page || 1];
+    if (!page) return;
+    const pw = page.clientWidth, ph = page.clientHeight;
+    const isIn = box.direction === 'in';
+    const color = isIn ? '#059669' : '#dc2626';
+    const el = document.createElement('div');
+    el.style.cssText = `position:absolute;left:${box.box_x * pw}px;top:${box.box_y * ph}px;width:${box.box_w * pw}px;height:${box.box_h * ph}px;border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.06)' : 'rgba(220,38,38,.06)'};box-sizing:border-box;z-index:6`;
+    const cap = document.createElement('div');
+    cap.textContent = _bsBoxLabelText(box, i + 1);
+    cap.style.cssText = `position:absolute;left:0;top:-2px;transform:translateY(-100%);max-width:340px;background:#fffbeb;border:1px solid ${color};color:#1f2937;font-size:11px;line-height:1.25;padding:2px 5px;border-radius:5px;white-space:pre-wrap;box-shadow:0 1px 4px rgba(0,0,0,.2);z-index:7`;
+    el.appendChild(cap);
+    page.appendChild(el);
+  });
+}
+
+// Build a white-bg PNG label (supports CJK) for stamping into the PDF.
+function bsLabelPng(text, hex, boxWcss) {
+  const padX = 6, padY = 3, fontPx = 12, lineH = 15, dpr = 3;
+  const font = '600 ' + fontPx + 'px -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif';
+  const meas = document.createElement('canvas').getContext('2d'); meas.font = font;
+  const innerW = Math.max(20, boxWcss - padX * 2);
+  const lines = [];
+  String(text).split('\n').forEach(para => {
+    let line = '';
+    for (const ch of para) {
+      if (line && meas.measureText(line + ch).width > innerW) { lines.push(line); line = ch; }
+      else line += ch;
+    }
+    lines.push(line);
+  });
+  const cssW = boxWcss, cssH = padY * 2 + Math.max(1, lines.length) * lineH;
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil(cssW * dpr); cv.height = Math.ceil(cssH * dpr);
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+  ctx.fillStyle = 'rgba(255,251,235,0.95)'; ctx.fillRect(0, 0, cssW, cssH);
+  ctx.strokeStyle = hex; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, cssW - 1, cssH - 1);
+  ctx.fillStyle = '#1f2937'; ctx.font = font; ctx.textBaseline = 'top';
+  lines.forEach((ln, i) => ctx.fillText(ln, padX, padY + i * lineH));
+  return { dataUrl: cv.toDataURL('image/png'), cssW, cssH };
+}
+
+async function bsViewerDownload() {
+  if (!_bsViewBytes) { showToast('PDF 未就绪', 'error'); return; }
+  const setStatus = t => { const s = document.getElementById('bsViewerStatus'); if (s) s.textContent = t || ''; };
+  try {
+    setStatus('生成 PDF…');
+    const doc = await PDFLib.PDFDocument.load(_bsViewBytes);
+    const pages = doc.getPages();
+    const hexRgb = h => { const n = parseInt(h.slice(1), 16); return PDFLib.rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); };
+    for (let i = 0; i < _bsViewBoxes.length; i++) {
+      const box = _bsViewBoxes[i];
+      const pg = pages[(box.page || 1) - 1];
+      if (!pg) continue;
+      const { width: W, height: H } = pg.getSize();
+      const x = box.box_x * W, w = box.box_w * W, h = box.box_h * H;
+      const yTop = box.box_y * H, rectY = H - yTop - h;
+      const isIn = box.direction === 'in';
+      const color = hexRgb(isIn ? '#059669' : '#dc2626');
+      pg.drawRectangle({ x, y: rectY, width: w, height: h, borderColor: color, borderWidth: 1.4 });
+      const png = bsLabelPng(_bsBoxLabelText(box, i + 1), isIn ? '#059669' : '#dc2626', 240);
+      const img = await doc.embedPng(png.dataUrl);
+      const lw = Math.min(png.cssW, W - x), lh = png.cssH;
+      let ly = rectY + h; // sit just above the box; clamp inside the page
+      if (ly + lh > H) ly = Math.max(0, rectY - lh);
+      pg.drawImage(img, { x, y: ly, width: lw, height: lh });
+    }
+    const out = await doc.save();
+    const url = URL.createObjectURL(new Blob([out], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = _bsViewName.replace(/\.pdf$/i, '') + '-已标注.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    setStatus('');
+  } catch (e) { setStatus(''); showToast('下载失败：' + (e.message || e), 'error'); }
 }
 
 // ── Box annotations: draw a rectangle on the PDF, fill details in the right panel ──
@@ -39051,8 +39199,8 @@ function bsFocusBoxItem(id) {
   setTimeout(() => { item.style.boxShadow = prev; }, 1000);
 }
 
-async function bsRenderPages(bytes) {
-  const cont = document.getElementById('bsEdPages');
+async function bsRenderPages(bytes, cont) {
+  cont = cont || document.getElementById('bsEdPages');
   cont.innerHTML = '';
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
   const targetW = Math.min(900, Math.max(360, cont.clientWidth - 40));
