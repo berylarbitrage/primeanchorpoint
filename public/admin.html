@@ -1660,7 +1660,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
   </div>
   <p style="color:var(--gray-500);font-size:.85rem;margin:.25rem 0 1rem">
-    上传你的对账单 PDF 存档、随时在系统里点开查看；下面列出系统里的「付给工人」记录，找到对账单上那笔金额对应的记录，点「复制备注」，再用你自己的 PDF 工具把备注贴到 PDF 上。系统不自动解析 PDF。
+    上传对账单 PDF 后，给每份标注<strong>银行</strong>（Chase / BoA / Cash App）、<strong>账户名</strong>与<strong>操作人</strong>；点「✏️ 标注」在 PDF 上<strong>拖动画框</strong>并填写<strong>日期</strong>和<strong>金额</strong>，标注会显示在每一行的右侧。也可把系统里的付款记录当备注贴到 PDF 上。系统不自动解析 PDF。
   </p>
   <div id="bsUploadHint" style="display:none;margin-bottom:.5rem;color:var(--sky);font-size:.85rem"></div>
   <div id="bsDropZone" onclick="document.getElementById('bsUploadInput').click()" style="border:2px dashed var(--gray-300);border-radius:10px;padding:.9rem 1rem;text-align:center;color:var(--gray-400);font-size:.85rem;margin-bottom:.9rem;cursor:pointer;transition:background .15s,border-color .15s,color .15s">⬇️ 把对账单 PDF 拖到这里上传（也可点此选择文件，支持一次多选）</div>
@@ -38196,11 +38196,46 @@ let _bsMarkInfo = {};           // payment_id -> {sid, sname} back-ref to the st
 let _bsShowMarked = false;
 let _bsPdfNames = {};           // id -> file_name (for the PDF editor title / output name)
 
+// Tagging option lists for uploaded statements.
+const BS_BANKS = ['Chase', 'BoA', 'Cash App'];
+const BS_ENTITIES = ['Prime Anchor Point', 'Prime Anchor Workforce', 'Bintique', 'Surplus Lane'];
+const BS_OPERATORS = ['Niki Zhao', 'Beryl Zhang', 'Tiexiong Zhou', 'Yizhao Cai'];
+
 function initBankStatementsPage() {
   bsPopulateCompanies();
   bsInitDropZone();
   loadBsPdfs();
   loadBsRecords();
+}
+
+function _bsSelect(cls, id, options, current, placeholder) {
+  const opts = [`<option value="">${esc(placeholder)}</option>`]
+    .concat(options.map(o => `<option value="${esc(o)}"${o === current ? ' selected' : ''}>${esc(o)}</option>`)).join('');
+  return `<select class="${cls}" onchange="bsSaveMeta(${id})" style="padding:.28rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:#fff">${opts}</select>`;
+}
+// Right-side annotation summary for a statement row (date · $amount chips).
+function _bsBoxSummary(boxes) {
+  if (!Array.isArray(boxes) || !boxes.length) {
+    return '<span style="color:var(--gray-300);font-size:.8rem">还没有标注</span>';
+  }
+  const chips = boxes.map(b => {
+    const d = b.txn_date ? esc(b.txn_date) : '—';
+    const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+    return `<span style="display:inline-flex;gap:.3rem;align-items:center;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:999px;padding:.1rem .5rem;font-size:.76rem;white-space:nowrap">📅 ${d}${amt ? ' · <b>' + amt + '</b>' : ''}</span>`;
+  }).join('');
+  return `<div style="display:flex;flex-wrap:wrap;gap:.3rem;justify-content:flex-end">${chips}</div>`;
+}
+async function bsSaveMeta(id) {
+  const row = document.querySelector(`.bs-stmt-row[data-id="${id}"]`);
+  if (!row) return;
+  const bank = row.querySelector('.bs-meta-bank').value;
+  const account_name = row.querySelector('.bs-meta-entity').value;
+  const operator = row.querySelector('.bs-meta-operator').value;
+  try {
+    const r = await api('/admin/bank-statements/' + id + '/meta', { method: 'PUT', body: JSON.stringify({ bank, account_name, operator }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast('已保存标注 ✓');
+  } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
 }
 
 // ── Uploaded statement PDFs (storage + view only; no parsing) ──
@@ -38255,16 +38290,26 @@ async function loadBsPdfs() {
   }
   _bsPdfNames = {};
   list.forEach(s => { _bsPdfNames[s.id] = s.file_name || 'PDF'; });
-  wrap.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:.5rem">${list.map(s => `
-    <div style="display:flex;align-items:center;gap:.5rem;border:1px solid var(--gray-200);border-radius:8px;padding:.4rem .6rem;background:#fff">
-      <span style="font-size:1.1rem">📄</span>
-      <div style="min-width:0">
-        <div style="font-size:.84rem;font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.file_name || 'PDF')}</div>
-        <div style="font-size:.72rem;color:var(--gray-400)">${esc(String(s.created_at || '').replace('T', ' ').slice(0, 16))}</div>
+  wrap.innerHTML = `<div style="display:flex;flex-direction:column;gap:.55rem">${list.map(s => `
+    <div class="bs-stmt-row" data-id="${s.id}" style="display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;border:1px solid var(--gray-200);border-radius:8px;padding:.55rem .7rem;background:#fff">
+      <div style="display:flex;align-items:center;gap:.5rem;min-width:210px;flex:0 0 auto">
+        <span style="font-size:1.15rem">📄</span>
+        <div style="min-width:0">
+          <div style="font-size:.84rem;font-weight:600;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.file_name || 'PDF')}">${esc(s.file_name || 'PDF')}</div>
+          <div style="font-size:.72rem;color:var(--gray-400)">${esc(String(s.created_at || '').replace('T', ' ').slice(0, 16))}</div>
+        </div>
       </div>
-      <button class="btn btn-sm btn-blue" onclick="bsOpenEditor(${s.id})">✏️ 贴备注</button>
-      ${s.file_url ? `<a class="btn btn-sm btn-outline" href="${esc(s.file_url)}" target="_blank" rel="noopener">查看</a>` : ''}
-      <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fca5a5" onclick="bsDeletePdf(${s.id})">删除</button>
+      <div style="display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;flex:0 0 auto">
+        ${_bsSelect('bs-meta-bank', s.id, BS_BANKS, s.bank || '', '🏦 银行')}
+        ${_bsSelect('bs-meta-entity', s.id, BS_ENTITIES, s.account_name || '', '🏢 账户名')}
+        ${_bsSelect('bs-meta-operator', s.id, BS_OPERATORS, s.operator || '', '🙋 操作人')}
+      </div>
+      <div style="display:flex;gap:.35rem;align-items:center;flex:0 0 auto">
+        <button class="btn btn-sm btn-blue" onclick="bsOpenEditor(${s.id})" title="框选标注日期/金额，或贴付款备注">✏️ 标注</button>
+        ${s.file_url ? `<a class="btn btn-sm btn-outline" href="${esc(s.file_url)}" target="_blank" rel="noopener">查看</a>` : ''}
+        <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fca5a5" onclick="bsDeletePdf(${s.id})">删除</button>
+      </div>
+      <div class="bs-stmt-boxes" style="flex:1 1 240px;min-width:200px;display:flex;justify-content:flex-end">${_bsBoxSummary(s.boxes)}</div>
     </div>`).join('')}</div>`;
 }
 
@@ -38277,6 +38322,7 @@ async function bsDeletePdf(id) {
 // ════════ 对账单 PDF 编辑器：把付款记录贴到 PDF 上、导出新 PDF ════════
 // pdf.js 渲染页面供可视化定位；pdf-lib 把备注（用 canvas 渲成 PNG，支持中文）盖到页面导出。
 let _bsEdId = null, _bsEdBytes = null, _bsEdName = 'statement.pdf', _bsLibsP = null;
+let _bsBoxMode = false;
 
 // Load pdf.js (render) + pdf-lib (export) from CDN, once, with multi-CDN fallback.
 function bsLoadLibs() {
@@ -38325,6 +38371,7 @@ function bsEnsureEditor() {
       '<div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--gray-200)">' +
         '<strong id="bsEdTitle" style="font-size:.92rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">编辑对账单</strong>' +
         '<span id="bsEdStatus" style="font-size:.78rem;color:var(--gray-400);white-space:nowrap"></span>' +
+        '<button id="bsBoxModeBtn" class="btn btn-sm btn-outline" onclick="bsToggleBoxMode()" title="开启后在 PDF 上拖动画框，标注日期和金额">🔲 框选标注</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsAddBlankNote()">+ 空白备注</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsEditorExport(\'download\')">⬇️ 下载</button>' +
         '<button class="btn btn-sm btn-green" onclick="bsEditorExport(\'store\')">💾 存为新档</button>' +
@@ -38362,6 +38409,8 @@ async function bsOpenEditor(id) {
     _bsEdBytes = new Uint8Array(await res.arrayBuffer());
     setStatus('渲染页面…');
     await bsRenderPages(_bsEdBytes);
+    bsWireBoxDrawing();
+    await bsLoadBoxes();
     setStatus('');
     if (!(_bsRecords && _bsRecords.length)) { try { await loadBsRecords(); } catch (_) {} }
     bsEdRenderRecs();
@@ -38374,6 +38423,120 @@ async function bsOpenEditor(id) {
 function bsCloseEditor() {
   const m = document.getElementById('bsEditorModal');
   if (m) m.style.display = 'none';
+  _bsBoxMode = false;
+  // Refresh the list so each row's right-side annotation summary is up to date.
+  try { loadBsPdfs(); } catch (_) {}
+}
+
+// ── Box annotations: drag a rectangle on a page → label date + amount ──
+function bsToggleBoxMode() {
+  _bsBoxMode = !_bsBoxMode;
+  const btn = document.getElementById('bsBoxModeBtn');
+  if (btn) {
+    btn.style.background = _bsBoxMode ? '#2563eb' : '';
+    btn.style.color = _bsBoxMode ? '#fff' : '';
+    btn.style.borderColor = _bsBoxMode ? '#2563eb' : '';
+  }
+  const cont = document.getElementById('bsEdPages');
+  if (cont) cont.querySelectorAll('.bs-ed-page').forEach(p => { p.style.cursor = _bsBoxMode ? 'crosshair' : ''; });
+  if (_bsBoxMode) showToast('框选已开启：在 PDF 上拖动画框', 'success', 2000);
+}
+
+function bsWireBoxDrawing() {
+  const cont = document.getElementById('bsEdPages');
+  if (!cont) return;
+  cont.querySelectorAll('.bs-ed-page').forEach(page => {
+    if (page._boxWired) return;
+    page._boxWired = true;
+    page.addEventListener('pointerdown', e => {
+      if (!_bsBoxMode) return;
+      // Don't start a new box when interacting with an existing box or note.
+      if (e.target.closest('.bs-box') || e.target.closest('.bs-ed-note')) return;
+      e.preventDefault();
+      const rect = page.getBoundingClientRect();
+      const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+      const rubber = document.createElement('div');
+      rubber.style.cssText = `position:absolute;border:2px dashed #2563eb;background:rgba(37,99,235,.12);z-index:8;left:${sx}px;top:${sy}px;width:0;height:0;pointer-events:none`;
+      page.appendChild(rubber);
+      const move = ev => {
+        const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+        rubber.style.left = Math.min(sx, x) + 'px';
+        rubber.style.top = Math.min(sy, y) + 'px';
+        rubber.style.width = Math.abs(x - sx) + 'px';
+        rubber.style.height = Math.abs(y - sy) + 'px';
+      };
+      const up = async () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        const l = parseFloat(rubber.style.left) || 0, t = parseFloat(rubber.style.top) || 0;
+        const w = parseFloat(rubber.style.width) || 0, h = parseFloat(rubber.style.height) || 0;
+        rubber.remove();
+        if (w < 12 || h < 12) return; // ignore accidental clicks
+        const pw = page.clientWidth, ph = page.clientHeight;
+        const pageNum = parseInt(page.dataset.page) || 1;
+        const box = { page: pageNum, box_x: l / pw, box_y: t / ph, box_w: w / pw, box_h: h / ph, txn_date: '', amount: 0 };
+        try {
+          const r = await api(`/admin/bank-statements/${_bsEdId}/boxes`, { method: 'POST', body: JSON.stringify(box) });
+          if (!r || !r.id) throw new Error(r && r.error || '保存失败');
+          box.id = r.id;
+          _bsRenderBox(page, box, true);
+        } catch (err) { showToast('保存框失败：' + (err.message || err), 'error'); }
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+  });
+}
+
+async function bsLoadBoxes() {
+  let boxes = [];
+  try { boxes = await api(`/admin/bank-statements/${_bsEdId}/boxes`) || []; } catch (_) { boxes = []; }
+  if (!Array.isArray(boxes)) boxes = [];
+  const cont = document.getElementById('bsEdPages');
+  if (!cont) return;
+  const pages = {};
+  cont.querySelectorAll('.bs-ed-page').forEach(p => { pages[parseInt(p.dataset.page)] = p; });
+  boxes.forEach(b => { const pg = pages[b.page || 1]; if (pg) _bsRenderBox(pg, b, false); });
+}
+
+function _bsRenderBox(page, box, focus) {
+  const pw = page.clientWidth, ph = page.clientHeight;
+  const el = document.createElement('div');
+  el.className = 'bs-box';
+  el.dataset.id = box.id;
+  el.style.cssText = `position:absolute;left:${box.box_x * pw}px;top:${box.box_y * ph}px;width:${box.box_w * pw}px;height:${box.box_h * ph}px;` +
+    'border:2px solid #2563eb;background:rgba(37,99,235,.08);box-sizing:border-box;z-index:6';
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:absolute;left:-2px;top:-30px;display:flex;gap:3px;align-items:center;background:#fff;border:1px solid #93c5fd;border-radius:6px;padding:2px 4px;box-shadow:0 1px 5px rgba(0,0,0,.18);white-space:nowrap;z-index:9';
+  bar.innerHTML =
+    '<input type="date" class="bs-box-date" style="font-size:11px;border:1px solid #cbd5e1;border-radius:4px;padding:1px 3px">' +
+    '<span style="color:#94a3b8;font-size:11px">$</span>' +
+    '<input type="number" class="bs-box-amt" placeholder="金额" step="0.01" style="width:74px;font-size:11px;border:1px solid #cbd5e1;border-radius:4px;padding:1px 3px">' +
+    '<button class="bs-box-del" title="删除框" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:12px;padding:0 5px;line-height:18px">✕</button>';
+  el.appendChild(bar);
+  const dateI = bar.querySelector('.bs-box-date');
+  const amtI = bar.querySelector('.bs-box-amt');
+  dateI.value = box.txn_date || '';
+  amtI.value = (box.amount != null && box.amount !== 0) ? box.amount : '';
+  const save = async () => {
+    try {
+      await api(`/admin/bank-statements/${_bsEdId}/boxes/${box.id}`, {
+        method: 'PUT', body: JSON.stringify({ txn_date: dateI.value, amount: amtI.value || 0 })
+      });
+      const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
+    } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+  };
+  dateI.addEventListener('change', save);
+  amtI.addEventListener('change', save);
+  // Stop drags on the controls from starting a new rubber-band box.
+  bar.addEventListener('pointerdown', e => e.stopPropagation());
+  bar.querySelector('.bs-box-del').addEventListener('click', async () => {
+    if (!await showConfirm('删除这个标注框？', { danger: true, confirmLabel: '删除' })) return;
+    try { await api(`/admin/bank-statements/${_bsEdId}/boxes/${box.id}`, { method: 'DELETE' }); el.remove(); }
+    catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
+  });
+  page.appendChild(el);
+  if (focus) dateI.focus();
 }
 
 async function bsRenderPages(bytes) {

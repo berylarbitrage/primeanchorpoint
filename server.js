@@ -2477,6 +2477,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS bank_statement_txns (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_bstxn_stmt ON bank_statement_txns(statement_id)`); } catch(e) {}
+// Statement tagging: which bank (Chase / BoA / Cash App) and who operated it.
+try { db.exec(`ALTER TABLE bank_statements ADD COLUMN bank TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE bank_statements ADD COLUMN operator TEXT DEFAULT ''`); } catch(e) {}
+// Box annotations drawn on the PDF: a normalized rectangle (0..1) on a page plus a
+// labelled date + amount. Stored as bank_statement_txns rows with kind='box'.
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN kind TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN page INTEGER DEFAULT 1`); } catch(e) {}
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN box_x REAL DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN box_y REAL DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN box_w REAL DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN box_h REAL DEFAULT 0`); } catch(e) {}
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -26737,13 +26748,97 @@ app.post('/api/admin/bank-statements', requireAdmin, blockManager, bankStmtUploa
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// List statements.
+// List statements (with tagging + their box annotations for the row-side summary).
 app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, source, account_name, period, file_name, file_path, txn_count, total_in, total_out, notes, created_at
+    const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
       FROM bank_statements ORDER BY created_at DESC`).all();
-    for (const r of rows) r.file_url = r.file_path ? `/uploads/${path.basename(r.file_path)}` : '';
+    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page FROM bank_statement_txns
+      WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
+    for (const r of rows) {
+      r.file_url = r.file_path ? `/uploads/${path.basename(r.file_path)}` : '';
+      r.boxes = boxStmt.all(r.id);
+    }
     res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Update statement tagging: bank / account_name (entity) / operator.
+app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const s = db.prepare('SELECT id FROM bank_statements WHERE id=?').get(id);
+    if (!s) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    db.prepare('UPDATE bank_statements SET bank=?, account_name=?, operator=? WHERE id=?').run(
+      String(b.bank || '').slice(0, 40),
+      String(b.account_name || '').slice(0, 80),
+      String(b.operator || '').slice(0, 80),
+      id
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Box annotations (draw a rectangle on the PDF + label date & amount) ───
+// GET the boxes for one statement.
+app.get('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note
+      FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`)
+      .all(parseInt(req.params.id));
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Create a box annotation.
+app.post('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id);
+    const s = db.prepare('SELECT id FROM bank_statements WHERE id=?').get(sid);
+    if (!s) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
+    const ins = db.prepare(`INSERT INTO bank_statement_txns
+      (statement_id, kind, page, box_x, box_y, box_w, box_h, txn_date, amount, note, direction)
+      VALUES (?, 'box', ?,?,?,?,?,?,?,?, 'out')`).run(
+        sid, Math.max(1, parseInt(b.page) || 1),
+        clamp01(b.box_x), clamp01(b.box_y), clamp01(b.box_w), clamp01(b.box_h),
+        String(b.txn_date || '').slice(0, 40), parseFloat(b.amount) || 0, String(b.note || '').slice(0, 200)
+      );
+    res.json({ success: true, id: ins.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Update a box annotation (coords and/or date/amount/note).
+app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManager, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id), tid = parseInt(req.params.txnId);
+    const row = db.prepare(`SELECT * FROM bank_statement_txns WHERE id=? AND statement_id=? AND kind='box'`).get(tid, sid);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
+    const has = k => Object.prototype.hasOwnProperty.call(b, k);
+    db.prepare(`UPDATE bank_statement_txns SET
+        page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, note=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND statement_id=?`).run(
+        has('page') ? Math.max(1, parseInt(b.page) || 1) : row.page,
+        has('box_x') ? clamp01(b.box_x) : row.box_x,
+        has('box_y') ? clamp01(b.box_y) : row.box_y,
+        has('box_w') ? clamp01(b.box_w) : row.box_w,
+        has('box_h') ? clamp01(b.box_h) : row.box_h,
+        has('txn_date') ? String(b.txn_date || '').slice(0, 40) : row.txn_date,
+        has('amount') ? (parseFloat(b.amount) || 0) : row.amount,
+        has('note') ? String(b.note || '').slice(0, 200) : row.note,
+        tid, sid
+      );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Delete a box annotation.
+app.delete('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManager, (req, res) => {
+  try {
+    db.prepare(`DELETE FROM bank_statement_txns WHERE id=? AND statement_id=? AND kind='box'`)
+      .run(parseInt(req.params.txnId), parseInt(req.params.id));
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
