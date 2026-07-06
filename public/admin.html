@@ -38299,6 +38299,9 @@ function bsOpenBoxDetail(id) {
       const col = isIn ? '#047857' : '#b91c1c';
       const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
       const reason = (b.note && String(b.note).trim()) ? esc(b.note) : '<span style="color:#dc2626">⚠️ 待补</span>';
+      const photos = (b.photos_urls && b.photos_urls.length)
+        ? b.photos_urls.map(u => `<img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="width:38px;height:38px;object-fit:cover;border-radius:5px;border:1px solid var(--gray-200);cursor:zoom-in;margin:1px">`).join('')
+        : '<span style="color:var(--gray-300)">—</span>';
       return `<tr style="border-top:1px solid var(--gray-100)">
         <td style="padding:.4rem .5rem;color:var(--gray-400)">${i + 1}</td>
         <td style="padding:.4rem .5rem;color:${col};font-weight:600;white-space:nowrap">${isIn ? '收入' : '支出'}</td>
@@ -38306,11 +38309,12 @@ function bsOpenBoxDetail(id) {
         <td style="padding:.4rem .5rem">${esc(_bsPayeeDisplay(b.payee)) || '—'}</td>
         <td style="padding:.4rem .5rem;text-align:right;font-weight:600;color:${col};white-space:nowrap">${amt}</td>
         <td style="padding:.4rem .5rem">${reason}</td>
+        <td style="padding:.4rem .5rem"><div style="display:flex;flex-wrap:wrap;max-width:140px">${photos}</div></td>
       </tr>`;
     }).join('');
     body.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem">
       <thead><tr style="color:var(--gray-500);text-align:left;border-bottom:2px solid var(--gray-200)">
-        <th style="padding:.4rem .5rem">#</th><th style="padding:.4rem .5rem">收支</th><th style="padding:.4rem .5rem">日期</th><th style="padding:.4rem .5rem">付给谁</th><th style="padding:.4rem .5rem;text-align:right">金额</th><th style="padding:.4rem .5rem">原因</th>
+        <th style="padding:.4rem .5rem">#</th><th style="padding:.4rem .5rem">收支</th><th style="padding:.4rem .5rem">日期</th><th style="padding:.4rem .5rem">付给谁</th><th style="padding:.4rem .5rem;text-align:right">金额</th><th style="padding:.4rem .5rem">原因</th><th style="padding:.4rem .5rem">照片</th>
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   document.getElementById('bsBoxDetailModal').classList.add('show');
@@ -38774,7 +38778,12 @@ function _bsRenderBoxPanel() {
         <span style="color:#94a3b8;font-size:.82rem">$</span>
         <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
-      <input type="text" class="bs-bx-note" placeholder="原因 / 备注（需补上）" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="var f=!!this.value.trim();this.style.borderColor=f?'var(--gray-200)':'#dc2626';this.style.background=f?'':'#fff5f5'" style="width:100%;padding:.32rem .4rem;border:1px solid ${(box.note && box.note.trim()) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${(box.note && box.note.trim()) ? '' : 'background:#fff5f5'}">
+      <input type="text" class="bs-bx-note" placeholder="原因 / 备注（需补上）" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="var f=!!this.value.trim();this.style.borderColor=f?'var(--gray-200)':'#dc2626';this.style.background=f?'':'#fff5f5'" style="width:100%;padding:.32rem .4rem;border:1px solid ${(box.note && box.note.trim()) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;margin-bottom:.4rem;${(box.note && box.note.trim()) ? '' : 'background:#fff5f5'}">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
+        <span style="font-size:.75rem;color:var(--gray-500)">📷 照片${(box.photos_urls && box.photos_urls.length) ? ' (' + box.photos_urls.length + ')' : ''}</span>
+        <label style="cursor:pointer;font-size:.75rem;color:#2563eb;font-weight:600">＋ 加照片<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="bsBoxUploadPhotos(${box.id}, this.files)"></label>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px"><img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);cursor:zoom-in"><button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
     </div>`;
   }).join('');
 }
@@ -38833,6 +38842,28 @@ async function bsUpdateBoxField(id, field, value) {
   }
 }
 
+async function bsBoxUploadPhotos(id, files) {
+  if (!files || !files.length) return;
+  const fd = new FormData();
+  Array.from(files).forEach(f => fd.append('photos', f));
+  try {
+    const res = await fetch(API + `/admin/bank-statements/${_bsEdId}/boxes/${id}/photos`, { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
+    const r = await res.json();
+    if (!r.success) throw new Error(r.error || '上传失败');
+    const box = _bsBoxList.find(b => b.id === id); if (box) box.photos_urls = r.photos_urls || [];
+    _bsRenderBoxPanel();
+    showToast('照片已上传 ✓');
+  } catch (e) { showToast('上传失败：' + (e.message || e), 'error'); }
+}
+async function bsBoxDeletePhoto(id, url) {
+  if (!await showConfirm('删除这张照片？', { danger: true, confirmLabel: '删除' })) return;
+  try {
+    const r = await api(`/admin/bank-statements/${_bsEdId}/boxes/${id}/photos`, { method: 'DELETE', body: JSON.stringify({ photo: url }) });
+    if (r && r.error) throw new Error(r.error);
+    const box = _bsBoxList.find(b => b.id === id); if (box) box.photos_urls = r.photos_urls || [];
+    _bsRenderBoxPanel();
+  } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
+}
 async function bsDeleteBox(id) {
   if (!await showConfirm('删除这个标注？', { danger: true, confirmLabel: '删除' })) return;
   try { await api(`/admin/bank-statements/${_bsEdId}/boxes/${id}`, { method: 'DELETE' }); } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); return; }

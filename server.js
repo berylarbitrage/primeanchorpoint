@@ -2491,6 +2491,8 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN box_x REAL DEFAULT 0`)
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN box_y REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN box_w REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN box_h REAL DEFAULT 0`); } catch(e) {}
+// Per-annotation supporting photos (JSON array of storage keys).
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN photos TEXT DEFAULT '[]'`); } catch(e) {}
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -26765,11 +26767,15 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
       FROM bank_statements ORDER BY created_at DESC`).all();
-    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction FROM bank_statement_txns
+    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos FROM bank_statement_txns
       WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
     for (const r of rows) {
       r.file_url = r.file_path ? `/uploads/${path.basename(r.file_path)}` : '';
       r.boxes = boxStmt.all(r.id);
+      for (const b of r.boxes) {
+        let keys = []; try { keys = JSON.parse(b.photos || '[]'); } catch { keys = []; }
+        b.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+      }
     }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -26798,9 +26804,14 @@ app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req,
 // GET the boxes for one statement.
 app.get('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction
+    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos
       FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`)
       .all(parseInt(req.params.id));
+    for (const r of rows) {
+      let keys = [];
+      try { keys = JSON.parse(r.photos || '[]'); } catch { keys = []; }
+      r.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+    }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -26854,9 +26865,48 @@ app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManage
 // Delete a box annotation.
 app.delete('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManager, (req, res) => {
   try {
-    db.prepare(`DELETE FROM bank_statement_txns WHERE id=? AND statement_id=? AND kind='box'`)
-      .run(parseInt(req.params.txnId), parseInt(req.params.id));
+    const tid = parseInt(req.params.txnId), sid = parseInt(req.params.id);
+    const row = db.prepare(`SELECT photos FROM bank_statement_txns WHERE id=? AND statement_id=? AND kind='box'`).get(tid, sid);
+    if (row) {
+      let keys = []; try { keys = JSON.parse(row.photos || '[]'); } catch { keys = []; }
+      (Array.isArray(keys) ? keys : []).forEach(k => { if (k) storage.deleteObject(storage.keyFrom(k, 'uploads')).catch(() => {}); });
+    }
+    db.prepare(`DELETE FROM bank_statement_txns WHERE id=? AND statement_id=? AND kind='box'`).run(tid, sid);
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Upload one or more supporting photos to a box annotation.
+app.post('/api/admin/bank-statements/:id/boxes/:txnId/photos', requireAdmin, blockManager, containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
+  try {
+    const sid = parseInt(req.params.id), tid = parseInt(req.params.txnId);
+    const row = db.prepare(`SELECT photos FROM bank_statement_txns WHERE id=? AND statement_id=? AND kind='box'`).get(tid, sid);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let keys = [];
+    try { keys = JSON.parse(row.photos || '[]'); } catch { keys = []; }
+    if (!Array.isArray(keys)) keys = [];
+    (req.files || []).forEach(f => { const k = f.key || f.path; if (k) keys.push(k); });
+    keys = keys.slice(0, 24);
+    db.prepare(`UPDATE bank_statement_txns SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND statement_id=?`)
+      .run(JSON.stringify(keys), tid, sid);
+    res.json({ success: true, photos_urls: keys.map(k => `/uploads/${path.basename(k)}`) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Remove one photo from a box annotation (by its /uploads/<name> url or key).
+app.delete('/api/admin/bank-statements/:id/boxes/:txnId/photos', requireAdmin, blockManager, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id), tid = parseInt(req.params.txnId);
+    const target = path.basename(String((req.body && req.body.photo) || req.query.photo || ''));
+    if (!target) return res.status(400).json({ error: 'missing photo' });
+    const row = db.prepare(`SELECT photos FROM bank_statement_txns WHERE id=? AND statement_id=? AND kind='box'`).get(tid, sid);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let keys = [];
+    try { keys = JSON.parse(row.photos || '[]'); } catch { keys = []; }
+    const kept = (Array.isArray(keys) ? keys : []).filter(k => path.basename(k) !== target);
+    const removed = (Array.isArray(keys) ? keys : []).find(k => path.basename(k) === target);
+    db.prepare(`UPDATE bank_statement_txns SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND statement_id=?`)
+      .run(JSON.stringify(kept), tid, sid);
+    if (removed) storage.deleteObject(storage.keyFrom(removed, 'uploads')).catch(() => {});
+    res.json({ success: true, photos_urls: kept.map(k => `/uploads/${path.basename(k)}`) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
