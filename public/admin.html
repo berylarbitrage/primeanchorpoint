@@ -38862,12 +38862,13 @@ function bsWireBoxDrawing() {
       if (!_bsBoxMode) return;
       // Don't start a new box when interacting with an existing box or note.
       if (e.target.closest('.bs-box') || e.target.closest('.bs-ed-note')) return;
-      // Require every existing box to have an amount before drawing the next one.
-      const unfilled = _bsBoxList.find(b => !_bsAmtFilled(b));
+      // Require every existing box to have an amount AND a valid date before the next.
+      const unfilled = _bsBoxList.find(b => !_bsAmtFilled(b) || !_bsDateOk(b));
       if (unfilled) {
-        showToast('请先把上一个标注的「金额」填好，再画下一个', 'error', 2600);
+        const needAmt = !_bsAmtFilled(unfilled);
+        showToast(needAmt ? '请先把上一个标注的「金额」填好，再画下一个' : '请先把上一个标注的「日期」填好（且在账单周期内），再画下一个', 'error', 2800);
         bsFocusBoxItem(unfilled.id);
-        const el = document.querySelector(`.bs-box-item[data-id="${unfilled.id}"] .bs-bx-amt`);
+        const el = document.querySelector(`.bs-box-item[data-id="${unfilled.id}"] .${needAmt ? 'bs-bx-amt' : 'bs-bx-date'}`);
         if (el) el.focus();
         return;
       }
@@ -39122,16 +39123,20 @@ function _bsDateInRange(d) {
 function _bsRangeLabel() {
   return `${_bsEdRange.start || '…'} ~ ${_bsEdRange.end || '…'}`;
 }
-// Validate a box's transaction date against the statement period; mark red + message.
+// A date is "filled & valid": present and within the statement period (if set).
+function _bsDateOk(box) { return !!(box && box.txn_date) && _bsDateInRange(box.txn_date); }
+// Validate a box's transaction date (required + within statement period); mark red + message.
 function bsValidateBoxDates(id) {
   const box = _bsBoxList.find(b => b.id === id);
   const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
   if (!box || !item) return true;
   const el = item.querySelector('.bs-bx-date');
-  const bad = box.txn_date && !_bsDateInRange(box.txn_date);
+  const empty = !box.txn_date;
+  const outOfRange = box.txn_date && !_bsDateInRange(box.txn_date);
+  const bad = empty || outOfRange;
   if (el) { el.style.borderColor = bad ? '#dc2626' : 'var(--gray-200)'; el.style.background = bad ? '#fff5f5' : ''; }
   const errEl = item.querySelector('.bs-date-err');
-  if (errEl) errEl.textContent = bad ? `⚠️ 交易日期 ${box.txn_date} 不在账单周期（${_bsRangeLabel()}）内` : '';
+  if (errEl) errEl.textContent = outOfRange ? `⚠️ 交易日期 ${box.txn_date} 不在账单周期（${_bsRangeLabel()}）内` : '';
   return !bad;
 }
 // Live amount typing — keep state current + recolor (red until a non-zero amount).
