@@ -38260,7 +38260,14 @@ function _bsBoxSummary(boxes) {
     const isIn = b.direction === 'in';
     const dirLabel = isIn ? '收入' : '支出';
     const bg = isIn ? '#ecfdf5' : '#fef2f2', bd = isIn ? '#a7f3d0' : '#fecaca', fg = isIn ? '#047857' : '#b91c1c';
-    const payee = b.payee ? (String(b.payee).indexOf('员工:') === 0 ? '👷 ' + esc(String(b.payee).slice(3)) : esc(b.payee)) : '';
+    let payee = '';
+    if (b.payee) {
+      if (String(b.payee).indexOf('员工:') === 0) {
+        const rest = String(b.payee).slice(3); const pi = rest.indexOf('|');
+        const co = pi < 0 ? '' : rest.slice(0, pi); const nm = pi < 0 ? rest : rest.slice(pi + 1);
+        payee = '👷 ' + esc([co, nm].filter(Boolean).join(' · '));
+      } else { payee = esc(b.payee); }
+    }
     const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     const bits = [dirLabel]; if (payee) bits.push(payee); if (amt) bits.push('<b>' + amt + '</b>'); if (b.txn_date) bits.push(esc(b.txn_date));
     const reason = b.note ? esc(b.note) : '';
@@ -38710,7 +38717,11 @@ function _bsRenderBoxPanel() {
         <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value)" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
       <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (box.payee || ''))}</select>
-      <input type="text" class="bs-bx-emp" placeholder="员工姓名（可含公司，如 SLM GROUP - 张三）" value="${esc(_bsEmpName(box.payee))}" onchange="bsUpdateBoxField(${box.id},'payee', BS_EMP_PREFIX + this.value.trim())" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;display:${_bsIsEmp(box.payee) ? '' : 'none'}">
+      <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
+        <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
+        <input type="text" class="bs-bx-emp-name" placeholder="员工姓名" value="${esc(_bsEmpParse(box.payee).name)}" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
       <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.35rem">
         <span style="color:#94a3b8;font-size:.82rem">$</span>
         <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
@@ -38721,17 +38732,39 @@ function _bsRenderBoxPanel() {
 }
 
 function _bsIsEmp(payee) { return typeof payee === 'string' && payee.indexOf(BS_EMP_PREFIX) === 0; }
-function _bsEmpName(payee) { return _bsIsEmp(payee) ? payee.slice(BS_EMP_PREFIX.length) : ''; }
-// Payee <select> change: the 员工 option reveals a name input; others save directly.
+// Employee payee is stored as "员工:<company>|<name>" (legacy "员工:<name>" has no pipe).
+function _bsEmpParse(payee) {
+  if (!_bsIsEmp(payee)) return { co: '', name: '' };
+  const rest = payee.slice(BS_EMP_PREFIX.length);
+  const i = rest.indexOf('|');
+  return i < 0 ? { co: '', name: rest } : { co: rest.slice(0, i), name: rest.slice(i + 1) };
+}
+function _bsEmpJoin(co, name) { return BS_EMP_PREFIX + (co || '') + '|' + (name || ''); }
+// Company <select> options (used inside the 员工 sub-picker).
+function _bsCompanyOptions(current) {
+  const parts = ['<option value="">— 选择公司 —</option>'];
+  const names = _bsCompanies.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+// Payee <select> change: the 员工 option reveals a company picker + name input.
 function bsPayeeSelChange(id, sel) {
-  const emp = sel.closest('.bs-box-item').querySelector('.bs-bx-emp');
+  const wrap = sel.closest('.bs-box-item').querySelector('.bs-emp-wrap');
   if (sel.value === BS_PAYEE_EMP) {
-    if (emp) { emp.style.display = ''; emp.focus(); }
-    bsUpdateBoxField(id, 'payee', BS_EMP_PREFIX + (emp ? emp.value.trim() : ''));
+    if (wrap) { wrap.style.display = ''; const co = wrap.querySelector('.bs-bx-emp-co'); if (co) co.focus(); bsEmpUpdate(id, co); }
   } else {
-    if (emp) emp.style.display = 'none';
+    if (wrap) wrap.style.display = 'none';
     bsUpdateBoxField(id, 'payee', sel.value);
   }
+}
+// Save the combined "员工:公司|姓名" from the company select + name input.
+function bsEmpUpdate(id, el) {
+  const wrap = el.closest('.bs-emp-wrap');
+  if (!wrap) return;
+  const co = wrap.querySelector('.bs-bx-emp-co').value;
+  const name = wrap.querySelector('.bs-bx-emp-name').value.trim();
+  bsUpdateBoxField(id, 'payee', _bsEmpJoin(co, name));
 }
 async function bsUpdateBoxField(id, field, value) {
   const box = _bsBoxList.find(b => b.id === id);
