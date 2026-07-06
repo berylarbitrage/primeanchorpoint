@@ -38864,13 +38864,16 @@ function bsWireBoxDrawing() {
       if (!_bsBoxMode) return;
       // Don't start a new box when interacting with an existing box or note.
       if (e.target.closest('.bs-box') || e.target.closest('.bs-ed-note')) return;
-      // Require every existing box to have an amount AND a valid date before the next.
-      const unfilled = _bsBoxList.find(b => !_bsAmtFilled(b) || !_bsDateOk(b));
+      // Require amount, a valid date, and (for employee wages) 全额/部分 before the next.
+      const unfilled = _bsBoxList.find(b => !_bsAmtFilled(b) || !_bsDateOk(b) || !_bsPortionOk(b));
       if (unfilled) {
-        const needAmt = !_bsAmtFilled(unfilled);
-        showToast(needAmt ? '请先把上一个标注的「金额」填好，再画下一个' : '请先把上一个标注的「日期」填好（且在账单周期内），再画下一个', 'error', 2800);
+        let msg, cls;
+        if (!_bsAmtFilled(unfilled)) { msg = '请先把上一个标注的「金额」填好，再画下一个'; cls = 'bs-bx-amt'; }
+        else if (!_bsDateOk(unfilled)) { msg = '请先把上一个标注的「日期」填好（且在账单周期内），再画下一个'; cls = 'bs-bx-date'; }
+        else { msg = '请先选择上一个员工工资的「全额 / 部分」，再画下一个'; cls = 'bs-bx-portion'; }
+        showToast(msg, 'error', 2800);
         bsFocusBoxItem(unfilled.id);
-        const el = document.querySelector(`.bs-box-item[data-id="${unfilled.id}"] .${needAmt ? 'bs-bx-amt' : 'bs-bx-date'}`);
+        const el = document.querySelector(`.bs-box-item[data-id="${unfilled.id}"] .${cls}`);
         if (el) el.focus();
         return;
       }
@@ -39028,8 +39031,8 @@ function _bsRenderBoxPanel() {
       <div class="bs-income-wrap" style="display:${_bsWantsInvoice(box) ? '' : 'none'};background:#f0fdf4;border:1px dashed #bbf7d0;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#059669;margin-bottom:.3rem">Invoice / 账期</div>
         <div class="bs-portion-row" style="display:${_bsPayeeKind(box) === 'employee' ? '' : 'none'};margin-bottom:.3rem">
-          <select class="bs-bx-portion" onchange="bsUpdateBoxField(${box.id},'pay_portion',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
-            <option value="">— 全额 / 部分 —</option>
+          <select class="bs-bx-portion" onchange="bsUpdateBoxField(${box.id},'pay_portion',this.value);bsRecolorPortion(this)" style="width:100%;padding:.3rem .4rem;border:1px solid ${box.pay_portion ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${box.pay_portion ? 'background:#fff' : 'background:#fff5f5'}">
+            <option value="">— 全额 / 部分（必选）—</option>
             <option value="full"${box.pay_portion === 'full' ? ' selected' : ''}>全额 Full</option>
             <option value="partial"${box.pay_portion === 'partial' ? ' selected' : ''}>部分 Partial</option>
           </select>
@@ -39136,6 +39139,13 @@ function _bsRangeLabel() {
 }
 // A date is "filled & valid": present and within the statement period (if set).
 function _bsDateOk(box) { return !!(box && box.txn_date) && _bsDateInRange(box.txn_date); }
+// Full/Partial is required for employee wage boxes; N/A (always ok) otherwise.
+function _bsPortionOk(box) { return _bsPayeeKind(box) !== 'employee' || !!(box && box.pay_portion); }
+function bsRecolorPortion(el) {
+  const f = !!el.value;
+  el.style.borderColor = f ? 'var(--gray-200)' : '#dc2626';
+  el.style.background = f ? '' : '#fff5f5';
+}
 // Validate a box's transaction date (required + within statement period); mark red + message.
 function bsValidateBoxDates(id) {
   const box = _bsBoxList.find(b => b.id === id);
