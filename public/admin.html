@@ -38860,6 +38860,15 @@ function bsWireBoxDrawing() {
       if (!_bsBoxMode) return;
       // Don't start a new box when interacting with an existing box or note.
       if (e.target.closest('.bs-box') || e.target.closest('.bs-ed-note')) return;
+      // Require every existing box to have an amount before drawing the next one.
+      const unfilled = _bsBoxList.find(b => !_bsAmtFilled(b));
+      if (unfilled) {
+        showToast('请先把上一个标注的「金额」填好，再画下一个', 'error', 2600);
+        bsFocusBoxItem(unfilled.id);
+        const el = document.querySelector(`.bs-box-item[data-id="${unfilled.id}"] .bs-bx-amt`);
+        if (el) el.focus();
+        return;
+      }
       e.preventDefault();
       const rect = page.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
@@ -39024,7 +39033,7 @@ function _bsRenderBoxPanel() {
       </div>
       <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.35rem">
         <span style="color:#94a3b8;font-size:.82rem">$</span>
-        <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+        <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额（必填）" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" oninput="bsAmtInput(${box.id},this)" style="flex:1;padding:.32rem .4rem;border:1px solid ${_bsAmtFilled(box) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${_bsAmtFilled(box) ? '' : 'background:#fff5f5'}">
       </div>
       <input type="text" class="bs-bx-note" placeholder="原因 / 备注${_bsNoteSatisfied(box) ? '（选填）' : '（需补上）'}" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="bsNoteInput(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid ${_bsNoteSatisfied(box) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;margin-bottom:.4rem;${_bsNoteSatisfied(box) ? '' : 'background:#fff5f5'}">
       <div class="bs-bx-photozone" ondragover="bsPhotoDragOver(event,this)" ondragleave="bsPhotoDragLeave(event,this)" ondrop="bsPhotoDrop(event,${box.id},this)" style="border:1px dashed var(--gray-300);border-radius:6px;padding:.4rem .5rem;transition:background .15s,border-color .15s">
@@ -39093,6 +39102,16 @@ function bsEmpUpdate(id, el) {
   const co = wrap.querySelector('.bs-bx-emp-co').value;
   const name = wrap.querySelector('.bs-bx-emp-name').value.trim();
   bsUpdateBoxField(id, 'payee', _bsEmpJoin(co, name));
+}
+// A box's amount counts as filled only when it's a non-zero number.
+function _bsAmtFilled(box) { const v = parseFloat(box && box.amount); return !isNaN(v) && v !== 0; }
+// Live amount typing — keep state current + recolor (red until a non-zero amount).
+function bsAmtInput(id, el) {
+  const box = _bsBoxList.find(b => b.id === id);
+  if (box) box.amount = el.value;
+  const f = !!el.value.trim() && parseFloat(el.value) !== 0 && !isNaN(parseFloat(el.value));
+  el.style.borderColor = f ? 'var(--gray-200)' : '#dc2626';
+  el.style.background = f ? '' : '#fff5f5';
 }
 // Live note typing — update state + recolor without saving on each keystroke.
 function bsNoteInput(id, el) {
