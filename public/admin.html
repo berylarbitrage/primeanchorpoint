@@ -38779,11 +38779,14 @@ function _bsRenderBoxPanel() {
         <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
       <input type="text" class="bs-bx-note" placeholder="原因 / 备注（需补上）" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="var f=!!this.value.trim();this.style.borderColor=f?'var(--gray-200)':'#dc2626';this.style.background=f?'':'#fff5f5'" style="width:100%;padding:.32rem .4rem;border:1px solid ${(box.note && box.note.trim()) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;margin-bottom:.4rem;${(box.note && box.note.trim()) ? '' : 'background:#fff5f5'}">
-      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
-        <span style="font-size:.75rem;color:var(--gray-500)">📷 照片${(box.photos_urls && box.photos_urls.length) ? ' (' + box.photos_urls.length + ')' : ''}</span>
-        <label style="cursor:pointer;font-size:.75rem;color:#2563eb;font-weight:600">＋ 加照片<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="bsBoxUploadPhotos(${box.id}, this.files)"></label>
+      <div class="bs-bx-photozone" ondragover="bsPhotoDragOver(event,this)" ondragleave="bsPhotoDragLeave(event,this)" ondrop="bsPhotoDrop(event,${box.id},this)" style="border:1px dashed var(--gray-300);border-radius:6px;padding:.4rem .5rem;transition:background .15s,border-color .15s">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem;flex-wrap:wrap">
+          <span style="font-size:.75rem;color:var(--gray-500)">📷 照片${(box.photos_urls && box.photos_urls.length) ? ' (' + box.photos_urls.length + ')' : ''}</span>
+          <label style="cursor:pointer;font-size:.75rem;color:#2563eb;font-weight:600">＋ 加照片<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="bsBoxUploadPhotos(${box.id}, this.files)"></label>
+          <span style="font-size:.72rem;color:var(--gray-400)">· 或把图片拖到这里</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px"><img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);cursor:zoom-in"><button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px"><img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);cursor:zoom-in"><button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
     </div>`;
   }).join('');
 }
@@ -38842,6 +38845,15 @@ async function bsUpdateBoxField(id, field, value) {
   }
 }
 
+function bsPhotoDragOver(e, el) { e.preventDefault(); e.stopPropagation(); el.style.background = '#eff6ff'; el.style.borderColor = '#2563eb'; }
+function bsPhotoDragLeave(e, el) { e.preventDefault(); e.stopPropagation(); el.style.background = ''; el.style.borderColor = 'var(--gray-300)'; }
+function bsPhotoDrop(e, id, el) {
+  e.preventDefault(); e.stopPropagation();
+  el.style.background = ''; el.style.borderColor = 'var(--gray-300)';
+  const files = Array.from((e.dataTransfer && e.dataTransfer.files) || [])
+    .filter(f => f && (/^image\//.test(f.type) || f.type === 'application/pdf' || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(f.name || '')));
+  if (files.length) bsBoxUploadPhotos(id, files);
+}
 async function bsBoxUploadPhotos(id, files) {
   if (!files || !files.length) return;
   const fd = new FormData();
