@@ -38272,6 +38272,7 @@ function _bsBoxExtraInfo(b) {
   if (kind === 'employee' || (kind === 'company' && b.direction === 'in')) {
     const bits = [];
     if (kind !== 'employee' && b.purpose) bits.push(esc(b.purpose));
+    if (kind === 'employee' && b.pay_portion) bits.push(b.pay_portion === 'full' ? '全额 Full' : '部分 Partial');
     if (b.invoice_number) bits.push('Inv ' + esc(b.invoice_number));
     if (b.period_start || b.period_end) bits.push('账期 ' + esc((b.period_start || '') + '~' + (b.period_end || '')));
     return bits.join('<br>');
@@ -38664,6 +38665,7 @@ function _bsBoxLabelText(box, num) {
   const l2 = [];
   if (box.txn_date) l2.push(box.txn_date);
   if (box.purpose) l2.push(box.purpose);
+  if (box.pay_portion) l2.push(box.pay_portion === 'full' ? '全额' : '部分');
   if (box.invoice_number) l2.push('Inv ' + box.invoice_number);
   if (box.period_start || box.period_end) l2.push((box.period_start || '') + '~' + (box.period_end || ''));
   if (box.note) l2.push(box.note);
@@ -39013,7 +39015,7 @@ function _bsRenderBoxPanel() {
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
         <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
-        <input type="text" class="bs-bx-emp-name" placeholder="员工姓名" value="${esc(_bsEmpParse(box.payee).name)}" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+        <input type="text" class="bs-bx-emp-name" placeholder="员工姓名（多个用逗号隔开）" value="${esc(_bsEmpParse(box.payee).name)}" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
       <div class="bs-fee-wrap" style="display:${box.payee === BS_PAYEE_BANKFEE ? '' : 'none'};background:#fffbeb;border:1px dashed #fde68a;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#92400e;margin-bottom:.3rem">银行费用类型</div>
@@ -39025,6 +39027,13 @@ function _bsRenderBoxPanel() {
       </div>
       <div class="bs-income-wrap" style="display:${_bsWantsInvoice(box) ? '' : 'none'};background:#f0fdf4;border:1px dashed #bbf7d0;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#059669;margin-bottom:.3rem">Invoice / 账期</div>
+        <div class="bs-portion-row" style="display:${_bsPayeeKind(box) === 'employee' ? '' : 'none'};margin-bottom:.3rem">
+          <select class="bs-bx-portion" onchange="bsUpdateBoxField(${box.id},'pay_portion',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
+            <option value="">— 全额 / 部分 —</option>
+            <option value="full"${box.pay_portion === 'full' ? ' selected' : ''}>全额 Full</option>
+            <option value="partial"${box.pay_portion === 'partial' ? ' selected' : ''}>部分 Partial</option>
+          </select>
+        </div>
         <div class="bs-purpose-row" style="display:${(isIn && _bsPayeeKind(box) === 'company') ? '' : 'none'}">
           <input type="text" class="bs-bx-purpose" list="bsPurposeList" placeholder="用途（如：劳务工资）" value="${esc(box.purpose || '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
         </div>
@@ -39066,10 +39075,12 @@ function bsUpdateBoxSections(id) {
   const pw = item.querySelector('.bs-personal-wrap');
   const iw = item.querySelector('.bs-income-wrap');
   const pr = item.querySelector('.bs-purpose-row');
+  const por = item.querySelector('.bs-portion-row');
   if (fw) fw.style.display = kind === 'bankfee' ? '' : 'none';
   if (pw) pw.style.display = kind === 'personal' ? '' : 'none';
   if (iw) iw.style.display = _bsWantsInvoice(box) ? '' : 'none';
   if (pr) pr.style.display = (kind === 'company' && isIn) ? '' : 'none'; // 用途 only for company income
+  if (por) por.style.display = kind === 'employee' ? '' : 'none';        // 全额/部分 only for employees
 }
 
 function _bsIsEmp(payee) { return typeof payee === 'string' && payee.indexOf(BS_EMP_PREFIX) === 0; }
