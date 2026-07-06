@@ -38599,6 +38599,8 @@ async function bsOpenEditor(id) {
   bsEnsureEditor();
   _bsEdId = id;
   _bsEdName = _bsPdfNames[id] || 'statement.pdf';
+  const stmt = _bsStmtById[id] || {};
+  _bsEdRange = { start: stmt.period_start || '', end: stmt.period_end || '' };
   document.getElementById('bsEdTitle').textContent = '✏️ ' + _bsEdName;
   document.getElementById('bsEditorModal').style.display = 'block';
   const pagesEl = document.getElementById('bsEdPages');
@@ -39003,8 +39005,9 @@ function _bsRenderBoxPanel() {
           <option value="out"${!isIn ? ' selected' : ''}>支出</option>
           <option value="in"${isIn ? ' selected' : ''}>收入</option>
         </select>
-        <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value)" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+        <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value);bsValidateBoxDates(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
+      <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
       <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (box.payee || ''))}</select>
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
@@ -39049,6 +39052,7 @@ function _bsRenderBoxPanel() {
     + '<datalist id="bsPurposeList"><option value="劳务工资"></option></datalist>'
     + '<datalist id="bsFeeList">' + BS_FEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsPersonalCatList">' + BS_PERSONAL_CATS.map(c => `<option value="${esc(c)}"></option>`).join('') + '</datalist>';
+  _bsBoxList.forEach(b => bsValidateBoxDates(b.id)); // flag out-of-period transaction dates
 }
 // Show/hide the fee / personal / invoice sub-sections based on payee + direction.
 function bsUpdateBoxSections(id) {
@@ -39105,6 +39109,31 @@ function bsEmpUpdate(id, el) {
 }
 // A box's amount counts as filled only when it's a non-zero number.
 function _bsAmtFilled(box) { const v = parseFloat(box && box.amount); return !isNaN(v) && v !== 0; }
+// Statement period the current editor's annotations must fall within (YYYY-MM-DD).
+let _bsEdRange = { start: '', end: '' };
+function _bsDateInRange(d) {
+  if (!d) return true;
+  const s = _bsEdRange.start, e = _bsEdRange.end;
+  if (!s && !e) return true;              // statement period not set → no check
+  if (s && d < s) return false;
+  if (e && d > e) return false;
+  return true;
+}
+function _bsRangeLabel() {
+  return `${_bsEdRange.start || '…'} ~ ${_bsEdRange.end || '…'}`;
+}
+// Validate a box's transaction date against the statement period; mark red + message.
+function bsValidateBoxDates(id) {
+  const box = _bsBoxList.find(b => b.id === id);
+  const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+  if (!box || !item) return true;
+  const el = item.querySelector('.bs-bx-date');
+  const bad = box.txn_date && !_bsDateInRange(box.txn_date);
+  if (el) { el.style.borderColor = bad ? '#dc2626' : 'var(--gray-200)'; el.style.background = bad ? '#fff5f5' : ''; }
+  const errEl = item.querySelector('.bs-date-err');
+  if (errEl) errEl.textContent = bad ? `⚠️ 交易日期 ${box.txn_date} 不在账单周期（${_bsRangeLabel()}）内` : '';
+  return !bad;
+}
 // Live amount typing — keep state current + recolor (red until a non-zero amount).
 function bsAmtInput(id, el) {
   const box = _bsBoxList.find(b => b.id === id);
