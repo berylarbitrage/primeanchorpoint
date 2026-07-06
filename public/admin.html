@@ -38275,11 +38275,21 @@ function _bsPayeeDisplay(payee) {
   }
   return p;
 }
+// A note is "satisfied" (no red) if written, OR the other structured fields already
+// explain the transaction: a bank-fee type is chosen, or all income details are filled.
+function _bsNoteSatisfied(box) {
+  if (box.note && String(box.note).trim()) return true;
+  if (box.payee === BS_PAYEE_BANKFEE && box.purpose && String(box.purpose).trim()) return true;
+  if (box.direction === 'in'
+    && String(box.purpose || '').trim() && String(box.invoice_number || '').trim()
+    && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
+  return false;
+}
 // Right-side cell: a compact button (count + missing-reason warning). Click to open details.
 function _bsBoxSummary(s) {
   const boxes = Array.isArray(s.boxes) ? s.boxes : [];
   if (!boxes.length) return '<span style="color:var(--gray-300);font-size:.8rem">还没有标注</span>';
-  const missing = boxes.filter(b => !(b.note && String(b.note).trim())).length;
+  const missing = boxes.filter(b => !_bsNoteSatisfied(b)).length;
   const warn = missing ? `<span style="color:#dc2626;font-weight:700" title="${missing} 条待补原因">⚠️ ${missing}</span>` : '';
   return `<button onclick="bsOpenBoxDetail(${s.id})" style="display:inline-flex;gap:.4rem;align-items:center;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:999px;padding:.2rem .75rem;font-size:.8rem;cursor:pointer;white-space:nowrap">🧾 ${boxes.length} 条标注 ${warn}<span style="opacity:.6">点开查看</span></button>`;
 }
@@ -38298,7 +38308,8 @@ function bsOpenBoxDetail(id) {
       const isIn = b.direction === 'in';
       const col = isIn ? '#047857' : '#b91c1c';
       const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
-      const reason = (b.note && String(b.note).trim()) ? esc(b.note) : '<span style="color:#dc2626">⚠️ 待补</span>';
+      const reason = (b.note && String(b.note).trim()) ? esc(b.note)
+        : (_bsNoteSatisfied(b) ? '<span style="color:var(--gray-300)">—</span>' : '<span style="color:#dc2626">⚠️ 待补</span>');
       const photos = (b.photos_urls && b.photos_urls.length)
         ? b.photos_urls.map(u => `<img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="width:38px;height:38px;object-fit:cover;border-radius:5px;border:1px solid var(--gray-200);cursor:zoom-in;margin:1px">`).join('')
         : '<span style="color:var(--gray-300)">—</span>';
@@ -38796,7 +38807,7 @@ function _bsRenderBoxPanel() {
         <span style="color:#94a3b8;font-size:.82rem">$</span>
         <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
-      <input type="text" class="bs-bx-note" placeholder="原因 / 备注（需补上）" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="var f=!!this.value.trim();this.style.borderColor=f?'var(--gray-200)':'#dc2626';this.style.background=f?'':'#fff5f5'" style="width:100%;padding:.32rem .4rem;border:1px solid ${(box.note && box.note.trim()) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;margin-bottom:.4rem;${(box.note && box.note.trim()) ? '' : 'background:#fff5f5'}">
+      <input type="text" class="bs-bx-note" placeholder="原因 / 备注${_bsNoteSatisfied(box) ? '（选填）' : '（需补上）'}" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="bsNoteInput(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid ${_bsNoteSatisfied(box) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;margin-bottom:.4rem;${_bsNoteSatisfied(box) ? '' : 'background:#fff5f5'}">
       <div class="bs-bx-photozone" ondragover="bsPhotoDragOver(event,this)" ondragleave="bsPhotoDragLeave(event,this)" ondrop="bsPhotoDrop(event,${box.id},this)" style="border:1px dashed var(--gray-300);border-radius:6px;padding:.4rem .5rem;transition:background .15s,border-color .15s">
         <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem;flex-wrap:wrap">
           <span style="font-size:.75rem;color:var(--gray-500)">📷 照片${(box.photos_urls && box.photos_urls.length) ? ' (' + box.photos_urls.length + ')' : ''}</span>
@@ -38859,6 +38870,24 @@ function bsEmpUpdate(id, el) {
   const name = wrap.querySelector('.bs-bx-emp-name').value.trim();
   bsUpdateBoxField(id, 'payee', _bsEmpJoin(co, name));
 }
+// Live note typing — update state + recolor without saving on each keystroke.
+function bsNoteInput(id, el) {
+  const box = _bsBoxList.find(b => b.id === id);
+  if (box) box.note = el.value;
+  bsRefreshNoteState(id);
+}
+// Recolor the note field (red only when nothing yet explains the transaction).
+function bsRefreshNoteState(id) {
+  const box = _bsBoxList.find(b => b.id === id);
+  const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+  if (!box || !item) return;
+  const el = item.querySelector('.bs-bx-note');
+  if (!el) return;
+  const ok = _bsNoteSatisfied(box);
+  el.style.borderColor = ok ? 'var(--gray-200)' : '#dc2626';
+  el.style.background = ok ? '' : '#fff5f5';
+  el.placeholder = ok ? '原因 / 备注（选填）' : '原因 / 备注（需补上）';
+}
 async function bsUpdateBoxField(id, field, value) {
   const box = _bsBoxList.find(b => b.id === id);
   if (!box) return;
@@ -38867,6 +38896,8 @@ async function bsUpdateBoxField(id, field, value) {
     await api(`/admin/bank-statements/${_bsEdId}/boxes/${id}`, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
     const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
   } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+  // Filling fee type / income details can satisfy the note requirement — recolor it.
+  bsRefreshNoteState(id);
   // Direction change recolors the overlay + panel border — refresh just those, keep focus.
   if (field === 'direction') {
     const isIn = value === 'in';
