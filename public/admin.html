@@ -38257,9 +38257,13 @@ function _bsBoxSummary(boxes) {
     return '<span style="color:var(--gray-300);font-size:.8rem">还没有标注</span>';
   }
   const chips = boxes.map(b => {
-    const d = b.txn_date ? esc(b.txn_date) : '—';
+    const isIn = b.direction === 'in';
+    const dirLabel = isIn ? '收入' : '支出';
+    const bg = isIn ? '#ecfdf5' : '#fef2f2', bd = isIn ? '#a7f3d0' : '#fecaca', fg = isIn ? '#047857' : '#b91c1c';
+    const payee = b.payee ? esc(b.payee) : '';
     const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
-    return `<span style="display:inline-flex;gap:.3rem;align-items:center;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:999px;padding:.1rem .5rem;font-size:.76rem;white-space:nowrap">📅 ${d}${amt ? ' · <b>' + amt + '</b>' : ''}</span>`;
+    const bits = [dirLabel]; if (payee) bits.push(payee); if (amt) bits.push('<b>' + amt + '</b>'); if (b.txn_date) bits.push(esc(b.txn_date));
+    return `<span style="display:inline-flex;gap:.3rem;align-items:center;background:${bg};border:1px solid ${bd};color:${fg};border-radius:999px;padding:.1rem .55rem;font-size:.76rem;white-space:nowrap">${bits.join(' · ')}</span>`;
   }).join('');
   return `<div style="display:flex;flex-wrap:wrap;gap:.3rem;justify-content:flex-end">${chips}</div>`;
 }
@@ -38488,20 +38492,18 @@ function bsEnsureEditor() {
       '<div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--gray-200)">' +
         '<strong id="bsEdTitle" style="font-size:.92rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">编辑对账单</strong>' +
         '<span id="bsEdStatus" style="font-size:.78rem;color:var(--gray-400);white-space:nowrap"></span>' +
-        '<button id="bsBoxModeBtn" class="btn btn-sm btn-outline" onclick="bsToggleBoxMode()" title="开启后在 PDF 上拖动画框，标注日期和金额">🔲 框选标注</button>' +
-        '<button class="btn btn-sm btn-outline" onclick="bsAddBlankNote()">+ 空白备注</button>' +
-        '<button class="btn btn-sm btn-outline" onclick="bsEditorExport(\'download\')">⬇️ 下载</button>' +
-        '<button class="btn btn-sm btn-green" onclick="bsEditorExport(\'store\')">💾 存为新档</button>' +
+        '<button id="bsBoxModeBtn" class="btn btn-sm btn-outline" onclick="bsToggleBoxMode()" title="开启后在 PDF 上拖动画框，右侧填写付款公司/金额/收支">🔲 框选</button>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsDownloadOriginal()">⬇️ 下载 PDF</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsCloseEditor()">✕ 关闭</button>' +
       '</div>' +
       '<div style="flex:1;display:flex;overflow:hidden">' +
         '<div id="bsEdPages" style="flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;align-items:center;gap:1rem"></div>' +
-        '<div style="width:300px;border-left:1px solid var(--gray-200);background:#fff;display:flex;flex-direction:column">' +
+        '<div style="width:340px;border-left:1px solid var(--gray-200);background:#fff;display:flex;flex-direction:column">' +
           '<div style="padding:.55rem .65rem;border-bottom:1px solid var(--gray-100)">' +
-            '<div style="font-weight:700;font-size:.84rem;margin-bottom:.35rem">点「贴」→ 加到当前页，再拖到对应交易旁</div>' +
-            '<input id="bsEdSearch" placeholder="搜 工人 / 金额 / 公司" style="width:100%;padding:.35rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" oninput="bsEdRenderRecs()">' +
+            '<div style="font-weight:700;font-size:.85rem">🧾 标注（付给公司 / 金额 / 收支）</div>' +
+            '<div style="font-size:.76rem;color:var(--gray-400);margin-top:.2rem">开启「框选」后在左侧 PDF 上拖动画框，标注信息在这里填写。</div>' +
           '</div>' +
-          '<div id="bsEdRecs" style="flex:1;overflow:auto;padding:.35rem .45rem"></div>' +
+          '<div id="bsBoxPanel" style="flex:1;overflow:auto;padding:.5rem .55rem"></div>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -38528,9 +38530,8 @@ async function bsOpenEditor(id) {
     await bsRenderPages(_bsEdBytes);
     bsWireBoxDrawing();
     await bsLoadBoxes();
+    bsSetBoxMode(true); // start ready to draw
     setStatus('');
-    if (!(_bsRecords && _bsRecords.length)) { try { await loadBsRecords(); } catch (_) {} }
-    bsEdRenderRecs();
   } catch (e) {
     pagesEl.innerHTML = '<div style="color:var(--red);padding:2rem">打开失败：' + esc(e.message || String(e)) + '</div>';
     setStatus('');
@@ -38545,9 +38546,10 @@ function bsCloseEditor() {
   try { loadBsPdfs(); } catch (_) {}
 }
 
-// ── Box annotations: drag a rectangle on a page → label date + amount ──
-function bsToggleBoxMode() {
-  _bsBoxMode = !_bsBoxMode;
+// ── Box annotations: draw a rectangle on the PDF, fill details in the right panel ──
+let _bsBoxList = [];   // current statement's boxes, kept in sync with the panel + overlays
+function bsSetBoxMode(on) {
+  _bsBoxMode = !!on;
   const btn = document.getElementById('bsBoxModeBtn');
   if (btn) {
     btn.style.background = _bsBoxMode ? '#2563eb' : '';
@@ -38556,7 +38558,10 @@ function bsToggleBoxMode() {
   }
   const cont = document.getElementById('bsEdPages');
   if (cont) cont.querySelectorAll('.bs-ed-page').forEach(p => { p.style.cursor = _bsBoxMode ? 'crosshair' : ''; });
-  if (_bsBoxMode) showToast('框选已开启：在 PDF 上拖动画框', 'success', 2000);
+}
+function bsToggleBoxMode() {
+  bsSetBoxMode(!_bsBoxMode);
+  if (_bsBoxMode) showToast('框选已开启：在 PDF 上拖动画框', 'success', 1800);
 }
 
 function bsWireBoxDrawing() {
@@ -38591,12 +38596,16 @@ function bsWireBoxDrawing() {
         if (w < 12 || h < 12) return; // ignore accidental clicks
         const pw = page.clientWidth, ph = page.clientHeight;
         const pageNum = parseInt(page.dataset.page) || 1;
-        const box = { page: pageNum, box_x: l / pw, box_y: t / ph, box_w: w / pw, box_h: h / ph, txn_date: '', amount: 0 };
+        const box = { page: pageNum, box_x: l / pw, box_y: t / ph, box_w: w / pw, box_h: h / ph, txn_date: '', amount: 0, payee: '', direction: 'out' };
         try {
           const r = await api(`/admin/bank-statements/${_bsEdId}/boxes`, { method: 'POST', body: JSON.stringify(box) });
           if (!r || !r.id) throw new Error(r && r.error || '保存失败');
           box.id = r.id;
-          _bsRenderBox(page, box, true);
+          _bsBoxList.push(box);
+          bsRenderAllBoxes();
+          // Focus the new row's payee field so the user can type the company.
+          const item = document.querySelector(`.bs-box-item[data-id="${box.id}"] .bs-bx-payee`);
+          if (item) { item.focus(); item.scrollIntoView({ block: 'nearest' }); }
         } catch (err) { showToast('保存框失败：' + (err.message || err), 'error'); }
       };
       document.addEventListener('pointermove', move);
@@ -38605,55 +38614,114 @@ function bsWireBoxDrawing() {
   });
 }
 
-async function bsLoadBoxes() {
-  let boxes = [];
-  try { boxes = await api(`/admin/bank-statements/${_bsEdId}/boxes`) || []; } catch (_) { boxes = []; }
-  if (!Array.isArray(boxes)) boxes = [];
-  const cont = document.getElementById('bsEdPages');
-  if (!cont) return;
-  const pages = {};
-  cont.querySelectorAll('.bs-ed-page').forEach(p => { pages[parseInt(p.dataset.page)] = p; });
-  boxes.forEach(b => { const pg = pages[b.page || 1]; if (pg) _bsRenderBox(pg, b, false); });
+function bsDownloadOriginal() {
+  if (!_bsEdBytes) { showToast('PDF 未就绪', 'error'); return; }
+  const url = URL.createObjectURL(new Blob([_bsEdBytes], { type: 'application/pdf' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = _bsEdName || 'statement.pdf';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-function _bsRenderBox(page, box, focus) {
+async function bsLoadBoxes() {
+  try { _bsBoxList = await api(`/admin/bank-statements/${_bsEdId}/boxes`) || []; } catch (_) { _bsBoxList = []; }
+  if (!Array.isArray(_bsBoxList)) _bsBoxList = [];
+  bsRenderAllBoxes();
+}
+
+// Redraw all on-PDF rectangles (numbered) + rebuild the right-side panel.
+function bsRenderAllBoxes() {
+  const cont = document.getElementById('bsEdPages');
+  if (!cont) return;
+  cont.querySelectorAll('.bs-box').forEach(e => e.remove());
+  _bsBoxList.sort((a, b) => (a.page - b.page) || (a.box_y - b.box_y) || (a.id - b.id));
+  const pages = {};
+  cont.querySelectorAll('.bs-ed-page').forEach(p => { pages[parseInt(p.dataset.page)] = p; });
+  _bsBoxList.forEach((box, i) => { const pg = pages[box.page || 1]; if (pg) _bsRenderBoxOverlay(pg, box, i + 1); });
+  _bsRenderBoxPanel();
+}
+
+// A numbered rectangle on the page (no inputs overlapping the PDF content).
+function _bsRenderBoxOverlay(page, box, num) {
   const pw = page.clientWidth, ph = page.clientHeight;
+  const isIn = box.direction === 'in';
+  const color = isIn ? '#059669' : '#dc2626';
   const el = document.createElement('div');
   el.className = 'bs-box';
   el.dataset.id = box.id;
   el.style.cssText = `position:absolute;left:${box.box_x * pw}px;top:${box.box_y * ph}px;width:${box.box_w * pw}px;height:${box.box_h * ph}px;` +
-    'border:2px solid #2563eb;background:rgba(37,99,235,.08);box-sizing:border-box;z-index:6';
-  const bar = document.createElement('div');
-  bar.style.cssText = 'position:absolute;left:-2px;top:-30px;display:flex;gap:3px;align-items:center;background:#fff;border:1px solid #93c5fd;border-radius:6px;padding:2px 4px;box-shadow:0 1px 5px rgba(0,0,0,.18);white-space:nowrap;z-index:9';
-  bar.innerHTML =
-    '<input type="date" class="bs-box-date" style="font-size:11px;border:1px solid #cbd5e1;border-radius:4px;padding:1px 3px">' +
-    '<span style="color:#94a3b8;font-size:11px">$</span>' +
-    '<input type="number" class="bs-box-amt" placeholder="金额" step="0.01" style="width:74px;font-size:11px;border:1px solid #cbd5e1;border-radius:4px;padding:1px 3px">' +
-    '<button class="bs-box-del" title="删除框" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:12px;padding:0 5px;line-height:18px">✕</button>';
-  el.appendChild(bar);
-  const dateI = bar.querySelector('.bs-box-date');
-  const amtI = bar.querySelector('.bs-box-amt');
-  dateI.value = box.txn_date || '';
-  amtI.value = (box.amount != null && box.amount !== 0) ? box.amount : '';
-  const save = async () => {
-    try {
-      await api(`/admin/bank-statements/${_bsEdId}/boxes/${box.id}`, {
-        method: 'PUT', body: JSON.stringify({ txn_date: dateI.value, amount: amtI.value || 0 })
-      });
-      const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
-    } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
-  };
-  dateI.addEventListener('change', save);
-  amtI.addEventListener('change', save);
-  // Stop drags on the controls from starting a new rubber-band box.
-  bar.addEventListener('pointerdown', e => e.stopPropagation());
-  bar.querySelector('.bs-box-del').addEventListener('click', async () => {
-    if (!await showConfirm('删除这个标注框？', { danger: true, confirmLabel: '删除' })) return;
-    try { await api(`/admin/bank-statements/${_bsEdId}/boxes/${box.id}`, { method: 'DELETE' }); el.remove(); }
-    catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
-  });
+    `border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'};box-sizing:border-box;z-index:6;cursor:pointer`;
+  el.innerHTML = `<span style="position:absolute;left:-2px;top:-18px;background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px">${num}</span>`;
+  el.onclick = () => bsFocusBoxItem(box.id);
   page.appendChild(el);
-  if (focus) dateI.focus();
+}
+
+// The right-side list where each box's details are entered.
+function _bsRenderBoxPanel() {
+  const panel = document.getElementById('bsBoxPanel');
+  if (!panel) return;
+  if (!_bsBoxList.length) {
+    panel.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.6rem .2rem">还没有标注。开启「框选」后在左侧 PDF 上拖动画框，这里会出现一条可填写的记录。</div>';
+    return;
+  }
+  panel.innerHTML = _bsBoxList.map((box, i) => {
+    const isIn = box.direction === 'in';
+    const color = isIn ? '#059669' : '#dc2626';
+    return `<div class="bs-box-item" data-id="${box.id}" style="border:1px solid var(--gray-200);border-left:3px solid ${color};border-radius:8px;padding:.5rem .55rem;margin-bottom:.5rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.35rem">
+        <span style="font-weight:700;font-size:.82rem;color:${color}">#${i + 1} · 第 ${box.page || 1} 页</span>
+        <button onclick="bsDeleteBox(${box.id})" title="删除" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:.8rem;padding:.1rem .45rem">🗑 删除</button>
+      </div>
+      <div style="display:flex;gap:.3rem;margin-bottom:.35rem">
+        <select class="bs-bx-dir" onchange="bsUpdateBoxField(${box.id},'direction',this.value)" style="flex:0 0 auto;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+          <option value="out"${!isIn ? ' selected' : ''}>支出</option>
+          <option value="in"${isIn ? ' selected' : ''}>收入</option>
+        </select>
+        <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value)" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+      </div>
+      <input type="text" class="bs-bx-payee" placeholder="付给哪个公司 / 对方" value="${esc(box.payee || '')}" onchange="bsUpdateBoxField(${box.id},'payee',this.value)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem">
+      <div style="display:flex;align-items:center;gap:.3rem">
+        <span style="color:#94a3b8;font-size:.82rem">$</span>
+        <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function bsUpdateBoxField(id, field, value) {
+  const box = _bsBoxList.find(b => b.id === id);
+  if (!box) return;
+  box[field] = value;
+  try {
+    await api(`/admin/bank-statements/${_bsEdId}/boxes/${id}`, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+    const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
+  } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+  // Direction change recolors the overlay + panel border — refresh just those, keep focus.
+  if (field === 'direction') {
+    const isIn = value === 'in';
+    const color = isIn ? '#059669' : '#dc2626';
+    const ov = document.querySelector(`.bs-box[data-id="${id}"]`);
+    if (ov) { ov.style.borderColor = color; ov.style.background = isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'; const n = ov.querySelector('span'); if (n) n.style.background = color; }
+    const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+    if (item) item.style.borderLeftColor = color;
+  }
+}
+
+async function bsDeleteBox(id) {
+  if (!await showConfirm('删除这个标注？', { danger: true, confirmLabel: '删除' })) return;
+  try { await api(`/admin/bank-statements/${_bsEdId}/boxes/${id}`, { method: 'DELETE' }); } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); return; }
+  _bsBoxList = _bsBoxList.filter(b => b.id !== id);
+  bsRenderAllBoxes();
+}
+
+// Clicking a rectangle scrolls to + flashes its panel row.
+function bsFocusBoxItem(id) {
+  const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+  if (!item) return;
+  item.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const prev = item.style.boxShadow;
+  item.style.boxShadow = '0 0 0 3px rgba(37,99,235,.35)';
+  setTimeout(() => { item.style.boxShadow = prev; }, 1000);
 }
 
 async function bsRenderPages(bytes) {
