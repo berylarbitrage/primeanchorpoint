@@ -38260,7 +38260,7 @@ function _bsBoxSummary(boxes) {
     const isIn = b.direction === 'in';
     const dirLabel = isIn ? '收入' : '支出';
     const bg = isIn ? '#ecfdf5' : '#fef2f2', bd = isIn ? '#a7f3d0' : '#fecaca', fg = isIn ? '#047857' : '#b91c1c';
-    const payee = b.payee ? esc(b.payee) : '';
+    const payee = b.payee ? (String(b.payee).indexOf('员工:') === 0 ? '👷 ' + esc(String(b.payee).slice(3)) : esc(b.payee)) : '';
     const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     const bits = [dirLabel]; if (payee) bits.push(payee); if (amt) bits.push('<b>' + amt + '</b>'); if (b.txn_date) bits.push(esc(b.txn_date));
     const reason = b.note ? esc(b.note) : '';
@@ -38564,14 +38564,17 @@ async function bsEnsureCompanies() {
 }
 // Options for the payee <select>: 银行费用 + people + existing companies
 // (+ keep any custom current value that isn't in those lists).
+const BS_PAYEE_EMP = '__emp__';   // sentinel: pay a named company employee
+const BS_EMP_PREFIX = '员工:';     // stored payee for an employee = prefix + name
 function _bsPayeeOptions(current) {
   const opt = n => `<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`;
   const parts = [`<option value="">— 选择付给谁 —</option>`,
-    `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`];
+    `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`,
+    `<option value="${BS_PAYEE_EMP}"${current === BS_PAYEE_EMP ? ' selected' : ''}>👷 公司员工（填姓名）</option>`];
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_EMP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
@@ -38706,7 +38709,8 @@ function _bsRenderBoxPanel() {
         </select>
         <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value)" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
-      <select class="bs-bx-payee" onchange="bsUpdateBoxField(${box.id},'payee',this.value)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(box.payee || '')}</select>
+      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (box.payee || ''))}</select>
+      <input type="text" class="bs-bx-emp" placeholder="员工姓名（可含公司，如 SLM GROUP - 张三）" value="${esc(_bsEmpName(box.payee))}" onchange="bsUpdateBoxField(${box.id},'payee', BS_EMP_PREFIX + this.value.trim())" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;display:${_bsIsEmp(box.payee) ? '' : 'none'}">
       <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.35rem">
         <span style="color:#94a3b8;font-size:.82rem">$</span>
         <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
@@ -38716,6 +38720,19 @@ function _bsRenderBoxPanel() {
   }).join('');
 }
 
+function _bsIsEmp(payee) { return typeof payee === 'string' && payee.indexOf(BS_EMP_PREFIX) === 0; }
+function _bsEmpName(payee) { return _bsIsEmp(payee) ? payee.slice(BS_EMP_PREFIX.length) : ''; }
+// Payee <select> change: the 员工 option reveals a name input; others save directly.
+function bsPayeeSelChange(id, sel) {
+  const emp = sel.closest('.bs-box-item').querySelector('.bs-bx-emp');
+  if (sel.value === BS_PAYEE_EMP) {
+    if (emp) { emp.style.display = ''; emp.focus(); }
+    bsUpdateBoxField(id, 'payee', BS_EMP_PREFIX + (emp ? emp.value.trim() : ''));
+  } else {
+    if (emp) emp.style.display = 'none';
+    bsUpdateBoxField(id, 'payee', sel.value);
+  }
+}
 async function bsUpdateBoxField(id, field, value) {
   const box = _bsBoxList.find(b => b.id === id);
   if (!box) return;
