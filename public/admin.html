@@ -38791,8 +38791,9 @@ let _bsCompanies = []; // cached company names (partners + extras) for the payee
 const BS_EXTRA_COMPANIES = ['Dando Chemicals US LLC'];
 const BS_PAYEE_BANKFEE = '银行费用';
 const BS_PAYEE_CLAIM = 'Claim';
+const BS_PAYEE_CC = '还 Prime Anchor Point 信用卡'; // credit-card repayment (not a bank fee)
 // Common bank-fee types shown when 付给谁 = 银行费用 (datalist; free text still allowed).
-const BS_FEE_TYPES = ['还 Prime Anchor Point 信用卡 CC Payment', '服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', '账户维护费 Maintenance Fee', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
+const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', '账户维护费 Maintenance Fee', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
 // Category options when paying an individual (个人：拿回家那部分).
 const BS_PERSONAL_CATS = ['换汇 FX', '自己工资 Own Salary', '公司转账 Company Transfer'];
 // Classify the payee to decide which detail sub-section to show.
@@ -38801,8 +38802,8 @@ function _bsPayeeKind(box) {
   if (p === BS_PAYEE_BANKFEE) return 'bankfee';
   if (_bsIsEmp(p)) return 'employee';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
-  if (p && p !== BS_PAYEE_CLAIM) return 'company';
-  return 'none';
+  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC) return 'company';
+  return 'none'; // Claim / credit-card repayment: no extra sub-section
 }
 // The invoice/账期 block applies to employee wages and to company income.
 function _bsWantsInvoice(box) {
@@ -38830,11 +38831,12 @@ function _bsPayeeOptions(current) {
   const parts = [`<option value="">— 选择付给谁 —</option>`,
     `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`,
     `<option value="${esc(BS_PAYEE_CLAIM)}"${current === BS_PAYEE_CLAIM ? ' selected' : ''}>📋 Claim</option>`,
+    `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
     `<option value="${BS_PAYEE_EMP}"${current === BS_PAYEE_EMP ? ' selected' : ''}>👷 公司员工（填姓名）</option>`];
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_CLAIM, BS_PAYEE_EMP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_EMP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
@@ -38954,7 +38956,7 @@ function _bsRenderBoxOverlay(page, box, num) {
   el.dataset.id = box.id;
   el.style.cssText = `position:absolute;left:${box.box_x * pw}px;top:${box.box_y * ph}px;width:${box.box_w * pw}px;height:${box.box_h * ph}px;` +
     `border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'};box-sizing:border-box;z-index:6;cursor:move`;
-  el.innerHTML = `<span style="position:absolute;left:-2px;top:-18px;background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px">⠿${num}</span>`;
+  el.innerHTML = `<span style="position:absolute;left:-22px;top:50%;transform:translateY(-50%);background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px;white-space:nowrap">⠿${num}</span>`;
   // Drag to reposition (up/down/left/right); a plain click still jumps to its panel row.
   let sx, sy, ox, oy, moved = false, dragging = false;
   el.addEventListener('pointerdown', e => {
