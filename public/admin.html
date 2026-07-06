@@ -38650,7 +38650,10 @@ function bsEnsureViewer() {
         '<button class="btn btn-sm btn-green" id="bsViewerDlBtn" onclick="bsViewerDownload()">⬇️ 下载带标注 PDF</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsCloseViewer()">✕ 关闭</button>' +
       '</div>' +
-      '<div id="bsViewerPages" style="flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;align-items:center;gap:1rem;background:#e2e8f0"></div>' +
+      '<div style="flex:1;display:flex;overflow:hidden">' +
+        '<div id="bsViewerPages" style="flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;align-items:center;gap:1rem;background:#e2e8f0"></div>' +
+        '<div id="bsViewerLegend" style="width:320px;flex:none;overflow:auto;padding:.75rem;background:#fff;border-left:1px solid var(--gray-200);display:flex;flex-direction:column;gap:.5rem"></div>' +
+      '</div>' +
     '</div>';
   document.body.appendChild(m);
 }
@@ -38701,25 +38704,64 @@ async function bsOpenViewer(id) {
   }
 }
 
-// Read-only labeled rectangles over the rendered pages.
+// Read-only numbered rectangles over the rendered pages, with all captions
+// moved OFF the PDF into the right-side legend so no statement text is covered.
 function bsDrawViewerBoxes() {
   const cont = document.getElementById('bsViewerPages');
   if (!cont) return;
+  const legend = document.getElementById('bsViewerLegend');
+  if (legend) legend.innerHTML = '';
   const pages = {};
   cont.querySelectorAll('.bs-ed-page').forEach(p => { pages[parseInt(p.dataset.page)] = p; });
+  if (legend && !_bsViewBoxes.length) {
+    legend.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.5rem">暂无标注</div>';
+  }
   _bsViewBoxes.forEach((box, i) => {
-    const page = pages[box.page || 1];
-    if (!page) return;
-    const pw = page.clientWidth, ph = page.clientHeight;
+    const num = i + 1;
     const isIn = box.direction === 'in';
     const color = isIn ? '#059669' : '#dc2626';
-    const el = document.createElement('div');
-    el.style.cssText = `position:absolute;left:${box.box_x * pw}px;top:${box.box_y * ph}px;width:${box.box_w * pw}px;height:${box.box_h * ph}px;border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.06)' : 'rgba(220,38,38,.06)'};box-sizing:border-box;z-index:6`;
-    const cap = document.createElement('div');
-    cap.textContent = _bsBoxLabelText(box, i + 1);
-    cap.style.cssText = `position:absolute;left:0;top:-2px;transform:translateY(-100%);max-width:340px;background:#fffbeb;border:1px solid ${color};color:#1f2937;font-size:11px;line-height:1.25;padding:2px 5px;border-radius:5px;white-space:pre-wrap;box-shadow:0 1px 4px rgba(0,0,0,.2);z-index:7`;
-    el.appendChild(cap);
-    page.appendChild(el);
+    const page = pages[box.page || 1];
+    if (page) {
+      const pw = page.clientWidth, ph = page.clientHeight;
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;left:${box.box_x * pw}px;top:${box.box_y * ph}px;width:${box.box_w * pw}px;height:${box.box_h * ph}px;border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.06)' : 'rgba(220,38,38,.06)'};box-sizing:border-box;z-index:6`;
+      // Number badge sits OUTSIDE the box on the left so it never covers text.
+      el.innerHTML = `<span style="position:absolute;left:-5px;top:50%;transform:translate(-100%,-50%);background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px;white-space:nowrap;z-index:7">${num}</span>`;
+      el.dataset.bsViewIdx = i;
+      page.appendChild(el);
+    }
+    if (legend) {
+      const card = document.createElement('div');
+      card.style.cssText = `border:1px solid var(--gray-200);border-left:4px solid ${color};border-radius:6px;padding:.4rem .55rem;background:#fff;cursor:pointer`;
+      const amt = (box.amount != null && box.amount !== 0) ? '$' + Number(box.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+      const payee = _bsPayeeDisplay(box.payee) || '';
+      const l2 = [];
+      if (box.txn_date) l2.push(box.txn_date);
+      if (box.purpose) l2.push(box.purpose);
+      if (box.pay_portion) l2.push(box.pay_portion === 'full' ? '全额' : '部分');
+      if (box.invoice_number) l2.push('Inv ' + box.invoice_number);
+      if (box.period_start || box.period_end) l2.push((box.period_start || '') + '~' + (box.period_end || ''));
+      card.innerHTML =
+        `<div style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;font-weight:700">` +
+          `<span style="background:${color};color:#fff;border-radius:4px;padding:0 6px;line-height:17px;font-size:.72rem">${num}</span>` +
+          `<span style="color:${color}">${isIn ? '收入' : '支出'}</span>` +
+          (payee ? `<span style="color:var(--gray-600);font-weight:600">${esc(payee)}</span>` : '') +
+          (amt ? `<span style="margin-left:auto">${esc(amt)}</span>` : '') +
+        `</div>` +
+        (l2.length ? `<div style="font-size:.75rem;color:var(--gray-500);margin-top:.15rem">${esc(l2.join(' · '))}</div>` : '') +
+        (box.note ? `<div style="font-size:.75rem;color:var(--gray-700);margin-top:.15rem;white-space:pre-wrap">📝 ${esc(box.note)}</div>` : '');
+      card.onclick = () => {
+        const p = pages[box.page || 1];
+        if (p) p.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const rect = cont.querySelector(`.bs-ed-page [data-bs-view-idx="${i}"]`);
+        if (rect) {
+          rect.style.transition = 'box-shadow .2s';
+          rect.style.boxShadow = `0 0 0 3px ${color}`;
+          setTimeout(() => { rect.style.boxShadow = ''; }, 900);
+        }
+      };
+      legend.appendChild(card);
+    }
   });
 }
 
@@ -38757,6 +38799,9 @@ async function bsViewerDownload() {
     const doc = await PDFLib.PDFDocument.load(_bsViewBytes);
     const pages = doc.getPages();
     const hexRgb = h => { const n = parseInt(h.slice(1), 16); return PDFLib.rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); };
+    const numFont = await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+    // Draw only the numbered rectangles on the statement pages — no captions
+    // over the content — so no text is ever covered.
     for (let i = 0; i < _bsViewBoxes.length; i++) {
       const box = _bsViewBoxes[i];
       const pg = pages[(box.page || 1) - 1];
@@ -38767,12 +38812,29 @@ async function bsViewerDownload() {
       const isIn = box.direction === 'in';
       const color = hexRgb(isIn ? '#059669' : '#dc2626');
       pg.drawRectangle({ x, y: rectY, width: w, height: h, borderColor: color, borderWidth: 1.4 });
-      const png = bsLabelPng(_bsBoxLabelText(box, i + 1), isIn ? '#059669' : '#dc2626', 240);
-      const img = await doc.embedPng(png.dataUrl);
-      const lw = Math.min(png.cssW, W - x), lh = png.cssH;
-      let ly = rectY + h; // sit just above the box; clamp inside the page
-      if (ly + lh > H) ly = Math.max(0, rectY - lh);
-      pg.drawImage(img, { x, y: ly, width: lw, height: lh });
+      // Number badge sits just outside the box on the left (or inside if there's no room).
+      const label = String(i + 1), fs = 9;
+      const tw = numFont.widthOfTextAtSize(label, fs), badgeW = tw + 6, badgeH = fs + 4;
+      let bx = x - badgeW - 2; if (bx < 0) bx = x + 1;
+      const by = rectY + (h - badgeH) / 2;
+      pg.drawRectangle({ x: bx, y: by, width: badgeW, height: badgeH, color });
+      pg.drawText(label, { x: bx + 3, y: by + 2.5, size: fs, font: numFont, color: PDFLib.rgb(1, 1, 1) });
+    }
+    // Append a legend page (or pages) listing every annotation off the statement.
+    if (_bsViewBoxes.length) {
+      const legendW = 612, legendH = 792, margin = 40, gap = 8;
+      let lp = doc.addPage([legendW, legendH]);
+      lp.drawText('Annotations / 标注清单', { x: margin, y: legendH - margin - 4, size: 13, font: numFont, color: PDFLib.rgb(0.1, 0.12, 0.17) });
+      let cy = legendH - margin - 28;
+      for (let i = 0; i < _bsViewBoxes.length; i++) {
+        const box = _bsViewBoxes[i];
+        const isIn = box.direction === 'in';
+        const png = bsLabelPng(_bsBoxLabelText(box, i + 1), isIn ? '#059669' : '#dc2626', legendW - margin * 2);
+        const img = await doc.embedPng(png.dataUrl);
+        if (cy - png.cssH < margin) { lp = doc.addPage([legendW, legendH]); cy = legendH - margin; }
+        lp.drawImage(img, { x: margin, y: cy - png.cssH, width: png.cssW, height: png.cssH });
+        cy -= png.cssH + gap;
+      }
     }
     const out = await doc.save();
     const url = URL.createObjectURL(new Blob([out], { type: 'application/pdf' }));
