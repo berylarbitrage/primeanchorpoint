@@ -38263,7 +38263,9 @@ function _bsBoxSummary(boxes) {
     const payee = b.payee ? esc(b.payee) : '';
     const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     const bits = [dirLabel]; if (payee) bits.push(payee); if (amt) bits.push('<b>' + amt + '</b>'); if (b.txn_date) bits.push(esc(b.txn_date));
-    return `<span style="display:inline-flex;gap:.3rem;align-items:center;background:${bg};border:1px solid ${bd};color:${fg};border-radius:999px;padding:.1rem .55rem;font-size:.76rem;white-space:nowrap">${bits.join(' · ')}</span>`;
+    const reason = b.note ? esc(b.note) : '';
+    const titleAttr = reason ? ` title="原因：${reason}"` : '';
+    return `<span${titleAttr} style="display:inline-flex;gap:.3rem;align-items:center;background:${bg};border:1px solid ${bd};color:${fg};border-radius:999px;padding:.1rem .55rem;font-size:.76rem;white-space:nowrap">${bits.join(' · ')}${reason ? ' · <span style="opacity:.75">' + reason + '</span>' : ''}</span>`;
   }).join('');
   return `<div style="display:flex;flex-wrap:wrap;gap:.3rem;justify-content:flex-end">${chips}</div>`;
 }
@@ -38529,6 +38531,7 @@ async function bsOpenEditor(id) {
     setStatus('渲染页面…');
     await bsRenderPages(_bsEdBytes);
     bsWireBoxDrawing();
+    await bsEnsureCompanies();
     await bsLoadBoxes();
     bsSetBoxMode(true); // start ready to draw
     setStatus('');
@@ -38548,6 +38551,25 @@ function bsCloseEditor() {
 
 // ── Box annotations: draw a rectangle on the PDF, fill details in the right panel ──
 let _bsBoxList = [];   // current statement's boxes, kept in sync with the panel + overlays
+let _bsCompanies = []; // cached partner company names for the payee dropdown
+const BS_PAYEE_BANKFEE = '银行费用';
+async function bsEnsureCompanies() {
+  if (_bsCompanies.length) return;
+  try {
+    const list = await api('/admin/partners');
+    const ps = Array.isArray(list) ? list : (list && list.partners) || [];
+    _bsCompanies = ps.map(p => p.name).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  } catch (_) { _bsCompanies = []; }
+}
+// Options for the payee <select>: 银行费用 + existing companies (+ keep any custom current value).
+function _bsPayeeOptions(current) {
+  const opts = [`<option value="">— 选择付给谁 —</option>`,
+    `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`];
+  const names = _bsCompanies.slice();
+  if (current && current !== BS_PAYEE_BANKFEE && !names.includes(current)) names.push(current);
+  names.forEach(n => { opts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`); });
+  return opts.join('');
+}
 function bsSetBoxMode(on) {
   _bsBoxMode = !!on;
   const btn = document.getElementById('bsBoxModeBtn');
@@ -38679,11 +38701,12 @@ function _bsRenderBoxPanel() {
         </select>
         <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value)" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
-      <input type="text" class="bs-bx-payee" placeholder="付给哪个公司 / 对方" value="${esc(box.payee || '')}" onchange="bsUpdateBoxField(${box.id},'payee',this.value)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem">
-      <div style="display:flex;align-items:center;gap:.3rem">
+      <select class="bs-bx-payee" onchange="bsUpdateBoxField(${box.id},'payee',this.value)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(box.payee || '')}</select>
+      <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.35rem">
         <span style="color:#94a3b8;font-size:.82rem">$</span>
         <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
+      <input type="text" class="bs-bx-note" placeholder="原因 / 备注" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
     </div>`;
   }).join('');
 }
