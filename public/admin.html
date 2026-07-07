@@ -38353,6 +38353,10 @@ function _bsPayeeDisplay(payee) {
     const names = p.slice(4).split('|').filter(Boolean);
     return (dep ? '📥 存支票' : '📤 取支票') + (names.length ? ' · ' + names.join('、') : '');
   }
+  if (p.indexOf('卡车费:') === 0) {
+    const co = p.slice('卡车费:'.length);
+    return '🚚 卡车费' + (co ? ' · ' + co : '');
+  }
   return p;
 }
 // A note is "satisfied" (no red) if written, OR the other structured fields already
@@ -38367,6 +38371,8 @@ function _bsNoteSatisfied(box) {
   if (kind === 'pallet' && _bsPalletParse(box.payee)) return true;
   // 存/取支票: a chosen counterparty already describes the transaction.
   if (kind === 'check' && _bsCheckParse(box.payee).names.length) return true;
+  // 卡车费: a chosen company already describes the transaction.
+  if (kind === 'truck' && _bsTruckParse(box.payee)) return true;
   // Bank fee type chosen, or personal category chosen.
   if ((kind === 'bankfee' || kind === 'personal') && String(box.purpose || '').trim()) return true;
   // Employee wage: invoice + billing period filled.
@@ -38941,6 +38947,10 @@ const BS_PAYEE_CHECK_DEP = '__checkdep__'; // sentinel: 存支票
 const BS_PAYEE_CHECK_WD = '__checkwd__';   // sentinel: 取支票
 const BS_CHECK_DEP_PREFIX = '存支票:';      // stored = prefix + names joined by "|"
 const BS_CHECK_WD_PREFIX = '取支票:';
+// 卡车费 (trucking cost): after choosing, pick one of these companies.
+const BS_PAYEE_TRUCK = '__truck__'; // sentinel: 卡车费
+const BS_TRUCK_PREFIX = '卡车费:';    // stored payee = prefix + company name
+const BS_TRUCK_COMPANIES = ['BOOKFREIGHT INC', 'Dando Chemicals US LLC'];
 // Common bank-fee types shown when 付给谁 = 银行费用 (datalist; free text still allowed).
 const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', '账户维护费 Maintenance Fee', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
 // Category options when paying an individual (个人：拿回家那部分).
@@ -38952,6 +38962,7 @@ function _bsPayeeKind(box) {
   if (_bsIsEmp(p)) return 'employee';
   if (_bsIsPallet(p)) return 'pallet';
   if (_bsIsCheck(p)) return 'check';
+  if (_bsIsTruck(p)) return 'truck';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
   if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP) return 'company';
   return 'none'; // Claim / credit-card repayment / cash withdrawal / irrelevant / PAP transfer: no extra sub-section
@@ -38987,6 +38998,7 @@ function _bsPayeeOptions(current, direction) {
     `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
     `<option value="${esc(BS_PAYEE_PAP)}"${current === BS_PAYEE_PAP ? ' selected' : ''}>🔁 Prime Anchor Point 转账</option>`,
     `<option value="${esc(BS_PAYEE_CASH)}"${current === BS_PAYEE_CASH ? ' selected' : ''}>💵 取现金</option>`,
+    `<option value="${BS_PAYEE_TRUCK}"${current === BS_PAYEE_TRUCK ? ' selected' : ''}>🚚 卡车费（选公司）</option>`,
     `<option value="${BS_PAYEE_CHECK_DEP}"${current === BS_PAYEE_CHECK_DEP ? ' selected' : ''}>📥 存支票（选对方）</option>`,
     `<option value="${BS_PAYEE_CHECK_WD}"${current === BS_PAYEE_CHECK_WD ? ' selected' : ''}>📤 取支票（选对方）</option>`,
     `<option value="${esc(BS_PAYEE_NA)}"${current === BS_PAYEE_NA ? ' selected' : ''}>🚫 无关</option>`,
@@ -38995,7 +39007,7 @@ function _bsPayeeOptions(current, direction) {
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_CASH, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_CASH, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
@@ -39175,7 +39187,7 @@ function _bsRenderBoxPanel() {
         <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value);bsValidateBoxDates(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
       <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
-      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (box.payee || ''))), box.direction)}</select>
+      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (box.payee || '')))), box.direction)}</select>
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
         <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
@@ -39188,6 +39200,10 @@ function _bsRenderBoxPanel() {
       <div class="bs-check-wrap" style="display:${_bsIsCheck(box.payee) ? '' : 'none'};background:#eff6ff;border:1px dashed #bfdbfe;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#1d4ed8;margin-bottom:.25rem">选择对方（可多选）</div>
         <div class="bs-check-list">${_bsCheckPartyCheckboxes(box)}</div>
+      </div>
+      <div class="bs-truck-wrap" style="display:${_bsIsTruck(box.payee) ? '' : 'none'};background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#475569;margin-bottom:.25rem">选择公司</div>
+        <select class="bs-bx-truck-co" onchange="bsTruckUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsTruckCoOptions(_bsTruckParse(box.payee))}</select>
       </div>
       <div class="bs-fee-wrap" style="display:${box.payee === BS_PAYEE_BANKFEE ? '' : 'none'};background:#fffbeb;border:1px dashed #fde68a;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#92400e;margin-bottom:.3rem">银行费用类型</div>
@@ -39250,8 +39266,10 @@ function bsUpdateBoxSections(id) {
   const por = item.querySelector('.bs-portion-row');
   const plw = item.querySelector('.bs-pallet-wrap');
   const ckw = item.querySelector('.bs-check-wrap');
+  const tkw = item.querySelector('.bs-truck-wrap');
   if (plw) plw.style.display = kind === 'pallet' ? '' : 'none';
   if (ckw) ckw.style.display = kind === 'check' ? '' : 'none';
+  if (tkw) tkw.style.display = kind === 'truck' ? '' : 'none';
   if (fw) fw.style.display = kind === 'bankfee' ? '' : 'none';
   if (pw) pw.style.display = kind === 'personal' ? '' : 'none';
   if (iw) iw.style.display = _bsWantsInvoice(box) ? '' : 'none';
@@ -39283,6 +39301,22 @@ function _bsPalletCustOptions(current) {
 // Save "木板钱:<customer>" from the customer select.
 function bsPalletUpdate(id, el) {
   bsUpdateBoxField(id, 'payee', _bsPalletJoin(el.value));
+  bsUpdateBoxSections(id);
+}
+// ── 卡车费: pick one of the trucking companies ──
+function _bsIsTruck(payee) { return typeof payee === 'string' && payee.indexOf(BS_TRUCK_PREFIX) === 0; }
+function _bsTruckParse(payee) { return _bsIsTruck(payee) ? payee.slice(BS_TRUCK_PREFIX.length) : ''; }
+function _bsTruckJoin(co) { return BS_TRUCK_PREFIX + (co || ''); }
+function _bsTruckCoOptions(current) {
+  const parts = ['<option value="">— 选择公司 —</option>'];
+  const names = BS_TRUCK_COMPANIES.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+// Save "卡车费:<company>" from the company select.
+function bsTruckUpdate(id, el) {
+  bsUpdateBoxField(id, 'payee', _bsTruckJoin(el.value));
   bsUpdateBoxSections(id);
 }
 // ── 存支票 / 取支票: pick one or more counterparties ──
@@ -39341,13 +39375,17 @@ function bsPayeeSelChange(id, sel) {
   const wrap = item.querySelector('.bs-emp-wrap');
   const pwrap = item.querySelector('.bs-pallet-wrap');
   const cwrap = item.querySelector('.bs-check-wrap');
-  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; };
+  const twrap = item.querySelector('.bs-truck-wrap');
+  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; };
   if (sel.value === BS_PAYEE_EMP) {
     hideAll();
     if (wrap) { wrap.style.display = ''; const co = wrap.querySelector('.bs-bx-emp-co'); if (co) co.focus(); bsEmpUpdate(id, co); }
   } else if (sel.value === BS_PAYEE_PALLET) {
     hideAll();
     if (pwrap) { pwrap.style.display = ''; const c = pwrap.querySelector('.bs-bx-pallet-cust'); if (c) { c.focus(); bsPalletUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_TRUCK) {
+    hideAll();
+    if (twrap) { twrap.style.display = ''; const c = twrap.querySelector('.bs-bx-truck-co'); if (c) { c.focus(); bsTruckUpdate(id, c); } }
   } else if (sel.value === BS_PAYEE_CHECK_DEP || sel.value === BS_PAYEE_CHECK_WD) {
     hideAll();
     const type = sel.value === BS_PAYEE_CHECK_WD ? 'wd' : 'dep';
