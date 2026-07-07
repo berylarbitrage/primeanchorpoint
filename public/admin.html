@@ -38355,7 +38355,7 @@ function bsOpenBoxDetail(id) {
     }).join('');
     body.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem">
       <thead><tr style="color:var(--gray-500);text-align:left;border-bottom:2px solid var(--gray-200)">
-        <th style="padding:.4rem .5rem">#</th><th style="padding:.4rem .5rem">收支</th><th style="padding:.4rem .5rem">日期</th><th style="padding:.4rem .5rem">付给谁</th><th style="padding:.4rem .5rem;text-align:right">金额</th><th style="padding:.4rem .5rem">原因</th><th style="padding:.4rem .5rem">照片</th>
+        <th style="padding:.4rem .5rem">#</th><th style="padding:.4rem .5rem">收支</th><th style="padding:.4rem .5rem">日期</th><th style="padding:.4rem .5rem">付给谁 / 谁付的</th><th style="padding:.4rem .5rem;text-align:right">金额</th><th style="padding:.4rem .5rem">原因</th><th style="padding:.4rem .5rem">照片</th>
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   document.getElementById('bsBoxDetailModal').classList.add('show');
@@ -38908,9 +38908,11 @@ async function bsEnsureCompanies() {
 // (+ keep any custom current value that isn't in those lists).
 const BS_PAYEE_EMP = '__emp__';   // sentinel: pay a named company employee
 const BS_EMP_PREFIX = '员工:';     // stored payee for an employee = prefix + name
-function _bsPayeeOptions(current) {
+// The payee prompt reads "付给谁"(paid to) for 支出 and "谁付的"(paid by) for 收入.
+function _bsPayeeLabel(direction) { return direction === 'in' ? '谁付的' : '付给谁'; }
+function _bsPayeeOptions(current, direction) {
   const opt = n => `<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`;
-  const parts = [`<option value="">— 选择付给谁 —</option>`,
+  const parts = [`<option value="">— 选择${_bsPayeeLabel(direction)} —</option>`,
     `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`,
     `<option value="${esc(BS_PAYEE_CLAIM)}"${current === BS_PAYEE_CLAIM ? ' selected' : ''}>📋 Claim</option>`,
     `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
@@ -39102,7 +39104,7 @@ function _bsRenderBoxPanel() {
         <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value);bsValidateBoxDates(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
       <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
-      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (box.payee || '')))}</select>
+      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (box.payee || '')), box.direction)}</select>
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
         <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
@@ -39322,6 +39324,8 @@ async function bsUpdateBoxField(id, field, value) {
     if (ov) { ov.style.borderColor = color; ov.style.background = isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'; const n = ov.querySelector('span'); if (n) n.style.background = color; }
     const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
     if (item) item.style.borderLeftColor = color;
+    // Payee prompt wording flips: 付给谁 (支出) ↔ 谁付的 (收入).
+    if (item) { const ph = item.querySelector('.bs-bx-payee option[value=""]'); if (ph) ph.textContent = `— 选择${_bsPayeeLabel(value)} —`; }
     bsUpdateBoxSections(id); // income vs fee section depends on direction too
   }
 }
