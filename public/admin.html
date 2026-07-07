@@ -38410,7 +38410,7 @@ function bsOpenBoxDetail(id) {
       const reason = (b.note && String(b.note).trim()) ? esc(b.note)
         : (_bsNoteSatisfied(b) ? '<span style="color:var(--gray-300)">—</span>' : '<span style="color:#dc2626">⚠️ 待补</span>');
       const photos = (b.photos_urls && b.photos_urls.length)
-        ? b.photos_urls.map(u => `<img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="width:38px;height:38px;object-fit:cover;border-radius:5px;border:1px solid var(--gray-200);cursor:zoom-in;margin:1px">`).join('')
+        ? b.photos_urls.map(u => `<span style="display:inline-block;margin:1px">${_bsPhotoThumbInner(u, 38)}</span>`).join('')
         : '<span style="color:var(--gray-300)">—</span>';
       return `<tr style="border-top:1px solid var(--gray-100)">
         <td style="padding:.4rem .5rem;color:var(--gray-400)">${i + 1}</td>
@@ -39163,6 +39163,37 @@ function _bsRenderBoxOverlay(page, box, num) {
   page.appendChild(el);
 }
 
+// A box "photo" may actually be a PDF — render those as a 📄 tile (an <img> can't
+// display a PDF, which is why it showed a broken-image icon) and open them in the
+// iframe lightbox instead of the image one.
+function _bsIsPdfUrl(u) { return /\.pdf(\?|#|$)/i.test(String(u || '')); }
+function bsOpenAttachment(url) {
+  fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } })
+    .then(r => r.ok ? r.blob() : Promise.reject(new Error('打开失败')))
+    .then(blob => {
+      const obj = URL.createObjectURL(blob);
+      if (_bsIsPdfUrl(url) || blob.type === 'application/pdf') showFileLightbox(obj);
+      else showImgLightbox(obj);
+    })
+    .catch(e => showToast('打开失败：' + (e.message || e), 'error'));
+}
+// Image failed to load (e.g. it was actually a PDF) → swap in a 📄 tile.
+function bsPhotoFallback(img, url) {
+  img.onerror = null;
+  const d = document.createElement('div');
+  d.title = '查看文件'; d.onclick = () => bsOpenAttachment(url);
+  d.style.cssText = img.style.cssText + ';background:#f8fafc;display:flex;align-items:center;justify-content:center';
+  d.textContent = '📄';
+  img.replaceWith(d);
+}
+// Thumbnail markup for a box attachment (image or PDF), sized to `s` px.
+function _bsPhotoThumbInner(u, s) {
+  if (_bsIsPdfUrl(u)) {
+    return `<div onclick="bsOpenAttachment('${esc(u)}')" title="查看 PDF" style="width:${s}px;height:${s}px;border-radius:6px;border:1px solid var(--gray-200);cursor:pointer;background:#f8fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box"><span style="font-size:${Math.round(s * 0.42)}px;line-height:1">📄</span><span style="font-size:8px;color:var(--gray-500);letter-spacing:.5px">PDF</span></div>`;
+  }
+  return `<img src="${esc(u)}" onclick="bsOpenAttachment('${esc(u)}')" onerror="bsPhotoFallback(this,'${esc(u)}')" style="width:${s}px;height:${s}px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);cursor:pointer;box-sizing:border-box">`;
+}
+
 // The right-side list where each box's details are entered.
 function _bsRenderBoxPanel() {
   const panel = document.getElementById('bsBoxPanel');
@@ -39243,7 +39274,7 @@ function _bsRenderBoxPanel() {
           <label style="cursor:pointer;font-size:.75rem;color:#2563eb;font-weight:600">＋ 加照片<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="bsBoxUploadPhotos(${box.id}, this.files)"></label>
           <span style="font-size:.72rem;color:var(--gray-400)">· 或把图片拖到这里</span>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px"><img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);cursor:zoom-in"><button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px">${_bsPhotoThumbInner(u, 46)}<button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
       </div>
     </div>`;
   }).join('')
