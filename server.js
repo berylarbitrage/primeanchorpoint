@@ -18239,17 +18239,32 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
   // Replace the proof set only when new files are uploaded; otherwise keep the
   // existing ones (lets "更新" edit amount/date/payee without re-uploading).
+  const b = req.body || {};
   let paths = _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path);
-  if (req.files && req.files.length) {
+  // Drop the previous proof files from disk (only real /uploads/ files exist there;
+  // a bank-statement reference resolves to basename 'file' and is left untouched).
+  const dropOldFiles = () => {
     for (const old of paths) {
       const oldPath = path.join(uploadsDir, path.basename(old));
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
+  };
+  if (req.files && req.files.length) {
+    dropOldFiles();
     paths = req.files.map(f => `/uploads/${f.filename}`);
+  } else if (b.bank_statement_id) {
+    // Reuse an already-uploaded 对账单 PDF as the proof instead of a fresh upload.
+    // Store a reference to the statement's own admin-guarded file route (served
+    // from storage) — NOT a /uploads/ path — so the shared statement file is never
+    // removed by the proof cleanup above/below.
+    const st = db.prepare('SELECT id FROM bank_statements WHERE id=?').get(parseInt(b.bank_statement_id));
+    if (st) {
+      dropOldFiles();
+      paths = [`/api/admin/bank-statements/${st.id}/file`];
+    }
   }
   const receiptPath = paths[0] || null;
   const pathsJson = paths.length ? JSON.stringify(paths) : null;
-  const b = req.body || {};
   const payee = (b.sub_payment_entity || '').trim() || null;
   const method = (b.sub_payment_bank || '').trim() || null;
   const handler = (b.sub_payment_handler || '').trim() || null;
@@ -18266,7 +18281,8 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   if (payee) parts.push(`分包商: ${payee}`);
   if (method) parts.push(`付款方式: ${method}`);
   if (handler) parts.push(`经办人: ${handler}`);
-  if (paths.length) parts.push(`回执${req.files && req.files.length ? '(已更新)' : ''}: ${paths.length} 个文件`);
+  if (b.bank_statement_id && !(req.files && req.files.length)) parts.push('回执: 复用已上传对账单 PDF');
+  else if (paths.length) parts.push(`回执${req.files && req.files.length ? '(已更新)' : ''}: ${paths.length} 个文件`);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, wasSubPaid ? '更新分包付款' : '标记分包已付款', parts.join(' · '));
   res.json({ success: true, receipt_path: receiptPath, receipt_paths: paths });

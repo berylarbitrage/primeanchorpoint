@@ -2595,6 +2595,18 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
     </div>
 
+    <div style="display:flex;align-items:center;gap:.6rem;margin:.2rem 0 1rem;color:var(--gray-400);font-size:.78rem">
+      <span style="flex:1;height:1px;background:var(--gray-200)"></span>或<span style="flex:1;height:1px;background:var(--gray-200)"></span>
+    </div>
+
+    <div style="margin-bottom:1rem">
+      <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">复用已上传的对账单 PDF 作为凭证</label>
+      <select id="invpSubPayStmt" onchange="_invpSubPayOnStmtChange()" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        <option value="">-- 不使用，改为上传文件 --</option>
+      </select>
+      <div style="font-size:.72rem;color:var(--gray-400);margin-top:.25rem">选一份对账单后，它将直接作为本次分包付款的凭证，无需再上传截图。可在「📄 对账备注」页上传对账单。</div>
+    </div>
+
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeInvpSubPayModal()">取消</button>
       <button class="btn btn-blue" id="invpSubPaySubmitBtn" onclick="submitInvpSubPay()">保存并确认</button>
@@ -31331,8 +31343,44 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
   } else {
     currentWrap.style.display = 'none';
   }
+  // Statement picker: reuse an already-uploaded 对账单 PDF as the proof.
+  const stmtSel = document.getElementById('invpSubPayStmt');
+  if (stmtSel) stmtSel.value = '';
+  _invpFillSubPayStatements();
+  if (!window._invpBankStmts) {
+    api('/admin/bank-statements')
+      .then(r => { window._invpBankStmts = Array.isArray(r) ? r : []; _invpFillSubPayStatements(); })
+      .catch(() => {});
+  }
   document.getElementById('invpSubPayModal').style.display = 'flex';
   _invpInitSubPayDrop();
+}
+
+// Fill the "reuse uploaded statement" dropdown from the cached statement list.
+function _invpFillSubPayStatements() {
+  const sel = document.getElementById('invpSubPayStmt');
+  if (!sel) return;
+  const keep = sel.value;
+  const list = Array.isArray(window._invpBankStmts) ? window._invpBankStmts : [];
+  sel.innerHTML = '<option value="">-- 不使用，改为上传文件 --</option>' +
+    list.map(s => {
+      const label = [s.account_name || s.source || '对账单', s.period, s.file_name].filter(Boolean).join(' · ')
+        + (s.created_at ? '（' + String(s.created_at).slice(0, 10) + '）' : '');
+      return `<option value="${s.id}">${esc(label)}</option>`;
+    }).join('');
+  if (keep) sel.value = keep;
+}
+
+// When a statement is picked, it becomes the proof — clear any chosen file so the
+// two proof sources don't conflict (file upload takes precedence on the server).
+function _invpSubPayOnStmtChange() {
+  const sel = document.getElementById('invpSubPayStmt');
+  if (sel && sel.value) {
+    const fi = document.getElementById('invpSubPayFile');
+    if (fi) fi.value = '';
+    const fn = document.getElementById('invpSubPayFileName');
+    if (fn) fn.textContent = '未选择文件';
+  }
 }
 
 function _invpInitSubPayDrop() {
@@ -31341,7 +31389,12 @@ function _invpInitSubPayDrop() {
   const nameEl = document.getElementById('invpSubPayFileName');
   if (!drop || drop._wired) return;
   drop._wired = true;
-  const showName = () => { nameEl.textContent = input.files.length ? (input.files.length === 1 ? input.files[0].name : input.files.length + ' 个文件') : '未选择文件'; };
+  const showName = () => {
+    nameEl.textContent = input.files.length ? (input.files.length === 1 ? input.files[0].name : input.files.length + ' 个文件') : '未选择文件';
+    // Choosing a file overrides the statement picker (server prefers files anyway).
+    const stmtSel = document.getElementById('invpSubPayStmt');
+    if (input.files.length && stmtSel) stmtSel.value = '';
+  };
   const lit = on => { drop.style.borderColor = on ? 'var(--sky)' : ''; drop.style.background = on ? '#eff6ff' : ''; };
   drop.addEventListener('click', () => input.click());
   input.addEventListener('change', showName);
@@ -31362,8 +31415,9 @@ function closeInvpSubPayModal() {
 async function submitInvpSubPay() {
   if (!_invpSubPayInvoiceId) return;
   const fileInput = document.getElementById('invpSubPayFile');
-  if (!fileInput.files.length && !_invpSubPayIsUpdate) {
-    alert('请选择或拖入分包付款凭证文件');
+  const stmtId = (document.getElementById('invpSubPayStmt') || {}).value || '';
+  if (!fileInput.files.length && !stmtId && !_invpSubPayIsUpdate) {
+    alert('请上传凭证文件，或选择一份已上传的对账单 PDF 作为凭证');
     return;
   }
   const btn = document.getElementById('invpSubPaySubmitBtn');
@@ -31373,6 +31427,8 @@ async function submitInvpSubPay() {
   try {
     const formData = new FormData();
     for (const f of fileInput.files) formData.append('receipts', f);
+    // No new file but a statement was picked → reuse that statement PDF as the proof.
+    if (!fileInput.files.length && stmtId) formData.append('bank_statement_id', stmtId);
     const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
     formData.append('sub_payment_entity', val('invpSubPayEntity'));
     formData.append('sub_payment_bank', val('invpSubPayMethod'));
