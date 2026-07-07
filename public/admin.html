@@ -39168,12 +39168,17 @@ function _bsRenderBoxOverlay(page, box, num) {
 // iframe lightbox instead of the image one.
 function _bsIsPdfUrl(u) { return /\.pdf(\?|#|$)/i.test(String(u || '')); }
 function bsOpenAttachment(url) {
-  fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } })
+  return fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } })
     .then(r => r.ok ? r.blob() : Promise.reject(new Error('打开失败')))
     .then(blob => {
-      const obj = URL.createObjectURL(blob);
-      if (_bsIsPdfUrl(url) || blob.type === 'application/pdf') showFileLightbox(obj);
-      else showImgLightbox(obj);
+      if (_bsIsPdfUrl(url) || blob.type === 'application/pdf') {
+        // /uploads streams without a Content-Type, so the blob is untyped and an
+        // iframe won't preview it — re-wrap it as application/pdf so it renders.
+        const pdf = blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' });
+        showFileLightbox(URL.createObjectURL(pdf));
+      } else {
+        showImgLightbox(URL.createObjectURL(blob));
+      }
     })
     .catch(e => showToast('打开失败：' + (e.message || e), 'error'));
 }
