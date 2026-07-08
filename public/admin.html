@@ -36514,7 +36514,21 @@ function renderApplicantInbox() {
       ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id})">删除</button>`
       : '';
     const _linkedEmp = linkedEmployeeForApplicant(s);
+    const _matchedEmp = _linkedEmp || matchEmployeeForApplicant(s);
     const _createdLabel = (_linkedEmp && _linkedEmp.status !== 'active') ? '✓ 已创建 · 待入职' : '✓ 已创建员工';
+    // Show WHICH employee this card is tied to (explicitly linked, or matched by
+    // phone/email) so it's obvious where to find them in 员工管理 — and obvious when
+    // the "match" is actually a different person who just shares a phone/email.
+    const _empName = _matchedEmp ? titleCase([_matchedEmp.first_name, _matchedEmp.middle_name, _matchedEmp.last_name].filter(Boolean).join(' ')) : '';
+    const _empChip = _matchedEmp
+      ? `<button onclick="_inboxViewEmp(${_matchedEmp.id})" title="在员工管理中查看该员工档案" style="padding:.2rem .55rem;font-size:.72rem;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:6px;font-weight:600;cursor:pointer;white-space:nowrap">👤 ${esc(_empName || '员工')}${_matchedEmp.employee_id ? ' · ' + esc(_matchedEmp.employee_id) : ''} ↗</button>`
+      : '';
+    // Matched by phone/email but not explicitly created from this application →
+    // let the admin still create a separate record (workers often share a phone/email).
+    const _matchOnly = !_linkedEmp && !!_matchedEmp && stage === 'created';
+    const _createAnyway = (_matchOnly && (USER_ROLE === 'admin' || USER_ROLE === 'staff'))
+      ? `<button class="btn btn-sm" style="padding:.15rem .5rem;font-size:.68rem;background:#fff;color:#047857;border:1px dashed #a7f3d0" onclick="createEmployeeFromApplicant(${s.id})">不是同一人？仍要创建</button>`
+      : '';
     const mkEmp = stage === 'history'
       ? '<span style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600">✓ 已入职</span>'
       : stage === 'created'
@@ -36540,6 +36554,8 @@ function renderApplicantInbox() {
         <div style="flex:0 0 auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:.4rem">
           <span style="font-size:.72rem;color:var(--gray-400);white-space:nowrap">🕒 ${esc(when)}</span>
           ${mkEmp}
+          ${_empChip}
+          ${_createAnyway}
           ${del}
         </div>
       </div>
@@ -36548,6 +36564,11 @@ function renderApplicantInbox() {
   }).join('');
 }
 function closeApplicantInbox() { document.getElementById('applyInboxModal').classList.remove('show'); }
+// Jump from an applicant card to the tied employee's档案 in 员工管理.
+function _inboxViewEmp(empId) {
+  closeApplicantInbox();
+  if (typeof viewEmployee === 'function') viewEmployee(empId);
+}
 async function deleteApplicant(id) {
   const name = _inboxPartnerName ? `【${_inboxPartnerName}】` : '';
   const step1 = await showConfirm(
