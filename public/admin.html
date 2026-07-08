@@ -31349,26 +31349,58 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
   _invpFillSubPayStatements();
   if (!window._invpBankStmts) {
     api('/admin/bank-statements')
-      .then(r => { window._invpBankStmts = Array.isArray(r) ? r : []; _invpFillSubPayStatements(); })
+      .then(r => { window._invpBankStmts = Array.isArray(r) ? r : []; _invpFillSubPayStatements(); _invpLoadSubPayBoxes(); })
       .catch(() => {});
+  } else {
+    _invpLoadSubPayBoxes();
   }
   document.getElementById('invpSubPayModal').style.display = 'flex';
   _invpInitSubPayDrop();
 }
 
 // Fill the "reuse uploaded statement" dropdown from the cached statement list.
+// Under each statement we also list its annotations (金额·付给谁·日期) so the user
+// can locate the right statement by the amount they annotated; picking any of them
+// reuses that statement's PDF as the proof.
 function _invpFillSubPayStatements() {
   const sel = document.getElementById('invpSubPayStmt');
   if (!sel) return;
   const keep = sel.value;
   const list = Array.isArray(window._invpBankStmts) ? window._invpBankStmts : [];
-  sel.innerHTML = '<option value="">-- 不使用，改为上传文件 --</option>' +
-    list.map(s => {
-      const label = [s.account_name || s.source || '对账单', s.period, s.file_name].filter(Boolean).join(' · ')
-        + (s.created_at ? '（' + String(s.created_at).slice(0, 10) + '）' : '');
-      return `<option value="${s.id}">${esc(label)}</option>`;
-    }).join('');
+  const boxesMap = window._invpBankStmtBoxes || {};
+  let html = '<option value="">-- 不使用，改为上传文件 --</option>';
+  list.forEach(s => {
+    const stmtLabel = [s.account_name || s.source || '对账单', s.period, s.file_name].filter(Boolean).join(' · ')
+      + (s.created_at ? '（' + String(s.created_at).slice(0, 10) + '）' : '');
+    const boxes = Array.isArray(boxesMap[s.id]) ? boxesMap[s.id] : null;
+    if (boxes && boxes.length) {
+      html += `<optgroup label="${esc(stmtLabel)}">`;
+      html += `<option value="${s.id}">📄 整份 PDF（${boxes.length} 条标注）</option>`;
+      boxes.forEach(b => {
+        const amt = (b.amount != null && b.amount !== 0)
+          ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+        const bits = [b.direction === 'in' ? '收入' : '支出', amt, _bsPayeeDisplay(b.payee), b.txn_date].filter(Boolean);
+        html += `<option value="${s.id}">　• ${esc(bits.join(' · '))}</option>`;
+      });
+      html += '</optgroup>';
+    } else {
+      html += `<option value="${s.id}">${esc(stmtLabel)}</option>`;
+    }
+  });
+  sel.innerHTML = html;
   if (keep) sel.value = keep;
+}
+// Load each statement's annotations once, then refresh the dropdown to show them.
+function _invpLoadSubPayBoxes() {
+  const list = Array.isArray(window._invpBankStmts) ? window._invpBankStmts : [];
+  if (!list.length) return;
+  if (window._invpBankStmtBoxes) { _invpFillSubPayStatements(); return; }
+  window._invpBankStmtBoxes = {};
+  return Promise.all(list.map(s =>
+    api(`/admin/bank-statements/${s.id}/boxes`)
+      .then(r => { window._invpBankStmtBoxes[s.id] = Array.isArray(r) ? r : []; })
+      .catch(() => { window._invpBankStmtBoxes[s.id] = []; })
+  )).then(() => _invpFillSubPayStatements());
 }
 
 // When a statement is picked, it becomes the proof — clear any chosen file so the
