@@ -2600,11 +2600,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
 
     <div style="margin-bottom:1rem">
-      <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">复用已上传的对账单 PDF 作为凭证</label>
+      <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">复用已上传的对账单作为凭证</label>
       <select id="invpSubPayStmt" onchange="_invpSubPayOnStmtChange()" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
         <option value="">-- 不使用，改为上传文件 --</option>
       </select>
-      <div style="font-size:.72rem;color:var(--gray-400);margin-top:.25rem">选一份对账单后，它将直接作为本次分包付款的凭证，无需再上传截图。可在「📄 对账备注」页上传对账单。</div>
+      <div style="font-size:.72rem;color:var(--gray-400);margin-top:.25rem">选「整份 PDF」用整份对账单作凭证；选某一条标注，则自动截取该笔交易那一行作为凭证。可在「📄 对账备注」页上传/标注对账单。</div>
     </div>
 
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
@@ -31380,7 +31380,7 @@ function _invpFillSubPayStatements() {
         const amt = (b.amount != null && b.amount !== 0)
           ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
         const bits = [b.direction === 'in' ? '收入' : '支出', amt, _bsPayeeDisplay(b.payee), b.txn_date].filter(Boolean);
-        html += `<option value="${s.id}">　• ${esc(bits.join(' · '))}</option>`;
+        html += `<option value="box:${s.id}:${b.id}">　• ${esc(bits.join(' · '))}</option>`;
       });
       html += '</optgroup>';
     } else {
@@ -31401,6 +31401,42 @@ function _invpLoadSubPayBoxes() {
       .then(r => { window._invpBankStmtBoxes[s.id] = Array.isArray(r) ? r : []; })
       .catch(() => { window._invpBankStmtBoxes[s.id] = []; })
   )).then(() => _invpFillSubPayStatements());
+}
+// Render just one annotated transaction (its row band, full page width, with the
+// box highlighted) from the statement PDF into a PNG File — used as the proof when
+// the user picks a specific annotation instead of the whole statement PDF.
+async function _invpCropBoxImage(stmtId, box) {
+  await bsLoadLibs();
+  const res = await fetch(API + '/admin/bank-statements/' + stmtId + '/file', { headers: { Authorization: 'Bearer ' + TOKEN } });
+  if (!res.ok) throw new Error('下载对账单失败 (' + res.status + ')');
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+  const page = await pdf.getPage(box.page || 1);
+  const vp = page.getViewport({ scale: 2 });
+  const full = document.createElement('canvas');
+  full.width = Math.ceil(vp.width); full.height = Math.ceil(vp.height);
+  await page.render({ canvasContext: full.getContext('2d'), viewport: vp }).promise;
+  const W = full.width, H = full.height;
+  // Crop the whole page width, but only the vertical band of the box (+ padding),
+  // so the full transaction row is captured even if the box is narrow.
+  const padY = Math.round(H * 0.012);
+  const top = Math.max(0, Math.round(box.box_y * H) - padY);
+  const h = Math.min(H - top, Math.round(box.box_h * H) + padY * 2);
+  const out = document.createElement('canvas');
+  out.width = W; out.height = h;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, h);
+  ctx.drawImage(full, 0, top, W, h, 0, 0, W, h);
+  // Highlight the annotated region within the crop.
+  const lw = Math.max(2, Math.round(H * 0.003));
+  ctx.strokeStyle = box.direction === 'in' ? '#059669' : '#dc2626';
+  ctx.lineWidth = lw;
+  ctx.strokeRect(Math.round(box.box_x * W) + lw / 2, (box.box_y * H - top) + lw / 2,
+    Math.max(1, Math.round(box.box_w * W) - lw), Math.max(1, Math.round(box.box_h * H) - lw));
+  const blob = await new Promise(r => out.toBlob(r, 'image/png'));
+  if (!blob) throw new Error('生成凭证图片失败');
+  const amt = (box.amount != null) ? String(box.amount).replace(/[^0-9.\-]/g, '') : '';
+  return new File([blob], `标注-${stmtId}-${box.id}${amt ? '-' + amt : ''}.png`, { type: 'image/png' });
 }
 
 // When a statement is picked, it becomes the proof — clear any chosen file so the
@@ -31459,8 +31495,20 @@ async function submitInvpSubPay() {
   try {
     const formData = new FormData();
     for (const f of fileInput.files) formData.append('receipts', f);
-    // No new file but a statement was picked → reuse that statement PDF as the proof.
-    if (!fileInput.files.length && stmtId) formData.append('bank_statement_id', stmtId);
+    // No new file but the statement picker was used as the proof source.
+    if (!fileInput.files.length && stmtId) {
+      if (stmtId.indexOf('box:') === 0) {
+        // A specific annotation was picked → crop that transaction into an image proof.
+        const [, sid, bid] = stmtId.split(':');
+        const boxes = (window._invpBankStmtBoxes || {})[sid] || [];
+        const box = boxes.find(b => String(b.id) === String(bid));
+        if (!box) throw new Error('标注不存在，请重新选择');
+        formData.append('receipts', await _invpCropBoxImage(sid, box));
+      } else {
+        // Whole statement PDF reused as the proof.
+        formData.append('bank_statement_id', stmtId);
+      }
+    }
     const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
     formData.append('sub_payment_entity', val('invpSubPayEntity'));
     formData.append('sub_payment_bank', val('invpSubPayMethod'));
