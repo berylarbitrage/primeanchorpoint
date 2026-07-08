@@ -17014,6 +17014,108 @@ app.get('/api/admin/employees/export', (req, res, next) => {
   res.send(csv);
 });
 
+// ── Minimal ZIP writer (deflate via built-in zlib; no external dependency) ──
+const _zlib = require('zlib');
+const _crcTable = (() => {
+  const t = new Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+  return t;
+})();
+function _crc32(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = _crcTable[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function buildZip(files) {
+  const parts = [], central = []; let offset = 0;
+  for (const f of files) {
+    const nameBuf = Buffer.from(f.name, 'utf8');
+    const data = Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data);
+    const crc = _crc32(data);
+    const comp = _zlib.deflateRawSync(data);
+    const useDeflate = comp.length < data.length;
+    const stored = useDeflate ? comp : data;
+    const method = useDeflate ? 8 : 0;
+    const lfh = Buffer.alloc(30);
+    lfh.writeUInt32LE(0x04034b50, 0); lfh.writeUInt16LE(20, 4); lfh.writeUInt16LE(0x0800, 6);
+    lfh.writeUInt16LE(method, 8); lfh.writeUInt16LE(0, 10); lfh.writeUInt16LE(0x21, 12);
+    lfh.writeUInt32LE(crc, 14); lfh.writeUInt32LE(stored.length, 18); lfh.writeUInt32LE(data.length, 22);
+    lfh.writeUInt16LE(nameBuf.length, 26); lfh.writeUInt16LE(0, 28);
+    parts.push(lfh, nameBuf, stored);
+    const cdr = Buffer.alloc(46);
+    cdr.writeUInt32LE(0x02014b50, 0); cdr.writeUInt16LE(20, 4); cdr.writeUInt16LE(20, 6); cdr.writeUInt16LE(0x0800, 8);
+    cdr.writeUInt16LE(method, 10); cdr.writeUInt16LE(0, 12); cdr.writeUInt16LE(0x21, 14);
+    cdr.writeUInt32LE(crc, 16); cdr.writeUInt32LE(stored.length, 20); cdr.writeUInt32LE(data.length, 24);
+    cdr.writeUInt16LE(nameBuf.length, 28); cdr.writeUInt16LE(0, 30); cdr.writeUInt16LE(0, 32);
+    cdr.writeUInt16LE(0, 34); cdr.writeUInt16LE(0, 36); cdr.writeUInt32LE(0, 38); cdr.writeUInt32LE(offset, 42);
+    central.push(Buffer.concat([cdr, nameBuf]));
+    offset += lfh.length + nameBuf.length + stored.length;
+  }
+  const cdBuf = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(0, 4); eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(central.length, 8); eocd.writeUInt16LE(central.length, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12); eocd.writeUInt32LE(offset, 16); eocd.writeUInt16LE(0, 20);
+  return Buffer.concat([...parts, cdBuf, eocd]);
+}
+
+// Bulk-export selected employees' contact info + SSN/EAD document files as a ZIP.
+// ?ids=1,2,3 (comma-separated employee ids). Auth: session token (query) or admin.
+app.get('/api/admin/employees/export-docs', (req, res, next) => {
+  if (req.query.token && validSession(req.query.token)) return next();
+  return requireAdmin(req, res, next);
+}, async (req, res) => {
+  try {
+    const ids = String(req.query.ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ error: '未选择员工' });
+    const empStmt = db.prepare('SELECT id, employee_id, first_name, middle_name, last_name, email, phone FROM employees WHERE id=?');
+    const primaryStmt = db.prepare(`SELECT d.id, d.doc_type, d.file_path, d.file_name FROM applicant_docs d
+      JOIN applicant_submissions s ON d.submission_id=s.id
+      WHERE s.employee_id=? AND d.doc_type IN ('ssn_front','ssn_back','ead_front','ead_back') ORDER BY d.id`);
+    const fallbackDocs = (e) => {
+      const conds = [], params = [];
+      if (e.phone) { conds.push('phone=?'); params.push(e.phone); }
+      if (e.email) { conds.push('email=?'); params.push(e.email); }
+      if (!conds.length) return [];
+      return db.prepare(`SELECT d.id, d.doc_type, d.file_path, d.file_name FROM applicant_docs d
+        WHERE d.submission_id IN (SELECT id FROM applicant_submissions WHERE ${conds.join(' OR ')} ORDER BY id DESC LIMIT 5)
+        AND d.doc_type IN ('ssn_front','ssn_back','ead_front','ead_back') ORDER BY d.id`).all(...params);
+    };
+    const DOC_LABEL = { ssn_front: 'SSN正', ssn_back: 'SSN反', ead_front: 'EAD正', ead_back: 'EAD反' };
+    const sanitize = s => String(s || '').replace(/[\\/:*?"<>|\r\n]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const files = [];
+    const idxRows = [['员工号', '姓名', '电话', '邮箱', '已导出证件']];
+    for (const id of ids) {
+      const e = empStmt.get(id);
+      if (!e) continue;
+      const name = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim() || ('员工' + id);
+      let docs = primaryStmt.all(id);
+      if (!docs.length) docs = fallbackDocs(e);
+      const seen = new Set(), picked = [];
+      for (const d of docs) { if (seen.has(d.doc_type)) continue; seen.add(d.doc_type); picked.push(d); }
+      const folder = sanitize(name) + '_' + (sanitize(e.employee_id) || id);
+      const got = [];
+      for (const d of picked) {
+        try {
+          const buf = await storage.getBuffer(storage.normalizeKey(d.file_path));
+          if (!buf || !buf.length) continue;
+          const ext = (path.extname(d.file_name || d.file_path || '') || '.jpg').toLowerCase();
+          const label = DOC_LABEL[d.doc_type] || d.doc_type;
+          files.push({ name: `${folder}/${label}${ext}`, data: buf });
+          got.push(label);
+        } catch (_) { /* skip unreadable file */ }
+      }
+      idxRows.push([e.employee_id || '', name, e.phone || '', e.email || '', got.join(' / ') || '（无证件）']);
+    }
+    const csv = '﻿' + idxRows.map(r => r.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    files.push({ name: '员工信息.csv', data: Buffer.from(csv, 'utf8') });
+    const zip = buildZip(files);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="employee-docs-${new Date().toISOString().slice(0, 10)}.zip"`);
+    res.send(zip);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
