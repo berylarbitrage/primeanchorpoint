@@ -1285,6 +1285,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <h1>员工管理</h1>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="exportEmployeeCSV()">导出 CSV</button>
+      <button class="btn btn-outline" id="empExportDocsBtn" onclick="exportSelectedEmpDocs()" title="勾选员工后导出其姓名/电话/邮箱与 SSN、EAD 证件（打包 ZIP）">📎 导出证件 (0)</button>
       <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
       <button class="btn btn-green" onclick="openEmpModal()">+ 新增员工</button>
     </div>
@@ -1318,6 +1319,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="emp-table-wrap">
     <table class="emp-table">
       <thead><tr>
+        <th style="width:34px;text-align:center"><input type="checkbox" id="empSelectAll" onclick="_empToggleAll(this)" title="全选 / 取消全选"></th>
         <th style="min-width:120px">员工号</th>
         <th style="min-width:200px">姓名 / 联系方式</th>
         <th style="min-width:180px">职位 / 公司</th>
@@ -14050,6 +14052,7 @@ function renderEmployees(list) {
       : '';
     const empFullName = titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '));
     return `<tr>
+    <td style="text-align:center"><input type="checkbox" class="emp-select" value="${e.id}" onclick="event.stopPropagation()" onchange="_empSelChange()"></td>
     <td>
       <div style="font-weight:700;font-size:.88rem">${esc(e.employee_id||'—')}</div>
       ${workerCodeHtml}
@@ -14080,7 +14083,8 @@ function renderEmployees(list) {
       ${e.status!=='terminated' && USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='terminateEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🚪 办理离职</button>` : ''}
       ${USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='deleteEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🗑️ 删除</button>` : ''}
     </td>
-  </tr>`}).join('') : '<tr><td colspan="7" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
+  </tr>`}).join('') : '<tr><td colspan="8" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
+  _empSelChange();
 }
 
 // ── Employee action dropdown ──
@@ -15953,6 +15957,28 @@ function editFromDetail() {
 }
 function exportEmployeeCSV() {
   window.open(API + '/admin/employees/export?token=' + TOKEN, '_blank');
+}
+// ── Bulk export of selected employees' 证件 (SSN/EAD) + contact info as a ZIP ──
+function _empSelectedIds() {
+  return [...document.querySelectorAll('.emp-select:checked')].map(c => c.value).filter(Boolean);
+}
+function _empSelChange() {
+  const boxes = [...document.querySelectorAll('.emp-select')];
+  const n = boxes.filter(c => c.checked).length;
+  const btn = document.getElementById('empExportDocsBtn');
+  if (btn) btn.textContent = `📎 导出证件 (${n})`;
+  const all = document.getElementById('empSelectAll');
+  if (all) { all.checked = n > 0 && n === boxes.length; all.indeterminate = n > 0 && n < boxes.length; }
+}
+function _empToggleAll(master) {
+  document.querySelectorAll('.emp-select').forEach(c => { c.checked = master.checked; });
+  _empSelChange();
+}
+function exportSelectedEmpDocs() {
+  const ids = _empSelectedIds();
+  if (!ids.length) { showToast('请先勾选要导出的员工', 'error'); return; }
+  showToast(`正在打包 ${ids.length} 位员工的证件…`, 'success', 3000);
+  window.open(API + '/admin/employees/export-docs?token=' + TOKEN + '&ids=' + ids.join(','), '_blank');
 }
 
 // ══════════════════════════════════════════════════════
