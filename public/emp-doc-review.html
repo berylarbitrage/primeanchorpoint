@@ -691,42 +691,57 @@
     const contours = new cv.MatVector();
     const hierarchy = new cv.Mat();
     let bestPts = null;
+    const closeK = cv.Mat.ones(5, 5, cv.CV_8U);
     try {
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
       cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
       // Try a few Canny threshold pairs and keep the best quad
       const thresholdSets = [[50, 150], [30, 100], [75, 200]];
       const imgArea = sw * sh;
-      let bestArea = imgArea * 0.18; // require at least 18% of image
+      let bestQuadArea = imgArea * 0.18;   // a clean 4-gon must cover ≥18% of the image
+      let bestRectArea = imgArea * 0.20;   // rotated-rect fallback must cover ≥20%
+      let bestRectPts = null;
       for (const [lo, hi] of thresholdSets) {
         cv.Canny(blurred, edges, lo, hi);
-        const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
-        cv.dilate(edges, dilated, kernel);
-        kernel.delete();
+        // Dilate + close so a card outline broken by glare / low contrast still forms
+        // ONE closed contour instead of fragments (a fragment approximates to junk).
+        cv.dilate(edges, dilated, closeK);
+        cv.morphologyEx(dilated, dilated, cv.MORPH_CLOSE, closeK);
         cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
         for (let i = 0; i < contours.size(); i++) {
           const cnt = contours.get(i);
-          const peri = cv.arcLength(cnt, true);
-          const approx = new cv.Mat();
-          cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
-          if (approx.rows === 4 && cv.isContourConvex(approx)) {
-            const area = Math.abs(cv.contourArea(approx));
-            if (area > bestArea) {
-              bestArea = area;
+          const area = Math.abs(cv.contourArea(cnt));
+          if (area > imgArea * 0.15) {
+            const peri = cv.arcLength(cnt, true);
+            const approx = new cv.Mat();
+            cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+            if (approx.rows === 4 && cv.isContourConvex(approx) && area > bestQuadArea) {
+              bestQuadArea = area;
               const pts = [];
               for (let j = 0; j < 4; j++) {
                 pts.push({ x: approx.data32S[j * 2] / k, y: approx.data32S[j * 2 + 1] / k });
               }
               bestPts = orderQuadCorners(pts);
+            } else if (area > bestRectArea) {
+              // A big region that isn't a clean quad (rounded corners, a nicked edge)
+              // → use its rotated bounding rectangle. Cards ARE rectangles, so this is
+              // a much better guess than the whole-frame default.
+              bestRectArea = area;
+              const rr = cv.minAreaRect(cnt);
+              const box = cv.RotatedRect.points(rr);
+              bestRectPts = orderQuadCorners(box.map(p => ({ x: p.x / k, y: p.y / k })));
             }
+            approx.delete();
           }
-          approx.delete();
           cnt.delete();
         }
       }
+      // Prefer a clean 4-gon; else fall back to the biggest region's rotated rect.
+      if (!bestPts && bestRectPts) bestPts = bestRectPts;
     } catch (e) {
       bestPts = null;
     } finally {
+      closeK.delete();
       src.delete(); gray.delete(); blurred.delete();
       edges.delete(); dilated.delete();
       contours.delete(); hierarchy.delete();
@@ -776,6 +791,38 @@
   //    inset depth), unlike a tight bounding box.
   // 5. Validate the quad covers a sensible fraction of the image; if not,
   //    fall back to the bounding-box, then the fixed 6% inset.
+  // Iterative flood fill (8-connectivity). Returns a mask keeping only the largest
+  // connected foreground region, or null if the input is empty.
+  function largestComponent(mask, w, h) {
+    const n = w * h;
+    const label = new Int32Array(n);   // 0 = unvisited
+    const stack = new Int32Array(n);
+    let cur = 0, bestLabel = 0, bestSize = 0;
+    for (let start = 0; start < n; start++) {
+      if (!mask[start] || label[start]) continue;
+      cur++;
+      let sp = 0, size = 0;
+      stack[sp++] = start; label[start] = cur;
+      while (sp > 0) {
+        const p = stack[--sp]; size++;
+        const px = p % w, py = (p - px) / w;
+        for (let dy = -1; dy <= 1; dy++) {
+          const ny = py + dy; if (ny < 0 || ny >= h) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = px + dx; if (nx < 0 || nx >= w) continue;
+            const np = ny * w + nx;
+            if (mask[np] && !label[np]) { label[np] = cur; stack[sp++] = np; }
+          }
+        }
+      }
+      if (size > bestSize) { bestSize = size; bestLabel = cur; }
+    }
+    if (!bestLabel) return null;
+    const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (label[i] === bestLabel) out[i] = 1;
+    return out;
+  }
+
   function autoDetectCorners(srcCanvas) {
     const W = srcCanvas.width, H = srcCanvas.height;
     const insetFallback = () => {
@@ -858,7 +905,12 @@
           if (nb >= 6) { eroded[i] = 1; erodedCount++; }
         }
       }
-      const useMask = erodedCount > sw * sh * 0.02 ? eroded : mask;
+      const baseMask = erodedCount > sw * sh * 0.02 ? eroded : mask;
+      // Isolate the single largest connected blob so disconnected background noise
+      // (a shadow, table grain, a second object, the letterbox border) can't drag a
+      // corner out to the image edge — the biggest foreground region IS the document.
+      // This is the main fix for "auto-detect grabs the whole frame" on busy photos.
+      const useMask = largestComponent(baseMask, sw, sh) || baseMask;
       // Extreme-point search (handles trapezoidal skew)
       let tlX = 0, tlY = 0, tlS = Infinity;
       let trX = 0, trY = 0, trS = -Infinity;
