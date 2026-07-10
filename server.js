@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-10f · 入职上传的SSN卡/工作许可优先于问卷匹配 + 证件可手动指定栏位(无条件优先)',
+  tag: '2026-07-10g · 裁剪永久保留原图且历史版本可见可回滚(全部来源) + 入职上传优先 + 手动指定栏位',
   started: new Date().toISOString(),
 };
 
@@ -17602,6 +17602,19 @@ app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Every review-crop keeps the original file (saves write a NEW key and only repoint the
+// row). This log records old→new key per save, so 历史版本 can always list the pristine
+// original — including wc_/wp_/ed_ docs whose originals aren't discoverable by the
+// id-edited-* prefix scan.
+db.exec(`CREATE TABLE IF NOT EXISTS id_doc_edit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_ref TEXT NOT NULL,
+  old_key TEXT DEFAULT '',
+  new_key TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_iel_ref ON id_doc_edit_log(doc_ref)'); } catch (e) {}
+
 // Save an edited (cropped / rotated / de-skewed) image back to the record.
 // Writes a NEW key and repoints the applicant_docs row; the original file is
 // left in storage so a bad crop is recoverable.
@@ -17641,6 +17654,7 @@ app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
     } else {
       db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?').run(newKey, editedName, docId);
     }
+    try { db.prepare('INSERT INTO id_doc_edit_log (doc_ref, old_key, new_key) VALUES (?,?,?)').run(rawId, oldKey, newKey); } catch (e) {}
     res.json({ ok: true, doc_id: rawId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -17767,6 +17781,17 @@ async function _empDocVersions(raw) {
   const map = new Map();
   for (const v of listed) map.set(v.key, { key: v.key, ts: v.lastModified || _tsFromEditedKey(v.key), size: v.size });
   if (!map.has(curKey)) map.set(curKey, { key: curKey, ts: _tsFromEditedKey(curKey) || null, size: null }); // include the pristine/current file
+  // Merge the edit log: every crop-save records old→new key, so the pristine original is
+  // always listed no matter the source table (wc_/wp_/ed_ included).
+  try {
+    for (const l of db.prepare('SELECT old_key, new_key, created_at FROM id_doc_edit_log WHERE doc_ref=?').all(String(raw))) {
+      for (const k of [l.old_key, l.new_key]) {
+        if (!k || map.has(k)) continue;
+        const ts = _tsFromEditedKey(k) || _docKeyEpochMs(k) || (l.created_at ? Date.parse(String(l.created_at).replace(' ', 'T') + 'Z') : null);
+        map.set(k, { key: k, ts, size: null, candidateOriginal: !/id-edited-/.test(String(k)) });
+      }
+    }
+  } catch (e) { /* table may not exist on first boot */ }
   // The very FIRST original (before any edit) is named apply-<ts>-* (a random name, not
   // id-edited-*), so the prefix search above misses it. It's never deleted though — find
   // it by the upload timestamp embedded in the name being close to the submission's
@@ -17785,6 +17810,33 @@ async function _empDocVersions(raw) {
           const m = String(f.key).match(/apply-(\d+)-/); if (!m) continue;
           const ts = parseInt(m[1], 10);
           if (Math.abs(ts - created) <= WINDOW && !map.has(f.key) && !siblingKeys.has(f.key)) map.set(f.key, { key: f.key, ts, size: f.size, candidateOriginal: true });
+        }
+      }
+    } catch (e) { /* best-effort */ }
+  } else if (r.src !== 'app') {
+    // Same original-hunt for onboarding/manual docs (wc/wp/ed) cropped BEFORE the edit
+    // log existed: their pristine original (onboard-*/doc-*/empdoc-*) was uploaded near
+    // the row's creation time — find it by the timestamp embedded in the filename,
+    // excluding files that sibling doc rows currently point at.
+    try {
+      const created0 = r.doc.created_at || r.doc.uploaded_at;
+      const created = created0 ? Date.parse(String(created0).replace(' ', 'T') + (/Z|[+-]\d\d:?\d\d$/.test(String(created0)) ? '' : 'Z')) : null;
+      if (created && !isNaN(created)) {
+        const sib = new Set();
+        const addSib = (fp) => { if (!fp) return; const s = String(fp); sib.add(s.includes('/') ? storage.keyForPath(s) : 'employee_docs/' + s); };
+        if (r.src === 'wc' || r.src === 'wp') {
+          const waId = r.doc.worker_account_id;
+          for (const x of db.prepare('SELECT id, file_path FROM worker_compliance_docs WHERE worker_account_id=?').all(waId)) { if (!(r.src === 'wc' && x.id === r.id)) addSib(x.file_path); }
+          for (const x of db.prepare('SELECT id, file_path FROM work_permit_docs WHERE worker_account_id=?').all(waId)) { if (!(r.src === 'wp' && x.id === r.id)) addSib(x.file_path); }
+        } else {
+          for (const x of db.prepare('SELECT id, file_path FROM employee_documents WHERE employee_id=?').all(r.doc.employee_id)) { if (x.id !== r.id) addSib(x.file_path); }
+        }
+        const WINDOW = 3 * 60 * 60 * 1000;
+        for (const pre of ['onboard-', 'doc-', 'empdoc-', 'wdoc-']) {
+          for (const f of await storage.listByPrefix(`${dir}/${pre}`)) {
+            const ts = _docKeyEpochMs(f.key);
+            if (ts && Math.abs(ts - created) <= WINDOW && !map.has(f.key) && !sib.has(f.key)) map.set(f.key, { key: f.key, ts, size: f.size, candidateOriginal: true });
+          }
         }
       }
     } catch (e) { /* best-effort */ }
@@ -17824,6 +17876,7 @@ app.post('/api/admin/employees/id-doc-restore/:docId', requireAdmin, async (req,
     else if (r.src === 'wp') db.prepare('UPDATE work_permit_docs SET file_path=?, file_name=? WHERE id=?').run(key, fname, r.id);
     else if (r.src === 'ed') db.prepare('UPDATE employee_documents SET file_path=?, file_name=? WHERE id=?').run(key.replace(/^employee_docs\//, ''), fname, r.id);
     else db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?').run(key, fname, r.id);
+    try { db.prepare('INSERT INTO id_doc_edit_log (doc_ref, old_key, new_key) VALUES (?,?,?)').run(String(req.params.docId), info.curKey, key); } catch (e) {}
     res.json({ ok: true, restored: key });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
