@@ -333,10 +333,13 @@
     setLoader(true, '加载证件图…');
     try {
       let c = null;
-      // Browser-native formats: draw directly. HEIC / anything the browser rejects:
-      // decode client-side so it can still be reviewed (then saved back as JPEG).
-      if (it.previewable) { try { c = await imageToCanvas(url); } catch (e) { /* try HEIC below */ } }
-      if (!c) { setLoader(true, '转换 HEIC 图片…'); c = await canvasFromHeicUrl(url); }
+      // ALWAYS try the browser first — it renders JPEG/PNG/WEBP/GIF even when the stored
+      // file has no extension (which is exactly why `previewable` can be wrong: it's
+      // computed from the filename extension, and many uploads have none). Only if the
+      // browser can't decode it do we treat it as HEIC and convert with heic2any.
+      try { c = await imageToCanvas(url); } catch (e) { /* not browser-native — try HEIC */ }
+      if (!c) { setLoader(true, '转换 HEIC 图片…'); try { c = await canvasFromHeicUrl(url); } catch (e) { /* give up below */ } }
+      if (!c) throw new Error('undecodable');
       await runDetectAndCrop(c);
     } catch (e) {
       setLoader(false);
