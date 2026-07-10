@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-10d · 文件时光机默认只看本人相关(按工号建档日/记录时间定位) + 免备份找回被覆盖证件',
+  tag: '2026-07-10e · 证件审阅/导出优先用员工档案最新上传(含时光机归还) + 文件时光机只看本人相关',
   started: new Date().toISOString(),
 };
 
@@ -17132,6 +17132,21 @@ function _makeEmpDocMatcher() {
   // work_permit_docs (also keyed by worker_account_id). Used to fill missing EAD slots.
   const wpStmt = db.prepare(`SELECT id, file_path, file_name FROM work_permit_docs
     WHERE worker_account_id=? AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC`);
+  // Documents uploaded straight onto the employee record (员工档案 → 上传文件, or the
+  // 时光机 "归还" recovery) live in employee_documents, keyed by employee_id. A manual
+  // re-upload is the strongest signal there is — it must beat whatever the application /
+  // onboarding tables still point at. Slot-mapped by label keywords, newest first. `ed_<id>`.
+  const edStmt = db.prepare(`SELECT id, doc_type, doc_label, file_path, file_name FROM employee_documents
+    WHERE employee_id=? AND file_path IS NOT NULL AND file_path!='' ORDER BY uploaded_at DESC, id DESC`);
+  const edSlot = r => {
+    const t = ((r.doc_label || '') + ' ' + (r.doc_type || '')).toLowerCase();
+    const isSsn = /ssn|social|社安/.test(t);
+    const isEad = /ead|work\s*_?permit|工卡|工作许可|许可证/.test(t);
+    if (!isSsn && !isEad) return null;
+    const back = /反|背|back/.test(t);
+    return (isSsn ? 'ssn_' : 'ead_') + (back ? 'back' : 'front');
+  };
+  const edKey = fp => { const s = String(fp); return s.includes('/') ? storage.keyForPath(s) : 'employee_docs/' + s; };
   return function pickDocs(e) {
     // Rank candidate submissions in three tiers so a correctly-owned doc always wins, but
     // we NEVER silently drop a doc that has nowhere else to match:
@@ -17147,6 +17162,13 @@ function _makeEmpDocMatcher() {
     const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) bucket(id);
     const uniq = [...new Set([...self, ...own, ...other])];
     const seen = new Set(), picked = [];
+    // Tier 0: manual uploads on the employee record claim their slot before anything else.
+    for (const r of edStmt.all(e.id)) {
+      const slot = edSlot(r); if (!slot || seen.has(slot)) continue;
+      picked.push({ id: 'ed_' + r.id, submission_id: null, doc_type: slot,
+                    file_path: edKey(r.file_path), file_name: r.file_name || r.doc_label || 'employee-doc', source: 'employee_documents' });
+      seen.add(slot);
+    }
     if (uniq.length) {
       const rows = db.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs
         WHERE submission_id IN (${uniq.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...uniq);
@@ -17538,14 +17560,21 @@ app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res
   try {
     const raw = String(req.params.docId || '');
     // `wc_<id>` → admin-uploaded SSN card (worker_compliance_docs); `wp_<id>` → work
-    // permit / EAD doc (work_permit_docs); otherwise a normal applicant_docs id.
+    // permit / EAD doc (work_permit_docs); `ed_<id>` → employee_documents (员工档案);
+    // otherwise a normal applicant_docs id.
     const doc = raw.startsWith('wc_')
       ? db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND doc_type='ssn_card'").get(parseInt(raw.slice(3), 10))
       : raw.startsWith('wp_')
       ? db.prepare("SELECT * FROM work_permit_docs WHERE id=?").get(parseInt(raw.slice(3), 10))
+      : raw.startsWith('ed_')
+      ? db.prepare('SELECT * FROM employee_documents WHERE id=?').get(parseInt(raw.slice(3), 10))
       : db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(raw);
     if (!doc) return res.status(404).json({ error: 'Not found' });
-    const key = storage.keyForPath(doc.file_path);   // handles absolute local paths (SSN cards) too
+    // employee_documents stores a bare basename served from employee_docs/; the rest are
+    // keys or absolute local paths that keyForPath reduces.
+    const key = raw.startsWith('ed_') && !String(doc.file_path).includes('/')
+      ? 'employee_docs/' + doc.file_path
+      : storage.keyForPath(doc.file_path);
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
     const buf = await storage.getBuffer(key);
     const ext = path.extname(key).toLowerCase();
@@ -17565,7 +17594,7 @@ app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res
 app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
   try {
     const rawId = String((req.body && req.body.docId) || '');
-    const src = rawId.startsWith('wc_') ? 'wc' : rawId.startsWith('wp_') ? 'wp' : 'app';
+    const src = rawId.startsWith('wc_') ? 'wc' : rawId.startsWith('wp_') ? 'wp' : rawId.startsWith('ed_') ? 'ed' : 'app';
     const docId = parseInt(src === 'app' ? rawId : rawId.slice(3), 10);
     const dataUrl = String((req.body && req.body.dataUrl) || '');
     const m = dataUrl.match(/^data:image\/(jpeg|jpg|png);base64,/i);
@@ -17574,12 +17603,16 @@ app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
       ? db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND doc_type='ssn_card'").get(docId)
       : src === 'wp'
       ? db.prepare("SELECT * FROM work_permit_docs WHERE id=?").get(docId)
+      : src === 'ed'
+      ? db.prepare('SELECT * FROM employee_documents WHERE id=?').get(docId)
       : db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(docId);
     if (!doc) return res.status(404).json({ error: 'Not found' });
     const buf = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
     if (!buf.length || buf.length > 15 * 1024 * 1024) return res.status(400).json({ error: '图片无效或过大' });
     const isPng = /png/i.test(m[1]);
-    const oldKey = storage.keyForPath(doc.file_path);   // absolute local paths → key
+    const oldKey = src === 'ed' && !String(doc.file_path).includes('/')
+      ? 'employee_docs/' + doc.file_path
+      : storage.keyForPath(doc.file_path);   // absolute local paths → key
     const dir = oldKey.includes('/') ? oldKey.slice(0, oldKey.lastIndexOf('/')) : 'uploads';
     const newKey = `${dir}/id-edited-${src === 'app' ? '' : src}${docId}-${Date.now()}.${isPng ? 'png' : 'jpg'}`;
     await storage.putObject(newKey, buf, { contentType: isPng ? 'image/png' : 'image/jpeg' });
@@ -17588,6 +17621,9 @@ app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
       db.prepare('UPDATE worker_compliance_docs SET file_path=?, file_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(newKey, editedName, docId);
     } else if (src === 'wp') {
       db.prepare('UPDATE work_permit_docs SET file_path=?, file_name=? WHERE id=?').run(newKey, editedName, docId);
+    } else if (src === 'ed') {
+      // employee_documents.file_path is a basename served from employee_docs/
+      db.prepare('UPDATE employee_documents SET file_path=?, file_name=? WHERE id=?').run(newKey.replace(/^employee_docs\//, ''), editedName, docId);
     } else {
       db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?').run(newKey, editedName, docId);
     }
@@ -17679,9 +17715,16 @@ function _resolveEmpDoc(raw) {
   raw = String(raw || '');
   if (raw.startsWith('wc_')) { const id = parseInt(raw.slice(3), 10); return { src: 'wc', id, doc: db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND doc_type='ssn_card'").get(id) }; }
   if (raw.startsWith('wp_')) { const id = parseInt(raw.slice(3), 10); return { src: 'wp', id, doc: db.prepare("SELECT * FROM work_permit_docs WHERE id=?").get(id) }; }
+  if (raw.startsWith('ed_')) {
+    const id = parseInt(raw.slice(3), 10);
+    const doc = db.prepare('SELECT * FROM employee_documents WHERE id=?').get(id);
+    // Normalize the bare-basename form so downstream keyForPath/dir logic works.
+    if (doc && doc.file_path && !String(doc.file_path).includes('/')) doc.file_path = 'employee_docs/' + doc.file_path;
+    return { src: 'ed', id, doc: doc && doc.file_path ? doc : null };
+  }
   const id = parseInt(raw, 10); return { src: 'app', id, doc: db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(id) };
 }
-function _tsFromEditedKey(key) { const m = String(key).match(/id-edited-(?:wc|wp)?\d+-(\d+)\./); return m ? parseInt(m[1], 10) : 0; }
+function _tsFromEditedKey(key) { const m = String(key).match(/id-edited-(?:wc|wp|ed)?\d+-(\d+)\./); return m ? parseInt(m[1], 10) : 0; }
 async function _empDocVersions(raw) {
   const r = _resolveEmpDoc(raw);
   if (!r.doc) return null;
@@ -17748,6 +17791,7 @@ app.post('/api/admin/employees/id-doc-restore/:docId', requireAdmin, async (req,
     const r = info.r, fname = 'restored-' + key.split('/').pop();
     if (r.src === 'wc') db.prepare('UPDATE worker_compliance_docs SET file_path=?, file_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(key, fname, r.id);
     else if (r.src === 'wp') db.prepare('UPDATE work_permit_docs SET file_path=?, file_name=? WHERE id=?').run(key, fname, r.id);
+    else if (r.src === 'ed') db.prepare('UPDATE employee_documents SET file_path=?, file_name=? WHERE id=?').run(key.replace(/^employee_docs\//, ''), fname, r.id);
     else db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?').run(key, fname, r.id);
     res.json({ ok: true, restored: key });
   } catch (e) { res.status(500).json({ error: e.message }); }
