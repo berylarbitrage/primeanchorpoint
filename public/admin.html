@@ -2615,10 +2615,14 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <option value="out">支出</option>
           <option value="in">收入</option>
         </select>
-        <input id="invpSubPayFilterPayee" oninput="_invpRenderSubPayList()" placeholder="🔍 公司 / 收款人" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
-        <input id="invpSubPayFilterPurpose" oninput="_invpRenderSubPayList()" placeholder="🔍 用途 / 备注" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
-        <input id="invpSubPayFilterAmtMin" type="number" step="0.01" oninput="_invpRenderSubPayList()" placeholder="金额 ≥" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
-        <input id="invpSubPayFilterAmtMax" type="number" step="0.01" oninput="_invpRenderSubPayList()" placeholder="金额 ≤" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+        <select id="invpSubPayFilterPayee" onchange="_invpRenderSubPayList()" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+          <option value="">全部公司 / 收款人</option>
+        </select>
+        <select id="invpSubPayFilterPurpose" onchange="_invpRenderSubPayList()" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+          <option value="">全部用途</option>
+        </select>
+        <input id="invpSubPayFilterAmtMin" type="number" step="0.01" inputmode="decimal" oninput="_invpRenderSubPayList()" placeholder="金额 ≥ （可自己填，如 2000）" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+        <input id="invpSubPayFilterAmtMax" type="number" step="0.01" inputmode="decimal" oninput="_invpRenderSubPayList()" placeholder="金额 ≤" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
         <input id="invpSubPayFilterDateFrom" type="date" onchange="_invpRenderSubPayList()" title="日期从" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
         <input id="invpSubPayFilterDateTo" type="date" onchange="_invpRenderSubPayList()" title="日期到" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
       </div>
@@ -31487,7 +31491,29 @@ function _invpFillSubPayStatements() {
       list.map(s => `<option value="${s.id}">${esc(_invpStmtLabel(s))}</option>`).join('');
     if (keep) filtSel.value = keep;
   }
+  _invpFillSubPayFilterOptions();
   _invpRenderSubPayList();
+}
+
+// Populate the 公司/收款人 and 用途 filter dropdowns from the distinct values actually
+// present in the loaded transactions (so the user picks instead of typing). Amount and
+// date stay free inputs. Preserves the current selection when still valid.
+function _invpFillSubPayFilterOptions() {
+  const boxesMap = window._invpBankStmtBoxes || {};
+  const payees = new Set(), purposes = new Set();
+  Object.values(boxesMap).forEach(arr => (arr || []).forEach(b => {
+    const p = (_bsPayeeDisplay(b.payee) || '').trim(); if (p) payees.add(p);
+    const u = (b.purpose || '').trim(); if (u) purposes.add(u);
+  }));
+  const fill = (id, values, allLabel) => {
+    const sel = document.getElementById(id); if (!sel) return;
+    const keep = sel.value;
+    sel.innerHTML = `<option value="">${allLabel}</option>` +
+      [...values].sort((a, b) => a.localeCompare(b)).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.value = (keep && values.has(keep)) ? keep : '';
+  };
+  fill('invpSubPayFilterPayee', payees, '全部公司 / 收款人');
+  fill('invpSubPayFilterPurpose', purposes, '全部用途');
 }
 
 // Set the chosen voucher (hidden #invpSubPayStmt) and refresh the list + summary line.
@@ -31520,8 +31546,9 @@ function _invpRenderSubPayList() {
   const fStmt = (document.getElementById('invpSubPayFilterStmt') || {}).value || '';
   const norm = v => String(v == null ? '' : v).toLowerCase().trim();
   const fDir = (document.getElementById('invpSubPayFilterDir') || {}).value || '';
-  const fPayee = norm(document.getElementById('invpSubPayFilterPayee')?.value);
-  const fPurpose = norm(document.getElementById('invpSubPayFilterPurpose')?.value);
+  // Payee / purpose are dropdowns of the actual values → match exactly.
+  const fPayee = (document.getElementById('invpSubPayFilterPayee') || {}).value || '';
+  const fPurpose = (document.getElementById('invpSubPayFilterPurpose') || {}).value || '';
   const _num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : n; };
   const fAmtMin = _num(document.getElementById('invpSubPayFilterAmtMin')?.value);
   const fAmtMax = _num(document.getElementById('invpSubPayFilterAmtMax')?.value);
@@ -31548,8 +31575,8 @@ function _invpRenderSubPayList() {
     const boxes = Array.isArray(boxesMap[s.id]) ? boxesMap[s.id] : [];
     const matches = boxes.filter(b => {
       if (fDir && (b.direction === 'in' ? 'in' : 'out') !== fDir) return false;
-      if (fPayee && !norm((_bsPayeeDisplay(b.payee) || '') + ' ' + (b.payee || '') + ' ' + (b.note || '')).includes(fPayee)) return false;
-      if (fPurpose && !norm((b.purpose || '') + ' ' + (b.note || '')).includes(fPurpose)) return false;
+      if (fPayee && (_bsPayeeDisplay(b.payee) || '').trim() !== fPayee) return false;
+      if (fPurpose && (b.purpose || '').trim() !== fPurpose) return false;
       if (fAmtMin != null || fAmtMax != null) {
         const amt = Math.abs(Number(b.amount) || 0);
         if (fAmtMin != null && amt < fAmtMin) return false;
