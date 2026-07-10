@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-10h · 发票查重拦截(同公司+同周期+同金额报错,同号禁止) + 裁剪保留原图 + 入职上传优先',
+  tag: '2026-07-10i · 工人工时查重(同名/同工时需确认) + 发票查重拦截 + 裁剪保留原图',
   started: new Date().toISOString(),
 };
 
