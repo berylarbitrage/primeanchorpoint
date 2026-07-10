@@ -17059,7 +17059,9 @@ function buildZip(files) {
   return Buffer.concat([...parts, cdBuf, eocd]);
 }
 
-// Bulk-export selected employees' contact info + SSN/EAD document files as a ZIP.
+// Bulk-export selected employees' contact info + SSN/EAD document photos as a
+// single, print-ready PDF packet: a cover/summary page followed by one section
+// per employee with their four ID photos embedded. (Replaces the old ZIP+CSV.)
 // ?ids=1,2,3 (comma-separated employee ids). Auth: session token (query) or admin.
 app.get('/api/admin/employees/export-docs', (req, res, next) => {
   if (req.query.token && validSession(req.query.token)) return next();
@@ -17068,52 +17070,338 @@ app.get('/api/admin/employees/export-docs', (req, res, next) => {
   try {
     const ids = String(req.query.ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
     if (!ids.length) return res.status(400).json({ error: '未选择员工' });
+
     const empStmt = db.prepare('SELECT id, employee_id, first_name, middle_name, last_name, email, phone FROM employees WHERE id=?');
-    const primaryStmt = db.prepare(`SELECT d.id, d.doc_type, d.file_path, d.file_name FROM applicant_docs d
-      JOIN applicant_submissions s ON d.submission_id=s.id
-      WHERE s.employee_id=? AND d.doc_type IN ('ssn_front','ssn_back','ead_front','ead_back') ORDER BY d.id`);
-    const fallbackDocs = (e) => {
-      const conds = [], params = [];
-      if (e.phone) { conds.push('phone=?'); params.push(e.phone); }
-      if (e.email) { conds.push('email=?'); params.push(e.email); }
-      if (!conds.length) return [];
-      return db.prepare(`SELECT d.id, d.doc_type, d.file_path, d.file_name FROM applicant_docs d
-        WHERE d.submission_id IN (SELECT id FROM applicant_submissions WHERE ${conds.join(' OR ')} ORDER BY id DESC LIMIT 5)
-        AND d.doc_type IN ('ssn_front','ssn_back','ead_front','ead_back') ORDER BY d.id`).all(...params);
+    const DOC_TYPES = ['ssn_front', 'ssn_back', 'ead_front', 'ead_back'];
+    const DOC_LABEL = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
+    const DOC_SHORT = { ssn_front: 'SSN正', ssn_back: 'SSN反', ead_front: 'EAD正', ead_back: 'EAD反' };
+
+    // ── Robust applicant → employee matching ────────────────────────────
+    // The four ID photos live on applicant_submissions / applicant_docs. We link
+    // them to an employee by (1) an explicit employee_id link, else (2) phone
+    // (compared on the last 10 digits, so a +1 country code or formatting still
+    // matches) or email (case-insensitive). This is looser than the old exact
+    // match, which silently dropped documents whenever a stored phone/email
+    // differed by a country code or letter case → spurious "无证件".
+    const norm10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
+    const phoneMap = new Map(), emailMap = new Map();
+    try {
+      for (const s of db.prepare('SELECT id, phone, email FROM applicant_submissions ORDER BY id DESC').all()) {
+        const p = norm10(s.phone);
+        if (p.length === 10) { if (!phoneMap.has(p)) phoneMap.set(p, []); phoneMap.get(p).push(s.id); }
+        const em = String(s.email || '').trim().toLowerCase();
+        if (em) { if (!emailMap.has(em)) emailMap.set(em, []); emailMap.get(em).push(s.id); }
+      }
+    } catch (_) { /* no submissions table content */ }
+    const linkedStmt = db.prepare('SELECT id FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC');
+    const pickDocs = (e) => {
+      const ordered = [];                                   // submission ids, highest priority first
+      for (const r of linkedStmt.all(e.id)) ordered.push(r.id);
+      const p = norm10(e.phone); if (p.length === 10) for (const id of (phoneMap.get(p) || [])) ordered.push(id);
+      const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) ordered.push(id);
+      const uniq = [...new Set(ordered)];
+      if (!uniq.length) return [];
+      const rows = db.prepare(`SELECT submission_id, doc_type, file_path, file_name FROM applicant_docs
+        WHERE submission_id IN (${uniq.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...uniq);
+      const prio = new Map(uniq.map((id, i) => [id, i]));
+      rows.sort((a, b) => (prio.get(a.submission_id) ?? 1e9) - (prio.get(b.submission_id) ?? 1e9));
+      const seen = new Set(), picked = [];
+      for (const r of rows) { if (seen.has(r.doc_type)) continue; seen.add(r.doc_type); picked.push(r); }
+      return picked;
     };
-    const DOC_LABEL = { ssn_front: 'SSN正', ssn_back: 'SSN反', ead_front: 'EAD正', ead_back: 'EAD反' };
-    const sanitize = s => String(s || '').replace(/[\\/:*?"<>|\r\n]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 60);
-    const files = [];
-    const idxRows = [['员工号', '姓名', '电话', '邮箱', '已导出证件']];
+
+    // pdfkit can only embed JPEG/PNG — detect by magic bytes.
+    const imgKind = (buf) => {
+      if (!buf || buf.length < 4) return null;
+      if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'jpg';
+      if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'png';
+      return null;
+    };
+
+    // Fetch every employee's photo buffers up front (async), then render sync.
+    const people = [];
     for (const id of ids) {
       const e = empStmt.get(id);
       if (!e) continue;
-      const name = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim() || ('员工' + id);
-      let docs = primaryStmt.all(id);
-      if (!docs.length) docs = fallbackDocs(e);
-      const seen = new Set(), picked = [];
-      for (const d of docs) { if (seen.has(d.doc_type)) continue; seen.add(d.doc_type); picked.push(d); }
-      const folder = sanitize(name) + '_' + (sanitize(e.employee_id) || id);
-      const got = [];
-      for (const d of picked) {
+      const name = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim() || ('员工 ' + id);
+      const slots = {};
+      for (const d of pickDocs(e)) {
         try {
           const buf = await storage.getBuffer(storage.normalizeKey(d.file_path));
           if (!buf || !buf.length) continue;
-          const ext = (path.extname(d.file_name || d.file_path || '') || '.jpg').toLowerCase();
-          const label = DOC_LABEL[d.doc_type] || d.doc_type;
-          files.push({ name: `${folder}/${label}${ext}`, data: buf });
-          got.push(label);
-        } catch (_) { /* skip unreadable file */ }
+          slots[d.doc_type] = { buf, kind: imgKind(buf), file_name: d.file_name || '', ext: (path.extname(d.file_name || d.file_path || '') || '').toLowerCase() };
+        } catch (_) { /* unreadable */ }
       }
-      idxRows.push([e.employee_id || '', name, e.phone || '', e.email || '', got.join(' / ') || '（无证件）']);
+      people.push({ e, name, slots });
     }
-    const csv = '﻿' + idxRows.map(r => r.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
-    files.push({ name: '员工信息.csv', data: Buffer.from(csv, 'utf8') });
-    const zip = buildZip(files);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="employee-docs-${new Date().toISOString().slice(0, 10)}.zip"`);
-    res.send(zip);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+
+    // ── Build the PDF ────────────────────────────────────────────────────
+    const cjkPath = [path.join(__dirname, 'fonts', 'NotoSansSC-Regular.ttf'), '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'].find(p => fs.existsSync(p));
+    const doc = new PDFDocument({ size: 'LETTER', margins: { top: 44, bottom: 54, left: 44, right: 44 }, bufferPages: true });
+    if (cjkPath) { if (cjkPath.endsWith('.ttc')) doc.registerFont('F', cjkPath, 'WenQuanYiZenHei'); else doc.registerFont('F', cjkPath); }
+    const F = cjkPath ? 'F' : 'Helvetica';
+
+    const buffers = [];
+    doc.on('data', b => buffers.push(b));
+    doc.on('end', () => {
+      const pdf = Buffer.concat(buffers);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="employee-docs-${new Date().toISOString().slice(0, 10)}.pdf"`);
+      res.send(pdf);
+    });
+
+    // Palette — mirrors the company INVOICE (clean blue on white).
+    const BLUE = '#29AAE1', BLUE_D = '#0E7BB8', BLUE_TX = '#075985', NAVY = '#0D2D5B';
+    const LT = '#e8f5fb', HDR = '#f0f9ff', CARDBG = '#f8fafc', WHITE = '#ffffff';
+    const BORDER = '#cbd5e1', LINE = '#e2e8f0', INK = '#1e293b', MUTED = '#64748b', SLATE = '#475569', FADE = '#94a3b8';
+    const GREEN = '#15803d', RED = '#dc2626', GRAY = '#9a9a9a';
+    const PW = doc.page.width, PH = doc.page.height, ML = 40, CW = PW - 80;
+    const COMPANY = 'Prime Anchor Workforce Inc';
+    const hasBuf = s => !!(s && s.buf && s.buf.length);
+    // Normalise US phone numbers to a single display format: (XXX) XXX-XXXX.
+    // Strips a leading 1 / +1 country code; leaves unusual values untouched.
+    const fmtPhone = (raw) => {
+      let n = String(raw || '').replace(/\D/g, '');
+      if (n.length === 11 && n[0] === '1') n = n.slice(1);
+      if (n.length === 10) return `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}`;
+      return String(raw || '').trim();
+    };
+    const CJK = F;                                   // NotoSansSC (or Helvetica fallback)
+    const cjkRe = /[　-〿㐀-鿿＀-￯]/;
+    const pf = (s, bold) => cjkRe.test(String(s)) ? CJK : (bold ? 'Helvetica-Bold' : 'Helvetica');
+    // Themed text helper: T(str, x, y, textOpts, {size,color,bold,font}).
+    const T = (s, x, y, opt = {}, o = {}) => {
+      if (o.size != null) doc.fontSize(o.size);
+      doc.fillColor(o.color || INK).font(o.font || pf(s, o.bold)).text(String(s), x, y, opt);
+    };
+    // Hard-truncate a string to a pixel width (…), so table cells never wrap.
+    const fit = (s, w, size, bold) => {
+      s = String(s == null ? '' : s);
+      doc.font(pf(s, bold)).fontSize(size);
+      if (doc.widthOfString(s) <= w) return s;
+      let lo = 0, hi = s.length;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (doc.widthOfString(s.slice(0, mid) + '…') <= w) lo = mid; else hi = mid - 1; }
+      return s.slice(0, Math.max(0, lo)) + '…';
+    };
+
+    // The anchor "A" logo, redrawn as native vectors from its 500×560 SVG.
+    const drawLogo = (x, y, h) => {
+      const s = h / 560;
+      doc.save();
+      doc.translate(x, y).scale(s);
+      doc.path('M250 140 L405 440 L360 440 L250 215 L140 440 L95 440 Z').fill(BLUE);
+      doc.path('M95 440 L48 545 L100 545 L140 440 Z').fill(NAVY);
+      doc.path('M360 440 L400 545 L452 545 L405 440 Z').fill(NAVY);
+      doc.lineCap('round').lineJoin('round');
+      doc.circle(250, 48, 24).lineWidth(14).stroke(GRAY);
+      doc.roundedRect(243, 70, 14, 34, 3).fill(GRAY);
+      doc.roundedRect(148, 98, 204, 16, 8).fill(GRAY);
+      doc.roundedRect(243, 112, 14, 238, 3).fill(GRAY);
+      doc.path('M250 340 C248 368 198 392 168 374').lineWidth(13).stroke(GRAY);
+      doc.moveTo(162, 368).lineTo(176, 392).lineWidth(12).stroke(GRAY);
+      doc.path('M250 340 C252 368 302 392 332 374').lineWidth(13).stroke(GRAY);
+      doc.moveTo(338, 368).lineTo(324, 392).lineWidth(12).stroke(GRAY);
+      doc.restore();
+    };
+
+    // Invoice-style label/value info box (right side of the header).
+    const infoBox = (x, y, w, rows, labelW) => {
+      const rH = 18, h = rH * rows.length;
+      rows.forEach((r, i) => doc.rect(x, y + i * rH, labelW, rH).fill(LT));
+      doc.roundedRect(x, y, w, h, 3).lineWidth(1).stroke(BORDER);
+      rows.forEach((r, i) => {
+        const ry = y + i * rH;
+        if (i) doc.moveTo(x, ry).lineTo(x + w, ry).lineWidth(0.5).strokeColor(LINE).stroke();
+        doc.font('Helvetica-Bold').fontSize(6.8).fillColor(MUTED).text(String(r[0]).toUpperCase(), x + 8, ry + 6, { width: labelW - 12, lineBreak: false, characterSpacing: 0.3 });
+        T(fit(r[1], w - labelW - 14, 8, true), x + labelW + 8, ry + 5.5, { width: w - labelW - 14, align: 'right', lineBreak: false }, { size: 8, color: r[2] || INK, bold: true });
+      });
+      return h;
+    };
+
+    // Common page header: logo + company (left), wordmark + info box (right),
+    // and the brand divider. Returns the y at which body content should start.
+    const pageHeader = (wordmark, rightRows) => {
+      drawLogo(ML, 30, 52);
+      const lx = ML + Math.round(52 * 500 / 560) + 14;
+      T(COMPANY, lx, 33, { lineBreak: false }, { size: 12.5, color: BLUE, bold: true });
+      T('员工证件档案 · Employee ID Documents', lx, 51, { width: 210, lineBreak: false, ellipsis: true }, { size: 8.5, color: INK });
+      T('机密文件 / Confidential', lx, 65, { lineBreak: false }, { size: 7.5, color: MUTED });
+      doc.font('Helvetica-Bold').fontSize(wordmark.length > 8 ? 19 : 24).fillColor(BLUE)
+        .text(wordmark, ML, 31, { width: CW, align: 'right', characterSpacing: 2, lineBreak: false });
+      let hb = 80;
+      if (rightRows) hb = Math.max(hb, 48 + infoBox(ML + CW - 232, 48, 232, rightRows, 96));
+      const dy = hb + 8;
+      doc.moveTo(ML, dy).lineTo(PW - ML, dy).lineWidth(2.5).strokeColor(BLUE).stroke();
+      return dy + 12;
+    };
+
+    const banner = (yy, text) => {
+      doc.rect(ML, yy, CW, 22).fill(LT);
+      doc.rect(ML, yy, 4, 22).fill(BLUE);
+      T(text, ML + 13, yy + 6.5, { lineBreak: false }, { size: 9, color: BLUE, bold: true });
+      return yy + 22;
+    };
+
+    const genDate = new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const withDocs = people.filter(p => DOC_TYPES.some(t => hasBuf(p.slots[t]))).length;
+    const noDocs = people.length - withDocs;
+
+    // ===== COVER / SUMMARY =====
+    let y = pageHeader('DOCUMENTS', [
+      ['Generated', genDate],
+      ['Employees', String(people.length)],
+      ['Confidential', 'Internal Use'],
+    ]);
+    y += 4;
+    y = banner(y, '员工证件汇总 · Document Summary');
+    y += 10;
+    T(`共 ${people.length} 位员工   ·   ${withDocs} 位已含证件   ·   ${noDocs} 位无证件`, ML, y, { lineBreak: false }, { size: 9, color: MUTED });
+    y += 20;
+
+    // Summary table (invoice line-item styling)
+    const cols = [
+      { label: '员工号 ID', w: 108 },
+      { label: '姓名 Name', w: 112 },
+      { label: '电话 Phone', w: 92 },
+      { label: '邮箱 Email', w: 88 },
+    ];
+    cols.push({ label: '已导出证件 Documents', w: CW - cols.reduce((s, c) => s + c.w, 0) });
+    const drawHead = (yy) => {
+      doc.rect(ML, yy, CW, 22).fill(HDR);
+      let x = ML;
+      for (const c of cols) T(c.label, x + 8, yy + 6.5, { width: c.w - 12, lineBreak: false, ellipsis: true }, { size: 7.6, color: BLUE_TX, bold: true }), x += c.w;
+      doc.moveTo(ML, yy + 22).lineTo(ML + CW, yy + 22).lineWidth(2).strokeColor(BLUE_D).stroke();
+      return yy + 22;
+    };
+    let segTop = y;
+    y = drawHead(y);
+    for (const p of people) {
+      const got = DOC_TYPES.filter(t => hasBuf(p.slots[t]));
+      const rowH = 22;
+      if (y + rowH > PH - 66) {
+        doc.rect(ML, segTop, CW, y - segTop).lineWidth(1).strokeColor(BLUE).stroke();
+        doc.addPage(); y = pageHeader('DOCUMENTS'); y = banner(y, '员工证件汇总（续） · Summary (cont.)') + 8; segTop = y; y = drawHead(y);
+      }
+      let x = ML;
+      T(fit(p.e.employee_id || '—', cols[0].w - 14, 8.4), x + 8, y + 6.5, { lineBreak: false }, { size: 8.4, color: INK }); x += cols[0].w;
+      T(fit(p.name, cols[1].w - 14, 8.4), x + 8, y + 6.5, { lineBreak: false }, { size: 8.4, color: INK }); x += cols[1].w;
+      T(fit(fmtPhone(p.e.phone) || '—', cols[2].w - 14, 8.4), x + 8, y + 6.5, { lineBreak: false }, { size: 8.4, color: SLATE }); x += cols[2].w;
+      T(fit(p.e.email || '—', cols[3].w - 14, 7.4), x + 8, y + 7, { lineBreak: false }, { size: 7.4, color: MUTED }); x += cols[3].w;
+      if (got.length) T(fit(got.map(t => DOC_SHORT[t]).join('   '), cols[4].w - 14, 7.8, true), x + 8, y + 6.5, { lineBreak: false }, { size: 7.8, color: GREEN, bold: true });
+      else T('无证件 / None', x + 8, y + 6.5, { lineBreak: false }, { size: 7.8, color: RED, bold: true });
+      doc.moveTo(ML, y + rowH).lineTo(ML + CW, y + rowH).lineWidth(0.5).strokeColor(LINE).stroke();
+      y += rowH;
+    }
+    doc.rect(ML, segTop, CW, y - segTop).lineWidth(1).strokeColor(BLUE).stroke();
+
+    // Notes card (Payment-Information styling)
+    if (y + 82 < PH - 54) {
+      y += 16;
+      const nH = 76;
+      doc.roundedRect(ML, y, CW, nH, 4).lineWidth(1).fillAndStroke(CARDBG, BORDER);
+      T('说明 / Notes', ML + 14, y + 11, { lineBreak: false }, { size: 8.5, color: BLUE, bold: true });
+      doc.moveTo(ML + 14, y + 26).lineTo(ML + CW - 14, y + 26).lineWidth(0.5).strokeColor(LINE).stroke();
+      T('•  SSN正/反 = 社会安全卡正反面；EAD正/反 = 工卡（工作许可）正反面。\n' +
+        '•  “无证件 / None” 表示系统内暂未找到该员工的证件文件（可能尚未上传，或申请资料未匹配）。\n' +
+        '•  本档案包含敏感个人信息，仅供内部合规核验，请妥善保管。',
+        ML + 14, y + 33, { width: CW - 28, lineGap: 2.5 }, { size: 8, color: SLATE });
+    }
+
+    // ===== PER-EMPLOYEE DETAIL =====
+    for (const p of people) {
+      doc.addPage();
+      const got = DOC_TYPES.filter(t => hasBuf(p.slots[t]));
+      const anySlot = DOC_TYPES.some(t => p.slots[t]);
+      const statusTxt = got.length === 4 ? 'Complete' : got.length ? 'Partial' : 'None';
+      const statusCol = got.length === 4 ? GREEN : got.length ? BLUE_TX : RED;
+      let yy = pageHeader('ID DOCS', [
+        ['Employee ID', p.e.employee_id || '—'],
+        ['Documents', `${got.length} / 4`, statusCol],
+        ['Status', statusTxt, statusCol],
+      ]);
+
+      // Employee identity (BILL-TO styling)
+      yy += 2;
+      doc.font('Helvetica-Bold').fontSize(7).fillColor(MUTED).text('EMPLOYEE', ML, yy + 3, { width: 96, lineBreak: false, characterSpacing: 0.5 });
+      T(fit(p.name, CW - 104, 13, true), ML + 104, yy, { lineBreak: false }, { size: 13, color: BLUE, bold: true });
+      yy += 22;
+      doc.font('Helvetica-Bold').fontSize(7).fillColor(MUTED).text('PHONE', ML, yy + 1, { width: 96, lineBreak: false, characterSpacing: 0.5 });
+      T(fit(fmtPhone(p.e.phone) || '—', CW - 104, 9.5), ML + 104, yy, { lineBreak: false }, { size: 9.5, color: INK });
+      yy += 15;
+      doc.font('Helvetica-Bold').fontSize(7).fillColor(MUTED).text('EMAIL', ML, yy + 1, { width: 96, lineBreak: false, characterSpacing: 0.5 });
+      T(fit(p.e.email || '—', CW - 104, 9.5), ML + 104, yy, { lineBreak: false }, { size: 9.5, color: INK });
+      yy += 22;
+
+      yy = banner(yy, '证件影像 · ID Document Images');
+      yy += 12;
+
+      if (!anySlot) {
+        const nh = 300, ny = yy + 24;
+        doc.roundedRect(ML, ny, CW, nh, 6).lineWidth(1).fillAndStroke(CARDBG, BORDER);
+        T('该员工暂无证件资料', ML, ny + nh / 2 - 34, { width: CW, align: 'center', lineBreak: false }, { size: 15, color: RED });
+        T('No ID documents on file', ML, ny + nh / 2 - 8, { width: CW, align: 'center', lineBreak: false }, { size: 10.5, color: MUTED });
+        T('可在「员工列表 → 发送材料链接」邀请其上传 SSN / EAD 证件。', ML, ny + nh / 2 + 20, { width: CW, align: 'center', lineBreak: false }, { size: 9, color: FADE });
+        continue;
+      }
+
+      // 2×2 grid of photo cards, vertically centered in the remaining space.
+      const gap = 18, slotW = (CW - gap) / 2, labelH = 20, slotH = 206;
+      const gridH = slotH * 2 + gap;
+      const gridTop = yy + Math.max(0, (PH - 66 - yy - gridH) / 2);
+      const positions = [
+        ['ssn_front', ML, gridTop], ['ssn_back', ML + slotW + gap, gridTop],
+        ['ead_front', ML, gridTop + slotH + gap], ['ead_back', ML + slotW + gap, gridTop + slotH + gap],
+      ];
+      for (const [type, sx, sy] of positions) {
+        doc.roundedRect(sx, sy, slotW, slotH, 6).lineWidth(1).fillAndStroke(WHITE, BORDER);
+        doc.save(); doc.roundedRect(sx + 0.5, sy + 0.5, slotW - 1, slotH - 1, 6).clip();
+        doc.rect(sx, sy, slotW, labelH).fill(HDR); doc.restore();
+        doc.moveTo(sx, sy + labelH).lineTo(sx + slotW, sy + labelH).lineWidth(0.7).strokeColor(BORDER).stroke();
+        T(DOC_LABEL[type], sx + 11, sy + 5.5, { width: slotW - 22, lineBreak: false }, { size: 9, color: BLUE_TX, bold: true });
+        const iX = sx + 8, iY = sy + labelH + 8, iW = slotW - 16, iH = slotH - labelH - 16;
+        const slot = p.slots[type];
+        if (slot && slot.kind) {
+          try {
+            doc.save();
+            doc.roundedRect(iX, iY, iW, iH, 4).clip();
+            doc.image(slot.buf, iX, iY, { fit: [iW, iH], align: 'center', valign: 'center' });
+            doc.restore();
+          } catch (_) {
+            try { doc.restore(); } catch (_) {}
+            doc.roundedRect(iX, iY, iW, iH, 4).fill(CARDBG);
+            T('（无法显示此图片）', iX, iY + iH / 2 - 6, { width: iW, align: 'center', lineBreak: false }, { size: 9, color: MUTED });
+          }
+        } else if (slot) {
+          doc.roundedRect(iX, iY, iW, iH, 4).fill(LT);
+          T('已上传，无法内嵌预览', iX, iY + iH / 2 - 24, { width: iW, align: 'center', lineBreak: false }, { size: 10, color: BLUE_TX, bold: true });
+          T(`${(slot.ext || '').replace('.', '').toUpperCase() || '其他'} 格式（如 HEIC / PDF）`, iX, iY + iH / 2 - 5, { width: iW, align: 'center', lineBreak: false }, { size: 8, color: MUTED });
+          T('请在系统内查看原件', iX, iY + iH / 2 + 15, { width: iW, align: 'center', lineBreak: false }, { size: 7.5, color: FADE });
+        } else {
+          doc.roundedRect(iX, iY, iW, iH, 4).fill(CARDBG);
+          T('未提供', iX, iY + iH / 2 - 15, { width: iW, align: 'center', lineBreak: false }, { size: 11, color: FADE });
+          T('Not provided', iX, iY + iH / 2 + 3, { width: iW, align: 'center', lineBreak: false }, { size: 8, color: '#b6c2d1', font: 'Helvetica' });
+        }
+      }
+    }
+
+    // ===== FOOTERS =====
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(range.start + i);
+      // Writing below the bottom margin makes pdfkit auto-append a blank page
+      // per footer; zero the margin for the footer draw to prevent that.
+      const mb = doc.page.margins.bottom; doc.page.margins.bottom = 0;
+      doc.moveTo(ML, PH - 40).lineTo(PW - ML, PH - 40).lineWidth(0.5).strokeColor(LINE).stroke();
+      T('本档案含敏感个人信息，仅供内部合规核验 · Confidential — Internal compliance use only', ML, PH - 32, { width: CW, align: 'left', lineBreak: false }, { size: 7.5, color: MUTED });
+      T(`${i + 1} / ${range.count}`, ML, PH - 32, { width: CW, align: 'right', lineBreak: false }, { size: 7.5, color: MUTED, font: 'Helvetica' });
+      doc.page.margins.bottom = mb;
+    }
+
+    doc.end();
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+    else { try { res.end(); } catch (_) {} }
+  }
 });
 
 app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {

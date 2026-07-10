@@ -1285,7 +1285,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <h1>员工管理</h1>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="exportEmployeeCSV()">导出 CSV</button>
-      <button class="btn btn-outline" id="empExportDocsBtn" onclick="exportSelectedEmpDocs()" title="勾选员工后导出其姓名/电话/邮箱与 SSN、EAD 证件（打包 ZIP）">📎 导出证件 (0)</button>
+      <button class="btn btn-outline" id="empExportDocsBtn" onclick="exportSelectedEmpDocs()" title="勾选员工后导出其姓名/电话/邮箱与 SSN、EAD 证件（生成 PDF 档案）">📎 导出证件 (0)</button>
       <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
       <button class="btn btn-green" onclick="openEmpModal()">+ 新增员工</button>
     </div>
@@ -15977,7 +15977,7 @@ function _empToggleAll(master) {
 function exportSelectedEmpDocs() {
   const ids = _empSelectedIds();
   if (!ids.length) { showToast('请先勾选要导出的员工', 'error'); return; }
-  showToast(`正在打包 ${ids.length} 位员工的证件…`, 'success', 3000);
+  showToast(`正在生成 ${ids.length} 位员工的证件 PDF…`, 'success', 3000);
   window.open(API + '/admin/employees/export-docs?token=' + TOKEN + '&ids=' + ids.join(','), '_blank');
 }
 
