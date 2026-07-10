@@ -14236,6 +14236,12 @@ async function openDocBackups(empId) {
       <h3 style="margin:0;font-size:1rem">🗄️ 历史数据库 · 证件旧记录</h3>
       <button class="btn btn-outline" onclick="document.getElementById('docBakOverlay').remove()">✕ 关闭</button>
     </div>
+    <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.55rem .65rem;margin-bottom:.6rem;font-size:.78rem;color:#5b21b6">
+      <div style="margin-bottom:.35rem">📤 <b>上传备份数据库</b>：如果需要更早的版本（比如一周前），可以从 Render 的每日磁盘快照里导出 <code>prime.db</code>，上传到这里一起搜索。文件仍在存储里，就能一键恢复。</div>
+      <input type="file" id="docBakUploadInput" accept=".db,.sqlite,.sqlite3,application/octet-stream" style="font-size:.75rem">
+      <button class="btn btn-sm" id="docBakUploadBtn" style="background:#7c3aed;color:#fff;border:none;font-size:.72rem" onclick="uploadBackupDb(${empId})">⬆️ 上传并搜索</button>
+      <div id="docBakUploadMsg" style="margin-top:.3rem;color:#64748b"></div>
+    </div>
     <div id="docBakBody" style="font-size:.85rem;color:#475569">加载中…（正在读取数据库备份）</div>
   </div>`;
   document.body.appendChild(ov);
@@ -14245,7 +14251,8 @@ async function openDocBackups(empId) {
     const body = document.getElementById('docBakBody'); if (!body) return;
     const baks = data.backups || [], snaps = data.snapshots || [];
     const oldest = baks.length ? baks[baks.length - 1].iso : null;
-    let h = `<div style="color:#64748b;margin-bottom:.5rem">共 ${baks.length} 个备份${oldest ? `，最早：${esc(new Date(oldest).toLocaleString())}` : ''}。备份默认只保留约 10 小时，若更早的版本不在这里，说明已被滚动清除。</div>`;
+    const upCount = baks.filter(b => b.source === 'uploaded').length;
+    let h = `<div style="color:#64748b;margin-bottom:.5rem">共 ${baks.length} 个备份${upCount ? `（其中 ${upCount} 个是上传的）` : ''}${oldest ? `，最早：${esc(new Date(oldest).toLocaleString())}` : ''}。自动备份默认只保留约 10 小时；若更早的版本不在这里，请用上方的「上传备份数据库」导入 Render 快照里的 <code>prime.db</code>。</div>`;
     if (!snaps.length) { h += '<div style="color:#94a3b8">所有备份里都没有找到该员工名下的证件记录。</div>'; body.innerHTML = h; return; }
     const fileImg = (key, table, id, label) => {
       const url = API + '/admin/storage-file?token=' + encodeURIComponent(TOKEN) + '&key=' + encodeURIComponent(key);
@@ -14255,8 +14262,9 @@ async function openDocBackups(empId) {
         <div><button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.64rem;margin-top:2px" onclick="restoreFromBackup('${table}',${id},'${esc(key)}',${empId})">↩ 恢复这版</button></div></div>`;
     };
     snaps.forEach(s => {
-      h += `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:.55rem;margin-bottom:.5rem">
-        <div style="font-weight:700;font-size:.8rem;margin-bottom:.35rem">🕓 ${esc(new Date(s.iso).toLocaleString())}</div>
+      const upBadge = s.source === 'uploaded' ? ' <span style="background:#ede9fe;color:#6d28d9;font-size:.6rem;padding:1px 5px;border-radius:6px;vertical-align:middle">上传的备份</span>' : '';
+      h += `<div style="border:1px solid ${s.source === 'uploaded' ? '#c4b5fd' : '#e2e8f0'};border-radius:8px;padding:.55rem;margin-bottom:.5rem">
+        <div style="font-weight:700;font-size:.8rem;margin-bottom:.35rem">🕓 ${esc(new Date(s.iso).toLocaleString())}${upBadge}</div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
           ${(s.applicant_docs || []).map(d => fileImg(d.key, 'applicant_docs', d.id, d.label)).join('')}
           ${(s.employee_docs || []).map(d => fileImg(d.key, 'employee_documents', d.id, d.doc_label || d.doc_type)).join('')}
@@ -14265,6 +14273,28 @@ async function openDocBackups(empId) {
     body.innerHTML = h;
   } catch (e) {
     const b = document.getElementById('docBakBody'); if (b) b.innerHTML = '<div style="color:var(--red)">加载失败：' + esc(e.message || '') + '</div>';
+  }
+}
+async function uploadBackupDb(empId) {
+  const input = document.getElementById('docBakUploadInput');
+  const msg = document.getElementById('docBakUploadMsg');
+  const btn = document.getElementById('docBakUploadBtn');
+  if (!input || !input.files || !input.files.length) { if (msg) msg.innerHTML = '<span style="color:var(--red)">请先选择一个 .db 文件</span>'; return; }
+  const f = input.files[0];
+  const fd = new FormData(); fd.append('db', f);
+  if (btn) { btn.disabled = true; btn.textContent = '上传中…'; }
+  if (msg) msg.innerHTML = '正在上传并校验（大文件可能需要一会儿）…';
+  try {
+    const resp = await fetch(API + '/admin/upload-backup-db', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
+    const r = await resp.json().catch(() => ({}));
+    if (!resp.ok || (r && r.error)) throw new Error((r && r.error) || ('HTTP ' + resp.status));
+    const c = r.counts || {};
+    if (msg) msg.innerHTML = `<span style="color:#166534">✔ 已上传：${esc(r.file || '')}（问卷证件 ${c.applicant_docs ?? '?'} 条、员工档案 ${c.employee_documents ?? '?'} 条）。正在重新搜索…</span>`;
+    // Re-open to re-run the search now that the uploaded DB is in the pool.
+    setTimeout(() => openDocBackups(empId), 400);
+  } catch (e) {
+    if (msg) msg.innerHTML = '<span style="color:var(--red)">上传失败：' + esc(e.message || '') + '</span>';
+    if (btn) { btn.disabled = false; btn.textContent = '⬆️ 上传并搜索'; }
   }
 }
 async function restoreFromBackup(table, id, key, empId) {
