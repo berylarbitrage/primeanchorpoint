@@ -14124,6 +14124,7 @@ function renderEmployees(list) {
         : `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;margin:1px" onclick='openEmpOnboarding(${e.id},"${esc(empFullName)}")'>📋 入职进度</button>`
       }
       <button class="btn btn-sm" style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;font-size:.72rem;margin:1px" onclick='openEmpModal(${e.id})'>✏️ 编辑信息</button>
+      <button class="btn btn-sm" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-size:.72rem;margin:1px" onclick='openEmpDocSources(${e.id},"${esc(empFullName)}")' title="查看这个人的 SSN / 工作许可等证件到底在系统哪里，找回被误关联的">🔍 证件来源</button>
       <button class="btn btn-sm" style="background:#fff7ed;color:#9A3412;border:1px solid #fed7aa;font-size:.72rem;margin:1px" onclick='openAssignJobModal(${e.id},"${esc(empFullName)}")'>📋 安排职位</button>
       <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin:1px" onclick='openRatingModal(${e.id},"${esc(empFullName)}")'>⭐ 评分</button>
       <button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.72rem;margin:1px" onclick='sendEmpDocLink(${e.id},"${esc(empFullName)}")'>📎 发送材料链接</button>
@@ -14133,6 +14134,78 @@ function renderEmployees(list) {
     </td>
   </tr>`}).join('') : '<tr><td colspan="8" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
   _empSelChange();
+}
+
+// ── 证件来源诊断 · 找回被误关联/看不到的 SSN / 工作许可 ──
+let _empDocSrcCtx = { empId: null, empName: '' };
+async function openEmpDocSources(empId, empName) {
+  _empDocSrcCtx = { empId, empName };
+  let ov = document.getElementById('empDocSrcOverlay'); if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'empDocSrcOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:600;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:780px;width:100%;max-height:90vh;overflow-y:auto;padding:1.25rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;margin-bottom:.6rem">
+      <h3 style="margin:0">🔍 证件来源诊断 · <span style="color:var(--sky)">${esc(empName || '')}</span></h3>
+      <button class="btn btn-outline" onclick="document.getElementById('empDocSrcOverlay').remove()">✕ 关闭</button>
+    </div>
+    <div id="empDocSrcBody" style="font-size:.88rem;color:#475569">加载中…</div>
+  </div>`;
+  document.body.appendChild(ov);
+  try {
+    const data = await api('/admin/employees/' + empId + '/doc-sources');
+    if (data && data.error) throw new Error(data.error);
+    renderEmpDocSources(data);
+  } catch (e) {
+    const b = document.getElementById('empDocSrcBody'); if (b) b.innerHTML = '<div style="color:var(--red)">加载失败：' + esc(e.message || '') + '</div>';
+  }
+}
+function renderEmpDocSources(data) {
+  const body = document.getElementById('empDocSrcBody'); if (!body) return;
+  const emp = data.employee || {};
+  const thumb = (docId, label) => {
+    const url = API + '/admin/employees/id-doc-image/' + encodeURIComponent(docId) + '?token=' + encodeURIComponent(TOKEN);
+    return `<div style="text-align:center"><div style="font-size:.66rem;color:#64748b;margin-bottom:2px">${esc(label)}</div>
+      <a href="${url}" target="_blank"><img src="${url}" style="height:66px;width:auto;max-width:120px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;object-fit:cover" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'📄 查看',style:'font-size:.72rem;color:#0369a1'}))"></a></div>`;
+  };
+  let h = `<div style="margin-bottom:.6rem;color:#64748b">本人：<b>${esc(emp.name || '')}</b> · ${esc(emp.phone || '') || '无电话'} · ${esc(emp.email || '') || '无邮箱'}</div>`;
+  h += '<div style="font-weight:700;margin:.5rem 0 .3rem">📋 匹配到的申请表（按 姓名 / 电话 / 邮箱）</div>';
+  if (!data.submissions.length) h += '<div style="color:#94a3b8;margin-bottom:.5rem">没有找到任何匹配的申请表。</div>';
+  const matchZh = { linked: '关联', phone: '电话', email: '邮箱', name: '姓名' };
+  data.submissions.forEach(s => {
+    const ownerTag = s.is_self ? '<span style="color:#16a34a;font-weight:700">✔ 已归本人</span>'
+      : s.owner_label ? `<span style="color:#b45309;font-weight:700">⚠ 现属于：${esc(s.owner_label)}</span>`
+      : '<span style="color:#64748b">未关联任何员工</span>';
+    h += `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:.6rem;margin-bottom:.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <div><b>${esc(s.name || '(无名)')}</b> <span style="color:#94a3b8;font-size:.8rem">· ${esc(s.phone || '')} · ${esc(s.email || '')}</span></div>
+        <div style="font-size:.76rem">按${matchZh[s.match] || s.match}匹配 · ${ownerTag}</div>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.4rem">
+        ${s.docs.length ? s.docs.map(d => thumb(d.id, d.label)).join('') : '<span style="color:#94a3b8;font-size:.8rem">此申请没有 SSN / EAD 文件</span>'}
+      </div>
+      ${!s.is_self ? `<div style="margin-top:.5rem"><button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac" onclick="relinkSubmission(${s.submission_id})">↩ 关联到本人（找回这些证件）</button></div>` : ''}
+    </div>`;
+  });
+  if ((data.compliance_ssn || []).length || (data.work_permit || []).length) {
+    h += '<div style="font-weight:700;margin:.7rem 0 .3rem">🗂️ 后台上传（SSN 卡 / 工作许可）</div>';
+    (data.compliance_ssn || []).forEach(d => h += `<div style="margin-bottom:.3rem">🔢 SSN 卡：<a href="${d.url}" target="_blank" style="color:#0369a1">${esc(d.file_name || '查看文件')}</a></div>`);
+    (data.work_permit || []).forEach(d => h += `<div style="margin-bottom:.3rem">🛂 工作许可：<a href="${d.url}" target="_blank" style="color:#0369a1">${esc(d.file_name || '查看文件')}</a>${d.expiry_date ? ` <span style="color:#94a3b8">(到期 ${esc(d.expiry_date)})</span>` : ''}</div>`);
+  }
+  h += '<div style="margin-top:.6rem;font-size:.76rem;color:#94a3b8">说明：这里只列出证件所在位置，任何操作都不会删除文件。「关联到本人」只是把该申请表归到这个员工名下，导出证件即可抓到。</div>';
+  body.innerHTML = h;
+}
+async function relinkSubmission(submissionId) {
+  const { empId, empName } = _empDocSrcCtx;
+  if (!empId) return;
+  if (!await showConfirm('确认把这份申请表关联到本员工吗？\n它里面的证件会归到本人名下（导出证件即可抓到）。不会删除任何文件。', { title: '关联到本人', confirmText: '确认关联', cancelText: '取消' })) return;
+  try {
+    const r = await api('/admin/employees/' + empId + '/relink-submission', { method: 'POST', body: JSON.stringify({ submission_id: submissionId }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast('已关联到本人，证件已找回', 'success');
+    openEmpDocSources(empId, empName);   // refresh
+  } catch (e) { showToast('关联失败：' + (e.message || ''), 'error'); }
 }
 
 // ── Employee action dropdown ──

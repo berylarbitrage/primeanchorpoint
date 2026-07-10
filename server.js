@@ -17590,6 +17590,65 @@ app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Diagnostic: where are an employee's ID documents? ──
+// Lists every applicant submission matched by linked-employee / phone / email / name
+// (with its current owner + SSN/EAD files), plus admin-uploaded SSN cards and work-permit
+// files. Lets an admin find a document that isn't showing (e.g. mis-linked to another
+// employee) and re-attach it. READ-ONLY.
+app.get('/api/admin/employees/:id/doc-sources', requireAdmin, (req, res) => {
+  try {
+    const e = db.prepare('SELECT id, first_name, middle_name, last_name, email, phone FROM employees WHERE id=?').get(req.params.id);
+    if (!e) return res.status(404).json({ error: 'Not found' });
+    const norm10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
+    const eName = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim().toLowerCase();
+    const ep = norm10(e.phone), eem = String(e.email || '').trim().toLowerCase();
+    const wa = db.prepare('SELECT id FROM worker_accounts WHERE employee_id=? ORDER BY active DESC, id ASC LIMIT 1').get(e.id);
+    const empNameStmt = db.prepare('SELECT first_name, middle_name, last_name FROM employees WHERE id=?');
+    const docStmt = db.prepare("SELECT id, doc_type, file_name FROM applicant_docs WHERE submission_id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back') ORDER BY id");
+    const submissions = [];
+    for (const s of db.prepare('SELECT id, name, phone, email, employee_id, created_at FROM applicant_submissions ORDER BY id DESC').all()) {
+      const matchSelf = s.employee_id && String(s.employee_id) === String(e.id);
+      const matchPhone = ep.length === 10 && norm10(s.phone) === ep;
+      const matchEmail = eem && String(s.email || '').trim().toLowerCase() === eem;
+      const matchName = eName && String(s.name || '').trim().toLowerCase() === eName;
+      if (!(matchSelf || matchPhone || matchEmail || matchName)) continue;
+      let ownerLabel = null;
+      if (s.employee_id) { const oe = empNameStmt.get(s.employee_id); ownerLabel = oe ? [oe.first_name, oe.middle_name, oe.last_name].filter(Boolean).join(' ') : ('员工#' + s.employee_id); }
+      submissions.push({
+        submission_id: s.id, name: s.name, phone: s.phone, email: s.email, created_at: s.created_at,
+        owner_employee_id: s.employee_id || null, owner_label: ownerLabel, is_self: !!matchSelf,
+        match: matchSelf ? 'linked' : matchPhone ? 'phone' : matchEmail ? 'email' : 'name',
+        docs: docStmt.all(s.id).map(d => ({ id: d.id, doc_type: d.doc_type, label: EMPDOC_LABEL[d.doc_type] || d.doc_type, file_name: d.file_name }))
+      });
+    }
+    let complianceSsn = [], workPermit = [];
+    if (wa) {
+      complianceSsn = db.prepare("SELECT id, file_name FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='ssn_card' AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC").all(wa.id)
+        .map(d => ({ id: d.id, file_name: d.file_name, url: `/api/admin/worker-accounts/${wa.id}/ssn-cards/${d.id}/file?inline=1` }));
+      workPermit = db.prepare("SELECT id, file_name, doc_number, expiry_date FROM work_permit_docs WHERE worker_account_id=? AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC").all(wa.id)
+        .map(d => ({ id: d.id, file_name: d.file_name, doc_number: d.doc_number, expiry_date: d.expiry_date, url: `/api/admin/work-permit-docs/${d.id}/download` }));
+    }
+    res.json({
+      employee: { id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '), phone: e.phone, email: e.email, worker_account_id: wa ? wa.id : null },
+      submissions, compliance_ssn: complianceSsn, work_permit: workPermit
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Re-link an applicant submission to THIS employee (recovery for a mis-linked doc). Only
+// changes the ownership pointer; never deletes files.
+app.post('/api/admin/employees/:id/relink-submission', requireAdmin, (req, res) => {
+  try {
+    const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+    const sid = parseInt(req.body && req.body.submission_id, 10);
+    const sub = db.prepare('SELECT id, employee_id FROM applicant_submissions WHERE id=?').get(sid);
+    if (!sub) return res.status(404).json({ error: 'Submission not found' });
+    db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(emp.id, sid);
+    res.json({ ok: true, submission_id: sid, employee_id: emp.id, previous_owner: sub.employee_id || null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
