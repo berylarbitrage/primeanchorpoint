@@ -162,15 +162,15 @@
       </div>
     </section>
 
-    <!-- Stage: done -->
+    <!-- Stage: done — final gallery, review everything before generating the PDF -->
     <section class="stage" id="stageDone">
-      <div class="center">
-        <div>
-          <div style="font-size:2.6rem;margin-bottom:.6rem">✅</div>
-          <h2 class="ok">审阅完成</h2>
-          <p class="hint" id="doneMsg">文件已发送给管理员。</p>
-          <p class="hint" id="doneCount" style="margin-top:.4rem;color:#bbf7d0"></p>
+      <div style="flex:1;overflow-y:auto;padding:1rem;width:100%;box-sizing:border-box">
+        <div style="text-align:center;margin-bottom:.7rem">
+          <h2 class="ok" style="margin:.2rem 0">✅ 审阅完成 · 最终预览</h2>
+          <p class="hint" id="doneMsg" style="margin:.2rem 0"></p>
+          <p class="hint" style="margin:.2rem 0;color:#93c5fd">👇 点任意一张可重新编辑；都满意后再点「生成 PDF」。</p>
         </div>
+        <div id="reviewGallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:.6rem"></div>
       </div>
       <div class="actions">
         <button class="btn btn-primary" id="anotherBtn">⬇️ 生成 PDF</button>
@@ -387,17 +387,33 @@
   }
 
   // ── Review actions ───────────────────────────────────────────────
+  let reviewOne = false;   // re-editing a single item from the final gallery
+  let galleryVer = 0;      // bumps to cache-bust thumbnails after a re-edit
+
   function advance() {
+    // Re-editing one item from the gallery → go straight back to the gallery.
+    if (reviewOne) { reviewOne = false; finishReview(); return; }
     reviewIdx++;
     if (reviewIdx >= reviewItems.length) { finishReview(); return; }
     loadReviewItem();
   }
-  function keepAsIs() { toast('保持原样', 1000); advance(); }
+  function keepAsIs() {
+    const it = reviewItems[reviewIdx];
+    if (it) { excludeSet.delete(it.empId + '|' + it.docType); if (it.state !== 'cropped') it.state = 'kept'; }
+    toast('保持原样', 1000); advance();
+  }
   function markUnusable() {
     const it = reviewItems[reviewIdx];
-    if (it) excludeSet.add(it.empId + '|' + it.docType);
+    if (it) { excludeSet.add(it.empId + '|' + it.docType); it.state = 'unusable'; }
     toast('已标记为不可用（PDF 里显示未提供）', 1400);
     advance();
+  }
+  // Re-open a specific item for editing, then return to the gallery.
+  function reviewItemAt(idx) {
+    if (idx < 0 || idx >= reviewItems.length) return;
+    reviewOne = true;
+    reviewIdx = idx;
+    loadReviewItem();
   }
   function rotate90() {
     if (!capturedBitmap) return;
@@ -424,15 +440,40 @@
       if (!r.ok || !j.ok) { setLoader(false); toast(j.error || '保存失败'); return; }
       savedCount++;
       excludeSet.delete(it.empId + '|' + it.docType);  // saved → usable
+      it.state = 'cropped';
       setLoader(false);
       advance();
     } catch (e) { setLoader(false); toast('网络异常'); }
   }
   function finishReview() {
-    $('doneMsg').textContent = `审阅完成：共 ${reviewItems.length} 张，保存修改 ${savedCount} 张，标记不可用 ${excludeSet.size} 张。`;
-    $('doneCount').textContent = '点下方按钮生成 PDF（不可用的将显示为「未提供」）。';
+    const unusable = reviewItems.filter(it => excludeSet.has(it.empId + '|' + it.docType)).length;
+    const cropped = reviewItems.filter(it => it.state === 'cropped').length;
+    $('doneMsg').textContent = `共 ${reviewItems.length} 张 · 已裁剪 ${cropped} · 保持原样 ${reviewItems.length - cropped - unusable} · 不可用 ${unusable}`;
+    renderGallery();
     refreshHeader();
     show('Done');
+  }
+  // Final gallery: one clickable thumbnail per reviewed document. Clicking re-opens it.
+  function renderGallery() {
+    const g = $('reviewGallery'); if (!g) return;
+    galleryVer++;
+    g.innerHTML = reviewItems.map((it, idx) => {
+      const unusable = excludeSet.has(it.empId + '|' + it.docType);
+      const badge = unusable ? ['🚫 不可用', '#ef4444'] : it.state === 'cropped' ? ['✂️ 已裁剪', '#10b981'] : ['原样', '#64748b'];
+      const src = API + '/admin/employees/id-doc-image/' + encodeURIComponent(it.docId) +
+        '?token=' + encodeURIComponent(TOKEN) + '&g=' + galleryVer;
+      return `<div onclick="reviewItemAt(${idx})" title="点击重新编辑" style="cursor:pointer;border:1px solid #1e293b;border-radius:8px;overflow:hidden;background:#0b1220;transition:border-color .12s" onmouseover="this.style.borderColor='#38bdf8'" onmouseout="this.style.borderColor='#1e293b'">
+        <div style="position:relative;height:112px;background:#0f172a;${unusable ? 'opacity:.5' : ''}">
+          <img loading="lazy" src="${src}" style="width:100%;height:112px;object-fit:cover;display:block" onerror="this.style.display='none';this.parentElement.querySelector('.ph').style.display='flex'">
+          <div class="ph" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:#475569;font-size:1.9rem">📄</div>
+          <span style="position:absolute;left:5px;top:5px;font-size:.62rem;font-weight:700;color:#fff;background:${badge[1]};border-radius:4px;padding:1px 6px">${badge[0]}</span>
+        </div>
+        <div style="padding:.35rem .45rem;font-size:.66rem;line-height:1.35;color:#cbd5e1">
+          <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.empName || '')}</div>
+          <div style="color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.docLabel || '')}</div>
+        </div>
+      </div>`;
+    }).join('');
   }
   function generatePdf() {
     const exclude = [...excludeSet].join(',');
@@ -442,7 +483,7 @@
   }
   // expose for inline button handlers
   window.keepAsIs = keepAsIs; window.markUnusable = markUnusable; window.rotate90 = rotate90;
-  window.saveAndNext = saveAndNext; window.generatePdf = generatePdf;
+  window.saveAndNext = saveAndNext; window.generatePdf = generatePdf; window.reviewItemAt = reviewItemAt;
 
   // ── Crop stage layout & handle dragging ──────────────────────────
   function layoutCropCanvas() {
