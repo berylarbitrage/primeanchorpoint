@@ -17226,8 +17226,8 @@ app.get('/api/admin/employees/export-docs', (req, res, next) => {
       T(COMPANY, lx, 33, { lineBreak: false }, { size: 12.5, color: BLUE, bold: true });
       T('员工证件档案 · Employee ID Documents', lx, 51, { width: 210, lineBreak: false, ellipsis: true }, { size: 8.5, color: INK });
       T('机密文件 / Confidential', lx, 65, { lineBreak: false }, { size: 7.5, color: MUTED });
-      doc.font('Helvetica-Bold').fontSize(wordmark.length > 8 ? 19 : 24).fillColor(BLUE)
-        .text(wordmark, ML, 31, { width: CW, align: 'right', characterSpacing: 2, lineBreak: false });
+      doc.font('Helvetica-Bold').fontSize(wordmark.length > 8 ? 13 : 15).fillColor(BLUE)
+        .text(wordmark, ML, 34, { width: CW, align: 'right', characterSpacing: 1.2, lineBreak: false });
       let hb = 80;
       if (rightRows) hb = Math.max(hb, 48 + infoBox(ML + CW - 232, 48, 232, rightRows, 96));
       const dy = hb + 8;

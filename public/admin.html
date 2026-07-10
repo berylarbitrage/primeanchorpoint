@@ -2819,6 +2819,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         </div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddContainer()">＋ 添加 Container</button>
+          <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0E7BB8;border-color:#0E7BB8" onclick="openInvpBulkContainer()" title="粘贴一组 container 号，批量生成行并自动检测重复">📋 批量粘贴</button>
           <button type="button" id="invpInboxBtn" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#92400E;border-color:#FDE68A;background:#fffbeb;display:none" onclick="openInvpCsubInbox()" title="查看本公司扫码录入的待审核记录">📥 扫码收件箱 <span id="invpInboxCount" style="font-weight:700">(0)</span></button>
           <span style="color:var(--gray-300);font-size:.85rem">|</span>
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0E7BB8;border-color:#0E7BB8" onclick="invpBulkReceipts('preview')" title="一次预览所有 container 的现金回执 PDF">👁 批量预览回执</button>
@@ -2888,6 +2889,25 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:.5rem">
       <button class="btn btn-outline" style="font-size:.82rem;color:var(--gray-500)" onclick="_invpDismissDup()">不是重复</button>
       <button class="btn btn-accent" onclick="document.getElementById('containerDupModal').classList.remove('show')">知道了</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ BULK-PASTE CONTAINER NUMBERS ════════════════════ -->
+<div class="modal-bg" id="invpBulkContainerModal" style="z-index:9999">
+  <div class="modal" style="max-width:520px">
+    <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem">
+      <div style="width:42px;height:42px;border-radius:50%;background:#e8f5fb;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">📋</div>
+      <h2 style="margin:0;font-size:1.15rem;color:#0E7BB8">批量粘贴 Container 号</h2>
+    </div>
+    <div id="invpBulkInputArea">
+      <p style="font-size:.85rem;color:var(--gray-500);line-height:1.6;margin-bottom:.6rem">每行一个 container 号（也支持逗号 / 空格分隔）。系统会为每个号自动生成一行，并检测重复。</p>
+      <textarea id="invpBulkText" rows="10" placeholder="MRKU5667453&#10;CSGU6496856&#10;TCLU5682010&#10;..." style="width:100%;border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .7rem;font-size:.9rem;font-family:monospace;line-height:1.6;resize:vertical;outline:none;box-sizing:border-box"></textarea>
+    </div>
+    <div id="invpBulkResult" style="display:none"></div>
+    <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+      <button class="btn btn-outline" style="font-size:.85rem;color:var(--gray-500)" onclick="closeInvpBulkContainer()">关闭</button>
+      <button id="invpBulkAddBtn" class="btn" style="font-size:.85rem;background:#0E7BB8;color:#fff;border:none" onclick="invpBulkAddContainers()">添加</button>
     </div>
   </div>
 </div>
@@ -33454,6 +33474,112 @@ function invpAddContainer() {
   // Focus new container number input
   const rows = document.querySelectorAll('.invp-cont-row');
   if (rows.length) rows[rows.length - 1].querySelector('.invp-cont-no').focus();
+}
+
+// ── Bulk-paste container numbers ─────────────────────────────────────────
+function openInvpBulkContainer() {
+  document.getElementById('invpBulkText').value = '';
+  const box = document.getElementById('invpBulkResult');
+  box.style.display = 'none'; box.innerHTML = '';
+  document.getElementById('invpBulkContainerModal').classList.add('show');
+  setTimeout(() => { const t = document.getElementById('invpBulkText'); if (t) t.focus(); }, 60);
+}
+function closeInvpBulkContainer() {
+  document.getElementById('invpBulkContainerModal').classList.remove('show');
+}
+
+// Pure parser: split a pasted blob into container numbers and classify them
+// against the numbers already on this invoice. Returns the new numbers to add
+// plus the duplicates (repeated in the paste, or already on the invoice) and
+// any that don't look like a valid ISO 6346 number (4 letters + 7 digits).
+function _invpParseContainerList(text, existingSet) {
+  const raw = String(text || '').split(/[\s,;]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+  const seen = new Set();
+  const fmt = /^[A-Z]{4}\d{7}$/;
+  const toAdd = [], dupInPaste = [], dupExisting = [], invalid = [];
+  for (const c of raw) {
+    if (existingSet.has(c)) { dupExisting.push(c); continue; }
+    if (seen.has(c)) { dupInPaste.push(c); continue; }
+    seen.add(c);
+    if (!fmt.test(c)) invalid.push(c);
+    toAdd.push(c);
+  }
+  return { total: raw.length, toAdd, dupInPaste, dupExisting, invalid };
+}
+
+function _invpBulkResultHtml(res) {
+  const uniq = a => [...new Set(a)];
+  const chip = (arr, color, bg) => uniq(arr).map(c =>
+    `<span style="display:inline-block;font-family:monospace;font-size:.8rem;color:${color};background:${bg};border:1px solid ${color}22;border-radius:5px;padding:.1rem .4rem;margin:.15rem .25rem .15rem 0">${c}</span>`).join('');
+  const dupEx = uniq(res.dupExisting), dupIn = uniq(res.dupInPaste), inv = uniq(res.invalid);
+  let h = '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.7rem .9rem;margin-top:.9rem;font-size:.85rem;line-height:1.6">';
+  h += `<div style="font-weight:700;color:#075985;margin-bottom:.2rem">✓ 已添加 ${res.toAdd.length} 个 container</div>`;
+  if (dupEx.length) h += `<div style="margin-top:.5rem;color:#b45309"><b>本发票已存在（已跳过）· ${dupEx.length} 个</b><div style="margin-top:.2rem">${chip(dupEx, '#b91c1c', '#fef2f2')}</div></div>`;
+  if (dupIn.length) h += `<div style="margin-top:.5rem;color:#b45309"><b>粘贴内容里重复（已去重）· ${dupIn.length} 个</b><div style="margin-top:.2rem">${chip(dupIn, '#b91c1c', '#fef2f2')}</div></div>`;
+  if (inv.length) h += `<div style="margin-top:.5rem;color:#92400e"><b>格式可疑（仍已添加，请核对）· ${inv.length} 个</b><div style="margin-top:.2rem">${chip(inv, '#92400e', '#fffbeb')}</div></div>`;
+  if (!dupEx.length && !dupIn.length && !inv.length) h += '<div style="color:#16a34a;margin-top:.2rem">没有重复，全部为新号 👍</div>';
+  h += '<div id="invpBulkHist"></div></div>';
+  return h;
+}
+
+function invpBulkAddContainers() {
+  _invpSaveContainerState();
+  const text = document.getElementById('invpBulkText').value;
+  const existing = new Set((window._invpContainerItems || [])
+    .map(i => (i.container_no || '').trim().toUpperCase()).filter(Boolean));
+  const res = _invpParseContainerList(text, existing);
+  if (!res.total) { showToast('请先粘贴 container 号', 'error'); return; }
+
+  res.toAdd.forEach(no => {
+    window._invpContainerItems.push({
+      uid: _invpContainerUidSeq++,
+      container_no: no,
+      week: _invpFmtPeriodForContainer(),
+      staffing: _invpDefaultStaffing(),
+      qty: '1',
+      unit_price: '',
+      sub_price: '',
+      staff_list: [],
+      referrer: '',
+      highlighted: false,
+    });
+  });
+  window._invpDirty = true;
+  renderInvpContainerTable(true);
+  _invpRefreshDupHighlights();
+
+  // Show the summary, clear the box so the user can paste another batch.
+  const box = document.getElementById('invpBulkResult');
+  box.innerHTML = _invpBulkResultHtml(res);
+  box.style.display = '';
+  document.getElementById('invpBulkText').value = '';
+  const dupCount = new Set([...res.dupExisting, ...res.dupInPaste]).size;
+  showToast(dupCount ? `已添加 ${res.toAdd.length} 个，发现 ${dupCount} 个重复` : `已添加 ${res.toAdd.length} 个 container`, dupCount ? 'info' : 'success');
+
+  // Cross-invoice (historical) duplicate check on the freshly added numbers,
+  // mirroring the per-row behaviour so red highlights + a note appear.
+  _invpBulkHistoricalCheck(res.toAdd);
+}
+
+async function _invpBulkHistoricalCheck(numbers) {
+  const companyName = (document.getElementById('invPageBillName').value || '').trim();
+  if (!companyName || !numbers || !numbers.length) return;
+  const hist = [];
+  for (const no of numbers) {
+    if ((window._invpDupIgnored || {})[no]) continue;
+    try {
+      const r = await _invpQueryDupHistory(no);
+      if (r && r.historical) { window._invpDupHistorical[no] = true; hist.push(no); }
+    } catch (_) {}
+  }
+  if (!hist.length) return;
+  _invpRefreshDupHighlights();
+  // Append a note to the result box if it is still visible.
+  const holder = document.getElementById('invpBulkHist');
+  if (holder) {
+    const chip = hist.map(c => `<span style="display:inline-block;font-family:monospace;font-size:.8rem;color:#b91c1c;background:#fef2f2;border:1px solid #b91c1c22;border-radius:5px;padding:.1rem .4rem;margin:.15rem .25rem .15rem 0">${c}</span>`).join('');
+    holder.innerHTML = `<div style="margin-top:.5rem;color:#b45309"><b>历史记录中已存在（其他发票 / 扫码）· ${hist.length} 个</b><div style="margin-top:.2rem">${chip}</div></div>`;
+  }
 }
 
 function invpRemoveContainer(uid) {
