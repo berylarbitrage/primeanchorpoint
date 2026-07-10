@@ -343,9 +343,12 @@
     try {
       let c = null;
       const url = URL.createObjectURL(file);
-      try { c = await imageToCanvas(url); } catch (e) { /* HEIC etc. — decode below */ }
+      try { c = await imageToCanvas(url); } catch (e) { /* HEIC / PDF — decode below */ }
       finally { URL.revokeObjectURL(url); }
-      if (!c) { setLoader(true, '转换 HEIC 图片…'); c = await canvasFromHeicBlob(file); }
+      if (!c) {
+        if (/pdf/i.test(file.type || '') || /\.pdf$/i.test(file.name || '')) { setLoader(true, '渲染 PDF…'); c = await canvasFromPdfBlob(file); }
+        else { setLoader(true, '转换 HEIC 图片…'); c = await canvasFromHeicBlob(file); }
+      }
       await runDetectAndCrop(c);
     } catch (e) { toast('读取图片失败'); } finally { setLoader(false); }
   }
@@ -363,10 +366,11 @@
       // computed from the filename extension, and many uploads have none). Only if the
       // browser can't decode it do we treat it as HEIC and convert with heic2any.
       try { c = await imageToCanvas(url); } catch (e) { /* not browser-native — try HEIC */ }
-      if (!c) { setLoader(true, '转换 HEIC 图片…'); try { c = await canvasFromHeicUrl(url); } catch (e) { /* give up below */ } }
-      if (!c) throw new Error('undecodable');
+      if (!c) { setLoader(true, '转换 HEIC 图片…'); try { c = await canvasFromHeicUrl(url); } catch (e) { /* try PDF / diagnose below */ } }
+      if (!c) { it._failReason = ''; c = await loadDocFallback(it, url); }  // PDF render, or throw a clear reason
       await runDetectAndCrop(c);
     } catch (e) {
+      it._failReason = (e && e.message && e.message !== 'undecodable') ? e.message : '';
       setLoader(false);
       showNonPreviewable(it);
     } finally { setLoader(false); }
@@ -375,8 +379,9 @@
   function showNonPreviewable(it) {
     setLoader(false);
     $('readyTitle').textContent = '此图无法预览';
+    const reason = it._failReason || ((it.ext || '未知') + ' 格式，转换失败或文件损坏');
     $('readyHint').innerHTML = esc(it.empName || '') + ' · ' + esc(it.docLabel) +
-      '<br>（' + esc(it.ext || '未知') + ' 格式，转换失败或文件损坏）。可用相机重拍替换，或保持原样 / 标记不可用。';
+      '<br>' + esc(reason) + '<br>可用相机重拍替换，或保持原样 / 标记不可用。';
     renderReviewBar();
     show('Ready');
   }
@@ -737,6 +742,65 @@
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('fetch ' + resp.status);
     return canvasFromHeicBlob(await resp.blob());
+  }
+
+  // ── PDF support ──────────────────────────────────────────────────
+  // EAD / work-permit / ID docs are often uploaded as PDF, which can't render in <img>.
+  // Lazy-load pdf.js and rasterise the first page so it can be reviewed/cropped; saving
+  // it back stores an image, which also lets it embed in the exported PDF packet.
+  const PDFJS_SRC = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+  const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  let _pdfjsPromise = null;
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve();
+    if (_pdfjsPromise) return _pdfjsPromise;
+    _pdfjsPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = PDFJS_SRC;
+      script.async = true;
+      script.onload = () => {
+        if (window.pdfjsLib) { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; } catch (e) {} resolve(); }
+        else reject(new Error('pdfjs init'));
+      };
+      script.onerror = () => { _pdfjsPromise = null; reject(new Error('pdfjs load failed')); };
+      document.head.appendChild(script);
+    });
+    return _pdfjsPromise;
+  }
+  // Render a PDF Blob's first page to a canvas (~2000px on the long side).
+  async function canvasFromPdfBlob(blob) {
+    await loadPdfJs();
+    const data = new Uint8Array(await blob.arrayBuffer());
+    const pdf = await window.pdfjsLib.getDocument({ data }).promise;
+    const page = await pdf.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(3, Math.max(1.5, 2000 / Math.max(base.width, base.height)));
+    const vp = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    return canvas;
+  }
+
+  // Last-resort loader: the browser and HEIC decoders both failed. Fetch the bytes,
+  // diagnose the real cause, and render PDFs. Throws with a human-readable reason so the
+  // "无法预览" screen can say WHY (404 / PDF render failure / corrupt / wrong format).
+  async function loadDocFallback(it, url) {
+    let resp;
+    try { resp = await fetch(url); } catch (e) { throw new Error('网络错误，无法获取文件'); }
+    if (!resp.ok) throw new Error(resp.status === 404 ? '服务器上找不到此文件（可能已删除或未上传成功）' : ('服务器返回错误 ' + resp.status));
+    const ct = (resp.headers.get('content-type') || '').toLowerCase();
+    const blob = await resp.blob();
+    if (ct.includes('pdf') || /\.pdf$/i.test(it.ext || '')) {
+      setLoader(true, '渲染 PDF…');
+      try { return await canvasFromPdfBlob(blob); }
+      catch (e) { throw new Error('这是 PDF 文件，但渲染失败，可点「保持原样」或重拍'); }
+    }
+    if (!blob.size) throw new Error('文件为空（0 字节），可能上传失败');
+    if (ct.startsWith('image/')) throw new Error('图片无法解码（可能已损坏或尺寸过大）');
+    throw new Error('格式不支持，无法预览（' + (ct || '未知类型') + '）');
   }
 
   // ── OpenCV document corner detection ─────────────────────────────
