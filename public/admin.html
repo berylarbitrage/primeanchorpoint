@@ -14296,17 +14296,18 @@ function openStorageTimeline(empId, empName) {
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:670;display:flex;align-items:center;justify-content:center;padding:1rem';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
   const d2s = d => d.toISOString().slice(0, 10);
-  const to = new Date(), from = new Date(Date.now() - 14 * 86400000);
+  const to = new Date(), from = new Date(Date.now() - 180 * 86400000);
   ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:860px;width:100%;max-height:92vh;overflow-y:auto;padding:1.1rem">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.4rem">
       <h3 style="margin:0;font-size:1rem">🕰️ 文件时光机 · 归还给 <span style="color:var(--sky)">${esc(empName || '')}</span></h3>
       <button class="btn btn-outline" onclick="document.getElementById('stlOverlay').remove()">✕ 关闭</button>
     </div>
-    <div style="font-size:.75rem;color:#64748b;margin-bottom:.5rem">系统保存证件时从不删除旧文件——被"覆盖"只是数据库改了指向。这里按上传时间列出存储里的<b>所有</b>证件文件；「无人引用」的就是被覆盖后留下的原件，认出来后点「归还」即可挂回员工名下。</div>
+    <div style="font-size:.75rem;color:#64748b;margin-bottom:.5rem">系统保存证件时从不删除旧文件——被"覆盖"只是数据库改了指向。默认只显示<b>和TA相关</b>的文件：TA名下记录引用的、以及TA建档日/问卷/入职上传时间点附近的；「无人引用」的就是被覆盖后留下的原件，认出来后点「归还」即可挂回员工名下。</div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.6rem;font-size:.78rem">
+      <label style="display:flex;align-items:center;gap:.25rem"><input type="checkbox" id="stlMine" checked>只看与 ${esc(empName || 'TA')} 相关的</label>
+      <label style="display:flex;align-items:center;gap:.25rem"><input type="checkbox" id="stlOrphan">只看无人引用的</label>
       <label>从 <input type="date" id="stlFrom" value="${d2s(from)}" style="font-size:.78rem"></label>
       <label>到 <input type="date" id="stlTo" value="${d2s(to)}" style="font-size:.78rem"></label>
-      <label style="display:flex;align-items:center;gap:.25rem"><input type="checkbox" id="stlOrphan" checked>只看无人引用的（被覆盖的原件）</label>
       <button class="btn btn-sm" style="background:#b45309;color:#fff;border:none;font-size:.74rem" onclick="_stlLoad(0)">🔍 查找</button>
     </div>
     <div id="stlBody" style="font-size:.85rem;color:#475569">加载中…</div>
@@ -14323,24 +14324,28 @@ async function _stlLoad(page) {
   const from = (document.getElementById('stlFrom') || {}).value || '';
   const to = (document.getElementById('stlTo') || {}).value || '';
   const orphan = (document.getElementById('stlOrphan') || {}).checked ? '1' : '0';
+  const mine = (document.getElementById('stlMine') || {}).checked ? '1' : '0';
   try {
-    const data = await api(`/admin/storage-timeline?from=${from}&to=${to}&orphan=${orphan}&page=${page}`);
+    const data = await api(`/admin/storage-timeline?from=${from}&to=${to}&orphan=${orphan}&mine=${mine}&empId=${_stlCtx.empId}&page=${page}`);
     if (data && data.error) throw new Error(data.error);
     const items = data.items || [];
-    if (!items.length) { body.innerHTML = '<div style="color:#94a3b8">这个时间段里没有找到文件。试试放宽日期范围，或取消勾选「只看无人引用的」。</div>'; document.getElementById('stlPager').innerHTML = ''; return; }
+    if (!items.length) { body.innerHTML = '<div style="color:#94a3b8">这个条件下没有找到文件。试试放宽日期范围、取消勾选「只看无人引用的」，或取消「只看与TA相关的」看全部。</div>'; document.getElementById('stlPager').innerHTML = ''; return; }
     let h = `<div style="color:#64748b;margin-bottom:.4rem">共 ${data.total} 个文件，按上传时间从新到旧：</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.55rem">`;
     let lastDay = '';
     for (const it of items) {
       const dt = new Date(it.ts);
       const day = dt.toLocaleDateString();
       const url = API + '/admin/storage-file?token=' + encodeURIComponent(TOKEN) + '&key=' + encodeURIComponent(it.key);
+      const hitHtml = it.hit === 'ref' ? '<div style="font-size:.58rem;color:#0369a1;margin-top:1px">✅ TA名下记录指向的文件</div>'
+        : it.hit === 'edited' ? '<div style="font-size:.58rem;color:#0369a1;margin-top:1px">✂️ TA证件的编辑版本</div>'
+        : it.hit === 'time' ? '<div style="font-size:.58rem;color:#92400e;margin-top:1px">🕓 TA的建档/上传时间附近</div>' : '';
       const refHtml = it.refBy && it.refBy.length
         ? `<div style="font-size:.6rem;color:#166534;background:#f0fdf4;border-radius:4px;padding:1px 4px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(it.refBy.join('；'))}">🔗 ${esc(it.refBy[0])}${it.refBy.length > 1 ? ' 等' : ''}</div>`
         : '<div style="font-size:.6rem;color:#b45309;background:#fffbeb;border-radius:4px;padding:1px 4px;margin-top:2px">🕳 无人引用（疑似被覆盖的原件）</div>';
       h += `<div style="border:1px solid ${it.refBy && it.refBy.length ? '#e2e8f0' : '#fcd34d'};border-radius:8px;padding:.4rem;text-align:center">
         <a href="${url}" target="_blank"><img src="${url}" loading="lazy" style="height:84px;width:100%;object-fit:cover;border-radius:5px;background:#f8fafc" onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'📄 打开查看',style:'font-size:.75rem;color:#0369a1;padding:2rem 0'}))"></a>
         <div style="font-size:.62rem;color:#334155;margin-top:2px">${esc(day)} ${esc(dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))} · ${esc(_stlTypeOf(it.key))} · ${Math.round((it.size || 0) / 1024)}KB</div>
-        ${refHtml}
+        ${hitHtml}${refHtml}
         <button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.64rem;margin-top:3px" onclick="attachStorageFile('${esc(it.key)}')">↩ 归还给 ${esc(_stlCtx.empName || 'TA')}</button>
       </div>`;
     }
