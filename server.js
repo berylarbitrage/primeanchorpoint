@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-10b · 历史数据库支持上传备份(.db)搜索恢复 + 证件来源诊断/历史版本 + 员工勾选持久化',
+  tag: '2026-07-10c · 文件时光机(免备份找回被覆盖证件) + 上传备份搜索 + 证件来源诊断/历史版本',
   started: new Date().toISOString(),
 };
 
@@ -17834,6 +17834,90 @@ app.post('/api/admin/upload-backup-db', requireAdmin, backupDbUpload.single('db'
     try { fs.unlinkSync(fp); } catch (_) {}
     res.status(400).json({ error: '无法作为 SQLite 数据库打开：' + e.message });
   }
+});
+
+// ── 文件时光机 (storage timeline) ──
+// Documents are never deleted from storage — saving a new version only repoints the DB
+// row. So an "overwritten" document's original file is still on disk/R2 under its old
+// key; what's lost is just the pointer. Every doc filename embeds its upload epoch-ms
+// (apply-<ts>-, onboard-<ts>-, doc-<ts>-, empdoc-<ts>-, id-edited-<id>-<ts>), so we can
+// reconstruct a browsable, date-filtered timeline of every file ever uploaded — no old
+// database needed — and flag which files no current DB row references (orphans, i.e.
+// overwritten originals).
+function _docKeyEpochMs(key) {
+  const base = String(key || '').split('/').pop();
+  // All 13-digit runs in the name; pick one that lands between 2020 and now+1d.
+  const runs = base.match(/\d{13}/g) || [];
+  const lo = Date.UTC(2020, 0, 1), hi = Date.now() + 86400000;
+  for (const r of runs) { const n = parseInt(r, 10); if (n >= lo && n <= hi) return n; }
+  return null;
+}
+function _allReferencedDocKeys() {
+  const map = new Map(); // key -> [ "owner (table)" ]
+  const add = (fp, label) => {
+    if (!fp) return;
+    const s = String(fp);
+    const k = s.includes('/') ? storage.keyForPath(s) : 'employee_docs/' + s;
+    if (!k) return;
+    const arr = map.get(k) || []; if (!arr.includes(label)) arr.push(label); map.set(k, arr);
+  };
+  try {
+    for (const r of db.prepare(`SELECT d.file_path, d.doc_type, s.name FROM applicant_docs d LEFT JOIN applicant_submissions s ON d.submission_id=s.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
+      add(r.file_path, `${r.name || '?'} · 问卷${EMPDOC_LABEL[r.doc_type] || r.doc_type}`);
+  } catch (e) {}
+  try {
+    for (const r of db.prepare(`SELECT d.file_path, d.doc_label, d.doc_type, e.first_name, e.last_name FROM employee_documents d LEFT JOIN employees e ON d.employee_id=e.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
+      add(r.file_path, `${[r.first_name, r.last_name].filter(Boolean).join(' ') || '?'} · 员工档案${r.doc_label || r.doc_type || ''}`);
+  } catch (e) {}
+  try {
+    for (const r of db.prepare(`SELECT d.file_path, d.doc_type, e.first_name, e.last_name FROM worker_compliance_docs d LEFT JOIN worker_accounts w ON d.worker_account_id=w.id LEFT JOIN employees e ON w.employee_id=e.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
+      add(r.file_path, `${[r.first_name, r.last_name].filter(Boolean).join(' ') || '?'} · 入职${r.doc_type || ''}`);
+  } catch (e) {}
+  try {
+    for (const r of db.prepare(`SELECT d.file_path, d.doc_label, e.first_name, e.last_name FROM work_permit_docs d LEFT JOIN worker_accounts w ON d.worker_account_id=w.id LEFT JOIN employees e ON w.employee_id=e.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
+      add(r.file_path, `${[r.first_name, r.last_name].filter(Boolean).join(' ') || '?'} · 工卡${r.doc_label || ''}`);
+  } catch (e) {}
+  return map;
+}
+app.get('/api/admin/storage-timeline', requireAdmin, async (req, res) => {
+  try {
+    const from = req.query.from ? Date.parse(req.query.from + 'T00:00:00') : null;
+    const to = req.query.to ? Date.parse(req.query.to + 'T23:59:59.999') : null;
+    const orphanOnly = req.query.orphan === '1';
+    const page = Math.max(0, parseInt(req.query.page || '0', 10));
+    const PER = 48;
+    let objs = [];
+    try { objs = await storage.listByPrefix('employee_docs/'); } catch (e) {}
+    const refs = _allReferencedDocKeys();
+    let items = objs
+      .filter(o => o.key && !o.key.endsWith('/'))
+      .map(o => {
+        const ts = _docKeyEpochMs(o.key) || o.lastModified || null;
+        return { key: o.key, size: o.size || 0, ts, refBy: refs.get(o.key) || [] };
+      })
+      .filter(o => o.ts && (!from || o.ts >= from) && (!to || o.ts <= to));
+    if (orphanOnly) items = items.filter(o => !o.refBy.length);
+    items.sort((a, b) => b.ts - a.ts);
+    const total = items.length;
+    res.json({ total, page, per: PER, items: items.slice(page * PER, (page + 1) * PER) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Recover a storage file to an employee: insert a NEW employee_documents row pointing at
+// it. Nothing is overwritten — this only adds a pointer, so it's always safe.
+app.post('/api/admin/doc-attach', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const key = storage.normalizeKey(b.key || '');
+    if (!/^(employee_docs|uploads)\//.test(key)) return res.status(403).json({ error: 'not allowed' });
+    const emp = db.prepare('SELECT id, first_name, last_name FROM employees WHERE id=?').get(parseInt(b.employee_id, 10));
+    if (!emp) return res.status(404).json({ error: '员工不存在' });
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    const label = String(b.label || '找回的证件').slice(0, 120);
+    const fp = key.startsWith('employee_docs/') ? key.slice('employee_docs/'.length) : key;
+    const info = db.prepare('INSERT INTO employee_documents (employee_id, doc_type, doc_label, file_path, file_name, notes) VALUES (?,?,?,?,?,?)')
+      .run(emp.id, 'recovered', label, fp, 'recovered-' + key.split('/').pop(), '经文件时光机找回');
+    res.json({ ok: true, id: info.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // Serve any file by storage key, restricted to the document folders. Admin-only. Lets the
 // backup viewer show old files whose keys aren't in the current DB.
