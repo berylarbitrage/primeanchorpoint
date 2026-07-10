@@ -2606,8 +2606,8 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <!-- Selected value lives here (kept as an input so submit / reset code is unchanged):
            "" = none, "<stmtId>" = whole PDF, "box:<stmtId>:<boxId>" = one transaction. -->
       <input type="hidden" id="invpSubPayStmt">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.4rem">
-        <select id="invpSubPayFilterStmt" onchange="_invpRenderSubPayList()" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.4rem;margin-bottom:.4rem">
+        <select id="invpSubPayFilterStmt" onchange="_invpRenderSubPayList()" style="min-width:0;padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
           <option value="">全部对账单</option>
         </select>
         <select id="invpSubPayFilterDir" onchange="_invpRenderSubPayList()" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
@@ -2630,7 +2630,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <label style="font-size:.74rem;color:var(--gray-500);display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" id="invpSubPayHideUsed" onchange="_invpRenderSubPayList()">仅显示未使用</label>
         <span style="font-size:.72rem;color:var(--gray-400)"><a onclick="_invpClearSubPayFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem">清除筛选</a><span id="invpSubPayListCount"></span></span>
       </div>
-      <div id="invpSubPayList" style="max-height:300px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;background:#fff">
+      <div id="invpSubPayList" style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow-wrap:anywhere;word-break:break-word">
         <div style="padding:1rem;text-align:center;color:var(--gray-400);font-size:.82rem">加载中…</div>
       </div>
       <div id="invpSubPaySelected" style="font-size:.78rem;color:var(--sky);font-weight:600;margin-top:.4rem;min-height:1.1em"></div>
@@ -31596,7 +31596,7 @@ function _invpRenderSubPayList() {
     const wholeSel = selVal === wholeVal;
     html += `<div style="padding:.4rem .6rem;background:#f8fafc;border-top:1px solid var(--gray-100);font-size:.72rem;color:var(--gray-500);font-weight:700;position:sticky;top:0">${esc(_invpStmtLabel(s))}</div>`;
     // Whole-PDF option for this statement.
-    html += `<div onclick="_invpPickSubPay('${wholeVal}', ${_invpJsStr('📄 整份 PDF · ' + _invpStmtLabel(s))})" style="padding:.5rem .6rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;${wholeSel ? 'background:#eff6ff' : ''}"><span>📄 整份 PDF <span style="color:var(--gray-400)">（${boxes.length} 条标注）</span></span>${wholeSel ? '<span style="color:var(--sky);font-weight:700">✓ 已选</span>' : ''}</div>`;
+    html += `<div onclick="_invpPickSubPay('${wholeVal}', ${_invpJsStr('📄 整份 PDF · ' + _invpStmtLabel(s))})" style="padding:.5rem .6rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;${wholeSel ? 'background:#eff6ff' : ''}"><span style="min-width:0">📄 整份 PDF <span style="color:var(--gray-400)">（${boxes.length} 条标注）</span></span>${wholeSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
 
     matches.forEach(b => {
       const usedBy = b.used_invoice_id;
@@ -31611,9 +31611,9 @@ function _invpRenderSubPayList() {
       const isSel = selVal === val;
       if (usedElsewhere) {
         const badge = invNumById[usedBy] ? ('已使用 · ' + invNumById[usedBy]) : '已使用';
-        html += `<div title="已被其他发票用作凭证" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);font-size:.82rem;color:var(--gray-400);background:#fafafa;cursor:not-allowed;display:flex;justify-content:space-between;align-items:center;gap:.5rem"><span style="text-decoration:line-through">${esc(bits)}</span><span style="flex:0 0 auto;font-size:.68rem;color:#b45309;background:#fef3c7;border-radius:4px;padding:.05rem .4rem">${esc(badge)}</span></div>`;
+        html += `<div title="已被其他发票用作凭证" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);font-size:.82rem;color:var(--gray-400);background:#fafafa;cursor:not-allowed;display:flex;justify-content:space-between;align-items:center;gap:.5rem"><span style="text-decoration:line-through;min-width:0">${esc(bits)}</span><span style="flex:0 0 auto;font-size:.68rem;color:#b45309;background:#fef3c7;border-radius:4px;padding:.05rem .4rem">${esc(badge)}</span></div>`;
       } else {
-        html += `<div onclick="_invpPickSubPay('${val}', ${_invpJsStr('• ' + bits)})" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;${isSel ? 'background:#eff6ff' : ''}"><span>• ${esc(bits)}</span>${isSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
+        html += `<div onclick="_invpPickSubPay('${val}', ${_invpJsStr('• ' + bits)})" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;${isSel ? 'background:#eff6ff' : ''}"><span style="min-width:0">• ${esc(bits)}</span>${isSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
       }
     });
   });
