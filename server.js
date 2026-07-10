@@ -3070,10 +3070,15 @@ schedule24hReminders();
 // ─── Middleware ───
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
-// Redirect *.html URLs to clean URLs (e.g. /admin.html → /admin)
+// Redirect *.html URLs to clean URLs (e.g. /admin.html → /admin). Preserve the query
+// string — dropping it broke links like /emp-doc-review.html?token=…&ids=… (the page
+// then saw no ids and showed 链接无效). Use 302 so a stale cached redirect can't pin a
+// query-less target.
 app.use((req, res, next) => {
   if (req.path.endsWith('.html') && req.method === 'GET') {
-    return res.redirect(301, req.path.slice(0, -5));
+    const qIdx = req.originalUrl.indexOf('?');
+    const query = qIdx >= 0 ? req.originalUrl.slice(qIdx) : '';
+    return res.redirect(302, req.path.slice(0, -5) + query);
   }
   next();
 });
