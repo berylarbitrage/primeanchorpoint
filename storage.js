@@ -63,6 +63,19 @@ function normalizeKey(keyOrPath) {
   return k;
 }
 
+// Reduce any stored file_path to a resolvable storage key. Handles the three forms a
+// file_path can take: a clean key ("employee_docs/x.jpg"), an R2 path-style value
+// ("/employee_docs/x.jpg"), and — the tricky one — an ABSOLUTE on-disk path that the
+// local multer backend stores in req.file.path ("/…/data/employee_docs/x.jpg"). For the
+// last, strip the dataDir prefix so the key resolves under the storage layout.
+function keyForPath(filePath) {
+  let k = normalizeKey(filePath);
+  if (!k || !_dataDir) return k;
+  const base = normalizeKey(_dataDir);
+  if (base && k.startsWith(base + '/')) k = k.slice(base.length + 1);
+  return k;
+}
+
 // Convert a DB-stored file_path into a canonical R2 key.
 // Examples:
 //   keyFrom('/uploads/foo.jpg',  'uploads')         -> 'uploads/foo.jpg'
@@ -201,6 +214,7 @@ module.exports = {
   deleteObject,
   getDownloadUrl,
   normalizeKey,
+  keyForPath,
   keyFrom,
   localAbsPath,
   backendName,
