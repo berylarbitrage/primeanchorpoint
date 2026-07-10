@@ -31319,22 +31319,22 @@ function renderInvpList() {
             return `<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center;max-width:140px;margin:0 auto">${arr.map(one).join('')}</div>`;
           };
           const receiptCell = isPaid ? rcptThumbs(r.payment_receipt_paths, r.payment_receipt_path, 'var(--green)') : dash;
-          // 分包付款: money paid OUT to the subcontractor. Compare to 工资
-          // (wage_cost — what we owe them) and flag red on a mismatch. Amount and
-          // receipt live in their own columns (subPayCell / subReceiptCell).
+          // 分包付款: money paid OUT to the subcontractor. Compare to 账单
+          // (subtotal — the invoice's billed total) and flag red on a mismatch. Amount
+          // and receipt live in their own columns (subPayCell / subReceiptCell).
           const subPaid = r.sub_payment_status === 'paid';
-          const wageOwed = r.wage_cost || 0;
+          const billOwed = r.subtotal || 0;
           const subAmt = r.sub_payment_amount != null ? Number(r.sub_payment_amount) : null;
-          const subMismatch = subPaid && subAmt != null && Math.abs(subAmt - wageOwed) > 0.005;
+          const subMismatch = subPaid && subAmt != null && Math.abs(subAmt - billOwed) > 0.005;
           const subInfo = subPaid ? [
             subAmt != null ? `$${subAmt.toFixed(2)}` : null,
             r.sub_payment_date || null, r.sub_payment_entity || null,
             r.sub_payment_bank || null, r.sub_payment_handler || null,
           ].filter(Boolean).join(' · ') : '';
           const subIsImg = subPaid && r.sub_payment_receipt_path && /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(r.sub_payment_receipt_path);
-          // 分包付款金额: its own column; red when it differs from 工资 (what we owe).
+          // 分包付款金额: its own column; red when it differs from 账单 (billed total).
           const subAmtCell = (subPaid && subAmt != null)
-            ? `<span ${subMismatch ? `title="工资 $${wageOwed.toFixed(2)} · 分包付款 $${subAmt.toFixed(2)} · 差额 $${(subAmt - wageOwed).toFixed(2)}"` : ''} style="${subMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${subAmt.toFixed(2)}${subMismatch ? ' ⚠' : ''}</span>`
+            ? `<span ${subMismatch ? `title="账单 $${billOwed.toFixed(2)} · 分包付款 $${subAmt.toFixed(2)} · 差额 $${(subAmt - billOwed).toFixed(2)}"` : ''} style="${subMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${subAmt.toFixed(2)}${subMismatch ? ' ⚠' : ''}</span>`
             : dash;
           // Status + action only; amount moved to subAmtCell. The 更新 button turns
           // green once a proof exists (the visible "已上传" colour change).
@@ -31777,10 +31777,10 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
   }
   _ensureBankNameOption(document.getElementById('invpSubPayMethod'),  row.sub_payment_bank || '');
   _ensureBankNameOption(document.getElementById('invpSubPayHandler'), row.sub_payment_handler || '');
-  // Default amount ← what we owe out for this invoice (工资), date ← today.
+  // Default amount ← the invoice's billed total (账单), date ← today.
   document.getElementById('invpSubPayAmount').value =
     (row.sub_payment_amount != null && row.sub_payment_amount !== '') ? row.sub_payment_amount
-    : (row.wage_cost != null ? row.wage_cost : '');
+    : (row.subtotal != null ? row.subtotal : '');
   document.getElementById('invpSubPayDate').value =
     row.sub_payment_date || new Date().toISOString().slice(0, 10);
 

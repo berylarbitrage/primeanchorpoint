@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-10j · 保存Invoice前强制确认账期起止 + 工时查重 + 发票查重拦截',
+  tag: '2026-07-10k · 分包付款默认金额改为账单金额(差额警告同步) + 账期确认 + 工时/发票查重',
   started: new Date().toISOString(),
 };
 
