@@ -17114,19 +17114,37 @@ function _makeEmpDocMatcher() {
     }
   } catch (_) { /* no submissions */ }
   const linkedStmt = db.prepare('SELECT id FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC');
+  // An SSN card uploaded later via 入职 → 核对税号 → 上传 SSN 卡 lives in
+  // worker_compliance_docs (keyed by worker_account_id), NOT applicant_docs. Resolve the
+  // employee's worker account and use that card as the SSN front when the application
+  // itself has none — otherwise those employees export with no SSN at all.
+  const waStmt = db.prepare('SELECT id FROM worker_accounts WHERE employee_id=? ORDER BY active DESC, id ASC LIMIT 1');
+  const ssnCardStmt = db.prepare(`SELECT id, file_path, file_name FROM worker_compliance_docs
+    WHERE worker_account_id=? AND doc_type='ssn_card' AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC LIMIT 1`);
   return function pickDocs(e) {
     const ordered = [];                                   // submission ids, highest priority first
     for (const r of linkedStmt.all(e.id)) ordered.push(r.id);
     const p = norm10(e.phone); if (p.length === 10) for (const id of (phoneMap.get(p) || [])) ordered.push(id);
     const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) ordered.push(id);
     const uniq = [...new Set(ordered)];
-    if (!uniq.length) return [];
-    const rows = db.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs
-      WHERE submission_id IN (${uniq.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...uniq);
-    const prio = new Map(uniq.map((id, i) => [id, i]));
-    rows.sort((a, b) => (prio.get(a.submission_id) ?? 1e9) - (prio.get(b.submission_id) ?? 1e9));
     const seen = new Set(), picked = [];
-    for (const r of rows) { if (seen.has(r.doc_type)) continue; seen.add(r.doc_type); picked.push(r); }
+    if (uniq.length) {
+      const rows = db.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs
+        WHERE submission_id IN (${uniq.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...uniq);
+      const prio = new Map(uniq.map((id, i) => [id, i]));
+      rows.sort((a, b) => (prio.get(a.submission_id) ?? 1e9) - (prio.get(b.submission_id) ?? 1e9));
+      for (const r of rows) { if (seen.has(r.doc_type)) continue; seen.add(r.doc_type); picked.push(r); }
+    }
+    // Fill a missing SSN front from an admin-uploaded SSN card. Namespace the id as
+    // `wc_<id>` so id-doc-image / save-id-doc read+write the worker_compliance_docs row.
+    if (!seen.has('ssn_front')) {
+      const wa = waStmt.get(e.id);
+      const card = wa ? ssnCardStmt.get(wa.id) : null;
+      if (card && card.file_path) {
+        picked.push({ id: 'wc_' + card.id, submission_id: null, doc_type: 'ssn_front',
+                      file_path: card.file_path, file_name: card.file_name || 'ssn-card', source: 'compliance' });
+      }
+    }
     return picked;
   };
 }
@@ -17480,7 +17498,12 @@ app.get('/api/admin/employees/id-docs', _empDocAuth, (req, res) => {
 // redirect) so the review page can draw it to a canvas without tainting it.
 app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res) => {
   try {
-    const doc = db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(req.params.docId);
+    const raw = String(req.params.docId || '');
+    // `wc_<id>` → an admin-uploaded SSN card in worker_compliance_docs; otherwise a
+    // normal applicant_docs id.
+    const doc = raw.startsWith('wc_')
+      ? db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND doc_type='ssn_card'").get(parseInt(raw.slice(3), 10))
+      : db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(raw);
     if (!doc) return res.status(404).json({ error: 'Not found' });
     const key = storage.normalizeKey(doc.file_path);
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
@@ -17501,22 +17524,31 @@ app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res
 // left in storage so a bad crop is recoverable.
 app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
   try {
-    const docId = parseInt(req.body && req.body.docId, 10);
+    const rawId = String((req.body && req.body.docId) || '');
+    const isWc = rawId.startsWith('wc_');               // admin-uploaded SSN card row
+    const docId = parseInt(isWc ? rawId.slice(3) : rawId, 10);
     const dataUrl = String((req.body && req.body.dataUrl) || '');
     const m = dataUrl.match(/^data:image\/(jpeg|jpg|png);base64,/i);
     if (!docId || !m) return res.status(400).json({ error: '参数错误' });
-    const doc = db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(docId);
+    const doc = isWc
+      ? db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND doc_type='ssn_card'").get(docId)
+      : db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(docId);
     if (!doc) return res.status(404).json({ error: 'Not found' });
     const buf = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
     if (!buf.length || buf.length > 15 * 1024 * 1024) return res.status(400).json({ error: '图片无效或过大' });
     const isPng = /png/i.test(m[1]);
     const oldKey = storage.normalizeKey(doc.file_path);
     const dir = oldKey.includes('/') ? oldKey.slice(0, oldKey.lastIndexOf('/')) : 'uploads';
-    const newKey = `${dir}/id-edited-${docId}-${Date.now()}.${isPng ? 'png' : 'jpg'}`;
+    const newKey = `${dir}/id-edited-${isWc ? 'wc' : ''}${docId}-${Date.now()}.${isPng ? 'png' : 'jpg'}`;
     await storage.putObject(newKey, buf, { contentType: isPng ? 'image/png' : 'image/jpeg' });
-    db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?')
-      .run(newKey, `id-edited-${doc.doc_type}.${isPng ? 'png' : 'jpg'}`, docId);
-    res.json({ ok: true, doc_id: docId });
+    if (isWc) {
+      db.prepare('UPDATE worker_compliance_docs SET file_path=?, file_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+        .run(newKey, `id-edited-ssn_card.${isPng ? 'png' : 'jpg'}`, docId);
+    } else {
+      db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?')
+        .run(newKey, `id-edited-${doc.doc_type}.${isPng ? 'png' : 'jpg'}`, docId);
+    }
+    res.json({ ok: true, doc_id: rawId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
