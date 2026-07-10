@@ -14149,7 +14149,10 @@ async function openEmpDocSources(empId, empName) {
   ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:780px;width:100%;max-height:90vh;overflow-y:auto;padding:1.25rem">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;margin-bottom:.6rem">
       <h3 style="margin:0">🔍 证件来源诊断 · <span style="color:var(--sky)">${esc(empName || '')}</span></h3>
-      <button class="btn btn-outline" onclick="document.getElementById('empDocSrcOverlay').remove()">✕ 关闭</button>
+      <div style="display:flex;gap:.4rem;flex:0 0 auto">
+        <button class="btn btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="openDocBackups(${empId})" title="在数据库历史备份里查找该员工的证件旧版本">🗄️ 历史数据库</button>
+        <button class="btn btn-outline" onclick="document.getElementById('empDocSrcOverlay').remove()">✕ 关闭</button>
+      </div>
     </div>
     <div id="empDocSrcBody" style="font-size:.88rem;color:#475569">加载中…</div>
   </div>`;
@@ -14219,6 +14222,59 @@ async function relinkSubmission(submissionId) {
     showToast('已关联到本人，证件已找回', 'success');
     openEmpDocSources(empId, empName);   // refresh
   } catch (e) { showToast('关联失败：' + (e.message || ''), 'error'); }
+}
+
+// ── 历史数据库：在 DB 备份里找该员工证件的旧记录，可恢复 ──
+async function openDocBackups(empId) {
+  let ov = document.getElementById('docBakOverlay'); if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'docBakOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:660;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto;padding:1.1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <h3 style="margin:0;font-size:1rem">🗄️ 历史数据库 · 证件旧记录</h3>
+      <button class="btn btn-outline" onclick="document.getElementById('docBakOverlay').remove()">✕ 关闭</button>
+    </div>
+    <div id="docBakBody" style="font-size:.85rem;color:#475569">加载中…（正在读取数据库备份）</div>
+  </div>`;
+  document.body.appendChild(ov);
+  try {
+    const data = await api('/admin/employees/' + empId + '/doc-backups');
+    if (data && data.error) throw new Error(data.error);
+    const body = document.getElementById('docBakBody'); if (!body) return;
+    const baks = data.backups || [], snaps = data.snapshots || [];
+    const oldest = baks.length ? baks[baks.length - 1].iso : null;
+    let h = `<div style="color:#64748b;margin-bottom:.5rem">共 ${baks.length} 个备份${oldest ? `，最早：${esc(new Date(oldest).toLocaleString())}` : ''}。备份默认只保留约 10 小时，若更早的版本不在这里，说明已被滚动清除。</div>`;
+    if (!snaps.length) { h += '<div style="color:#94a3b8">所有备份里都没有找到该员工名下的证件记录。</div>'; body.innerHTML = h; return; }
+    const fileImg = (key, table, id, label) => {
+      const url = API + '/admin/storage-file?token=' + encodeURIComponent(TOKEN) + '&key=' + encodeURIComponent(key);
+      return `<div style="text-align:center;max-width:130px">
+        <div style="font-size:.64rem;color:#64748b;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label || '')}</div>
+        <a href="${url}" target="_blank"><img src="${url}" style="height:64px;width:auto;max-width:120px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;object-fit:cover" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'📄 查看',style:'font-size:.72rem;color:#0369a1'}))"></a>
+        <div><button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.64rem;margin-top:2px" onclick="restoreFromBackup('${table}',${id},'${esc(key)}',${empId})">↩ 恢复这版</button></div></div>`;
+    };
+    snaps.forEach(s => {
+      h += `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:.55rem;margin-bottom:.5rem">
+        <div style="font-weight:700;font-size:.8rem;margin-bottom:.35rem">🕓 ${esc(new Date(s.iso).toLocaleString())}</div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          ${(s.applicant_docs || []).map(d => fileImg(d.key, 'applicant_docs', d.id, d.label)).join('')}
+          ${(s.employee_docs || []).map(d => fileImg(d.key, 'employee_documents', d.id, d.doc_label || d.doc_type)).join('')}
+        </div></div>`;
+    });
+    body.innerHTML = h;
+  } catch (e) {
+    const b = document.getElementById('docBakBody'); if (b) b.innerHTML = '<div style="color:var(--red)">加载失败：' + esc(e.message || '') + '</div>';
+  }
+}
+async function restoreFromBackup(table, id, key, empId) {
+  if (!await showConfirm('确认把这条证件恢复到备份里的这个文件吗？\n当前文件仍保留在存储里。', { title: '从备份恢复', confirmText: '确认恢复', cancelText: '取消' })) return;
+  try {
+    const r = await api('/admin/doc-set-file', { method: 'POST', body: JSON.stringify({ table, id, key }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast('已恢复到备份版本', 'success');
+    if (_empDocSrcCtx && _empDocSrcCtx.empId) openEmpDocSources(_empDocSrcCtx.empId, _empDocSrcCtx.empName);
+  } catch (e) { showToast('恢复失败：' + (e.message || ''), 'error'); }
 }
 
 // ── 证件历史版本：查看每次编辑保存的旧版本，可回滚 ──

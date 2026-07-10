@@ -17748,6 +17748,80 @@ app.post('/api/admin/employees/id-doc-restore/:docId', requireAdmin, async (req,
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Search the BACKUP databases for an employee's documents ("历史数据库") ──
+// Backups are prime-<ts>.db snapshots. Open each read-only and show the employee's docs
+// as they were then. Files are never deleted, so an old file_path from a backup still
+// points to a real file in current storage — viewable via /admin/storage-file.
+function _backupTsToIso(ts) { const [d, t] = String(ts).split('T'); if (!t) return ts; const m = t.match(/^(\d\d)-(\d\d)-(\d\d)-(\d+)Z?$/); return m ? `${d}T${m[1]}:${m[2]}:${m[3]}.${m[4]}Z` : ts; }
+function _listBackupDbs(limit = 15) {
+  const seen = new Map();
+  for (const dir of BACKUP_DIRS) {
+    let files = []; try { files = fs.readdirSync(dir).filter(f => f.startsWith('prime-') && f.endsWith('.db')); } catch (e) { continue; }
+    for (const f of files) { const ts = f.slice(6, -3); if (!seen.has(ts)) seen.set(ts, path.join(dir, f)); }
+  }
+  return [...seen.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, limit).map(([ts, p]) => ({ ts, iso: _backupTsToIso(ts), path: p }));
+}
+function _empDocKeyFromBackup(fp) { const s = String(fp || ''); if (!s) return ''; return s.includes('/') ? storage.keyForPath(s) : 'employee_docs/' + s; }
+app.get('/api/admin/employees/:id/doc-backups', requireAdmin, (req, res) => {
+  try {
+    const e = db.prepare('SELECT id, first_name, middle_name, last_name, email, phone FROM employees WHERE id=?').get(req.params.id);
+    if (!e) return res.status(404).json({ error: 'Not found' });
+    const norm10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
+    const eName = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim().toLowerCase();
+    const ep = norm10(e.phone), eem = String(e.email || '').trim().toLowerCase();
+    const backups = _listBackupDbs(15);
+    const snapshots = [];
+    for (const b of backups) {
+      let bdb; try { bdb = new Database(b.path, { readonly: true, fileMustExist: true }); } catch (err) { continue; }
+      try {
+        const empDocs = bdb.prepare("SELECT id, doc_type, doc_label, file_path, file_name FROM employee_documents WHERE employee_id=? AND file_path IS NOT NULL AND file_path!=''").all(e.id)
+          .map(d => ({ ...d, key: _empDocKeyFromBackup(d.file_path) }));
+        const subs = bdb.prepare('SELECT id, name, phone, email, employee_id FROM applicant_submissions').all();
+        const subIds = subs.filter(s => (s.employee_id && String(s.employee_id) === String(e.id)) || (ep.length === 10 && norm10(s.phone) === ep) || (eem && String(s.email || '').trim().toLowerCase() === eem) || (eName && String(s.name || '').trim().toLowerCase() === eName)).map(s => s.id);
+        let appDocs = [];
+        if (subIds.length) appDocs = bdb.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs WHERE submission_id IN (${subIds.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...subIds)
+          .map(d => ({ ...d, label: EMPDOC_LABEL[d.doc_type] || d.doc_type, key: storage.keyForPath(d.file_path) }));
+        if (empDocs.length || appDocs.length) snapshots.push({ ts: b.ts, iso: b.iso, employee_docs: empDocs, applicant_docs: appDocs });
+      } catch (err) { /* skip bad backup */ } finally { try { bdb.close(); } catch (e) {} }
+    }
+    res.json({ employee: { id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ') }, backups: backups.map(b => ({ ts: b.ts, iso: b.iso })), snapshots });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+// Serve any file by storage key, restricted to the document folders. Admin-only. Lets the
+// backup viewer show old files whose keys aren't in the current DB.
+app.get('/api/admin/storage-file', _empDocAuth, async (req, res) => {
+  try {
+    const key = storage.normalizeKey(req.query.key || '');
+    if (!/^(employee_docs|uploads)\//.test(key)) return res.status(403).json({ error: 'not allowed' });
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    const buf = await storage.getBuffer(key);
+    res.setHeader('Content-Type', _sniffImageMime(buf) || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Restore an employee doc / applicant doc to a specific storage key found in a backup.
+app.post('/api/admin/doc-set-file', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const key = storage.normalizeKey(b.key || '');
+    if (!/^(employee_docs|uploads)\//.test(key)) return res.status(403).json({ error: 'not allowed' });
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    const fname = 'restored-' + key.split('/').pop();
+    if (b.table === 'employee_documents') {
+      const d = db.prepare('SELECT id FROM employee_documents WHERE id=?').get(parseInt(b.id, 10));
+      if (!d) return res.status(404).json({ error: 'Not found' });
+      // employee_documents.file_path is a basename served from employee_docs/
+      db.prepare('UPDATE employee_documents SET file_path=?, file_name=? WHERE id=?').run(key.replace(/^employee_docs\//, ''), fname, d.id);
+    } else {
+      const d = db.prepare("SELECT id FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(parseInt(b.id, 10));
+      if (!d) return res.status(404).json({ error: 'Not found' });
+      db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?').run(key, fname, d.id);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
