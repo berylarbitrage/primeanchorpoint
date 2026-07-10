@@ -15997,8 +15997,9 @@ function _empToggleAll(master) {
 function exportSelectedEmpDocs() {
   const ids = _empSelectedIds();
   if (!ids.length) { showToast('请先勾选要导出的员工', 'error'); return; }
-  showToast(`正在生成 ${ids.length} 位员工的证件 PDF…`, 'success', 3000);
-  window.open(API + '/admin/employees/export-docs?token=' + TOKEN + '&ids=' + ids.join(','), '_blank');
+  // Open the pre-export review page: step through each SSN/EAD photo, auto-crop
+  // / rotate / de-skew and confirm before the PDF is generated.
+  window.open('/emp-doc-review.html?token=' + encodeURIComponent(TOKEN) + '&ids=' + ids.join(','), '_blank');
 }
 
 // ══════════════════════════════════════════════════════

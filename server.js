@@ -17059,10 +17059,56 @@ function buildZip(files) {
   return Buffer.concat([...parts, cdBuf, eocd]);
 }
 
+// ── Shared applicant → employee ID-document matcher ────────────────────
+// The four ID photos live on applicant_submissions / applicant_docs. We link
+// them to an employee by (1) an explicit employee_id link, else (2) phone
+// (compared on the last 10 digits, so a +1 country code or formatting still
+// matches) or email (case-insensitive). This is looser than an exact match,
+// which silently dropped documents when a stored phone/email differed by a
+// country code or letter case → spurious "无证件". Used by the export + the
+// pre-export review endpoints so all three agree on which doc belongs to whom.
+const EMPDOC_TYPES = ['ssn_front', 'ssn_back', 'ead_front', 'ead_back'];
+const EMPDOC_LABEL = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
+function _empDocImgKind(buf) {
+  if (!buf || buf.length < 4) return null;
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'jpg';
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'png';
+  return null;
+}
+function _makeEmpDocMatcher() {
+  const norm10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
+  const phoneMap = new Map(), emailMap = new Map();
+  try {
+    for (const s of db.prepare('SELECT id, phone, email FROM applicant_submissions ORDER BY id DESC').all()) {
+      const p = norm10(s.phone);
+      if (p.length === 10) { if (!phoneMap.has(p)) phoneMap.set(p, []); phoneMap.get(p).push(s.id); }
+      const em = String(s.email || '').trim().toLowerCase();
+      if (em) { if (!emailMap.has(em)) emailMap.set(em, []); emailMap.get(em).push(s.id); }
+    }
+  } catch (_) { /* no submissions */ }
+  const linkedStmt = db.prepare('SELECT id FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC');
+  return function pickDocs(e) {
+    const ordered = [];                                   // submission ids, highest priority first
+    for (const r of linkedStmt.all(e.id)) ordered.push(r.id);
+    const p = norm10(e.phone); if (p.length === 10) for (const id of (phoneMap.get(p) || [])) ordered.push(id);
+    const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) ordered.push(id);
+    const uniq = [...new Set(ordered)];
+    if (!uniq.length) return [];
+    const rows = db.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs
+      WHERE submission_id IN (${uniq.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...uniq);
+    const prio = new Map(uniq.map((id, i) => [id, i]));
+    rows.sort((a, b) => (prio.get(a.submission_id) ?? 1e9) - (prio.get(b.submission_id) ?? 1e9));
+    const seen = new Set(), picked = [];
+    for (const r of rows) { if (seen.has(r.doc_type)) continue; seen.add(r.doc_type); picked.push(r); }
+    return picked;
+  };
+}
+
 // Bulk-export selected employees' contact info + SSN/EAD document photos as a
 // single, print-ready PDF packet: a cover/summary page followed by one section
 // per employee with their four ID photos embedded. (Replaces the old ZIP+CSV.)
-// ?ids=1,2,3 (comma-separated employee ids). Auth: session token (query) or admin.
+// ?ids=1,2,3 (comma-separated). ?exclude=empId|docType,... marks images the
+// admin reviewed as unusable → they render as "未提供". Auth: token or admin.
 app.get('/api/admin/employees/export-docs', (req, res, next) => {
   if (req.query.token && validSession(req.query.token)) return next();
   return requireAdmin(req, res, next);
@@ -17070,53 +17116,13 @@ app.get('/api/admin/employees/export-docs', (req, res, next) => {
   try {
     const ids = String(req.query.ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
     if (!ids.length) return res.status(400).json({ error: '未选择员工' });
+    const exclude = new Set(String(req.query.exclude || '').split(',').map(s => s.trim()).filter(Boolean));
 
     const empStmt = db.prepare('SELECT id, employee_id, first_name, middle_name, last_name, email, phone FROM employees WHERE id=?');
-    const DOC_TYPES = ['ssn_front', 'ssn_back', 'ead_front', 'ead_back'];
-    const DOC_LABEL = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
+    const DOC_TYPES = EMPDOC_TYPES;
+    const DOC_LABEL = EMPDOC_LABEL;
     const DOC_SHORT = { ssn_front: 'SSN正', ssn_back: 'SSN反', ead_front: 'EAD正', ead_back: 'EAD反' };
-
-    // ── Robust applicant → employee matching ────────────────────────────
-    // The four ID photos live on applicant_submissions / applicant_docs. We link
-    // them to an employee by (1) an explicit employee_id link, else (2) phone
-    // (compared on the last 10 digits, so a +1 country code or formatting still
-    // matches) or email (case-insensitive). This is looser than the old exact
-    // match, which silently dropped documents whenever a stored phone/email
-    // differed by a country code or letter case → spurious "无证件".
-    const norm10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
-    const phoneMap = new Map(), emailMap = new Map();
-    try {
-      for (const s of db.prepare('SELECT id, phone, email FROM applicant_submissions ORDER BY id DESC').all()) {
-        const p = norm10(s.phone);
-        if (p.length === 10) { if (!phoneMap.has(p)) phoneMap.set(p, []); phoneMap.get(p).push(s.id); }
-        const em = String(s.email || '').trim().toLowerCase();
-        if (em) { if (!emailMap.has(em)) emailMap.set(em, []); emailMap.get(em).push(s.id); }
-      }
-    } catch (_) { /* no submissions table content */ }
-    const linkedStmt = db.prepare('SELECT id FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC');
-    const pickDocs = (e) => {
-      const ordered = [];                                   // submission ids, highest priority first
-      for (const r of linkedStmt.all(e.id)) ordered.push(r.id);
-      const p = norm10(e.phone); if (p.length === 10) for (const id of (phoneMap.get(p) || [])) ordered.push(id);
-      const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) ordered.push(id);
-      const uniq = [...new Set(ordered)];
-      if (!uniq.length) return [];
-      const rows = db.prepare(`SELECT submission_id, doc_type, file_path, file_name FROM applicant_docs
-        WHERE submission_id IN (${uniq.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...uniq);
-      const prio = new Map(uniq.map((id, i) => [id, i]));
-      rows.sort((a, b) => (prio.get(a.submission_id) ?? 1e9) - (prio.get(b.submission_id) ?? 1e9));
-      const seen = new Set(), picked = [];
-      for (const r of rows) { if (seen.has(r.doc_type)) continue; seen.add(r.doc_type); picked.push(r); }
-      return picked;
-    };
-
-    // pdfkit can only embed JPEG/PNG — detect by magic bytes.
-    const imgKind = (buf) => {
-      if (!buf || buf.length < 4) return null;
-      if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'jpg';
-      if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'png';
-      return null;
-    };
+    const pickDocs = _makeEmpDocMatcher();
 
     // Fetch every employee's photo buffers up front (async), then render sync.
     const people = [];
@@ -17126,10 +17132,11 @@ app.get('/api/admin/employees/export-docs', (req, res, next) => {
       const name = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim() || ('员工 ' + id);
       const slots = {};
       for (const d of pickDocs(e)) {
+        if (exclude.has(id + '|' + d.doc_type)) continue;    // admin marked unusable → 未提供
         try {
           const buf = await storage.getBuffer(storage.normalizeKey(d.file_path));
           if (!buf || !buf.length) continue;
-          slots[d.doc_type] = { buf, kind: imgKind(buf), file_name: d.file_name || '', ext: (path.extname(d.file_name || d.file_path || '') || '').toLowerCase() };
+          slots[d.doc_type] = { buf, kind: _empDocImgKind(buf), file_name: d.file_name || '', ext: (path.extname(d.file_name || d.file_path || '') || '').toLowerCase() };
         } catch (_) { /* unreadable */ }
       }
       people.push({ e, name, slots });
@@ -17402,6 +17409,85 @@ app.get('/api/admin/employees/export-docs', (req, res, next) => {
     if (!res.headersSent) res.status(500).json({ error: e.message });
     else { try { res.end(); } catch (_) {} }
   }
+});
+
+// ── Pre-export review of ID documents ──────────────────────────────────
+// The admin opens a review page (emp-doc-review.html) before generating the
+// PDF, steps through each employee's SSN/EAD photo, and can auto-crop / rotate
+// / de-skew and save the cleaned image back to the record. These three
+// endpoints back that flow. Auth: session token (query/body) or admin.
+const _empDocAuth = (req, res, next) => {
+  const tok = req.query.token || (req.body && req.body.token);
+  if (tok && validSession(tok)) return next();
+  return requireAdmin(req, res, next);
+};
+
+// Metadata: which of the four ID docs each selected employee has, plus the
+// applicant_docs id and whether the browser can display it (for editing).
+app.get('/api/admin/employees/id-docs', _empDocAuth, (req, res) => {
+  try {
+    const ids = String(req.query.ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ error: '未选择员工' });
+    const pickDocs = _makeEmpDocMatcher();
+    const empStmt = db.prepare('SELECT id, employee_id, first_name, middle_name, last_name, email, phone FROM employees WHERE id=?');
+    const previewExts = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
+    const out = [];
+    for (const id of ids) {
+      const e = empStmt.get(id);
+      if (!e) continue;
+      const name = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim() || ('员工 ' + id);
+      const byType = {};
+      for (const d of pickDocs(e)) byType[d.doc_type] = d;
+      const docs = EMPDOC_TYPES.map(t => {
+        const d = byType[t];
+        const ext = d ? (path.extname(d.file_name || d.file_path || '') || '').toLowerCase() : '';
+        return { type: t, label: EMPDOC_LABEL[t], present: !!d, doc_id: d ? d.id : null, ext, previewable: d ? previewExts.includes(ext) : false };
+      });
+      out.push({ id: e.id, employee_id: e.employee_id, name, phone: e.phone || '', email: e.email || '', docs });
+    }
+    res.json({ employees: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Stream one ID document's bytes THROUGH the server (never a cross-origin R2
+// redirect) so the review page can draw it to a canvas without tainting it.
+app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res) => {
+  try {
+    const doc = db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(req.params.docId);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    const key = storage.normalizeKey(doc.file_path);
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    const buf = await storage.getBuffer(key);
+    const ext = path.extname(key).toLowerCase();
+    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.heic': 'image/heic', '.heif': 'image/heif', '.pdf': 'application/pdf' };
+    res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Save an edited (cropped / rotated / de-skewed) image back to the record.
+// Writes a NEW key and repoints the applicant_docs row; the original file is
+// left in storage so a bad crop is recoverable.
+app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
+  try {
+    const docId = parseInt(req.body && req.body.docId, 10);
+    const dataUrl = String((req.body && req.body.dataUrl) || '');
+    const m = dataUrl.match(/^data:image\/(jpeg|jpg|png);base64,/i);
+    if (!docId || !m) return res.status(400).json({ error: '参数错误' });
+    const doc = db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(docId);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    const buf = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
+    if (!buf.length || buf.length > 15 * 1024 * 1024) return res.status(400).json({ error: '图片无效或过大' });
+    const isPng = /png/i.test(m[1]);
+    const oldKey = storage.normalizeKey(doc.file_path);
+    const dir = oldKey.includes('/') ? oldKey.slice(0, oldKey.lastIndexOf('/')) : 'uploads';
+    const newKey = `${dir}/id-edited-${docId}-${Date.now()}.${isPng ? 'png' : 'jpg'}`;
+    await storage.putObject(newKey, buf, { contentType: isPng ? 'image/png' : 'image/jpeg' });
+    db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?')
+      .run(newKey, `id-edited-${doc.doc_type}.${isPng ? 'png' : 'jpg'}`, docId);
+    res.json({ ok: true, doc_id: docId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
