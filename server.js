@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-10c · 文件时光机(免备份找回被覆盖证件) + 上传备份搜索 + 证件来源诊断/历史版本',
+  tag: '2026-07-10d · 文件时光机默认只看本人相关(按工号建档日/记录时间定位) + 免备份找回被覆盖证件',
   started: new Date().toISOString(),
 };
 
@@ -17879,12 +17879,59 @@ function _allReferencedDocKeys() {
   } catch (e) {}
   return map;
 }
+// Per-employee scope: an orphan file carries no DB pointer, so "whose is it" must be
+// inferred. Three signals, from strongest to weakest: (1) keys her current rows reference,
+// (2) id-edited-<docId>- files whose docId belongs to her applicant docs, (3) upload
+// timestamps that land inside her activity windows — her submissions' created_at, her
+// onboarding docs' created_at, plus the enrollment day embedded in her WRK-ST-MMDDYY code.
+function _empScopeFor(empId) {
+  const e = db.prepare('SELECT * FROM employees WHERE id=?').get(empId);
+  if (!e) return null;
+  const keys = new Set(), docIds = new Set(), windows = [];
+  const W = 6 * 3600 * 1000; // ±6h around each known activity
+  const addKey = fp => { if (!fp) return; const s = String(fp); const k = s.includes('/') ? storage.keyForPath(s) : 'employee_docs/' + s; if (k) keys.add(k); };
+  const addWin = (t, spread) => {
+    if (!t) return; let s = String(t).trim(); if (s.includes(' ')) s = s.replace(' ', 'T');
+    if (!/Z|[+-]\d\d:?\d\d$/.test(s)) s += 'Z';
+    const ms = Date.parse(s); if (!isNaN(ms)) windows.push([ms - (spread || W), ms + (spread || W)]);
+  };
+  try { for (const r of db.prepare('SELECT file_path, uploaded_at FROM employee_documents WHERE employee_id=?').iterate(e.id)) { addKey(r.file_path); addWin(r.uploaded_at); } } catch (err) {}
+  try {
+    for (const w of db.prepare('SELECT id FROM worker_accounts WHERE employee_id=?').iterate(e.id)) {
+      for (const r of db.prepare('SELECT file_path, created_at FROM worker_compliance_docs WHERE worker_account_id=?').iterate(w.id)) { addKey(r.file_path); addWin(r.created_at); }
+      for (const r of db.prepare('SELECT file_path, created_at FROM work_permit_docs WHERE worker_account_id=?').iterate(w.id)) { addKey(r.file_path); addWin(r.created_at); }
+    }
+  } catch (err) {}
+  try {
+    const norm10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
+    const ep = norm10(e.phone), eem = String(e.email || '').trim().toLowerCase();
+    const eName = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim().toLowerCase();
+    for (const s of db.prepare('SELECT id, name, phone, email, employee_id, created_at FROM applicant_submissions').iterate()) {
+      const hit = (s.employee_id && String(s.employee_id) === String(e.id))
+        || (ep.length === 10 && norm10(s.phone) === ep)
+        || (eem && String(s.email || '').trim().toLowerCase() === eem)
+        || (eName && String(s.name || '').trim().toLowerCase() === eName);
+      if (!hit) continue;
+      addWin(s.created_at);
+      for (const d of db.prepare('SELECT id, file_path FROM applicant_docs WHERE submission_id=?').iterate(s.id)) { addKey(d.file_path); docIds.add(d.id); }
+    }
+  } catch (err) {}
+  // Enrollment day from the WRK-ST-MMDDYY-#### code (and hire_date): cover that whole
+  // day generously — onboarding uploads happen then even if the DB rows were replaced.
+  const dayWin = d0 => { if (!isNaN(d0)) windows.push([d0 - 12 * 3600 * 1000, d0 + 36 * 3600 * 1000]); };
+  const m = String(e.employee_id || '').match(/^WRK-\w{2}-(\d\d)(\d\d)(\d\d)-\d{4}$/);
+  if (m) dayWin(Date.UTC(2000 + parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10)));
+  if (e.hire_date) dayWin(Date.parse(String(e.hire_date).slice(0, 10) + 'T00:00:00Z'));
+  return { keys, docIds, windows };
+}
 app.get('/api/admin/storage-timeline', requireAdmin, async (req, res) => {
   try {
     const from = req.query.from ? Date.parse(req.query.from + 'T00:00:00') : null;
     const to = req.query.to ? Date.parse(req.query.to + 'T23:59:59.999') : null;
     const orphanOnly = req.query.orphan === '1';
     const page = Math.max(0, parseInt(req.query.page || '0', 10));
+    const empId = parseInt(req.query.empId || '0', 10) || 0;
+    const scope = req.query.mine === '1' && empId ? _empScopeFor(empId) : null;
     const PER = 48;
     let objs = [];
     try { objs = await storage.listByPrefix('employee_docs/'); } catch (e) {}
@@ -17896,6 +17943,15 @@ app.get('/api/admin/storage-timeline', requireAdmin, async (req, res) => {
         return { key: o.key, size: o.size || 0, ts, refBy: refs.get(o.key) || [] };
       })
       .filter(o => o.ts && (!from || o.ts >= from) && (!to || o.ts <= to));
+    if (scope) {
+      const reEdited = scope.docIds.size ? new RegExp('^id-edited-(' + [...scope.docIds].join('|') + ')-') : null;
+      items = items.filter(o => {
+        if (scope.keys.has(o.key)) { o.hit = 'ref'; return true; }
+        if (reEdited && reEdited.test(String(o.key).split('/').pop())) { o.hit = 'edited'; return true; }
+        if (scope.windows.some(w => o.ts >= w[0] && o.ts <= w[1])) { o.hit = 'time'; return true; }
+        return false;
+      });
+    }
     if (orphanOnly) items = items.filter(o => !o.refBy.length);
     items.sort((a, b) => b.ts - a.ts);
     const total = items.length;
