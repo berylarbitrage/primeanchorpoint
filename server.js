@@ -17084,6 +17084,24 @@ function _empDocImgKind(buf) {
   if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'png';
   return null;
 }
+// Detect an image's MIME from its magic bytes (covers extension-less uploads). Returns
+// null for anything we don't recognise so the caller can fall back to the extension.
+function _sniffImageMime(b) {
+  if (!b || b.length < 12) return null;
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return 'image/jpeg';
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'image/png';
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
+  if (b[0] === 0x42 && b[1] === 0x4D) return 'image/bmp';
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'application/pdf';
+  // ISO-BMFF (HEIC/HEIF): bytes 4..8 == 'ftyp', brand heic/heix/mif1/msf1…
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    const brand = String.fromCharCode(b[8], b[9], b[10], b[11]).toLowerCase();
+    if (/^(hei|hev|mif|msf)/.test(brand)) return 'image/heic';
+  }
+  return null;
+}
 function _makeEmpDocMatcher() {
   const norm10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
   const phoneMap = new Map(), emailMap = new Map();
@@ -17469,7 +17487,10 @@ app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res
     const buf = await storage.getBuffer(key);
     const ext = path.extname(key).toLowerCase();
     const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.heic': 'image/heic', '.heif': 'image/heif', '.pdf': 'application/pdf' };
-    res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
+    // Sniff the real type from magic bytes — many uploads have NO extension, so the
+    // extension map would wrongly send application/octet-stream and the browser might
+    // refuse to render an otherwise-fine JPEG. Magic bytes win over the extension.
+    res.setHeader('Content-Type', _sniffImageMime(buf) || mimeMap[ext] || 'application/octet-stream');
     res.setHeader('Cache-Control', 'no-store');
     res.send(buf);
   } catch (e) { res.status(500).json({ error: e.message }); }
