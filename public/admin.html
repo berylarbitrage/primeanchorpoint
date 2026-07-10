@@ -14150,6 +14150,7 @@ async function openEmpDocSources(empId, empName) {
     <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;margin-bottom:.6rem">
       <h3 style="margin:0">🔍 证件来源诊断 · <span style="color:var(--sky)">${esc(empName || '')}</span></h3>
       <div style="display:flex;gap:.4rem;flex:0 0 auto">
+        <button class="btn btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="openStorageTimeline(${empId},'${esc(empName || '')}')" title="按时间浏览存储里所有上传过的证件文件（包括已被覆盖、数据库不再指向的旧文件），可一键归还">🕰️ 文件时光机</button>
         <button class="btn btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="openDocBackups(${empId})" title="在数据库历史备份里查找该员工的证件旧版本">🗄️ 历史数据库</button>
         <button class="btn btn-outline" onclick="document.getElementById('empDocSrcOverlay').remove()">✕ 关闭</button>
       </div>
@@ -14274,6 +14275,98 @@ async function openDocBackups(empId) {
   } catch (e) {
     const b = document.getElementById('docBakBody'); if (b) b.innerHTML = '<div style="color:var(--red)">加载失败：' + esc(e.message || '') + '</div>';
   }
+}
+// ── 文件时光机：按时间浏览存储里所有上传过的证件文件（含已被覆盖的孤儿文件），可归还 ──
+let _stlCtx = null;
+function _stlTypeOf(key) {
+  const b = String(key || '').split('/').pop();
+  if (b.startsWith('apply-')) return '问卷上传';
+  if (b.startsWith('onboard-')) return '入职上传';
+  if (b.startsWith('doc-')) return '后台上传';
+  if (b.startsWith('empdoc-')) return '补件上传';
+  if (b.startsWith('id-edited-')) return '审阅编辑版';
+  if (b.startsWith('wdoc-')) return '工人自传';
+  return '其他';
+}
+function openStorageTimeline(empId, empName) {
+  _stlCtx = { empId, empName, page: 0 };
+  let ov = document.getElementById('stlOverlay'); if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'stlOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:670;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const d2s = d => d.toISOString().slice(0, 10);
+  const to = new Date(), from = new Date(Date.now() - 14 * 86400000);
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:860px;width:100%;max-height:92vh;overflow-y:auto;padding:1.1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.4rem">
+      <h3 style="margin:0;font-size:1rem">🕰️ 文件时光机 · 归还给 <span style="color:var(--sky)">${esc(empName || '')}</span></h3>
+      <button class="btn btn-outline" onclick="document.getElementById('stlOverlay').remove()">✕ 关闭</button>
+    </div>
+    <div style="font-size:.75rem;color:#64748b;margin-bottom:.5rem">系统保存证件时从不删除旧文件——被"覆盖"只是数据库改了指向。这里按上传时间列出存储里的<b>所有</b>证件文件；「无人引用」的就是被覆盖后留下的原件，认出来后点「归还」即可挂回员工名下。</div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.6rem;font-size:.78rem">
+      <label>从 <input type="date" id="stlFrom" value="${d2s(from)}" style="font-size:.78rem"></label>
+      <label>到 <input type="date" id="stlTo" value="${d2s(to)}" style="font-size:.78rem"></label>
+      <label style="display:flex;align-items:center;gap:.25rem"><input type="checkbox" id="stlOrphan" checked>只看无人引用的（被覆盖的原件）</label>
+      <button class="btn btn-sm" style="background:#b45309;color:#fff;border:none;font-size:.74rem" onclick="_stlLoad(0)">🔍 查找</button>
+    </div>
+    <div id="stlBody" style="font-size:.85rem;color:#475569">加载中…</div>
+    <div id="stlPager" style="display:flex;justify-content:center;gap:.6rem;margin-top:.6rem"></div>
+  </div>`;
+  document.body.appendChild(ov);
+  _stlLoad(0);
+}
+async function _stlLoad(page) {
+  if (!_stlCtx) return;
+  _stlCtx.page = page;
+  const body = document.getElementById('stlBody'); if (!body) return;
+  body.innerHTML = '加载中…（正在扫描存储）';
+  const from = (document.getElementById('stlFrom') || {}).value || '';
+  const to = (document.getElementById('stlTo') || {}).value || '';
+  const orphan = (document.getElementById('stlOrphan') || {}).checked ? '1' : '0';
+  try {
+    const data = await api(`/admin/storage-timeline?from=${from}&to=${to}&orphan=${orphan}&page=${page}`);
+    if (data && data.error) throw new Error(data.error);
+    const items = data.items || [];
+    if (!items.length) { body.innerHTML = '<div style="color:#94a3b8">这个时间段里没有找到文件。试试放宽日期范围，或取消勾选「只看无人引用的」。</div>'; document.getElementById('stlPager').innerHTML = ''; return; }
+    let h = `<div style="color:#64748b;margin-bottom:.4rem">共 ${data.total} 个文件，按上传时间从新到旧：</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.55rem">`;
+    let lastDay = '';
+    for (const it of items) {
+      const dt = new Date(it.ts);
+      const day = dt.toLocaleDateString();
+      const url = API + '/admin/storage-file?token=' + encodeURIComponent(TOKEN) + '&key=' + encodeURIComponent(it.key);
+      const refHtml = it.refBy && it.refBy.length
+        ? `<div style="font-size:.6rem;color:#166534;background:#f0fdf4;border-radius:4px;padding:1px 4px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(it.refBy.join('；'))}">🔗 ${esc(it.refBy[0])}${it.refBy.length > 1 ? ' 等' : ''}</div>`
+        : '<div style="font-size:.6rem;color:#b45309;background:#fffbeb;border-radius:4px;padding:1px 4px;margin-top:2px">🕳 无人引用（疑似被覆盖的原件）</div>';
+      h += `<div style="border:1px solid ${it.refBy && it.refBy.length ? '#e2e8f0' : '#fcd34d'};border-radius:8px;padding:.4rem;text-align:center">
+        <a href="${url}" target="_blank"><img src="${url}" loading="lazy" style="height:84px;width:100%;object-fit:cover;border-radius:5px;background:#f8fafc" onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'📄 打开查看',style:'font-size:.75rem;color:#0369a1;padding:2rem 0'}))"></a>
+        <div style="font-size:.62rem;color:#334155;margin-top:2px">${esc(day)} ${esc(dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))} · ${esc(_stlTypeOf(it.key))} · ${Math.round((it.size || 0) / 1024)}KB</div>
+        ${refHtml}
+        <button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.64rem;margin-top:3px" onclick="attachStorageFile('${esc(it.key)}')">↩ 归还给 ${esc(_stlCtx.empName || 'TA')}</button>
+      </div>`;
+    }
+    h += '</div>';
+    body.innerHTML = h;
+    const pages = Math.ceil(data.total / (data.per || 48));
+    document.getElementById('stlPager').innerHTML = pages > 1
+      ? `<button class="btn btn-sm btn-outline" ${page <= 0 ? 'disabled' : ''} onclick="_stlLoad(${page - 1})">← 更新的</button>
+         <span style="font-size:.75rem;color:#64748b;align-self:center">${page + 1} / ${pages} 页</span>
+         <button class="btn btn-sm btn-outline" ${page >= pages - 1 ? 'disabled' : ''} onclick="_stlLoad(${page + 1})">更早的 →</button>`
+      : '';
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--red)">加载失败：' + esc(e.message || '') + '</div>';
+  }
+}
+async function attachStorageFile(key) {
+  if (!_stlCtx) return;
+  const label = prompt(`把这个文件归还给 ${_stlCtx.empName || ''}，给它起个名称：\n（例如：SSN卡正面 / 工卡正面 / 工卡背面）`, '找回的证件');
+  if (label === null) return;
+  try {
+    const r = await api('/admin/doc-attach', { method: 'POST', body: JSON.stringify({ employee_id: _stlCtx.empId, key, label: label || '找回的证件' }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast('已归还到 ' + (_stlCtx.empName || '') + ' 的员工档案', 'success');
+    _stlLoad(_stlCtx.page || 0);
+    if (_empDocSrcCtx && _empDocSrcCtx.empId) openEmpDocSources(_empDocSrcCtx.empId, _empDocSrcCtx.empName);
+  } catch (e) { showToast('归还失败：' + (e.message || ''), 'error'); }
 }
 async function uploadBackupDb(empId) {
   const input = document.getElementById('docBakUploadInput');
