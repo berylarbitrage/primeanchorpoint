@@ -35115,6 +35115,8 @@ async function generateInvpPreview() {
       <!-- Line items table (hourly OR container) -->
       ${lineItemTableHtml}
 
+      <!-- Total + payment + footer: kept together so it never splits across pages -->
+      <div class="invp-tail">
       <!-- Amount summary (right-aligned) -->
       <div style="display:flex;justify-content:flex-end;margin-bottom:.85rem">
         <table style="border-collapse:collapse;font-size:.86rem;min-width:280px">
@@ -35153,6 +35155,7 @@ async function generateInvpPreview() {
       <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;text-align:center;font-size:.78rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">
         THANK YOU FOR YOUR BUSINESS!
       </div>
+      </div>
     </div>
     </div>`;
 
@@ -35184,14 +35187,19 @@ function printInvpInvoice() {
   const w = window.open('', '_blank');
   w.document.write(`<!DOCTYPE html><html><head><title>${invNum}</title>
     <style>
-      @page { size: letter; margin: 0; }
+      /* Page margin lives on @page so EVERY page (incl. overflow pages) keeps
+         its 0.5in edge — a padded single .sheet box only pads its first/last
+         page. */
+      @page { size: letter; margin: 0.5in; }
       html, body { margin: 0; padding: 0; }
       body { font-family: 'Helvetica Neue', Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .sheet { width: 8.5in; min-height: 11in; padding: 0.5in; box-sizing: border-box; }
-      table { page-break-inside: avoid; }
-      @media print {
-        .sheet { page-break-after: avoid; }
-      }
+      .sheet { box-sizing: border-box; }
+      /* Let the container table flow across pages instead of jumping whole to
+         the next one: keep each row intact and repeat the column header. */
+      thead { display: table-header-group; }
+      tr, img { page-break-inside: avoid; break-inside: avoid; }
+      /* Keep the total + payment + footer block together (never split it). */
+      .invp-tail { page-break-inside: avoid; break-inside: avoid; }
     </style>
     </head><body><div class="sheet">${content}</div></body></html>`);
   w.document.close();
