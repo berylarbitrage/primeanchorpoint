@@ -17621,11 +17621,23 @@ app.get('/api/admin/employees/:id/doc-sources', requireAdmin, (req, res) => {
         docs: docStmt.all(s.id).map(d => ({ id: d.id, doc_type: d.doc_type, label: EMPDOC_LABEL[d.doc_type] || d.doc_type, file_name: d.file_name }))
       });
     }
+    // Admin-uploaded docs (SSN cards / work permits): search not just this employee's
+    // resolved worker account but ALSO any worker account whose employee matches by name
+    // or phone — so a doc you uploaded to a slightly mis-linked account still surfaces.
+    const norm10b = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
+    const acctIds = new Set(); if (wa) acctIds.add(wa.id);
+    try {
+      for (const w of db.prepare('SELECT wa2.id wid, em.first_name f, em.middle_name m, em.last_name l, em.phone ph FROM worker_accounts wa2 JOIN employees em ON wa2.employee_id=em.id').all()) {
+        const nm = [w.f, w.m, w.l].filter(Boolean).join(' ').trim().toLowerCase();
+        if ((eName && nm === eName) || (ep.length === 10 && norm10b(w.ph) === ep)) acctIds.add(w.wid);
+      }
+    } catch (e) { /* best-effort */ }
     let complianceSsn = [], workPermit = [];
-    if (wa) {
-      complianceSsn = db.prepare("SELECT id, file_name FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='ssn_card' AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC").all(wa.id)
-        .map(d => ({ id: d.id, file_name: d.file_name, url: `/api/admin/worker-accounts/${wa.id}/ssn-cards/${d.id}/file?inline=1` }));
-      workPermit = db.prepare("SELECT id, file_name, doc_number, expiry_date FROM work_permit_docs WHERE worker_account_id=? AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC").all(wa.id)
+    if (acctIds.size) {
+      const ids = [...acctIds], ph = ids.map(() => '?').join(',');
+      complianceSsn = db.prepare(`SELECT id, worker_account_id, file_name FROM worker_compliance_docs WHERE worker_account_id IN (${ph}) AND doc_type='ssn_card' AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC`).all(...ids)
+        .map(d => ({ id: d.id, file_name: d.file_name, url: `/api/admin/worker-accounts/${d.worker_account_id}/ssn-cards/${d.id}/file?inline=1` }));
+      workPermit = db.prepare(`SELECT id, worker_account_id, file_name, doc_number, expiry_date FROM work_permit_docs WHERE worker_account_id IN (${ph}) AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC`).all(...ids)
         .map(d => ({ id: d.id, file_name: d.file_name, doc_number: d.doc_number, expiry_date: d.expiry_date, url: `/api/admin/work-permit-docs/${d.id}/download` }));
     }
     res.json({
@@ -17681,11 +17693,14 @@ async function _empDocVersions(raw) {
       const sub = db.prepare('SELECT created_at FROM applicant_submissions WHERE id=?').get(r.doc.submission_id);
       const created = sub && sub.created_at ? new Date(String(sub.created_at).replace(' ', 'T') + 'Z').getTime() : null;
       if (created) {
+        // Exclude the SIBLING docs of the same submission (their apply-* files were
+        // uploaded at the same time but are DIFFERENT documents, not versions of this one).
+        const siblingKeys = new Set(db.prepare('SELECT file_path FROM applicant_docs WHERE submission_id=? AND id!=?').all(r.doc.submission_id, r.id).map(x => storage.keyForPath(x.file_path)));
         const WINDOW = 3 * 60 * 60 * 1000;   // ±3h around the submission time
         for (const f of await storage.listByPrefix(`${dir}/apply-`)) {
           const m = String(f.key).match(/apply-(\d+)-/); if (!m) continue;
           const ts = parseInt(m[1], 10);
-          if (Math.abs(ts - created) <= WINDOW && !map.has(f.key)) map.set(f.key, { key: f.key, ts, size: f.size, candidateOriginal: true });
+          if (Math.abs(ts - created) <= WINDOW && !map.has(f.key) && !siblingKeys.has(f.key)) map.set(f.key, { key: f.key, ts, size: f.size, candidateOriginal: true });
         }
       }
     } catch (e) { /* best-effort */ }
