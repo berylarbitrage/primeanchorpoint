@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<!-- Meta Pixel Code -->
+<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js'); fbq('init', '978932388059197'); fbq('track', 'PageView');</script>
+<noscript><img height="1" width="1" src="https://www.facebook.com/tr?id=978932388059197&ev=PageView&noscript=1"/></noscript>
+<!-- End Meta Pixel Code -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f2b5b">
+<title>证件审阅 · 导出前逐张确认</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #0f172a; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    overflow: hidden; touch-action: none; }
+  .app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  header { padding: .85rem 1rem; background: #0f2b5b; box-shadow: 0 1px 4px rgba(0,0,0,.3); flex-shrink: 0; }
+  header h1 { margin: 0 0 .15rem; font-size: 1.02rem; font-weight: 700; letter-spacing: .02em; }
+  header .sub { font-size: .78rem; color: #94a3b8; }
+  main { flex: 1; min-height: 0; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .stage { position: absolute; inset: 0; display: none; flex-direction: column; }
+  .stage.active { display: flex; }
+  .center { flex: 1; display: flex; align-items: center; justify-content: center; padding: 1.2rem; text-align: center; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    padding: .8rem 1.1rem; border-radius: 10px; font-size: 1rem; font-weight: 700; border: 0;
+    cursor: pointer; touch-action: manipulation; min-height: 48px; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:active { background: #1d4ed8; }
+  .btn-green { background: #16a34a; color: #fff; }
+  .btn-green:active { background: #15803d; }
+  .btn-outline { background: transparent; color: #e2e8f0; border: 1px solid #475569; }
+  .btn-outline:active { background: #1e293b; }
+  .btn-danger { background: #dc2626; color: #fff; }
+  .actions { display: flex; gap: .6rem; padding: .85rem 1rem calc(.85rem + env(safe-area-inset-bottom)); background: #0f172a;
+    border-top: 1px solid #1e293b; flex-shrink: 0; }
+  .actions .btn { flex: 1; }
+  .hint { font-size: .82rem; color: #94a3b8; line-height: 1.5; max-width: 320px; margin: 0 auto; }
+  .stage h2 { margin: 0 0 .4rem; font-size: 1.05rem; }
+  #capInput, #capPick { position: absolute; left: -9999px; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+
+  /* Crop stage */
+  .crop-wrap { flex: 1; position: relative; overflow: hidden; background: #000; touch-action: none; }
+  #cropCanvas { position: absolute; left: 0; top: 0; touch-action: none; }
+  #cropOverlay { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .handle { position: absolute; width: 32px; height: 32px; margin: -16px 0 0 -16px;
+    border-radius: 50%; background: rgba(37,99,235,.18); border: 2px solid #60a5fa;
+    box-shadow: 0 0 0 2px rgba(0,0,0,.4); touch-action: none; cursor: grab; }
+  .handle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px;
+    margin: -4px 0 0 -4px; background: #60a5fa; border-radius: 50%; }
+  .handle:active { background: rgba(96,165,250,.35); }
+
+  /* Preview stage */
+  #previewWrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #1e293b; padding: 1rem; overflow: auto; }
+  #previewImg { max-width: 100%; max-height: 100%; box-shadow: 0 4px 16px rgba(0,0,0,.5); border-radius: 4px; background: #fff; }
+
+  /* Toast & status */
+  .toast { position: fixed; left: 50%; bottom: calc(120px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: rgba(15,23,42,.95); color: #fff; padding: .65rem 1rem; border-radius: 8px; font-size: .88rem;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4); z-index: 100; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid #94a3b8; border-top-color: #fff;
+    border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .full-loader { position: fixed; inset: 0; background: rgba(15,23,42,.7); display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: .6rem; z-index: 200; }
+  .full-loader.show { display: flex; }
+  .full-loader .spinner { width: 40px; height: 40px; border-width: 3px; }
+  .full-loader .msg { color: #e2e8f0; font-size: .9rem; }
+
+  .err { color: #fecaca; }
+  .ok { color: #bbf7d0; }
+  .count-pill { display: inline-block; background: #16a34a; color: #fff; font-size: .72rem; font-weight: 700;
+    padding: .15rem .55rem; border-radius: 999px; margin-left: .4rem; vertical-align: middle; }
+  .thumbs { display: flex; gap: .4rem; overflow-x: auto; padding: .4rem .2rem .2rem; -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory; }
+  .thumb { flex: 0 0 auto; width: 64px; height: 84px; border-radius: 6px; background: #1e293b; overflow: hidden;
+    border: 1px solid #334155; position: relative; scroll-snap-align: start; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .idx { position: absolute; left: 4px; top: 4px; background: rgba(15,23,42,.85); color: #fff;
+    font-size: .68rem; padding: 1px 6px; border-radius: 999px; font-weight: 700; }
+  .thumbs-title { font-size: .78rem; color: #94a3b8; margin-bottom: .3rem; }
+
+  .filter-bar { display: flex; gap: .4rem; overflow-x: auto; padding: .55rem .85rem;
+    background: #0b1220; border-top: 1px solid #1e293b; flex-shrink: 0; -webkit-overflow-scrolling: touch; }
+  .filter-chip { flex: 0 0 auto; padding: .45rem .75rem; border-radius: 999px; border: 1px solid #334155;
+    background: #1e293b; color: #cbd5e1; font-size: .82rem; font-weight: 600; cursor: pointer; min-height: 36px;
+    touch-action: manipulation; }
+  .filter-chip:active { background: #334155; }
+  .filter-chip.active { background: #2563eb; border-color: #60a5fa; color: #fff; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="headerTitle">手机扫描上传</h1>
+    <div class="sub" id="headerSub">正在加载…</div>
+  </header>
+  <main>
+    <!-- Stage: error -->
+    <section class="stage" id="stageError">
+      <div class="center">
+        <div>
+          <div style="font-size:2.4rem;margin-bottom:.6rem">⚠️</div>
+          <h2 class="err">链接无效</h2>
+          <p class="hint" id="errMsg">该链接可能已过期或被吊销。请联系管理员重新生成。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stage: ready (waiting for camera) -->
+    <section class="stage" id="stageReady">
+      <div class="center">
+        <div style="width:100%">
+          <div style="font-size:2.6rem;margin-bottom:.6rem">📄</div>
+          <h2 id="readyTitle">点击下方按钮拍照</h2>
+          <p class="hint" id="readyHint">将文件平铺，拍摄完整页面。可拍多张连续上传。</p>
+          <div id="uploadedStrip" style="display:none;margin-top:1rem"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="capBtn">📷 重拍</button>
+        <button class="btn btn-outline" id="pickBtn">🖼️ 相册</button>
+        <button class="btn btn-outline" onclick="keepAsIs()">➡️ 保持原样</button>
+        <button class="btn btn-outline" style="color:#f87171;border-color:#f87171" onclick="markUnusable()">🚫 标记不可用</button>
+        <input id="capInput" type="file" accept="image/*" capture="environment">
+        <input id="capPick" type="file" accept="image/*">
+      </div>
+    </section>
+
+    <!-- Stage: crop -->
+    <section class="stage" id="stageCrop">
+      <div class="crop-wrap" id="cropWrap">
+        <canvas id="cropCanvas"></canvas>
+        <svg id="cropOverlay" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="handle" data-corner="tl"></div>
+        <div class="handle" data-corner="tr"></div>
+        <div class="handle" data-corner="br"></div>
+        <div class="handle" data-corner="bl"></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-outline" onclick="rotate90()">🔄 旋转</button>
+        <button class="btn btn-outline" id="cropReshootBtn">📷 重拍</button>
+        <button class="btn btn-outline" onclick="keepAsIs()">➡️ 保持原样</button>
+        <button class="btn btn-outline" style="color:#f87171;border-color:#f87171" onclick="markUnusable()">🚫 不可用</button>
+        <button class="btn btn-green" id="cropConfirmBtn">✂️ 裁剪</button>
+      </div>
+    </section>
+
+    <!-- Stage: preview -->
+    <section class="stage" id="stagePreview">
+      <div id="previewWrap"><img id="previewImg" alt="预览"></div>
+      <div class="filter-bar">
+        <button class="filter-chip" data-filter="magic">✨ 增强</button>
+        <button class="filter-chip" data-filter="bw">📄 黑白</button>
+        <button class="filter-chip" data-filter="gray">🌫️ 灰度</button>
+        <button class="filter-chip" data-filter="original">🖼️ 原图</button>
+      </div>
+      <div class="actions">
+        <button class="btn btn-outline" id="prevBackBtn">↩ 重新调整</button>
+        <button class="btn btn-green" id="uploadBtn">✅ 保存并下一张</button>
+      </div>
+    </section>
+
+    <!-- Stage: done -->
+    <section class="stage" id="stageDone">
+      <div class="center">
+        <div>
+          <div style="font-size:2.6rem;margin-bottom:.6rem">✅</div>
+          <h2 class="ok">审阅完成</h2>
+          <p class="hint" id="doneMsg">文件已发送给管理员。</p>
+          <p class="hint" id="doneCount" style="margin-top:.4rem;color:#bbf7d0"></p>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="anotherBtn">⬇️ 生成 PDF</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="full-loader" id="loader"><div class="spinner"></div><div class="msg" id="loaderMsg">处理中…</div></div>
+
+<script>
+(function() {
+  const _q = new URLSearchParams(location.search);
+  const TOKEN = _q.get('token') || '';
+  const API = '/api';
+  const EMP_IDS = (_q.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean);
+  // Review queue: one entry per present SSN/EAD image across all selected employees.
+  let reviewItems = [];        // {empId, empName, employeeId, docType, docLabel, docId, previewable, ext}
+  let reviewIdx = 0;
+  const excludeSet = new Set();  // `${empId}|${docType}` marked unusable → 未提供 in PDF
+  let savedCount = 0;
+  const $ = (id) => document.getElementById(id);
+  const stages = ['Error', 'Ready', 'Crop', 'Preview', 'Done'];
+  function show(stage) {
+    stages.forEach(s => $('stage' + s).classList.toggle('active', s === stage));
+  }
+  let toastTimer = null;
+  function toast(msg, ms = 2400) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+  function setLoader(on, msg) {
+    $('loader').classList.toggle('show', !!on);
+    if (msg) $('loaderMsg').textContent = msg;
+  }
+
+  // ── Session state ────────────────────────────────────────────────
+  let docLabel = '文件';
+  let sessionUploads = 0;           // count uploaded this session
+  let serverInitialCount = 0;       // already-uploaded count when page opened
+  const sessionThumbs = [];         // {url: blobURL} per local upload
+
+  function totalCount() { return serverInitialCount + sessionUploads; }
+  function refreshHeader() {
+    const tot = reviewItems.length;
+    $('headerTitle').innerHTML = '📄 证件审阅' +
+      (tot ? `<span class="count-pill">${Math.min(reviewIdx + 1, tot)} / ${tot}</span>` : '');
+  }
+  function renderReviewBar() {
+    const it = reviewItems[reviewIdx];
+    if (it) $('headerSub').textContent = it.empName + '（' + (it.employeeId || '—') + '） · ' + it.docLabel;
+    refreshHeader();
+  }
+  function refreshReadyStrip() {
+    const wrap = $('uploadedStrip');
+    if (!sessionThumbs.length) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+    wrap.style.display = '';
+    wrap.innerHTML = '<div class="thumbs-title">本次已上传 ' + sessionThumbs.length + ' 张</div>' +
+      '<div class="thumbs">' + sessionThumbs.map((t, i) =>
+        `<div class="thumb"><img src="${t.url}"><span class="idx">${i + 1}</span></div>`
+      ).join('') + '</div>';
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // ── Load review queue, then step through each image ──────────────
+  async function init() {
+    if (!TOKEN || !EMP_IDS.length) {
+      $('errMsg').textContent = '缺少参数，请从「员工管理 → 导出证件」重新进入。';
+      show('Error'); return;
+    }
+    loadOpenCV().catch(() => {});   // preload the AI edge detector
+    try {
+      const r = await fetch(API + '/admin/employees/id-docs?token=' + encodeURIComponent(TOKEN) + '&ids=' + EMP_IDS.join(','));
+      if (!r.ok) { $('errMsg').textContent = '加载失败（' + r.status + '），请返回重试。'; show('Error'); return; }
+      const data = await r.json();
+      const emps = (data && data.employees) || [];
+      reviewItems = [];
+      let missing = 0;
+      for (const e of emps) for (const d of e.docs) {
+        if (!d.present) { missing++; continue; }
+        reviewItems.push({ empId: e.id, empName: e.name, employeeId: e.employee_id, docType: d.type, docLabel: d.label, docId: d.doc_id, previewable: d.previewable, ext: d.ext });
+      }
+      window._reviewMeta = { employees: emps.length, images: reviewItems.length, missing };
+      if (!reviewItems.length) { finishReview(); return; }
+      reviewIdx = 0;
+      loadReviewItem();
+    } catch (e) {
+      $('errMsg').textContent = '网络异常，请稍后重试。';
+      show('Error');
+    }
+  }
+
+  // ── Image pipeline ───────────────────────────────────────────────
+  let capturedBitmap = null;     // canvas of the current photo/image
+  let displayScale = 1;          // canvas display scale vs bitmap pixels
+  let cornersImg = [];           // 4 corners in image coords: [{x,y}]
+  let outputBlob = null;
+
+  $('capInput').addEventListener('change', e => onPicked(e.target.files));
+  $('capPick').addEventListener('change', e => onPicked(e.target.files));
+  $('capBtn').addEventListener('click', () => $('capInput').click());
+  $('pickBtn').addEventListener('click', () => $('capPick').click());
+
+  async function imageToCanvas(srcUrl) {
+    const img = new Image();
+    img.decoding = 'async';
+    img.crossOrigin = 'anonymous';   // same-origin proxy → canvas stays clean
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('load')); img.src = srcUrl; });
+    const MAX_DIM = 2400;
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) throw new Error('empty');
+    if (Math.max(w, h) > MAX_DIM) { const k = MAX_DIM / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    return c;
+  }
+
+  async function runDetectAndCrop(c) {
+    capturedBitmap = c;
+    const cvReady = !!(window.cv && window.cv.Mat);
+    setLoader(true, cvReady ? '✨ AI 识别边缘…' : '✨ AI 模型加载中…');
+    const det = await detectCorners(c, cvReady ? 4000 : 12000);
+    cornersImg = det.corners;
+    renderReviewBar();
+    show('Crop');
+    requestAnimationFrame(layoutCropCanvas);
+    if (det.engine === 'opencv') toast('✨ AI 已识别边缘', 1400);
+  }
+
+  async function onPicked(files) {
+    const file = files && files[0];
+    $('capInput').value = ''; $('capPick').value = '';
+    if (!file) return;
+    setLoader(true, '读取图片…');
+    try {
+      const url = URL.createObjectURL(file);
+      const c = await imageToCanvas(url);
+      URL.revokeObjectURL(url);
+      await runDetectAndCrop(c);
+    } catch (e) { toast('读取图片失败'); } finally { setLoader(false); }
+  }
+
+  async function loadReviewItem() {
+    const it = reviewItems[reviewIdx];
+    if (!it) { finishReview(); return; }
+    renderReviewBar();
+    if (!it.previewable) { showNonPreviewable(it); return; }
+    setLoader(true, '加载证件图…');
+    try {
+      const c = await imageToCanvas(API + '/admin/employees/id-doc-image/' + it.docId + '?token=' + encodeURIComponent(TOKEN) + '&_=' + reviewIdx);
+      await runDetectAndCrop(c);
+    } catch (e) {
+      setLoader(false);
+      toast('该图无法加载，可重拍或标记不可用');
+      showNonPreviewable(it);
+    } finally { setLoader(false); }
+  }
+
+  function showNonPreviewable(it) {
+    setLoader(false);
+    $('readyTitle').textContent = '此图无法在浏览器预览';
+    $('readyHint').innerHTML = esc(it.empName || '') + ' · ' + esc(it.docLabel) +
+      '<br>（' + esc(it.ext || '未知') + ' 格式，如 HEIC）。可用相机重拍替换，或保持原样 / 标记不可用。';
+    renderReviewBar();
+    show('Ready');
+  }
+
+  // ── Review actions ───────────────────────────────────────────────
+  function advance() {
+    reviewIdx++;
+    if (reviewIdx >= reviewItems.length) { finishReview(); return; }
+    loadReviewItem();
+  }
+  function keepAsIs() { toast('保持原样', 1000); advance(); }
+  function markUnusable() {
+    const it = reviewItems[reviewIdx];
+    if (it) excludeSet.add(it.empId + '|' + it.docType);
+    toast('已标记为不可用（PDF 里显示未提供）', 1400);
+    advance();
+  }
+  function rotate90() {
+    if (!capturedBitmap) return;
+    const src = capturedBitmap;
+    const c = document.createElement('canvas');
+    c.width = src.height; c.height = src.width;
+    const ctx = c.getContext('2d');
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(src, -src.width / 2, -src.height / 2);
+    runDetectAndCrop(c);
+  }
+  async function saveAndNext() {
+    const it = reviewItems[reviewIdx];
+    if (!outputBlob || !it) { toast('请先点「裁剪」'); return; }
+    setLoader(true, '保存中…');
+    try {
+      const dataUrl = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(outputBlob); });
+      const r = await fetch(API + '/admin/employees/save-id-doc?token=' + encodeURIComponent(TOKEN), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: TOKEN, docId: it.docId, dataUrl }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) { setLoader(false); toast(j.error || '保存失败'); return; }
+      savedCount++;
+      excludeSet.delete(it.empId + '|' + it.docType);  // saved → usable
+      setLoader(false);
+      advance();
+    } catch (e) { setLoader(false); toast('网络异常'); }
+  }
+  function finishReview() {
+    $('doneMsg').textContent = `审阅完成：共 ${reviewItems.length} 张，保存修改 ${savedCount} 张，标记不可用 ${excludeSet.size} 张。`;
+    $('doneCount').textContent = '点下方按钮生成 PDF（不可用的将显示为「未提供」）。';
+    refreshHeader();
+    show('Done');
+  }
+  function generatePdf() {
+    const exclude = [...excludeSet].join(',');
+    const url = API + '/admin/employees/export-docs?token=' + encodeURIComponent(TOKEN) +
+      '&ids=' + EMP_IDS.join(',') + (exclude ? '&exclude=' + encodeURIComponent(exclude) : '');
+    window.open(url, '_blank');
+  }
+  // expose for inline button handlers
+  window.keepAsIs = keepAsIs; window.markUnusable = markUnusable; window.rotate90 = rotate90;
+  window.saveAndNext = saveAndNext; window.generatePdf = generatePdf;
+
+  // ── Crop stage layout & handle dragging ──────────────────────────
+  function layoutCropCanvas() {
+    const wrap = $('cropWrap');
+    const cw = wrap.clientWidth, wh = wrap.clientHeight;
+    const iw = capturedBitmap.width, ih = capturedBitmap.height;
+    const s = Math.min(cw / iw, wh / ih);
+    displayScale = s;
+    const dw = Math.round(iw * s), dh = Math.round(ih * s);
+    const offX = Math.round((cw - dw) / 2), offY = Math.round((wh - dh) / 2);
+    const cv = $('cropCanvas');
+    cv.width = iw; cv.height = ih;
+    cv.style.width = dw + 'px';
+    cv.style.height = dh + 'px';
+    cv.style.left = offX + 'px';
+    cv.style.top = offY + 'px';
+    cv.getContext('2d').drawImage(capturedBitmap, 0, 0);
+    // Overlay svg
+    const svg = $('cropOverlay');
+    svg.setAttribute('width', dw); svg.setAttribute('height', dh);
+    svg.style.left = offX + 'px';
+    svg.style.top = offY + 'px';
+    redrawOverlay();
+    placeHandles();
+  }
+
+  function corner2screen(p) {
+    return { x: p.x * displayScale, y: p.y * displayScale };
+  }
+  function placeHandles() {
+    const wrap = $('cropWrap');
+    const cv = $('cropCanvas');
+    const offX = cv.offsetLeft, offY = cv.offsetTop;
+    document.querySelectorAll('.handle').forEach((h, i) => {
+      const p = corner2screen(cornersImg[i]);
+      h.style.left = (offX + p.x) + 'px';
+      h.style.top = (offY + p.y) + 'px';
+    });
+  }
+  function redrawOverlay() {
+    const svg = $('cropOverlay');
+    const pts = cornersImg.map(corner2screen).map(p => `${p.x},${p.y}`).join(' ');
+    svg.innerHTML = `
+      <polygon points="${pts}" fill="rgba(96,165,250,0.16)" stroke="#60a5fa" stroke-width="2"/>
+    `;
+  }
+
+  let dragIdx = -1;
+  const CORNER_KEYS = ['tl', 'tr', 'br', 'bl'];
+  document.querySelectorAll('.handle').forEach((h, i) => {
+    const start = (e) => {
+      e.preventDefault();
+      dragIdx = i;
+    };
+    h.addEventListener('touchstart', start, { passive: false });
+    h.addEventListener('mousedown', start);
+  });
+  function pointerMove(clientX, clientY) {
+    if (dragIdx < 0) return;
+    const cv = $('cropCanvas');
+    const r = cv.getBoundingClientRect();
+    let x = (clientX - r.left) / r.width * capturedBitmap.width;
+    let y = (clientY - r.top) / r.height * capturedBitmap.height;
+    x = Math.max(0, Math.min(capturedBitmap.width, x));
+    y = Math.max(0, Math.min(capturedBitmap.height, y));
+    cornersImg[dragIdx] = { x, y };
+    redrawOverlay();
+    placeHandles();
+  }
+  window.addEventListener('touchmove', (e) => {
+    if (dragIdx < 0) return;
+    e.preventDefault();
+    const t = e.touches[0]; pointerMove(t.clientX, t.clientY);
+  }, { passive: false });
+  window.addEventListener('mousemove', (e) => { if (dragIdx >= 0) pointerMove(e.clientX, e.clientY); });
+  const endDrag = () => { dragIdx = -1; };
+  window.addEventListener('touchend', endDrag);
+  window.addEventListener('mouseup', endDrag);
+  window.addEventListener('resize', () => { if ($('stageCrop').classList.contains('active')) layoutCropCanvas(); });
+
+  // ── Crop buttons ─────────────────────────────────────────────────
+  // 重拍 opens the camera to replace the CURRENT item's image.
+  $('cropReshootBtn').addEventListener('click', () => { $('capInput').click(); });
+
+  let rawWarpedCanvas = null;  // perspective-corrected, pre-filter
+  let currentFilter = 'magic';
+  $('cropConfirmBtn').addEventListener('click', () => {
+    setLoader(true, '裁剪中…');
+    setTimeout(() => {
+      try {
+        const out = warpToRect(capturedBitmap, cornersImg);
+        rawWarpedCanvas = out.canvas;
+        currentFilter = 'magic';
+        applyFilterAndPreview();
+        show('Preview');
+        setLoader(false);
+      } catch (e) {
+        setLoader(false);
+        toast('裁剪失败');
+      }
+    }, 30);
+  });
+
+  // ── Image filters (scanner-style enhancement) ────────────────────
+  document.querySelectorAll('.filter-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentFilter = btn.dataset.filter;
+      applyFilterAndPreview();
+    });
+  });
+
+  function applyFilterAndPreview() {
+    if (!rawWarpedCanvas) return;
+    setLoader(true, '处理中…');
+    setTimeout(() => {
+      try {
+        document.querySelectorAll('.filter-chip').forEach(b => b.classList.toggle('active', b.dataset.filter === currentFilter));
+        const out = applyFilter(rawWarpedCanvas, currentFilter);
+        // B&W filter uses higher quality JPEG (sharper edges)
+        const q = currentFilter === 'bw' ? 0.95 : 0.9;
+        out.toBlob(blob => {
+          outputBlob = blob;
+          const old = $('previewImg').src;
+          $('previewImg').src = URL.createObjectURL(blob);
+          if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
+          setLoader(false);
+        }, 'image/jpeg', q);
+      } catch (e) {
+        setLoader(false);
+        toast('滤镜处理失败');
+      }
+    }, 20);
+  }
+
+  function applyFilter(src, mode) {
+    if (mode === 'original') return src;
+    const w = src.width, h = src.height;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(src, 0, 0);
+    const img = ctx.getImageData(0, 0, w, h);
+    const px = img.data;
+    if (mode === 'gray') {
+      for (let i = 0; i < px.length; i += 4) {
+        const g = px[i] * 0.299 + px[i+1] * 0.587 + px[i+2] * 0.114;
+        px[i] = px[i+1] = px[i+2] = g;
+      }
+    } else if (mode === 'bw') {
+      // Adaptive threshold (Bradley) — strong scanner look
+      adaptiveThresholdBradley(px, w, h, 0.15, Math.max(16, Math.min(w, h) >> 5));
+    } else {
+      // 'magic' — auto-levels per channel + gentle contrast + brightness lift
+      autoLevels(px, w, h);
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
+
+  // Per-channel histogram stretch using 1% / 99% percentiles, then mild S-curve.
+  function autoLevels(px, w, h) {
+    const N = w * h;
+    const histR = new Uint32Array(256), histG = new Uint32Array(256), histB = new Uint32Array(256);
+    for (let i = 0; i < px.length; i += 4) {
+      histR[px[i]]++; histG[px[i+1]]++; histB[px[i+2]]++;
+    }
+    const lowCount = Math.max(1, Math.round(N * 0.01));
+    const findLow = (h) => { let c=0; for (let v=0; v<256; v++) { c+=h[v]; if (c>=lowCount) return v; } return 0; };
+    const findHigh = (h) => { let c=0; for (let v=255; v>=0; v--) { c+=h[v]; if (c>=lowCount) return v; } return 255; };
+    const rLo = findLow(histR), rHi = findHigh(histR);
+    const gLo = findLow(histG), gHi = findHigh(histG);
+    const bLo = findLow(histB), bHi = findHigh(histB);
+    const scaleR = rHi > rLo ? 255 / (rHi - rLo) : 1;
+    const scaleG = gHi > gLo ? 255 / (gHi - gLo) : 1;
+    const scaleB = bHi > bLo ? 255 / (bHi - bLo) : 1;
+    // Lookup tables: stretch then mild S-curve for paper-white whites and crisp blacks
+    const sCurve = (v) => {
+      const x = v / 255;
+      // Smooth S: increases contrast around mid, brightens lights slightly
+      const y = x < 0.5 ? 2 * x * x : 1 - 2 * (1 - x) * (1 - x);
+      // Blend 65% S-curve, 35% linear, plus +6 brightness
+      return Math.max(0, Math.min(255, (y * 0.65 + x * 0.35) * 255 + 6));
+    };
+    const lutR = new Uint8ClampedArray(256), lutG = new Uint8ClampedArray(256), lutB = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) {
+      lutR[v] = sCurve(Math.max(0, Math.min(255, (v - rLo) * scaleR)));
+      lutG[v] = sCurve(Math.max(0, Math.min(255, (v - gLo) * scaleG)));
+      lutB[v] = sCurve(Math.max(0, Math.min(255, (v - bLo) * scaleB)));
+    }
+    for (let i = 0; i < px.length; i += 4) {
+      px[i]   = lutR[px[i]];
+      px[i+1] = lutG[px[i+1]];
+      px[i+2] = lutB[px[i+2]];
+    }
+  }
+
+  // Bradley adaptive threshold using integral image.
+  // T = mean(window) * (1 - sensitivity). Window radius ≈ image_dim / 32.
+  function adaptiveThresholdBradley(px, w, h, sensitivity, radius) {
+    const N = w * h;
+    const gray = new Float32Array(N);
+    for (let i = 0, j = 0; j < N; i += 4, j++) {
+      gray[j] = px[i] * 0.299 + px[i+1] * 0.587 + px[i+2] * 0.114;
+    }
+    // Integral image
+    const integ = new Float64Array(N);
+    for (let y = 0; y < h; y++) {
+      let rowSum = 0;
+      for (let x = 0; x < w; x++) {
+        rowSum += gray[y * w + x];
+        integ[y * w + x] = rowSum + (y > 0 ? integ[(y - 1) * w + x] : 0);
+      }
+    }
+    const r = Math.max(8, radius | 0);
+    const factor = 1 - sensitivity;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const x1 = Math.max(0, x - r), y1 = Math.max(0, y - r);
+        const x2 = Math.min(w - 1, x + r), y2 = Math.min(h - 1, y + r);
+        const count = (x2 - x1) * (y2 - y1);
+        const A = (x1 > 0 && y1 > 0) ? integ[(y1 - 1) * w + (x1 - 1)] : 0;
+        const B = (y1 > 0) ? integ[(y1 - 1) * w + x2] : 0;
+        const C = (x1 > 0) ? integ[y2 * w + (x1 - 1)] : 0;
+        const D = integ[y2 * w + x2];
+        const sum = D - B - C + A;
+        const t = (sum / count) * factor;
+        const v = gray[y * w + x] < t ? 0 : 255;
+        const i4 = (y * w + x) * 4;
+        px[i4] = px[i4 + 1] = px[i4 + 2] = v;
+      }
+    }
+  }
+
+  // ── OpenCV.js lazy loader ────────────────────────────────────────
+  // Loaded on demand; cached after first load. We tolerate failures
+  // (offline / blocked CDN) and fall back to the pure-JS detector.
+  const CV_SRC = 'https://docs.opencv.org/4.5.0/opencv.js';
+  let _cvPromise = null;
+  function loadOpenCV() {
+    if (_cvPromise) return _cvPromise;
+    if (window.cv && window.cv.Mat) return Promise.resolve();
+    _cvPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = CV_SRC;
+      script.async = true;
+      script.onload = () => {
+        const ready = () => window.cv && window.cv.Mat;
+        if (ready()) return resolve();
+        if (window.cv && typeof window.cv === 'object') {
+          window.cv.onRuntimeInitialized = () => ready() ? resolve() : reject(new Error('cv init incomplete'));
+        }
+        // Safety poll in case onRuntimeInitialized never fires
+        let waited = 0;
+        const it = setInterval(() => {
+          waited += 200;
+          if (ready()) { clearInterval(it); resolve(); }
+          else if (waited > 30000) { clearInterval(it); reject(new Error('cv timeout')); }
+        }, 200);
+      };
+      script.onerror = () => { _cvPromise = null; reject(new Error('cv load failed')); };
+      document.head.appendChild(script);
+    });
+    return _cvPromise;
+  }
+
+  // ── OpenCV document corner detection ─────────────────────────────
+  // Canny → dilate → contours → approxPolyDP, pick largest 4-vertex
+  // convex polygon. Returns 4 ordered corners (TL, TR, BR, BL) in the
+  // original image's coordinate space, or null if no good quad found.
+  function detectCornersOpenCV(srcCanvas) {
+    if (!window.cv || !cv.Mat) return null;
+    const TARGET = 900;
+    const k = Math.min(1, TARGET / Math.max(srcCanvas.width, srcCanvas.height));
+    const sw = Math.round(srcCanvas.width * k);
+    const sh = Math.round(srcCanvas.height * k);
+    const small = document.createElement('canvas');
+    small.width = sw; small.height = sh;
+    small.getContext('2d').drawImage(srcCanvas, 0, 0, sw, sh);
+    const src = cv.imread(small);
+    const gray = new cv.Mat();
+    const blurred = new cv.Mat();
+    const edges = new cv.Mat();
+    const dilated = new cv.Mat();
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    let bestPts = null;
+    try {
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+      cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+      // Try a few Canny threshold pairs and keep the best quad
+      const thresholdSets = [[50, 150], [30, 100], [75, 200]];
+      const imgArea = sw * sh;
+      let bestArea = imgArea * 0.18; // require at least 18% of image
+      for (const [lo, hi] of thresholdSets) {
+        cv.Canny(blurred, edges, lo, hi);
+        const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+        cv.dilate(edges, dilated, kernel);
+        kernel.delete();
+        cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        for (let i = 0; i < contours.size(); i++) {
+          const cnt = contours.get(i);
+          const peri = cv.arcLength(cnt, true);
+          const approx = new cv.Mat();
+          cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+          if (approx.rows === 4 && cv.isContourConvex(approx)) {
+            const area = Math.abs(cv.contourArea(approx));
+            if (area > bestArea) {
+              bestArea = area;
+              const pts = [];
+              for (let j = 0; j < 4; j++) {
+                pts.push({ x: approx.data32S[j * 2] / k, y: approx.data32S[j * 2 + 1] / k });
+              }
+              bestPts = orderQuadCorners(pts);
+            }
+          }
+          approx.delete();
+          cnt.delete();
+        }
+      }
+    } catch (e) {
+      bestPts = null;
+    } finally {
+      src.delete(); gray.delete(); blurred.delete();
+      edges.delete(); dilated.delete();
+      contours.delete(); hierarchy.delete();
+    }
+    return bestPts;
+  }
+
+  function orderQuadCorners(pts) {
+    // TL = argmin(x+y), BR = argmax(x+y), TR = argmax(x-y), BL = argmin(x-y)
+    let tl = pts[0], tr = pts[0], br = pts[0], bl = pts[0];
+    let tlS = Infinity, trS = -Infinity, brS = -Infinity, blS = Infinity;
+    for (const p of pts) {
+      const s1 = p.x + p.y, s2 = p.x - p.y;
+      if (s1 < tlS) { tlS = s1; tl = p; }
+      if (s1 > brS) { brS = s1; br = p; }
+      if (s2 > trS) { trS = s2; tr = p; }
+      if (s2 < blS) { blS = s2; bl = p; }
+    }
+    return [tl, tr, br, bl];
+  }
+
+  // Composite detector: prefer OpenCV, fall back to pure-JS heuristic.
+  // `cvBudgetMs` is the max time we'll wait for OpenCV to finish loading
+  // on its very first invocation (subsequent calls resolve instantly).
+  async function detectCorners(canvas, cvBudgetMs = 10000) {
+    try {
+      await Promise.race([
+        loadOpenCV(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('cv budget exhausted')), cvBudgetMs))
+      ]);
+      const cvCorners = detectCornersOpenCV(canvas);
+      if (cvCorners) return { corners: cvCorners, engine: 'opencv' };
+    } catch (e) { /* fall through */ }
+    return { corners: autoDetectCorners(canvas), engine: 'js' };
+  }
+
+  // ── Auto-detect document corners ─────────────────────────────────
+  // Pipeline:
+  // 1. Downscale to ~240px.
+  // 2. Sample the four edge strips as the "background" colour and build
+  //    a foreground mask by colour-distance + Sobel gradient magnitude.
+  // 3. Morphological erosion (3x3) to drop isolated noise pixels.
+  // 4. Find four extreme points on the foreground mask:
+  //       TL = argmin(x + y), TR = argmax(x - y)
+  //       BR = argmax(x + y), BL = argmin(x - y)
+  //    This handles perspective skew (each corner can sit at a different
+  //    inset depth), unlike a tight bounding box.
+  // 5. Validate the quad covers a sensible fraction of the image; if not,
+  //    fall back to the bounding-box, then the fixed 6% inset.
+  function autoDetectCorners(srcCanvas) {
+    const W = srcCanvas.width, H = srcCanvas.height;
+    const insetFallback = () => {
+      const ix = W * 0.06, iy = H * 0.06;
+      return [{x:ix,y:iy},{x:W-ix,y:iy},{x:W-ix,y:H-iy},{x:ix,y:H-iy}];
+    };
+    try {
+      const TARGET = 240;
+      const k = Math.min(1, TARGET / Math.max(W, H));
+      const sw = Math.max(20, Math.round(W * k));
+      const sh = Math.max(20, Math.round(H * k));
+      const small = document.createElement('canvas');
+      small.width = sw; small.height = sh;
+      small.getContext('2d').drawImage(srcCanvas, 0, 0, sw, sh);
+      const data = small.getContext('2d').getImageData(0, 0, sw, sh).data;
+      // Background colour = mean of the four edge strips
+      let bgR = 0, bgG = 0, bgB = 0, n = 0;
+      const sample = (x, y) => {
+        const i = (y * sw + x) * 4;
+        bgR += data[i]; bgG += data[i+1]; bgB += data[i+2]; n++;
+      };
+      for (let x = 0; x < sw; x++) { sample(x, 0); sample(x, sh - 1); }
+      for (let y = 0; y < sh; y++) { sample(0, y); sample(sw - 1, y); }
+      bgR /= n; bgG /= n; bgB /= n;
+      // Colour-distance map
+      const dists = new Float32Array(sw * sh);
+      const gray = new Float32Array(sw * sh);
+      let sumD = 0;
+      for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+          const i = (y * sw + x) * 4;
+          const dr = data[i] - bgR, dg = data[i+1] - bgG, db = data[i+2] - bgB;
+          const d = Math.sqrt(dr*dr + dg*dg + db*db);
+          dists[y * sw + x] = d;
+          gray[y * sw + x] = (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114);
+          sumD += d;
+        }
+      }
+      const meanD = sumD / (sw * sh);
+      // Sobel gradient magnitude (boosts true paper edges)
+      const grad = new Float32Array(sw * sh);
+      let sumG = 0;
+      for (let y = 1; y < sh - 1; y++) {
+        for (let x = 1; x < sw - 1; x++) {
+          const i = y * sw + x;
+          const gx =
+            -gray[i - sw - 1] - 2 * gray[i - 1] - gray[i + sw - 1]
+            + gray[i - sw + 1] + 2 * gray[i + 1] + gray[i + sw + 1];
+          const gy =
+            -gray[i - sw - 1] - 2 * gray[i - sw] - gray[i - sw + 1]
+            + gray[i + sw - 1] + 2 * gray[i + sw] + gray[i + sw + 1];
+          const m = Math.sqrt(gx * gx + gy * gy);
+          grad[i] = m;
+          sumG += m;
+        }
+      }
+      const meanG = sumG / (sw * sh);
+      // Foreground = strong colour distance OR strong edge
+      const colourT = Math.max(28, meanD * 1.4);
+      const edgeT = Math.max(20, meanG * 1.6);
+      const mask = new Uint8Array(sw * sh);
+      let totalFg = 0;
+      for (let i = 0; i < sw * sh; i++) {
+        if (dists[i] > colourT || grad[i] > edgeT) { mask[i] = 1; totalFg++; }
+      }
+      if (totalFg < sw * sh * 0.04) return insetFallback();
+      // Erode 3x3 — drop pixels with <5 foreground neighbours
+      const eroded = new Uint8Array(sw * sh);
+      let erodedCount = 0;
+      for (let y = 1; y < sh - 1; y++) {
+        for (let x = 1; x < sw - 1; x++) {
+          const i = y * sw + x;
+          if (!mask[i]) continue;
+          let nb = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (mask[i + dy * sw + dx]) nb++;
+            }
+          }
+          if (nb >= 6) { eroded[i] = 1; erodedCount++; }
+        }
+      }
+      const useMask = erodedCount > sw * sh * 0.02 ? eroded : mask;
+      // Extreme-point search (handles trapezoidal skew)
+      let tlX = 0, tlY = 0, tlS = Infinity;
+      let trX = 0, trY = 0, trS = -Infinity;
+      let brX = 0, brY = 0, brS = -Infinity;
+      let blX = 0, blY = 0, blS = Infinity;
+      for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+          if (!useMask[y * sw + x]) continue;
+          const s1 = x + y, s2 = x - y;
+          if (s1 < tlS) { tlS = s1; tlX = x; tlY = y; }
+          if (s2 > trS) { trS = s2; trX = x; trY = y; }
+          if (s1 > brS) { brS = s1; brX = x; brY = y; }
+          if (s2 < blS) { blS = s2; blX = x; blY = y; }
+        }
+      }
+      // Validate quad area (shoelace formula)
+      const area2 = Math.abs(
+        tlX*(trY-blY) + trX*(brY-tlY) + brX*(blY-trY) + blX*(tlY-brY)
+      ) / 2;
+      const imgArea = sw * sh;
+      if (area2 < imgArea * 0.18) {
+        // Fall back to bounding box of the foreground mask
+        let top = sh, bot = -1, lef = sw, rig = -1;
+        for (let y = 0; y < sh; y++) {
+          for (let x = 0; x < sw; x++) {
+            if (useMask[y * sw + x]) {
+              if (y < top) top = y; if (y > bot) bot = y;
+              if (x < lef) lef = x; if (x > rig) rig = x;
+            }
+          }
+        }
+        if (bot - top < sh * 0.2 || rig - lef < sw * 0.2) return insetFallback();
+        tlX = lef; tlY = top; trX = rig; trY = top;
+        brX = rig; brY = bot; blX = lef; blY = bot;
+      }
+      // Pad a touch so edges aren't clipped
+      const px = Math.round(sw * 0.008), py = Math.round(sh * 0.008);
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      // Project to original coords
+      const ox = W / sw, oy = H / sh;
+      return [
+        { x: clamp(tlX - px, 0, sw - 1) * ox, y: clamp(tlY - py, 0, sh - 1) * oy },
+        { x: clamp(trX + px, 0, sw - 1) * ox, y: clamp(trY - py, 0, sh - 1) * oy },
+        { x: clamp(brX + px, 0, sw - 1) * ox, y: clamp(brY + py, 0, sh - 1) * oy },
+        { x: clamp(blX - px, 0, sw - 1) * ox, y: clamp(blY + py, 0, sh - 1) * oy }
+      ];
+    } catch (e) {
+      return insetFallback();
+    }
+  }
+
+  // ── Perspective warp ─────────────────────────────────────────────
+  function solve8(A, b) {
+    // Gaussian elimination with partial pivot
+    const n = 8;
+    const M = A.map((r, i) => [...r, b[i]]);
+    for (let i = 0; i < n; i++) {
+      let maxR = i;
+      for (let k = i + 1; k < n; k++) if (Math.abs(M[k][i]) > Math.abs(M[maxR][i])) maxR = k;
+      if (maxR !== i) { const tmp = M[i]; M[i] = M[maxR]; M[maxR] = tmp; }
+      const piv = M[i][i] || 1e-12;
+      for (let k = i + 1; k < n; k++) {
+        const f = M[k][i] / piv;
+        for (let j = i; j <= n; j++) M[k][j] -= f * M[i][j];
+      }
+    }
+    const x = new Array(n);
+    for (let i = n - 1; i >= 0; i--) {
+      let s = M[i][n];
+      for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j];
+      x[i] = s / (M[i][i] || 1e-12);
+    }
+    return x;
+  }
+  function homography(src, dst) {
+    const A = [], b = [];
+    for (let i = 0; i < 4; i++) {
+      const sx = src[i].x, sy = src[i].y, dx = dst[i].x, dy = dst[i].y;
+      A.push([sx, sy, 1, 0, 0, 0, -dx * sx, -dx * sy]);
+      A.push([0, 0, 0, sx, sy, 1, -dy * sx, -dy * sy]);
+      b.push(dx); b.push(dy);
+    }
+    const h = solve8(A, b);
+    return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+  }
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function warpToRect(srcCanvas, srcQuad) {
+    // Estimate output rectangle size
+    const wTop = dist(srcQuad[0], srcQuad[1]);
+    const wBot = dist(srcQuad[3], srcQuad[2]);
+    const hLft = dist(srcQuad[0], srcQuad[3]);
+    const hRgt = dist(srcQuad[1], srcQuad[2]);
+    let outW = Math.round(Math.max(wTop, wBot));
+    let outH = Math.round(Math.max(hLft, hRgt));
+    // Cap output size
+    const MAX = 1800;
+    if (Math.max(outW, outH) > MAX) {
+      const k = MAX / Math.max(outW, outH);
+      outW = Math.round(outW * k);
+      outH = Math.round(outH * k);
+    }
+    outW = Math.max(64, outW); outH = Math.max(64, outH);
+    // Map dst rect → src quad (inverse for sampling)
+    const dstRect = [{x:0,y:0},{x:outW,y:0},{x:outW,y:outH},{x:0,y:outH}];
+    const H = homography(dstRect, srcQuad);
+    const srcCtx = srcCanvas.getContext('2d');
+    const sw = srcCanvas.width, sh = srcCanvas.height;
+    const srcImg = srcCtx.getImageData(0, 0, sw, sh);
+    const srcPx = srcImg.data;
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = outW; outCanvas.height = outH;
+    const outCtx = outCanvas.getContext('2d');
+    const outImg = outCtx.createImageData(outW, outH);
+    const outPx = outImg.data;
+    const h0=H[0],h1=H[1],h2=H[2],h3=H[3],h4=H[4],h5=H[5],h6=H[6],h7=H[7];
+    for (let y = 0; y < outH; y++) {
+      for (let x = 0; x < outW; x++) {
+        const denom = h6*x + h7*y + 1;
+        const sx = (h0*x + h1*y + h2) / denom;
+        const sy = (h3*x + h4*y + h5) / denom;
+        const x0 = Math.floor(sx), y0 = Math.floor(sy);
+        const idx = (y*outW + x) * 4;
+        if (x0 >= 0 && x0 < sw-1 && y0 >= 0 && y0 < sh-1) {
+          const dx = sx - x0, dy = sy - y0;
+          const w00 = (1-dx)*(1-dy), w10 = dx*(1-dy), w01 = (1-dx)*dy, w11 = dx*dy;
+          const i00 = (y0*sw + x0)*4, i10 = i00 + 4, i01 = ((y0+1)*sw + x0)*4, i11 = i01 + 4;
+          outPx[idx]   = srcPx[i00]*w00 + srcPx[i10]*w10 + srcPx[i01]*w01 + srcPx[i11]*w11;
+          outPx[idx+1] = srcPx[i00+1]*w00 + srcPx[i10+1]*w10 + srcPx[i01+1]*w01 + srcPx[i11+1]*w11;
+          outPx[idx+2] = srcPx[i00+2]*w00 + srcPx[i10+2]*w10 + srcPx[i01+2]*w01 + srcPx[i11+2]*w11;
+          outPx[idx+3] = 255;
+        } else {
+          outPx[idx]=255; outPx[idx+1]=255; outPx[idx+2]=255; outPx[idx+3]=255;
+        }
+      }
+    }
+    outCtx.putImageData(outImg, 0, 0);
+    return { canvas: outCanvas, width: outW, height: outH };
+  }
+
+  // ── Preview & upload ─────────────────────────────────────────────
+  $('prevBackBtn').addEventListener('click', () => {
+    if ($('previewImg').src) URL.revokeObjectURL($('previewImg').src);
+    show('Crop');
+    requestAnimationFrame(layoutCropCanvas);
+  });
+  // Save the cropped result back to the employee record, then advance.
+  $('uploadBtn').addEventListener('click', () => { saveAndNext(); });
+  // Done stage → generate the PDF.
+  $('anotherBtn').addEventListener('click', () => { generatePdf(); });
+
+  init();
+})();
+</script>
+</body>
+</html>
