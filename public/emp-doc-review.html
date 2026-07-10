@@ -316,9 +316,11 @@
     if (!file) return;
     setLoader(true, '读取图片…');
     try {
+      let c = null;
       const url = URL.createObjectURL(file);
-      const c = await imageToCanvas(url);
-      URL.revokeObjectURL(url);
+      try { c = await imageToCanvas(url); } catch (e) { /* HEIC etc. — decode below */ }
+      finally { URL.revokeObjectURL(url); }
+      if (!c) { setLoader(true, '转换 HEIC 图片…'); c = await canvasFromHeicBlob(file); }
       await runDetectAndCrop(c);
     } catch (e) { toast('读取图片失败'); } finally { setLoader(false); }
   }
@@ -327,23 +329,26 @@
     const it = reviewItems[reviewIdx];
     if (!it) { finishReview(); return; }
     renderReviewBar();
-    if (!it.previewable) { showNonPreviewable(it); return; }
+    const url = API + '/admin/employees/id-doc-image/' + it.docId + '?token=' + encodeURIComponent(TOKEN) + '&_=' + reviewIdx;
     setLoader(true, '加载证件图…');
     try {
-      const c = await imageToCanvas(API + '/admin/employees/id-doc-image/' + it.docId + '?token=' + encodeURIComponent(TOKEN) + '&_=' + reviewIdx);
+      let c = null;
+      // Browser-native formats: draw directly. HEIC / anything the browser rejects:
+      // decode client-side so it can still be reviewed (then saved back as JPEG).
+      if (it.previewable) { try { c = await imageToCanvas(url); } catch (e) { /* try HEIC below */ } }
+      if (!c) { setLoader(true, '转换 HEIC 图片…'); c = await canvasFromHeicUrl(url); }
       await runDetectAndCrop(c);
     } catch (e) {
       setLoader(false);
-      toast('该图无法加载，可重拍或标记不可用');
       showNonPreviewable(it);
     } finally { setLoader(false); }
   }
 
   function showNonPreviewable(it) {
     setLoader(false);
-    $('readyTitle').textContent = '此图无法在浏览器预览';
+    $('readyTitle').textContent = '此图无法预览';
     $('readyHint').innerHTML = esc(it.empName || '') + ' · ' + esc(it.docLabel) +
-      '<br>（' + esc(it.ext || '未知') + ' 格式，如 HEIC）。可用相机重拍替换，或保持原样 / 标记不可用。';
+      '<br>（' + esc(it.ext || '未知') + ' 格式，转换失败或文件损坏）。可用相机重拍替换，或保持原样 / 标记不可用。';
     renderReviewBar();
     show('Ready');
   }
@@ -668,6 +673,41 @@
       document.head.appendChild(script);
     });
     return _cvPromise;
+  }
+
+  // ── HEIC / HEIF support ──────────────────────────────────────────
+  // iPhones save photos as HEIC, which browsers can't draw to a canvas — that's the
+  // "此图无法在浏览器预览" case. We lazy-load heic2any (libheif WASM) and decode HEIC to
+  // a JPEG blob client-side so the photo can still be reviewed/cropped; saving it back
+  // then stores a JPEG, which also fixes the final PDF (pdfkit can't embed HEIC).
+  const HEIC_SRC = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+  let _heicPromise = null;
+  function loadHeic2any() {
+    if (window.heic2any) return Promise.resolve();
+    if (_heicPromise) return _heicPromise;
+    _heicPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = HEIC_SRC;
+      script.async = true;
+      script.onload = () => window.heic2any ? resolve() : reject(new Error('heic2any init'));
+      script.onerror = () => { _heicPromise = null; reject(new Error('heic2any load failed')); };
+      document.head.appendChild(script);
+    });
+    return _heicPromise;
+  }
+  // Decode a HEIC/HEIF Blob to a canvas via heic2any → JPEG → <img>.
+  async function canvasFromHeicBlob(blob) {
+    await loadHeic2any();
+    const out = await window.heic2any({ blob, toType: 'image/jpeg', quality: 0.92 });
+    const jpg = Array.isArray(out) ? out[0] : out;
+    const url = URL.createObjectURL(jpg);
+    try { return await imageToCanvas(url); } finally { URL.revokeObjectURL(url); }
+  }
+  // Fetch an id-doc's raw bytes (same-origin proxy) and HEIC-decode them.
+  async function canvasFromHeicUrl(url) {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('fetch ' + resp.status);
+    return canvasFromHeicBlob(await resp.blob());
   }
 
   // ── OpenCV document corner detection ─────────────────────────────
