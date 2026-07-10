@@ -17671,6 +17671,25 @@ async function _empDocVersions(raw) {
   const map = new Map();
   for (const v of listed) map.set(v.key, { key: v.key, ts: v.lastModified || _tsFromEditedKey(v.key), size: v.size });
   if (!map.has(curKey)) map.set(curKey, { key: curKey, ts: _tsFromEditedKey(curKey) || null, size: null }); // include the pristine/current file
+  // The very FIRST original (before any edit) is named apply-<ts>-* (a random name, not
+  // id-edited-*), so the prefix search above misses it. It's never deleted though — find
+  // it by the upload timestamp embedded in the name being close to the submission's
+  // creation time, and surface it as a candidate original so a pre-edit version can be
+  // recovered.
+  if (r.src === 'app' && r.doc.submission_id) {
+    try {
+      const sub = db.prepare('SELECT created_at FROM applicant_submissions WHERE id=?').get(r.doc.submission_id);
+      const created = sub && sub.created_at ? new Date(String(sub.created_at).replace(' ', 'T') + 'Z').getTime() : null;
+      if (created) {
+        const WINDOW = 3 * 60 * 60 * 1000;   // ±3h around the submission time
+        for (const f of await storage.listByPrefix(`${dir}/apply-`)) {
+          const m = String(f.key).match(/apply-(\d+)-/); if (!m) continue;
+          const ts = parseInt(m[1], 10);
+          if (Math.abs(ts - created) <= WINDOW && !map.has(f.key)) map.set(f.key, { key: f.key, ts, size: f.size, candidateOriginal: true });
+        }
+      }
+    } catch (e) { /* best-effort */ }
+  }
   const list = [...map.values()].map(v => ({ ...v, isCurrent: v.key === curKey })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
   return { r, curKey, list };
 }
