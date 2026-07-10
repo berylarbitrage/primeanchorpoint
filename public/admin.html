@@ -2710,12 +2710,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <label>Invoice # <span style="font-size:.75rem;color:var(--gray-400)">(自动生成)</span></label>
           <div style="display:flex;gap:.4rem;align-items:center">
             <input type="text" id="invPageNumber" readonly style="flex:1;min-width:0;background:#f5f5f5;color:#0369a1;font-family:monospace;font-weight:600;cursor:default" placeholder="填写公司名后自动生成">
-            <button type="button" class="btn btn-sm btn-outline" onclick="invpRegenerateNumber()" title="按当前账单地址所在州重新生成发票号（改了地址/州后用）" style="white-space:nowrap;padding:.45rem .6rem;flex:0 0 auto">🔄 重新生成</button>
+            <button type="button" class="btn btn-sm btn-outline" onclick="invpRegenerateNumber()" title="按当前账单地址所在州和 Invoice 日期重新生成发票号（改了地址/州/日期后用）" style="white-space:nowrap;padding:.45rem .6rem;flex:0 0 auto">🔄 重新生成</button>
           </div>
         </div>
         <div class="field">
           <label>Invoice 日期</label>
-          <input type="date" id="invPageDate">
+          <input type="date" id="invPageDate" onchange="invpOnInvoiceDateChange()">
         </div>
         <div class="field">
           <label>服务周期 开始 <span style="color:var(--red)">*</span></label>
@@ -32011,10 +32011,23 @@ async function _getPartnerStateFromData(billName) {
   return null;
 }
 
+// The invoice number's date segment (MMDDYY) follows the Invoice 日期 field so the
+// number and the printed invoice date always agree. Falls back to today if the field
+// is empty. (invPageDate is a native date input → value is always YYYY-MM-DD; parse it
+// as local time to avoid a UTC day-shift.)
+function _invpNumberDateSeg() {
+  const v = (document.getElementById('invPageDate')?.value || '');
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = m ? new Date(+m[1], +m[2]-1, +m[3]) : new Date();
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  const yy = String(d.getFullYear()).slice(2);
+  return mm + dd + yy;
+}
+
 async function invpRefreshInvoiceNumber() {
   const numEl = document.getElementById('invPageNumber');
   if (!numEl || numEl.value) return; // don't overwrite if already set
-  const today = new Date();
   const billName = (document.getElementById('invPageBillName').value || '').trim();
   const partnerState = await _getPartnerStateFromData(billName);
   const billAddr = (document.getElementById('invPageBillAddr').value || '');
@@ -32025,10 +32038,7 @@ async function invpRefreshInvoiceNumber() {
   // (fixes multi-address companies showing the wrong state in the number).
   const state = (addrState || window._invpSelectedPartnerState || partnerState || 'XX').toUpperCase().slice(0,2);
   const companyAbbr = billName.split(/[\s\-&,]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
-  const mm = String(today.getMonth()+1).padStart(2,'0');
-  const dd = String(today.getDate()).padStart(2,'0');
-  const yy = String(today.getFullYear()).slice(2);
-  const datePart = mm + dd + yy;
+  const datePart = _invpNumberDateSeg();
   // C = Container 计费, L = Labor 工时计费
   const modeLetter = (window._invpMode === 'container') ? 'C' : 'L';
   const prefix = `INV-${modeLetter}-${state}-${companyAbbr}-${datePart}-`;
@@ -32041,15 +32051,17 @@ async function invpRefreshInvoiceNumber() {
   numEl.value = prefix + String(nextSeq).padStart(4, '0');
 }
 
-// Re-number an EXISTING invoice number to a different state, keeping mode / company
-// abbr / DATE intact — only the state segment changes, and the sequence is reassigned
+// Re-number an EXISTING invoice number to a different state (and optionally a different
+// date segment), keeping mode / company abbr intact — the sequence is reassigned
 // collision-safely for the new prefix. Returns the new number, or null if the current
-// number can't be parsed. (Unlike invpRefreshInvoiceNumber, this never changes the date.)
-async function _invpRenumberStateOnly(newState) {
+// number can't be parsed. When newDateSeg is omitted the date is kept unchanged, so
+// existing state-only callers behave exactly as before.
+async function _invpRenumberStateOnly(newState, newDateSeg) {
   const cur = (document.getElementById('invPageNumber').value || '');
   const m = cur.match(/^(INV)-([A-Za-z])-([A-Za-z]{2})-([A-Za-z0-9]+)-(\d{6})-(\d+)$/);
   if (!m) return null;
-  const prefix = `INV-${m[2]}-${String(newState).toUpperCase().slice(0,2)}-${m[4]}-${m[5]}-`;
+  const dateSeg = newDateSeg || m[5];
+  const prefix = `INV-${m[2]}-${String(newState).toUpperCase().slice(0,2)}-${m[4]}-${dateSeg}-`;
   const existing = await api('/admin/invoices').catch(() => []);
   let maxSeq = 0;
   (Array.isArray(existing) ? existing : []).forEach(r => {
@@ -32059,9 +32071,46 @@ async function _invpRenumberStateOnly(newState) {
   return prefix + String(maxSeq + 1).padStart(4, '0');
 }
 
-// Re-number the invoice so its state matches the current bill-to address. Keeps the
-// invoice's original date (only swaps the state); falls back to a full regenerate
-// only when there's no existing number / parseable address state.
+// Re-number an EXISTING invoice number to a different DATE segment, keeping mode /
+// state / company intact and reassigning the sequence collision-safely for the new
+// prefix. Returns the current number unchanged when the date already matches, or null
+// when the number can't be parsed yet.
+async function _invpRenumberDate(newDateSeg) {
+  const cur = (document.getElementById('invPageNumber').value || '');
+  const m = cur.match(/^(INV)-([A-Za-z])-([A-Za-z]{2})-([A-Za-z0-9]+)-(\d{6})-(\d+)$/);
+  if (!m) return null;
+  if (newDateSeg === m[5]) return cur;              // already matches the Invoice 日期
+  const prefix = `INV-${m[2]}-${m[3]}-${m[4]}-${newDateSeg}-`;
+  const existing = await api('/admin/invoices').catch(() => []);
+  let maxSeq = 0;
+  (Array.isArray(existing) ? existing : []).forEach(r => {
+    const n = r.invoice_number || '';
+    if (n.startsWith(prefix)) { const s = parseInt(n.slice(prefix.length)) || 0; if (s > maxSeq) maxSeq = s; }
+  });
+  return prefix + String(maxSeq + 1).padStart(4, '0');
+}
+
+// Invoice 日期 changed → make the invoice number's date segment follow it. Only acts
+// once a number exists (a brand-new invoice gets its date baked in at generation time
+// via _invpNumberDateSeg). Fires only on real user edits — programmatic .value sets
+// (loading an invoice for edit, showInvpBuilder defaulting to today) don't trigger it.
+async function invpOnInvoiceDateChange() {
+  const numEl = document.getElementById('invPageNumber');
+  if (!numEl || !numEl.value) return;
+  const before = numEl.value;
+  const newNum = await _invpRenumberDate(_invpNumberDateSeg());
+  if (!newNum || newNum === before) return;
+  numEl.value = newNum;
+  window._invpDirty = true;
+  _invpReplaceTitleNumber(before, newNum);
+  const editId = document.getElementById('invPageEditId').value;
+  showToast('发票号日期已跟随 Invoice 日期更新：' + newNum + (editId ? '，记得点「保存 / 更新保存」' : ''), 'success', 5000);
+}
+
+// Re-number the invoice so its state matches the current bill-to address AND its date
+// segment matches the Invoice 日期 field. Swaps state+date in place on the existing
+// number (keeping company/mode, reassigning the sequence); falls back to a full
+// regenerate only when there's no existing number / parseable address state.
 async function invpRegenerateNumber() {
   const numEl = document.getElementById('invPageNumber');
   if (!numEl) return;
@@ -32069,7 +32118,10 @@ async function invpRegenerateNumber() {
   if (!billName) { showToast('请先填写客户公司名称', 'warning'); return; }
   const before = numEl.value;
   const addrState = _parseStateFromAddrStr(document.getElementById('invPageBillAddr').value || '');
-  let newNum = (before && addrState) ? await _invpRenumberStateOnly(addrState) : null;
+  const dateSeg = _invpNumberDateSeg();
+  let newNum = null;
+  if (before && addrState) newNum = await _invpRenumberStateOnly(addrState, dateSeg);
+  else if (before)         newNum = await _invpRenumberDate(dateSeg);   // no parseable state: at least follow the date
   if (!newNum) {
     numEl.value = '';
     await invpRefreshInvoiceNumber();
@@ -32078,10 +32130,10 @@ async function invpRegenerateNumber() {
   }
   numEl.value = newNum;
   window._invpDirty = true;
-  if (newNum === before) { showToast('发票号未变化（州相同）：' + newNum, 'success'); return; }
+  if (newNum === before) { showToast('发票号未变化（州和日期相同）：' + newNum, 'success'); return; }
   _invpReplaceTitleNumber(before, newNum);
   const editId = document.getElementById('invPageEditId').value;
-  showToast('已按当前地址重新生成：' + newNum + (editId ? '，记得点「保存 / 更新保存」' : ''), 'success', 6000);
+  showToast('已按当前地址和 Invoice 日期重新生成：' + newNum + (editId ? '，记得点「保存 / 更新保存」' : ''), 'success', 6000);
 }
 
 // When the invoice number changes in the open editor, refresh the modal title so it
