@@ -34912,11 +34912,26 @@ async function generateInvpPreview() {
   // Mode-specific aggregations
   let baseAmt, billedAmt, totalRegHrs = 0, totalOtHrs = 0, hasPosition = false, totalRowColspan = 3;
   let lineItemTableHtml = '';
+  let invPages = null, invColHead = '', invTotalRow = '';  // container mode → even-distribution paginated tables
 
   if (mode === 'container') {
     baseAmt   = containerItems.reduce((s,i) => s + (i.total || 0), 0);
     billedAmt = Math.round(baseAmt * markupRate * 100) / 100;
-    const containerRows = containerItems.map((i, idx) => {
+    const totalQty = containerItems.reduce((s,i) => s + (i.qty || 0), 0);
+
+    // ── Even-distribution pagination ───────────────────────────────────
+    // pageCount = ceil(N / CAP); spread N as evenly as possible across the
+    // pages so no page is left with an orphan row (11 → 6+5, 21 → 7+7+7). Row
+    // padding is sized so `perPage` rows fill a page (clamped so few rows aren't
+    // absurdly tall). The outer builder renders one table per page.
+    const N = containerItems.length;
+    const CAP = 10;                                   // max containers per page
+    const pageCount = Math.max(1, Math.ceil(N / CAP));
+    const perPage = Math.max(1, Math.ceil(N / pageCount));
+    let padV = Math.round((430 / perPage - 20) / 2);  // ~430px row band/page (conservative so a page's table never overflows onto a 2nd page)
+    padV = Math.max(9, Math.min(30, padV));
+
+    const rowArr = containerItems.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
       const hl = !!i.highlighted;
       const pricey = (Number(i.unit_price) || 0) > 200;
@@ -34926,26 +34941,23 @@ async function generateInvpPreview() {
       const rowExtra = highlight ? 'box-shadow:inset 4px 0 0 #d97706;' : '';
       const noColor = highlight ? '#92400e' : '#0f172a';
       const idxColor = highlight ? '#92400e' : '#64748b';
-      // Taller rows so ~10 containers fill a page evenly (rather than being
-      // cramped at the top). We do NOT force a hard page-break every 10 rows,
-      // because a forced break inside the table stops the browser from repeating
-      // the tfoot (payment/footer) on that page — and the footer must stay on
-      // every page. So rows flow naturally with the letterhead/footer repeating.
       return `<tr style="background:${rowBg};${rowExtra}">
-        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${idxColor}">${idx + 1}</td>
-        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:${noColor}">${esc(i.container_no || '—')}</td>
-        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
-        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
-        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
-        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.unit_price||0).toFixed(2)}</td>
-        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
+        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${idxColor}">${idx + 1}</td>
+        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:${noColor}">${esc(i.container_no || '—')}</td>
+        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
+        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
+        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
+        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.unit_price||0).toFixed(2)}</td>
+        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
       </tr>`;
-    }).join('');
-    const totalQty = containerItems.reduce((s,i) => s + (i.qty || 0), 0);
-    lineItemTableHtml = `
-      <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
-        <thead>
-          <tr style="background:#f0f9ff;color:#075985;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
+    });
+
+    // Slice rows into pages using the even-distribution counts.
+    const _base = Math.floor(N / pageCount), _extra = N % pageCount;
+    invPages = []; let _cur = 0;
+    for (let _p = 0; _p < pageCount; _p++) { const _c = _base + (_p < _extra ? 1 : 0); invPages.push(rowArr.slice(_cur, _cur + _c)); _cur += _c; }
+
+    invColHead = `<tr style="background:#f0f9ff;color:#075985;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
             <th style="padding:8px 8px;font-weight:700;text-align:center">N.</th>
             <th style="padding:8px 8px;font-weight:700;text-align:left">Container Number</th>
             <th style="padding:8px 8px;font-weight:700;text-align:left">Unloading Week</th>
@@ -34953,17 +34965,14 @@ async function generateInvpPreview() {
             <th style="padding:8px 8px;font-weight:700;text-align:center">Qty</th>
             <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Unit Price</th>
             <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">Total Price</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${containerRows}
-          <tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
-            <td colspan="4" style="padding:7px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
-            <td style="padding:7px 7px;text-align:center">${totalQty}</td>
-            <td style="padding:7px 7px;text-align:right" colspan="2">$${billedAmt.toFixed(2)}</td>
-          </tr>
-        </tbody>
-      </table>`;
+          </tr>`;
+    invTotalRow = `<tr style="background:#e8f5fb;font-weight:700;color:#1e293b;border-top:2px solid #29AAE1">
+            <td colspan="4" style="padding:10px 7px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Total${hasMarkup ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:10px 7px;text-align:center">${totalQty}</td>
+            <td style="padding:10px 7px;text-align:right" colspan="2">$${billedAmt.toFixed(2)}</td>
+          </tr>`;
+    // Fallback single table (only used if the paginated path is somehow skipped).
+    lineItemTableHtml = `<table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem"><thead>${invColHead}</thead><tbody>${rowArr.join('')}${invTotalRow}</tbody></table>`;
   } else {
     const totalHours  = items.reduce((s,i) => s+i.hours, 0);
     baseAmt     = items.reduce((s,i) => s+i.total, 0);
@@ -35117,10 +35126,28 @@ async function generateInvpPreview() {
   // page) and the payment/footer into a <tfoot> (repeats every page). Replace
   // </table>→tfoot FIRST (the raw line-item table has exactly one), then <thead>.
   // Function replacements keep `$` in dollar amounts literal.
-  const invoiceTable = lineItemTableHtml
-    .replace(/border:1px solid #29AAE1/g, 'border:none')
-    .replace('</table>', () => `<tfoot><tr class="inv-paytail"><td colspan="20" style="padding:0;border:none">${footerBlock}</td></tr></tfoot></table>`)
-    .replace('<thead>', () => `<thead><tr class="inv-letterhead"><td colspan="20" style="padding:0;border:none">${headerBlock}</td></tr>`);
+  // Container mode: render ONE self-contained table per page — each with its own
+  // repeating letterhead (thead) and payment/footer (tfoot), page-broken between
+  // them. Because each page IS a complete table, its tfoot always renders (no
+  // orphan page, footer on every page), and rows are evenly distributed by the
+  // pagination above. Other modes keep the single flowing table.
+  let invoiceTable;
+  if (invPages && invPages.length) {
+    invoiceTable = invPages.map((rows, pi) => {
+      const isLast = pi === invPages.length - 1;
+      const brk = isLast ? '' : 'page-break-after:always;break-after:page;';
+      return `<table style="width:100%;border-collapse:collapse;font-size:.82rem;${brk}">
+        <thead><tr class="inv-letterhead"><td colspan="20" style="padding:0;border:none">${headerBlock}</td></tr>${invColHead}</thead>
+        <tfoot><tr class="inv-paytail"><td colspan="20" style="padding:0;border:none">${footerBlock}</td></tr></tfoot>
+        <tbody>${rows.join('')}${isLast ? invTotalRow : ''}</tbody>
+      </table>`;
+    }).join('');
+  } else {
+    invoiceTable = lineItemTableHtml
+      .replace(/border:1px solid #29AAE1/g, 'border:none')
+      .replace('</table>', () => `<tfoot><tr class="inv-paytail"><td colspan="20" style="padding:0;border:none">${footerBlock}</td></tr></tfoot></table>`)
+      .replace('<thead>', () => `<thead><tr class="inv-letterhead"><td colspan="20" style="padding:0;border:none">${headerBlock}</td></tr>`);
+  }
 
   const html = `
     <div id="invpPaper" style="background:#fff;width:8.5in;min-height:11in;padding:0.5in;box-shadow:0 4px 18px rgba(0,0,0,.12);box-sizing:border-box">
