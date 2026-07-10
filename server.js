@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-10 · 证件来源诊断/历史版本/历史数据库找回 + 员工勾选持久化 + 分包付款筛选',
+  tag: '2026-07-10b · 历史数据库支持上传备份(.db)搜索恢复 + 证件来源诊断/历史版本 + 员工勾选持久化',
   started: new Date().toISOString(),
 };
 
@@ -2781,6 +2781,11 @@ const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/bac
   .split(',').map(d => d.trim()).filter(Boolean);
 const BACKUP_INTERVAL = parseInt(process.env.BACKUP_INTERVAL_MIN || '60', 10) * 60 * 1000; // default 60 min
 const BACKUP_KEEP = parseInt(process.env.BACKUP_KEEP || '10', 10); // keep last N backups per location
+// Manually-uploaded backup databases (e.g. a prime.db pulled off a Render disk
+// snapshot). Kept separate from the auto-rotated copies so they are never
+// rotated away, and always searched for doc recovery.
+const UPLOADED_BACKUP_DIR = path.join(dataDir, 'backups', 'uploaded');
+try { fs.mkdirSync(UPLOADED_BACKUP_DIR, { recursive: true }); } catch (e) {}
 const backupLog = []; // in-memory log of recent backup results
 
 BACKUP_DIRS.forEach(dir => {
@@ -17757,9 +17762,16 @@ function _listBackupDbs(limit = 15) {
   const seen = new Map();
   for (const dir of BACKUP_DIRS) {
     let files = []; try { files = fs.readdirSync(dir).filter(f => f.startsWith('prime-') && f.endsWith('.db')); } catch (e) { continue; }
-    for (const f of files) { const ts = f.slice(6, -3); if (!seen.has(ts)) seen.set(ts, path.join(dir, f)); }
+    for (const f of files) { const ts = f.slice(6, -3); if (!seen.has(ts)) seen.set(ts, { path: path.join(dir, f), source: 'auto' }); }
   }
-  return [...seen.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, limit).map(([ts, p]) => ({ ts, iso: _backupTsToIso(ts), path: p }));
+  const auto = [...seen.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, limit)
+    .map(([ts, v]) => ({ ts, iso: _backupTsToIso(ts), path: v.path, source: 'auto' }));
+  // Manually-uploaded backups are always included (never subject to the limit) and
+  // listed first — they are what the user explicitly brought in to recover from.
+  const uploaded = [];
+  let ufiles = []; try { ufiles = fs.readdirSync(UPLOADED_BACKUP_DIR).filter(f => f.startsWith('prime-') && f.endsWith('.db')); } catch (e) {}
+  for (const f of ufiles.sort().reverse()) { const ts = f.slice(6, -3); uploaded.push({ ts, iso: _backupTsToIso(ts), path: path.join(UPLOADED_BACKUP_DIR, f), source: 'uploaded' }); }
+  return [...uploaded, ...auto];
 }
 function _empDocKeyFromBackup(fp) { const s = String(fp || ''); if (!s) return ''; return s.includes('/') ? storage.keyForPath(s) : 'employee_docs/' + s; }
 app.get('/api/admin/employees/:id/doc-backups', requireAdmin, (req, res) => {
@@ -17781,11 +17793,47 @@ app.get('/api/admin/employees/:id/doc-backups', requireAdmin, (req, res) => {
         let appDocs = [];
         if (subIds.length) appDocs = bdb.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs WHERE submission_id IN (${subIds.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...subIds)
           .map(d => ({ ...d, label: EMPDOC_LABEL[d.doc_type] || d.doc_type, key: storage.keyForPath(d.file_path) }));
-        if (empDocs.length || appDocs.length) snapshots.push({ ts: b.ts, iso: b.iso, employee_docs: empDocs, applicant_docs: appDocs });
+        if (empDocs.length || appDocs.length) snapshots.push({ ts: b.ts, iso: b.iso, source: b.source || 'auto', employee_docs: empDocs, applicant_docs: appDocs });
       } catch (err) { /* skip bad backup */ } finally { try { bdb.close(); } catch (e) {} }
     }
-    res.json({ employee: { id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ') }, backups: backups.map(b => ({ ts: b.ts, iso: b.iso })), snapshots });
+    res.json({ employee: { id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ') }, backups: backups.map(b => ({ ts: b.ts, iso: b.iso, source: b.source || 'auto' })), snapshots });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+// Upload a backup database (e.g. a prime.db extracted from a Render disk snapshot).
+// It is stored in UPLOADED_BACKUP_DIR, validated as a real SQLite prime.db, and
+// thereafter searched by /doc-backups for old document versions. The referenced
+// files must still exist in current storage for recovery to work — which they do,
+// because save-id-doc never deletes the underlying file.
+const backupDbUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => { try { fs.mkdirSync(UPLOADED_BACKUP_DIR, { recursive: true }); } catch (e) {} cb(null, UPLOADED_BACKUP_DIR); },
+    filename: (req, file, cb) => { cb(null, `prime-${new Date().toISOString().replace(/[:.]/g, '-')}.db`); },
+  }),
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB
+});
+app.post('/api/admin/upload-backup-db', requireAdmin, backupDbUpload.single('db'), (req, res) => {
+  if (!req.file || !req.file.path) return res.status(400).json({ error: '没有收到文件' });
+  const fp = req.file.path;
+  let bdb;
+  try {
+    bdb = new Database(fp, { readonly: true, fileMustExist: true });
+    const tables = bdb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
+    if (!tables.includes('applicant_docs') && !tables.includes('employee_documents')) {
+      try { bdb.close(); } catch (e) {}
+      try { fs.unlinkSync(fp); } catch (e) {}
+      return res.status(400).json({ error: '这个文件不是有效的 prime.db 备份（找不到 applicant_docs / employee_documents 表）。' });
+    }
+    const counts = {};
+    for (const n of ['applicant_docs', 'employee_documents', 'applicant_submissions']) {
+      try { counts[n] = bdb.prepare(`SELECT COUNT(*) AS c FROM ${n}`).get().c; } catch (e) { counts[n] = null; }
+    }
+    try { bdb.close(); } catch (e) {}
+    res.json({ ok: true, file: path.basename(fp), counts });
+  } catch (e) {
+    try { if (bdb) bdb.close(); } catch (_) {}
+    try { fs.unlinkSync(fp); } catch (_) {}
+    res.status(400).json({ error: '无法作为 SQLite 数据库打开：' + e.message });
+  }
 });
 // Serve any file by storage key, restricted to the document folders. Admin-only. Lets the
 // backup viewer show old files whose keys aren't in the current DB.
