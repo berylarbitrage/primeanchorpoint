@@ -14363,7 +14363,7 @@ async function _stlLoad(page) {
 }
 async function attachStorageFile(key) {
   if (!_stlCtx) return;
-  const label = prompt(`把这个文件归还给 ${_stlCtx.empName || ''}，给它起个名称：\n（例如：SSN卡正面 / 工卡正面 / 工卡背面）`, '找回的证件');
+  const label = prompt(`把这个文件归还给 ${_stlCtx.empName || ''}，给它起个名称：\n\n⚠️ 名称里带「SSN」或「工卡」+「正面/反面」，证件审阅和导出就会自动用上它，并且优先于旧记录。\n例如：SSN正面、SSN反面、工卡正面、工卡背面`, 'SSN正面');
   if (label === null) return;
   try {
     const r = await api('/admin/doc-attach', { method: 'POST', body: JSON.stringify({ employee_id: _stlCtx.empId, key, label: label || '找回的证件' }) });
