@@ -32862,6 +32862,36 @@ async function saveInvpInvoice(status) {
     }
   }
 
+  // 工时查重：同一张发票里，同名工人出现两次，或两名工人的工时完全一样
+  // （REG+OT 都相同；标准整周 40h 无加班的除外，否则满勤周会全员误报），
+  // 都可能是重复录入——列出来让用户核对，确认后才保存。
+  if (mode !== 'container' && items.length > 1) {
+    const problems = [];
+    const byName = new Map();
+    for (const it of items) {
+      const k = (it.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (!k) continue;
+      if (byName.has(k)) problems.push(`同名工人出现多次：<b>${esc(it.name)}</b>`);
+      else byName.set(k, true);
+    }
+    const byTime = new Map();
+    for (const it of items) {
+      const reg = Math.round((it.regHours || 0) * 100) / 100, ot = Math.round((it.otHours || 0) * 100) / 100;
+      if (reg + ot <= 0) continue;
+      if (reg === 40 && ot === 0) continue;   // 满勤整周无加班，相同属正常
+      const k = reg + '/' + ot;
+      if (byTime.has(k)) problems.push(`工时完全相同（REG ${reg}h + OT ${ot}h）：<b>${esc(byTime.get(k))}</b> 和 <b>${esc(it.name)}</b>`);
+      else byTime.set(k, it.name);
+    }
+    if (problems.length) {
+      const ok = await showConfirm(
+        `⚠️ 保存前核对，发现疑似重复的工人工时：<br><br>${[...new Set(problems)].join('<br>')}<br><br>确认这些不是重复录入、仍要保存吗？`,
+        { confirmLabel: '确认无误，保存', cancelLabel: '返回核对', danger: true }
+      );
+      if (!ok) return;
+    }
+  }
+
   const profileWithMode = { ...getInvpProfile(), invoice_mode: mode, container_items: containerItems };
   // 两边分开记账：从「按月付款」转来的发票，行项目按公司价（从公司收）开给客户，真实「付给
   // 工人」工资单独存进 profile.wage_cost，后台列表才能正确显示工资/利润。由转入时留底的逐人
