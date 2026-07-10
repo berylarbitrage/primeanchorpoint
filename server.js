@@ -2500,6 +2500,10 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN period_start TEXT DEFA
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN period_end TEXT DEFAULT ''`); } catch(e) {}
 // Employee wage: whether this payment is full or partial.
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN pay_portion TEXT DEFAULT ''`); } catch(e) {}
+// Voucher usage: which invoice reused this annotated transaction as its sub-payment
+// proof. Set when a box is picked in 记录分包付款, cleared on 取消/换凭证, so the picker
+// can grey out已使用 transactions and stop the same row being used twice.
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN used_invoice_id INTEGER DEFAULT NULL`); } catch(e) {}
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -18750,6 +18754,16 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   db.prepare(`UPDATE invoices SET sub_payment_status='paid', sub_payment_receipt_path=?, sub_payment_receipt_paths=?, sub_paid_at=datetime('now'),
               sub_payment_entity=?, sub_payment_bank=?, sub_payment_handler=?, sub_payment_amount=?, sub_payment_date=? WHERE id=?`)
     .run(receiptPath, pathsJson, payee, method, handler, amount, payDate, req.params.id);
+  // Voucher usage link: free whatever transaction this invoice used before, then mark
+  // the newly-picked one (format "stmtId:boxId") as used by this invoice. Sent even
+  // when empty (switched to a file / whole PDF) so the old link is released.
+  try {
+    const invId = parseInt(req.params.id);
+    db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=NULL WHERE used_invoice_id=?`).run(invId);
+    const boxRef = (b.sub_payment_stmt_box || '').trim();
+    const bm = boxRef.match(/^(\d+):(\d+)$/);
+    if (bm) db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=? WHERE id=? AND statement_id=? AND kind='box'`).run(invId, parseInt(bm[2]), parseInt(bm[1]));
+  } catch (e) {}
   const wasSubPaid = inv.sub_payment_status === 'paid';
   const parts = [];
   if (amount != null) parts.push(`金额: $${amount.toFixed(2)}`);
@@ -18774,6 +18788,8 @@ app.post('/api/admin/invoices/:id/mark-sub-unpaid', requireAdmin, (req, res) => 
   }
   db.prepare(`UPDATE invoices SET sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_payment_receipt_paths=NULL, sub_paid_at=NULL WHERE id=?`)
     .run(req.params.id);
+  // Release any statement transaction this invoice had reserved as its voucher.
+  try { db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=NULL WHERE used_invoice_id=?`).run(parseInt(req.params.id)); } catch (e) {}
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, '取消分包已付款', '');
   res.json({ success: true });
@@ -27303,7 +27319,7 @@ app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req,
 // GET the boxes for one statement.
 app.get('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion
+    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, used_invoice_id
       FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`)
       .all(parseInt(req.params.id));
     for (const r of rows) {
