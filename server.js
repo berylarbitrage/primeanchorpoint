@@ -17141,8 +17141,11 @@ function _makeEmpDocMatcher() {
       const wa = waStmt.get(e.id);
       const card = wa ? ssnCardStmt.get(wa.id) : null;
       if (card && card.file_path) {
+        // keyForPath: SSN cards uploaded via docUpload store an absolute on-disk path
+        // (local backend) in file_path — reduce it to a resolvable storage key so the
+        // export/preview can actually read the bytes.
         picked.push({ id: 'wc_' + card.id, submission_id: null, doc_type: 'ssn_front',
-                      file_path: card.file_path, file_name: card.file_name || 'ssn-card', source: 'compliance' });
+                      file_path: storage.keyForPath(card.file_path), file_name: card.file_name || 'ssn-card', source: 'compliance' });
       }
     }
     return picked;
@@ -17505,7 +17508,7 @@ app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res
       ? db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND doc_type='ssn_card'").get(parseInt(raw.slice(3), 10))
       : db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(raw);
     if (!doc) return res.status(404).json({ error: 'Not found' });
-    const key = storage.normalizeKey(doc.file_path);
+    const key = storage.keyForPath(doc.file_path);   // handles absolute local paths (SSN cards) too
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
     const buf = await storage.getBuffer(key);
     const ext = path.extname(key).toLowerCase();
@@ -17537,7 +17540,7 @@ app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
     const buf = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
     if (!buf.length || buf.length > 15 * 1024 * 1024) return res.status(400).json({ error: '图片无效或过大' });
     const isPng = /png/i.test(m[1]);
-    const oldKey = storage.normalizeKey(doc.file_path);
+    const oldKey = storage.keyForPath(doc.file_path);   // absolute local paths → key
     const dir = oldKey.includes('/') ? oldKey.slice(0, oldKey.lastIndexOf('/')) : 'uploads';
     const newKey = `${dir}/id-edited-${isWc ? 'wc' : ''}${docId}-${Date.now()}.${isPng ? 'png' : 'jpg'}`;
     await storage.putObject(newKey, buf, { contentType: isPng ? 'image/png' : 'image/jpeg' });
