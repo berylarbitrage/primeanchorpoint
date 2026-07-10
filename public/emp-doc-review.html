@@ -241,10 +241,15 @@
 
   // ── Load review queue, then step through each image ──────────────
   async function init() {
-    if (!TOKEN || !EMP_IDS.length) {
-      $('errMsg').textContent = '缺少参数，请从「员工管理 → 导出证件」重新进入。';
+    // Auth is cookie-based (pa_token) for admins, so TOKEN may legitimately be
+    // empty — same-origin requests still carry the session cookie. Only the
+    // employee ids are truly required here.
+    if (!EMP_IDS.length) {
+      $('errMsg').textContent = '缺少员工参数，请从「员工管理 → 导出证件」重新进入。';
       show('Error'); return;
     }
+    $('headerTitle').textContent = '📄 证件审阅';
+    $('headerSub').textContent = '导出前逐张确认';
     loadOpenCV().catch(() => {});   // preload the AI edge detector
     try {
       const r = await fetch(API + '/admin/employees/id-docs?token=' + encodeURIComponent(TOKEN) + '&ids=' + EMP_IDS.join(','));
