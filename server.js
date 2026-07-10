@@ -17121,6 +17121,10 @@ function _makeEmpDocMatcher() {
   const waStmt = db.prepare('SELECT id FROM worker_accounts WHERE employee_id=? ORDER BY active DESC, id ASC LIMIT 1');
   const ssnCardStmt = db.prepare(`SELECT id, file_path, file_name FROM worker_compliance_docs
     WHERE worker_account_id=? AND doc_type='ssn_card' AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC LIMIT 1`);
+  // Work permit / EAD / ID documents uploaded via 入职 → 工作许可验证 live in
+  // work_permit_docs (also keyed by worker_account_id). Used to fill missing EAD slots.
+  const wpStmt = db.prepare(`SELECT id, file_path, file_name FROM work_permit_docs
+    WHERE worker_account_id=? AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC`);
   return function pickDocs(e) {
     const ordered = [];                                   // submission ids, highest priority first
     for (const r of linkedStmt.all(e.id)) ordered.push(r.id);
@@ -17135,17 +17139,33 @@ function _makeEmpDocMatcher() {
       rows.sort((a, b) => (prio.get(a.submission_id) ?? 1e9) - (prio.get(b.submission_id) ?? 1e9));
       for (const r of rows) { if (seen.has(r.doc_type)) continue; seen.add(r.doc_type); picked.push(r); }
     }
-    // Fill a missing SSN front from an admin-uploaded SSN card. Namespace the id as
-    // `wc_<id>` so id-doc-image / save-id-doc read+write the worker_compliance_docs row.
-    if (!seen.has('ssn_front')) {
+    // Fall back to admin-uploaded documents (keyed by worker_account) when the
+    // application itself is missing that ID. keyForPath: these are stored with an
+    // absolute on-disk path under the local backend — reduce to a resolvable key.
+    if (!seen.has('ssn_front') || !seen.has('ead_front') || !seen.has('ead_back')) {
       const wa = waStmt.get(e.id);
-      const card = wa ? ssnCardStmt.get(wa.id) : null;
-      if (card && card.file_path) {
-        // keyForPath: SSN cards uploaded via docUpload store an absolute on-disk path
-        // (local backend) in file_path — reduce it to a resolvable storage key so the
-        // export/preview can actually read the bytes.
-        picked.push({ id: 'wc_' + card.id, submission_id: null, doc_type: 'ssn_front',
-                      file_path: storage.keyForPath(card.file_path), file_name: card.file_name || 'ssn-card', source: 'compliance' });
+      if (wa) {
+        // SSN card → SSN front. Namespace id as `wc_<id>`.
+        if (!seen.has('ssn_front')) {
+          const card = ssnCardStmt.get(wa.id);
+          if (card && card.file_path) {
+            picked.push({ id: 'wc_' + card.id, submission_id: null, doc_type: 'ssn_front',
+                          file_path: storage.keyForPath(card.file_path), file_name: card.file_name || 'ssn-card', source: 'compliance' });
+            seen.add('ssn_front');
+          }
+        }
+        // Work permit / EAD docs → fill empty EAD slots (front then back). `wp_<id>`.
+        if (!seen.has('ead_front') || !seen.has('ead_back')) {
+          const wps = wpStmt.all(wa.id);
+          let wi = 0;
+          for (const slot of ['ead_front', 'ead_back']) {
+            if (seen.has(slot)) continue;
+            const wp = wps[wi]; if (!wp) break; wi++;
+            picked.push({ id: 'wp_' + wp.id, submission_id: null, doc_type: slot,
+                          file_path: storage.keyForPath(wp.file_path), file_name: wp.file_name || 'work-permit', source: 'work_permit' });
+            seen.add(slot);
+          }
+        }
       }
     }
     return picked;
@@ -17502,10 +17522,12 @@ app.get('/api/admin/employees/id-docs', _empDocAuth, (req, res) => {
 app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res) => {
   try {
     const raw = String(req.params.docId || '');
-    // `wc_<id>` → an admin-uploaded SSN card in worker_compliance_docs; otherwise a
-    // normal applicant_docs id.
+    // `wc_<id>` → admin-uploaded SSN card (worker_compliance_docs); `wp_<id>` → work
+    // permit / EAD doc (work_permit_docs); otherwise a normal applicant_docs id.
     const doc = raw.startsWith('wc_')
       ? db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND doc_type='ssn_card'").get(parseInt(raw.slice(3), 10))
+      : raw.startsWith('wp_')
+      ? db.prepare("SELECT * FROM work_permit_docs WHERE id=?").get(parseInt(raw.slice(3), 10))
       : db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(raw);
     if (!doc) return res.status(404).json({ error: 'Not found' });
     const key = storage.keyForPath(doc.file_path);   // handles absolute local paths (SSN cards) too
@@ -17528,13 +17550,15 @@ app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res
 app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
   try {
     const rawId = String((req.body && req.body.docId) || '');
-    const isWc = rawId.startsWith('wc_');               // admin-uploaded SSN card row
-    const docId = parseInt(isWc ? rawId.slice(3) : rawId, 10);
+    const src = rawId.startsWith('wc_') ? 'wc' : rawId.startsWith('wp_') ? 'wp' : 'app';
+    const docId = parseInt(src === 'app' ? rawId : rawId.slice(3), 10);
     const dataUrl = String((req.body && req.body.dataUrl) || '');
     const m = dataUrl.match(/^data:image\/(jpeg|jpg|png);base64,/i);
     if (!docId || !m) return res.status(400).json({ error: '参数错误' });
-    const doc = isWc
+    const doc = src === 'wc'
       ? db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND doc_type='ssn_card'").get(docId)
+      : src === 'wp'
+      ? db.prepare("SELECT * FROM work_permit_docs WHERE id=?").get(docId)
       : db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(docId);
     if (!doc) return res.status(404).json({ error: 'Not found' });
     const buf = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
@@ -17542,14 +17566,15 @@ app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
     const isPng = /png/i.test(m[1]);
     const oldKey = storage.keyForPath(doc.file_path);   // absolute local paths → key
     const dir = oldKey.includes('/') ? oldKey.slice(0, oldKey.lastIndexOf('/')) : 'uploads';
-    const newKey = `${dir}/id-edited-${isWc ? 'wc' : ''}${docId}-${Date.now()}.${isPng ? 'png' : 'jpg'}`;
+    const newKey = `${dir}/id-edited-${src === 'app' ? '' : src}${docId}-${Date.now()}.${isPng ? 'png' : 'jpg'}`;
     await storage.putObject(newKey, buf, { contentType: isPng ? 'image/png' : 'image/jpeg' });
-    if (isWc) {
-      db.prepare('UPDATE worker_compliance_docs SET file_path=?, file_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
-        .run(newKey, `id-edited-ssn_card.${isPng ? 'png' : 'jpg'}`, docId);
+    const editedName = `id-edited-${src === 'app' ? doc.doc_type : src}.${isPng ? 'png' : 'jpg'}`;
+    if (src === 'wc') {
+      db.prepare('UPDATE worker_compliance_docs SET file_path=?, file_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(newKey, editedName, docId);
+    } else if (src === 'wp') {
+      db.prepare('UPDATE work_permit_docs SET file_path=?, file_name=? WHERE id=?').run(newKey, editedName, docId);
     } else {
-      db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?')
-        .run(newKey, `id-edited-${doc.doc_type}.${isPng ? 'png' : 'jpg'}`, docId);
+      db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?').run(newKey, editedName, docId);
     }
     res.json({ ok: true, doc_id: rawId });
   } catch (e) { res.status(500).json({ error: e.message }); }
