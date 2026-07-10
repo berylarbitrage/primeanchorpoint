@@ -17128,16 +17128,19 @@ function _makeEmpDocMatcher() {
   const wpStmt = db.prepare(`SELECT id, file_path, file_name FROM work_permit_docs
     WHERE worker_account_id=? AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC`);
   return function pickDocs(e) {
-    const ordered = [];                                   // submission ids, highest priority first
-    for (const r of linkedStmt.all(e.id)) ordered.push(r.id);
-    // Phone/email fallback, but NEVER borrow a submission that is explicitly linked to a
-    // DIFFERENT employee — that's another person's document. Two employees sharing a phone
-    // or email (data-entry dup, family phone) must not cross-pull each other's IDs. Only
-    // unlinked submissions, or ones linked to THIS employee, may match by phone/email.
-    const ownerOk = id => { const o = subOwner.get(id); return !o || String(o) === String(e.id); };
-    const p = norm10(e.phone); if (p.length === 10) for (const id of (phoneMap.get(p) || [])) if (ownerOk(id)) ordered.push(id);
-    const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) if (ownerOk(id)) ordered.push(id);
-    const uniq = [...new Set(ordered)];
+    // Rank candidate submissions in three tiers so a correctly-owned doc always wins, but
+    // we NEVER silently drop a doc that has nowhere else to match:
+    //   self  — explicitly linked to THIS employee (employee_id = e.id)
+    //   own   — matched by phone/email and unlinked (or linked to this employee)
+    //   other — matched by phone/email but linked to ANOTHER employee (last resort only)
+    // Two employees sharing a phone/email each keep their own docs (self/own beat other);
+    // a doc sitting in a mis-linked submission still surfaces instead of appearing "gone".
+    const self = [], own = [], other = [];
+    for (const r of linkedStmt.all(e.id)) self.push(r.id);
+    const bucket = id => { const o = subOwner.get(id); (!o || String(o) === String(e.id) ? own : other).push(id); };
+    const p = norm10(e.phone); if (p.length === 10) for (const id of (phoneMap.get(p) || [])) bucket(id);
+    const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) bucket(id);
+    const uniq = [...new Set([...self, ...own, ...other])];
     const seen = new Set(), picked = [];
     if (uniq.length) {
       const rows = db.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs
