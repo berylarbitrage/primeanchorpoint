@@ -35051,13 +35051,11 @@ async function generateInvpPreview() {
       For questions regarding this invoice, please contact: <strong>${[profile.contact_name,profile.contact_phone,profile.contact_email].filter(Boolean).map(s=>esc(s)).join('&nbsp; | &nbsp;')}</strong>
     </div>` : '';
 
-  const html = `
-    <div id="invpPaper" style="background:#fff;width:8.5in;min-height:11in;padding:0.5in;box-shadow:0 4px 18px rgba(0,0,0,.12);box-sizing:border-box">
-    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b">
-
-      <!-- ── HEADER ── -->
+  // Build the invoice as ONE table so the letterhead (thead) and the payment /
+  // footer (tfoot) repeat on EVERY printed page; only the line items flow in the
+  // middle. headerBlock = everything above the items; footerBlock = below.
+  const headerBlock = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem">
-        <!-- Left: Logo + Sender info -->
         <div style="display:flex;align-items:center;gap:.85rem;flex:1;min-width:0">
           <img src="/logo.svg" style="height:72px;width:auto;flex-shrink:0" alt="Logo">
           <div style="line-height:1.55;font-size:.85rem;color:#1e293b">
@@ -35068,78 +35066,37 @@ async function generateInvpPreview() {
             ${profile.contact_name   ? `<div>Contact:&nbsp; ${esc(profile.contact_name)}</div>` : ''}
           </div>
         </div>
-        <!-- Right: INVOICE title + info box -->
         <div style="text-align:right;flex-shrink:0">
           <div style="font-size:2.1rem;font-weight:900;letter-spacing:4px;color:#29AAE1;line-height:1;margin-bottom:.55rem">INVOICE</div>
           <table style="border-collapse:collapse;margin-left:auto;font-size:.8rem;border:1px solid #cbd5e1;border-radius:3px;overflow:hidden;background:#f8fafc">
-            <tr style="border-bottom:1px solid #e2e8f0">
-              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Invoice No.</td>
-              <td style="padding:5px 12px;font-weight:700;text-align:right;white-space:nowrap">${esc(invNum||'—')}</td>
-            </tr>
-            <tr style="border-bottom:1px solid #e2e8f0">
-              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Invoice Date</td>
-              <td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${fmtNice(invDate)}</td>
-            </tr>
-            <tr>
-              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Service Period</td>
-              <td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${servicePeriodLabel}</td>
-            </tr>
+            <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Invoice No.</td><td style="padding:5px 12px;font-weight:700;text-align:right;white-space:nowrap">${esc(invNum||'—')}</td></tr>
+            <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Invoice Date</td><td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${fmtNice(invDate)}</td></tr>
+            <tr><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Service Period</td><td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${servicePeriodLabel}</td></tr>
           </table>
         </div>
       </div>
-
-      <!-- Brand divider -->
       <div style="border-top:2.5px solid #29AAE1;margin-bottom:.9rem"></div>
-
-      <!-- Bill To (labeled rows) -->
-      <table style="border-collapse:collapse;margin-bottom:.8rem;font-size:.85rem;line-height:1.55">
-        <tr>
-          <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">BILL TO:</td>
-          <td style="padding:2px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(billName)}</td>
-        </tr>
-        ${billAddr ? `<tr>
-          <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">ADDRESS:</td>
-          <td style="padding:2px 0;color:#1e293b">${esc(billAddr)}</td>
-        </tr>` : ''}
-        <tr>
-          <td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">SERVICE PERIOD:</td>
-          <td style="padding:2px 0;color:#1e293b;font-weight:600">${servicePeriodLabel}</td>
-        </tr>
+      <table style="border-collapse:collapse;margin-bottom:.7rem;font-size:.85rem;line-height:1.55">
+        <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">BILL TO:</td><td style="padding:2px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(billName)}</td></tr>
+        ${billAddr ? `<tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">ADDRESS:</td><td style="padding:2px 0;color:#1e293b">${esc(billAddr)}</td></tr>` : ''}
+        <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">SERVICE PERIOD:</td><td style="padding:2px 0;color:#1e293b;font-weight:600">${servicePeriodLabel}</td></tr>
       </table>
+      <div style="background:#e8f5fb;border-left:4px solid #29AAE1;padding:.4rem .8rem;margin-bottom:.4rem;font-size:.8rem;color:#29AAE1;font-weight:600;letter-spacing:.02em">Services rendered for the period ${servicePeriodLabel}</div>`;
 
-      <!-- Service Period banner -->
-      <div style="background:#e8f5fb;border-left:4px solid #29AAE1;padding:.4rem .8rem;margin-bottom:.75rem;font-size:.8rem;color:#29AAE1;font-weight:600;letter-spacing:.02em">
-        Services rendered for the period ${servicePeriodLabel}
-      </div>
-
-      <!-- Line items table (hourly OR container) -->
-      ${lineItemTableHtml}
-
-      <!-- Total + payment + footer: kept together so it never splits across pages -->
-      <div class="invp-tail">
-      <!-- Amount summary (right-aligned) -->
-      <div style="display:flex;justify-content:flex-end;margin-bottom:.85rem">
+  const footerBlock = `
+      <div style="display:flex;justify-content:flex-end;margin-top:.7rem;margin-bottom:.85rem">
         <table style="border-collapse:collapse;font-size:.86rem;min-width:280px">
           ${(() => {
-            // Show the "subtotal × markup = billed" line whenever the bill differs
-            // from the wage base (covers both container global markup and hourly
-            // per-row markups). In hourly mode with mixed markups, label it as
-            // "Markup per worker" rather than a single number.
             const showSummary = (mode === 'container' ? hasMarkup : Math.abs(billedAmt - baseAmt) > 0.005);
             if (!showSummary) return '';
             let mkText;
-            if (mode === 'container') {
-              mkText = `Markup ${markupRate.toFixed(2)}`;
-            } else {
+            if (mode === 'container') { mkText = `Markup ${markupRate.toFixed(2)}`; }
+            else {
               const effMks = items.map(i => (i.markup && i.markup > 0) ? i.markup : markupRate);
               const uniqueMks = [...new Set(effMks.map(v => Math.round(v * 10000) / 10000))];
               mkText = uniqueMks.length === 1 ? `Markup ${uniqueMks[0].toFixed(2)}` : 'Markup per worker';
             }
-            return `<tr>
-              <td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">
-                ${mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} $${baseAmt.toFixed(2)} &nbsp;×&nbsp; ${mkText} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
-              </td>
-            </tr>`;
+            return `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">${mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} $${baseAmt.toFixed(2)} &nbsp;×&nbsp; ${mkText} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong></td></tr>`;
           })()}
           <tr>
             <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;font-size:.9rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>
@@ -35147,15 +35104,23 @@ async function generateInvpPreview() {
           </tr>
         </table>
       </div>
-
       ${bankBlock}
       ${contactBlock}
+      <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;text-align:center;font-size:.78rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">THANK YOU FOR YOUR BUSINESS!</div>`;
 
-      <!-- Footer -->
-      <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;text-align:center;font-size:.78rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">
-        THANK YOU FOR YOUR BUSINESS!
-      </div>
-      </div>
+  // Inject the letterhead into the line-item table's <thead> (repeats every
+  // page) and the payment/footer into a <tfoot> (repeats every page). Replace
+  // </table>→tfoot FIRST (the raw line-item table has exactly one), then <thead>.
+  // Function replacements keep `$` in dollar amounts literal.
+  const invoiceTable = lineItemTableHtml
+    .replace(/border:1px solid #29AAE1/g, 'border:none')
+    .replace('</table>', () => `<tfoot><tr class="inv-paytail"><td colspan="20" style="padding:0;border:none">${footerBlock}</td></tr></tfoot></table>`)
+    .replace('<thead>', () => `<thead><tr class="inv-letterhead"><td colspan="20" style="padding:0;border:none">${headerBlock}</td></tr>`);
+
+  const html = `
+    <div id="invpPaper" style="background:#fff;width:8.5in;min-height:11in;padding:0.5in;box-shadow:0 4px 18px rgba(0,0,0,.12);box-sizing:border-box">
+    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b">
+      ${invoiceTable}
     </div>
     </div>`;
 
@@ -35194,12 +35159,12 @@ function printInvpInvoice() {
       html, body { margin: 0; padding: 0; }
       body { font-family: 'Helvetica Neue', Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .sheet { box-sizing: border-box; }
-      /* Let the container table flow across pages instead of jumping whole to
-         the next one: keep each row intact and repeat the column header. */
+      /* The whole invoice is one table: repeat the letterhead (thead) at the top
+         and the payment/footer (tfoot) at the bottom of EVERY page, with the line
+         items flowing in the middle and no row split across a page break. */
       thead { display: table-header-group; }
+      tfoot { display: table-footer-group; }
       tr, img { page-break-inside: avoid; break-inside: avoid; }
-      /* Keep the total + payment + footer block together (never split it). */
-      .invp-tail { page-break-inside: avoid; break-inside: avoid; }
     </style>
     </head><body><div class="sheet">${content}</div></body></html>`);
   w.document.close();
