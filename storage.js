@@ -16,7 +16,7 @@ const BACKEND = (process.env.STORAGE_BACKEND || 'local').toLowerCase();
 const isR2 = BACKEND === 'r2';
 
 let s3Client = null;
-let GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand;
+let GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command;
 let getSignedUrl;
 const R2_BUCKET = process.env.R2_BUCKET || '';
 const R2_PUBLIC_BASE_URL = (process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
@@ -34,6 +34,7 @@ if (isR2) {
     PutObjectCommand = s3.PutObjectCommand;
     DeleteObjectCommand = s3.DeleteObjectCommand;
     HeadObjectCommand = s3.HeadObjectCommand;
+    ListObjectsV2Command = s3.ListObjectsV2Command;
     getSignedUrl = signer.getSignedUrl;
     s3Client = new s3.S3Client({
       region: 'auto',
@@ -107,6 +108,37 @@ function localPathForKey(key) {
 function localAbsPath(key) {
   if (!_dataDir) return null;
   return path.join(_dataDir, normalizeKey(key));
+}
+
+// ─── List objects whose key starts with `prefix` ───
+// Returns [{ key, size, lastModified(ms) }]. Used to surface a document's version
+// history (its id-edited-<id>-<ts> copies) without a separate version log.
+async function listByPrefix(prefix) {
+  const p = normalizeKey(prefix);
+  if (s3Client) {
+    const out = [];
+    let token;
+    do {
+      const resp = await s3Client.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: p, ContinuationToken: token }));
+      for (const o of (resp.Contents || [])) out.push({ key: o.Key, size: o.Size, lastModified: o.LastModified ? o.LastModified.getTime() : null });
+      token = resp.IsTruncated ? resp.NextContinuationToken : null;
+    } while (token);
+    return out;
+  }
+  // Local: prefix is "dir/basePrefix" — read that dir and filter by the basename prefix.
+  const slash = p.lastIndexOf('/');
+  const dir = slash >= 0 ? p.slice(0, slash) : '';
+  const base = slash >= 0 ? p.slice(slash + 1) : p;
+  const absDir = _dataDir ? path.join(_dataDir, dir) : null;
+  if (!absDir) return [];
+  let names = [];
+  try { names = fs.readdirSync(absDir); } catch (e) { return []; }
+  return names.filter(n => n.startsWith(base)).map(n => {
+    const key = dir ? `${dir}/${n}` : n;
+    let size = 0, lastModified = null;
+    try { const st = fs.statSync(path.join(absDir, n)); size = st.size; lastModified = st.mtimeMs; } catch (e) {}
+    return { key, size, lastModified };
+  });
 }
 
 // ─── Put a Buffer / Readable as an object ───
@@ -216,6 +248,7 @@ module.exports = {
   normalizeKey,
   keyForPath,
   keyFrom,
+  listByPrefix,
   localAbsPath,
   backendName,
   R2_BUCKET,

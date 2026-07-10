@@ -17649,6 +17649,66 @@ app.post('/api/admin/employees/:id/relink-submission', requireAdmin, (req, res) 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── ID document version history ──
+// Every review-save writes a NEW key `id-edited-[wc|wp]<id>-<ts>.<ext>` and keeps the old
+// file, so a document's past versions live in storage. Resolve a docId (applicant / wc_ /
+// wp_) to its row + all stored versions so an admin can preview and roll back.
+function _resolveEmpDoc(raw) {
+  raw = String(raw || '');
+  if (raw.startsWith('wc_')) { const id = parseInt(raw.slice(3), 10); return { src: 'wc', id, doc: db.prepare("SELECT * FROM worker_compliance_docs WHERE id=? AND doc_type='ssn_card'").get(id) }; }
+  if (raw.startsWith('wp_')) { const id = parseInt(raw.slice(3), 10); return { src: 'wp', id, doc: db.prepare("SELECT * FROM work_permit_docs WHERE id=?").get(id) }; }
+  const id = parseInt(raw, 10); return { src: 'app', id, doc: db.prepare("SELECT * FROM applicant_docs WHERE id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')").get(id) };
+}
+function _tsFromEditedKey(key) { const m = String(key).match(/id-edited-(?:wc|wp)?\d+-(\d+)\./); return m ? parseInt(m[1], 10) : 0; }
+async function _empDocVersions(raw) {
+  const r = _resolveEmpDoc(raw);
+  if (!r.doc) return null;
+  const curKey = storage.keyForPath(r.doc.file_path);
+  const dir = curKey.includes('/') ? curKey.slice(0, curKey.lastIndexOf('/')) : 'uploads';
+  const prefix = `${dir}/id-edited-${r.src === 'app' ? '' : r.src}${r.id}-`;
+  let listed = [];
+  try { listed = await storage.listByPrefix(prefix); } catch (e) { listed = []; }
+  const map = new Map();
+  for (const v of listed) map.set(v.key, { key: v.key, ts: v.lastModified || _tsFromEditedKey(v.key), size: v.size });
+  if (!map.has(curKey)) map.set(curKey, { key: curKey, ts: _tsFromEditedKey(curKey) || null, size: null }); // include the pristine/current file
+  const list = [...map.values()].map(v => ({ ...v, isCurrent: v.key === curKey })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return { r, curKey, list };
+}
+app.get('/api/admin/employees/id-doc-versions/:docId', requireAdmin, async (req, res) => {
+  try {
+    const info = await _empDocVersions(req.params.docId);
+    if (!info) return res.status(404).json({ error: 'Not found' });
+    res.json({ docId: String(req.params.docId), current: info.curKey, versions: info.list });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/admin/employees/id-doc-version-image/:docId', _empDocAuth, async (req, res) => {
+  try {
+    const key = storage.normalizeKey(req.query.key || '');
+    const info = await _empDocVersions(req.params.docId);
+    if (!info) return res.status(404).json({ error: 'Not found' });
+    if (!info.list.some(v => v.key === key)) return res.status(403).json({ error: 'key not allowed' });   // guard: only this doc's versions
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    const buf = await storage.getBuffer(key);
+    res.setHeader('Content-Type', _sniffImageMime(buf) || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/admin/employees/id-doc-restore/:docId', requireAdmin, async (req, res) => {
+  try {
+    const key = storage.normalizeKey((req.body && req.body.key) || '');
+    const info = await _empDocVersions(req.params.docId);
+    if (!info) return res.status(404).json({ error: 'Not found' });
+    if (!info.list.some(v => v.key === key)) return res.status(403).json({ error: 'key not allowed' });
+    if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    const r = info.r, fname = 'restored-' + key.split('/').pop();
+    if (r.src === 'wc') db.prepare('UPDATE worker_compliance_docs SET file_path=?, file_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(key, fname, r.id);
+    else if (r.src === 'wp') db.prepare('UPDATE work_permit_docs SET file_path=?, file_name=? WHERE id=?').run(key, fname, r.id);
+    else db.prepare('UPDATE applicant_docs SET file_path=?, file_name=? WHERE id=?').run(key, fname, r.id);
+    res.json({ ok: true, restored: key });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
