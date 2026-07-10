@@ -17105,8 +17105,10 @@ function _sniffImageMime(b) {
 function _makeEmpDocMatcher() {
   const norm10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; };
   const phoneMap = new Map(), emailMap = new Map();
+  const subOwner = new Map();   // submission id → its linked employee_id (null if unlinked)
   try {
-    for (const s of db.prepare('SELECT id, phone, email FROM applicant_submissions ORDER BY id DESC').all()) {
+    for (const s of db.prepare('SELECT id, phone, email, employee_id FROM applicant_submissions ORDER BY id DESC').all()) {
+      subOwner.set(s.id, s.employee_id || null);
       const p = norm10(s.phone);
       if (p.length === 10) { if (!phoneMap.has(p)) phoneMap.set(p, []); phoneMap.get(p).push(s.id); }
       const em = String(s.email || '').trim().toLowerCase();
@@ -17128,8 +17130,13 @@ function _makeEmpDocMatcher() {
   return function pickDocs(e) {
     const ordered = [];                                   // submission ids, highest priority first
     for (const r of linkedStmt.all(e.id)) ordered.push(r.id);
-    const p = norm10(e.phone); if (p.length === 10) for (const id of (phoneMap.get(p) || [])) ordered.push(id);
-    const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) ordered.push(id);
+    // Phone/email fallback, but NEVER borrow a submission that is explicitly linked to a
+    // DIFFERENT employee — that's another person's document. Two employees sharing a phone
+    // or email (data-entry dup, family phone) must not cross-pull each other's IDs. Only
+    // unlinked submissions, or ones linked to THIS employee, may match by phone/email.
+    const ownerOk = id => { const o = subOwner.get(id); return !o || String(o) === String(e.id); };
+    const p = norm10(e.phone); if (p.length === 10) for (const id of (phoneMap.get(p) || [])) if (ownerOk(id)) ordered.push(id);
+    const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) if (ownerOk(id)) ordered.push(id);
     const uniq = [...new Set(ordered)];
     const seen = new Set(), picked = [];
     if (uniq.length) {
