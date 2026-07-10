@@ -33187,7 +33187,7 @@ function renderInvpContainerTable(skipSave) {
     <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
       <th style="padding:5px 6px;text-align:center">N.</th>
       <th style="padding:5px 6px;text-align:left;position:sticky;left:0;background:var(--gray-50);z-index:2;box-shadow:1px 0 0 var(--gray-200)">Container Number</th>
-      <th style="padding:5px 6px;text-align:left">Unloading Week</th>
+      <th style="padding:5px 6px;text-align:left;white-space:nowrap">Unloading Week <button type="button" onclick="invpBatchSetWeek()" title="把所有 container 行的 Unloading Week 统一改成同一个值" style="margin-left:4px;font-size:.66rem;padding:1px 7px;border:1px solid #0E7BB8;color:#0E7BB8;background:#eff6ff;border-radius:4px;cursor:pointer;font-weight:600">批量</button></th>
       <th style="padding:5px 6px;text-align:left">Unloading Staffing</th>
       <th style="padding:5px 6px;text-align:center">Qty</th>
       <th style="padding:5px 6px;text-align:right">Unit Price</th>
@@ -33454,6 +33454,22 @@ async function invpDiscardCsub(submissionId) {
     loadInvpCsubInbox();
     refreshInvpInboxBadge();
   } catch (e) { showToast('丢弃失败：' + (e.message || e), 'error'); }
+}
+
+// Batch-set the Unloading Week for every container row at once.
+async function invpBatchSetWeek() {
+  _invpSaveContainerState();
+  const items = window._invpContainerItems || [];
+  if (!items.length) { showToast('请先添加 container 行', 'error'); return; }
+  // Pre-fill with the first non-empty week, else the invoice's service period.
+  const cur = (items.find(i => (i.week || '').trim()) || {}).week || _invpFmtPeriodForContainer() || '';
+  const val = await adminPrompt('把所有 container 行的 Unloading Week 统一改成（格式 MM.DD.YY - MM.DD.YY）：', '批量修改 Unloading Week', cur);
+  if (val === null) return;                     // cancelled
+  const v = val.trim();
+  items.forEach(i => { i.week = v; });
+  window._invpDirty = true;
+  renderInvpContainerTable(true);
+  showToast(`已把 ${items.length} 行的 Unloading Week 改为「${v || '(空)'}」`);
 }
 
 function invpAddContainer() {
