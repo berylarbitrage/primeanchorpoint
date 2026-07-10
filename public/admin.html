@@ -16015,7 +16015,8 @@ function exportSelectedEmpDocs() {
   if (!ids.length) { showToast('请先勾选要导出的员工', 'error'); return; }
   // Open the pre-export review page: step through each SSN/EAD photo, auto-crop
   // / rotate / de-skew and confirm before the PDF is generated.
-  window.open('/emp-doc-review.html?token=' + encodeURIComponent(TOKEN) + '&ids=' + ids.join(','), '_blank');
+  // Use the clean URL (not .html) so we don't bounce through the *.html→clean redirect.
+  window.open('/emp-doc-review?token=' + encodeURIComponent(TOKEN) + '&ids=' + ids.join(','), '_blank');
 }
 
 // ══════════════════════════════════════════════════════
