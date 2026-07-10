@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-10g · 裁剪永久保留原图且历史版本可见可回滚(全部来源) + 入职上传优先 + 手动指定栏位',
+  tag: '2026-07-10h · 发票查重拦截(同公司+同周期+同金额报错,同号禁止) + 裁剪保留原图 + 入职上传优先',
   started: new Date().toISOString(),
 };
 
@@ -19093,10 +19093,35 @@ app.post('/api/admin/invoices/fix-number-states', requireAdmin, (req, res) => {
   res.json({ applied: apply, total: rows.length, changeCount: changes.length, skippedCount: skipped.length, changes, skipped: skipped.slice(0, 100) });
 });
 
+// Duplicate-invoice guard: two invoices with identical key details (same client company,
+// same service period, same billed total) are almost certainly the same invoice entered
+// twice. Same-number saves are always blocked; same-details saves are blocked unless the
+// caller explicitly passes force:true (the UI asks for confirmation first).
+function _findDupInvoice(b, excludeId) {
+  const exc = excludeId ? parseInt(excludeId, 10) : -1;
+  const byNum = db.prepare('SELECT id, invoice_number FROM invoices WHERE invoice_number=? AND id!=?').get(b.invoice_number, exc);
+  if (byNum) return { kind: 'number', existing: byNum };
+  const same = db.prepare(`SELECT id, invoice_number, invoice_date, status FROM invoices
+    WHERE company_name=? AND IFNULL(period_start,'')=? AND IFNULL(period_end,'')=?
+      AND ABS(IFNULL(subtotal,0) - ?) < 0.005 AND id!=? LIMIT 1`)
+    .get(b.company_name, b.period_start || '', b.period_end || '', Number(b.subtotal) || 0, exc);
+  if (same) return { kind: 'details', existing: same };
+  return null;
+}
+function _dupInvoiceError(dup) {
+  return dup.kind === 'number'
+    ? `发票号 ${dup.existing.invoice_number} 已存在，不允许两张发票用同一个号`
+    : `已存在细节完全相同的发票：${dup.existing.invoice_number}（同客户公司、同服务周期、同账单金额${dup.existing.invoice_date ? '，开票日期 ' + dup.existing.invoice_date : ''}）`;
+}
+
 // Save invoice
 app.post('/api/admin/invoices', requireAdmin, (req, res) => {
   const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
+  const dup = _findDupInvoice(req.body, null);
+  if (dup && (dup.kind === 'number' || !req.body.force)) {
+    return res.status(409).json({ error: _dupInvoiceError(dup), kind: dup.kind, duplicate: dup.existing });
+  }
   const result = db.prepare(`
     INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json, status, markup_rate)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -19143,6 +19168,10 @@ app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
 app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
+  const dup = _findDupInvoice(req.body, req.params.id);
+  if (dup && (dup.kind === 'number' || !req.body.force)) {
+    return res.status(409).json({ error: _dupInvoiceError(dup), kind: dup.kind, duplicate: dup.existing });
+  }
 
   // Snapshot the previous state so we can record a field-level diff in history.
   const prev = db.prepare('SELECT * FROM invoices WHERE id=?').get(req.params.id);

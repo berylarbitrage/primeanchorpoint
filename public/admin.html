@@ -32874,10 +32874,22 @@ async function saveInvpInvoice(status) {
     period_start: ps, period_end: pe, subtotal, items, markup_rate: markupRate, profile: profileWithMode, status
   };
 
-  let res;
+  const send = () => editId
+    ? api('/admin/invoices/' + editId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(e => ({ error: e.message }))
+    : api('/admin/invoices', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(e => ({ error: e.message }));
+  let res = await send();
+  // 重复发票拦截：细节完全一样（同客户公司+同服务周期+同账单金额）默认报错，
+  // 确认后可强制保存；发票号重复则永远不放行。
+  if (res && res.kind === 'details') {
+    const ok = await showConfirm(
+      `⚠️ ${esc(res.error || '')}<br><br>为避免重复开票已拦截。确定这不是重复、仍要保存吗？`,
+      { confirmLabel: '仍要保存', cancelLabel: '取消', danger: true }
+    );
+    if (!ok) return;
+    payload.force = true;
+    res = await send();
+  }
   if (editId) {
-    // Update existing
-    res = await api('/admin/invoices/' + editId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(e => ({ error: e.message }));
     if (res && res.success) {
       window._invpCurrentSavedId = parseInt(editId);
       window._invpPreviewSaved = (status === 'saved');
@@ -32889,8 +32901,6 @@ async function saveInvpInvoice(status) {
       return;
     }
   } else {
-    // Create new
-    res = await api('/admin/invoices', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(e => ({ error: e.message }));
     if (res && res.id) {
       window._invpCurrentSavedId = res.id;
       document.getElementById('invPageEditId').value = res.id; // now in edit mode
@@ -32903,7 +32913,7 @@ async function saveInvpInvoice(status) {
       return;
     }
   }
-  alert('保存失败，请重试');
+  alert(res && res.error ? '保存失败：' + res.error : '保存失败，请重试');
 }
 
 async function loadInvpCompanies() {
