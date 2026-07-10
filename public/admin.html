@@ -14201,16 +14201,23 @@ function renderEmpDocSources(data) {
   }
   if ((data.employee_docs || []).length) {
     h += '<div style="font-weight:700;margin:.7rem 0 .3rem">📁 员工档案上传（你自己直接上传到该员工的文件）</div>';
+    h += '<div style="font-size:.72rem;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:.35rem .5rem;margin-bottom:.4rem">👇 点文件下方的栏位按钮把它<b>指定</b>为该证件——证件审阅和导出会<b>无条件优先</b>使用被指定的文件。</div>';
+    const SLOTS = [['ssn_front', 'SSN正'], ['ssn_back', 'SSN反'], ['ead_front', 'EAD正'], ['ead_back', 'EAD反']];
     h += '<div style="display:flex;gap:.6rem;flex-wrap:wrap">' + data.employee_docs.map(d => {
       const url = API + '/admin/documents/' + d.id + '/file?token=' + encodeURIComponent(TOKEN);
       const when = d.uploaded_at ? String(d.uploaded_at).slice(0, 10) : '';
-      return `<div style="text-align:center;max-width:130px">
+      const pinned = SLOTS.find(s => s[0] === d.doc_type);
+      const slotBtns = SLOTS.map(([slot, short]) => d.doc_type === slot
+        ? `<button class="btn btn-sm" style="font-size:.58rem;padding:1px 4px;background:#166534;color:#fff;border:none" onclick="setDocSlot(${d.id},'')" title="取消指定">✓${short}</button>`
+        : `<button class="btn btn-sm" style="font-size:.58rem;padding:1px 4px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1" onclick="setDocSlot(${d.id},'${slot}')" title="指定为${short}面，审阅/导出优先用它">${short}</button>`).join('');
+      return `<div style="text-align:center;max-width:140px;border:1px solid ${pinned ? '#86efac' : 'transparent'};border-radius:6px;padding:2px">
         <div style="font-size:.66rem;color:#64748b;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.doc_label || d.doc_type || '文件')}</div>
         <a href="${url}" target="_blank"><img src="${url}" style="height:66px;width:auto;max-width:120px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;object-fit:cover" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'📄 查看',style:'font-size:.72rem;color:#0369a1'}))"></a>
-        <div style="font-size:.64rem;color:#94a3b8">${esc(when)}</div></div>`;
+        <div style="font-size:.64rem;color:#94a3b8">${esc(when)}${pinned ? ` · <span style="color:#166534;font-weight:700">已指定:${pinned[1]}</span>` : ''}</div>
+        <div style="display:flex;gap:2px;justify-content:center;margin-top:2px;flex-wrap:wrap">${slotBtns}</div></div>`;
     }).join('') + '</div>';
   }
-  h += '<div style="margin-top:.6rem;font-size:.76rem;color:#94a3b8">说明：这里只列出证件所在位置，任何操作都不会删除文件。「关联到本人」只是把该申请表归到这个员工名下，导出证件即可抓到。</div>';
+  h += '<div style="margin-top:.6rem;font-size:.76rem;color:#94a3b8">说明：这里只列出证件所在位置，任何操作都不会删除文件。「关联到本人」把申请表归到这个员工名下；「指定栏位」让审阅/导出无条件用你选的文件。</div>';
   body.innerHTML = h;
 }
 async function relinkSubmission(submissionId) {
@@ -14223,6 +14230,16 @@ async function relinkSubmission(submissionId) {
     showToast('已关联到本人，证件已找回', 'success');
     openEmpDocSources(empId, empName);   // refresh
   } catch (e) { showToast('关联失败：' + (e.message || ''), 'error'); }
+}
+async function setDocSlot(docId, slot) {
+  const { empId, empName } = _empDocSrcCtx || {};
+  if (!empId) return;
+  try {
+    const r = await api('/admin/employees/' + empId + '/set-doc-slot', { method: 'POST', body: JSON.stringify({ doc_id: docId, slot }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast(slot ? '已指定，审阅/导出将优先使用这份文件' : '已取消指定', 'success');
+    openEmpDocSources(empId, empName);   // refresh
+  } catch (e) { showToast('指定失败：' + (e.message || ''), 'error'); }
 }
 
 // ── 历史数据库：在 DB 备份里找该员工证件的旧记录，可恢复 ──
@@ -14361,14 +14378,35 @@ async function _stlLoad(page) {
     body.innerHTML = '<div style="color:var(--red)">加载失败：' + esc(e.message || '') + '</div>';
   }
 }
-async function attachStorageFile(key) {
+function attachStorageFile(key) {
   if (!_stlCtx) return;
-  const label = prompt(`把这个文件归还给 ${_stlCtx.empName || ''}，给它起个名称：\n\n⚠️ 名称里带「SSN」或「工卡」+「正面/反面」，证件审阅和导出就会自动用上它，并且优先于旧记录。\n例如：SSN正面、SSN反面、工卡正面、工卡背面`, 'SSN正面');
-  if (label === null) return;
+  // Slot picker: choosing a slot PINS the file — 证件审阅/导出 will use it for that
+  // slot unconditionally. 仅存档 just files it without occupying a slot.
+  let pk = document.getElementById('stlSlotPick'); if (pk) pk.remove();
+  pk = document.createElement('div');
+  pk.id = 'stlSlotPick';
+  pk.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:680;display:flex;align-items:center;justify-content:center;padding:1rem';
+  pk.onclick = e => { if (e.target === pk) pk.remove(); };
+  const btn = (slot, label, hint) => `<button class="btn" style="display:block;width:100%;margin-bottom:.4rem;text-align:left;background:#f8fafc;border:1px solid #cbd5e1;color:#0f172a" onclick="_stlDoAttach('${esc(key)}','${slot}')"><b>${label}</b> <span style="color:#64748b;font-size:.75rem">${hint}</span></button>`;
+  pk.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:420px;width:100%;padding:1.1rem">
+    <h3 style="margin:0 0 .3rem;font-size:.95rem">这个文件是 ${esc(_stlCtx.empName || '')} 的哪个证件？</h3>
+    <div style="font-size:.74rem;color:#64748b;margin-bottom:.6rem">选择栏位后，证件审阅和导出会<b>无条件优先</b>使用这份文件（覆盖旧记录的抓取）。</div>
+    ${btn('ssn_front', '🔢 SSN 正面', '')}
+    ${btn('ssn_back', '🔢 SSN 反面', '')}
+    ${btn('ead_front', '🛂 EAD / 工卡 正面', '')}
+    ${btn('ead_back', '🛂 EAD / 工卡 反面', '')}
+    ${btn('', '📁 仅存档', '不指定栏位，只放进员工档案')}
+    <button class="btn btn-outline" style="width:100%" onclick="document.getElementById('stlSlotPick').remove()">取消</button>
+  </div>`;
+  document.body.appendChild(pk);
+}
+async function _stlDoAttach(key, slot) {
+  const pk = document.getElementById('stlSlotPick'); if (pk) pk.remove();
+  if (!_stlCtx) return;
   try {
-    const r = await api('/admin/doc-attach', { method: 'POST', body: JSON.stringify({ employee_id: _stlCtx.empId, key, label: label || '找回的证件' }) });
+    const r = await api('/admin/doc-attach', { method: 'POST', body: JSON.stringify({ employee_id: _stlCtx.empId, key, slot: slot || '' }) });
     if (r && r.error) throw new Error(r.error);
-    showToast('已归还到 ' + (_stlCtx.empName || '') + ' 的员工档案', 'success');
+    showToast(slot ? '已归还并指定栏位，审阅/导出将优先使用' : '已归还到员工档案', 'success');
     _stlLoad(_stlCtx.page || 0);
     if (_empDocSrcCtx && _empDocSrcCtx.empId) openEmpDocSources(_empDocSrcCtx.empId, _empDocSrcCtx.empName);
   } catch (e) { showToast('归还失败：' + (e.message || ''), 'error'); }
