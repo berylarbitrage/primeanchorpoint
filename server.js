@@ -17640,9 +17640,14 @@ app.get('/api/admin/employees/:id/doc-sources', requireAdmin, (req, res) => {
       workPermit = db.prepare(`SELECT id, worker_account_id, file_name, doc_number, expiry_date FROM work_permit_docs WHERE worker_account_id IN (${ph}) AND file_path IS NOT NULL AND file_path!='' ORDER BY created_at DESC`).all(...ids)
         .map(d => ({ id: d.id, file_name: d.file_name, doc_number: d.doc_number, expiry_date: d.expiry_date, url: `/api/admin/work-permit-docs/${d.id}/download` }));
     }
+    // Files uploaded directly onto the employee record (员工档案 → 上传文件). Keyed by
+    // employee_id — this is where admin-uploaded SSN/EAD/other docs land, so "我自己上传的"
+    // versions show up here.
+    const employeeDocs = db.prepare("SELECT id, doc_type, doc_label, file_name, uploaded_at FROM employee_documents WHERE employee_id=? AND file_path IS NOT NULL AND file_path!='' ORDER BY uploaded_at DESC").all(e.id)
+      .map(d => ({ id: d.id, doc_type: d.doc_type, doc_label: d.doc_label, file_name: d.file_name, uploaded_at: d.uploaded_at }));
     res.json({
       employee: { id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '), phone: e.phone, email: e.email, worker_account_id: wa ? wa.id : null },
-      submissions, compliance_ssn: complianceSsn, work_permit: workPermit
+      submissions, compliance_ssn: complianceSsn, work_permit: workPermit, employee_docs: employeeDocs
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

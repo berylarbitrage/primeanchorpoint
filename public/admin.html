@@ -14195,6 +14195,17 @@ function renderEmpDocSources(data) {
     (data.compliance_ssn || []).forEach(d => h += `<div style="margin-bottom:.3rem">🔢 SSN 卡：<a href="${d.url}" target="_blank" style="color:#0369a1">${esc(d.file_name || '查看文件')}</a></div>`);
     (data.work_permit || []).forEach(d => h += `<div style="margin-bottom:.3rem">🛂 工作许可：<a href="${d.url}" target="_blank" style="color:#0369a1">${esc(d.file_name || '查看文件')}</a>${d.expiry_date ? ` <span style="color:#94a3b8">(到期 ${esc(d.expiry_date)})</span>` : ''}</div>`);
   }
+  if ((data.employee_docs || []).length) {
+    h += '<div style="font-weight:700;margin:.7rem 0 .3rem">📁 员工档案上传（你自己直接上传到该员工的文件）</div>';
+    h += '<div style="display:flex;gap:.6rem;flex-wrap:wrap">' + data.employee_docs.map(d => {
+      const url = API + '/admin/documents/' + d.id + '/file?token=' + encodeURIComponent(TOKEN);
+      const when = d.uploaded_at ? String(d.uploaded_at).slice(0, 10) : '';
+      return `<div style="text-align:center;max-width:130px">
+        <div style="font-size:.66rem;color:#64748b;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.doc_label || d.doc_type || '文件')}</div>
+        <a href="${url}" target="_blank"><img src="${url}" style="height:66px;width:auto;max-width:120px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;object-fit:cover" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'📄 查看',style:'font-size:.72rem;color:#0369a1'}))"></a>
+        <div style="font-size:.64rem;color:#94a3b8">${esc(when)}</div></div>`;
+    }).join('') + '</div>';
+  }
   h += '<div style="margin-top:.6rem;font-size:.76rem;color:#94a3b8">说明：这里只列出证件所在位置，任何操作都不会删除文件。「关联到本人」只是把该申请表归到这个员工名下，导出证件即可抓到。</div>';
   body.innerHTML = h;
 }
