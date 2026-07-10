@@ -34926,14 +34926,19 @@ async function generateInvpPreview() {
       const rowExtra = highlight ? 'box-shadow:inset 4px 0 0 #d97706;' : '';
       const noColor = highlight ? '#92400e' : '#0f172a';
       const idxColor = highlight ? '#92400e' : '#64748b';
+      // Taller rows so ~10 containers fill a page evenly (rather than being
+      // cramped at the top). We do NOT force a hard page-break every 10 rows,
+      // because a forced break inside the table stops the browser from repeating
+      // the tfoot (payment/footer) on that page — and the footer must stay on
+      // every page. So rows flow naturally with the letterhead/footer repeating.
       return `<tr style="background:${rowBg};${rowExtra}">
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${idxColor}">${idx + 1}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:${noColor}">${esc(i.container_no || '—')}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.unit_price||0).toFixed(2)}</td>
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
+        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${idxColor}">${idx + 1}</td>
+        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:${noColor}">${esc(i.container_no || '—')}</td>
+        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
+        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
+        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
+        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.unit_price||0).toFixed(2)}</td>
+        <td style="padding:18px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
       </tr>`;
     }).join('');
     const totalQty = containerItems.reduce((s,i) => s + (i.qty || 0), 0);
