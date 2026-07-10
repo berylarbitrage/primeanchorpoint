@@ -298,16 +298,41 @@
     return c;
   }
 
+  let _cropToken = 0;         // bumps per image so a stale background upgrade is ignored
+  let _cornersDirty = false;  // set once the user drags a corner → don't auto-override
+
   async function runDetectAndCrop(c) {
     capturedBitmap = c;
-    const cvReady = !!(window.cv && window.cv.Mat);
-    setLoader(true, cvReady ? '✨ AI 识别边缘…' : '✨ AI 模型加载中…');
-    const det = await detectCorners(c, cvReady ? 4000 : 12000);
+    const token = ++_cropToken;
+    _cornersDirty = false;
+    setLoader(true, '识别边缘…');
+    // Never block on the 8MB OpenCV download (that was the long "AI 模型加载中…" hang).
+    // If OpenCV is already loaded, use it; otherwise detect instantly with the JS
+    // detector and show the crop NOW — OpenCV keeps loading in the background and
+    // silently upgrades the corners once ready (unless the user already nudged them).
+    const det = await detectCorners(c, 0);
+    if (token !== _cropToken) return;     // a newer image started while detecting
     cornersImg = det.corners;
     renderReviewBar();
     show('Crop');
     requestAnimationFrame(layoutCropCanvas);
+    setLoader(false);
     if (det.engine === 'opencv') toast('✨ AI 已识别边缘', 1400);
+    else scheduleCvUpgrade(c, token);
+  }
+
+  // Once OpenCV finishes loading in the background, re-run the (better) OpenCV detector
+  // and swap in its corners — but only if we're still on the same image and the user
+  // hasn't manually adjusted the corners.
+  function scheduleCvUpgrade(c, token) {
+    loadOpenCV().then(() => {
+      if (token !== _cropToken || _cornersDirty || !(window.cv && window.cv.Mat)) return;
+      const pts = detectCornersOpenCV(c);
+      if (!pts || token !== _cropToken || _cornersDirty) return;
+      cornersImg = pts;
+      if ($('stageCrop').classList.contains('active')) { redrawOverlay(); placeHandles(); }
+      toast('✨ AI 已识别边缘', 1400);
+    }).catch(() => {});
   }
 
   async function onPicked(files) {
@@ -479,6 +504,7 @@
     x = Math.max(0, Math.min(capturedBitmap.width, x));
     y = Math.max(0, Math.min(capturedBitmap.height, y));
     cornersImg[dragIdx] = { x, y };
+    _cornersDirty = true;   // user took over — stop any background OpenCV auto-adjust
     redrawOverlay();
     placeHandles();
   }
@@ -807,16 +833,23 @@
   }
 
   // Composite detector: prefer OpenCV, fall back to pure-JS heuristic.
-  // `cvBudgetMs` is the max time we'll wait for OpenCV to finish loading
-  // on its very first invocation (subsequent calls resolve instantly).
-  async function detectCorners(canvas, cvBudgetMs = 10000) {
+  // `cvBudgetMs` is the max time we'll wait for OpenCV to finish loading. With the
+  // default 0 we NEVER wait: if OpenCV is already loaded we use it, otherwise we return
+  // the instant JS result immediately (the caller upgrades in the background). Pass a
+  // positive budget only if you truly need to block for OpenCV.
+  async function detectCorners(canvas, cvBudgetMs = 0) {
     try {
-      await Promise.race([
-        loadOpenCV(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('cv budget exhausted')), cvBudgetMs))
-      ]);
-      const cvCorners = detectCornersOpenCV(canvas);
-      if (cvCorners) return { corners: cvCorners, engine: 'opencv' };
+      if (window.cv && window.cv.Mat) {
+        const cvCorners = detectCornersOpenCV(canvas);
+        if (cvCorners) return { corners: cvCorners, engine: 'opencv' };
+      } else if (cvBudgetMs > 0) {
+        await Promise.race([
+          loadOpenCV(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('cv budget exhausted')), cvBudgetMs))
+        ]);
+        const cvCorners = detectCornersOpenCV(canvas);
+        if (cvCorners) return { corners: cvCorners, engine: 'opencv' };
+      }
     } catch (e) { /* fall through */ }
     return { corners: autoDetectCorners(canvas), engine: 'js' };
   }
