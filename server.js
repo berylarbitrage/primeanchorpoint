@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-18 · 发票:入职/离职备注在发票上显示英文(Start/End date) + 粘贴名单',
+  tag: '2026-07-10 · 证件来源诊断/历史版本/历史数据库找回 + 员工勾选持久化 + 分包付款筛选',
   started: new Date().toISOString(),
 };
 
