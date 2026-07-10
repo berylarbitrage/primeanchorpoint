@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-10e · 证件审阅/导出优先用员工档案最新上传(含时光机归还) + 文件时光机只看本人相关',
+  tag: '2026-07-10f · 入职上传的SSN卡/工作许可优先于问卷匹配 + 证件可手动指定栏位(无条件优先)',
   started: new Date().toISOString(),
 };
 
@@ -17136,6 +17136,10 @@ function _makeEmpDocMatcher() {
   // 时光机 "归还" recovery) live in employee_documents, keyed by employee_id. A manual
   // re-upload is the strongest signal there is — it must beat whatever the application /
   // onboarding tables still point at. Slot-mapped by label keywords, newest first. `ed_<id>`.
+  // Explicitly pinned slots (doc_type set to the slot itself via 证件来源 → 设为…) beat
+  // everything, including keyword-mapped rows — no guessing involved.
+  const edExactStmt = db.prepare(`SELECT id, doc_type, doc_label, file_path, file_name FROM employee_documents
+    WHERE employee_id=? AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back') AND file_path IS NOT NULL AND file_path!='' ORDER BY uploaded_at DESC, id DESC`);
   const edStmt = db.prepare(`SELECT id, doc_type, doc_label, file_path, file_name FROM employee_documents
     WHERE employee_id=? AND file_path IS NOT NULL AND file_path!='' ORDER BY uploaded_at DESC, id DESC`);
   const edSlot = r => {
@@ -17162,24 +17166,26 @@ function _makeEmpDocMatcher() {
     const em = String(e.email || '').trim().toLowerCase(); if (em) for (const id of (emailMap.get(em) || [])) bucket(id);
     const uniq = [...new Set([...self, ...own, ...other])];
     const seen = new Set(), picked = [];
-    // Tier 0: manual uploads on the employee record claim their slot before anything else.
+    // Tier 0a: explicitly pinned slots — absolute priority, no guessing.
+    for (const r of edExactStmt.all(e.id)) {
+      if (seen.has(r.doc_type)) continue;
+      picked.push({ id: 'ed_' + r.id, submission_id: null, doc_type: r.doc_type,
+                    file_path: edKey(r.file_path), file_name: r.file_name || r.doc_label || 'employee-doc', source: 'employee_documents', pinned: true });
+      seen.add(r.doc_type);
+    }
+    // Tier 0b: manual uploads slot-mapped by label keywords claim before submission docs.
     for (const r of edStmt.all(e.id)) {
       const slot = edSlot(r); if (!slot || seen.has(slot)) continue;
       picked.push({ id: 'ed_' + r.id, submission_id: null, doc_type: slot,
                     file_path: edKey(r.file_path), file_name: r.file_name || r.doc_label || 'employee-doc', source: 'employee_documents' });
       seen.add(slot);
     }
-    if (uniq.length) {
-      const rows = db.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs
-        WHERE submission_id IN (${uniq.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...uniq);
-      const prio = new Map(uniq.map((id, i) => [id, i]));
-      rows.sort((a, b) => (prio.get(a.submission_id) ?? 1e9) - (prio.get(b.submission_id) ?? 1e9));
-      for (const r of rows) { if (seen.has(r.doc_type)) continue; seen.add(r.doc_type); picked.push(r); }
-    }
-    // Fall back to admin-uploaded documents (keyed by worker_account) when the
-    // application itself is missing that ID. keyForPath: these are stored with an
-    // absolute on-disk path under the local backend — reduce to a resolvable key.
-    if (!seen.has('ssn_front') || !seen.has('ead_front') || !seen.has('ead_back')) {
+    // Tier 1: onboarding-verification uploads (入职进度 → 上传SSN卡 / 工作许可验证),
+    // keyed to THIS employee's worker account. Deliberately uploaded and verified for
+    // this specific person, so they BEAT questionnaire matches — a phone/email-matched
+    // submission can belong to someone sharing the contact info, these cannot.
+    // keyForPath: stored with an absolute on-disk path under the local backend.
+    {
       const wa = waStmt.get(e.id);
       if (wa) {
         // SSN card → SSN front. Namespace id as `wc_<id>`.
@@ -17191,7 +17197,7 @@ function _makeEmpDocMatcher() {
             seen.add('ssn_front');
           }
         }
-        // Work permit / EAD docs → fill empty EAD slots (front then back). `wp_<id>`.
+        // Work permit / EAD docs → fill EAD slots (front then back). `wp_<id>`.
         if (!seen.has('ead_front') || !seen.has('ead_back')) {
           const wps = wpStmt.all(wa.id);
           let wi = 0;
@@ -17204,6 +17210,14 @@ function _makeEmpDocMatcher() {
           }
         }
       }
+    }
+    // Tier 2: questionnaire (applicant) docs fill whatever is still empty.
+    if (uniq.length) {
+      const rows = db.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs
+        WHERE submission_id IN (${uniq.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...uniq);
+      const prio = new Map(uniq.map((id, i) => [id, i]));
+      rows.sort((a, b) => (prio.get(a.submission_id) ?? 1e9) - (prio.get(b.submission_id) ?? 1e9));
+      for (const r of rows) { if (seen.has(r.doc_type)) continue; seen.add(r.doc_type); picked.push(r); }
     }
     return picked;
   };
@@ -17707,6 +17721,23 @@ app.post('/api/admin/employees/:id/relink-submission', requireAdmin, (req, res) 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Pin an employee_documents file to one of the four ID slots (or unpin with slot='').
+// A pinned file is what 证件审阅 / 导出证件 uses for that slot, unconditionally — the
+// deterministic override for when keyword matching can't tell what a file is.
+app.post('/api/admin/employees/:id/set-doc-slot', requireAdmin, (req, res) => {
+  try {
+    const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+    const b = req.body || {};
+    const slot = String(b.slot || '');
+    if (slot && !EMPDOC_TYPES.includes(slot)) return res.status(400).json({ error: '无效栏位' });
+    const d = db.prepare('SELECT id, doc_type FROM employee_documents WHERE id=? AND employee_id=?').get(parseInt(b.doc_id, 10), emp.id);
+    if (!d) return res.status(404).json({ error: '文件不属于该员工' });
+    db.prepare('UPDATE employee_documents SET doc_type=? WHERE id=?').run(slot || 'other', d.id);
+    res.json({ ok: true, doc_id: d.id, slot: slot || null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── ID document version history ──
 // Every review-save writes a NEW key `id-edited-[wc|wp]<id>-<ts>.<ext>` and keeps the old
 // file, so a document's past versions live in storage. Resolve a docId (applicant / wc_ /
@@ -18012,11 +18043,14 @@ app.post('/api/admin/doc-attach', requireAdmin, async (req, res) => {
     const emp = db.prepare('SELECT id, first_name, last_name FROM employees WHERE id=?').get(parseInt(b.employee_id, 10));
     if (!emp) return res.status(404).json({ error: '员工不存在' });
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
-    const label = String(b.label || '找回的证件').slice(0, 120);
+    // With a valid slot the row is PINNED: 证件审阅/导出 will use it for that slot
+    // unconditionally (matcher tier 0a).
+    const slot = EMPDOC_TYPES.includes(String(b.slot || '')) ? String(b.slot) : '';
+    const label = String(b.label || (slot ? (EMPDOC_LABEL[slot] || slot) : '找回的证件')).slice(0, 120);
     const fp = key.startsWith('employee_docs/') ? key.slice('employee_docs/'.length) : key;
     const info = db.prepare('INSERT INTO employee_documents (employee_id, doc_type, doc_label, file_path, file_name, notes) VALUES (?,?,?,?,?,?)')
-      .run(emp.id, 'recovered', label, fp, 'recovered-' + key.split('/').pop(), '经文件时光机找回');
-    res.json({ ok: true, id: info.lastInsertRowid });
+      .run(emp.id, slot || 'recovered', label, fp, 'recovered-' + key.split('/').pop(), '经文件时光机找回');
+    res.json({ ok: true, id: info.lastInsertRowid, slot: slot || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // Serve any file by storage key, restricted to the document folders. Admin-only. Lets the
