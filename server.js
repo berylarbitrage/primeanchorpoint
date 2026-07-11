@@ -891,6 +891,9 @@ try { db.exec(`ALTER TABLE container_submissions ADD COLUMN work_date TEXT DEFAU
 // Extra verification photos (JSON array of storage keys) attached to a batch — the
 // weekly sheet lets a foreman upload several photos for the admin to cross-check.
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN photos TEXT DEFAULT '[]'`); } catch(e) {}
+// Payment proof file keys (JSON array) attached by the reviewer when approving a
+// scan record inline — e.g. the transfer screenshot showing this container was paid.
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN payment_proofs TEXT DEFAULT '[]'`); } catch(e) {}
 // One-time cleanup: strip whitespace that phone keyboards / OCR sneak into scanned
 // container numbers ("TIIU 562 579 9" → "TIIU5625799") — spaced forms never match
 // the invoice's container_items. New submissions are normalized on save.
@@ -15465,6 +15468,10 @@ app.get('/api/admin/container-submissions', requireAdmin, blockManager, (req, re
       try { photoKeys = JSON.parse(r.photos || '[]'); } catch { photoKeys = []; }
       r.photos_urls = (Array.isArray(photoKeys) ? photoKeys : [])
         .filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+      let proofKeys = [];
+      try { proofKeys = JSON.parse(r.payment_proofs || '[]'); } catch { proofKeys = []; }
+      r.payment_proof_urls = (Array.isArray(proofKeys) ? proofKeys : [])
+        .filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
     }
     // Enrich each submission with matching invoice container line items (same
     // company, same container number) so the scan list can show the billed
@@ -15515,10 +15522,30 @@ app.post('/api/admin/container-submissions/:id/discard', requireAdmin, blockMana
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Payment proof files attached while approving a scan record (transfer screenshot
+// etc.). Multipart-only — JSON approvals pass straight through untouched.
+const csubProofUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `csubproof-${req.params.id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|heic|webp|gif)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(file.originalname || '');
+    cb(null, ok);
+  },
+});
+
 // POST /api/admin/container-submissions/:id/approve
-//   body: { reviewer_name, container_no, participants?, unit_price?, customer_price?, worker_price? }
-//   Reviewer can edit the record's fields, then it's marked approved + stamped.
-app.post('/api/admin/container-submissions/:id/approve', requireAdmin, blockManager, (req, res) => {
+//   body (JSON or multipart): { reviewer_name, container_no, participants?,
+//   unit_price?, customer_price?, worker_price? } + optional proofs[] files
+//   (付款证明, appended to the record). Reviewer can edit the record's fields,
+//   then it's marked approved + stamped.
+app.post('/api/admin/container-submissions/:id/approve', requireAdmin, blockManager, csubProofUpload.array('proofs', 10), (req, res) => {
   try {
     const sub = db.prepare('SELECT * FROM container_submissions WHERE id=?').get(parseInt(req.params.id));
     if (!sub) return res.status(404).json({ error: 'not found' });
@@ -15531,14 +15558,20 @@ app.post('/api/admin/container-submissions/:id/approve', requireAdmin, blockMana
     if (typeof names === 'string') names = names.split(/[,，、\n]/);
     names = (Array.isArray(names) ? names : []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 30);
     const numOr = (v, cur) => (v === '' || v == null) ? cur : Number(v);
+    // Append newly-uploaded proof files to whatever the record already has.
+    let proofs = [];
+    try { proofs = JSON.parse(sub.payment_proofs || '[]'); } catch { proofs = []; }
+    if (!Array.isArray(proofs)) proofs = [];
+    for (const f of (req.files || [])) { const k = f.key || f.path; if (k) proofs.push(k); }
     db.prepare(`UPDATE container_submissions SET
         status='approved', reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP,
-        container_no=?, participants=?, unit_price=?, customer_price=?, worker_price=?
+        container_no=?, participants=?, unit_price=?, customer_price=?, worker_price=?, payment_proofs=?
       WHERE id=?`).run(
       reviewer.slice(0, 100), cno, JSON.stringify(names),
       numOr(d.unit_price, sub.unit_price), numOr(d.customer_price, sub.customer_price), numOr(d.worker_price, sub.worker_price),
+      JSON.stringify(proofs.slice(0, 20)),
       sub.id);
-    res.json({ success: true });
+    res.json({ success: true, proofs: proofs.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
