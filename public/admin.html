@@ -2650,8 +2650,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
     </div></div>
 
-    <div style="display:flex;gap:.5rem;justify-content:flex-end">
-      <button class="btn btn-outline" onclick="closeInvpSubPayModal()">取消</button>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <!-- Rescue for records entered on the wrong side: moves this whole 分包付款
+           (amount/date/receipt/statement link) over to 收款回执 (the left column). -->
+      <button class="btn btn-sm btn-outline" id="invpSubPayMoveBtn" style="display:none;color:#0E7BB8;border-color:#7dd3fc;margin-right:auto" onclick="moveInvpSubPayToReceived()" title="这笔其实是客户打款？整条记录（金额/日期/回执）会移到收款回执列">⇄ 这是收款，移到收款回执</button>
+      <button class="btn btn-outline" style="margin-left:auto" onclick="closeInvpSubPayModal()">取消</button>
       <button class="btn btn-blue" id="invpSubPaySubmitBtn" onclick="submitInvpSubPay()">保存并确认</button>
     </div>
   </div>
@@ -31833,6 +31836,9 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
   _invpSubPayIsUpdate = !!isUpdate;
   document.getElementById('invpSubPayModalTitle').textContent = isUpdate ? '更新分包付款' : '记录分包付款';
   document.getElementById('invpSubPaySubmitBtn').textContent = isUpdate ? '更新' : '保存并确认';
+  // The rescue action only makes sense for an existing (possibly misplaced) record.
+  const moveBtn = document.getElementById('invpSubPayMoveBtn');
+  if (moveBtn) moveBtn.style.display = isUpdate ? '' : 'none';
   const fileInput = document.getElementById('invpSubPayFile');
   fileInput.value = '';
   const fileName = document.getElementById('invpSubPayFileName');
@@ -32151,6 +32157,24 @@ function _invpInitSubPayDrop() {
 function closeInvpSubPayModal() {
   document.getElementById('invpSubPayModal').style.display = 'none';
   _invpSubPayInvoiceId = null;
+}
+
+// Move a misplaced 分包付款 record to the 收款 side (the whole record — amount,
+// date, receipt files, statement-transaction link — ends up under 收款回执).
+async function moveInvpSubPayToReceived() {
+  const invId = _invpSubPayInvoiceId;
+  if (invId == null) return;
+  const row = (_invpAllRows || []).find(r => r.id === invId) || {};
+  const amt = row.sub_payment_amount != null ? ' $' + Number(row.sub_payment_amount).toFixed(2) : '';
+  if (!await showConfirm(`确定把这条分包付款${amt} 整体移到<b>收款回执</b>吗？<br><br>金额、日期、回执文件都会转过去，分包付款侧会被清空。`, { confirmLabel: '移到收款回执', cancelLabel: '取消' })) return;
+  try {
+    const r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST' });
+    if (r && r.error) { showToast(r.error, 'error'); return; }
+    showToast('已移到收款回执 ✓');
+    window._invpBankStmtBoxes = null; // the txn's used_kind changed — refresh pickers
+    closeInvpSubPayModal();
+    loadInvpList();
+  } catch (e) { showToast('操作失败：' + (e.message || e), 'error'); }
 }
 
 async function submitInvpSubPay() {

@@ -19543,6 +19543,44 @@ app.post('/api/admin/invoices/:id/mark-sub-unpaid', requireAdmin, (req, res) => 
   res.json({ success: true });
 });
 
+// Move a misplaced 分包付款 record over to the 收款 side. Before the 收款凭证
+// modal grew its own bank-statement picker, incoming客户打款 could only be
+// recorded through 分包付款, landing the proof in the wrong (分包回执) column.
+// This moves the whole record — amount/date/handler/receipt files/statement-txn
+// link — to payment_* so it shows under 收款回执, and clears the sub side.
+app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(parseInt(req.params.id));
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    if (inv.sub_payment_status !== 'paid') return res.status(400).json({ error: '该发票没有分包付款记录' });
+    // Refuse to clobber an existing 收款 record — that needs a human decision.
+    const existingRecv = _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path);
+    if (inv.payment_status === 'paid' || existingRecv.length) {
+      return res.status(400).json({ error: '收款侧已有记录/回执，请先处理原有收款记录再转移' });
+    }
+    const subRcpts = _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path);
+    db.prepare(`UPDATE invoices SET
+        payment_status='paid', paid_at=COALESCE(sub_paid_at, datetime('now')),
+        payment_receipt_path=?, payment_receipt_paths=?,
+        payment_amount=sub_payment_amount, payment_date=sub_payment_date,
+        payment_entity=sub_payment_entity, payment_bank=sub_payment_bank, payment_handler=sub_payment_handler,
+        sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_payment_receipt_paths=NULL, sub_paid_at=NULL,
+        sub_payment_entity=NULL, sub_payment_bank=NULL, sub_payment_handler=NULL, sub_payment_amount=NULL, sub_payment_date=NULL
+      WHERE id=?`)
+      .run(subRcpts[0] || null, subRcpts.length ? JSON.stringify(subRcpts) : null, inv.id);
+    // Re-tag the statement transaction this record had reserved: it now backs the 收款回执.
+    try {
+      db.prepare(`UPDATE bank_statement_txns SET used_kind='recv' WHERE used_invoice_id=? AND (used_kind IS NULL OR used_kind='' OR used_kind='sub')`).run(inv.id);
+    } catch (e) {}
+    db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+      .run(inv.id, '分包付款转为收款回执',
+        [inv.sub_payment_amount != null ? `金额: $${Number(inv.sub_payment_amount).toFixed(2)}` : null,
+         inv.sub_payment_date ? `日期: ${inv.sub_payment_date}` : null,
+         subRcpts.length ? `回执: ${subRcpts.length} 个文件` : null].filter(Boolean).join(' · '));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── PER-LINE (container / worker) PAYMENT PROOFS ───
 // Coexists with the per-invoice 分包付款: this attaches proof-of-payment file(s) to
 // an individual container (keyed by 柜号) or an individual worker (keyed by row
