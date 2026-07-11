@@ -1863,6 +1863,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <div class="top">
     <h1>📦 扫码记录</h1>
     <div class="top-actions">
+      <button class="btn btn-blue" id="csubBulkBtn" onclick="toggleCsubBulkEdit()">✏️ 批量编辑价格</button>
       <button class="btn btn-green" onclick="openReviewLinkModal()">🔗 生成审核链接（顾客 / 工头）</button>
       <button class="btn btn-outline" onclick="openPendingQrModal()">📱 待确认记录二维码</button>
       <button class="btn btn-outline" onclick="loadCsubScans()">刷新</button>
@@ -1899,6 +1900,16 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <input type="text" id="csubScanQ" placeholder="柜号或人名…" oninput="renderCsubScans()">
       </div>
       <div id="csubScanTotal" style="color:var(--gray-500);font-size:.85rem;padding-bottom:.4rem"></div>
+    </div>
+    <!-- Bulk price-review bar: shown while 批量编辑 is active. One reviewer name
+         covers every row confirmed in this pass. -->
+    <div id="csubBulkBar" style="display:none;margin-top:.8rem;padding:.6rem .75rem;background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <b style="color:#1d4ed8;font-size:.85rem">✏️ 批量编辑中</b>
+      <input type="text" id="csubBulkReviewer" placeholder="审核人 *" autocomplete="off" style="padding:.35rem .5rem;border:1px solid #93c5fd;border-radius:6px;font-size:.83rem;width:130px">
+      <span style="font-size:.76rem;color:var(--gray-500)"><span style="display:inline-block;width:12px;height:12px;background:#dbeafe;border:1px solid #93c5fd;border-radius:3px;vertical-align:-2px"></span> 蓝色 = 自动填入发票价格，可直接修改；取消勾选 = 本次不通过该条</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-sm btn-green" id="csubBulkSaveBtn" onclick="saveCsubBulk()">✓ 保存并通过所选</button>
+      <button class="btn btn-sm btn-outline" onclick="toggleCsubBulkEdit()">退出编辑</button>
     </div>
   </div>
   <div class="card" style="overflow-x:auto">
@@ -37821,7 +37832,133 @@ function _csubProofThumbs(r) {
     <span style="font-size:.62rem;color:var(--gray-400)">付款证明</span>${urls.slice(0, 5).map(one).join('')}
     ${urls.length > 5 ? `<span style="font-size:.62rem;color:var(--gray-400)">+${urls.length - 5}</span>` : ''}</div>`;
 }
+// Effective prices for editing: the record's own value wins; when it's empty the
+// matched invoice line's price is offered as the starting point (auto:true → the
+// input gets the blue "came from the invoice" tint). 报价/客户价 ← 发票单价,
+// 工人价 ← 发票分包价. A stored 0 counts as empty (public submits default to 0).
+function _csubAutoPrices(r) {
+  const m = _csubInvMatch(r);
+  const own = v => v != null && Number(v) !== 0;
+  const pick = (val, invVal) => own(val) ? { v: val, auto: false }
+    : (m && invVal != null && isFinite(invVal) ? { v: invVal, auto: true } : { v: '', auto: false });
+  return {
+    unit: pick(r.unit_price, m && m.unit_price),
+    cust: pick(r.customer_price, m && m.unit_price),
+    worker: pick(r.worker_price, m && m.sub_price),
+  };
+}
+// ── 批量编辑价格 (bulk review) ──
+// One click turns every pending row's 柜号/参与人/价格 into inputs (invoice prices
+// pre-filled), then one 保存 approves all checked rows with a shared reviewer.
+let _csubBulkEdit = false;
+let _csubBulkVals = {};   // id → {cno, parts, unit, cust, worker, ok} — survives re-renders
+function toggleCsubBulkEdit() {
+  _csubBulkEdit = !_csubBulkEdit;
+  _csubBulkVals = {};
+  _csubEditingId = null;
+  const bar = document.getElementById('csubBulkBar');
+  if (bar) bar.style.display = _csubBulkEdit ? 'flex' : 'none';
+  const btn = document.getElementById('csubBulkBtn');
+  if (btn) btn.textContent = _csubBulkEdit ? '✕ 退出批量编辑' : '✏️ 批量编辑价格';
+  renderCsubScans();
+  if (_csubBulkEdit) { const rv = document.getElementById('csubBulkReviewer'); if (rv) rv.focus(); }
+}
+function _csubBVal(id, k, v) { (_csubBulkVals[id] = _csubBulkVals[id] || {})[k] = v; }
+function _csubBGet(id, k, fallback) {
+  const s = _csubBulkVals[id];
+  return (s && s[k] !== undefined) ? s[k] : fallback;
+}
+function _csubBulkRowHtml(r) {
+  const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
+  const parts = (Array.isArray(r.participants) ? r.participants : []).join('、');
+  const ap = _csubAutoPrices(r);
+  const inp = 'padding:.24rem .35rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.78rem;background:#fff';
+  const autoStyle = 'background:#dbeafe;border-color:#93c5fd';
+  const priceInp = (k, label, p) => {
+    const v = _csubBGet(r.id, k, p.v);
+    const isAuto = p.auto && _csubBGet(r.id, k, undefined) === undefined;
+    return `<div style="display:flex;align-items:center;gap:3px;white-space:nowrap">
+      <span style="font-size:.66rem;color:var(--gray-500);width:2.4em;text-align:right">${label}</span>
+      <input type="number" id="csubB_${k}_${r.id}" min="0" step="0.01" value="${v !== '' && v != null ? v : ''}"
+        oninput="_csubBVal(${r.id},'${k}',this.value);this.style.background='#fff';this.style.borderColor='var(--gray-300)'"
+        style="${inp};width:72px;text-align:right;${isAuto ? autoStyle : ''}" ${isAuto ? 'title="自动填入发票价格，可修改"' : ''}>
+    </div>`;
+  };
+  const okChecked = _csubBGet(r.id, 'ok', true);
+  return `<tr style="border-top:1px solid #bfdbfe;background:#f8fbff">
+    <td style="padding:5px 8px;vertical-align:top">${_csubTypeBadge(r.submit_type)}</td>
+    <td style="padding:5px 8px;vertical-align:top;min-width:160px">
+      <input type="text" id="csubB_cno_${r.id}" value="${esc(_csubBGet(r.id, 'cno', r.container_no || ''))}" autocomplete="off"
+        oninput="_csubBVal(${r.id},'cno',this.value)"
+        style="${inp};width:100%;text-transform:uppercase;font-family:monospace;font-weight:700">
+    </td>
+    <td style="padding:5px 8px;font-size:.78rem;white-space:nowrap;vertical-align:top">
+      ${r.service_period ? '<div>' + esc(r.service_period) + '</div>' : ''}
+      ${r.work_date ? '<div style="color:var(--gray-500)">' + esc(r.work_date) + '</div>' : ''}
+    </td>
+    <td style="padding:5px 8px;vertical-align:top">${_csubPhotoCell(r, 40)}</td>
+    <td style="padding:5px 8px;vertical-align:top;min-width:120px">
+      <input type="text" id="csubB_parts_${r.id}" value="${esc(_csubBGet(r.id, 'parts', parts))}" placeholder="名字1、名字2" autocomplete="off"
+        oninput="_csubBVal(${r.id},'parts',this.value)" style="${inp};width:100%">
+    </td>
+    <td style="padding:5px 8px;vertical-align:top">
+      <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">
+        ${priceInp('unit', '报价', ap.unit)}
+        ${priceInp('cust', '客户', ap.cust)}
+        ${priceInp('worker', '工人', ap.worker)}
+      </div>
+    </td>
+    <td style="padding:5px 8px;vertical-align:top">${_csubInvCell(r)}</td>
+    <td style="padding:5px 8px;white-space:nowrap;color:var(--gray-500);font-size:.78rem;vertical-align:top">${esc(when)}</td>
+    <td style="padding:5px 8px;vertical-align:top;color:#92400e;font-size:.78rem">待审核</td>
+    <td style="padding:5px 8px;text-align:right;white-space:nowrap;vertical-align:top">
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:.76rem;color:#1d4ed8;cursor:pointer">
+        <input type="checkbox" id="csubB_ok_${r.id}" data-csub-ok="${r.id}" ${okChecked ? 'checked' : ''}
+          onchange="_csubBVal(${r.id},'ok',this.checked)">通过
+      </label>
+    </td>
+  </tr>`;
+}
+async function saveCsubBulk() {
+  const reviewer = (document.getElementById('csubBulkReviewer') || {}).value?.trim() || '';
+  if (!reviewer) { showToast('请先填写审核人姓名', 'error'); const rv = document.getElementById('csubBulkReviewer'); if (rv) rv.focus(); return; }
+  // Targets = every pending row currently rendered with its 通过 box checked.
+  const boxes = [...document.querySelectorAll('[data-csub-ok]')].filter(b => b.checked);
+  if (!boxes.length) { showToast('没有勾选任何记录', 'error'); return; }
+  if (!await showConfirm(`确定通过审核所选的 <b>${boxes.length}</b> 条记录吗？价格以表格中当前填写的为准。`, { confirmLabel: `通过 ${boxes.length} 条`, cancelLabel: '取消' })) return;
+  const btn = document.getElementById('csubBulkSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+  let ok = 0; const fails = [];
+  for (const box of boxes) {
+    const id = box.getAttribute('data-csub-ok');
+    const v = k => { const el = document.getElementById(`csubB_${k}_${id}`); return el ? el.value : ''; };
+    const cno = v('cno').trim();
+    if (!cno) { fails.push(`#${id} 柜号为空`); continue; }
+    const fd = new FormData();
+    fd.append('reviewer_name', reviewer);
+    fd.append('container_no', cno);
+    fd.append('participants', v('parts'));
+    fd.append('unit_price', v('unit'));
+    fd.append('customer_price', v('cust'));
+    fd.append('worker_price', v('worker'));
+    try {
+      const resp = await fetch(API + `/admin/container-submissions/${id}/approve`, {
+        method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd,
+      });
+      const rj = await resp.json().catch(() => ({}));
+      if (!resp.ok || (rj && rj.error)) throw new Error((rj && rj.error) || ('HTTP ' + resp.status));
+      ok++;
+    } catch (e) { fails.push(`${cno}: ${e.message || e}`); }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '✓ 保存并通过所选'; }
+  if (fails.length) showToast(`已通过 ${ok} 条；失败 ${fails.length} 条：${fails.slice(0, 3).join('；')}`, 'error');
+  else { showToast(`已通过审核 ${ok} 条 ✓`); _csubBulkEdit = false; _csubBulkVals = {};
+    const bar = document.getElementById('csubBulkBar'); if (bar) bar.style.display = 'none';
+    const tbtn = document.getElementById('csubBulkBtn'); if (tbtn) tbtn.textContent = '✏️ 批量编辑价格'; }
+  loadCsubScans();
+}
 function _csubScanRowHtml(r) {
+  if (_csubBulkEdit && r.status === 'pending') return _csubBulkRowHtml(r);
   if (r.id === _csubEditingId && r.status === 'pending') return _csubEditRowHtml(r);
   const typeBadge = _csubTypeBadge(r.submit_type);
   const parts = Array.isArray(r.participants) ? r.participants : [];
@@ -37834,7 +37971,9 @@ function _csubScanRowHtml(r) {
     : '';
   const discardBtn = (r.status === 'discarded') ? ''
     : `<button class="btn btn-sm" style="padding:.05rem .4rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="discardCsubScan(${r.id})">丢弃</button>`;
-  return `<tr style="border-top:1px solid var(--gray-200)">
+  // Double-clicking a pending row is a shortcut into inline review.
+  const dbl = canReview ? ` ondblclick="openCsubReview(${r.id})" title="双击直接编辑审核"` : '';
+  return `<tr style="border-top:1px solid var(--gray-200)${canReview ? ';cursor:pointer' : ''}"${dbl}>
     <td style="padding:5px 8px">${typeBadge}</td>
     <td style="padding:5px 8px;font-family:monospace;font-weight:600">${esc(r.container_no || '—')}</td>
     <td style="padding:5px 8px;font-size:.78rem;white-space:nowrap">
@@ -37962,10 +38101,13 @@ function _csubEditRowHtml(r) {
   const parts = (Array.isArray(r.participants) ? r.participants : []).join('、');
   const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
   const inpStyle = 'padding:.28rem .4rem;border:1px solid #93c5fd;border-radius:6px;font-size:.8rem;background:#fff';
-  const numInp = (id, label, val) => `
+  const ap = _csubAutoPrices(r);
+  const numInp = (id, label, p) => `
     <div style="display:flex;align-items:center;gap:3px;white-space:nowrap">
       <span style="font-size:.68rem;color:var(--gray-500);width:2.6em;text-align:right">${label}</span>
-      <input type="number" id="${id}" min="0" step="0.01" value="${val != null ? val : ''}" style="${inpStyle};width:76px;text-align:right">
+      <input type="number" id="${id}" min="0" step="0.01" value="${p.v !== '' && p.v != null ? p.v : ''}"
+        ${p.auto ? `title="自动填入发票价格，可修改" oninput="this.style.background='#fff'"` : ''}
+        style="${inpStyle};width:76px;text-align:right${p.auto ? ';background:#dbeafe' : ''}">
     </div>`;
   return `<tr style="border-top:2px solid #60a5fa;background:#eff6ff">
     <td style="padding:6px 8px;vertical-align:top">${_csubTypeBadge(r.submit_type)}</td>
@@ -37984,9 +38126,9 @@ function _csubEditRowHtml(r) {
     </td>
     <td style="padding:6px 8px;vertical-align:top">
       <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
-        ${numInp('csubEditUnit', '报价', r.unit_price)}
-        ${numInp('csubEditCust', '客户', r.customer_price)}
-        ${numInp('csubEditWorker', '工人', r.worker_price)}
+        ${numInp('csubEditUnit', '报价', ap.unit)}
+        ${numInp('csubEditCust', '客户', ap.cust)}
+        ${numInp('csubEditWorker', '工人', ap.worker)}
       </div>
     </td>
     <td style="padding:6px 8px;vertical-align:top">${_csubInvCell(r)}</td>
