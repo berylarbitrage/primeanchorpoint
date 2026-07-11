@@ -2531,6 +2531,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
     </div>
 
+    <!-- The shared bank-statement voucher picker (#invpVoucherPicker) is moved
+         into this slot while the 收款 modal is open, so an income transaction's
+         exported snippet lands in 收款回执 (left column) — not 分包回执. -->
+    <div id="invpReceiptPickerSlot"></div>
+
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeInvpReceiptModal()">取消</button>
       <button class="btn btn-green" id="invpReceiptSubmitBtn" onclick="submitInvpReceipt()">确认付款</button>
@@ -2599,6 +2604,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
     </div>
 
+    <!-- Shared voucher picker: lives here by default, but is re-parented into the
+         收款凭证 modal (see #invpReceiptPickerSlot) when that modal opens. Only one
+         modal is visible at a time, so the single DOM instance can be shared;
+         _invpVoucherCtx tells the picker logic which side (sub/recv) is active. -->
+    <div id="invpSubPayPickerSlot"><div id="invpVoucherPicker">
     <div style="display:flex;align-items:center;gap:.6rem;margin:.2rem 0 1rem;color:var(--gray-400);font-size:.78rem">
       <span style="flex:1;height:1px;background:var(--gray-200)"></span>或<span style="flex:1;height:1px;background:var(--gray-200)"></span>
     </div>
@@ -2636,8 +2646,9 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <div style="padding:1rem;text-align:center;color:var(--gray-400);font-size:.82rem">加载中…</div>
       </div>
       <div id="invpSubPaySelected" style="font-size:.78rem;color:var(--sky);font-weight:600;margin-top:.4rem;min-height:1.1em"></div>
-      <div style="font-size:.72rem;color:var(--gray-400);margin-top:.2rem">选某一条交易会自动截取该行作为凭证；选「整份 PDF」用整份对账单。<span style="color:var(--gray-500)">灰色 = 已被别的发票用过</span>。可在「📄 对账备注」页上传/标注对账单。</div>
+      <div style="font-size:.72rem;color:var(--gray-400);margin-top:.2rem">选某一条交易会自动截取该行作为凭证；选「整份 PDF」用整份对账单。<span style="color:var(--gray-500)">灰色 = 已被用过（收款/分包各占一条）</span>。可在「📄 对账备注」页上传/标注对账单。</div>
     </div>
+    </div></div>
 
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeInvpSubPayModal()">取消</button>
@@ -31641,6 +31652,34 @@ function _invpReceiptArr(pathsJson, single) {
   return arr.filter(Boolean);
 }
 
+// ── Shared bank-statement voucher picker context ──
+// The picker DOM (#invpVoucherPicker) is one instance shared by the 收款凭证 and
+// 分包付款 modals; _invpVoucherCtx says which side is active so a picked
+// transaction lands in the right column (收款回执 vs 分包回执).
+let _invpVoucherCtx = 'sub'; // 'sub' | 'recv'
+function _invpVoucherInvoiceId() { return _invpVoucherCtx === 'recv' ? _invpReceiptInvoiceId : _invpSubPayInvoiceId; }
+// Which side a stored usage belongs to (legacy rows without used_kind were all 分包).
+function _invpUsedKind(b) { return b && b.used_kind === 'recv' ? 'recv' : 'sub'; }
+// Move the shared picker into the modal that's opening and mark the context.
+function _invpMountVoucherPicker(ctx) {
+  _invpVoucherCtx = ctx;
+  const picker = document.getElementById('invpVoucherPicker');
+  const slot = document.getElementById(ctx === 'recv' ? 'invpReceiptPickerSlot' : 'invpSubPayPickerSlot');
+  if (picker && slot && picker.parentElement !== slot) slot.appendChild(picker);
+}
+// Load statements + annotations (cached) and preselect this invoice's own voucher.
+function _invpOpenVoucherPicker() {
+  _invpResetSubPayPicker();
+  if (!window._invpBankStmts) {
+    api('/admin/bank-statements')
+      .then(r => { window._invpBankStmts = Array.isArray(r) ? r : []; return Promise.resolve(_invpLoadSubPayBoxes()); })
+      .then(_invpMaybePreselectUsedBox)
+      .catch(() => {});
+  } else {
+    Promise.resolve(_invpLoadSubPayBoxes()).then(_invpMaybePreselectUsedBox);
+  }
+}
+
 function openInvpReceiptModal(invoiceId, isUpdate) {
   _invpReceiptInvoiceId = invoiceId;
   _invpReceiptIsUpdate = !!isUpdate;
@@ -31676,6 +31715,10 @@ function openInvpReceiptModal(invoiceId, isUpdate) {
   } else {
     currentWrap.style.display = 'none';
   }
+  // Bank-statement voucher picker (shared with the 分包付款 modal): an income
+  // transaction picked here becomes the 收款回执 — the left receipt column.
+  _invpMountVoucherPicker('recv');
+  _invpOpenVoucherPicker();
   document.getElementById('invpReceiptModal').style.display = 'flex';
   _invpInitReceiptDrop();
 }
@@ -31688,7 +31731,12 @@ function _invpInitReceiptDrop() {
   const nameEl = document.getElementById('invpReceiptFileName');
   if (!drop || drop._wired) return;
   drop._wired = true;
-  const showName = () => { nameEl.textContent = input.files.length ? (input.files.length === 1 ? input.files[0].name : input.files.length + ' 个文件') : '未选择文件'; };
+  const showName = () => {
+    nameEl.textContent = input.files.length ? (input.files.length === 1 ? input.files[0].name : input.files.length + ' 个文件') : '未选择文件';
+    // Choosing a file overrides the statement picker (server prefers files) —
+    // clear the voucher selection so its highlight/summary don't linger.
+    if (input.files.length) _invpPickSubPay('');
+  };
   const lit = on => { drop.style.borderColor = on ? 'var(--green)' : ''; drop.style.background = on ? '#f0fdf4' : ''; };
   drop.addEventListener('click', () => input.click());
   input.addEventListener('change', showName);
@@ -31709,10 +31757,13 @@ function closeInvpReceiptModal() {
 async function submitInvpReceipt() {
   if (!_invpReceiptInvoiceId) return;
   const fileInput = document.getElementById('invpReceiptFile');
-  // A file is required for the first upload; when updating, the existing receipt
-  // is kept if no new file is chosen.
-  if (!fileInput.files.length && !_invpReceiptIsUpdate) {
-    alert('请选择或拖入付款回执文件');
+  // The picker is shared with the 分包 modal — only honour it while it's mounted
+  // on this (收款) side, so a stale selection can't leak across.
+  const stmtId = (_invpVoucherCtx === 'recv' && (document.getElementById('invpSubPayStmt') || {}).value) || '';
+  // A file (or a picked bank-statement voucher) is required for the first upload;
+  // when updating, the existing receipt is kept if no new file is chosen.
+  if (!fileInput.files.length && !stmtId && !_invpReceiptIsUpdate) {
+    alert('请选择或拖入付款回执文件，或从对账单里选一条收入交易作为凭证');
     return;
   }
   const btn = document.getElementById('invpReceiptSubmitBtn');
@@ -31722,6 +31773,22 @@ async function submitInvpReceipt() {
   try {
     const formData = new FormData();
     for (const f of fileInput.files) formData.append('receipts', f);
+    // No new file but the statement picker was used as the proof source.
+    if (!fileInput.files.length && stmtId) {
+      if (stmtId.indexOf('box:') === 0) {
+        // A specific annotation was picked → crop that transaction into an image proof.
+        const [, sid, bid] = stmtId.split(':');
+        const boxes = (window._invpBankStmtBoxes || {})[sid] || [];
+        const box = boxes.find(b => String(b.id) === String(bid));
+        if (!box) throw new Error('标注不存在，请重新选择');
+        formData.append('receipts', await _invpCropBoxImage(sid, box));
+        // Record which transaction was used (as 收款) so pickers grey it out.
+        formData.append('payment_stmt_box', sid + ':' + bid);
+      } else {
+        // Whole statement PDF reused as the proof.
+        formData.append('bank_statement_id', stmtId);
+      }
+    }
     const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
     formData.append('payment_entity', val('invpReceiptEntity'));
     formData.append('payment_bank', val('invpReceiptBank'));
@@ -31733,6 +31800,9 @@ async function submitInvpReceipt() {
       body: formData
     });
     if (!resp.ok) throw new Error(await resp.text());
+    // The used/unused state of transactions changed — drop the cache so the picker
+    // reloads fresh 已使用 flags next time it opens.
+    window._invpBankStmtBoxes = null;
     closeInvpReceiptModal();
     loadInvpList();
   } catch (e) {
@@ -31795,17 +31865,11 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
   } else {
     currentWrap.style.display = 'none';
   }
-  // Voucher picker: reset filters + selection, then load statements/annotations and
-  // (on 更新) preselect whichever transaction this invoice already reserved.
-  _invpResetSubPayPicker();
-  if (!window._invpBankStmts) {
-    api('/admin/bank-statements')
-      .then(r => { window._invpBankStmts = Array.isArray(r) ? r : []; return Promise.resolve(_invpLoadSubPayBoxes()); })
-      .then(_invpMaybePreselectUsedBox)
-      .catch(() => {});
-  } else {
-    Promise.resolve(_invpLoadSubPayBoxes()).then(_invpMaybePreselectUsedBox);
-  }
+  // Voucher picker: reclaim the shared picker for the 分包 side, reset filters +
+  // selection, then load statements/annotations and (on 更新) preselect whichever
+  // transaction this invoice already reserved.
+  _invpMountVoucherPicker('sub');
+  _invpOpenVoucherPicker();
   document.getElementById('invpSubPayModal').style.display = 'flex';
   _invpInitSubPayDrop();
 }
@@ -31826,6 +31890,10 @@ function _invpClearSubPayFilters() {
 // Clear the voucher picker's filters, selection and summary line (called on open).
 function _invpResetSubPayPicker() {
   _INVP_SUBPAY_FILTER_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Default direction: the 收款 side pre-filters to income transactions (that's
+  // what a 收款回执 is); the 分包 side keeps showing everything as before.
+  const dirSel = document.getElementById('invpSubPayFilterDir');
+  if (dirSel) dirSel.value = _invpVoucherCtx === 'recv' ? 'in' : '';
   const hu = document.getElementById('invpSubPayHideUsed'); if (hu) hu.checked = false;
   const hid = document.getElementById('invpSubPayStmt'); if (hid) hid.value = '';
   const selEl = document.getElementById('invpSubPaySelected'); if (selEl) selEl.textContent = '';
@@ -31836,10 +31904,11 @@ function _invpResetSubPayPicker() {
 function _invpMaybePreselectUsedBox() {
   const hid = document.getElementById('invpSubPayStmt');
   if (!hid || hid.value) return;
-  const curInvId = _invpSubPayInvoiceId;
+  const curInvId = _invpVoucherInvoiceId();
   const boxesMap = window._invpBankStmtBoxes || {};
   for (const sid of Object.keys(boxesMap)) {
-    const b = (boxesMap[sid] || []).find(x => x.used_invoice_id != null && String(x.used_invoice_id) === String(curInvId));
+    const b = (boxesMap[sid] || []).find(x => x.used_invoice_id != null && String(x.used_invoice_id) === String(curInvId)
+      && _invpUsedKind(x) === _invpVoucherCtx);
     if (b) {
       const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
       const bits = [b.direction === 'in' ? '收入' : '支出', amt, _bsPayeeDisplay(b.payee), b.purpose, b.txn_date].filter(Boolean).join(' · ');
@@ -31899,9 +31968,10 @@ function _invpPickSubPay(val, label) {
   if (!hid) return;
   hid.value = val || '';
   if (val) {
-    const fi = document.getElementById('invpSubPayFile');
+    // Clear the file input of whichever modal currently hosts the picker.
+    const fi = document.getElementById(_invpVoucherCtx === 'recv' ? 'invpReceiptFile' : 'invpSubPayFile');
     if (fi) fi.value = '';
-    const fn = document.getElementById('invpSubPayFileName');
+    const fn = document.getElementById(_invpVoucherCtx === 'recv' ? 'invpReceiptFileName' : 'invpSubPayFileName');
     if (fn) fn.textContent = '未选择文件';
   }
   const selEl = document.getElementById('invpSubPaySelected');
@@ -31917,7 +31987,7 @@ function _invpRenderSubPayList() {
   if (!listEl) return;
   const stmts = Array.isArray(window._invpBankStmts) ? window._invpBankStmts : [];
   const boxesMap = window._invpBankStmtBoxes || {};
-  const curInvId = _invpSubPayInvoiceId;
+  const curInvId = _invpVoucherInvoiceId();
   const selVal = (document.getElementById('invpSubPayStmt') || {}).value || '';
   const fStmt = (document.getElementById('invpSubPayFilterStmt') || {}).value || '';
   const norm = v => String(v == null ? '' : v).toLowerCase().trim();
@@ -31976,7 +32046,10 @@ function _invpRenderSubPayList() {
 
     matches.forEach(b => {
       const usedBy = b.used_invoice_id;
-      const usedElsewhere = usedBy != null && String(usedBy) !== String(curInvId);
+      // A transaction is only re-selectable by the SAME invoice on the SAME side
+      // (收款/分包) — used by another invoice or the other side greys it out.
+      const usedByThis = usedBy != null && String(usedBy) === String(curInvId) && _invpUsedKind(b) === _invpVoucherCtx;
+      const usedElsewhere = usedBy != null && !usedByThis;
       if (usedElsewhere && hideUsed) return;
       shown++;
       const amt = (b.amount != null && b.amount !== 0)
@@ -31986,7 +32059,8 @@ function _invpRenderSubPayList() {
       const val = `box:${s.id}:${b.id}`;
       const isSel = selVal === val;
       if (usedElsewhere) {
-        const badge = invNumById[usedBy] ? ('已使用 · ' + invNumById[usedBy]) : '已使用';
+        const kindTag = _invpUsedKind(b) === 'recv' ? '收款回执' : '分包回执';
+        const badge = (invNumById[usedBy] ? ('已用作' + kindTag + ' · ' + invNumById[usedBy]) : ('已用作' + kindTag));
         html += `<div title="已被其他发票用作凭证" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);font-size:.82rem;color:var(--gray-400);background:#fafafa;cursor:not-allowed;display:flex;justify-content:space-between;align-items:center;gap:.5rem"><span style="text-decoration:line-through;min-width:0">${esc(bits)}</span><span style="flex:0 0 auto;font-size:.68rem;color:#b45309;background:#fef3c7;border-radius:4px;padding:.05rem .4rem">${esc(badge)}</span></div>`;
       } else {
         html += `<div onclick="_invpPickSubPay('${val}', ${_invpJsStr('• ' + bits)})" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;${isSel ? 'background:#eff6ff' : ''}"><span style="min-width:0">• ${esc(bits)}</span>${isSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
@@ -32082,7 +32156,8 @@ function closeInvpSubPayModal() {
 async function submitInvpSubPay() {
   if (!_invpSubPayInvoiceId) return;
   const fileInput = document.getElementById('invpSubPayFile');
-  const stmtId = (document.getElementById('invpSubPayStmt') || {}).value || '';
+  // Only honour the shared picker while it's mounted on this (分包) side.
+  const stmtId = (_invpVoucherCtx === 'sub' && (document.getElementById('invpSubPayStmt') || {}).value) || '';
   if (!fileInput.files.length && !stmtId && !_invpSubPayIsUpdate) {
     alert('请上传凭证文件，或选择一份已上传的对账单 PDF 作为凭证');
     return;
