@@ -891,6 +891,18 @@ try { db.exec(`ALTER TABLE container_submissions ADD COLUMN work_date TEXT DEFAU
 // Extra verification photos (JSON array of storage keys) attached to a batch — the
 // weekly sheet lets a foreman upload several photos for the admin to cross-check.
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN photos TEXT DEFAULT '[]'`); } catch(e) {}
+// One-time cleanup: strip whitespace that phone keyboards / OCR sneak into scanned
+// container numbers ("TIIU 562 579 9" → "TIIU5625799") — spaced forms never match
+// the invoice's container_items. New submissions are normalized on save.
+try {
+  const _dirtyCnos = db.prepare(`SELECT id, container_no FROM container_submissions WHERE container_no != ''`).all()
+    .filter(r => /\s/.test(r.container_no || ''));
+  if (_dirtyCnos.length) {
+    const _updCno = db.prepare('UPDATE container_submissions SET container_no=? WHERE id=?');
+    for (const r of _dirtyCnos) _updCno.run(String(r.container_no).toUpperCase().replace(/\s+/g, ''), r.id);
+    console.log(`[startup] 扫码柜号去空格: ${_dirtyCnos.length} 条`);
+  }
+} catch(e) {}
 
 // Per-date-range review links (one each for customer & foreman). The link covers a
 // company's container records in [date_from, date_to]; submitting updates those records.
@@ -15340,6 +15352,11 @@ app.post('/c-submit/verify', (req, res) => {
   res.json({ ok: pw === CONTAINER_SUBMIT_PASSWORD });
 });
 
+// Container numbers never legitimately contain whitespace (ISO 6346: 4 letters +
+// 7 digits), but phone keyboards / OCR often sneak spaces in ("TIIU 562 579 9").
+// Normalize on save and when matching so spaced and unspaced forms compare equal.
+function _normContainerNo(v) { return String(v || '').toUpperCase().replace(/\s+/g, ''); }
+
 // POST /c-submit?t=TOKEN — public: submit one container record (multipart)
 app.post('/c-submit', containerSubmitPhotoUpload.single('photo'), (req, res) => {
   try {
@@ -15349,7 +15366,7 @@ app.post('/c-submit', containerSubmitPhotoUpload.single('photo'), (req, res) => 
     if (String(d.password || '') !== CONTAINER_SUBMIT_PASSWORD) {
       return res.status(401).json({ error: '密码错误 / Wrong password', code: 'bad_password' });
     }
-    const containerNo = String(d.container_no || '').trim().toUpperCase();
+    const containerNo = _normContainerNo(d.container_no);
     let participants = [];
     try {
       participants = typeof d.participants === 'string'
@@ -15406,7 +15423,7 @@ app.post('/cw-submit', containerSubmitPhotoUpload.array('photos', 12), (req, res
     } catch { rawRows = []; }
     const rows = (Array.isArray(rawRows) ? rawRows : [])
       .map(r => ({
-        container_no: String((r && r.container_no) || '').trim().toUpperCase().slice(0, 40),
+        container_no: _normContainerNo(r && r.container_no).slice(0, 40),
         work_date: String((r && r.work_date) || '').trim().slice(0, 40),
       }))
       .filter(r => r.container_no)
@@ -15464,7 +15481,7 @@ app.get('/api/admin/container-submissions', requireAdmin, blockManager, (req, re
           try { profile = JSON.parse(inv.profile_json || '{}'); } catch { continue; }
           const items = Array.isArray(profile.container_items) ? profile.container_items : [];
           for (const it of items) {
-            const no = String((it && it.container_no) || '').trim().toUpperCase();
+            const no = _normContainerNo(it && it.container_no);
             if (!no) continue;
             const key = co.toUpperCase() + '|' + no;
             if (!matchMap.has(key)) matchMap.set(key, []);
@@ -15481,7 +15498,7 @@ app.get('/api/admin/container-submissions', requireAdmin, blockManager, (req, re
       }
     } catch (_) { /* invoice matching is an overlay — keep the list usable */ }
     for (const r of rows) {
-      const cno = String(r.container_no || '').trim().toUpperCase();
+      const cno = _normContainerNo(r.container_no);
       r.invoice_matches = cno
         ? (matchMap.get(String(r.partner_name || '').trim().toUpperCase() + '|' + cno) || [])
         : [];
@@ -15507,7 +15524,7 @@ app.post('/api/admin/container-submissions/:id/approve', requireAdmin, blockMana
     if (!sub) return res.status(404).json({ error: 'not found' });
     const d = req.body || {};
     const reviewer = String(d.reviewer_name || '').trim();
-    const cno = String(d.container_no || '').trim().toUpperCase();
+    const cno = _normContainerNo(d.container_no);
     if (!reviewer) return res.status(400).json({ error: '请填写审核人姓名' });
     if (!cno) return res.status(400).json({ error: '请填写柜号' });
     let names = d.participants;
@@ -19559,15 +19576,25 @@ app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res
       return res.status(400).json({ error: '收款侧已有记录/回执，请先处理原有收款记录再转移' });
     }
     const subRcpts = _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path);
+    // 收款银行/收款公司: keep what the (misplaced) record carried, else fall back to
+    // the invoice profile's bank info — the same defaults the 收款凭证 modal offers.
+    let profBank = '', profEntity = '';
+    try {
+      const prof = JSON.parse(inv.profile_json || '{}');
+      profBank = String(prof.bank_name || '').trim();
+      profEntity = String(prof.bank_account_name || '').trim();
+    } catch (_) {}
+    const recvBank = (inv.sub_payment_bank || '').trim() || profBank || null;
+    const recvEntity = (inv.sub_payment_entity || '').trim() || profEntity || null;
     db.prepare(`UPDATE invoices SET
         payment_status='paid', paid_at=COALESCE(sub_paid_at, datetime('now')),
         payment_receipt_path=?, payment_receipt_paths=?,
         payment_amount=sub_payment_amount, payment_date=sub_payment_date,
-        payment_entity=sub_payment_entity, payment_bank=sub_payment_bank, payment_handler=sub_payment_handler,
+        payment_entity=?, payment_bank=?, payment_handler=sub_payment_handler,
         sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_payment_receipt_paths=NULL, sub_paid_at=NULL,
         sub_payment_entity=NULL, sub_payment_bank=NULL, sub_payment_handler=NULL, sub_payment_amount=NULL, sub_payment_date=NULL
       WHERE id=?`)
-      .run(subRcpts[0] || null, subRcpts.length ? JSON.stringify(subRcpts) : null, inv.id);
+      .run(subRcpts[0] || null, subRcpts.length ? JSON.stringify(subRcpts) : null, recvEntity, recvBank, inv.id);
     // Re-tag the statement transaction this record had reserved: it now backs the 收款回执.
     try {
       db.prepare(`UPDATE bank_statement_txns SET used_kind='recv' WHERE used_invoice_id=? AND (used_kind IS NULL OR used_kind='' OR used_kind='sub')`).run(inv.id);
