@@ -2504,6 +2504,10 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN pay_portion TEXT DEFAU
 // proof. Set when a box is picked in 记录分包付款, cleared on 取消/换凭证, so the picker
 // can grey out已使用 transactions and stop the same row being used twice.
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN used_invoice_id INTEGER DEFAULT NULL`); } catch(e) {}
+// Which side of the invoice used it: 'recv' = 收款回执 (money in from the client),
+// 'sub'/'' = 分包回执 (money out to the subcontractor; legacy rows predate the
+// column). An invoice can hold one of each, and each flow only clears its own.
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN used_kind TEXT DEFAULT ''`); } catch(e) {}
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -15445,6 +15449,43 @@ app.get('/api/admin/container-submissions', requireAdmin, blockManager, (req, re
       r.photos_urls = (Array.isArray(photoKeys) ? photoKeys : [])
         .filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
     }
+    // Enrich each submission with matching invoice container line items (same
+    // company, same container number) so the scan list can show the billed
+    // price, 分包价 and the line's refer人 without opening each invoice.
+    // Best-effort: an unmigrated invoices table must not break the scan list.
+    const matchMap = new Map(); // 'COMPANY|CONTAINER_NO' -> [match, ...]
+    try {
+      const companies = [...new Set(rows.map(r => String(r.partner_name || '').trim()).filter(Boolean))];
+      for (const co of companies) {
+        const invs = db.prepare(`SELECT id, invoice_number, status, invoice_date, period_start, period_end, profile_json
+          FROM invoices WHERE company_name = ? COLLATE NOCASE`).all(co);
+        for (const inv of invs) {
+          let profile = {};
+          try { profile = JSON.parse(inv.profile_json || '{}'); } catch { continue; }
+          const items = Array.isArray(profile.container_items) ? profile.container_items : [];
+          for (const it of items) {
+            const no = String((it && it.container_no) || '').trim().toUpperCase();
+            if (!no) continue;
+            const key = co.toUpperCase() + '|' + no;
+            if (!matchMap.has(key)) matchMap.set(key, []);
+            matchMap.get(key).push({
+              invoice_id: inv.id, invoice_number: inv.invoice_number || '', invoice_status: inv.status || '',
+              invoice_date: inv.invoice_date || '', period_start: inv.period_start || '', period_end: inv.period_end || '',
+              qty: Number(it.qty) || 0,
+              unit_price: (it.unit_price === '' || it.unit_price == null) ? null : Number(it.unit_price),
+              sub_price: (it.sub_price === '' || it.sub_price == null) ? null : Number(it.sub_price),
+              referrer: String((it && it.referrer) || '').trim(),
+            });
+          }
+        }
+      }
+    } catch (_) { /* invoice matching is an overlay — keep the list usable */ }
+    for (const r of rows) {
+      const cno = String(r.container_no || '').trim().toUpperCase();
+      r.invoice_matches = cno
+        ? (matchMap.get(String(r.partner_name || '').trim().toUpperCase() + '|' + cno) || [])
+        : [];
+    }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -19334,19 +19375,34 @@ const subReceiptUpload = multer({
 app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array('receipts', 20), (req, res) => {
   const inv = db.prepare('SELECT id, payment_status, payment_receipt_path, payment_receipt_paths FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  const b = req.body || {};
   // Replace the receipt set only when new files are uploaded; otherwise keep the
   // existing ones (lets "更新回执" edit amount/date/bank without re-uploading).
   let paths = _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path);
-  if (req.files && req.files.length) {
+  // Drop the previous receipt files from disk (only real /uploads/ files exist there;
+  // a bank-statement reference resolves to basename 'file' and is left untouched).
+  const dropOldFiles = () => {
     for (const old of paths) {
       const oldPath = path.join(uploadsDir, path.basename(old));
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
+  };
+  if (req.files && req.files.length) {
+    dropOldFiles();
     paths = req.files.map(f => `/uploads/${f.filename}`);
+  } else if (b.bank_statement_id) {
+    // Reuse an already-uploaded 对账单 PDF as the 收款回执 instead of a fresh upload.
+    // Store a reference to the statement's own admin-guarded file route (served
+    // from storage) — NOT a /uploads/ path — so the shared statement file is never
+    // removed by the receipt cleanup above/below.
+    const st = db.prepare('SELECT id FROM bank_statements WHERE id=?').get(parseInt(b.bank_statement_id));
+    if (st) {
+      dropOldFiles();
+      paths = [`/api/admin/bank-statements/${st.id}/file`];
+    }
   }
   const receiptPath = paths[0] || null;                  // first file → legacy single column
   const pathsJson = paths.length ? JSON.stringify(paths) : null;
-  const b = req.body || {};
   const bank = (b.payment_bank || '').trim() || null;
   const entity = (b.payment_entity || '').trim() || null;
   const handler = (b.payment_handler || '').trim() || null;
@@ -19356,6 +19412,16 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array(
   db.prepare(`UPDATE invoices SET payment_status='paid', payment_receipt_path=?, payment_receipt_paths=?, paid_at=datetime('now'),
               payment_bank=?, payment_entity=?, payment_handler=?, payment_amount=?, payment_date=? WHERE id=?`)
     .run(receiptPath, pathsJson, bank, entity, handler, amount, payDate, req.params.id);
+  // Voucher usage link (收款 side): free whatever income transaction this invoice's
+  // 收款回执 used before, then mark the newly-picked one ("stmtId:boxId") as used.
+  // Scoped to used_kind='recv' so the 分包回执 link on the same invoice is untouched.
+  try {
+    const invId = parseInt(req.params.id);
+    db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=NULL, used_kind='' WHERE used_invoice_id=? AND used_kind='recv'`).run(invId);
+    const boxRef = (b.payment_stmt_box || '').trim();
+    const bm = boxRef.match(/^(\d+):(\d+)$/);
+    if (bm) db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=?, used_kind='recv' WHERE id=? AND statement_id=? AND kind='box'`).run(invId, parseInt(bm[2]), parseInt(bm[1]));
+  } catch (e) {}
   // First "标记已付款" vs a later edit/re-upload — log distinctly so the history
   // shows when the payment info / receipt was updated (with its time), not just
   // a repeated "标记已付款".
@@ -19366,7 +19432,8 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array(
   if (entity) parts.push(`收款公司: ${entity}`);
   if (bank) parts.push(`银行: ${bank}`);
   if (handler) parts.push(`经办人: ${handler}`);
-  if (paths.length) parts.push(`回执${req.files && req.files.length ? '(已更新)' : ''}: ${paths.length} 个文件`);
+  if (b.bank_statement_id && !(req.files && req.files.length)) parts.push('回执: 复用已上传对账单 PDF');
+  else if (paths.length) parts.push(`回执${req.files && req.files.length ? '(已更新)' : ''}: ${paths.length} 个文件`);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, wasPaid ? '更新收款信息' : '标记已付款', parts.join(' · '));
   res.json({ success: true, receipt_path: receiptPath, receipt_paths: paths });
@@ -19382,6 +19449,8 @@ app.post('/api/admin/invoices/:id/mark-unpaid', requireAdmin, (req, res) => {
   }
   db.prepare(`UPDATE invoices SET payment_status='unpaid', payment_receipt_path=NULL, payment_receipt_paths=NULL, paid_at=NULL WHERE id=?`)
     .run(req.params.id);
+  // Release the income transaction this invoice's 收款回执 had reserved (if any).
+  try { db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=NULL, used_kind='' WHERE used_invoice_id=? AND used_kind='recv'`).run(parseInt(req.params.id)); } catch (e) {}
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, '取消已付款', '');
   res.json({ success: true });
@@ -19435,10 +19504,12 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   // when empty (switched to a file / whole PDF) so the old link is released.
   try {
     const invId = parseInt(req.params.id);
-    db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=NULL WHERE used_invoice_id=?`).run(invId);
+    // Scoped to the 分包 side (legacy rows have used_kind='') so the 收款回执 link
+    // on the same invoice is untouched.
+    db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=NULL, used_kind='' WHERE used_invoice_id=? AND (used_kind IS NULL OR used_kind='' OR used_kind='sub')`).run(invId);
     const boxRef = (b.sub_payment_stmt_box || '').trim();
     const bm = boxRef.match(/^(\d+):(\d+)$/);
-    if (bm) db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=? WHERE id=? AND statement_id=? AND kind='box'`).run(invId, parseInt(bm[2]), parseInt(bm[1]));
+    if (bm) db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=?, used_kind='sub' WHERE id=? AND statement_id=? AND kind='box'`).run(invId, parseInt(bm[2]), parseInt(bm[1]));
   } catch (e) {}
   const wasSubPaid = inv.sub_payment_status === 'paid';
   const parts = [];
@@ -19464,11 +19535,50 @@ app.post('/api/admin/invoices/:id/mark-sub-unpaid', requireAdmin, (req, res) => 
   }
   db.prepare(`UPDATE invoices SET sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_payment_receipt_paths=NULL, sub_paid_at=NULL WHERE id=?`)
     .run(req.params.id);
-  // Release any statement transaction this invoice had reserved as its voucher.
-  try { db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=NULL WHERE used_invoice_id=?`).run(parseInt(req.params.id)); } catch (e) {}
+  // Release the statement transaction this invoice's 分包回执 had reserved
+  // (scoped so the 收款回执 link on the same invoice is untouched).
+  try { db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=NULL, used_kind='' WHERE used_invoice_id=? AND (used_kind IS NULL OR used_kind='' OR used_kind='sub')`).run(parseInt(req.params.id)); } catch (e) {}
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, '取消分包已付款', '');
   res.json({ success: true });
+});
+
+// Move a misplaced 分包付款 record over to the 收款 side. Before the 收款凭证
+// modal grew its own bank-statement picker, incoming客户打款 could only be
+// recorded through 分包付款, landing the proof in the wrong (分包回执) column.
+// This moves the whole record — amount/date/handler/receipt files/statement-txn
+// link — to payment_* so it shows under 收款回执, and clears the sub side.
+app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(parseInt(req.params.id));
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+    if (inv.sub_payment_status !== 'paid') return res.status(400).json({ error: '该发票没有分包付款记录' });
+    // Refuse to clobber an existing 收款 record — that needs a human decision.
+    const existingRecv = _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path);
+    if (inv.payment_status === 'paid' || existingRecv.length) {
+      return res.status(400).json({ error: '收款侧已有记录/回执，请先处理原有收款记录再转移' });
+    }
+    const subRcpts = _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path);
+    db.prepare(`UPDATE invoices SET
+        payment_status='paid', paid_at=COALESCE(sub_paid_at, datetime('now')),
+        payment_receipt_path=?, payment_receipt_paths=?,
+        payment_amount=sub_payment_amount, payment_date=sub_payment_date,
+        payment_entity=sub_payment_entity, payment_bank=sub_payment_bank, payment_handler=sub_payment_handler,
+        sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_payment_receipt_paths=NULL, sub_paid_at=NULL,
+        sub_payment_entity=NULL, sub_payment_bank=NULL, sub_payment_handler=NULL, sub_payment_amount=NULL, sub_payment_date=NULL
+      WHERE id=?`)
+      .run(subRcpts[0] || null, subRcpts.length ? JSON.stringify(subRcpts) : null, inv.id);
+    // Re-tag the statement transaction this record had reserved: it now backs the 收款回执.
+    try {
+      db.prepare(`UPDATE bank_statement_txns SET used_kind='recv' WHERE used_invoice_id=? AND (used_kind IS NULL OR used_kind='' OR used_kind='sub')`).run(inv.id);
+    } catch (e) {}
+    db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+      .run(inv.id, '分包付款转为收款回执',
+        [inv.sub_payment_amount != null ? `金额: $${Number(inv.sub_payment_amount).toFixed(2)}` : null,
+         inv.sub_payment_date ? `日期: ${inv.sub_payment_date}` : null,
+         subRcpts.length ? `回执: ${subRcpts.length} 个文件` : null].filter(Boolean).join(' · '));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── PER-LINE (container / worker) PAYMENT PROOFS ───
@@ -27995,7 +28105,7 @@ app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req,
 // GET the boxes for one statement.
 app.get('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, used_invoice_id
+    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, used_invoice_id, used_kind
       FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`)
       .all(parseInt(req.params.id));
     for (const r of rows) {
