@@ -1868,7 +1868,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="loadCsubScans()">刷新</button>
     </div>
   </div>
-  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">现场扫码（🟢 开始 / 🔴 结束）提交的 container 记录。可按公司、状态、类型筛选。同一柜号的开始/结束可对照出起止时间。</p>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">现场扫码（🟢 开始 / 🔴 结束）提交的 container 记录。可按公司、状态、类型筛选。同一柜号的开始/结束可对照出起止时间。记录按<b>提交批次</b>分组、批次内再按发票 <b>Refer人</b> 分开；柜号若出现在该公司发票中，会显示发票号与单价 / 分包价，点发票号可直接打开。</p>
   <div class="card" style="margin-bottom:1rem">
     <div style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap">
       <div class="field" style="margin:0;min-width:200px">
@@ -1910,11 +1910,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <th style="text-align:left">照片</th>
         <th style="text-align:left">参与人</th>
         <th style="text-align:right">价格</th>
+        <th style="text-align:left">发票匹配（价格 / Refer人）</th>
         <th style="text-align:left">提交时间</th>
         <th style="text-align:left">状态</th>
         <th></th>
       </tr></thead>
-      <tbody id="csubScanBody"><tr><td colspan="9" style="color:var(--gray-400);padding:.6rem">加载中…</td></tr></tbody>
+      <tbody id="csubScanBody"><tr><td colspan="10" style="color:var(--gray-400);padding:.6rem">加载中…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -37597,7 +37598,7 @@ async function loadCsubScans() {
   const type = document.getElementById('csubScanType').value;
   const status = document.getElementById('csubScanStatus').value;
   const tb = document.getElementById('csubScanBody');
-  tb.innerHTML = '<tr><td colspan="9" style="color:var(--gray-400);padding:.6rem">加载中…</td></tr>';
+  tb.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400);padding:.6rem">加载中…</td></tr>';
   try {
     const params = new URLSearchParams();
     if (pid) params.set('partner_id', pid);
@@ -37608,7 +37609,7 @@ async function loadCsubScans() {
     _csubScanRows = rows;
     renderCsubScans();
   } catch (e) {
-    tb.innerHTML = `<tr><td colspan="9" style="color:#b91c1c;padding:.6rem">加载失败：${esc(e.message || e)}</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="10" style="color:#b91c1c;padding:.6rem">加载失败：${esc(e.message || e)}</td></tr>`;
   }
 }
 function _csubStatusLabel(r) {
@@ -37650,6 +37651,34 @@ function _csubTypeBadge(type, fontSize) {
   else style = 'background:#f0fdf4;color:#15803d;border:1px solid #86efac';
   return `<span style="display:inline-block;border-radius:999px;padding:.05rem .45rem;font-size:${fs};font-weight:700;${style}">${_csubTypeText(type)}</span>`;
 }
+// Best invoice match for a submission (first match = whichever invoice was found
+// first for this container number; multiple invoices sharing the number are rare
+// and surfaced via a "+N" marker).
+function _csubInvMatch(r) {
+  const m = Array.isArray(r.invoice_matches) ? r.invoice_matches : [];
+  return m.length ? m[0] : null;
+}
+// The refer人 a submission belongs to, derived from its matched invoice line.
+function _csubReferrer(r) {
+  const m = _csubInvMatch(r);
+  if (!m) return '';
+  return (m.referrer || '').trim();
+}
+// Invoice-match cell: invoice number (click = open that invoice) + billed prices.
+function _csubInvCell(r) {
+  const matches = Array.isArray(r.invoice_matches) ? r.invoice_matches : [];
+  if (!matches.length) return '<span style="color:var(--gray-300)">未匹配</span>';
+  const m = matches[0];
+  const prices = [];
+  if (m.unit_price != null && isFinite(m.unit_price)) prices.push(`<span style="color:#0E7BB8">单价 $${Number(m.unit_price).toFixed(2)}</span>`);
+  if (m.sub_price != null && isFinite(m.sub_price)) prices.push(`<span style="color:#9a3412">分包 $${Number(m.sub_price).toFixed(2)}</span>`);
+  const more = matches.length > 1 ? ` <span style="color:var(--gray-400);font-size:.7rem" title="该柜号出现在 ${matches.length} 张发票中">+${matches.length - 1} 张</span>` : '';
+  return `<div style="font-size:.78rem;white-space:nowrap">
+    <a href="#" onclick="event.preventDefault();_invpOpenMatchedInvoice(${m.invoice_id})" style="font-weight:600;color:#0E7BB8;text-decoration:underline">#${esc(m.invoice_number || m.invoice_id)}</a>${more}
+    ${prices.length ? '<div>' + prices.join(' · ') + '</div>' : '<div style="color:var(--gray-400)">发票内无价格</div>'}
+    ${m.referrer ? `<div style="color:#6d28d9">Refer人: ${esc(m.referrer)}</div>` : ''}
+  </div>`;
+}
 function _csubScanRowHtml(r) {
   const typeBadge = _csubTypeBadge(r.submit_type);
   const parts = Array.isArray(r.participants) ? r.participants : [];
@@ -37678,10 +37707,30 @@ function _csubScanRowHtml(r) {
       ${r.worker_price != null ? '<span style="color:#9a3412">工人 $' + Number(r.worker_price).toFixed(2) + '</span>' : ''}
       ${(!r.unit_price && r.customer_price == null && r.worker_price == null) ? '<span style="color:var(--gray-300)">—</span>' : ''}
     </td>
+    <td style="padding:5px 8px">${_csubInvCell(r)}</td>
     <td style="padding:5px 8px;white-space:nowrap;color:var(--gray-500);font-size:.78rem">${esc(when)}</td>
     <td style="padding:5px 8px">${_csubStatusLabel(r)}</td>
     <td style="padding:5px 8px;text-align:right;white-space:nowrap">${reviewBtn} ${discardBtn}</td>
   </tr>`;
+}
+// Rows submitted together form a batch: weekly-sheet rows are inserted in one
+// transaction so they share created_at + submitter + service_period. Single
+// start/end scans fall into one per-company "现场扫码" bucket.
+function _csubBatchKey(r) {
+  if ((r.submit_type || 'start') === 'week') {
+    return `week|${r.created_at || ''}|${r.submitter_name || ''}|${r.service_period || ''}`;
+  }
+  return 'scan';
+}
+function _csubBatchLabel(key, list) {
+  if (key === 'scan') return '📷 现场扫码（开始 / 结束）';
+  const r = list[0];
+  const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
+  const bits = ['📅 周柜批次'];
+  if (r.service_period) bits.push('周期 ' + r.service_period);
+  if (r.submitter_name) bits.push('提交人 ' + r.submitter_name);
+  if (when) bits.push('提交于 ' + when);
+  return bits.map(esc).join(' · ');
 }
 function renderCsubScans() {
   const tb = document.getElementById('csubScanBody');
@@ -37691,10 +37740,12 @@ function renderCsubScans() {
     String(r.container_no || '').toLowerCase().includes(q)
     || String(r.service_period || '').toLowerCase().includes(q)
     || String(r.work_date || '').toLowerCase().includes(q)
-    || (Array.isArray(r.participants) ? r.participants.join(' ').toLowerCase() : '').includes(q));
+    || (Array.isArray(r.participants) ? r.participants.join(' ').toLowerCase() : '').includes(q)
+    || _csubReferrer(r).toLowerCase().includes(q)
+    || (Array.isArray(r.invoice_matches) ? r.invoice_matches.map(m => m.invoice_number || '').join(' ').toLowerCase() : '').includes(q));
   document.getElementById('csubScanTotal').textContent = `共 ${rows.length} 条`;
-  if (!rows.length) { tb.innerHTML = '<tr><td colspan="9" style="color:var(--gray-400);padding:.6rem">暂无记录</td></tr>'; return; }
-  // Group by company.
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400);padding:.6rem">暂无记录</td></tr>'; return; }
+  // Three levels: company → submission batch → refer人 (from the matched invoice line).
   const groups = new Map();
   rows.forEach(r => {
     const key = r.partner_name || '—';
@@ -37704,8 +37755,46 @@ function renderCsubScans() {
   const blocks = [];
   Array.from(groups.keys()).sort((a, b) => a.localeCompare(b)).forEach(co => {
     const list = groups.get(co);
-    blocks.push(`<tr style="background:#fff7ed"><td colspan="9" style="padding:.5rem .75rem;border-top:2px solid #fdba74;font-weight:700;color:#9a3412">🏢 ${esc(co)} <span style="font-weight:400;color:var(--gray-500);font-size:.82rem">· ${list.length} 条</span></td></tr>`);
-    blocks.push(list.map(_csubScanRowHtml).join(''));
+    blocks.push(`<tr style="background:#fff7ed"><td colspan="10" style="padding:.5rem .75rem;border-top:2px solid #fdba74;font-weight:700;color:#9a3412">🏢 ${esc(co)} <span style="font-weight:400;color:var(--gray-500);font-size:.82rem">· ${list.length} 条</span></td></tr>`);
+    // Batches keep the list's order (newest first).
+    const batches = new Map();
+    list.forEach(r => {
+      const bk = _csubBatchKey(r);
+      if (!batches.has(bk)) batches.set(bk, []);
+      batches.get(bk).push(r);
+    });
+    batches.forEach((bList, bKey) => {
+      blocks.push(`<tr style="background:#eff6ff"><td colspan="10" style="padding:.35rem .75rem .35rem 1.4rem;border-top:1px solid #bfdbfe;font-weight:600;color:#1d4ed8;font-size:.8rem">${_csubBatchLabel(bKey, bList)} <span style="font-weight:400;color:var(--gray-500)">· ${bList.length} 条</span></td></tr>`);
+      // Split the batch by refer人 (matched invoice line's referrer).
+      const byRef = new Map();
+      bList.forEach(r => {
+        const m = _csubInvMatch(r);
+        const rk = !m ? ' none' : (_csubReferrer(r) || ' blank');
+        if (!byRef.has(rk)) byRef.set(rk, []);
+        byRef.get(rk).push(r);
+      });
+      const refKeys = Array.from(byRef.keys()).sort((a, b) => {
+        // Named referrers first (alphabetical), then 发票无Refer人, then 未匹配.
+        const w = k => k === ' none' ? 2 : (k === ' blank' ? 1 : 0);
+        return (w(a) - w(b)) || a.localeCompare(b);
+      });
+      refKeys.forEach(rk => {
+        const rList = byRef.get(rk);
+        const label = rk === ' none' ? '❓ 未匹配到发票'
+          : rk === ' blank' ? '👤 发票内无 Refer人'
+          : `👤 Refer人：${esc(rk)}`;
+        let unitSum = 0, subSum = 0;
+        rList.forEach(r => {
+          const m = _csubInvMatch(r);
+          if (m && m.unit_price != null && isFinite(m.unit_price)) unitSum += Number(m.unit_price) * (Number(m.qty) || 1);
+          if (m && m.sub_price != null && isFinite(m.sub_price)) subSum += Number(m.sub_price) * (Number(m.qty) || 1);
+        });
+        const sums = (rk === ' none') ? ''
+          : ` <span style="font-weight:400;color:var(--gray-500)">· 单价合计 $${unitSum.toFixed(2)} · 分包合计 $${subSum.toFixed(2)}</span>`;
+        blocks.push(`<tr style="background:#faf5ff"><td colspan="10" style="padding:.3rem .75rem .3rem 2.2rem;border-top:1px solid #e9d5ff;color:#6d28d9;font-size:.78rem;font-weight:600">${label} <span style="font-weight:400;color:var(--gray-500)">· ${rList.length} 条</span>${sums}</td></tr>`);
+        blocks.push(rList.map(_csubScanRowHtml).join(''));
+      });
+    });
   });
   tb.innerHTML = blocks.join('');
 }

@@ -15445,6 +15445,43 @@ app.get('/api/admin/container-submissions', requireAdmin, blockManager, (req, re
       r.photos_urls = (Array.isArray(photoKeys) ? photoKeys : [])
         .filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
     }
+    // Enrich each submission with matching invoice container line items (same
+    // company, same container number) so the scan list can show the billed
+    // price, 分包价 and the line's refer人 without opening each invoice.
+    // Best-effort: an unmigrated invoices table must not break the scan list.
+    const matchMap = new Map(); // 'COMPANY|CONTAINER_NO' -> [match, ...]
+    try {
+      const companies = [...new Set(rows.map(r => String(r.partner_name || '').trim()).filter(Boolean))];
+      for (const co of companies) {
+        const invs = db.prepare(`SELECT id, invoice_number, status, invoice_date, period_start, period_end, profile_json
+          FROM invoices WHERE company_name = ? COLLATE NOCASE`).all(co);
+        for (const inv of invs) {
+          let profile = {};
+          try { profile = JSON.parse(inv.profile_json || '{}'); } catch { continue; }
+          const items = Array.isArray(profile.container_items) ? profile.container_items : [];
+          for (const it of items) {
+            const no = String((it && it.container_no) || '').trim().toUpperCase();
+            if (!no) continue;
+            const key = co.toUpperCase() + '|' + no;
+            if (!matchMap.has(key)) matchMap.set(key, []);
+            matchMap.get(key).push({
+              invoice_id: inv.id, invoice_number: inv.invoice_number || '', invoice_status: inv.status || '',
+              invoice_date: inv.invoice_date || '', period_start: inv.period_start || '', period_end: inv.period_end || '',
+              qty: Number(it.qty) || 0,
+              unit_price: (it.unit_price === '' || it.unit_price == null) ? null : Number(it.unit_price),
+              sub_price: (it.sub_price === '' || it.sub_price == null) ? null : Number(it.sub_price),
+              referrer: String((it && it.referrer) || '').trim(),
+            });
+          }
+        }
+      }
+    } catch (_) { /* invoice matching is an overlay — keep the list usable */ }
+    for (const r of rows) {
+      const cno = String(r.container_no || '').trim().toUpperCase();
+      r.invoice_matches = cno
+        ? (matchMap.get(String(r.partner_name || '').trim().toUpperCase() + '|' + cno) || [])
+        : [];
+    }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
