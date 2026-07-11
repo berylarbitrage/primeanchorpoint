@@ -1920,32 +1920,6 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════════ 扫码记录: 审核 Modal ════════ -->
-<div class="modal-bg" id="csubReviewModal" style="display:none" onclick="if(event.target===this)closeCsubReviewModal()">
-  <div class="modal" style="max-width:340px;max-height:90vh;overflow-y:auto;padding:.85rem">
-    <div id="csubReviewSub" style="font-size:.78rem;color:var(--gray-500);margin-bottom:.4rem"></div>
-    <div id="csubReviewPhoto" style="margin-bottom:.4rem"></div>
-    <div class="field" style="margin-bottom:.45rem">
-      <label style="font-size:.78rem">柜号（对照上图核对）</label>
-      <input type="text" id="csubReviewCno" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase;font-family:monospace;font-weight:700;font-size:1.1rem">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.45rem">
-      <div class="field" style="margin:0"><label style="font-size:.78rem">审核人 *</label><input type="text" id="csubReviewName" placeholder="你的名字" autocomplete="off"></div>
-      <div class="field" style="margin:0"><label style="font-size:.78rem">参与人（逗号）</label><input type="text" id="csubReviewParts" autocomplete="off" placeholder="名字1、名字2"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-bottom:.45rem">
-      <div class="field" style="margin:0"><label style="font-size:.74rem">报价 $</label><input type="number" id="csubReviewUnit" min="0" step="0.01"></div>
-      <div class="field" style="margin:0"><label style="font-size:.74rem">客户价 $</label><input type="number" id="csubReviewCust" min="0" step="0.01"></div>
-      <div class="field" style="margin:0"><label style="font-size:.74rem">工人价 $</label><input type="number" id="csubReviewWorker" min="0" step="0.01"></div>
-    </div>
-    <div id="csubReviewErr" style="color:#dc2626;font-size:.82rem;min-height:1em;margin-bottom:.3rem"></div>
-    <div style="display:flex;gap:.5rem;justify-content:flex-end">
-      <button class="btn btn-sm btn-outline" onclick="closeCsubReviewModal()">取消</button>
-      <button class="btn btn-sm btn-green" id="csubReviewBtn" onclick="submitCsubReview()">通过审核</button>
-    </div>
-  </div>
-</div>
-
 <!-- ════════ 扫码记录: 生成审核链接 Modal ════════ -->
 <div class="modal-bg" id="reviewLinkModal" style="display:none" onclick="if(event.target===this)closeReviewLinkModal()">
   <div class="modal" style="max-width:560px;max-height:92vh;overflow-y:auto">
@@ -31655,6 +31629,60 @@ function _invpReceiptArr(pathsJson, single) {
   return arr.filter(Boolean);
 }
 
+// ── Draggable payment modals ──
+// Hold the title (h2) to drag the dialog aside and read the invoice list behind
+// it. Position resets to center every time the modal opens.
+function _invpMakeDraggable(modalBgId) {
+  const bg = document.getElementById(modalBgId);
+  const modal = bg && bg.querySelector('.modal');
+  if (!modal || modal._dragWired) return;
+  modal._dragWired = true;
+  const handle = modal.querySelector('h2');
+  if (!handle) return;
+  handle.style.cursor = 'move';
+  handle.title = '按住拖动窗口';
+  // A drag that ends over the backdrop must not count as the "click outside to
+  // close" gesture — wrap the inline onclick with a just-dragged guard.
+  const origOnclick = bg.onclick;
+  bg.onclick = e => {
+    if (Date.now() - (modal._dragEndAt || 0) < 300) return;
+    if (origOnclick) origOnclick.call(bg, e);
+  };
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.target.closest('button,a,input,select')) return;
+    const r = modal.getBoundingClientRect();
+    const ox = e.clientX - r.left, oy = e.clientY - r.top;
+    modal.style.position = 'fixed';
+    modal.style.margin = '0';
+    modal.style.left = r.left + 'px';
+    modal.style.top = r.top + 'px';
+    let moved = false;
+    const move = ev => {
+      moved = true;
+      // Keep a grabbable sliver on-screen so the dialog can't be lost.
+      modal.style.left = Math.min(Math.max(ev.clientX - ox, 80 - r.width), window.innerWidth - 80) + 'px';
+      modal.style.top = Math.min(Math.max(ev.clientY - oy, 0), window.innerHeight - 48) + 'px';
+    };
+    const up = ev => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      try { handle.releasePointerCapture(ev.pointerId); } catch (_) {}
+      if (moved) modal._dragEndAt = Date.now();
+    };
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    e.preventDefault();
+  });
+}
+// Re-center a (possibly previously dragged) modal before showing it again.
+function _invpResetModalPos(modalBgId) {
+  const bg = document.getElementById(modalBgId);
+  const modal = bg && bg.querySelector('.modal');
+  if (!modal) return;
+  modal.style.position = ''; modal.style.left = ''; modal.style.top = ''; modal.style.margin = '';
+}
+
 // ── Shared bank-statement voucher picker context ──
 // The picker DOM (#invpVoucherPicker) is one instance shared by the 收款凭证 and
 // 分包付款 modals; _invpVoucherCtx says which side is active so a picked
@@ -31722,6 +31750,8 @@ function openInvpReceiptModal(invoiceId, isUpdate) {
   // transaction picked here becomes the 收款回执 — the left receipt column.
   _invpMountVoucherPicker('recv');
   _invpOpenVoucherPicker();
+  _invpResetModalPos('invpReceiptModal');
+  _invpMakeDraggable('invpReceiptModal');
   document.getElementById('invpReceiptModal').style.display = 'flex';
   _invpInitReceiptDrop();
 }
@@ -31876,6 +31906,8 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
   // transaction this invoice already reserved.
   _invpMountVoucherPicker('sub');
   _invpOpenVoucherPicker();
+  _invpResetModalPos('invpSubPayModal');
+  _invpMakeDraggable('invpSubPayModal');
   document.getElementById('invpSubPayModal').style.display = 'flex';
   _invpInitSubPayDrop();
 }
@@ -37778,7 +37810,19 @@ function _csubInvCell(r) {
     ${m.referrer ? `<div style="color:#6d28d9">Refer人: ${esc(m.referrer)}</div>` : ''}
   </div>`;
 }
+// Payment-proof thumbnails (付款证明) attached during review; 📄 for PDFs.
+function _csubProofThumbs(r) {
+  const urls = Array.isArray(r.payment_proof_urls) ? r.payment_proof_urls.filter(Boolean) : [];
+  if (!urls.length) return '';
+  const one = u => /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(u)
+    ? `<a href="#" onclick="event.preventDefault();invpOpenCsubPhoto('${esc(u)}')" title="付款证明"><img src="${esc(u)}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;border:1px solid var(--gray-200)"></a>`
+    : `<a href="${esc(u)}" target="_blank" title="付款证明 (PDF)" style="font-size:.8rem;text-decoration:none">📄</a>`;
+  return `<div style="display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin-top:3px">
+    <span style="font-size:.62rem;color:var(--gray-400)">付款证明</span>${urls.slice(0, 5).map(one).join('')}
+    ${urls.length > 5 ? `<span style="font-size:.62rem;color:var(--gray-400)">+${urls.length - 5}</span>` : ''}</div>`;
+}
 function _csubScanRowHtml(r) {
+  if (r.id === _csubEditingId && r.status === 'pending') return _csubEditRowHtml(r);
   const typeBadge = _csubTypeBadge(r.submit_type);
   const parts = Array.isArray(r.participants) ? r.participants : [];
   const partsHtml = parts.length ? parts.map(n => esc(n)).join('、') : '<span style="color:var(--gray-300)">—</span>';
@@ -37808,7 +37852,7 @@ function _csubScanRowHtml(r) {
     </td>
     <td style="padding:5px 8px">${_csubInvCell(r)}</td>
     <td style="padding:5px 8px;white-space:nowrap;color:var(--gray-500);font-size:.78rem">${esc(when)}</td>
-    <td style="padding:5px 8px">${_csubStatusLabel(r)}</td>
+    <td style="padding:5px 8px">${_csubStatusLabel(r)}${_csubProofThumbs(r)}</td>
     <td style="padding:5px 8px;text-align:right;white-space:nowrap">${reviewBtn} ${discardBtn}</td>
   </tr>`;
 }
@@ -37898,52 +37942,103 @@ function renderCsubScans() {
   tb.innerHTML = blocks.join('');
 }
 
-// ── 审核 (verify by re-entering container no) ──
-let _csubReviewId = null;
+// ── 审核 (inline, in the table row — no modal) ──
+// Clicking 审核 swaps the row's cells for inputs: verify/edit the 柜号 against the
+// photo, fill reviewer + prices, optionally attach 付款证明 files, then confirm.
+let _csubEditingId = null;
 function openCsubReview(id) {
-  const r = _csubScanRows.find(x => x.id === id);
-  if (!r) return;
-  _csubReviewId = id;
-  document.getElementById('csubReviewSub').innerHTML = `${esc(r.partner_name || '')} · ${_csubTypeText(r.submit_type)} · 提交 ${esc(r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '')}`;
-  const _rvPhotos = _csubPhotoUrls(r);
-  document.getElementById('csubReviewPhoto').innerHTML = _rvPhotos.length
-    ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${_rvPhotos.map(u => `<img src="${esc(u)}" onclick="invpOpenCsubPhoto('${esc(u)}')" style="max-width:100%;max-height:160px;object-fit:contain;border:1px solid var(--gray-200);border-radius:8px;cursor:zoom-in;background:#f8fafc" alt="">`).join('')}</div>`
-    : '';
-  document.getElementById('csubReviewName').value = '';
-  document.getElementById('csubReviewCno').value = r.container_no || '';
-  document.getElementById('csubReviewParts').value = (Array.isArray(r.participants) ? r.participants : []).join('、');
-  document.getElementById('csubReviewUnit').value = r.unit_price != null ? r.unit_price : '';
-  document.getElementById('csubReviewCust').value = r.customer_price != null ? r.customer_price : '';
-  document.getElementById('csubReviewWorker').value = r.worker_price != null ? r.worker_price : '';
-  document.getElementById('csubReviewErr').textContent = '';
-  document.getElementById('csubReviewModal').style.display = 'flex';
+  _csubEditingId = id;
+  renderCsubScans();
+  const el = document.getElementById('csubEditCno');
+  if (el) { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
 }
-function closeCsubReviewModal() { document.getElementById('csubReviewModal').style.display = 'none'; }
-async function submitCsubReview() {
-  if (_csubReviewId == null) return;
-  const reviewer = document.getElementById('csubReviewName').value.trim();
-  const cno = document.getElementById('csubReviewCno').value.trim();
-  const errEl = document.getElementById('csubReviewErr');
-  errEl.textContent = '';
-  if (!reviewer) { errEl.textContent = '请填写审核人姓名'; return; }
-  if (!cno) { errEl.textContent = '请填写柜号'; return; }
-  const num = id => { const v = document.getElementById(id).value; return v === '' ? null : Number(v); };
-  const btn = document.getElementById('csubReviewBtn');
-  btn.disabled = true;
+function cancelCsubEdit() { _csubEditingId = null; renderCsubScans(); }
+function _csubProofPicked() {
+  const inp = document.getElementById('csubEditProofs');
+  const lbl = document.getElementById('csubEditProofLbl');
+  if (inp && lbl) lbl.textContent = inp.files.length ? `已选 ${inp.files.length} 个文件 ✓` : '';
+}
+function _csubEditRowHtml(r) {
+  const parts = (Array.isArray(r.participants) ? r.participants : []).join('、');
+  const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
+  const inpStyle = 'padding:.28rem .4rem;border:1px solid #93c5fd;border-radius:6px;font-size:.8rem;background:#fff';
+  const numInp = (id, label, val) => `
+    <div style="display:flex;align-items:center;gap:3px;white-space:nowrap">
+      <span style="font-size:.68rem;color:var(--gray-500);width:2.6em;text-align:right">${label}</span>
+      <input type="number" id="${id}" min="0" step="0.01" value="${val != null ? val : ''}" style="${inpStyle};width:76px;text-align:right">
+    </div>`;
+  return `<tr style="border-top:2px solid #60a5fa;background:#eff6ff">
+    <td style="padding:6px 8px;vertical-align:top">${_csubTypeBadge(r.submit_type)}</td>
+    <td style="padding:6px 8px;vertical-align:top;min-width:170px">
+      <input type="text" id="csubEditCno" value="${esc(r.container_no || '')}" autocomplete="off" autocapitalize="characters"
+        style="${inpStyle};width:100%;text-transform:uppercase;font-family:monospace;font-weight:700">
+      <div style="font-size:.66rem;color:var(--gray-500);margin-top:2px">对照照片核对柜号</div>
+    </td>
+    <td style="padding:6px 8px;font-size:.78rem;white-space:nowrap;vertical-align:top">
+      ${r.service_period ? '<div>' + esc(r.service_period) + '</div>' : ''}
+      ${r.work_date ? '<div style="color:var(--gray-500)">' + esc(r.work_date) + '</div>' : ''}
+    </td>
+    <td style="padding:6px 8px;vertical-align:top">${_csubPhotoCell(r, 46)}</td>
+    <td style="padding:6px 8px;vertical-align:top;min-width:130px">
+      <input type="text" id="csubEditParts" value="${esc(parts)}" placeholder="名字1、名字2" autocomplete="off" style="${inpStyle};width:100%">
+    </td>
+    <td style="padding:6px 8px;vertical-align:top">
+      <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+        ${numInp('csubEditUnit', '报价', r.unit_price)}
+        ${numInp('csubEditCust', '客户', r.customer_price)}
+        ${numInp('csubEditWorker', '工人', r.worker_price)}
+      </div>
+    </td>
+    <td style="padding:6px 8px;vertical-align:top">${_csubInvCell(r)}</td>
+    <td style="padding:6px 8px;white-space:nowrap;color:var(--gray-500);font-size:.78rem;vertical-align:top">${esc(when)}</td>
+    <td style="padding:6px 8px;vertical-align:top;min-width:110px">
+      <input type="text" id="csubEditReviewer" placeholder="审核人 *" autocomplete="off" style="${inpStyle};width:100%">
+      <label style="display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:.7rem;color:#1d4ed8;cursor:pointer;border:1px dashed #93c5fd;border-radius:6px;padding:.2rem .4rem;background:#fff">
+        📎 付款证明
+        <input type="file" id="csubEditProofs" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="display:none" onchange="_csubProofPicked()">
+      </label>
+      <div id="csubEditProofLbl" style="font-size:.66rem;color:#15803d;margin-top:2px"></div>
+    </td>
+    <td style="padding:6px 8px;text-align:right;white-space:nowrap;vertical-align:top">
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+        <button class="btn btn-sm btn-green" id="csubEditOkBtn" style="padding:.15rem .55rem;font-size:.74rem" onclick="submitCsubInlineReview()">✓ 通过审核</button>
+        <button class="btn btn-sm btn-outline" style="padding:.15rem .55rem;font-size:.74rem" onclick="cancelCsubEdit()">取消</button>
+      </div>
+    </td>
+  </tr>`;
+}
+async function submitCsubInlineReview() {
+  const id = _csubEditingId;
+  if (id == null) return;
+  const v = x => { const el = document.getElementById(x); return el ? el.value : ''; };
+  const reviewer = v('csubEditReviewer').trim();
+  const cno = v('csubEditCno').trim();
+  if (!reviewer) { showToast('请填写审核人姓名', 'error'); const el = document.getElementById('csubEditReviewer'); if (el) el.focus(); return; }
+  if (!cno) { showToast('请填写柜号', 'error'); return; }
+  const fd = new FormData();
+  fd.append('reviewer_name', reviewer);
+  fd.append('container_no', cno);
+  fd.append('participants', v('csubEditParts'));
+  fd.append('unit_price', v('csubEditUnit'));
+  fd.append('customer_price', v('csubEditCust'));
+  fd.append('worker_price', v('csubEditWorker'));
+  const pf = document.getElementById('csubEditProofs');
+  if (pf) for (const f of pf.files) fd.append('proofs', f);
+  const btn = document.getElementById('csubEditOkBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   try {
-    const r = await api(`/admin/container-submissions/${_csubReviewId}/approve`, {
-      method: 'POST', body: JSON.stringify({
-        reviewer_name: reviewer, container_no: cno,
-        participants: document.getElementById('csubReviewParts').value,
-        unit_price: num('csubReviewUnit'), customer_price: num('csubReviewCust'), worker_price: num('csubReviewWorker'),
-      })
+    const resp = await fetch(API + `/admin/container-submissions/${id}/approve`, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd,
     });
-    if (r && r.error) { errEl.textContent = r.error; btn.disabled = false; return; }
+    const rj = await resp.json().catch(() => ({}));
+    if (!resp.ok || (rj && rj.error)) throw new Error((rj && rj.error) || ('HTTP ' + resp.status));
     showToast('已保存并通过审核 ✓');
-    closeCsubReviewModal();
+    _csubEditingId = null;
     loadCsubScans();
-  } catch (e) { errEl.textContent = '操作失败：' + (e.message || e); }
-  finally { btn.disabled = false; }
+  } catch (e) {
+    showToast('操作失败：' + (e.message || e), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✓ 通过审核'; }
+  }
 }
 async function discardCsubScan(id) {
   if (!await showConfirm('确定丢弃这条扫码记录？', { danger: true })) return;
