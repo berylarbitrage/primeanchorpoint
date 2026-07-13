@@ -19423,7 +19423,7 @@ const subReceiptUpload = multer({
 });
 
 app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array('receipts', 20), (req, res) => {
-  const inv = db.prepare('SELECT id, payment_status, payment_receipt_path, payment_receipt_paths FROM invoices WHERE id=?').get(req.params.id);
+  const inv = db.prepare('SELECT id, payment_status, payment_receipt_path, payment_receipt_paths, profile_json FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
   const b = req.body || {};
   // Replace the receipt set only when new files are uploaded; otherwise keep the
@@ -19453,8 +19453,16 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array(
   }
   const receiptPath = paths[0] || null;                  // first file → legacy single column
   const pathsJson = paths.length ? JSON.stringify(paths) : null;
-  const bank = (b.payment_bank || '').trim() || null;
-  const entity = (b.payment_entity || '').trim() || null;
+  // 收款银行/收款公司 default to the invoice profile's bank info when the caller
+  // doesn't supply them, so the 收款账户 column is never left blank on paid rows.
+  let profBank = '', profEntity = '';
+  try {
+    const prof = JSON.parse(inv.profile_json || '{}');
+    profBank = String(prof.bank_name || '').trim();
+    profEntity = String(prof.bank_account_name || '').trim();
+  } catch (_) {}
+  const bank = (b.payment_bank || '').trim() || profBank || null;
+  const entity = (b.payment_entity || '').trim() || profEntity || null;
   const handler = (b.payment_handler || '').trim() || null;
   const amtNum = Number(b.payment_amount);
   const amount = (b.payment_amount != null && b.payment_amount !== '' && !isNaN(amtNum)) ? amtNum : null;
