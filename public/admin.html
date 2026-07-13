@@ -31301,8 +31301,12 @@ function renderInvpList() {
             ? `<span ${amtMismatch ? `title="账单 $${billed.toFixed(2)} · 实收 $${Number(r.payment_amount).toFixed(2)} · 差额 $${(Number(r.payment_amount) - billed).toFixed(2)}"` : ''} style="${amtMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${Number(r.payment_amount).toFixed(2)}${amtMismatch ? ' ⚠' : ''}</span>`
             : dash;
           const payDateCell = (isPaid && r.payment_date) ? esc(r.payment_date) : dash;
-          const payAcctCell = (isPaid && (r.payment_bank || r.payment_entity))
-            ? `${esc(r.payment_bank || '')}${r.payment_entity ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(r.payment_entity)}</div>` : ''}`
+          // 收款账户: the recorded receiving bank/entity; older paid records without
+          // one fall back to the invoice profile's bank info automatically.
+          const _acctBank = r.payment_bank || r.bank_name || '';
+          const _acctEntity = r.payment_entity || r.bank_account_name || '';
+          const payAcctCell = (isPaid && (_acctBank || _acctEntity))
+            ? `${esc(_acctBank)}${_acctEntity ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_acctEntity)}</div>` : ''}`
             : dash;
           // Receipts can now be multiple files (…_receipt_paths JSON array);
           // fall back to the legacy single path. Each renders as a thumbnail / 📄.
