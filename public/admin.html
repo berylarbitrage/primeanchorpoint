@@ -31372,7 +31372,9 @@ function renderInvpList() {
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td class="invp-frz" style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
           <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}</td>
-          <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${esc(invpBankLabel(r) || '—')}</td>
+          <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${invpBankLabel(r)
+            ? `${esc(invpBankLabel(r))}${r.bank_account_name ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(r.bank_account_name)}</div>` : ''}`
+            : '—'}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
           <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap${amtMismatch ? ';color:#dc2626' : ''}" ${amtMismatch ? 'title="实收金额与账单不一致"' : ''}>$${(r.subtotal||0).toFixed(2)}</td>
           <td class="invp-frz" style="padding:8px 10px;text-align:right;color:var(--gray-600);white-space:nowrap">$${(r.wage_cost||0).toFixed(2)}</td>
