@@ -63,6 +63,10 @@ tr:hover td{background:var(--sky-light)}
 .invp-frz{position:sticky;background:#fff;z-index:2}
 thead .invp-frz{z-index:3;background:var(--gray-50,#fff)}
 tr:hover td.invp-frz{background:var(--sky-light)}
+/* 发票列表: 表头在竖向滚动时钉在顶部（列表在容器内滚动，表头行不动）。
+   冻结列的表头同时钉左+钉顶，层级要盖过普通表头和冻结的正文格。 */
+#invpTableWrap thead th{position:sticky;top:0;background:var(--gray-50,#f9fafb);z-index:4;box-shadow:0 2px 3px -2px rgba(0,0,0,.18)}
+#invpTableWrap thead th.invp-frz{z-index:5}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700}
 .badge-en{background:#fef3c7;color:#b45309}.badge-zh{background:#FFF3E0;color:#E67E22}.badge-es{background:#E8F5E9;color:#2D9D78}
 .badge-employer{background:#fef3c7;color:var(--blue)}.badge-seeker{background:#FFF3E0;color:#E67E22}.badge-other{background:var(--gray-200);color:var(--gray-600)}
@@ -31252,7 +31256,7 @@ function renderInvpList() {
 
   tableWrap.innerHTML = `
     ${containerNote}
-    <div style="overflow-x:auto">
+    <div style="overflow:auto;max-height:calc(100vh - 185px)">
     <table style="width:100%;border-collapse:collapse;font-size:.88rem;white-space:nowrap">
       <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
         ${th('Invoice 编号', 'num', 'left', true)}
@@ -31302,8 +31306,9 @@ function renderInvpList() {
             : dash;
           const payDateCell = (isPaid && r.payment_date) ? esc(r.payment_date) : dash;
           // 收款账户: the recorded receiving bank/entity; older paid records without
-          // one fall back to the invoice profile's bank info automatically.
-          const _acctBank = r.payment_bank || r.bank_name || '';
+          // one fall back to the invoice profile's bank info automatically. Profiles
+          // with only an account number still yield "账户 ••1234" via invpBankLabel.
+          const _acctBank = r.payment_bank || invpBankLabel(r) || '';
           const _acctEntity = r.payment_entity || r.bank_account_name || '';
           const payAcctCell = (isPaid && (_acctBank || _acctEntity))
             ? `${esc(_acctBank)}${_acctEntity ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_acctEntity)}</div>` : ''}`

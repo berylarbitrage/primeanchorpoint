@@ -19455,10 +19455,12 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array(
   const pathsJson = paths.length ? JSON.stringify(paths) : null;
   // 收款银行/收款公司 default to the invoice profile's bank info when the caller
   // doesn't supply them, so the 收款账户 column is never left blank on paid rows.
+  // A profile that only has an account number still yields "账户 ••1234".
   let profBank = '', profEntity = '';
   try {
     const prof = JSON.parse(inv.profile_json || '{}');
-    profBank = String(prof.bank_name || '').trim();
+    const acct = String(prof.bank_account_no || '').replace(/\D/g, '');
+    profBank = String(prof.bank_name || '').trim() || (acct ? '账户 ••' + acct.slice(-4) : '');
     profEntity = String(prof.bank_account_name || '').trim();
   } catch (_) {}
   const bank = (b.payment_bank || '').trim() || profBank || null;
@@ -19622,7 +19624,8 @@ app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res
     let profBank = '', profEntity = '';
     try {
       const prof = JSON.parse(inv.profile_json || '{}');
-      profBank = String(prof.bank_name || '').trim();
+      const acct = String(prof.bank_account_no || '').replace(/\D/g, '');
+      profBank = String(prof.bank_name || '').trim() || (acct ? '账户 ••' + acct.slice(-4) : '');
       profEntity = String(prof.bank_account_name || '').trim();
     } catch (_) {}
     const recvBank = (inv.sub_payment_bank || '').trim() || profBank || null;
