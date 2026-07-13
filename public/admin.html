@@ -7481,7 +7481,14 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </select></div>
       <div class="field"><label>文件标签</label><input id="pFileLabel" placeholder="例：2026年合同"></div>
     </div>
-    <div class="field"><input type="file" id="pFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%"></div>
+    <div class="field">
+      <div id="pFileDrop" style="border:2px dashed var(--gray-300);border-radius:10px;padding:.9rem;text-align:center;cursor:pointer;color:var(--gray-500);font-size:.85rem;transition:all .15s">
+        <div style="font-size:1.3rem;line-height:1">⬆️</div>
+        <div style="margin-top:.25rem">把文件拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span><span style="color:var(--gray-400)">（可多选）</span></div>
+        <div id="pFileName" style="margin-top:.35rem;font-weight:600;color:var(--gray-700)">未选择文件</div>
+        <input type="file" id="pFileInput" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx" style="display:none">
+      </div>
+    </div>
     <div style="display:flex;gap:.5rem;margin-top:.5rem;align-items:center;flex-wrap:wrap">
       <button class="btn-add-sm" onclick="uploadPartnerFile()">上传文件</button>
       <button class="btn-add-sm" style="background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE" onclick="openContractEditor()" title="编辑并生成格式正确的合伙协议 PDF，可直接发送 DocuSeal">📄 编辑合同模板</button>
@@ -13338,8 +13345,30 @@ function openPartnerModal(p) {
   // Files
   if (p && p.id) loadPartnerFiles(p.id);
   else document.getElementById('pFilesList').innerHTML = '';
+  _initPartnerFileDrop();
   document.getElementById('partnerModal').classList.add('show');
   captureModalState('partnerModal');
+}
+
+// Wire the partner-file drag-and-drop / click-to-pick zone once. Dropping files
+// assigns them to the hidden <input type=file> so 上传文件 reads them as usual.
+function _initPartnerFileDrop() {
+  const drop = document.getElementById('pFileDrop');
+  const input = document.getElementById('pFileInput');
+  const nameEl = document.getElementById('pFileName');
+  if (!drop || drop._wired) return;
+  drop._wired = true;
+  const showName = () => { nameEl.textContent = input.files.length ? (input.files.length === 1 ? input.files[0].name : input.files.length + ' 个文件') : '未选择文件'; };
+  const lit = on => { drop.style.borderColor = on ? 'var(--sky)' : ''; drop.style.background = on ? '#eff6ff' : ''; };
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', showName);
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(true); }));
+  ['dragleave', 'dragend'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(false); }));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); lit(false);
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) { input.files = files; showName(); }
+  });
 }
 
 const _PREDEFINED_INDUSTRIES = ['物流 Logistics','制造业 Manufacturing','食品加工 Food Processing','餐饮 Restaurant','零售 Retail','建筑 Construction','农业 Agriculture','仓储 Warehousing','清洁 Cleaning','酒店 Hospitality','医疗 Healthcare','运输 Transportation','其他 Other'];
@@ -13392,16 +13421,29 @@ async function uploadPartnerFile() {
   const pid = document.getElementById('partnerId').value;
   if (!pid) return alert('请先保存公司信息后再上传文件');
   const fileInput = document.getElementById('pFileInput');
-  if (!fileInput.files.length) return alert('请选择文件');
-  const fd = new FormData();
-  fd.append('file', fileInput.files[0]);
-  fd.append('file_type', document.getElementById('pFileType').value);
-  fd.append('file_label', document.getElementById('pFileLabel').value);
-  const r = await fetch(`${API}/admin/partners/${pid}/files`, {
-    method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
-  }).then(r=>r.json());
-  if (r.success) { fileInput.value=''; document.getElementById('pFileLabel').value=''; loadPartnerFiles(pid); }
-  else alert(r.error||'上传失败');
+  if (!fileInput.files.length) return alert('请选择或拖入文件');
+  // The endpoint takes one file per request — upload each picked/dropped file in
+  // turn, all under the same 类型/标签.
+  let ok = 0; const fails = [];
+  for (const f of fileInput.files) {
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('file_type', document.getElementById('pFileType').value);
+    fd.append('file_label', document.getElementById('pFileLabel').value);
+    try {
+      const r = await fetch(`${API}/admin/partners/${pid}/files`, {
+        method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
+      }).then(r=>r.json());
+      if (r.success) ok++; else fails.push(`${f.name}: ${r.error||'上传失败'}`);
+    } catch(e) { fails.push(`${f.name}: ${e.message||e}`); }
+  }
+  if (ok) {
+    fileInput.value=''; document.getElementById('pFileLabel').value='';
+    const nameEl = document.getElementById('pFileName'); if (nameEl) nameEl.textContent = '未选择文件';
+    loadPartnerFiles(pid);
+  }
+  if (fails.length) alert(`已上传 ${ok} 个；失败：\n${fails.join('\n')}`);
+  else if (ok) showToast(`已上传 ${ok} 个文件 ✓`);
 }
 
 async function deletePartnerFile(fid, pid) {
