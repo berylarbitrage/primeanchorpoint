@@ -31240,6 +31240,21 @@ function renderInvpList() {
     ? `<div style="margin-bottom:.6rem;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;font-size:.83rem;padding:.5rem .75rem;border-radius:8px">📦 找到 <b>${list.length}</b> 张包含 container「<b style="font-family:monospace">${esc(_invpFilter.container.toUpperCase())}</b>」的 invoice（下表已高亮匹配柜号）。</div>`
     : '';
 
+  // 银行名 → 唯一的账号后四位（跨全部发票档案汇总）。收款账户列里只记了银行名
+  // 的老记录，用它补上 ••后四位，让两列的显示格式一致；同名银行出现多个账号时
+  // 不补（无法确定是哪一个）。
+  const _bankL4 = {};
+  (window._invpAllRows || list).forEach(x => {
+    const n = (x.bank_name || '').trim(), l = (x.bank_account_last4 || '').trim();
+    if (n && l) (_bankL4[n] = _bankL4[n] || new Set()).add(l);
+  });
+  const _withL4 = label => {
+    const s = (label || '').trim();
+    if (!s || s.includes('••')) return s;
+    const set = _bankL4[s];
+    return (set && set.size === 1) ? s + ' ••' + [...set][0] : s;
+  };
+
   // Clickable, sortable column headers. The active column shows ▲/▼; the rest
   // show a faint ↕ to hint they're clickable. The header rebuilds with the table
   // on every sort, so the indicator always tracks the live sort state.
@@ -31305,13 +31320,10 @@ function renderInvpList() {
             ? `<span ${amtMismatch ? `title="账单 $${billed.toFixed(2)} · 实收 $${Number(r.payment_amount).toFixed(2)} · 差额 $${(Number(r.payment_amount) - billed).toFixed(2)}"` : ''} style="${amtMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${Number(r.payment_amount).toFixed(2)}${amtMismatch ? ' ⚠' : ''}</span>`
             : dash;
           const payDateCell = (isPaid && r.payment_date) ? esc(r.payment_date) : dash;
-          // 收款账户: 银行名 + ••账号后四位 + 收款公司。缺的部分从发票档案回退
-          // （与「收款银行」列同源）。档案的 ••后四位只在记录的银行就是档案银行
-          // 时才拼上 — 收进别的银行时我们并没有那个账户的号码可显示。
-          const _l4 = (r.bank_account_last4 || '').trim();
-          const _profBankName = (r.bank_name || '').trim();
-          let _acctBank = (r.payment_bank || '').trim() || invpBankLabel(r) || '';
-          if (_l4 && _acctBank && !_acctBank.includes('••') && _acctBank === _profBankName) _acctBank += ' ••' + _l4;
+          // 收款账户: 内容是实际记录的收款银行/公司（缺失时回退发票档案），格式
+          // 与「收款银行」列一致 — 「银行名 ••后四位」。只记了银行名的老记录用
+          // 全部发票档案里该银行唯一的后四位补齐格式。
+          const _acctBank = _withL4((r.payment_bank || '').trim() || invpBankLabel(r));
           const _acctEntity = r.payment_entity || r.bank_account_name || '';
           const payAcctCell = (isPaid && (_acctBank || _acctEntity))
             ? `${esc(_acctBank)}${_acctEntity ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_acctEntity)}</div>` : ''}`
