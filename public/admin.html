@@ -31305,10 +31305,13 @@ function renderInvpList() {
             ? `<span ${amtMismatch ? `title="账单 $${billed.toFixed(2)} · 实收 $${Number(r.payment_amount).toFixed(2)} · 差额 $${(Number(r.payment_amount) - billed).toFixed(2)}"` : ''} style="${amtMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${Number(r.payment_amount).toFixed(2)}${amtMismatch ? ' ⚠' : ''}</span>`
             : dash;
           const payDateCell = (isPaid && r.payment_date) ? esc(r.payment_date) : dash;
-          // 收款账户: the recorded receiving bank/entity; older paid records without
-          // one fall back to the invoice profile's bank info automatically. Profiles
-          // with only an account number still yield "账户 ••1234" via invpBankLabel.
-          const _acctBank = r.payment_bank || invpBankLabel(r) || '';
+          // 收款账户: 银行名 + ••账号后四位 + 收款公司。缺的部分从发票档案回退
+          // （与「收款银行」列同源）。档案的 ••后四位只在记录的银行就是档案银行
+          // 时才拼上 — 收进别的银行时我们并没有那个账户的号码可显示。
+          const _l4 = (r.bank_account_last4 || '').trim();
+          const _profBankName = (r.bank_name || '').trim();
+          let _acctBank = (r.payment_bank || '').trim() || invpBankLabel(r) || '';
+          if (_l4 && _acctBank && !_acctBank.includes('••') && _acctBank === _profBankName) _acctBank += ' ••' + _l4;
           const _acctEntity = r.payment_entity || r.bank_account_name || '';
           const payAcctCell = (isPaid && (_acctBank || _acctEntity))
             ? `${esc(_acctBank)}${_acctEntity ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_acctEntity)}</div>` : ''}`
