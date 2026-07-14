@@ -37713,47 +37713,85 @@ function openApplicantDocViewer(url, label) {
     v.innerHTML =
       `<div id="adVwHead" style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.45rem .35rem .45rem .65rem;background:#1A3F7A;color:#fff;cursor:move;user-select:none">
         <span id="adVwTitle" style="font-size:.8rem;font-weight:700">证件</span>
-        <span style="display:flex;gap:.5rem;align-items:center">
+        <span style="display:flex;gap:.4rem;align-items:center">
+          <button type="button" onclick="zoomApplicantDocViewer(-1)" title="缩小" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">－</button>
+          <span id="adVwZoomPct" style="font-size:.68rem;opacity:.85;min-width:2.8em;text-align:center">100%</span>
+          <button type="button" onclick="zoomApplicantDocViewer(1)" title="放大（也可滚轮 / 双击图片）" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">＋</button>
           <button type="button" id="adVwRotate" onclick="rotateApplicantDocViewer()" title="旋转 90°" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .25rem">⟳</button>
           <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap">原图 ↗</a>
           <button type="button" onclick="closeApplicantDocViewer()" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 .35rem">✕</button>
         </span>
       </div>
-      <div style="background:#000;display:flex;align-items:center;justify-content:center;max-height:72vh;overflow:auto">
+      <div id="adVwImgWrap" style="background:#000;display:flex;align-items:center;justify-content:center;max-height:72vh;overflow:auto">
         <img id="adVwImg" style="max-width:100%;display:block;transition:transform .15s ease" alt="">
       </div>`;
     document.body.appendChild(v);
     v.addEventListener('mousedown', e => e.stopPropagation());
     _makeDraggable(v, v.querySelector('#adVwHead'));
+    // Zoom shortcuts: wheel over the image zooms; double-click toggles 100%↔200%.
+    const wrap = v.querySelector('#adVwImgWrap');
+    wrap.addEventListener('wheel', e => { e.preventDefault(); zoomApplicantDocViewer(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+    wrap.addEventListener('dblclick', () => { _adVwZoom = _adVwZoom > 1.001 ? 1 : 2; _applyApplicantDocView(); });
   }
   v.style.display = 'block';
   v.querySelector('#adVwTitle').textContent = label || '证件';
   _adVwRotation = 0; // reset orientation for each newly opened document
+  _adVwZoom = 1;     // reset zoom too
   const img = v.querySelector('#adVwImg');
   img.src = url;
-  _applyApplicantDocRotation();
+  _applyApplicantDocView();
   v.querySelector('#adVwOpen').href = url;
 }
 let _adVwRotation = 0;
+let _adVwZoom = 1;
+const _AD_VW_ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
 function rotateApplicantDocViewer() {
   _adVwRotation = (_adVwRotation + 90) % 360;
-  _applyApplicantDocRotation();
+  _applyApplicantDocView();
 }
-function _applyApplicantDocRotation() {
+function zoomApplicantDocViewer(dir) {
+  let i = _AD_VW_ZOOMS.findIndex(s => Math.abs(s - _adVwZoom) < 0.01);
+  if (i < 0) i = 2;
+  i = Math.max(0, Math.min(_AD_VW_ZOOMS.length - 1, i + dir));
+  _adVwZoom = _AD_VW_ZOOMS[i];
+  _applyApplicantDocView();
+}
+// Apply the current rotation + zoom. Zoom widens the image (real layout width,
+// so the panel scrolls to reach every corner) and grows the floating panel so
+// more of the enlarged document is visible at once.
+function _applyApplicantDocView() {
   const img = document.getElementById('adVwImg');
   if (!img) return;
-  const r = _adVwRotation;
+  const r = _adVwRotation, z = _adVwZoom;
   img.style.transform = `rotate(${r}deg)`;
-  // When sideways, swap the fit constraints so the rotated image still fits the
-  // panel width instead of spilling out horizontally.
-  if (r === 90 || r === 270) {
-    img.style.maxWidth = '72vh';
-    img.style.maxHeight = '320px';
+  const pctEl = document.getElementById('adVwZoomPct');
+  if (pctEl) pctEl.textContent = Math.round(z * 100) + '%';
+  const wrap = document.getElementById('adVwImgWrap');
+  const panel = document.getElementById('applicantDocViewer');
+  if (z > 1.001) {
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+    img.style.width = Math.round(z * 100) + '%';
+    // Anchor top-left so the scrollbars can reach the whole image.
+    if (wrap) { wrap.style.alignItems = 'flex-start'; wrap.style.justifyContent = 'flex-start'; }
+    if (panel) panel.style.width = 'min(92vw, 720px)';
   } else {
-    img.style.maxWidth = '100%';
-    img.style.maxHeight = '72vh';
+    img.style.width = z < 0.999 ? Math.round(z * 100) + '%' : '';
+    // When sideways, swap the fit constraints so the rotated image still fits the
+    // panel width instead of spilling out horizontally.
+    if (r === 90 || r === 270) {
+      img.style.maxWidth = '72vh';
+      img.style.maxHeight = '320px';
+    } else {
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '72vh';
+    }
+    if (wrap) { wrap.style.alignItems = 'center'; wrap.style.justifyContent = 'center'; }
+    if (panel) panel.style.width = '360px';
   }
 }
+// Back-compat name (older callers) — same behavior.
+function _applyApplicantDocRotation() { _applyApplicantDocView(); }
 function closeApplicantDocViewer() { const v = document.getElementById('applicantDocViewer'); if (v) v.style.display = 'none'; }
 
 // Generic drag-by-handle helper (used by the floating doc viewer).
