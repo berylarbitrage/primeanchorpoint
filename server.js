@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11y · 新增创始人取款统计页(日期/金额/用途/截图/银行交易关联+按人统计)',
+  tag: '2026-07-11z · 存量公司编号批量改为带公司名缩写格式(COMP-州-缩写-日期) + 创始人取款页',
   started: new Date().toISOString(),
 };
 
@@ -2671,6 +2671,32 @@ try {
     if (_spRows.length) console.log(`[migration] 分包付款金额统一按账单覆盖: ${_spRows.length} 张发票`);
   }
 } catch (e) { console.log('[migration] sub_payment_amount→subtotal error:', e.message); }
+
+// One-time rename: existing partner numbers in the old COMP-ST-MMDDYY-#### format are
+// rewritten to the name-abbreviated format (#1689) new companies already use —
+// COMP-ST-ABBR-MMDDYY — keeping the ORIGINAL date segment. company_number has no
+// foreign references (everything links by partner id), so this is a pure relabel.
+try {
+  const _pnDone = db.prepare("SELECT value FROM app_settings WHERE key='partner_number_name_migrated'").get();
+  if (!_pnDone) {
+    const _pnRows = db.prepare("SELECT id, name, company_number FROM partners WHERE company_number LIKE 'COMP-%'").all();
+    const _pnUpd = db.prepare('UPDATE partners SET company_number=? WHERE id=?');
+    const _pnTaken = n => db.prepare('SELECT 1 FROM partners WHERE company_number=? LIMIT 1').get(n);
+    let _pnCount = 0;
+    db.transaction(() => {
+      for (const p of _pnRows) {
+        const m = String(p.company_number || '').match(/^COMP-([A-Z]{2})-(\d{6})-\d{4}$/);
+        if (!m) continue;   // already the new format (or a custom number) — leave it
+        const base = `COMP-${m[1]}-${partnerAbbr(p.name)}-${m[2]}`;
+        let num = base;
+        if (_pnTaken(num)) { for (let i = 2; i < 100; i++) { const c = base + '-' + i; if (!_pnTaken(c)) { num = c; break; } } }
+        if (num !== p.company_number) { _pnUpd.run(num, p.id); _pnCount++; }
+      }
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('partner_number_name_migrated','1')").run();
+    })();
+    if (_pnCount) console.log(`[migration] 公司编号改为带公司名缩写: ${_pnCount} 家`);
+  }
+} catch (e) { console.log('[migration] partner number rename error:', e.message); }
 
 // ─── SMS Inbox Module — Database Schema ───
 db.exec(`CREATE TABLE IF NOT EXISTS sms_contacts (
