@@ -32068,11 +32068,14 @@ async function invpOpenSubReceiptGallery(invoiceId) {
         ${info('利润', money((Number(row.subtotal) || 0) - (Number(row.wage_cost) || 0)), '#047857')}
       </div>
       <div style="display:flex;gap:.9rem;flex-wrap:wrap;align-items:center;border-top:1px dashed #e2e8f0;padding-top:.35rem">
-        ${info('收款银行', esc((row.bank_name || '—') + (row.bank_account_last4 ? ' ••' + row.bank_account_last4 : '')) + (row.bank_account_name ? ` <span style="color:var(--gray-500);font-weight:400">${esc(row.bank_account_name)}</span>` : ''))}
+        ${info('收款银行', esc((typeof invpBankLabel === 'function' ? invpBankLabel(row) : '') || (row.bank_account_last4 ? '账户 ••' + row.bank_account_last4 : '—'))
+          + (row.bank_account_name
+            ? ` <span style="color:var(--gray-500);font-weight:400">（户名 ${esc(row.bank_account_name)}）</span>`
+            : ' <span style="color:var(--gray-400);font-weight:400">（发票未填户名）</span>'))}
         ${info('付款状态', row.payment_status === 'paid' ? '✓ 已付款' : '未收款', row.payment_status === 'paid' ? '#047857' : '#b45309')}
         ${info('实付金额', money(row.payment_amount))}
         ${info('付款日期', esc(row.payment_date || '—'))}
-        ${info('收款账户', esc(row.payment_bank || '—'))}
+        ${info('收款账户', esc(row.payment_bank || '—') + (row.payment_entity ? ` <span style="color:var(--gray-500);font-weight:400">（户名 ${esc(row.payment_entity)}）</span>` : ''))}
       </div>
       <div style="display:flex;gap:.9rem;flex-wrap:wrap;align-items:center;border-top:1px dashed #e2e8f0;padding-top:.35rem">
         ${info('分包付款', money(row.sub_payment_amount), '#1d4ed8')}
