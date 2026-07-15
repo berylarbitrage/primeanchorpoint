@@ -19567,11 +19567,13 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   try {
     const invId = parseInt(req.params.id);
     // Scoped to the 分包 side (legacy rows have used_kind='') so the 收款回执 link
-    // on the same invoice is untouched.
+    // on the same invoice is untouched. A sub payment may span SEVERAL transactions
+    // (one per worker) — refs arrive comma/pipe-separated, link each.
     db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=NULL, used_kind='' WHERE used_invoice_id=? AND (used_kind IS NULL OR used_kind='' OR used_kind='sub')`).run(invId);
-    const boxRef = (b.sub_payment_stmt_box || '').trim();
-    const bm = boxRef.match(/^(\d+):(\d+)$/);
-    if (bm) db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=?, used_kind='sub' WHERE id=? AND statement_id=? AND kind='box'`).run(invId, parseInt(bm[2]), parseInt(bm[1]));
+    for (const ref of String(b.sub_payment_stmt_box || '').split(/[,|]/)) {
+      const bm = ref.trim().match(/^(\d+):(\d+)$/);
+      if (bm) db.prepare(`UPDATE bank_statement_txns SET used_invoice_id=?, used_kind='sub' WHERE id=? AND statement_id=? AND kind='box'`).run(invId, parseInt(bm[2]), parseInt(bm[1]));
+    }
   } catch (e) {}
   const wasSubPaid = inv.sub_payment_status === 'paid';
   const parts = [];
