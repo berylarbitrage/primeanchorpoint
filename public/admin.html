@@ -12706,6 +12706,7 @@ function openPartnerLabelSheetPrint(items) {
     .hint select { font-size: 13px; padding: 3px 6px; margin: 0 4px; }
     .hint .tip { opacity: .75; margin-left: 8px; }
     .sheet { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.25); margin: 0 auto 16px; }
+    .pageno { color: #e2e8f0; font-size: 12px; text-align: center; margin: 0 0 6px; }
     .cell { outline: 1px dashed #e2e8f0; }
     .cell:not(.empty) { cursor: grab; }
     .cell:hover { outline: 2px solid #60a5fa; z-index: 1; }
@@ -12721,6 +12722,8 @@ function openPartnerLabelSheetPrint(items) {
       width: 100%; height: 100%; font-size: 11px; color: #94a3b8; user-select: none;
     }
   }
+  .pageno { display: none; }
+  @media screen { .pageno { display: block; } }
   @media print {
     .hint { display: none; }
     .cell { outline: none; }
@@ -12728,14 +12731,17 @@ function openPartnerLabelSheetPrint(items) {
     .cell.picked { outline: none; background: none; }
     .skip, .slotno { display: none; }
     .sheet { page-break-after: always; }
-    .sheet:last-child { page-break-after: auto; }
+    .sheet:last-of-type { page-break-after: auto; }
+    .sheet.blank { display: none; }
   }
 </style></head><body>
   <p class="hint">Letter 纸 · Avery 5160（1 × 2-5/8″，每页 30 个）· ${items.length} 家公司 / ${data.length} 张标签（多州公司每州一张）·
     起始格 <select id="startSel" onchange="setStart(parseInt(this.value, 10))">${startOpts}</select> ·
     每个标签打 <input id="copiesInp" type="number" min="1" max="30" value="1" style="width:52px;font-size:13px;padding:3px 4px;text-align:center" onchange="setCopies(parseInt(this.value, 10))"> 份
+    <button onclick="addPage()" title="在后面加一页空白格子，把标签拖过去即可放到下一页">＋加一页</button>
+    <button onclick="removePage()" title="删除最后一页（须为空页）">－减空页</button>
     <button onclick="doPrint()">🖨 打印</button>
-    <span class="tip">💡 拖动标签到任意格子可调整位置（或先点标签、再点目标格；两张标签互点可交换）</span>
+    <span class="tip">💡 拖动标签到任意格子可调整位置（或先点标签、再点目标格）；想放到下一页就点「＋加一页」再拖过去，全空的页打印时自动跳过</span>
   </p>
   <div id="pages"></div>
   <script>
@@ -12760,6 +12766,19 @@ function openPartnerLabelSheetPrint(items) {
     function setCopies(n) {
       copies = Math.max(1, Math.min(30, n || 1));
       pack(); render();
+    }
+    // 加一页空白格子（30 格），标签可以拖进去；减页只允许删全空的最后一页
+    function addPage() {
+      for (var i = 0; i < 30; i++) slots.push(null);
+      render();
+    }
+    function removePage() {
+      if (slots.length <= 30) return;
+      var last = slots.slice(-30);
+      if (last.some(function(x){ return !!x; })) { alert('最后一页上还有标签，先把它们移走再删这一页'); return; }
+      slots.length -= 30;
+      if (picked >= slots.length) picked = -1;
+      render();
     }
     // 移动/交换：目标为空格 → 移过去；目标已有标签 → 两张互换
     function moveLabel(from, to) {
@@ -12798,7 +12817,9 @@ function openPartnerLabelSheetPrint(items) {
       var pages = [];
       for (var p = 0; p < slots.length; p += 30) pages.push(slots.slice(p, p + 30));
       document.getElementById('pages').innerHTML = pages.map(function(pg, pi){
-        return '<div class="sheet">' + pg.map(function(it, ci){
+        var blank = !pg.some(function(x){ return !!x; });
+        return '<div class="pageno">第 ' + (pi + 1) + ' 页 / 共 ' + pages.length + ' 页' + (blank ? '（空白页，打印时跳过）' : '') + '</div>' +
+          '<div class="sheet' + (blank ? ' blank' : '') + '">' + pg.map(function(it, ci){
           var idx = pi * 30 + ci;
           var slotNo = idx + 1;
           var dnd = ' ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, ' + idx + ')" onclick="onCellClick(' + idx + ')"';
