@@ -32126,7 +32126,20 @@ function _invpMatchInit(invoiceId, inv, txns, rcpts) {
   const validIdx = new Set(items.map((_, i) => i)), validId = new Set(mtxns.map(t => t.id));
   let groups = (inv && Array.isArray(inv.sub_match_groups)) ? inv.sub_match_groups : [];
   groups = groups.map(g => ({ w: (g.w || []).filter(i => validIdx.has(i)), t: (g.t || []).filter(id => validId.has(id)) })).filter(g => g.w.length || g.t.length);
+  // Auto-match obvious 1:1 same-amount pairs (exact first, then within $5) for anything
+  // not already grouped — the user only needs to manually handle combos / mismatches.
+  const grouped = new Set(), tGone = new Set();
+  groups.forEach(g => { g.w.forEach(i => grouped.add(i)); g.t.forEach(id => tGone.add(id)); });
+  let autoAdded = false;
+  const tryFill = maxDiff => items.forEach((it, i) => {
+    if (grouped.has(i)) return;
+    let best = null, bd = Infinity;
+    mtxns.forEach(t => { if (tGone.has(t.id)) return; const d = Math.abs(t.amt - it.amt); if (d <= maxDiff && d < bd) { bd = d; best = t; } });
+    if (best) { tGone.add(best.id); grouped.add(i); groups.push({ w: [i], t: [best.id] }); autoAdded = true; }
+  });
+  tryFill(0.005); tryFill(5);
   window._invpMatch = { invId: invoiceId, keyLabel, items, txns: mtxns, rcpts: rcpts || [], groups, subtotal: (inv && inv.subtotal) || 0, sel: { w: new Set(), t: new Set() } };
+  if (autoAdded) _invpMatchSave();
 }
 const _INVP_GC = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#db2777', '#0891b2', '#65a30d', '#dc2626'];
 function _invpGroupState(g) {
