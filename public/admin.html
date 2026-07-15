@@ -40112,8 +40112,18 @@ function bsOpenBoxDetail(id) {
         const bg = isRecv ? '#ecfdf5' : '#eff6ff', c2 = isRecv ? '#047857' : '#1d4ed8', bd = isRecv ? '#a7f3d0' : '#bfdbfe';
         return `<span title="已被发票 ${esc(b.used_by.invoice_number || '')}${b.used_by.company_name ? '（' + esc(b.used_by.company_name) + '）' : ''} 用作${lbl}凭证" style="display:inline-block;margin:1px;padding:.1rem .45rem;background:${bg};color:${c2};border:1px solid ${bd};border-radius:5px;font-size:.7rem;font-weight:700;white-space:nowrap"><span style="font-family:monospace">🧾 ${esc(b.used_by.invoice_number || '')}</span> · ${lbl}</span>`;
       })() : '';
+      // Annotation-side link: the invoice number filled/matched while annotating.
+      // Show whether that invoice exists and its 收款 status.
+      const invRefBadge = (!b.used_by && b.inv_ref) ? (() => {
+        const r = b.inv_ref;
+        const pill = (txt, bg, c2, bd, tip) => `<span title="${tip}" style="display:inline-block;margin:1px;padding:.1rem .45rem;background:${bg};color:${c2};border:1px solid ${bd};border-radius:5px;font-size:.7rem;font-weight:700;white-space:nowrap"><span style="font-family:monospace">🔗 ${esc(r.invoice_number || '')}</span> · ${txt}</span>`;
+        if (r.missing) return pill('找不到该发票', '#fef2f2', '#b91c1c', '#fecaca', '标注里填的发票号在系统中不存在，请核对');
+        return r.payment_status === 'paid'
+          ? pill('发票已收款', '#ecfdf5', '#047857', '#a7f3d0', `标注对应发票 ${esc(r.invoice_number)}${r.company_name ? '（' + esc(r.company_name) + '）' : ''} · 已标记收款`)
+          : pill('发票未收款', '#fffbeb', '#b45309', '#fde68a', `标注对应发票 ${esc(r.invoice_number)}${r.company_name ? '（' + esc(r.company_name) + '）' : ''} · 还未标记收款`);
+      })() : '';
       const extLinks = (Array.isArray(b.links) && b.links.length) ? _bsLinkBadges(b.links) : '';
-      const linkCell = (usedBadge + extLinks) || '<span style="color:var(--gray-300)">—</span>';
+      const linkCell = (usedBadge + invRefBadge + extLinks) || '<span style="color:var(--gray-300)">—</span>';
       return `<tr style="border-top:1px solid var(--gray-100);background:${i % 2 ? '#fafbfc' : '#fff'}">
         <td style="padding:.55rem .5rem;color:var(--gray-400);font-size:.76rem;text-align:right">${i + 1}</td>
         <td style="padding:.55rem .5rem;white-space:nowrap">${dirPill}</td>
