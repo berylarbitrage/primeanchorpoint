@@ -32025,13 +32025,20 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
   _ensureBankNameOption(document.getElementById('invpSubPayHandler'), row.sub_payment_handler || '');
   // Default amount ← ALWAYS the invoice's billed total (账单), date ← today. Even on
   // 更新, a previously saved amount is replaced by the bill (per user: the sub payment
-  // must equal the bill) — a toast notes the swap when the two differ.
+  // must equal the bill) — a toast notes the swap when the two differ. Container-mode
+  // invoices are the exception: their sub payment is the 分包合计, not the bill, so the
+  // saved amount is kept there.
   const _savedSubAmt = (row.sub_payment_amount != null && row.sub_payment_amount !== '') ? Number(row.sub_payment_amount) : null;
-  document.getElementById('invpSubPayAmount').value =
-    (row.subtotal != null && row.subtotal !== '') ? row.subtotal
-    : (_savedSubAmt != null ? _savedSubAmt : '');
-  if (_savedSubAmt != null && row.subtotal != null && Math.abs(_savedSubAmt - Number(row.subtotal)) > 0.005) {
-    showToast(`原记录金额 $${_savedSubAmt.toFixed(2)}，已按账单 $${Number(row.subtotal).toFixed(2)} 预填，核对后点更新`, 'warning', 6000);
+  const _isContainerInv = row.invoice_mode === 'container';
+  if (_isContainerInv && _savedSubAmt != null) {
+    document.getElementById('invpSubPayAmount').value = _savedSubAmt;
+  } else {
+    document.getElementById('invpSubPayAmount').value =
+      (row.subtotal != null && row.subtotal !== '') ? row.subtotal
+      : (_savedSubAmt != null ? _savedSubAmt : '');
+    if (_savedSubAmt != null && row.subtotal != null && Math.abs(_savedSubAmt - Number(row.subtotal)) > 0.005) {
+      showToast(`原记录金额 $${_savedSubAmt.toFixed(2)}，已按账单 $${Number(row.subtotal).toFixed(2)} 预填，核对后点更新`, 'warning', 6000);
+    }
   }
   document.getElementById('invpSubPayDate').value =
     row.sub_payment_date || new Date().toISOString().slice(0, 10);
