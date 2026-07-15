@@ -31377,7 +31377,7 @@ function renderInvpList() {
             : dash;
           // Receipts can now be multiple files (…_receipt_paths JSON array);
           // fall back to the legacy single path. Each renders as a thumbnail / 📄.
-          const rcptThumbs = (pathsJson, single, color, stack) => {
+          const rcptThumbs = (pathsJson, single, color) => {
             let arr = [];
             try { arr = pathsJson ? JSON.parse(pathsJson) : []; } catch (_) { arr = []; }
             if (!Array.isArray(arr)) arr = [];
@@ -31385,11 +31385,11 @@ function renderInvpList() {
             arr = arr.filter(Boolean);
             if (!arr.length) return dash;
             const one = p => /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(p)
-              ? `<a href="${p}" onclick="invpOpenReceipt(this.href);return false" title="点击查看回执"><img src="${p}" alt="回执" loading="lazy" style="width:${stack ? 56 : 42}px;height:42px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block;cursor:zoom-in"></a>`
-              : `<a href="${p}" onclick="invpOpenReceipt(this.href);return false" title="点击查看文件" style="font-size:.72rem;color:${color};text-decoration:underline;cursor:pointer">📄</a>`;
-            // stack: one thumbnail per line (分包回执 often holds one cropped txn per
-            // worker — a single column reads top-to-bottom instead of a 3-wide mosaic).
-            return `<div style="display:flex;${stack ? 'flex-direction:column;align-items:center' : 'flex-wrap:wrap;justify-content:center'};gap:3px;max-width:140px;margin:0 auto">${arr.map(one).join('')}</div>`;
+              ? `<a href="${p}" onclick="invpOpenReceipt(this.href);return false" title="点击查看回执" style="flex:0 0 auto"><img src="${p}" alt="回执" loading="lazy" style="width:42px;height:42px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);display:block;cursor:zoom-in"></a>`
+              : `<a href="${p}" onclick="invpOpenReceipt(this.href);return false" title="点击查看文件" style="flex:0 0 auto;font-size:.72rem;color:${color};text-decoration:underline;cursor:pointer;align-self:center">📄</a>`;
+            // Always a single horizontal row (fixed height) so every invoice row is the
+            // same height; extra receipts scroll horizontally instead of stacking.
+            return `<div style="display:flex;flex-wrap:nowrap;justify-content:center;align-items:center;gap:3px;max-width:150px;margin:0 auto;overflow-x:auto">${arr.map(one).join('')}</div>`;
           };
           const receiptCell = isPaid ? rcptThumbs(r.payment_receipt_paths, r.payment_receipt_path, 'var(--green)') : dash;
           // 分包付款: money paid OUT to the subcontractor. It corresponds to 工资
@@ -31419,7 +31419,7 @@ function renderInvpList() {
                  <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
                </div>`
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
-          const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)', true) : dash;
+          const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)') : dash;
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td class="invp-frz" style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
           <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}</td>
