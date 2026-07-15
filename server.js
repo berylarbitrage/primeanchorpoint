@@ -19080,8 +19080,14 @@ function _invoiceWageCost(items_json, profile_json) {
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
   const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, payment_receipt_paths, sub_payment_receipt_paths, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
+  // Sum of the bank-statement transactions linked to an invoice as its proof, per
+  // side (recv = 收款回执 / sub = 分包回执). This IS the real 实付 / 分包付款金额
+  // ("所有上传凭证的加和"), independent of any hand-entered amount.
+  const linkedSumStmt = db.prepare(`SELECT COALESCE(SUM(ABS(amount)),0) AS s FROM bank_statement_txns WHERE used_invoice_id=? AND used_kind=? AND kind='box'`);
   for (const r of rows) {
     r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json);
+    try { r.payment_txn_sum = Number(linkedSumStmt.get(r.id, 'recv').s) || 0; } catch (_) { r.payment_txn_sum = 0; }
+    try { r.sub_payment_txn_sum = Number(linkedSumStmt.get(r.id, 'sub').s) || 0; } catch (_) { r.sub_payment_txn_sum = 0; }
     // Surface a lightweight bank label (bank name + account last-4) and the payee
     // entity (account name) so the list can show/filter by bank and the receipt
     // dialog can default its dropdowns — without shipping the whole profile_json.
