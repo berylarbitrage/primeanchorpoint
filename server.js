@@ -857,6 +857,12 @@ try { db.exec(`ALTER TABLE partners ADD COLUMN company_number TEXT DEFAULT ''`);
 try { db.exec(`ALTER TABLE partners ADD COLUMN abolished INTEGER DEFAULT 0`); } catch {}
 try { db.exec(`ALTER TABLE partners ADD COLUMN container_submit_token TEXT DEFAULT ''`); } catch {}
 try { db.exec(`ALTER TABLE partners ADD COLUMN label_printed_at TEXT DEFAULT ''`); } catch {}
+// Short links for printed QR codes: /s/<code> 302-redirects to a same-origin path
+db.exec(`CREATE TABLE IF NOT EXISTS short_links (
+  code TEXT PRIMARY KEY,
+  target TEXT NOT NULL UNIQUE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 
 // ─── Per-partner container submission inbox (mobile QR collection) ───
 db.exec(`CREATE TABLE IF NOT EXISTS container_submissions (
@@ -14673,6 +14679,37 @@ app.post('/api/admin/partners/:id/applicant-qr/regenerate', requireAdmin, blockM
     const token = crypto.randomBytes(20).toString('hex');
     db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
     res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUBLIC: printed-QR short link → 302 to the stored same-origin path.
+app.get('/s/:code', (req, res) => {
+  const code = String(req.params.code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const row = code ? db.prepare('SELECT target FROM short_links WHERE code=?').get(code) : null;
+  if (!row) return res.status(404).send('Link not found');
+  res.redirect(row.target);
+});
+
+// Get-or-create a short code for a same-origin path (only paths are accepted,
+// so the redirect can never leave this site).
+app.post('/api/admin/short-link', requireAdmin, blockManager, (req, res) => {
+  try {
+    let target = String((req.body && req.body.target) || '').trim();
+    if (!target.startsWith('/') || target.startsWith('//') || target.length > 500) {
+      return res.status(400).json({ error: 'target must be a same-origin path' });
+    }
+    const existing = db.prepare('SELECT code FROM short_links WHERE target=?').get(target);
+    if (existing) return res.json({ success: true, code: existing.code });
+    let code = '';
+    for (let i = 0; i < 20; i++) {
+      code = crypto.randomBytes(5).toString('hex').slice(0, 6);
+      const clash = db.prepare('SELECT code FROM short_links WHERE code=?').get(code);
+      if (!clash) break;
+      code = '';
+    }
+    if (!code) return res.status(500).json({ error: 'could not allocate code' });
+    db.prepare('INSERT INTO short_links (code, target) VALUES (?,?)').run(code, target);
+    res.json({ success: true, code });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
