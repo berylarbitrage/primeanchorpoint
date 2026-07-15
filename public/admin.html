@@ -12593,13 +12593,13 @@ function printSelectedPartnerLabels() {
   openPartnerLabelSheetPrint(items);
 }
 // Letter 纸批量标签：Avery 5160 版式（3 列 × 10 行 = 每页 30 个，1 × 2-5/8″）
+// 支持选择起始格：标签纸前面几格已用掉时，从第 N 格开始排，前面留空跳过。
+// 顶部下拉可选 1-30，也可以直接点击预览里的格子把它设为起点；超过 30 格自动分页。
 function openPartnerLabelSheetPrint(items) {
-  const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const cells = items.map(p => `
-    <div class="cell"><div class="inner">
-      <div class="name">${esca((p.name||'').trim() || '—')}</div>
-      ${p.company_number ? `<div class="num">${esca(p.company_number)}</div>` : ''}
-    </div></div>`).join('');
+  const data = items.map(p => ({ name: (p.name||'').trim() || '—', num: p.company_number || '' }));
+  const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
+  const startOpts = Array.from({ length: 30 }, (_, i) =>
+    `<option value="${i + 1}">第 ${i + 1} 格（第 ${Math.floor(i / 3) + 1} 行第 ${i % 3 + 1} 列）</option>`).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>公司标签 (${items.length})</title>
 <style>
   @page { size: letter; margin: 0; }
@@ -12615,7 +12615,7 @@ function openPartnerLabelSheetPrint(items) {
     column-gap: 0.125in;          /* 列间距 1/8in */
     row-gap: 0;
   }
-  .cell { width: 2.625in; height: 1in; overflow: hidden; }
+  .cell { width: 2.625in; height: 1in; overflow: hidden; position: relative; }
   .inner {
     width: 100%; height: 100%;
     padding: 0.06in 0.15in;
@@ -12631,25 +12631,68 @@ function openPartnerLabelSheetPrint(items) {
     margin-top: 0.05in; font-family: 'Courier New', monospace; font-size: 7.5pt; letter-spacing: .2px;
     color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
   }
+  .skip { display: none; }
   @media screen {
     body { background: #64748b; padding: 20px; }
     .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
     .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
-    .sheet { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
-    .cell { outline: 1px dashed #e2e8f0; }
+    .hint select { font-size: 13px; padding: 3px 6px; margin: 0 4px; }
+    .hint .tip { opacity: .75; margin-left: 8px; }
+    .sheet { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.25); margin: 0 auto 16px; }
+    .cell { outline: 1px dashed #e2e8f0; cursor: pointer; }
+    .cell:hover { outline: 2px solid #60a5fa; z-index: 1; }
+    .cell.empty { background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 6px, #eef2f7 6px, #eef2f7 12px); }
+    .skip {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; height: 100%; font-size: 11px; color: #94a3b8; user-select: none;
+    }
   }
-  @media print { .hint { display: none; } .cell { outline: none; } }
+  @media print {
+    .hint { display: none; }
+    .cell { outline: none; }
+    .cell.empty { background: none; }
+    .skip { display: none; }
+    .sheet { page-break-after: always; }
+    .sheet:last-child { page-break-after: auto; }
+  }
 </style></head><body>
-  <p class="hint">Letter 纸 · Avery 5160（1 × 2-5/8″，每页 30 个）· 共 ${items.length} 个标签<button onclick="window.print()">🖨 打印</button></p>
-  <div class="sheet">${cells}</div>
+  <p class="hint">Letter 纸 · Avery 5160（1 × 2-5/8″，每页 30 个）· 共 ${items.length} 个标签 ·
+    起始格 <select id="startSel" onchange="setStart(parseInt(this.value, 10))">${startOpts}</select>
+    <button onclick="window.print()">🖨 打印</button>
+    <span class="tip">💡 也可以直接点格子选择从哪格开始（跳过已用掉的格子）</span>
+  </p>
+  <div id="pages"></div>
   <script>
-    (function(){
+    var ITEMS = ${dataJson};
+    var start = 1;
+    function escp(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+    function setStart(n) {
+      start = Math.max(1, Math.min(30, n || 1));
+      render();
+    }
+    function render() {
+      var slots = [];
+      for (var i = 0; i < start - 1; i++) slots.push(null);
+      for (var j = 0; j < ITEMS.length; j++) slots.push(ITEMS[j]);
+      var pages = [];
+      for (var p = 0; p < slots.length; p += 30) pages.push(slots.slice(p, p + 30));
+      document.getElementById('pages').innerHTML = pages.map(function(pg, pi){
+        return '<div class="sheet">' + pg.map(function(it, ci){
+          var slotNo = pi * 30 + ci + 1;
+          if (!it) return '<div class="cell empty" title="已用格（点击可改成从此格开始）" onclick="setStart(' + slotNo + ')"><div class="skip">跳过</div></div>';
+          return '<div class="cell" title="点击从此格开始" onclick="setStart(' + slotNo + ')"><div class="inner">' +
+            '<div class="name">' + escp(it.name) + '</div>' +
+            (it.num ? '<div class="num">' + escp(it.num) + '</div>' : '') +
+          '</div></div>';
+        }).join('') + '</div>';
+      }).join('');
       document.querySelectorAll('.name').forEach(function(el){
         var size = 10.5;
         while (el.scrollHeight > el.clientHeight && size > 7) { size -= 0.5; el.style.fontSize = size + 'pt'; }
       });
-      window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 300); });
-    })();
+      document.getElementById('startSel').value = String(start);
+    }
+    render();
   <\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=900,height=700');
