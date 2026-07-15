@@ -31026,8 +31026,14 @@ function invpMatchedContainers(r, q) {
 // "Chase ••9072" label for a list row, from the server-supplied bank_name /
 // bank_account_last4. Used for the 银行 column and the per-bank filter.
 function invpBankLabel(r) {
-  const name = (r.bank_name || '').trim();
+  let name = (r.bank_name || '').trim();
   const l4 = (r.bank_account_last4 || '').trim();
+  // Only a last-4 recorded → borrow the bank name from another invoice that used the
+  // same account (when it maps to exactly one bank), so it reads "Chase Bank ••9072".
+  if (!name && l4) {
+    const set = (window._invpL4Bank || {})[l4];
+    if (set && set.size === 1) name = [...set][0];
+  }
   if (!name && !l4) return '';
   return (name || '账户') + (l4 ? ' ••' + l4 : '');
 }
@@ -31202,6 +31208,15 @@ function renderInvpList() {
   _invpFilter.to = val('invpFltTo');
   _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
   _invpFilter.container = (val('invpFltContainer') || '').trim().toLowerCase();
+
+  // 账号后四位 → 银行名（跨全部发票汇总）。有些发票只记了账号后四位没记银行名，
+  // 用同一后四位在别处出现过的唯一银行名补上，让「银行/收款账户」显示成
+  // 「Chase Bank ••9072」而不是「账户 ••9072」。同一后四位对应多个银行名时不补。
+  window._invpL4Bank = {};
+  (_invpAllRows || []).forEach(x => {
+    const n = (x.bank_name || '').trim(), l = (x.bank_account_last4 || '').trim();
+    if (n && l) (window._invpL4Bank[l] = window._invpL4Bank[l] || new Set()).add(n);
+  });
 
   let list = _invpAllRows.slice();
   if (_invpFilter.company) list = list.filter(r => (r.company_name || '') === _invpFilter.company);
