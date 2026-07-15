@@ -40675,15 +40675,17 @@ function _bsDetailRender() {
         return _linkPill(b.used_by.invoice_id, b.used_by.invoice_number, lbl, bg, c2, bd,
           `已被发票 ${esc(b.used_by.invoice_number || '')}${b.used_by.company_name ? '（' + esc(b.used_by.company_name) + '）' : ''} 用作${isRecv ? '收款回执' : '分包付款'}凭证`);
       })() : '';
-      // Annotation-side link: the invoice number filled/matched while annotating.
-      // Show whether that invoice exists and its 收款 status.
+      // Annotation-side link: the invoice number filled/matched while annotating. The
+      // role follows the transaction's direction — an income row IS that invoice's
+      // 收款回执, an expense row IS its 分包付款 — same wording as the picker-made links.
       const invRefBadge = (!b.used_by && b.inv_ref) ? (() => {
         const r = b.inv_ref;
         if (r.missing) return _linkPill(null, r.invoice_number, '⚠ 找不到该发票', '#fef2f2', '#b91c1c', '#fecaca', '标注里填的发票号在系统中不存在，请核对');
         const nm = r.company_name ? '（' + esc(r.company_name) + '）' : '';
-        return r.payment_status === 'paid'
-          ? _linkPill(r.invoice_id, r.invoice_number, '🔗 已关联 · 发票已收款', '#ecfdf5', '#047857', '#a7f3d0', `已关联发票 ${esc(r.invoice_number)}${nm} · 发票页已标记收款`)
-          : _linkPill(r.invoice_id, r.invoice_number, '🔗 已关联', '#eff6ff', '#1d4ed8', '#bfdbfe', `已关联发票 ${esc(r.invoice_number)}${nm}（发票页的收款状态为未收款，仅供参考）`);
+        const isIn = b.direction === 'in';
+        return isIn
+          ? _linkPill(r.invoice_id, r.invoice_number, '🧾 已用作收款回执', '#ecfdf5', '#047857', '#a7f3d0', `已关联发票 ${esc(r.invoice_number)}${nm} · 这笔收入是该发票的收款`)
+          : _linkPill(r.invoice_id, r.invoice_number, '🧾 已用作分包付款', '#eff6ff', '#1d4ed8', '#bfdbfe', `已关联发票 ${esc(r.invoice_number)}${nm} · 这笔支出是该发票的分包付款`);
       })() : '';
       const extLinks = (Array.isArray(b.links) && b.links.length) ? _bsLinkBadges(b.links) : '';
       const linkCell = (usedBadge + invRefBadge + extLinks) || '<span style="color:var(--gray-300)">—</span>';
