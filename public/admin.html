@@ -40503,10 +40503,7 @@ function _bsDetailRender() {
         const nm = r.company_name ? '（' + esc(r.company_name) + '）' : '';
         return r.payment_status === 'paid'
           ? _linkPill(r.invoice_id, r.invoice_number, '✓ 发票已收款', '#ecfdf5', '#047857', '#a7f3d0', `标注对应发票 ${esc(r.invoice_number)}${nm} · 已标记收款`)
-          : _linkPill(r.invoice_id, r.invoice_number, '发票未收款', '#fffbeb', '#b45309', '#fde68a', `标注对应发票 ${esc(r.invoice_number)}${nm} · 还未标记收款`)
-            + (b.direction === 'in'
-              ? `<button class="btn btn-sm" style="margin-top:2px;background:#16a34a;color:#fff;border:none;font-size:.66rem;padding:.15rem .5rem;border-radius:6px;cursor:pointer" onclick="bsQuickMarkPaid(${id},${b.id},${r.invoice_id})" title="用这笔收入自动生成收款回执并把发票 ${esc(r.invoice_number)} 标记为已收款">⚡ 一键登记收款</button>`
-              : '');
+          : _linkPill(r.invoice_id, r.invoice_number, '发票未收款', '#fffbeb', '#b45309', '#fde68a', `标注对应发票 ${esc(r.invoice_number)}${nm} · 还未标记收款（收款在发票页登记）`);
       })() : '';
       const extLinks = (Array.isArray(b.links) && b.links.length) ? _bsLinkBadges(b.links) : '';
       const linkCell = (usedBadge + invRefBadge + extLinks) || '<span style="color:var(--gray-300)">—</span>';
@@ -40533,36 +40530,6 @@ function _bsDetailRender() {
   }
 }
 function bsCloseBoxDetail() { document.getElementById('bsBoxDetailModal').classList.remove('show'); }
-// One-click 收款登记 from an annotation: crop this transaction as the receipt image,
-// mark the linked invoice paid (amount/date from the transaction) and reserve the
-// transaction as its recv-side proof — the same result as doing it on the invoice page.
-async function bsQuickMarkPaid(stmtId, boxId, invoiceId) {
-  const s = _bsStmtById[stmtId]; if (!s) return;
-  const box = (s.boxes || []).find(b => String(b.id) === String(boxId)); if (!box) { showToast('标注不存在', 'error'); return; }
-  const amt = box.amount != null ? Number(box.amount) : null;
-  const ok = await showConfirm(
-    `把发票 <b style="font-family:monospace">${esc(box.invoice_number || '')}</b> 登记为已收款？<br><br>实付金额 <b>$${amt != null ? amt.toFixed(2) : '—'}</b> · 付款日期 <b>${esc(box.txn_date || '—')}</b><br>凭证：自动截取这笔交易作为收款回执，并与发票关联。`,
-    { confirmLabel: '登记收款', cancelLabel: '取消' }
-  );
-  if (!ok) return;
-  showToast('正在生成回执并登记…', 'warning', 4000);
-  try {
-    const file = await _invpCropBoxImage(stmtId, box);
-    const fd = new FormData();
-    fd.append('receipts', file);
-    fd.append('payment_stmt_box', stmtId + ':' + boxId);
-    if (amt != null) fd.append('payment_amount', String(amt));
-    if (box.txn_date) fd.append('payment_date', box.txn_date);
-    fd.append('payment_bank', s.bank || '');
-    fd.append('payment_entity', s.account_name || '');
-    const resp = await fetch('/api/admin/invoices/' + invoiceId + '/mark-paid', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
-    if (!resp.ok) throw new Error(await resp.text());
-    window._invpBankStmtBoxes = null;   // picker cache: used flags changed
-    showToast('已登记收款 ✓', 'success');
-    if (typeof loadInvpList === 'function' && document.getElementById('invpListWrap')) loadInvpList();
-    bsOpenBoxDetail(stmtId);   // re-fetch → badge flips to 已用作收款回执
-  } catch (e) { showToast('登记失败：' + (e.message || e), 'error', 6000); }
-}
 // Jump from an annotation's link badge straight to the invoice builder with that
 // invoice loaded (view/edit).
 function bsOpenLinkedInvoice(invoiceId) {
