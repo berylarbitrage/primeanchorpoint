@@ -13176,6 +13176,7 @@ function _openQrPrintWindow(title, hintText, pagesHtml) {
     border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 0.12in 0.22in; margin-bottom: 0.16in;
     page-break-inside: avoid;
   }
+  .row:last-child { margin-bottom: 0; }
   .row img { width: 2.2in; height: 2.2in; flex: 0 0 auto; }
   .rt { min-width: 0; }
   .ct { font-weight: 800; font-size: 14pt; margin-bottom: 5px; }
@@ -13189,7 +13190,13 @@ function _openQrPrintWindow(title, hintText, pagesHtml) {
   }
   @media print {
     .hint { display: none; }
-    .page { padding: 0.45in; page-break-after: always; }
+    /* 固定一页高度并纵向居中，内容不再靠上（高度留 0.02in 余量防止
+       四舍五入挤出空白页） */
+    .page {
+      height: 10.98in; padding: 0.45in;
+      display: flex; flex-direction: column; justify-content: center;
+      page-break-after: always;
+    }
     .page:last-child { page-break-after: auto; }
   }
 </style></head><body>
