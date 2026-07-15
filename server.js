@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11c · 分包付款一律按账单金额预填(更新也是) + 扫码分组/发票匹配 + 行内审核',
+  tag: '2026-07-11d · 已存分包付款金额一次性批量覆盖为账单(container除外) + 预填一律按账单',
   started: new Date().toISOString(),
 };
 
@@ -2630,6 +2630,31 @@ db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('worker_port
 // Admin can update these via the company settings UI; DB values override env vars.
 db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('company_legal_name',  'Prime Anchor Workforce LLC')`).run();
 db.prepare(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('company_signer_name', 'Prime Anchor Workforce LLC')`).run();
+
+// One-time overwrite (user request): every recorded 分包付款 amount on an HOURLY invoice
+// must equal the invoice's billed total (账单). Older records saved the wage total (the
+// old prefill default) or a hand-typed figure — overwrite them all to subtotal, noting
+// each change in invoice_history so the original figure stays traceable. Container-mode
+// invoices are skipped: their sub payment is the 分包合计, not the bill.
+try {
+  const _spDone = db.prepare("SELECT value FROM app_settings WHERE key='sub_pay_amount_bill_migrated'").get();
+  if (!_spDone) {
+    const _spRows = db.prepare(`SELECT id, invoice_number, sub_payment_amount, subtotal, profile_json FROM invoices
+      WHERE sub_payment_status='paid' AND sub_payment_amount IS NOT NULL AND subtotal IS NOT NULL
+        AND ABS(sub_payment_amount - subtotal) > 0.005`).all()
+      .filter(r => !String(r.profile_json || '').includes('"invoice_mode":"container"'));
+    const _spUpd = db.prepare('UPDATE invoices SET sub_payment_amount=? WHERE id=?');
+    const _spHist = db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)');
+    db.transaction(() => {
+      for (const r of _spRows) {
+        _spUpd.run(r.subtotal, r.id);
+        _spHist.run(r.id, '分包付款金额改按账单', `$${Number(r.sub_payment_amount).toFixed(2)} → $${Number(r.subtotal).toFixed(2)}（统一按账单金额覆盖）`);
+      }
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('sub_pay_amount_bill_migrated','1')").run();
+    })();
+    if (_spRows.length) console.log(`[migration] 分包付款金额统一按账单覆盖: ${_spRows.length} 张发票`);
+  }
+} catch (e) { console.log('[migration] sub_payment_amount→subtotal error:', e.message); }
 
 // ─── SMS Inbox Module — Database Schema ───
 db.exec(`CREATE TABLE IF NOT EXISTS sms_contacts (
@@ -19072,7 +19097,8 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
       // a number found here belongs to the record that actually holds it.
       const citems = Array.isArray(p.container_items) ? p.container_items : [];
       r.container_nos = [...new Set(citems.map(c => String(c.container_no || '').trim().toUpperCase()).filter(Boolean))];
-    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; }
+      r.invoice_mode = p.invoice_mode === 'container' ? 'container' : 'hourly';
+    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; r.invoice_mode = 'hourly'; }
     delete r.items_json; delete r.profile_json;
   }
   res.json(rows);
