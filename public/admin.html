@@ -12592,18 +12592,18 @@ function openPartnerLabelSheetPrint(items) {
   .cell { width: 2.625in; height: 1in; overflow: hidden; }
   .inner {
     width: 100%; height: 100%;
-    padding: 0.06in 0.1in;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; overflow: hidden;
+    padding: 0.06in 0.15in;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+    text-align: left; overflow: hidden;
   }
   .name {
-    font-weight: 700; line-height: 1.1; font-size: 13pt;
+    font-weight: 600; line-height: 1.18; font-size: 10.5pt;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     word-break: break-word; max-width: 100%;
   }
   .num {
-    margin-top: 0.05in; font-family: 'Courier New', monospace; font-size: 8.5pt; letter-spacing: .2px;
-    color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    margin-top: 0.05in; font-family: 'Courier New', monospace; font-size: 7.5pt; letter-spacing: .2px;
+    color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
   }
   @media screen {
     body { background: #64748b; padding: 20px; }
@@ -12619,7 +12619,7 @@ function openPartnerLabelSheetPrint(items) {
   <script>
     (function(){
       document.querySelectorAll('.name').forEach(function(el){
-        var size = 13;
+        var size = 10.5;
         while (el.scrollHeight > el.clientHeight && size > 7) { size -= 0.5; el.style.fontSize = size + 'pt'; }
       });
       window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 300); });
@@ -12644,20 +12644,20 @@ function openPartnerLabelPrint(name, number) {
   body { font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
   .label {
     width: 2.625in; height: 1in;
-    padding: 0.08in 0.12in;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; overflow: hidden;
+    padding: 0.07in 0.15in;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+    text-align: left; overflow: hidden;
   }
   .name {
-    font-weight: 700; line-height: 1.12;
-    font-size: 15pt;
+    font-weight: 600; line-height: 1.18;
+    font-size: 10.5pt;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     word-break: break-word; max-width: 100%;
   }
   .num {
-    margin-top: 0.06in;
-    font-family: 'Courier New', monospace; font-size: 9pt; letter-spacing: .3px;
-    color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    margin-top: 0.05in;
+    font-family: 'Courier New', monospace; font-size: 7.5pt; letter-spacing: .2px;
+    color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
   }
   @media screen {
     body { background: #64748b; padding: 24px; }
@@ -12676,8 +12676,8 @@ function openPartnerLabelPrint(name, number) {
     (function(){
       // 长公司名自动缩小字号以适应两行
       var el = document.querySelector('.name');
-      var size = 15;
-      while (el.scrollHeight > el.clientHeight && size > 8) { size -= 0.5; el.style.fontSize = size + 'pt'; }
+      var size = 10.5;
+      while (el.scrollHeight > el.clientHeight && size > 7) { size -= 0.5; el.style.fontSize = size + 'pt'; }
       window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 250); });
     })();
   <\/script>
