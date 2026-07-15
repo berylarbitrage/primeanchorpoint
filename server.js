@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11s · 配对编号按工资表行顺序重排(上下1234严格对齐,与配组先后无关)',
+  tag: '2026-07-11t · 配组显示本组总金额(工资合计↔回执合计·差额) + 编号按行顺序对齐',
   started: new Date().toISOString(),
 };
 
