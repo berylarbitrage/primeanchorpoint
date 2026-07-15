@@ -32065,6 +32065,11 @@ function _invpFillSubPayFilterOptions() {
   const payees = new Set(), purposes = new Set();
   Object.values(boxesMap).forEach(arr => (arr || []).forEach(b => {
     const p = (_bsPayeeDisplay(b.payee) || '').trim(); if (p) payees.add(p);
+    // Employee payouts (员工:公司|姓名) also list the COMPANY itself as an option,
+    // so picking e.g. "SLM GROUP" surfaces every worker paid under it.
+    if (_bsIsEmp(b.payee)) { const co = (_bsEmpParse(b.payee).co || '').trim(); if (co) payees.add(co); }
+    // Check deposits/withdrawals: each counterparty is selectable too.
+    if (_bsIsCheck(b.payee)) _bsCheckParse(b.payee).names.forEach(n => { const t = (n || '').trim(); if (t) payees.add(t); });
     const u = (b.purpose || '').trim(); if (u) purposes.add(u);
   }));
   const fill = (id, values, allLabel) => {
@@ -32138,7 +32143,7 @@ function _invpRenderSubPayList() {
     const boxes = Array.isArray(boxesMap[s.id]) ? boxesMap[s.id] : [];
     const matches = boxes.filter(b => {
       if (fDir && (b.direction === 'in' ? 'in' : 'out') !== fDir) return false;
-      if (fPayee && (_bsPayeeDisplay(b.payee) || '').trim() !== fPayee) return false;
+      if (fPayee && !_invpSubPayPayeeMatch(b, fPayee)) return false;
       if (fPurpose && (b.purpose || '').trim() !== fPurpose) return false;
       if (fAmtMin != null || fAmtMax != null) {
         const amt = Math.abs(Number(b.amount) || 0);
@@ -32191,6 +32196,15 @@ function _invpRenderSubPayList() {
 }
 // Safely embed a string as a JS single-quoted literal inside an inline onclick.
 function _invpJsStr(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\r?\n/g, ' ') + "'"; }
+// Whether a transaction matches the 公司/收款人 filter: exact display match, the
+// company behind an employee payout (员工:公司|姓名 → picking the company shows
+// every worker paid under it), or a 存/取支票 counterparty.
+function _invpSubPayPayeeMatch(b, fPayee) {
+  if ((_bsPayeeDisplay(b.payee) || '').trim() === fPayee) return true;
+  if (_bsIsEmp(b.payee) && (_bsEmpParse(b.payee).co || '').trim() === fPayee) return true;
+  if (_bsIsCheck(b.payee) && _bsCheckParse(b.payee).names.some(n => (n || '').trim() === fPayee)) return true;
+  return false;
+}
 
 // Load each statement's annotations once, then refresh the list to show them.
 function _invpLoadSubPayBoxes() {
