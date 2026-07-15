@@ -12505,7 +12505,7 @@ function renderPartners(partners) {
       ? '<span class="badge" style="background:#E2E8F0;color:#64748B;border:1px solid #CBD5E1;padding:2px 8px;border-radius:4px;font-size:.75rem">已作废</span>'
       : (p.active?'<span class="badge badge-completed">合作中</span>':(p.signed_contract_count||0)>0?'<span class="badge badge-cancelled">已停止</span>':'<span class="badge" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;padding:2px 8px;border-radius:4px;font-size:.75rem">待签约</span>');
     return `<tr style="${rowStyle}" onclick="showPartnerById(${p.id})">
-      <td style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="partner-select" value="${p.id}" onclick="onPartnerSelectChange()"></td>
+      <td style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="partner-select" value="${p.id}" ${abolished ? 'disabled title="已作废的公司不能选择"' : ''} onclick="onPartnerSelectChange()"></td>
       <td style="font-size:.75rem;color:var(--gray-500);font-family:monospace;white-space:nowrap">${esc(p.company_number||'-')}</td>
       <td><strong style="${abolished?'text-decoration:line-through':''}">${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}</td>
       <td>${esc(mainContact)}${contacts.length>1?` <span style="color:var(--gray-400)">(+${contacts.length-1})</span>`:''}</td>
@@ -12549,11 +12549,12 @@ async function setPartnerAbolished(id, abolished) {
 // ── 多选 & 批量打印标签 ──
 function _selectedPartnerCheckboxes() { return Array.from(document.querySelectorAll('.partner-select')); }
 function togglePartnerSelectAll(cb) {
-  _selectedPartnerCheckboxes().forEach(x => { x.checked = cb.checked; });
+  // 已作废的公司复选框是禁用的，全选时跳过
+  _selectedPartnerCheckboxes().forEach(x => { x.checked = cb.checked && !x.disabled; });
   onPartnerSelectChange();
 }
 function onPartnerSelectChange() {
-  const boxes = _selectedPartnerCheckboxes();
+  const boxes = _selectedPartnerCheckboxes().filter(x => !x.disabled);
   const checked = boxes.filter(x => x.checked);
   const all = document.getElementById('partnerSelectAll');
   if (all) { all.checked = boxes.length > 0 && checked.length === boxes.length; all.indeterminate = checked.length > 0 && checked.length < boxes.length; }
@@ -12562,7 +12563,7 @@ function onPartnerSelectChange() {
 }
 function printSelectedPartnerLabels() {
   const ids = _selectedPartnerCheckboxes().filter(x => x.checked).map(x => parseInt(x.value, 10));
-  const items = ids.map(id => allPartners.find(p => p.id === id)).filter(Boolean);
+  const items = ids.map(id => allPartners.find(p => p.id === id)).filter(p => p && !p.abolished);
   if (!items.length) { alert('请先勾选要打印标签的公司'); return; }
   openPartnerLabelSheetPrint(items);
 }
