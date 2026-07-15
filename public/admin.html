@@ -31314,6 +31314,19 @@ function renderInvpList() {
     const set = _bankL4[s];
     return (set && set.size === 1) ? s + ' ••' + [...set][0] : s;
   };
+  // Normalise a stored bank label to the real bank name: fills ••后四位 for bare
+  // names, and upgrades a generic "账户 ••XXXX" / bare "账户" to the actual bank name
+  // inferred from that account's last-4 (window._invpL4Bank).
+  const _upBank = (label, fallbackL4) => {
+    const s = _withL4((label || '').trim());
+    const m = s.match(/^账户(?:\s*••\s*(\d{3,4}))?$/);
+    if (m) {
+      const l4 = m[1] || (fallbackL4 || '').trim();
+      const set = l4 ? (window._invpL4Bank || {})[l4] : null;
+      if (set && set.size === 1) return [...set][0] + (l4 ? ' ••' + l4 : '');
+    }
+    return s;
+  };
 
   // Clickable, sortable column headers. The active column shows ▲/▼; the rest
   // show a faint ↕ to hint they're clickable. The header rebuilds with the table
@@ -31361,7 +31374,7 @@ function renderInvpList() {
           const profit = (r.subtotal || 0) - (r.wage_cost || 0);
           const payInfo = isPaid ? [
             r.payment_amount != null ? `$${Number(r.payment_amount).toFixed(2)}` : null,
-            r.payment_date || null, r.payment_bank || null,
+            r.payment_date || null, _upBank(r.payment_bank || '', r.bank_account_last4) || null,
             r.payment_entity || null, r.payment_handler || null,
           ].filter(Boolean).join(' · ') : '';
           const paidBtn = isPaid
@@ -31385,7 +31398,7 @@ function renderInvpList() {
           // 收款账户: 内容是实际记录的收款银行/公司（缺失时回退发票档案），格式
           // 与「收款银行」列一致 — 「银行名 ••后四位」。只记了银行名的老记录用
           // 全部发票档案里该银行唯一的后四位补齐格式。
-          const _acctBank = _withL4((r.payment_bank || '').trim() || invpBankLabel(r));
+          const _acctBank = _upBank((r.payment_bank || '').trim() || invpBankLabel(r), r.bank_account_last4);
           const _acctEntity = r.payment_entity || r.bank_account_name || '';
           const payAcctCell = (isPaid && (_acctBank || _acctEntity))
             ? `${esc(_acctBank)}${_acctEntity ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_acctEntity)}</div>` : ''}`
@@ -31424,7 +31437,7 @@ function renderInvpList() {
           const subInfo = subPaid ? [
             subAmt != null ? `$${subAmt.toFixed(2)}` : null,
             r.sub_payment_date || null, r.sub_payment_entity || null,
-            r.sub_payment_bank || null, r.sub_payment_handler || null,
+            _upBank(r.sub_payment_bank || '', r.bank_account_last4) || null, r.sub_payment_handler || null,
           ].filter(Boolean).join(' · ') : '';
           const subIsImg = subPaid && r.sub_payment_receipt_path && /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(r.sub_payment_receipt_path);
           // 分包付款金额: its own column; red when it differs from 工资 (wage_cost).
