@@ -12819,20 +12819,21 @@ async function markPartnerLabelsPrinted(ids) {
   showToast('已标记标签打印 ✓');
 }
 
-// 一页打印某公司的全部信息采集二维码：招工申请（多州则每州一个）+ 周柜登记。
-// 二维码在本页离屏生成成 dataURL，弹出的打印页只是静态图片。
+// 打印某公司的信息采集二维码：每张纸对应一个州（多州公司自动分页），
+// 每张纸三行 —— 招工申请（该州）、员工文件上传（W-9/Contract，全局码）、
+// 周柜登记。二维码在本页离屏生成成 dataURL，弹出的打印页只是静态图片。
 async function printPartnerQrSheet(id, name, number) {
   showToast('正在生成二维码…');
-  let apply = [], weekUrl = '';
-  const [ra, rc] = await Promise.all([
+  const [ra, rc, rw] = await Promise.all([
     api(`/admin/partners/${id}/applicant-qr`).catch(() => null),
     api(`/admin/partners/${id}/container-qr`).catch(() => null),
+    api('/admin/worker-doc-qr').catch(() => null),
   ]);
-  let qrs = Array.isArray(ra && ra.qrs) ? ra.qrs.filter(q => q && q.url) : [];
-  if (!qrs.length && ra && ra.url) qrs = [{ state: '', url: ra.url }];
-  apply = qrs;
-  if (rc && rc.token) weekUrl = `${location.origin}/cw/${rc.token}`;
-  if (!apply.length && !weekUrl) { showToast('二维码生成失败', 'error'); return; }
+  let applyQrs = Array.isArray(ra && ra.qrs) ? ra.qrs.filter(q => q && q.url) : [];
+  if (!applyQrs.length && ra && ra.url) applyQrs = [{ state: '', url: ra.url }];
+  const weekUrl = (rc && rc.token) ? `${location.origin}/cw/${rc.token}` : '';
+  const wdoc = (rw && rw.qr_data_url) ? { img: rw.qr_data_url, url: rw.url || '' } : null;
+  if (!applyQrs.length && !weekUrl && !wdoc) { showToast('二维码生成失败', 'error'); return; }
   await _loadQRLib();
   const mkQr = (url, color) => new Promise(resolve => {
     const div = document.createElement('div');
@@ -12846,65 +12847,94 @@ async function printPartnerQrSheet(id, name, number) {
       resolve(srcUrl);
     }, 80);
   });
-  const cards = [];
-  for (const q of apply) {
-    cards.push({
-      title: '🪪 招工申请 / Job Application' + (q.state ? `（📍 ${q.state}）` : ''),
-      img: await mkQr(q.url, '#3730A3'),
-      url: q.url,
-      note: '应聘者扫码填写资料并上传证件 / Applicants scan to apply',
-    });
-  }
-  if (weekUrl) {
-    cards.push({
-      title: '📅 周柜登记 / Weekly Containers',
-      img: await mkQr(weekUrl, '#6D28D9'),
-      url: weekUrl,
-      note: '工头扫码登记一周柜子 · 扫码后输入密码 <b>123456</b> / Foreman logs weekly containers · password <b>123456</b>',
-    });
+  const weekImg = weekUrl ? await mkQr(weekUrl, '#6D28D9') : '';
+  // 每个州一页；没有招工码的公司也打一页（只有员工文件 + 周柜两行）
+  const pageDefs = applyQrs.length ? applyQrs : [null];
+  const pages = [];
+  for (const q of pageDefs) {
+    const rows = [];
+    if (q) {
+      rows.push({
+        title: '🪪 招工申请 / Job Application' + (q.state ? `（📍 ${q.state}）` : ''),
+        img: await mkQr(q.url, '#3730A3'),
+        url: q.url,
+        note: '应聘者扫码填写资料并上传证件<br>Applicants scan to fill in info & upload documents',
+      });
+    }
+    if (wdoc) {
+      rows.push({
+        title: '📎 员工文件上传 / Worker Documents',
+        img: wdoc.img,
+        url: wdoc.url,
+        note: '工人扫码验证手机号后上传 W-9、Contract 及付款方式签字文件<br>Workers scan to upload W-9, Contract & payment forms',
+      });
+    }
+    if (weekUrl) {
+      rows.push({
+        title: '📅 周柜登记 / Weekly Containers',
+        img: weekImg,
+        url: weekUrl,
+        note: '工头扫码登记一周柜子 · 扫码后输入密码 <b>123456</b><br>Foreman logs weekly containers · password <b>123456</b>',
+      });
+    }
+    pages.push({ state: q && q.state ? q.state : '', rows });
   }
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const cardHtml = cards.map(c => `
-    <div class="card">
-      <div class="ct">${esca(c.title)}</div>
-      <img src="${c.img}" alt="QR">
-      <div class="cu">${esca(c.url)}</div>
-      <div class="cn">${c.note}</div>
+  const pageHtml = pages.map(pg => `
+    <div class="page">
+      <div class="head">
+        <h1>${esca(name || '—')}${pg.state ? ` <span class="st">📍 ${esca(pg.state)}</span>` : ''}</h1>
+        <div class="sub">${esca(number || '')}</div>
+      </div>
+      ${pg.rows.map(r => `
+      <div class="row">
+        <img src="${r.img}" alt="QR">
+        <div class="rt">
+          <div class="ct">${esca(r.title)}</div>
+          <div class="cn">${r.note}</div>
+          <div class="cu">${esca(r.url)}</div>
+        </div>
+      </div>`).join('')}
     </div>`).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>信息采集二维码 - ${esca(name || '')}</title>
 <style>
-  @page { size: letter; margin: 0.5in; }
+  @page { size: letter; margin: 0.45in; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #0f172a; }
-  h1 { font-size: 20pt; margin: 0 0 2px; }
-  .sub { font-family: 'Courier New', monospace; color: #64748b; font-size: 10pt; margin-bottom: 18px; }
-  .grid { display: flex; flex-wrap: wrap; gap: 0.35in; }
-  .card { width: 3.35in; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 0.22in; text-align: center; page-break-inside: avoid; }
-  .ct { font-weight: 700; font-size: 12.5pt; margin-bottom: 8px; }
-  .card img { width: 2.55in; height: 2.55in; }
-  .cu { font-family: 'Courier New', monospace; font-size: 6.5pt; color: #64748b; word-break: break-all; margin: 6px 0; }
-  .cn { font-size: 9pt; color: #334155; line-height: 1.45; }
+  .head { border-bottom: 2.5px solid #0f172a; padding-bottom: 8px; margin-bottom: 14px; }
+  h1 { font-size: 19pt; margin: 0 0 2px; }
+  h1 .st { font-size: 13pt; color: #3730a3; font-weight: 700; }
+  .sub { font-family: 'Courier New', monospace; color: #64748b; font-size: 10pt; }
+  .row {
+    display: flex; align-items: center; gap: 0.28in;
+    border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 0.18in 0.25in; margin-bottom: 0.22in;
+    page-break-inside: avoid;
+  }
+  .row img { width: 2.5in; height: 2.5in; flex: 0 0 auto; }
+  .rt { min-width: 0; }
+  .ct { font-weight: 800; font-size: 15pt; margin-bottom: 6px; }
+  .cn { font-size: 10.5pt; color: #334155; line-height: 1.55; margin-bottom: 8px; }
+  .cu { font-family: 'Courier New', monospace; font-size: 7pt; color: #64748b; word-break: break-all; }
   @media screen {
     body { background: #64748b; padding: 20px; }
-    .page { background: #fff; max-width: 8.5in; margin: 0 auto; padding: 0.5in; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
+    .page { background: #fff; max-width: 8.5in; margin: 0 auto 20px; padding: 0.45in; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
     .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
     .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
   }
-  @media print { .hint { display: none; } .page { padding: 0; } }
+  @media print {
+    .hint { display: none; }
+    .page { padding: 0; page-break-after: always; }
+    .page:last-child { page-break-after: auto; }
+  }
 </style></head><body>
-  <p class="hint">信息采集二维码 · ${esca(name || '')}<button onclick="window.print()">🖨 打印</button></p>
-  <div class="page">
-    <h1>${esca(name || '—')}</h1>
-    <div class="sub">${esca(number || '')}</div>
-    <div class="grid">${cardHtml}</div>
-  </div>
+  <p class="hint">信息采集二维码 · ${esca(name || '')}${pages.length > 1 ? ` · 共 ${pages.length} 页（每州一页）` : ''}<button onclick="window.print()">🖨 打印</button></p>
+  ${pageHtml}
   <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 300); });<\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=980,height=760');
   if (!w) { alert('请允许弹出窗口以打印二维码'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
-
 function editPartnerById(id) { const p=allPartners.find(x=>x.id===id); if(p) openPartnerModal(p); }
 
 async function showPartnerById(id) {
