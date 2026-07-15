@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11p · 标注明细加筛选/统计chip + 未收款发票可一键登记收款(自动截图做回执)',
+  tag: '2026-07-11r · 分包配对:只自动配金额完全一致的(其余留空白) + 回执按编号排序上下对应',
   started: new Date().toISOString(),
 };
 
