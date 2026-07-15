@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11e · 标注明细弹窗改版(汇总条/收支色块/标签胶囊/斑马纹) + 分包付款金额按账单覆盖',
+  tag: '2026-07-11f · 标注明细显示被哪张发票关联(收款/分包凭证) + 弹窗排版改版',
   started: new Date().toISOString(),
 };
 
@@ -28174,8 +28174,10 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
       FROM bank_statements ORDER BY created_at DESC`).all();
-    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, links FROM bank_statement_txns
+    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, links, used_invoice_id, used_kind FROM bank_statement_txns
       WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
+    const usedInvStmt = db.prepare('SELECT invoice_number, company_name FROM invoices WHERE id=?');
+    const usedInvCache = new Map();
     for (const r of rows) {
       r.file_url = r.file_path ? `/uploads/${path.basename(r.file_path)}` : '';
       r.boxes = boxStmt.all(r.id);
@@ -28183,6 +28185,14 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
         let keys = []; try { keys = JSON.parse(b.photos || '[]'); } catch { keys = []; }
         b.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
         try { b.links = JSON.parse(b.links || '[]'); } catch { b.links = []; }
+        // Which invoice reserved this transaction as its proof (voucher picker link),
+        // so the annotation views can show "已被 INV-… 用作收款/分包付款凭证".
+        if (b.used_invoice_id) {
+          if (!usedInvCache.has(b.used_invoice_id)) usedInvCache.set(b.used_invoice_id, usedInvStmt.get(b.used_invoice_id) || null);
+          const inv = usedInvCache.get(b.used_invoice_id);
+          b.used_by = inv ? { invoice_id: b.used_invoice_id, invoice_number: inv.invoice_number, company_name: inv.company_name, kind: b.used_kind === 'recv' ? 'recv' : 'sub' } : null;
+        } else b.used_by = null;
+        delete b.used_invoice_id; delete b.used_kind;
       }
     }
     res.json(rows);
