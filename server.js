@@ -854,6 +854,7 @@ partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
 try { db.exec(`ALTER TABLE partners ADD COLUMN company_number TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE partners ADD COLUMN abolished INTEGER DEFAULT 0`); } catch {}
 try { db.exec(`ALTER TABLE partners ADD COLUMN container_submit_token TEXT DEFAULT ''`); } catch {}
 
 // ─── Per-partner container submission inbox (mobile QR collection) ───
@@ -15296,6 +15297,15 @@ app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('updat
       d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
       d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', req.params.id);
   res.json({ success: true });
+});
+
+// POST /api/admin/partners/:id/abolish — soft "abolish" (grey out) instead of hard delete.
+// Body: { abolished: true|false }. Abolished companies stay in the DB but are marked inactive.
+app.post('/api/admin/partners/:id/abolish', requireAdmin, blockManager, (req, res) => {
+  const ab = req.body && req.body.abolished === false ? 0 : 1;
+  db.prepare('UPDATE partners SET abolished=?, active=CASE WHEN ?=1 THEN 0 ELSE active END WHERE id=?')
+    .run(ab, ab, req.params.id);
+  res.json({ success: true, abolished: ab });
 });
 
 app.delete('/api/admin/partners/:id', requireAdmin, requireRole('admin'), (req, res) => {
