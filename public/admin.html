@@ -664,6 +664,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="nav-group-items">
       <a onclick="showTab('bank-statement-files')" data-tab="bank-statement-files" data-role="admin,staff">🏦 银行账单</a>
       <a onclick="showTab('bank-statements')" data-tab="bank-statements" data-role="admin,staff">📄 对账备注</a>
+      <a onclick="showTab('founder-draws')" data-tab="founder-draws" data-role="admin">👑 创始人取款</a>
     </div>
   </div>
 
@@ -1712,6 +1713,29 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 </div></div>
 
 <!-- ════════ 对账备注 Tab（付款记录 → 复制备注） ════════ -->
+<!-- ════════ 创始人取款统计 ════════ -->
+<div id="tab-founder-draws" style="display:none">
+  <div class="top">
+    <h1>👑 创始人取款统计</h1>
+    <button class="btn btn-green" onclick="openFounderDrawModal()">＋ 记一笔</button>
+  </div>
+  <p style="color:var(--gray-500);font-size:.85rem;margin:.25rem 0 1rem">
+    记录三位创始人拿到的钱：日期、金额、用途、截图；可关联「对账备注」里标注的银行交易。统计随下方筛选实时变化。
+  </p>
+  <div id="fdStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.8rem;margin-bottom:1rem"></div>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.8rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;font-size:.82rem">
+    <select id="fdFounder" onchange="renderFounderDraws()" style="padding:.35rem .45rem;border:1px solid var(--gray-200);border-radius:6px">
+      <option value="">全部创始人</option>
+      <option>Beryl Zhang</option><option>Niki Zhao</option><option>Tiexiong Zhou</option>
+    </select>
+    <input type="date" id="fdFrom" onchange="renderFounderDraws()" style="padding:.35rem .45rem;border:1px solid var(--gray-200);border-radius:6px">
+    <input type="date" id="fdTo" onchange="renderFounderDraws()" style="padding:.35rem .45rem;border:1px solid var(--gray-200);border-radius:6px">
+    <input id="fdQ" oninput="renderFounderDraws()" placeholder="搜用途 / 备注" style="padding:.35rem .45rem;border:1px solid var(--gray-200);border-radius:6px;width:150px">
+    <a onclick="fdClearFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;font-size:.78rem">清除筛选</a>
+  </div>
+  <div id="fdTableWrap" class="card" style="overflow-x:auto"></div>
+</div>
+
 <div id="tab-bank-statements" style="display:none">
   <div class="top">
     <h1>📄 对账备注</h1>
@@ -8902,6 +8926,7 @@ function showTab(t) {
   if (t === 'ts-history')  loadTsHistory();
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
   if (t === 'warehouse-claims') loadWarehouseClaims();
+  if (t === 'founder-draws') loadFounderDraws();
   if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
   if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
   if (t === 'company-payments') initCompanyPayPage();
@@ -40712,6 +40737,163 @@ function _bsDetailRender() {
   }
 }
 function bsCloseBoxDetail() { document.getElementById('bsBoxDetailModal').classList.remove('show'); }
+
+// ═══════ 创始人取款统计 ═══════
+const FD_FOUNDERS = ['Beryl Zhang', 'Niki Zhao', 'Tiexiong Zhou'];
+const FD_COLORS = { 'Beryl Zhang': ['#eff6ff', '#1d4ed8', '#bfdbfe'], 'Niki Zhao': ['#f5f3ff', '#7c3aed', '#ddd6fe'], 'Tiexiong Zhou': ['#ecfdf5', '#047857', '#a7f3d0'] };
+let _fdAll = [];
+function _fdMoney(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+async function loadFounderDraws() {
+  const r = await api('/admin/founder-draws').catch(() => []);
+  _fdAll = Array.isArray(r) ? r : [];
+  renderFounderDraws();
+}
+function fdClearFilters() {
+  for (const id of ['fdFounder', 'fdFrom', 'fdTo', 'fdQ']) { const el = document.getElementById(id); if (el) el.value = ''; }
+  renderFounderDraws();
+}
+function renderFounderDraws() {
+  const wrap = document.getElementById('fdTableWrap'); if (!wrap) return;
+  const gv = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const fF = gv('fdFounder'), from = gv('fdFrom'), to = gv('fdTo'), q = gv('fdQ').trim().toLowerCase();
+  const list = _fdAll.filter(d =>
+    (!fF || d.founder === fF) &&
+    (!from || (d.draw_date || '') >= from) && (!to || (d.draw_date || '') <= to) &&
+    (!q || [d.purpose || '', d.notes || '', d.founder || ''].join(' ').toLowerCase().includes(q)));
+  const stats = document.getElementById('fdStats');
+  if (stats) {
+    const cards = FD_FOUNDERS.map(f => {
+      const rows = list.filter(d => d.founder === f);
+      const c = FD_COLORS[f];
+      return `<div style="background:${c[0]};border:1px solid ${c[2]};border-radius:12px;padding:.8rem 1rem">
+        <div style="font-size:.82rem;color:${c[1]};font-weight:700">👑 ${esc(f)}</div>
+        <div style="font-size:1.35rem;font-weight:800;color:${c[1]};margin-top:.2rem">${_fdMoney(rows.reduce((s, d) => s + (Number(d.amount) || 0), 0))}</div>
+        <div style="font-size:.72rem;color:var(--gray-500)">${rows.length} 笔</div></div>`;
+    }).join('');
+    const total = list.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+    stats.innerHTML = cards + `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:.8rem 1rem">
+      <div style="font-size:.82rem;color:var(--gray-600);font-weight:700">Σ 合计</div>
+      <div style="font-size:1.35rem;font-weight:800;margin-top:.2rem">${_fdMoney(total)}</div>
+      <div style="font-size:.72rem;color:var(--gray-500)">${list.length} 笔</div></div>`;
+  }
+  const th = (t, extra) => `<th style="padding:.5rem .6rem;font-size:.76rem;color:var(--gray-500);text-align:left;white-space:nowrap;${extra || ''}">${t}</th>`;
+  const rows = list.map(d => {
+    const c = FD_COLORS[d.founder] || ['#f8fafc', '#334155', '#e2e8f0'];
+    const photos = (d.photos_urls || []).map(u => `<a href="${u}" onclick="invpOpenReceipt(this.href);return false" title="点击放大"><img src="${u}" loading="lazy" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);margin:1px" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'📄',style:'font-size:1rem'}))"></a>`).join('') || '<span style="color:var(--gray-300)">—</span>';
+    const bank = d.stmt_txn_id
+      ? `<div style="font-size:.76rem"><span style="color:#1d4ed8;font-weight:600">🔗 ${esc(d.txn_date || '')} · ${_fdMoney(Math.abs(Number(d.txn_amount) || 0))}</span>${d.stmt_name ? `<div style="color:var(--gray-400);font-size:.7rem">📄 ${esc(d.stmt_name)}</div>` : ''}</div>`
+      : '<span style="color:var(--gray-300)">—</span>';
+    return `<tr style="border-top:1px solid var(--gray-100)">
+      <td style="padding:.5rem .6rem;white-space:nowrap">${esc(d.draw_date || '—')}</td>
+      <td style="padding:.5rem .6rem;white-space:nowrap"><span style="background:${c[0]};color:${c[1]};border:1px solid ${c[2]};border-radius:999px;padding:.1rem .6rem;font-size:.76rem;font-weight:700">${esc(d.founder)}</span></td>
+      <td style="padding:.5rem .6rem;text-align:right;font-weight:700;color:#b91c1c;white-space:nowrap">${_fdMoney(d.amount)}</td>
+      <td style="padding:.5rem .6rem;max-width:240px">${esc(d.purpose || '') || '<span style="color:var(--gray-300)">—</span>'}${d.notes ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(d.notes)}</div>` : ''}</td>
+      <td style="padding:.5rem .6rem"><div style="display:flex;flex-wrap:wrap;max-width:140px">${photos}</div></td>
+      <td style="padding:.5rem .6rem">${bank}</td>
+      <td style="padding:.5rem .6rem;white-space:nowrap">
+        <button class="btn btn-sm btn-outline" onclick="openFounderDrawModal(${d.id})">编辑</button>
+        <button class="btn btn-sm btn-red" onclick="deleteFounderDraw(${d.id})">删除</button></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.86rem">
+    <thead><tr>${th('日期')}${th('创始人')}${th('金额', 'text-align:right')}${th('用途 / 备注')}${th('截图')}${th('银行关联')}${th('操作')}</tr></thead>
+    <tbody>${rows || `<tr><td colspan="7" style="padding:1rem;color:var(--gray-400)">还没有记录，点右上「＋ 记一笔」。</td></tr>`}</tbody></table>`;
+}
+async function openFounderDrawModal(id) {
+  const d = id ? _fdAll.find(x => x.id === id) : null;
+  let ov = document.getElementById('fdModal'); if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'fdModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:700;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const inp = 'width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.86rem';
+  const lbl = 'display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.25rem';
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;padding:1.2rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+      <h3 style="margin:0;font-size:1.05rem">${d ? '✏️ 编辑取款记录' : '＋ 记一笔创始人取款'}</h3>
+      <button class="btn btn-outline" onclick="document.getElementById('fdModal').remove()">✕ 关闭</button></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem">
+      <div><label style="${lbl}">创始人</label>
+        <select id="fdmFounder" style="${inp}">${FD_FOUNDERS.map(f => `<option ${d && d.founder === f ? 'selected' : ''}>${f}</option>`).join('')}</select></div>
+      <div><label style="${lbl}">日期</label>
+        <input type="date" id="fdmDate" value="${esc((d && d.draw_date) || new Date().toISOString().slice(0, 10))}" style="${inp}"></div>
+      <div><label style="${lbl}">金额 (USD)</label>
+        <input type="number" step="0.01" min="0" id="fdmAmount" value="${d ? (Number(d.amount) || '') : ''}" placeholder="0.00" style="${inp}"></div>
+      <div><label style="${lbl}">用途</label>
+        <input id="fdmPurpose" value="${esc((d && d.purpose) || '')}" placeholder="生活费 / 分红 / 报销…" style="${inp}"></div>
+      <div style="grid-column:1/-1"><label style="${lbl}">备注（可选）</label>
+        <input id="fdmNotes" value="${esc((d && d.notes) || '')}" style="${inp}"></div>
+      <div style="grid-column:1/-1"><label style="${lbl}">截图（可多选${d ? '，新选的会追加' : ''}）</label>
+        <input type="file" id="fdmPhotos" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.heic" multiple style="font-size:.8rem">
+        ${d && (d.photos_urls || []).length ? `<div style="margin-top:.3rem">${d.photos_urls.map(u => `<a href="${u}" onclick="invpOpenReceipt(this.href);return false"><img src="${u}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);margin:1px"></a>`).join('')}</div>` : ''}</div>
+      <div style="grid-column:1/-1"><label style="${lbl}">关联银行交易（可选）</label>
+        <select id="fdmTxn" style="${inp}"><option value="">— 不关联 —</option></select>
+        <div style="font-size:.7rem;color:var(--gray-400);margin-top:.2rem">候选来自「对账备注」里标注的支出交易，⭐ = 付给该创始人的；选中后自动带出金额/日期。</div></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+      <button class="btn btn-outline" onclick="document.getElementById('fdModal').remove()">取消</button>
+      <button class="btn btn-green" onclick="saveFounderDraw(${d ? d.id : 0})">${d ? '保存修改' : '保存'}</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  // Candidate bank transactions: expense annotations from the statements, the current
+  // founder's own payments starred and sorted first.
+  try {
+    const stmts = await api('/admin/bank-statements');
+    const sel = document.getElementById('fdmTxn');
+    const fill = () => {
+      if (!sel) return;
+      const fname = ((document.getElementById('fdmFounder') || {}).value || '').toLowerCase();
+      const opts = [];
+      (Array.isArray(stmts) ? stmts : []).forEach(s => (s.boxes || []).forEach(b => {
+        if (b.direction === 'in') return;
+        const payee = String(_bsPayeeDisplay(b.payee) || b.payee || '');
+        opts.push({ id: b.id, mine: payee.toLowerCase().includes(fname), amt: Math.abs(Number(b.amount) || 0), date: b.txn_date || '', label: `${b.txn_date || '?'} · ${_fdMoney(Math.abs(Number(b.amount) || 0))} · ${payee || '—'} · ${s.file_name || ''}` });
+      }));
+      opts.sort((a, b2) => ((b2.mine ? 1 : 0) - (a.mine ? 1 : 0)) || String(b2.date).localeCompare(String(a.date)));
+      const cur = d && d.stmt_txn_id;
+      sel.innerHTML = '<option value="">— 不关联 —</option>' + opts.map(o => `<option value="${o.id}" data-amt="${o.amt}" data-date="${esc(o.date)}" ${cur === o.id ? 'selected' : ''}>${o.mine ? '⭐ ' : ''}${esc(o.label)}</option>`).join('');
+    };
+    fill();
+    const fSel = document.getElementById('fdmFounder'); if (fSel) fSel.addEventListener('change', fill);
+    sel.addEventListener('change', () => {
+      const o = sel.selectedOptions[0]; if (!o || !o.value) return;
+      const a = document.getElementById('fdmAmount'), dt = document.getElementById('fdmDate');
+      if (a && o.dataset.amt && !(Number(a.value) > 0)) a.value = o.dataset.amt;
+      if (dt && o.dataset.date) dt.value = o.dataset.date;
+    });
+  } catch (_) { /* picker stays empty */ }
+}
+async function saveFounderDraw(id) {
+  const gv = i => { const el = document.getElementById(i); return el ? el.value : ''; };
+  const amount = parseFloat(gv('fdmAmount'));
+  if (!(amount > 0)) { showToast('请填写金额', 'error'); return; }
+  const fd = new FormData();
+  fd.append('founder', gv('fdmFounder'));
+  fd.append('amount', String(amount));
+  fd.append('draw_date', gv('fdmDate'));
+  fd.append('purpose', gv('fdmPurpose'));
+  fd.append('notes', gv('fdmNotes'));
+  fd.append('stmt_txn_id', gv('fdmTxn'));
+  const files = document.getElementById('fdmPhotos');
+  if (files && files.files) for (const f of files.files) fd.append('photos', f);
+  try {
+    const resp = await fetch('/api/admin/founder-draws' + (id ? '/' + id : ''), { method: id ? 'PUT' : 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
+    const r = await resp.json().catch(() => ({}));
+    if (!resp.ok || r.error) throw new Error(r.error || ('HTTP ' + resp.status));
+    const m = document.getElementById('fdModal'); if (m) m.remove();
+    showToast(id ? '已保存修改' : '已记录 ✓', 'success');
+    loadFounderDraws();
+  } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+}
+async function deleteFounderDraw(id) {
+  if (!await showConfirm('确认删除这条取款记录吗？已上传的截图文件仍保留在存储里。', { confirmLabel: '删除', cancelLabel: '取消', danger: true })) return;
+  try {
+    const r = await api('/admin/founder-draws/' + id, { method: 'DELETE' });
+    if (r && r.error) throw new Error(r.error);
+    showToast('已删除', 'success');
+    loadFounderDraws();
+  } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
+}
 // Jump from an annotation's link badge straight to the invoice builder with that
 // invoice loaded (view/edit).
 function bsOpenLinkedInvoice(invoiceId) {

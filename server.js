@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11x · 关联徽标按收支方向定性:收入=已用作收款回执,支出=已用作分包付款',
+  tag: '2026-07-11y · 新增创始人取款统计页(日期/金额/用途/截图/银行交易关联+按人统计)',
   started: new Date().toISOString(),
 };
 
@@ -28303,6 +28303,91 @@ app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req,
       id
     );
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 创始人取款 (founder draws): money taken by the founders, with screenshots and an
+// optional link to an annotated bank-statement transaction ───
+db.exec(`CREATE TABLE IF NOT EXISTS founder_draws (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  founder TEXT NOT NULL,
+  amount REAL NOT NULL DEFAULT 0,
+  draw_date TEXT DEFAULT '',
+  purpose TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  photos TEXT DEFAULT '[]',
+  stmt_txn_id INTEGER DEFAULT NULL,
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+const founderDrawUpload = multer({
+  storage: r2Storage({
+    subdir: 'uploads',
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `founderdraw-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(jpeg|png|gif|webp|heic|heif)|application\/pdf)$/i.test(file.mimetype)
+      || /\.(jpe?g|png|gif|webp|pdf|heic|heif)$/i.test(file.originalname || '');
+    cb(null, ok);
+  }
+});
+function _fdRowOut(r) {
+  let keys = []; try { keys = JSON.parse(r.photos || '[]'); } catch { keys = []; }
+  r.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+  delete r.photos;
+  return r;
+}
+app.get('/api/admin/founder-draws', requireAdmin, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT d.*, t.txn_date AS txn_date, t.amount AS txn_amount, t.payee AS txn_payee,
+        s.file_name AS stmt_name, t.statement_id AS stmt_id
+      FROM founder_draws d
+      LEFT JOIN bank_statement_txns t ON d.stmt_txn_id = t.id
+      LEFT JOIN bank_statements s ON t.statement_id = s.id
+      ORDER BY d.draw_date DESC, d.id DESC`).all();
+    res.json(rows.map(_fdRowOut));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/admin/founder-draws', requireAdmin, founderDrawUpload.array('photos', 10), (req, res) => {
+  try {
+    const b = req.body || {};
+    const founder = String(b.founder || '').trim();
+    const amount = Number(b.amount);
+    if (!founder) return res.status(400).json({ error: '请选择创始人' });
+    if (!(amount > 0)) return res.status(400).json({ error: '金额无效' });
+    const keys = (req.files || []).map(f => f.key || f.filename || (f.path ? path.basename(f.path) : '')).filter(Boolean);
+    const txnId = parseInt(b.stmt_txn_id, 10) || null;
+    const info = db.prepare(`INSERT INTO founder_draws (founder, amount, draw_date, purpose, notes, photos, stmt_txn_id, created_by)
+      VALUES (?,?,?,?,?,?,?,?)`)
+      .run(founder, amount, String(b.draw_date || '').slice(0, 10), String(b.purpose || '').slice(0, 300),
+           String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, (req.adminUser && req.adminUser.username) || '');
+    res.json({ ok: true, id: info.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/admin/founder-draws/:id', requireAdmin, founderDrawUpload.array('photos', 10), (req, res) => {
+  try {
+    const d = db.prepare('SELECT * FROM founder_draws WHERE id=?').get(req.params.id);
+    if (!d) return res.status(404).json({ error: 'Not found' });
+    const b = req.body || {};
+    const amount = Number(b.amount);
+    if (!(amount > 0)) return res.status(400).json({ error: '金额无效' });
+    let keys = []; try { keys = JSON.parse(d.photos || '[]'); } catch { keys = []; }
+    keys = keys.concat((req.files || []).map(f => f.key || f.filename || (f.path ? path.basename(f.path) : '')).filter(Boolean));
+    const txnId = parseInt(b.stmt_txn_id, 10) || null;
+    db.prepare(`UPDATE founder_draws SET founder=?, amount=?, draw_date=?, purpose=?, notes=?, photos=?, stmt_txn_id=? WHERE id=?`)
+      .run(String(b.founder || d.founder).trim(), amount, String(b.draw_date || '').slice(0, 10),
+           String(b.purpose || '').slice(0, 300), String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, d.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/admin/founder-draws/:id', requireAdmin, (req, res) => {
+  try {
+    db.prepare('DELETE FROM founder_draws WHERE id=?').run(req.params.id);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
