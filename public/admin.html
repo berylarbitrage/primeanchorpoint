@@ -1111,6 +1111,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="openPendingQrModal()">📱 待确认记录二维码</button>
       <button class="btn btn-outline" id="partnerBatchLabelBtn" onclick="printSelectedPartnerLabels()" title="批量打印所选公司的标签（Letter 纸，1 × 2-5/8″，每页 30 个）">🏷 批量打印标签 (0)</button>
       <button class="btn btn-outline" id="partnerBatchQrBtn" onclick="printSelectedPartnerQrSheets()" title="批量打印所选公司的信息采集二维码（每公司每州一页，三行：招工申请/员工文件/周柜登记）">🖨 批量打印二维码 (0)</button>
+      <button class="btn btn-outline" onclick="openDocChecklistLabelModal()" title="打印带勾选框的员工文件清单标签（Avery 5163，2 × 4″，每页 10 个）">📋 文件清单标签</button>
       <button class="btn" onclick="openPartnerModal()">+ 新增公司</button>
     </div>
   </div>
@@ -12844,6 +12845,100 @@ function openPartnerLabelSheetPrint(items) {
   <\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=900,height=700');
+  if (!w) { alert('请允许弹出窗口以打印标签'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+// ── 员工文件清单标签（Avery 5163，2 × 4″，每页 10 个）──
+// 顶部大字年份（可选）+ 姓名栏，正文是勾选框文件项（可自定义）。
+const DOC_CHECKLIST_ITEMS = ['SSN', 'EAD', 'W-9', 'Agreement', '付款方式表格签字'];
+function openDocChecklistLabelModal() {
+  let ov = document.getElementById('dclModal'); if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'dclModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:700;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const yNow = new Date().getFullYear();
+  const years = [yNow - 1, yNow, yNow + 1, yNow + 2];
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:460px;width:100%;padding:1.2rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem">
+      <h3 style="margin:0;font-size:1.05rem">📋 文件清单标签</h3>
+      <button class="btn btn-outline" onclick="document.getElementById('dclModal').remove()">✕ 关闭</button></div>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.7rem">Avery 5163（2 × 4″，每页 10 个）。贴在员工文件袋上，收到哪份就勾哪项。</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem">
+      <div><label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.25rem">年份（印在最上方）</label>
+        <select id="dclYear" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">${years.map(y => `<option ${y === yNow ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
+      <div><label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.25rem">打印张数</label>
+        <input type="number" id="dclCount" value="10" min="1" max="200" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+      <div style="grid-column:1/-1"><label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.25rem">包含的文件项</label>
+        <div style="display:flex;flex-direction:column;gap:.25rem;font-size:.85rem">
+          ${DOC_CHECKLIST_ITEMS.map(it => `<label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" class="dcl-item" value="${esc(it)}" checked>${esc(it)}</label>`).join('')}
+        </div>
+        <input id="dclCustom" placeholder="自定义项（逗号分隔，可留空），如：I-9, 保险表" style="width:100%;margin-top:.4rem;padding:.45rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem"></div>
+      <div style="grid-column:1/-1"><label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer"><input type="checkbox" id="dclNameLine" checked>标签上带「姓名 Name ____」一行</label></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+      <button class="btn btn-outline" onclick="document.getElementById('dclModal').remove()">取消</button>
+      <button class="btn btn-green" onclick="printDocChecklistLabels()">🖨 打印</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function printDocChecklistLabels() {
+  const year = (document.getElementById('dclYear') || {}).value || new Date().getFullYear();
+  const count = Math.max(1, Math.min(200, parseInt((document.getElementById('dclCount') || {}).value, 10) || 10));
+  const items = [...document.querySelectorAll('.dcl-item:checked')].map(x => x.value);
+  const custom = ((document.getElementById('dclCustom') || {}).value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
+  const all = items.concat(custom);
+  if (!all.length) { showToast('至少选一个文件项', 'error'); return; }
+  const nameLine = !!(document.getElementById('dclNameLine') || {}).checked;
+  const m = document.getElementById('dclModal'); if (m) m.remove();
+  const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const itemHtml = all.map(it => `<div class="it"><span class="cb"></span>${esca(it)}</div>`).join('');
+  const one = `<div class="cell"><div class="inner">
+    <div class="hd"><span class="yr">${esca(year)}</span><span class="ttl">员工文件清单 Document Checklist</span></div>
+    ${nameLine ? '<div class="nm">姓名 Name <span class="ln"></span></div>' : ''}
+    <div class="grid">${itemHtml}</div>
+  </div></div>`;
+  const cells = Array.from({ length: count }, () => one).join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>文件清单标签 ${esca(year)} (${count})</title>
+<style>
+  @page { size: letter; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  .sheet {
+    width: 8.5in;
+    padding: 0.5in 0.15625in;            /* Avery 5163: 上下 0.5in，左右 5/32in */
+    display: grid;
+    grid-template-columns: repeat(2, 4in);
+    grid-auto-rows: 2in;
+    column-gap: 0.1875in;                /* 列间距 3/16in */
+    row-gap: 0;
+  }
+  .cell { width: 4in; height: 2in; overflow: hidden; page-break-inside: avoid; }
+  .inner { width: 100%; height: 100%; padding: 0.12in 0.18in; display: flex; flex-direction: column; justify-content: center; }
+  .hd { display: flex; align-items: baseline; gap: 8px; border-bottom: 1.5px solid #111; padding-bottom: 3px; }
+  .yr { font-size: 16pt; font-weight: 800; letter-spacing: 1px; }
+  .ttl { font-size: 8.5pt; font-weight: 600; color: #333; }
+  .nm { font-size: 9pt; margin-top: 5px; display: flex; align-items: baseline; gap: 4px; }
+  .nm .ln { flex: 1; border-bottom: 1px solid #555; height: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 6px; }
+  .it { font-size: 9pt; display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cb { display: inline-block; width: 11px; height: 11px; border: 1.3px solid #111; border-radius: 2px; flex: 0 0 auto; }
+  @media screen {
+    body { background: #64748b; padding: 20px; }
+    .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
+    .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
+    .sheet { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.25); margin: 0 auto; }
+    .cell { outline: 1px dashed #e2e8f0; }
+  }
+  @media print { .hint { display: none; } .cell { outline: none; } }
+</style></head><body>
+  <p class="hint">Letter 纸 · Avery 5163（2 × 4″，每页 10 个）· 共 ${count} 个标签<button onclick="window.print()">🖨 打印</button></p>
+  <div class="sheet">${cells}</div>
+  <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 250); });<\/script>
+</body></html>`;
+  const w = window.open('', '_blank', 'width=920,height=720');
   if (!w) { alert('请允许弹出窗口以打印标签'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
