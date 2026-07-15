@@ -40744,7 +40744,17 @@ async function bsSaveMeta(id) {
   try {
     const r = await api('/admin/bank-statements/' + id + '/meta', { method: 'PUT', body: JSON.stringify({ bank, account_name, operator, period_start, period_end }) });
     if (r && r.error) throw new Error(r.error);
-    showToast('已保存标注 ✓');
+    // The server rebuilds the canonical file name from the new tags — reflect it
+    // in the row so late-tagged statements still end up correctly named.
+    if (r && r.file_name) {
+      const nameEl = row.querySelector('.bs-file-name');
+      if (nameEl) { nameEl.textContent = r.file_name; nameEl.title = r.file_name; }
+      if (_bsStmtById[id]) _bsStmtById[id].file_name = r.file_name;
+      _bsPdfNames[id] = r.file_name;
+      showToast('已保存标注，文件已按规范重命名 ✓');
+    } else {
+      showToast('已保存标注 ✓');
+    }
   } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
 }
 
@@ -40809,6 +40819,14 @@ async function bsDoUpload() {
   const btn = document.getElementById('bsUpConfirmBtn');
   const err = document.getElementById('bsUpErr');
   err.textContent = '';
+  // 命名规范需要全部五项信息 —— 缺一不可，否则文件名会不完整
+  const missing = [];
+  if (!meta.bank) missing.push('银行');
+  if (!meta.account_name) missing.push('账户名');
+  if (!meta.operator) missing.push('操作人');
+  if (!meta.period_start) missing.push('账单起始');
+  if (!meta.period_end) missing.push('账单结束');
+  if (missing.length) { err.textContent = '请先选择：' + missing.join('、'); return; }
   btn.disabled = true;
   const multi = _bsUpFiles.length > 1;
   let done = 0;
@@ -40864,6 +40882,17 @@ async function loadBsPdfs() {
     wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.83rem;padding:.5rem .25rem">还没上传对账单。点右上角「+ 上传对账单 PDF」。</div>';
     return;
   }
+  // 按账单起始日期倒序（新账期在上）；没填起始日期的排最后；同一账期按上传时间倒序
+  list.sort((a, b) => {
+    const pa = a.period_start || '', pb = b.period_start || '';
+    if (pa !== pb) {
+      if (!pa) return 1;
+      if (!pb) return -1;
+      return pa < pb ? 1 : -1;
+    }
+    const ca = a.created_at || '', cb = b.created_at || '';
+    return ca < cb ? 1 : ca > cb ? -1 : 0;
+  });
   _bsPdfNames = {};
   _bsStmtById = {};
   list.forEach(s => { _bsPdfNames[s.id] = s.file_name || 'PDF'; _bsStmtById[s.id] = s; });
@@ -40874,7 +40903,7 @@ async function loadBsPdfs() {
         <div style="display:flex;align-items:center;gap:.5rem">
           <span style="font-size:1.1rem">📄</span>
           <div style="min-width:0">
-            <div style="font-size:.84rem;font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.file_name || 'PDF')}">${esc(s.file_name || 'PDF')}</div>
+            <div class="bs-file-name" style="font-size:.84rem;font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.file_name || 'PDF')}">${esc(s.file_name || 'PDF')}</div>
             <div style="font-size:.72rem;color:var(--gray-400)">${esc(String(s.created_at || '').replace('T', ' ').slice(0, 16))}</div>
           </div>
         </div>
