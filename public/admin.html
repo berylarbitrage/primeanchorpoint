@@ -12505,6 +12505,7 @@ function renderPartners(partners) {
       <td>${p.active?'<span class="badge badge-completed">合作中</span>':(p.signed_contract_count||0)>0?'<span class="badge badge-cancelled">已停止</span>':'<span class="badge" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;padding:2px 8px;border-radius:4px;font-size:.75rem">待签约</span>'}</td>
       <td>
         <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
+        <button class="btn btn-sm" style="background:#F1F5F9;color:#334155;border:1px solid #CBD5E1" onclick='event.stopPropagation();openPartnerLabelPrint(${JSON.stringify(p.name||"")}, ${JSON.stringify(p.company_number||"")})' title="打印公司标签（1 × 2-5/8″）">🏷 标签</button>
         ${(p.signed_contract_count||0)>0
           ? `<button class="btn btn-sm" style="background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="event.stopPropagation();showPartnerById(${p.id})">📄 查看合同</button>`
           : (p.contract_file_count||0)>0
@@ -12520,6 +12521,62 @@ function renderPartners(partners) {
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="7" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
+}
+
+// 打印公司标签：1 × 2-5/8″（Avery 5160 尺寸），只放公司名 + 公司编号
+function openPartnerLabelPrint(name, number) {
+  name = String(name || '').trim();
+  number = String(number || '').trim();
+  const esca = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esca(name||'公司标签')}</title>
+<style>
+  @page { size: 2.625in 1in; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  .label {
+    width: 2.625in; height: 1in;
+    padding: 0.08in 0.12in;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; overflow: hidden;
+  }
+  .name {
+    font-weight: 700; line-height: 1.12;
+    font-size: 15pt;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    word-break: break-word; max-width: 100%;
+  }
+  .num {
+    margin-top: 0.06in;
+    font-family: 'Courier New', monospace; font-size: 9pt; letter-spacing: .3px;
+    color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+  }
+  @media screen {
+    body { background: #64748b; padding: 24px; }
+    .label { background: #fff; border: 1px solid #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+    .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
+    .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
+  }
+  @media print { .hint { display: none; } }
+</style></head><body>
+  <p class="hint">标签尺寸 1 × 2-5/8″（Avery 5160）<button onclick="window.print()">🖨 打印</button></p>
+  <div class="label">
+    <div class="name">${esca(name || '—')}</div>
+    ${number ? `<div class="num">${esca(number)}</div>` : ''}
+  </div>
+  <script>
+    (function(){
+      // 长公司名自动缩小字号以适应两行
+      var el = document.querySelector('.name');
+      var size = 15;
+      while (el.scrollHeight > el.clientHeight && size > 8) { size -= 0.5; el.style.fontSize = size + 'pt'; }
+      window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 250); });
+    })();
+  <\/script>
+</body></html>`;
+  const w = window.open('', '_blank', 'width=520,height=360');
+  if (!w) { alert('请允许弹出窗口以打印标签'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 function editPartnerById(id) { const p=allPartners.find(x=>x.id===id); if(p) openPartnerModal(p); }
