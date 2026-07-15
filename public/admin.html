@@ -32137,7 +32137,9 @@ function _invpMatchInit(invoiceId, inv, txns, rcpts) {
     mtxns.forEach(t => { if (tGone.has(t.id)) return; const d = Math.abs(t.amt - it.amt); if (d <= maxDiff && d < bd) { bd = d; best = t; } });
     if (best) { tGone.add(best.id); grouped.add(i); groups.push({ w: [i], t: [best.id] }); autoAdded = true; }
   });
-  tryFill(0.005); tryFill(5);
+  // 只自动配金额完全一致的（数字一样→同号一一对应）；金额对不上的留空白，
+  // 由用户手动勾选或点「⚡ 自动匹配」（±$5 / 组合）处理。
+  tryFill(0.005);
   window._invpMatch = { invId: invoiceId, keyLabel, items, txns: mtxns, rcpts: rcpts || [], groups, subtotal: (inv && inv.subtotal) || 0, sel: { w: new Set(), t: new Set() } };
   if (autoAdded) _invpMatchSave();
 }
@@ -32200,8 +32202,12 @@ function _invpMatchRender() {
           <span>${gi >= 0 ? badge(gi) : (sel ? '<span style="color:#2563eb;font-weight:700">✓ </span>' : '')}<b style="color:#b91c1c">${_invpMoney(t.amt)}</b> <span style="color:var(--gray-500);font-size:.75rem">${esc(t.date)} · ${esc(t.payee)}</span></span>
         </div>${imgH}${t.stmt ? `<div style="color:var(--gray-400);font-size:.7rem;margin-top:.2rem">📄 ${esc(t.stmt)}</div>` : ''}</div>`;
   };
+  // 回执按编号排序（#1 #2 …在前、未配对的空白在后），与上方工资表的编号阅读
+  // 顺序一致——上下同号一一对应。
+  const rcptOrder = M.txns.map((t, i) => ({ t, i, gi: gOfT(t.id) }));
+  rcptOrder.sort((a, b) => ((a.gi < 0 ? 1e9 : a.gi) - (b.gi < 0 ? 1e9 : b.gi)) || (a.i - b.i));
   body.innerHTML = bar + (M.txns.length
-    ? `<div style="font-weight:700;margin-bottom:.3rem">分包回执交易（${M.txns.length} 笔）</div>` + M.txns.map(rcptRow).join('')
+    ? `<div style="font-weight:700;margin-bottom:.3rem">分包回执交易（${M.txns.length} 笔）</div>` + rcptOrder.map(o => rcptRow(o.t, o.i)).join('')
     : '<div style="color:#94a3b8">这张发票还没有分包回执。</div>');
 }
 function _invpMatchToggleW(idx) { const M = window._invpMatch; if (!M) return; M.sel.w.has(idx) ? M.sel.w.delete(idx) : M.sel.w.add(idx); _invpMatchRender(); }
