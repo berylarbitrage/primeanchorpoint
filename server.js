@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11b · 分包付款更新时旧工资金额自动换成账单预填 + 扫码分组/发票匹配 + 行内审核',
+  tag: '2026-07-11c · 分包付款一律按账单金额预填(更新也是) + 扫码分组/发票匹配 + 行内审核',
   started: new Date().toISOString(),
 };
 
