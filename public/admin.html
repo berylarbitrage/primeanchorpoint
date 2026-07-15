@@ -12921,6 +12921,8 @@ function printDocChecklistLabels() {
   .grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 2px 8px; margin-top: 4px; }
   .it { font-size: 7.5pt; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cb { display: inline-block; width: 9px; height: 9px; border: 1.2px solid #111; border-radius: 2px; flex: 0 0 auto; }
+  /* 落单的最后一项（如 Payment Authorization）横跨两列，避免窄列截断 */
+  .it:last-child:nth-child(odd) { grid-column: 1 / -1; }
   @media screen {
     body { background: #64748b; padding: 20px; }
     .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }

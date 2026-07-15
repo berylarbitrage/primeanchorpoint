@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12d · 清单项规范命名:SSN Card/EAD/W-9/Contractor Agreement/Payment Authorization',
+  tag: '2026-07-12e · 清单标签防截断:落单长项(Payment Authorization)横跨两列',
   started: new Date().toISOString(),
 };
 
