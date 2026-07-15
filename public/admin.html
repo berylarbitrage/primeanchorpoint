@@ -12542,7 +12542,9 @@ function renderPartners(partners) {
         ${abolished
           ? `<button class="btn btn-sm" style="background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="event.stopPropagation();setPartnerAbolished(${p.id},false)" title="恢复该公司">↩ 恢复</button>`
           : `<button class="btn btn-sm" style="background:#F8FAFC;color:#64748B;border:1px solid #CBD5E1" onclick="event.stopPropagation();setPartnerAbolished(${p.id},true)" title="作废（变灰保留，不删除）">🚫 作废</button>`}
-        <button class="btn btn-sm" style="background:#F1F5F9;color:#334155;border:1px solid #CBD5E1" onclick='event.stopPropagation();openPartnerLabelPrint(${JSON.stringify(p.name||"")}, ${JSON.stringify(p.company_number||"")})' title="打印公司标签（1 × 2-5/8″）">🏷 标签</button>
+        ${p.label_printed_at
+          ? `<button class="btn btn-sm" style="background:#F0FDF4;color:#047857;border:1px solid #BBF7D0" onclick='event.stopPropagation();openPartnerLabelPrint(${p.id}, ${JSON.stringify(p.name||"")}, ${JSON.stringify(p.company_number||"")})' title="标签已打印过（${esc(String(p.label_printed_at).slice(0,16))}），点击可再次打印">🏷 已打印 ✓</button>`
+          : `<button class="btn btn-sm" style="background:#F1F5F9;color:#334155;border:1px solid #CBD5E1" onclick='event.stopPropagation();openPartnerLabelPrint(${p.id}, ${JSON.stringify(p.name||"")}, ${JSON.stringify(p.company_number||"")})' title="打印公司标签（1 × 2-5/8″）">🏷 标签</button>`}
         ${(p.signed_contract_count||0)>0
           ? `<button class="btn btn-sm" style="background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="event.stopPropagation();showPartnerById(${p.id})">📄 查看合同</button>`
           : (p.contract_file_count||0)>0
@@ -12596,7 +12598,7 @@ function printSelectedPartnerLabels() {
 // 支持选择起始格：标签纸前面几格已用掉时，从第 N 格开始排，前面留空跳过。
 // 顶部下拉可选 1-30，也可以直接点击预览里的格子把它设为起点；超过 30 格自动分页。
 function openPartnerLabelSheetPrint(items) {
-  const data = items.map(p => ({ name: (p.name||'').trim() || '—', num: p.company_number || '' }));
+  const data = items.map(p => ({ id: p.id, name: (p.name||'').trim() || '—', num: p.company_number || '' }));
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
   const startOpts = Array.from({ length: 30 }, (_, i) =>
     `<option value="${i + 1}">第 ${i + 1} 格（第 ${Math.floor(i / 3) + 1} 行第 ${i % 3 + 1} 列）</option>`).join('');
@@ -12656,24 +12658,39 @@ function openPartnerLabelSheetPrint(items) {
     .sheet:last-child { page-break-after: auto; }
   }
 </style></head><body>
-  <p class="hint">Letter 纸 · Avery 5160（1 × 2-5/8″，每页 30 个）· 共 ${items.length} 个标签 ·
-    起始格 <select id="startSel" onchange="setStart(parseInt(this.value, 10))">${startOpts}</select>
-    <button onclick="window.print()">🖨 打印</button>
+  <p class="hint">Letter 纸 · Avery 5160（1 × 2-5/8″，每页 30 个）· 共 ${items.length} 个公司 ·
+    起始格 <select id="startSel" onchange="setStart(parseInt(this.value, 10))">${startOpts}</select> ·
+    每个标签打 <input id="copiesInp" type="number" min="1" max="30" value="1" style="width:52px;font-size:13px;padding:3px 4px;text-align:center" onchange="setCopies(parseInt(this.value, 10))"> 份
+    <button onclick="doPrint()">🖨 打印</button>
     <span class="tip">💡 也可以直接点格子选择从哪格开始（跳过已用掉的格子）</span>
   </p>
   <div id="pages"></div>
   <script>
     var ITEMS = ${dataJson};
     var start = 1;
+    var copies = 1;
     function escp(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
     function setStart(n) {
       start = Math.max(1, Math.min(30, n || 1));
       render();
     }
+    function setCopies(n) {
+      copies = Math.max(1, Math.min(30, n || 1));
+      render();
+    }
+    function doPrint() {
+      window.print();
+      // 通知主页面把这些公司标记为「标签已打印」
+      try {
+        if (window.opener && !window.opener.closed && window.opener.markPartnerLabelsPrinted) {
+          window.opener.markPartnerLabelsPrinted(ITEMS.map(function(it){ return it.id; }).filter(Boolean));
+        }
+      } catch (e) {}
+    }
     function render() {
       var slots = [];
       for (var i = 0; i < start - 1; i++) slots.push(null);
-      for (var j = 0; j < ITEMS.length; j++) slots.push(ITEMS[j]);
+      for (var j = 0; j < ITEMS.length; j++) for (var k = 0; k < copies; k++) slots.push(ITEMS[j]);
       var pages = [];
       for (var p = 0; p < slots.length; p += 30) pages.push(slots.slice(p, p + 30));
       document.getElementById('pages').innerHTML = pages.map(function(pg, pi){
@@ -12691,6 +12708,7 @@ function openPartnerLabelSheetPrint(items) {
         while (el.scrollHeight > el.clientHeight && size > 7) { size -= 0.5; el.style.fontSize = size + 'pt'; }
       });
       document.getElementById('startSel').value = String(start);
+      document.getElementById('copiesInp').value = String(copies);
     }
     render();
   <\/script>
@@ -12700,8 +12718,9 @@ function openPartnerLabelSheetPrint(items) {
   w.document.open(); w.document.write(html); w.document.close();
 }
 
-// 打印公司标签：1 × 2-5/8″（Avery 5160 尺寸），只放公司名 + 公司编号
-function openPartnerLabelPrint(name, number) {
+// 打印公司标签：1 × 2-5/8″（Avery 5160 尺寸），只放公司名 + 公司编号。
+// 可选份数（每份一页，适合标签打印机连打）；打印后把该公司标记为「已打印」。
+function openPartnerLabelPrint(id, name, number) {
   name = String(name || '').trim();
   number = String(number || '').trim();
   const esca = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -12730,30 +12749,73 @@ function openPartnerLabelPrint(name, number) {
   }
   @media screen {
     body { background: #64748b; padding: 24px; }
-    .label { background: #fff; border: 1px solid #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+    .label { background: #fff; border: 1px solid #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,.2); margin: 0 auto 10px; }
     .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
     .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
+    .hint input { width: 52px; font-size: 13px; padding: 3px 4px; text-align: center; }
   }
-  @media print { .hint { display: none; } }
+  @media print {
+    .hint { display: none; }
+    .label { page-break-after: always; }
+    .label:last-child { page-break-after: auto; }
+  }
 </style></head><body>
-  <p class="hint">标签尺寸 1 × 2-5/8″（Avery 5160）<button onclick="window.print()">🖨 打印</button></p>
-  <div class="label">
-    <div class="name">${esca(name || '—')}</div>
-    ${number ? `<div class="num">${esca(number)}</div>` : ''}
-  </div>
+  <p class="hint">标签尺寸 1 × 2-5/8″（Avery 5160）· 打
+    <input id="copiesInp" type="number" min="1" max="50" value="1" onchange="setCopies(parseInt(this.value, 10))"> 份
+    <button onclick="doPrint()">🖨 打印</button>
+  </p>
+  <div id="labels"></div>
   <script>
-    (function(){
+    var PARTNER_ID = ${JSON.stringify(id || null)};
+    var NAME = ${JSON.stringify(name || '—').replace(/</g, '\\u003c')};
+    var NUM = ${JSON.stringify(number || '').replace(/</g, '\\u003c')};
+    var copies = 1;
+    function escp(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+    function setCopies(n) {
+      copies = Math.max(1, Math.min(50, n || 1));
+      render();
+    }
+    function render() {
+      var one = '<div class="label"><div class="name">' + escp(NAME) + '<\/div>' + (NUM ? '<div class="num">' + escp(NUM) + '<\/div>' : '') + '<\/div>';
+      var out = '';
+      for (var i = 0; i < copies; i++) out += one;
+      document.getElementById('labels').innerHTML = out;
       // 长公司名自动缩小字号以适应两行
-      var el = document.querySelector('.name');
-      var size = 10.5;
-      while (el.scrollHeight > el.clientHeight && size > 7) { size -= 0.5; el.style.fontSize = size + 'pt'; }
-      window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 250); });
-    })();
+      document.querySelectorAll('.name').forEach(function(el){
+        var size = 10.5;
+        while (el.scrollHeight > el.clientHeight && size > 7) { size -= 0.5; el.style.fontSize = size + 'pt'; }
+      });
+      document.getElementById('copiesInp').value = String(copies);
+    }
+    function doPrint() {
+      window.print();
+      try {
+        if (PARTNER_ID && window.opener && !window.opener.closed && window.opener.markPartnerLabelsPrinted) {
+          window.opener.markPartnerLabelsPrinted([PARTNER_ID]);
+        }
+      } catch (e) {}
+    }
+    render();
   <\/script>
 </body></html>`;
-  const w = window.open('', '_blank', 'width=520,height=360');
+  const w = window.open('', '_blank', 'width=520,height=420');
   if (!w) { alert('请允许弹出窗口以打印标签'); return; }
   w.document.open(); w.document.write(html); w.document.close();
+}
+
+// 打印完成后把这些公司标记为「标签已打印」（弹窗回调 → 落库 → 刷新按钮徽标）
+async function markPartnerLabelsPrinted(ids) {
+  ids = (ids || []).filter(Boolean);
+  if (!ids.length) return;
+  try {
+    await api('/admin/partners/labels-printed', { method: 'POST', body: JSON.stringify({ ids }) });
+  } catch (e) { return; }
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const ts = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+  ids.forEach(id => { const p = allPartners.find(x => x.id === id); if (p) p.label_printed_at = ts; });
+  filterPartners();
+  showToast('已标记标签打印 ✓');
 }
 
 function editPartnerById(id) { const p=allPartners.find(x=>x.id===id); if(p) openPartnerModal(p); }
