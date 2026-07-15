@@ -31358,11 +31358,13 @@ function renderInvpList() {
           const paidStatusCell = isPaid
             ? `<span title="${esc(payInfo || '已付款')}" style="display:inline-flex;align-items:center;gap:4px;background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px">&#10003; 已付款</span>`
             : '<span style="color:var(--gray-400);font-size:.78rem">未收款</span>';
-          // 账单红：实付金额（回执上银行实收）与账单差 > $5 时标红。
+          // 账单红：实付金额 = 收款回执交易的加和（无凭证时回退手填值），与账单差 > $5 标红。
           const billed = r.subtotal || 0;
-          const amtMismatch = isPaid && r.payment_amount != null && Math.abs(Number(r.payment_amount) - billed) > 5;
-          const payAmountCell = (isPaid && r.payment_amount != null)
-            ? `<span ${amtMismatch ? `title="账单 $${billed.toFixed(2)} · 实收 $${Number(r.payment_amount).toFixed(2)} · 差额 $${(Number(r.payment_amount) - billed).toFixed(2)}"` : ''} style="${amtMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${Number(r.payment_amount).toFixed(2)}${amtMismatch ? ' ⚠' : ''}</span>`
+          const payAmt = (Number(r.payment_txn_sum) > 0) ? Number(r.payment_txn_sum)
+            : (r.payment_amount != null ? Number(r.payment_amount) : null);
+          const amtMismatch = isPaid && payAmt != null && Math.abs(payAmt - billed) > 5;
+          const payAmountCell = (isPaid && payAmt != null)
+            ? `<span ${amtMismatch ? `title="账单 $${billed.toFixed(2)} · 实收 $${payAmt.toFixed(2)} · 差额 $${(payAmt - billed).toFixed(2)}"` : ''} style="${amtMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${payAmt.toFixed(2)}${amtMismatch ? ' ⚠' : ''}</span>`
             : dash;
           const payDateCell = (isPaid && r.payment_date) ? esc(r.payment_date) : dash;
           // 收款账户: 内容是实际记录的收款银行/公司（缺失时回退发票档案），格式
@@ -31395,7 +31397,9 @@ function renderInvpList() {
           // they differ by > $5. Amount/receipt live in their own columns.
           const subPaid = r.sub_payment_status === 'paid';
           const wageOwed = Number(r.wage_cost) || 0;
-          const subAmt = r.sub_payment_amount != null ? Number(r.sub_payment_amount) : null;
+          // 分包付款金额 = 分包回执交易的加和（无凭证时回退手填值）。
+          const subAmt = (Number(r.sub_payment_txn_sum) > 0) ? Number(r.sub_payment_txn_sum)
+            : (r.sub_payment_amount != null ? Number(r.sub_payment_amount) : null);
           const subMismatch = subPaid && subAmt != null && Math.abs(subAmt - wageOwed) > 5;
           const subInfo = subPaid ? [
             subAmt != null ? `$${subAmt.toFixed(2)}` : null,
