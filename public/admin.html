@@ -31358,9 +31358,9 @@ function renderInvpList() {
           const paidStatusCell = isPaid
             ? `<span title="${esc(payInfo || '已付款')}" style="display:inline-flex;align-items:center;gap:4px;background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px">&#10003; 已付款</span>`
             : '<span style="color:var(--gray-400);font-size:.78rem">未收款</span>';
-          // Flag when the amount actually received differs from the billed total.
+          // 账单红：实付金额（回执上银行实收）与账单差 > $5 时标红。
           const billed = r.subtotal || 0;
-          const amtMismatch = isPaid && r.payment_amount != null && Math.abs(Number(r.payment_amount) - billed) > 0.005;
+          const amtMismatch = isPaid && r.payment_amount != null && Math.abs(Number(r.payment_amount) - billed) > 5;
           const payAmountCell = (isPaid && r.payment_amount != null)
             ? `<span ${amtMismatch ? `title="账单 $${billed.toFixed(2)} · 实收 $${Number(r.payment_amount).toFixed(2)} · 差额 $${(Number(r.payment_amount) - billed).toFixed(2)}"` : ''} style="${amtMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${Number(r.payment_amount).toFixed(2)}${amtMismatch ? ' ⚠' : ''}</span>`
             : dash;
@@ -31388,22 +31388,22 @@ function renderInvpList() {
             return `<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center;max-width:140px;margin:0 auto">${arr.map(one).join('')}</div>`;
           };
           const receiptCell = isPaid ? rcptThumbs(r.payment_receipt_paths, r.payment_receipt_path, 'var(--green)') : dash;
-          // 分包付款: money paid OUT to the subcontractor. Compare to 账单
-          // (subtotal — the invoice's billed total) and flag red on a mismatch. Amount
-          // and receipt live in their own columns (subPayCell / subReceiptCell).
+          // 分包付款: money paid OUT to the subcontractor. It corresponds to 工资
+          // (wage_cost), so compare the sub-payment amount to 工资 and flag red when
+          // they differ by > $5. Amount/receipt live in their own columns.
           const subPaid = r.sub_payment_status === 'paid';
-          const billOwed = r.subtotal || 0;
+          const wageOwed = Number(r.wage_cost) || 0;
           const subAmt = r.sub_payment_amount != null ? Number(r.sub_payment_amount) : null;
-          const subMismatch = subPaid && subAmt != null && Math.abs(subAmt - billOwed) > 0.005;
+          const subMismatch = subPaid && subAmt != null && Math.abs(subAmt - wageOwed) > 5;
           const subInfo = subPaid ? [
             subAmt != null ? `$${subAmt.toFixed(2)}` : null,
             r.sub_payment_date || null, r.sub_payment_entity || null,
             r.sub_payment_bank || null, r.sub_payment_handler || null,
           ].filter(Boolean).join(' · ') : '';
           const subIsImg = subPaid && r.sub_payment_receipt_path && /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(r.sub_payment_receipt_path);
-          // 分包付款金额: its own column; red when it differs from 账单 (billed total).
+          // 分包付款金额: its own column; red when it differs from 工资 (wage_cost).
           const subAmtCell = (subPaid && subAmt != null)
-            ? `<span ${subMismatch ? `title="账单 $${billOwed.toFixed(2)} · 分包付款 $${subAmt.toFixed(2)} · 差额 $${(subAmt - billOwed).toFixed(2)}"` : ''} style="${subMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${subAmt.toFixed(2)}${subMismatch ? ' ⚠' : ''}</span>`
+            ? `<span ${subMismatch ? `title="工资 $${wageOwed.toFixed(2)} · 分包付款 $${subAmt.toFixed(2)} · 差额 $${(subAmt - wageOwed).toFixed(2)}"` : ''} style="${subMismatch ? 'color:#dc2626;font-weight:700;background:#fef2f2;padding:1px 7px;border-radius:6px' : ''}">$${subAmt.toFixed(2)}${subMismatch ? ' ⚠' : ''}</span>`
             : dash;
           // Status + action only; amount moved to subAmtCell. The 更新 button turns
           // green once a proof exists (the visible "已上传" colour change).
@@ -31422,7 +31422,7 @@ function renderInvpList() {
             : '—'}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
           <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap${amtMismatch ? ';color:#dc2626' : ''}" ${amtMismatch ? 'title="实收金额与账单不一致"' : ''}>$${(r.subtotal||0).toFixed(2)}</td>
-          <td class="invp-frz" style="padding:8px 10px;text-align:right;color:var(--gray-600);white-space:nowrap">$${(r.wage_cost||0).toFixed(2)}</td>
+          <td class="invp-frz" style="padding:8px 10px;text-align:right;white-space:nowrap;color:${subMismatch ? '#dc2626' : 'var(--gray-600)'}" ${subMismatch ? 'title="分包付款金额与工资不一致"' : ''}>$${(r.wage_cost||0).toFixed(2)}</td>
           <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${profit>=0?'#16a34a':'#dc2626'}">$${profit.toFixed(2)}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
           <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
@@ -32231,14 +32231,14 @@ function _invpSubPayAmtCheck() {
   if (_invpVoucherCtx === 'sub' && refs.length) {
     sum = _invpSelBoxSum();
     const v = parseFloat(a.value);
-    mismatch = isFinite(v) && Math.abs(v - sum) > 0.005;
+    mismatch = isFinite(v) && Math.abs(v - sum) > 5;
   }
   a.style.borderColor = mismatch ? '#dc2626' : '';
   a.style.background = mismatch ? '#fff5f5' : '';
   a.title = mismatch ? `付款金额与已选交易合计 $${sum.toFixed(2)} 不一致` : '';
 }
-// Selection summary: count + sum of the picked transactions, compared against the
-// invoice's 账单 / 工资(分包)合计 — green when it matches, red 差额 + 还需要修改 when not.
+// Selection summary: count + sum of the picked transactions, compared against 工资
+// (分包付款对应工资) — green when within $5, red 差额 + 还需要修改 when not.
 function _invpUpdateSubPaySelSummary(label) {
   const selEl = document.getElementById('invpSubPaySelected');
   if (!selEl) return;
@@ -32250,12 +32250,20 @@ function _invpUpdateSubPaySelSummary(label) {
   let html = `已选 <b>${refs.length}</b> 条交易 · 合计 <b>$${sum.toFixed(2)}</b>`;
   const t = window._invpSubPayInvTotals;
   if (t && _invpVoucherCtx === 'sub') {
-    const near = (a, b) => Math.abs(a - b) <= 0.005;
-    if (near(sum, t.billed)) html += ' <span style="color:#15803d;font-weight:700">✓ 与账单对上</span>';
-    else if (t.keyTotal && near(sum, t.keyTotal)) html += ` <span style="color:#15803d;font-weight:700">✓ 与${esc(t.keyLabel)}对上</span>`;
-    else html += ` <span style="color:#dc2626;font-weight:700">⚠ 与账单差 $${Math.abs(sum - t.billed).toFixed(2)}${t.keyTotal ? ' · 与' + esc(t.keyLabel) + '差 $' + Math.abs(sum - t.keyTotal).toFixed(2) : ''} · 还需要修改</span>`;
+    // 分包付款对应工资：拿已选合计和工资比，差 > $5 标红。
+    const target = (t.keyTotal != null ? t.keyTotal : t.billed) || 0;
+    const targetLabel = esc(t.keyTotal != null ? (t.keyLabel || '工资') : '账单');
+    if (Math.abs(sum - target) <= 5) html += ` <span style="color:#15803d;font-weight:700">✓ 与${targetLabel}对上</span>`;
+    else html += ` <span style="color:#dc2626;font-weight:700">⚠ 与${targetLabel}差 $${Math.abs(sum - target).toFixed(2)} · 还需要修改</span>`;
   }
-  html += ` <a onclick="const a=document.getElementById('invpSubPayAmount');if(a)a.value='${sum.toFixed(2)}';_invpSubPayAmtCheck()" style="color:var(--sky);text-decoration:underline;cursor:pointer;font-size:.72rem">填入金额</a>`;
+  if (_invpVoucherCtx === 'recv') {
+    // 收款回执：实付金额 = 回执上的银行金额（已选交易合计），自动填入实付金额框。
+    const amtEl = document.getElementById('invpReceiptAmount');
+    if (amtEl && refs.length) amtEl.value = sum.toFixed(2);
+    html += ` <a onclick="const a=document.getElementById('invpReceiptAmount');if(a)a.value='${sum.toFixed(2)}'" style="color:var(--sky);text-decoration:underline;cursor:pointer;font-size:.72rem">填入实付金额</a>`;
+  } else {
+    html += ` <a onclick="const a=document.getElementById('invpSubPayAmount');if(a)a.value='${sum.toFixed(2)}';_invpSubPayAmtCheck()" style="color:var(--sky);text-decoration:underline;cursor:pointer;font-size:.72rem">填入金额</a>`;
+  }
   selEl.innerHTML = html;
   _invpSubPayAmtCheck();
 }
