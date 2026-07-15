@@ -32158,7 +32158,13 @@ function _invpMatchRender() {
   const gOfW = idx => M.groups.findIndex(g => g.w.includes(idx));
   const gOfT = id => M.groups.findIndex(g => g.t.includes(id));
   const clsBg = c => c === 'exact' ? '#dcfce7' : c === 'near' ? '#fef9c3' : c === 'bad' ? '#fee2e2' : '';
-  const badge = gi => `<span style="background:${_INVP_GC[gi % _INVP_GC.length]};color:#fff;border-radius:4px;font-size:.62rem;font-weight:700;padding:0 5px;margin-right:4px">#${gi + 1}</span>`;
+  // 显示编号按上面工资表的行顺序重排：包含第一行工资的组是 #1，依此类推——
+  // 与配组创建的先后无关，保证上下编号顺序一致。
+  const gOrder = M.groups.map((g, gi) => ({ gi, minW: g.w.length ? Math.min(...g.w) : Infinity }));
+  gOrder.sort((a, b) => (a.minW - b.minW) || (a.gi - b.gi));
+  const dispNo = new Array(M.groups.length);
+  gOrder.forEach((o, k) => { dispNo[o.gi] = k + 1; });
+  const badge = gi => `<span style="background:${_INVP_GC[(dispNo[gi] - 1) % _INVP_GC.length]};color:#fff;border-radius:4px;font-size:.62rem;font-weight:700;padding:0 5px;margin-right:4px">#${dispNo[gi]}</span>`;
   const td = 'padding:4px 8px;border-top:1px solid var(--gray-100)';
   const keyTotal = M.items.reduce((s, i) => s + i.amt, 0);
   const wrows = M.items.map((it, idx) => {
@@ -32205,7 +32211,7 @@ function _invpMatchRender() {
   // 回执按编号排序（#1 #2 …在前、未配对的空白在后），与上方工资表的编号阅读
   // 顺序一致——上下同号一一对应。
   const rcptOrder = M.txns.map((t, i) => ({ t, i, gi: gOfT(t.id) }));
-  rcptOrder.sort((a, b) => ((a.gi < 0 ? 1e9 : a.gi) - (b.gi < 0 ? 1e9 : b.gi)) || (a.i - b.i));
+  rcptOrder.sort((a, b) => ((a.gi < 0 ? 1e9 : dispNo[a.gi]) - (b.gi < 0 ? 1e9 : dispNo[b.gi])) || (a.i - b.i));
   body.innerHTML = bar + (M.txns.length
     ? `<div style="font-weight:700;margin-bottom:.3rem">分包回执交易（${M.txns.length} 笔）</div>` + rcptOrder.map(o => rcptRow(o.t, o.i)).join('')
     : '<div style="color:#94a3b8">这张发票还没有分包回执。</div>');
