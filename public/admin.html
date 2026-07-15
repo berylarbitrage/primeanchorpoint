@@ -31025,8 +31025,27 @@ function invpMatchedContainers(r, q) {
 
 // "Chase ••9072" label for a list row, from the server-supplied bank_name /
 // bank_account_last4. Used for the 银行 column and the per-bank filter.
+// Canonical bank name — unify variants (e.g. "Chase" → "Chase Bank") so the same
+// account never shows two different labels.
+function _invpCanonBank(name) {
+  const s = String(name || '').trim();
+  if (!s) return '';
+  const low = s.toLowerCase();
+  if (/(^|\b)(chase|jpmorgan|jp ?morgan)\b/.test(low)) return 'Chase Bank';
+  if (/(bank of america|\bboa\b|\bbofa\b)/.test(low)) return 'Bank of America';
+  if (/cash ?app/.test(low)) return 'Cash App';
+  return s;
+}
+// Canonicalise a "Name ••1234" (or bare name) label's bank-name part.
+function _invpCanonLabel(label) {
+  const s = String(label || '').trim();
+  if (!s) return '';
+  const i = s.indexOf('••');
+  if (i >= 0) { const nm = _invpCanonBank(s.slice(0, i).trim()); const l4 = s.slice(i + 2).trim(); return (nm || '账户') + ' ••' + l4; }
+  return _invpCanonBank(s) || s;
+}
 function invpBankLabel(r) {
-  let name = (r.bank_name || '').trim();
+  let name = _invpCanonBank(r.bank_name);
   const l4 = (r.bank_account_last4 || '').trim();
   // Only a last-4 recorded → borrow the bank name from another invoice that used the
   // same account (when it maps to exactly one bank), so it reads "Chase Bank ••9072".
@@ -31215,7 +31234,7 @@ function renderInvpList() {
   window._invpL4Bank = {};
   window._invpL4Entity = {}; // 账号后四位 → 户名/公司（同理补上缺失的公司行）。
   (_invpAllRows || []).forEach(x => {
-    const n = (x.bank_name || '').trim(), l = (x.bank_account_last4 || '').trim();
+    const n = _invpCanonBank(x.bank_name), l = (x.bank_account_last4 || '').trim();
     if (n && l) (window._invpL4Bank[l] = window._invpL4Bank[l] || new Set()).add(n);
     const e = (x.bank_account_name || '').trim();
     if (e && l) (window._invpL4Entity[l] = window._invpL4Entity[l] || new Set()).add(e);
@@ -31336,7 +31355,7 @@ function renderInvpList() {
       const set = l4 ? (window._invpL4Bank || {})[l4] : null;
       if (set && set.size === 1) return [...set][0] + (l4 ? ' ••' + l4 : '');
     }
-    return s;
+    return _invpCanonLabel(s); // unify "Chase ••9072" → "Chase Bank ••9072"
   };
 
   // Clickable, sortable column headers. The active column shows ▲/▼; the rest
