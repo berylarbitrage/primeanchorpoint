@@ -2578,7 +2578,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
       <div>
         <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款金额 (USD)</label>
-        <input type="number" id="invpSubPayAmount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        <input type="number" id="invpSubPayAmount" step="0.01" min="0" placeholder="0.00" oninput="_invpSubPayAmtCheck()" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
       </div>
       <div>
         <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">付款日期</label>
@@ -32126,16 +32126,35 @@ function _invpFillSubPayStatements() {
 // date stay free inputs. Preserves the current selection when still valid.
 function _invpFillSubPayFilterOptions() {
   const boxesMap = window._invpBankStmtBoxes || {};
-  const payees = new Set(), purposes = new Set();
+  const purposes = new Set();
+  const raw = new Set();     // candidate payee options
+  const withCo = new Set();  // person names that also appear under a company
   Object.values(boxesMap).forEach(arr => (arr || []).forEach(b => {
-    const p = (_bsPayeeDisplay(b.payee) || '').trim(); if (p) payees.add(p);
-    // Employee payouts (员工:公司|姓名) also list the COMPANY itself as an option,
-    // so picking e.g. "SLM GROUP" surfaces every worker paid under it.
-    if (_bsIsEmp(b.payee)) { const co = (_bsEmpParse(b.payee).co || '').trim(); if (co) payees.add(co); }
-    // Check deposits/withdrawals: each counterparty is selectable too.
-    if (_bsIsCheck(b.payee)) _bsCheckParse(b.payee).names.forEach(n => { const t = (n || '').trim(); if (t) payees.add(t); });
     const u = (b.purpose || '').trim(); if (u) purposes.add(u);
+    if (_bsIsEmp(b.payee)) {
+      // Employee payouts (员工:公司|姓名): list the COMPANY itself as an option
+      // (so picking "SLM GROUP" surfaces every worker paid under it) plus the
+      // per-person display.
+      const e = _bsEmpParse(b.payee);
+      const nm = (e.name || '').trim(), co = (e.co || '').trim();
+      if (co) { raw.add(co); if (nm) withCo.add(nm); }
+      const p = (_bsPayeeDisplay(b.payee) || '').trim(); if (p) raw.add(p);
+      return;
+    }
+    // Check deposits/withdrawals: each counterparty is selectable too.
+    if (_bsIsCheck(b.payee)) { _bsCheckParse(b.payee).names.forEach(n => { const t = (n || '').trim(); if (t) raw.add(t); }); return; }
+    const p = (_bsPayeeDisplay(b.payee) || '').trim(); if (p) raw.add(p);
   }));
+  // De-dup people listed both bare ("Estiben Aguilar") and under a company
+  // ("👷 SLM GROUP · Estiben Aguilar") — keep only the company variant; the
+  // match helper still hits the bare-form transactions.
+  const payees = new Set();
+  raw.forEach(o => {
+    const stripped = o.replace(/^👷\s*/, '').trim();
+    const bare = stripped.indexOf(' · ') < 0;
+    if (bare && withCo.has(stripped)) return;
+    payees.add(o);
+  });
   const fill = (id, values, allLabel) => {
     const sel = document.getElementById(id); if (!sel) return;
     const keep = sel.value;
@@ -32179,6 +32198,32 @@ function _invpSelBoxRefs() {
   const v = (document.getElementById('invpSubPayStmt') || {}).value || '';
   return v.indexOf('box:') === 0 ? v.split('|').filter(Boolean) : [];
 }
+// Sum of the currently-selected transactions' (absolute) amounts.
+function _invpSelBoxSum() {
+  const boxesMap = window._invpBankStmtBoxes || {};
+  let sum = 0;
+  _invpSelBoxRefs().forEach(r => {
+    const [, sid, bid] = r.split(':');
+    const b = (boxesMap[sid] || []).find(x => String(x.id) === String(bid));
+    if (b) sum += Math.abs(Number(b.amount) || 0);
+  });
+  return sum;
+}
+// 付款金额 vs 已选交易合计（实付）: red-flag the amount input when they differ.
+function _invpSubPayAmtCheck() {
+  const a = document.getElementById('invpSubPayAmount');
+  if (!a) return;
+  const refs = _invpSelBoxRefs();
+  let mismatch = false, sum = 0;
+  if (_invpVoucherCtx === 'sub' && refs.length) {
+    sum = _invpSelBoxSum();
+    const v = parseFloat(a.value);
+    mismatch = isFinite(v) && Math.abs(v - sum) > 0.005;
+  }
+  a.style.borderColor = mismatch ? '#dc2626' : '';
+  a.style.background = mismatch ? '#fff5f5' : '';
+  a.title = mismatch ? `付款金额与已选交易合计 $${sum.toFixed(2)} 不一致` : '';
+}
 // Selection summary: count + sum of the picked transactions, compared against the
 // invoice's 账单 / 工资(分包)合计 — green when it matches, red 差额 + 还需要修改 when not.
 function _invpUpdateSubPaySelSummary(label) {
@@ -32188,13 +32233,7 @@ function _invpUpdateSubPaySelSummary(label) {
   if (!hidVal) { selEl.innerHTML = ''; return; }
   if (hidVal.indexOf('box:') !== 0) { selEl.innerHTML = '已选凭证：' + esc(label || '📄 整份 PDF'); return; }
   const refs = _invpSelBoxRefs();
-  const boxesMap = window._invpBankStmtBoxes || {};
-  let sum = 0;
-  refs.forEach(r => {
-    const [, sid, bid] = r.split(':');
-    const b = (boxesMap[sid] || []).find(x => String(x.id) === String(bid));
-    if (b) sum += Math.abs(Number(b.amount) || 0);
-  });
+  const sum = _invpSelBoxSum();
   let html = `已选 <b>${refs.length}</b> 条交易 · 合计 <b>$${sum.toFixed(2)}</b>`;
   const t = window._invpSubPayInvTotals;
   if (t && _invpVoucherCtx === 'sub') {
@@ -32203,8 +32242,9 @@ function _invpUpdateSubPaySelSummary(label) {
     else if (t.keyTotal && near(sum, t.keyTotal)) html += ` <span style="color:#15803d;font-weight:700">✓ 与${esc(t.keyLabel)}对上</span>`;
     else html += ` <span style="color:#dc2626;font-weight:700">⚠ 与账单差 $${Math.abs(sum - t.billed).toFixed(2)}${t.keyTotal ? ' · 与' + esc(t.keyLabel) + '差 $' + Math.abs(sum - t.keyTotal).toFixed(2) : ''} · 还需要修改</span>`;
   }
-  html += ` <a onclick="const a=document.getElementById('invpSubPayAmount');if(a)a.value='${sum.toFixed(2)}'" style="color:var(--sky);text-decoration:underline;cursor:pointer;font-size:.72rem">填入金额</a>`;
+  html += ` <a onclick="const a=document.getElementById('invpSubPayAmount');if(a)a.value='${sum.toFixed(2)}';_invpSubPayAmtCheck()" style="color:var(--sky);text-decoration:underline;cursor:pointer;font-size:.72rem">填入金额</a>`;
   selEl.innerHTML = html;
+  _invpSubPayAmtCheck();
 }
 
 // Render the filtered transaction list into #invpSubPayList. Rows already used by
@@ -32302,13 +32342,26 @@ function _invpRenderSubPayList() {
 }
 // Safely embed a string as a JS single-quoted literal inside an inline onclick.
 function _invpJsStr(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\r?\n/g, ' ') + "'"; }
+// Person name inside a payee filter option ("👷 SLM GROUP · 张三" → "张三").
+function _invpPayeeOptName(s) {
+  const t = String(s || '').replace(/^👷\s*/, '').trim();
+  const i = t.lastIndexOf(' · ');
+  return i >= 0 ? t.slice(i + 3).trim() : t;
+}
 // Whether a transaction matches the 公司/收款人 filter: exact display match, the
 // company behind an employee payout (员工:公司|姓名 → picking the company shows
-// every worker paid under it), or a 存/取支票 counterparty.
+// every worker paid under it), the same PERSON in bare legacy form (员工:姓名 or a
+// plain-name payee), or a 存/取支票 counterparty.
 function _invpSubPayPayeeMatch(b, fPayee) {
   if ((_bsPayeeDisplay(b.payee) || '').trim() === fPayee) return true;
-  if (_bsIsEmp(b.payee) && (_bsEmpParse(b.payee).co || '').trim() === fPayee) return true;
-  if (_bsIsCheck(b.payee) && _bsCheckParse(b.payee).names.some(n => (n || '').trim() === fPayee)) return true;
+  const fName = _invpPayeeOptName(fPayee);
+  if (_bsIsEmp(b.payee)) {
+    const e = _bsEmpParse(b.payee);
+    if ((e.co || '').trim() === fPayee) return true;
+    if (fName && (e.name || '').trim() === fName) return true;
+  }
+  if (typeof b.payee === 'string' && fName && b.payee.trim() === fName) return true;
+  if (_bsIsCheck(b.payee) && _bsCheckParse(b.payee).names.some(n => { const t = (n || '').trim(); return t === fPayee || (fName && t === fName); })) return true;
   return false;
 }
 
