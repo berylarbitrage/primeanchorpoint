@@ -28291,18 +28291,34 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
 app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const s = db.prepare('SELECT id FROM bank_statements WHERE id=?').get(id);
+    const s = db.prepare('SELECT id, file_name FROM bank_statements WHERE id=?').get(id);
     if (!s) return res.status(404).json({ error: 'not found' });
     const b = req.body || {};
-    db.prepare('UPDATE bank_statements SET bank=?, account_name=?, operator=?, period_start=?, period_end=? WHERE id=?').run(
+    // Rebuild the canonical display file name (bank_account_operator_start_end.pdf,
+    // same convention the upload modal uses) so statements tagged or corrected
+    // after upload still follow the naming rule. A trailing _N multi-file suffix
+    // is preserved; a name ending in the period date is not mistaken for one.
+    let file_name = null;
+    const nameParts = [b.bank, b.account_name, b.operator].map(x => String(x || '').trim()).filter(Boolean);
+    const period = (b.period_start && b.period_end) ? (b.period_start + '_' + b.period_end) : (b.period_start || b.period_end || '');
+    if (period) nameParts.push(period);
+    if (nameParts.length) {
+      let base = nameParts.join('_').replace(/\s+/g, '');
+      const old = String(s.file_name || '');
+      const sfx = /_(\d+)\.pdf$/i.exec(old);
+      if (sfx && !/\d{4}-\d{2}-\d{2}\.pdf$/i.test(old)) base += '_' + sfx[1];
+      file_name = (base.replace(/[\/\\:*?"<>|]+/g, '-') + '.pdf').slice(0, 200);
+    }
+    db.prepare('UPDATE bank_statements SET bank=?, account_name=?, operator=?, period_start=?, period_end=?, file_name=COALESCE(?, file_name) WHERE id=?').run(
       String(b.bank || '').slice(0, 40),
       String(b.account_name || '').slice(0, 80),
       String(b.operator || '').slice(0, 80),
       String(b.period_start || '').slice(0, 40),
       String(b.period_end || '').slice(0, 40),
+      file_name,
       id
     );
-    res.json({ success: true });
+    res.json({ success: true, file_name });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
