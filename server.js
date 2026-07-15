@@ -1111,6 +1111,8 @@ try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_bank TEXT DEFAULT NUL
 try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_handler TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_amount REAL DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_date TEXT DEFAULT NULL`); } catch(e) {}
+// Manual 工资↔分包回执 correspondence groups (JSON): [{ w:[itemIndex...], t:[txnId...] }].
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_match_groups TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`UPDATE employees SET employee_id = REPLACE(employee_id, 'STAFF-', 'WRK-') WHERE employee_id LIKE 'STAFF-%'`); } catch(e) {}
@@ -19286,8 +19288,27 @@ app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   if (!row) return res.status(404).json({ error: 'Not found' });
   row.items = row.items_json ? JSON.parse(row.items_json) : [];
   row.profile = row.profile_json ? JSON.parse(row.profile_json) : {};
+  try { row.sub_match_groups = JSON.parse(row.sub_match_groups || '[]'); } catch (_) { row.sub_match_groups = []; }
   delete row.items_json; delete row.profile_json;
   res.json(row);
+});
+
+// Save the manual 工资↔分包回执 correspondence groups for an invoice.
+// Body: { groups: [{ w:[itemIndex...], t:[txnId...] }, ...] }
+app.post('/api/admin/invoices/:id/sub-match-groups', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT id FROM invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Not found' });
+    let groups = (req.body && req.body.groups) || [];
+    if (!Array.isArray(groups)) groups = [];
+    // Sanitise: numeric indices/ids only, drop empties, cap size.
+    groups = groups.slice(0, 200).map(g => ({
+      w: (Array.isArray(g && g.w) ? g.w : []).map(n => parseInt(n, 10)).filter(n => Number.isInteger(n) && n >= 0).slice(0, 100),
+      t: (Array.isArray(g && g.t) ? g.t : []).map(n => parseInt(n, 10)).filter(n => Number.isInteger(n) && n > 0).slice(0, 100),
+    })).filter(g => g.w.length || g.t.length);
+    db.prepare('UPDATE invoices SET sub_match_groups=? WHERE id=?').run(JSON.stringify(groups), inv.id);
+    res.json({ success: true, groups });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Update invoice

@@ -32104,96 +32104,124 @@ async function invpOpenSubReceiptGallery(invoiceId) {
     if (Array.isArray(txnsRes)) txns = txnsRes.filter(t => t.used_kind === 'sub');
     if (invRes && !invRes.error) inv = invRes;
   } catch (_) {}
-  // Invoice line items (the "inside" of the invoice): per-worker hours/rate/subtotal,
-  // or per-container qty/sub-price — same numbers the 分包付款 modal embeds.
-  const invBox = document.getElementById('invpSubGalInv');
-  if (invBox) {
-    if (!inv) invBox.innerHTML = '<div style="color:var(--gray-400);margin-bottom:.7rem">无法加载 Invoice 明细</div>';
-    else {
-      let profile = inv.profile;
-      if (typeof profile === 'string') { try { profile = JSON.parse(profile); } catch (_) { profile = {}; } }
-      profile = profile || {};
-      const td = 'padding:3px 8px;border-top:1px solid var(--gray-100)';
-      let rowsH = '', headH = '', keyLabel = '工资合计', keyTotal = 0;
-      // Match each worker/柜 小计 to the closest as-yet-unused 回执 amount:
-      //   'exact' (金额完全一致) → 绿；'near' (差 ≤ $5) → 黄；否则不标。
-      const _rcptAmts = (txns || []).map(t => Math.abs(Number(t.amount) || 0)).filter(a => a > 0);
-      const _rcptUsed = new Array(_rcptAmts.length).fill(false);
-      const _matchAmt = amt => {
-        let best = -1, bestDiff = Infinity;
-        for (let i = 0; i < _rcptAmts.length; i++) {
-          if (_rcptUsed[i]) continue;
-          const d = Math.abs(_rcptAmts[i] - amt);
-          if (d <= 5 && d < bestDiff) { bestDiff = d; best = i; }
-        }
-        if (best < 0) return null;
-        _rcptUsed[best] = true;
-        return bestDiff < 0.005 ? 'exact' : 'near';
-      };
-      // Row background / 小计 text colour / marker for a match state.
-      const _mBg = m => m === 'exact' ? 'background:#dcfce7' : m === 'near' ? 'background:#fef9c3' : '';
-      const _mCol = m => m === 'exact' ? ';color:#15803d' : m === 'near' ? ';color:#a16207' : '';
-      const _mMark = m => m === 'exact' ? '✓ ' : m === 'near' ? '⚠ ' : '';
-      const _cs = Array.isArray(profile.container_items) ? profile.container_items : [];
-      if (profile.invoice_mode === 'container' && (_cs.length || !(Array.isArray(inv.items) && inv.items.length))) {
-        keyLabel = '分包合计';
-        headH = `<tr style="color:var(--gray-400);font-size:.72rem"><th style="text-align:left;padding:3px 8px">柜号</th><th style="padding:3px 8px">Qty</th><th style="text-align:right;padding:3px 8px">分包价</th><th style="text-align:right;padding:3px 8px">小计</th></tr>`;
-        rowsH = _cs.map(c => {
-          const line = (Number(c.qty) || 0) * (Number(c.sub_price) || 0);
-          keyTotal += line;
-          const _m = _matchAmt(line);
-          return `<tr style="${_mBg(_m)}"><td style="${td};font-family:monospace;font-weight:600">${esc(c.container_no || '—')}</td><td style="${td};text-align:center">${c.qty || 0}</td><td style="${td};text-align:right">${money(c.sub_price)}</td><td style="${td};text-align:right;font-weight:600${_mCol(_m)}">${_mMark(_m)}${money(line)}</td></tr>`;
-        }).join('');
-      } else {
-        const items = Array.isArray(inv.items) ? inv.items : [];
-        headH = `<tr style="color:var(--gray-400);font-size:.72rem"><th style="text-align:left;padding:3px 8px">姓名</th><th style="text-align:right;padding:3px 8px">工时</th><th style="text-align:right;padding:3px 8px">时薪</th><th style="text-align:right;padding:3px 8px">小计</th></tr>`;
-        rowsH = items.map(it => {
-          keyTotal += Number(it.total) || 0;
-          const _m = _matchAmt(Number(it.total) || 0);
-          return `<tr style="${_mBg(_m)}"><td style="${td}">${esc(it.name || '—')}</td><td style="${td};text-align:right">${it.hours != null ? it.hours : '—'}</td><td style="${td};text-align:right">${it.rate != null ? money(it.rate) : '—'}</td><td style="${td};text-align:right;font-weight:600${_mCol(_m)}">${_mMark(_m)}${money(it.total)}</td></tr>`;
-        }).join('');
-      }
-      invBox.innerHTML = `
-        <div style="font-weight:700;margin:.1rem 0 .3rem">📋 Invoice 明细
-          <span style="font-weight:600;color:#9a3412;margin-left:.5rem">${keyLabel} ${money(keyTotal)}</span>
-          <span style="font-weight:600;color:var(--gray-600);margin-left:.5rem">账单 ${money(inv.subtotal)}</span>
-        </div>
-        ${rowsH ? `<div style="max-height:190px;overflow-y:auto;border:1px solid var(--gray-100);border-radius:8px;background:#fff;margin-bottom:.7rem">
-          <table style="width:100%;border-collapse:collapse;font-size:.78rem"><thead>${headH}</thead><tbody>${rowsH}</tbody></table>
-        </div>` : '<div style="color:var(--gray-400);margin-bottom:.7rem">此 Invoice 没有行项目</div>'}`;
-    }
-  }
-  const body = document.getElementById('invpSubGalBody'); if (!body) return;
-  const imgCard = (p, t, idx) => {
-    const img = /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(p)
-      ? `<a href="${p}" onclick="invpOpenReceipt(this.href);return false" title="点击放大"><img src="${p}" loading="lazy" style="width:100%;max-height:130px;object-fit:contain;background:#f8fafc;border-radius:6px;cursor:zoom-in"></a>`
-      : `<a href="${p}" target="_blank" style="color:#0369a1">📄 打开文件</a>`;
-    const tinfo = t ? `<div style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin-top:.3rem;font-size:.78rem">
-        <b style="color:#b91c1c;font-size:.92rem">${money(t.amount)}</b>
-        <span style="color:var(--gray-600)">${esc(t.txn_date || '—')}</span>
-        <span style="color:var(--gray-700)">${esc(_bsPayeeDisplay(t.payee) || t.payee || '—')}</span>
-        ${t.statement_name ? `<span style="color:var(--gray-400);font-size:.7rem" title="来源对账单">📄 ${esc(t.statement_name)}</span>` : ''}
-      </div>` : '<div style="margin-top:.3rem;font-size:.74rem;color:var(--gray-400)">（没有找到对应的交易记录——可能是手动上传的截图）</div>';
-    return `<div style="border:1px solid #e2e8f0;border-radius:10px;padding:.55rem;margin-bottom:.55rem">
-      <div style="font-size:.68rem;color:var(--gray-400);margin-bottom:.25rem">回执 ${idx + 1} / ${rcpts.length}</div>
-      ${img}${tinfo}</div>`;
-  };
-  let h = '';
-  if (!rcpts.length) {
-    h = '<div style="color:#94a3b8">这张发票还没有分包回执。</div>';
-  } else if (txns.length === rcpts.length && txns.length > 0) {
-    // Counts match → pair each image with its transaction (upload order = selection order).
-    h = rcpts.map((p, i) => imgCard(p, txns[i], i)).join('');
+  // Interactive 工资 ↔ 分包回执 matching (supports N:M; groups persist per invoice).
+  _invpMatchInit(invoiceId, inv, txns, rcpts);
+  _invpMatchRender();
+}
+
+// ── Interactive 工资 ↔ 分包回执 matching (N:M, groups persisted per invoice) ──
+function _invpMoney(v) { return (v == null || v === '') ? '—' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function _invpMatchInit(invoiceId, inv, txns, rcpts) {
+  const items = [];
+  let keyLabel = '工资合计';
+  let profile = inv && inv.profile; if (typeof profile === 'string') { try { profile = JSON.parse(profile); } catch (_) { profile = {}; } } profile = profile || {};
+  const cs = Array.isArray(profile.container_items) ? profile.container_items : [];
+  if (profile.invoice_mode === 'container' && (cs.length || !(inv && Array.isArray(inv.items) && inv.items.length))) {
+    keyLabel = '分包合计';
+    cs.forEach(c => items.push({ label: c.container_no || '—', sub: (c.qty || 0) + ' × ' + _invpMoney(c.sub_price), amt: (Number(c.qty) || 0) * (Number(c.sub_price) || 0) }));
   } else {
-    if (txns.length) {
-      h += `<div style="font-weight:700;margin-bottom:.3rem">已关联的交易（${txns.length} 条 · 合计 <span style="color:#b91c1c">${money(txns.reduce((s, t) => s + (Number(t.amount) || 0), 0))}</span>）</div>
-        <div style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:.7rem"><table style="width:100%;border-collapse:collapse;font-size:.8rem">
-        <thead><tr style="background:var(--gray-50);color:var(--gray-500);font-size:.72rem;text-align:left"><th style="padding:.35rem .5rem">日期</th><th style="padding:.35rem .5rem">付给谁</th><th style="padding:.35rem .5rem;text-align:right">金额</th><th style="padding:.35rem .5rem">来源对账单</th></tr></thead>
-        <tbody>${txns.map(t => `<tr style="border-top:1px solid var(--gray-100)"><td style="padding:.35rem .5rem;white-space:nowrap">${esc(t.txn_date || '—')}</td><td style="padding:.35rem .5rem">${esc(_bsPayeeDisplay(t.payee) || t.payee || '—')}</td><td style="padding:.35rem .5rem;text-align:right;font-weight:700;color:#b91c1c">${money(t.amount)}</td><td style="padding:.35rem .5rem;color:var(--gray-400);font-size:.72rem">${esc(t.statement_name || '—')}</td></tr>`).join('')}</tbody></table></div>`;
-    }
-    h += `<div style="font-weight:700;margin-bottom:.3rem">回执图片（${rcpts.length} 张，点击放大）</div>` + rcpts.map((p, i) => imgCard(p, null, i)).join('');
+    (inv && Array.isArray(inv.items) ? inv.items : []).forEach(it => items.push({ label: it.name || '—', sub: (it.hours != null ? it.hours : '—') + 'h × ' + (it.rate != null ? _invpMoney(it.rate) : '—'), amt: Number(it.total) || 0 }));
   }
-  body.innerHTML = h;
+  const mtxns = (txns || []).map(t => ({ id: t.id, amt: Math.abs(Number(t.amount) || 0), date: t.txn_date || '', payee: (_bsPayeeDisplay(t.payee) || t.payee || '—'), stmt: t.statement_name || '' }));
+  const validIdx = new Set(items.map((_, i) => i)), validId = new Set(mtxns.map(t => t.id));
+  let groups = (inv && Array.isArray(inv.sub_match_groups)) ? inv.sub_match_groups : [];
+  groups = groups.map(g => ({ w: (g.w || []).filter(i => validIdx.has(i)), t: (g.t || []).filter(id => validId.has(id)) })).filter(g => g.w.length || g.t.length);
+  window._invpMatch = { invId: invoiceId, keyLabel, items, txns: mtxns, rcpts: rcpts || [], groups, subtotal: (inv && inv.subtotal) || 0, sel: { w: new Set(), t: new Set() } };
+}
+const _INVP_GC = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#db2777', '#0891b2', '#65a30d', '#dc2626'];
+function _invpGroupState(g) {
+  const M = window._invpMatch;
+  const wsum = g.w.reduce((s, i) => s + ((M.items[i] && M.items[i].amt) || 0), 0);
+  const tsum = g.t.reduce((s, id) => { const t = M.txns.find(x => x.id === id); return s + (t ? t.amt : 0); }, 0);
+  const d = Math.abs(wsum - tsum);
+  return { wsum, tsum, d, cls: d < 0.005 ? 'exact' : (d <= 5 ? 'near' : 'bad') };
+}
+function _invpMatchRender() {
+  const M = window._invpMatch; if (!M) return;
+  const invBox = document.getElementById('invpSubGalInv'), body = document.getElementById('invpSubGalBody');
+  if (!invBox || !body) return;
+  const gOfW = idx => M.groups.findIndex(g => g.w.includes(idx));
+  const gOfT = id => M.groups.findIndex(g => g.t.includes(id));
+  const clsBg = c => c === 'exact' ? '#dcfce7' : c === 'near' ? '#fef9c3' : c === 'bad' ? '#fee2e2' : '';
+  const badge = gi => `<span style="background:${_INVP_GC[gi % _INVP_GC.length]};color:#fff;border-radius:4px;font-size:.62rem;font-weight:700;padding:0 5px;margin-right:4px">#${gi + 1}</span>`;
+  const td = 'padding:4px 8px;border-top:1px solid var(--gray-100)';
+  const keyTotal = M.items.reduce((s, i) => s + i.amt, 0);
+  const wrows = M.items.map((it, idx) => {
+    const gi = gOfW(idx), gs = gi >= 0 ? _invpGroupState(M.groups[gi]) : null, sel = M.sel.w.has(idx);
+    const bg = gi >= 0 ? clsBg(gs.cls) : (sel ? '#dbeafe' : '');
+    const click = gi >= 0 ? `_invpMatchUngroup(${gi})` : `_invpMatchToggleW(${idx})`;
+    const title = gi >= 0 ? '点击拆开该组' : (sel ? '已选，点击取消' : '点击选择');
+    return `<tr onclick="${click}" title="${title}" style="cursor:pointer;${bg ? 'background:' + bg : ''}">
+      <td style="${td}">${gi >= 0 ? badge(gi) : (sel ? '<span style="color:#2563eb;font-weight:700">✓ </span>' : '')}${esc(it.label)}</td>
+      <td style="${td};text-align:right;color:var(--gray-400);font-size:.72rem">${esc(it.sub)}</td>
+      <td style="${td};text-align:right;font-weight:600">${_invpMoney(it.amt)}</td></tr>`;
+  }).join('');
+  invBox.innerHTML = `<div style="font-weight:700;margin:.1rem 0 .3rem">📋 Invoice 明细
+      <span style="font-weight:600;color:#9a3412;margin-left:.5rem">${M.keyLabel} ${_invpMoney(keyTotal)}</span>
+      <span style="font-weight:600;color:var(--gray-600);margin-left:.5rem">账单 ${_invpMoney(M.subtotal)}</span></div>
+    <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.3rem">勾选工资行 + 下方回执，凑齐后点「配成一组」（可多对多）；点已配组的行/回执可拆开。绿=完全一致，黄=差≤$5，红=差>$5。</div>
+    <div style="max-height:200px;overflow-y:auto;border:1px solid var(--gray-100);border-radius:8px;background:#fff;margin-bottom:.6rem">
+      <table style="width:100%;border-collapse:collapse;font-size:.78rem"><tbody>${wrows || '<tr><td style="padding:8px;color:#94a3b8">无行项目</td></tr>'}</tbody></table></div>`;
+  // Balance bar + selectable receipts.
+  const selWsum = [...M.sel.w].reduce((s, i) => s + ((M.items[i] && M.items[i].amt) || 0), 0);
+  const selTsum = [...M.sel.t].reduce((s, id) => { const t = M.txns.find(x => x.id === id); return s + (t ? t.amt : 0); }, 0);
+  const selDiff = Math.abs(selWsum - selTsum);
+  const canGroup = M.sel.w.size > 0 && M.sel.t.size > 0;
+  const btn = (on, label, fn, extra) => `<button onclick="${fn}" ${on ? '' : 'disabled'} style="font-size:.75rem;padding:.25rem .6rem;border-radius:6px;border:1px solid ${on ? '#059669' : '#e2e8f0'};background:${on ? (extra || '#ecfdf5') : '#f8fafc'};color:${on ? '#047857' : '#94a3b8'};cursor:${on ? 'pointer' : 'default'};font-weight:600">${label}</button>`;
+  const bar = `<div style="position:sticky;top:0;z-index:2;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .7rem;margin-bottom:.6rem;display:flex;gap:.7rem;align-items:center;flex-wrap:wrap">
+     <span style="font-size:.8rem">已选工资 <b>${_invpMoney(selWsum)}</b>（${M.sel.w.size}）</span>
+     <span style="font-size:.8rem">已选回执 <b>${_invpMoney(selTsum)}</b>（${M.sel.t.size}）</span>
+     <span style="font-size:.8rem;font-weight:700;color:${selDiff < 0.005 ? '#15803d' : selDiff <= 5 ? '#a16207' : '#b91c1c'}">差 ${_invpMoney(selDiff)}</span>
+     ${btn(canGroup, '✓ 配成一组', '_invpMatchGroupSel()')}
+     ${btn(M.sel.w.size || M.sel.t.size, '清除选择', '_invpMatchClearSel()', '#eff6ff')}
+     ${btn(true, '⚡ 自动匹配', '_invpMatchAuto()', '#eff6ff')}
+   </div>`;
+  const rcptRow = (t, i) => {
+    const gi = gOfT(t.id), gs = gi >= 0 ? _invpGroupState(M.groups[gi]) : null, sel = M.sel.t.has(t.id);
+    const bg = gi >= 0 ? clsBg(gs.cls) : (sel ? '#dbeafe' : '#fff');
+    const click = gi >= 0 ? `_invpMatchUngroup(${gi})` : `_invpMatchToggleT(${t.id})`;
+    const p = (M.rcpts.length === M.txns.length) ? M.rcpts[i] : null;
+    const imgH = p ? `<a href="${p}" onclick="event.stopPropagation();invpOpenReceipt(this.href);return false" title="点击放大"><img src="${p}" loading="lazy" style="width:100%;max-height:120px;object-fit:contain;background:#f8fafc;border-radius:6px;margin-top:.3rem;cursor:zoom-in"></a>` : '';
+    return `<div onclick="${click}" title="${gi >= 0 ? '点击拆开该组' : (sel ? '已选，点击取消' : '点击选择')}" style="cursor:pointer;border:1px solid #e2e8f0;border-radius:10px;padding:.5rem;margin-bottom:.5rem;background:${bg}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-size:.8rem">
+          <span>${gi >= 0 ? badge(gi) : (sel ? '<span style="color:#2563eb;font-weight:700">✓ </span>' : '')}<b style="color:#b91c1c">${_invpMoney(t.amt)}</b> <span style="color:var(--gray-500);font-size:.75rem">${esc(t.date)} · ${esc(t.payee)}</span></span>
+        </div>${imgH}${t.stmt ? `<div style="color:var(--gray-400);font-size:.7rem;margin-top:.2rem">📄 ${esc(t.stmt)}</div>` : ''}</div>`;
+  };
+  body.innerHTML = bar + (M.txns.length
+    ? `<div style="font-weight:700;margin-bottom:.3rem">分包回执交易（${M.txns.length} 笔）</div>` + M.txns.map(rcptRow).join('')
+    : '<div style="color:#94a3b8">这张发票还没有分包回执。</div>');
+}
+function _invpMatchToggleW(idx) { const M = window._invpMatch; if (!M) return; M.sel.w.has(idx) ? M.sel.w.delete(idx) : M.sel.w.add(idx); _invpMatchRender(); }
+function _invpMatchToggleT(id) { const M = window._invpMatch; if (!M) return; M.sel.t.has(id) ? M.sel.t.delete(id) : M.sel.t.add(id); _invpMatchRender(); }
+function _invpMatchClearSel() { const M = window._invpMatch; if (!M) return; M.sel.w.clear(); M.sel.t.clear(); _invpMatchRender(); }
+function _invpMatchGroupSel() { const M = window._invpMatch; if (!M || !M.sel.w.size || !M.sel.t.size) return; M.groups.push({ w: [...M.sel.w], t: [...M.sel.t] }); M.sel.w.clear(); M.sel.t.clear(); _invpMatchSave(); _invpMatchRender(); }
+function _invpMatchUngroup(gi) { const M = window._invpMatch; if (!M || gi < 0 || gi >= M.groups.length) return; M.groups.splice(gi, 1); _invpMatchSave(); _invpMatchRender(); }
+function _invpMatchSave() { const M = window._invpMatch; if (!M) return; api('/admin/invoices/' + M.invId + '/sub-match-groups', { method: 'POST', body: JSON.stringify({ groups: M.groups }) }).catch(() => {}); }
+// Smallest-diff (then fewest-items) subset of `amts` summing within `tol` of target.
+function _invpSubsetSum(amts, target, tol) {
+  const idx = []; for (let i = 0; i < amts.length; i++) if (isFinite(amts[i]) && amts[i] > 0) idx.push(i);
+  const N = idx.length; if (!N) return null;
+  if (N > 18) { let best = null, bd = Infinity; for (let i = 0; i < N; i++) { const d = Math.abs(amts[idx[i]] - target); if (d <= tol && d < bd) { bd = d; best = [idx[i]]; } } return best; }
+  let best = null, bd = Infinity, bc = Infinity;
+  for (let mask = 1; mask < (1 << N); mask++) {
+    let s = 0, c = 0; for (let b = 0; b < N; b++) if (mask & (1 << b)) { s += amts[idx[b]]; c++; }
+    const d = Math.abs(s - target);
+    if (d <= tol && (d < bd - 1e-9 || (Math.abs(d - bd) < 1e-9 && c < bc))) { bd = d; bc = c; best = []; for (let b = 0; b < N; b++) if (mask & (1 << b)) best.push(idx[b]); }
+  }
+  return best;
+}
+function _invpMatchAuto() {
+  const M = window._invpMatch; if (!M) return;
+  const usedW = new Set(), usedT = new Set();
+  M.groups.forEach(g => { g.w.forEach(i => usedW.add(i)); g.t.forEach(id => usedT.add(id)); });
+  const availT = M.txns.map((t, k) => ({ k, id: t.id, amt: t.amt })).filter(x => !usedT.has(x.id));
+  const tGone = new Array(availT.length).fill(false);
+  M.items.forEach((it, i) => {
+    if (usedW.has(i)) return;
+    const res = _invpSubsetSum(availT.map((t, k) => tGone[k] ? Infinity : t.amt), it.amt, 5);
+    if (res && res.length) { res.forEach(k => tGone[k] = true); M.groups.push({ w: [i], t: res.map(k => availT[k].id) }); }
+  });
+  _invpMatchSave(); _invpMatchRender();
 }
 
 function openInvpSubPayModal(invoiceId, isUpdate) {
