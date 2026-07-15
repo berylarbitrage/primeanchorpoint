@@ -12851,7 +12851,7 @@ function openPartnerLabelSheetPrint(items) {
 
 // ── 员工文件清单标签（Avery 5163，2 × 4″，每页 10 个）──
 // 顶部大字年份（可选）+ 姓名栏，正文是勾选框文件项（可自定义）。
-const DOC_CHECKLIST_ITEMS = ['SSN', 'EAD', 'W-9', 'Agreement', '付款方式表格签字'];
+const DOC_CHECKLIST_ITEMS = ['SSN', 'EAD', 'W-9', 'Agreement', 'Payment Form'];
 function openDocChecklistLabelModal() {
   let ov = document.getElementById('dclModal'); if (ov) ov.remove();
   ov = document.createElement('div');
@@ -12874,8 +12874,7 @@ function openDocChecklistLabelModal() {
         <div style="display:flex;flex-direction:column;gap:.25rem;font-size:.85rem">
           ${DOC_CHECKLIST_ITEMS.map(it => `<label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" class="dcl-item" value="${esc(it)}" checked>${esc(it)}</label>`).join('')}
         </div>
-        <input id="dclCustom" placeholder="自定义项（逗号分隔，可留空），如：I-9, 保险表" style="width:100%;margin-top:.4rem;padding:.45rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem"></div>
-      <div style="grid-column:1/-1"><label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer"><input type="checkbox" id="dclNameLine" checked>标签上带「姓名 Name ____」一行</label></div>
+        <input id="dclCustom" placeholder="自定义项（逗号分隔，可留空），如：I-9, Insurance" style="width:100%;margin-top:.4rem;padding:.45rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
       <button class="btn btn-outline" onclick="document.getElementById('dclModal').remove()">取消</button>
@@ -12890,13 +12889,11 @@ function printDocChecklistLabels() {
   const custom = ((document.getElementById('dclCustom') || {}).value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
   const all = items.concat(custom);
   if (!all.length) { showToast('至少选一个文件项', 'error'); return; }
-  const nameLine = !!(document.getElementById('dclNameLine') || {}).checked;
   const m = document.getElementById('dclModal'); if (m) m.remove();
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const itemHtml = all.map(it => `<div class="it"><span class="cb"></span>${esca(it)}</div>`).join('');
   const one = `<div class="cell"><div class="inner">
-    <div class="hd"><span class="yr">${esca(year)}</span><span class="ttl">员工文件清单 Document Checklist</span></div>
-    ${nameLine ? '<div class="nm">姓名 Name <span class="ln"></span></div>' : ''}
+    <div class="yr">${esca(year)}</div>
     <div class="grid">${itemHtml}</div>
   </div></div>`;
   const cells = Array.from({ length: count }, () => one).join('');
@@ -12916,15 +12913,11 @@ function printDocChecklistLabels() {
     row-gap: 0;
   }
   .cell { width: 4in; height: 2in; overflow: hidden; page-break-inside: avoid; }
-  .inner { width: 100%; height: 100%; padding: 0.12in 0.18in; display: flex; flex-direction: column; justify-content: center; }
-  .hd { display: flex; align-items: baseline; gap: 8px; border-bottom: 1.5px solid #111; padding-bottom: 3px; }
-  .yr { font-size: 16pt; font-weight: 800; letter-spacing: 1px; }
-  .ttl { font-size: 8.5pt; font-weight: 600; color: #333; }
-  .nm { font-size: 9pt; margin-top: 5px; display: flex; align-items: baseline; gap: 4px; }
-  .nm .ln { flex: 1; border-bottom: 1px solid #555; height: 12px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 6px; }
-  .it { font-size: 9pt; display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cb { display: inline-block; width: 11px; height: 11px; border: 1.3px solid #111; border-radius: 2px; flex: 0 0 auto; }
+  .inner { width: 100%; height: 100%; padding: 0.12in 0.2in; display: flex; flex-direction: column; justify-content: center; }
+  .yr { font-size: 18pt; font-weight: 800; letter-spacing: 1px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-top: 8px; }
+  .it { font-size: 10pt; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cb { display: inline-block; width: 12px; height: 12px; border: 1.4px solid #111; border-radius: 2px; flex: 0 0 auto; }
   @media screen {
     body { background: #64748b; padding: 20px; }
     .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
