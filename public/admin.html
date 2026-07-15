@@ -32109,9 +32109,8 @@ async function invpOpenSubReceiptGallery(invoiceId) {
       profile = profile || {};
       const td = 'padding:3px 8px;border-top:1px solid var(--gray-100)';
       let rowsH = '', headH = '', keyLabel = '工资合计', keyTotal = 0;
-      // Amounts of the linked 分包 transactions (回执). Green each worker/柜 row whose
-      // 小计 is within $5 of an as-yet-unmatched receipt amount (工时×时薪 vs the actual
-      // Zelle often differ by a few cents); each receipt greens the closest one row.
+      // Match each worker/柜 小计 to the closest as-yet-unused 回执 amount:
+      //   'exact' (金额完全一致) → 绿；'near' (差 ≤ $5) → 黄；否则不标。
       const _rcptAmts = (txns || []).map(t => Math.abs(Number(t.amount) || 0)).filter(a => a > 0);
       const _rcptUsed = new Array(_rcptAmts.length).fill(false);
       const _matchAmt = amt => {
@@ -32121,9 +32120,14 @@ async function invpOpenSubReceiptGallery(invoiceId) {
           const d = Math.abs(_rcptAmts[i] - amt);
           if (d <= 5 && d < bestDiff) { bestDiff = d; best = i; }
         }
-        if (best >= 0) { _rcptUsed[best] = true; return true; }
-        return false;
+        if (best < 0) return null;
+        _rcptUsed[best] = true;
+        return bestDiff < 0.005 ? 'exact' : 'near';
       };
+      // Row background / 小计 text colour / marker for a match state.
+      const _mBg = m => m === 'exact' ? 'background:#dcfce7' : m === 'near' ? 'background:#fef9c3' : '';
+      const _mCol = m => m === 'exact' ? ';color:#15803d' : m === 'near' ? ';color:#a16207' : '';
+      const _mMark = m => m === 'exact' ? '✓ ' : m === 'near' ? '⚠ ' : '';
       const _cs = Array.isArray(profile.container_items) ? profile.container_items : [];
       if (profile.invoice_mode === 'container' && (_cs.length || !(Array.isArray(inv.items) && inv.items.length))) {
         keyLabel = '分包合计';
@@ -32132,7 +32136,7 @@ async function invpOpenSubReceiptGallery(invoiceId) {
           const line = (Number(c.qty) || 0) * (Number(c.sub_price) || 0);
           keyTotal += line;
           const _m = _matchAmt(line);
-          return `<tr style="${_m ? 'background:#dcfce7' : ''}"><td style="${td};font-family:monospace;font-weight:600">${esc(c.container_no || '—')}</td><td style="${td};text-align:center">${c.qty || 0}</td><td style="${td};text-align:right">${money(c.sub_price)}</td><td style="${td};text-align:right;font-weight:600${_m ? ';color:#15803d' : ''}">${_m ? '✓ ' : ''}${money(line)}</td></tr>`;
+          return `<tr style="${_mBg(_m)}"><td style="${td};font-family:monospace;font-weight:600">${esc(c.container_no || '—')}</td><td style="${td};text-align:center">${c.qty || 0}</td><td style="${td};text-align:right">${money(c.sub_price)}</td><td style="${td};text-align:right;font-weight:600${_mCol(_m)}">${_mMark(_m)}${money(line)}</td></tr>`;
         }).join('');
       } else {
         const items = Array.isArray(inv.items) ? inv.items : [];
@@ -32140,7 +32144,7 @@ async function invpOpenSubReceiptGallery(invoiceId) {
         rowsH = items.map(it => {
           keyTotal += Number(it.total) || 0;
           const _m = _matchAmt(Number(it.total) || 0);
-          return `<tr style="${_m ? 'background:#dcfce7' : ''}"><td style="${td}">${esc(it.name || '—')}</td><td style="${td};text-align:right">${it.hours != null ? it.hours : '—'}</td><td style="${td};text-align:right">${it.rate != null ? money(it.rate) : '—'}</td><td style="${td};text-align:right;font-weight:600${_m ? ';color:#15803d' : ''}">${_m ? '✓ ' : ''}${money(it.total)}</td></tr>`;
+          return `<tr style="${_mBg(_m)}"><td style="${td}">${esc(it.name || '—')}</td><td style="${td};text-align:right">${it.hours != null ? it.hours : '—'}</td><td style="${td};text-align:right">${it.rate != null ? money(it.rate) : '—'}</td><td style="${td};text-align:right;font-weight:600${_mCol(_m)}">${_mMark(_m)}${money(it.total)}</td></tr>`;
         }).join('');
       }
       invBox.innerHTML = `
