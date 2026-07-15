@@ -31453,8 +31453,14 @@ function renderInvpList() {
                </div>`
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
           const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)', r.id) : dash;
+          // 双核对标记：收款（实付=账单）与分包付款（金额无差额）都已核对无误 →
+          // 发票号前打一个绿色对勾，一眼识别"这张已完全结清且金额全对"。
+          const allSettled = isPaid && payAmt != null && !amtMismatch && subPaid && subAmt != null && !subMismatch;
+          const settledMark = allSettled
+            ? '<span title="收款与分包付款金额都核对无误" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;background:#16a34a;color:#fff;border-radius:50%;font-size:.62rem;font-weight:900;margin-right:5px;vertical-align:-2px">✓</span>'
+            : '';
           return `<tr style="border-top:1px solid var(--gray-100)">
-          <td class="invp-frz" style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
+          <td class="invp-frz" style="padding:8px 10px;font-weight:600">${settledMark}<a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
           <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${invpBankLabel(r)
             ? `${esc(invpBankLabel(r))}${r.bank_account_name ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(r.bank_account_name)}</div>` : ''}`
