@@ -12618,14 +12618,31 @@ function _partnerStates(p) {
   if (!states.length) { const m = String(p.company_number || '').match(/^COMP-([A-Z]{2})-/); if (m) add(m[1]); }
   return states;
 }
+// 取公司在某个州的（仓库）地址：优先匹配该州的地址条目，取不到时退回
+// 第一条有内容的地址，再退回旧的单地址字段。
+function _partnerAddrForState(p, st) {
+  const fromStr = s => { const m = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return m ? m[1] : ''; };
+  const stOf = a => {
+    if (typeof a === 'string') return fromStr(a);
+    if (!a || typeof a !== 'object') return '';
+    const s = String(a.state || '').trim().toUpperCase();
+    return /^[A-Z]{2}$/.test(s) ? s : fromStr(a.address);
+  };
+  const txt = a => String(typeof a === 'string' ? a : (a && a.address) || '').trim();
+  let list = [];
+  try { const arr = JSON.parse(p.addresses || '[]'); if (Array.isArray(arr)) list = arr; } catch (_) {}
+  if (st) { for (const a of list) if (stOf(a) === st && txt(a)) return txt(a); }
+  for (const a of list) if (txt(a)) return txt(a);
+  return String(p.address || '').trim();
+}
 function openPartnerLabelSheetPrint(items) {
   // 多个州的公司拆成多张标签：每个州一张
   const data = [];
   items.forEach(p => {
     const base = { id: p.id, name: (p.name||'').trim() || '—', num: p.company_number || '' };
     const sts = _partnerStates(p);
-    if (sts.length > 1) sts.forEach(st => data.push({ ...base, st }));
-    else data.push({ ...base, st: sts[0] || '' });
+    if (sts.length > 1) sts.forEach(st => data.push({ ...base, st, addr: _partnerAddrForState(p, st) }));
+    else data.push({ ...base, st: sts[0] || '', addr: _partnerAddrForState(p, sts[0] || '') });
   });
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
   const startOpts = Array.from({ length: 30 }, (_, i) =>
@@ -12658,8 +12675,13 @@ function openPartnerLabelSheetPrint(items) {
     word-break: break-word; max-width: 100%;
   }
   .num {
-    margin-top: 0.05in; font-family: 'Courier New', monospace; font-size: 7.5pt; letter-spacing: .2px;
+    margin-top: 0.03in; font-family: 'Courier New', monospace; font-size: 7.5pt; letter-spacing: .2px;
     color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+  }
+  .adr {
+    margin-top: 1px; font-size: 6.5pt; color: #555; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    word-break: break-word; max-width: 100%;
   }
   .stx { font-family: 'Segoe UI', Arial, sans-serif; font-weight: 700; color: #111; }
   .skip { display: none; }
@@ -12770,6 +12792,7 @@ function openPartnerLabelSheetPrint(items) {
           if (!it) return '<div class="cell empty" title="第 ' + slotNo + ' 格（空）：拖标签过来，或先点一张标签再点这里"' + dnd + '>' + no + '</div>';
           return '<div class="cell' + (picked === idx ? ' picked' : '') + '" draggable="true" ondragstart="onDragStart(event, ' + idx + ')" title="第 ' + slotNo + ' 格：拖动可换位置，点一下再点目标格也可以"' + dnd + '>' + no + '<div class="inner">' +
             '<div class="name">' + escp(it.name) + '</div>' +
+            (it.addr ? '<div class="adr">' + escp(it.addr) + '</div>' : '') +
             (it.num || it.st ? '<div class="num">' + escp(it.num) + (it.st ? '<span class="stx">' + (it.num ? ' · ' : '') + '📍 ' + escp(it.st) + '</span>' : '') + '</div>' : '') +
           '</div></div>';
         }).join('') + '</div>';
@@ -12797,6 +12820,7 @@ function openPartnerLabelPrint(id, name, number) {
   number = String(number || '').trim();
   const _p = (typeof allPartners !== 'undefined' && allPartners.find) ? allPartners.find(x => x.id === id) : null;
   const stateList = _p ? _partnerStates(_p) : [];
+  const labelDefs = (stateList.length ? stateList : ['']).map(st => ({ st, addr: _p ? _partnerAddrForState(_p, st) : '' }));
   const esca = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esca(name||'公司标签')}</title>
 <style>
@@ -12817,9 +12841,14 @@ function openPartnerLabelPrint(id, name, number) {
     word-break: break-word; max-width: 100%;
   }
   .num {
-    margin-top: 0.05in;
+    margin-top: 0.03in;
     font-family: 'Courier New', monospace; font-size: 7.5pt; letter-spacing: .2px;
     color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+  }
+  .adr {
+    margin-top: 1px; font-size: 6.5pt; color: #555; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    word-break: break-word; max-width: 100%;
   }
   .stx { font-family: 'Segoe UI', Arial, sans-serif; font-weight: 700; color: #111; }
   @media screen {
@@ -12844,7 +12873,7 @@ function openPartnerLabelPrint(id, name, number) {
     var PARTNER_ID = ${JSON.stringify(id || null)};
     var NAME = ${JSON.stringify(name || '—').replace(/</g, '\\u003c')};
     var NUM = ${JSON.stringify(number || '').replace(/</g, '\\u003c')};
-    var STS = ${JSON.stringify(stateList.length ? stateList : ['']).replace(/</g, '\\u003c')};
+    var LABELS = ${JSON.stringify(labelDefs).replace(/</g, '\\u003c')};
     var copies = 1;
     function escp(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
     function setCopies(n) {
@@ -12852,10 +12881,12 @@ function openPartnerLabelPrint(id, name, number) {
       render();
     }
     function render() {
-      // 多个州 → 每个州一张标签；每张再按份数重复
+      // 多个州 → 每个州一张标签（带该州地址）；每张再按份数重复
       var out = '';
-      STS.forEach(function(st) {
+      LABELS.forEach(function(lb) {
+        var st = lb.st || '';
         var one = '<div class="label"><div class="name">' + escp(NAME) + '<\/div>' +
+          (lb.addr ? '<div class="adr">' + escp(lb.addr) + '<\/div>' : '') +
           (NUM || st ? '<div class="num">' + escp(NUM) + (st ? '<span class="stx">' + (NUM ? ' · ' : '') + '📍 ' + escp(st) + '<\/span>' : '') + '<\/div>' : '') + '<\/div>';
         for (var i = 0; i < copies; i++) out += one;
       });
