@@ -40287,16 +40287,92 @@ async function bsOpenBoxDetail(id) {
     if (Array.isArray(list) && list.length) list.forEach(x => { _bsPdfNames[x.id] = x.file_name || 'PDF'; _bsStmtById[x.id] = x; });
     s = _bsStmtById[id] || s;
   } catch (_) { /* use cache */ }
+  window._bsDetailStmtId = id;
   const boxes = Array.isArray(s.boxes) ? s.boxes : [];
   const body = document.getElementById('bsBoxDetailBody');
   if (!boxes.length) {
     body.innerHTML = '<div style="color:var(--gray-400);padding:1rem">还没有标注。点「✏️ 编辑标注」在 PDF 上框选。</div>';
-  } else {
-    const inCount = boxes.filter(b => b.direction === 'in').length;
-    const inSum = boxes.filter(b => b.direction === 'in').reduce((s, b) => s + (Number(b.amount) || 0), 0);
-    const outSum = boxes.filter(b => b.direction !== 'in').reduce((s, b) => s + (Number(b.amount) || 0), 0);
-    const fmtM = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const rows = boxes.map((b, i) => {
+    return;
+  }
+  // Skeleton once (stats chips + filter bar + table container); the table re-renders
+  // on every filter change without refetching.
+  const payees = [...new Set(boxes.map(b => (b.payee || '').trim()).filter(Boolean))].sort();
+  const selCss = 'padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem;background:#fff';
+  body.innerHTML = `
+    <div id="bsDetStats" style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem;font-size:.78rem"></div>
+    <div style="display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.4rem .55rem;margin-bottom:.55rem;font-size:.78rem">
+      <select id="bsDetFDir" onchange="_bsDetailRender()" style="${selCss}"><option value="">全部收支</option><option value="in">只看收入</option><option value="out">只看支出</option></select>
+      <select id="bsDetFLink" onchange="_bsDetailRender()" style="${selCss}"><option value="">全部关联状态</option><option value="linked">已关联发票</option><option value="unlinked">未关联</option><option value="pending">待补原因</option></select>
+      <select id="bsDetFPayee" onchange="_bsDetailRender()" style="${selCss};max-width:170px"><option value="">全部付给谁</option>${payees.map(p => `<option value="${esc(p)}">${esc(_bsPayeeDisplay(p) || p)}</option>`).join('')}</select>
+      <input id="bsDetFQ" oninput="_bsDetailRender()" placeholder="搜关键字 / 发票号" style="${selCss};width:130px">
+      <input id="bsDetFMin" type="number" oninput="_bsDetailRender()" placeholder="金额 ≥" style="${selCss};width:80px">
+      <input id="bsDetFMax" type="number" oninput="_bsDetailRender()" placeholder="金额 ≤" style="${selCss};width:80px">
+      <input id="bsDetFFrom" type="date" onchange="_bsDetailRender()" style="${selCss}">
+      <input id="bsDetFTo" type="date" onchange="_bsDetailRender()" style="${selCss}">
+      <a onclick="_bsDetailClearFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;font-size:.74rem">清除筛选</a>
+    </div>
+    <div id="bsDetTable"></div>`;
+  _bsDetailRender();
+}
+function _bsDetailClearFilters() {
+  for (const fid of ['bsDetFDir', 'bsDetFLink', 'bsDetFPayee', 'bsDetFQ', 'bsDetFMin', 'bsDetFMax', 'bsDetFFrom', 'bsDetFTo']) { const el = document.getElementById(fid); if (el) el.value = ''; }
+  _bsDetailRender();
+}
+function _bsDetailSetFilter(dir, link) {
+  const d = document.getElementById('bsDetFDir'), l = document.getElementById('bsDetFLink');
+  if (d) d.value = dir; if (l) l.value = link;
+  _bsDetailRender();
+}
+function _bsDetailRender() {
+  const id = window._bsDetailStmtId;
+  const s = _bsStmtById[id]; if (!s) return;
+  const boxes = Array.isArray(s.boxes) ? s.boxes : [];
+  const tableEl = document.getElementById('bsDetTable'); if (!tableEl) return;
+  const gv = fid => { const el = document.getElementById(fid); return el ? el.value : ''; };
+  const fDir = gv('bsDetFDir'), fLink = gv('bsDetFLink'), fPayee = gv('bsDetFPayee'), fQ = gv('bsDetFQ').trim().toLowerCase();
+  const fMin = parseFloat(gv('bsDetFMin')), fMax = parseFloat(gv('bsDetFMax'));
+  const fFrom = gv('bsDetFFrom'), fTo = gv('bsDetFTo');
+  const fmtM = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const hasNote = b => !!(b.note && String(b.note).trim());
+  const isLinked = b => !!(b.used_by || (b.inv_ref && !b.inv_ref.missing));
+  const isPending = b => !hasNote(b) && !_bsNoteSatisfied(b);
+  const filtered = boxes.filter(b => {
+    if (fDir === 'in' && b.direction !== 'in') return false;
+    if (fDir === 'out' && b.direction === 'in') return false;
+    if (fLink === 'linked' && !isLinked(b)) return false;
+    if (fLink === 'unlinked' && isLinked(b)) return false;
+    if (fLink === 'pending' && !isPending(b)) return false;
+    if (fPayee && (b.payee || '').trim() !== fPayee) return false;
+    if (isFinite(fMin) && !(Number(b.amount) >= fMin)) return false;
+    if (isFinite(fMax) && !(Number(b.amount) <= fMax)) return false;
+    if (fFrom && (b.txn_date || '') < fFrom) return false;
+    if (fTo && (b.txn_date || '') > fTo) return false;
+    if (fQ) {
+      const hay = [(b.payee || ''), _bsPayeeDisplay(b.payee) || '', b.invoice_number || '', b.note || '', b.purpose || '',
+        b.used_by ? (b.used_by.invoice_number || '') : '', b.inv_ref ? (b.inv_ref.invoice_number || '') : ''].join(' ').toLowerCase();
+      if (!hay.includes(fQ)) return false;
+    }
+    return true;
+  });
+  // Stats over ALL annotations — chips are clickable shortcuts that set the filter.
+  const inAll = boxes.filter(b => b.direction === 'in'), outAll = boxes.filter(b => b.direction !== 'in');
+  const linkedAll = boxes.filter(isLinked), pendingAll = boxes.filter(isPending);
+  const sum = arr => arr.reduce((t, b) => t + (Number(b.amount) || 0), 0);
+  const act = cond => cond ? 'box-shadow:0 0 0 2px #93c5fd;' : '';
+  const chip = (html, bg, bd, c2, on, a) => `<span onclick="${on}" title="点击筛选" style="cursor:pointer;background:${bg};border:1px solid ${bd};border-radius:8px;padding:.25rem .7rem;color:${c2};${a}">${html}</span>`;
+  const statsEl = document.getElementById('bsDetStats');
+  if (statsEl) statsEl.innerHTML =
+    chip(`共 <b>${boxes.length}</b> 条`, '#f8fafc', '#e2e8f0', 'var(--gray-600)', "_bsDetailSetFilter('','')", act(!fDir && !fLink)) +
+    chip(`↓ 收入 <b>${inAll.length}</b> · <b>${fmtM(sum(inAll))}</b>`, '#ecfdf5', '#a7f3d0', '#047857', "_bsDetailSetFilter('in','')", act(fDir === 'in' && !fLink)) +
+    chip(`↑ 支出 <b>${outAll.length}</b> · <b>${fmtM(sum(outAll))}</b>`, '#fef2f2', '#fecaca', '#b91c1c', "_bsDetailSetFilter('out','')", act(fDir === 'out' && !fLink)) +
+    chip(`🧾 已关联发票 <b>${linkedAll.length}</b> · <b>${fmtM(sum(linkedAll))}</b>`, '#eff6ff', '#bfdbfe', '#1d4ed8', "_bsDetailSetFilter('','linked')", act(fLink === 'linked')) +
+    chip(`⚠️ 待补原因 <b>${pendingAll.length}</b>`, '#fffbeb', '#fde68a', '#b45309', "_bsDetailSetFilter('','pending')", act(fLink === 'pending'));
+  if (!filtered.length) {
+    tableEl.innerHTML = '<div style="color:#94a3b8;padding:.8rem">这个筛选条件下没有标注。</div>';
+    return;
+  }
+  {
+    const rows = filtered.map((b, i) => {
       const isIn = b.direction === 'in';
       const col = isIn ? '#047857' : '#b91c1c';
       const dirPill = isIn
@@ -40335,7 +40411,10 @@ async function bsOpenBoxDetail(id) {
         const nm = r.company_name ? '（' + esc(r.company_name) + '）' : '';
         return r.payment_status === 'paid'
           ? _linkPill(r.invoice_id, r.invoice_number, '✓ 发票已收款', '#ecfdf5', '#047857', '#a7f3d0', `标注对应发票 ${esc(r.invoice_number)}${nm} · 已标记收款`)
-          : _linkPill(r.invoice_id, r.invoice_number, '发票未收款', '#fffbeb', '#b45309', '#fde68a', `标注对应发票 ${esc(r.invoice_number)}${nm} · 还未标记收款`);
+          : _linkPill(r.invoice_id, r.invoice_number, '发票未收款', '#fffbeb', '#b45309', '#fde68a', `标注对应发票 ${esc(r.invoice_number)}${nm} · 还未标记收款`)
+            + (b.direction === 'in'
+              ? `<button class="btn btn-sm" style="margin-top:2px;background:#16a34a;color:#fff;border:none;font-size:.66rem;padding:.15rem .5rem;border-radius:6px;cursor:pointer" onclick="bsQuickMarkPaid(${id},${b.id},${r.invoice_id})" title="用这笔收入自动生成收款回执并把发票 ${esc(r.invoice_number)} 标记为已收款">⚡ 一键登记收款</button>`
+              : '');
       })() : '';
       const extLinks = (Array.isArray(b.links) && b.links.length) ? _bsLinkBadges(b.links) : '';
       const linkCell = (usedBadge + invRefBadge + extLinks) || '<span style="color:var(--gray-300)">—</span>';
@@ -40351,20 +40430,47 @@ async function bsOpenBoxDetail(id) {
       </tr>`;
     }).join('');
     const th = (t, extra) => `<th style="padding:.45rem .5rem;font-size:.72rem;font-weight:700;color:var(--gray-500);letter-spacing:.03em;white-space:nowrap;${extra || ''}">${t}</th>`;
-    body.innerHTML = `
-      <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.55rem;font-size:.78rem">
-        <span style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.25rem .7rem;color:var(--gray-600)">共 <b>${boxes.length}</b> 条</span>
-        <span style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:.25rem .7rem;color:#047857">收入 <b>${inCount}</b> 条 · <b>${fmtM(inSum)}</b></span>
-        <span style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.25rem .7rem;color:#b91c1c">支出 <b>${boxes.length - inCount}</b> 条 · <b>${fmtM(outSum)}</b></span>
-      </div>
+    const sumLine = filtered.length !== boxes.length
+      ? `<div style="font-size:.76rem;color:var(--gray-500);margin:.1rem 0 .35rem">筛选结果 <b>${filtered.length}</b> 条 · 收入 <b>${fmtM(sum(filtered.filter(b => b.direction === 'in')))}</b> · 支出 <b>${fmtM(sum(filtered.filter(b => b.direction !== 'in')))}</b></div>`
+      : '';
+    tableEl.innerHTML = sumLine + `
       <div style="overflow-x:auto;border:1px solid var(--gray-200);border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:.84rem">
       <thead><tr style="text-align:left;background:var(--gray-50)">
-        ${th('#', 'text-align:right')}${th('收支')}${th('日期')}${th('付给谁 / 谁付的')}${th('金额', 'text-align:right')}${th('原因')}${th('照片')}<th style="padding:.45rem .5rem;font-size:.72rem;font-weight:700;color:var(--gray-500);white-space:nowrap" title="被链接到其它系统（如 pallet.bintique.com）">关联</th>
+        ${th('#', 'text-align:right')}${th('收支')}${th('日期')}${th('付给谁 / 谁付的')}${th('金额', 'text-align:right')}${th('原因')}${th('照片')}<th style="padding:.45rem .5rem;font-size:.72rem;font-weight:700;color:var(--gray-500);white-space:nowrap" title="发票凭证占用 / 标注发票号 / 外部系统链接">关联</th>
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
-  document.getElementById('bsBoxDetailModal').classList.add('show');
 }
 function bsCloseBoxDetail() { document.getElementById('bsBoxDetailModal').classList.remove('show'); }
+// One-click 收款登记 from an annotation: crop this transaction as the receipt image,
+// mark the linked invoice paid (amount/date from the transaction) and reserve the
+// transaction as its recv-side proof — the same result as doing it on the invoice page.
+async function bsQuickMarkPaid(stmtId, boxId, invoiceId) {
+  const s = _bsStmtById[stmtId]; if (!s) return;
+  const box = (s.boxes || []).find(b => String(b.id) === String(boxId)); if (!box) { showToast('标注不存在', 'error'); return; }
+  const amt = box.amount != null ? Number(box.amount) : null;
+  const ok = await showConfirm(
+    `把发票 <b style="font-family:monospace">${esc(box.invoice_number || '')}</b> 登记为已收款？<br><br>实付金额 <b>$${amt != null ? amt.toFixed(2) : '—'}</b> · 付款日期 <b>${esc(box.txn_date || '—')}</b><br>凭证：自动截取这笔交易作为收款回执，并与发票关联。`,
+    { confirmLabel: '登记收款', cancelLabel: '取消' }
+  );
+  if (!ok) return;
+  showToast('正在生成回执并登记…', 'warning', 4000);
+  try {
+    const file = await _invpCropBoxImage(stmtId, box);
+    const fd = new FormData();
+    fd.append('receipts', file);
+    fd.append('payment_stmt_box', stmtId + ':' + boxId);
+    if (amt != null) fd.append('payment_amount', String(amt));
+    if (box.txn_date) fd.append('payment_date', box.txn_date);
+    fd.append('payment_bank', s.bank || '');
+    fd.append('payment_entity', s.account_name || '');
+    const resp = await fetch('/api/admin/invoices/' + invoiceId + '/mark-paid', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
+    if (!resp.ok) throw new Error(await resp.text());
+    window._invpBankStmtBoxes = null;   // picker cache: used flags changed
+    showToast('已登记收款 ✓', 'success');
+    if (typeof loadInvpList === 'function' && document.getElementById('invpListWrap')) loadInvpList();
+    bsOpenBoxDetail(stmtId);   // re-fetch → badge flips to 已用作收款回执
+  } catch (e) { showToast('登记失败：' + (e.message || e), 'error', 6000); }
+}
 // Jump from an annotation's link badge straight to the invoice builder with that
 // invoice loaded (view/edit).
 function bsOpenLinkedInvoice(invoiceId) {
