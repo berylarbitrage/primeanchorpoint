@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11j · 标注明细每次打开拉最新关联(发票页刚关联的立刻显示) + 徽标可点击',
+  tag: '2026-07-11k · 分包回执画廊:点缩略图看全部大图+每张交易明细+发票信息',
   started: new Date().toISOString(),
 };
 
@@ -19622,6 +19622,22 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, wasSubPaid ? '更新分包付款' : '标记分包已付款', parts.join(' · '));
   res.json({ success: true, receipt_path: receiptPath, receipt_paths: paths });
+});
+
+// Transactions this invoice reserved as its proof in the voucher picker (both sides:
+// recv = 收款回执, sub = 分包付款), with each source statement's name — powers the
+// receipt gallery so every proof image can sit next to its transaction's details.
+app.get('/api/admin/invoices/:id/linked-txns', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT id FROM invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Not found' });
+    const rows = db.prepare(`SELECT t.id, t.statement_id, t.txn_date, t.amount, t.payee, t.purpose, t.direction, t.used_kind,
+        s.file_name AS statement_name, s.bank AS statement_bank, s.account_name AS statement_account
+      FROM bank_statement_txns t LEFT JOIN bank_statements s ON t.statement_id=s.id
+      WHERE t.used_invoice_id=? AND t.kind='box'
+      ORDER BY CASE WHEN t.used_kind='recv' THEN 0 ELSE 1 END, t.txn_date ASC, t.id ASC`).all(inv.id);
+    res.json(rows.map(r => ({ ...r, used_kind: r.used_kind === 'recv' ? 'recv' : 'sub' })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Clear the subcontractor payment for this invoice (remove proof).
