@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12c · 文件清单标签改为Avery 5160(1×2-5/8″每页30个,与公司标签同纸)',
+  tag: '2026-07-12d · 清单项规范命名:SSN Card/EAD/W-9/Contractor Agreement/Payment Authorization',
   started: new Date().toISOString(),
 };
 
