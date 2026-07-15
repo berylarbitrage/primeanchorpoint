@@ -31213,10 +31213,21 @@ function renderInvpList() {
   // 用同一后四位在别处出现过的唯一银行名补上，让「银行/收款账户」显示成
   // 「Chase Bank ••9072」而不是「账户 ••9072」。同一后四位对应多个银行名时不补。
   window._invpL4Bank = {};
+  window._invpL4Entity = {}; // 账号后四位 → 户名/公司（同理补上缺失的公司行）。
   (_invpAllRows || []).forEach(x => {
     const n = (x.bank_name || '').trim(), l = (x.bank_account_last4 || '').trim();
     if (n && l) (window._invpL4Bank[l] = window._invpL4Bank[l] || new Set()).add(n);
+    const e = (x.bank_account_name || '').trim();
+    if (e && l) (window._invpL4Entity[l] = window._invpL4Entity[l] || new Set()).add(e);
   });
+  // Entity (户名/公司) for a row: use its own, else borrow from the account's last-4.
+  const _rowEntity = r => {
+    const own = (r.bank_account_name || '').trim();
+    if (own) return own;
+    const l4 = (r.bank_account_last4 || '').trim();
+    const set = l4 ? window._invpL4Entity[l4] : null;
+    return (set && set.size === 1) ? [...set][0] : '';
+  };
 
   let list = _invpAllRows.slice();
   if (_invpFilter.company) list = list.filter(r => (r.company_name || '') === _invpFilter.company);
@@ -31399,7 +31410,7 @@ function renderInvpList() {
           // 与「收款银行」列一致 — 「银行名 ••后四位」。只记了银行名的老记录用
           // 全部发票档案里该银行唯一的后四位补齐格式。
           const _acctBank = _upBank((r.payment_bank || '').trim() || invpBankLabel(r), r.bank_account_last4);
-          const _acctEntity = r.payment_entity || r.bank_account_name || '';
+          const _acctEntity = r.payment_entity || r.bank_account_name || _rowEntity(r) || '';
           const payAcctCell = (isPaid && (_acctBank || _acctEntity))
             ? `${esc(_acctBank)}${_acctEntity ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_acctEntity)}</div>` : ''}`
             : dash;
@@ -31463,7 +31474,7 @@ function renderInvpList() {
           <td class="invp-frz" style="padding:8px 10px;font-weight:600">${settledMark}<a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
           <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${invpBankLabel(r)
-            ? `${esc(invpBankLabel(r))}${r.bank_account_name ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(r.bank_account_name)}</div>` : ''}`
+            ? `${esc(invpBankLabel(r))}${_rowEntity(r) ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_rowEntity(r))}</div>` : ''}`
             : '—'}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
           <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap${amtMismatch ? ';color:#dc2626' : ''}" ${amtMismatch ? 'title="实收金额与账单不一致"' : ''}>$${(r.subtotal||0).toFixed(2)}</td>
