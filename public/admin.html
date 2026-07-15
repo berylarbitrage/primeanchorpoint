@@ -40081,11 +40081,22 @@ function _bsBoxSummary(s) {
   return `<button onclick="bsOpenBoxDetail(${s.id})" style="display:inline-flex;gap:.4rem;align-items:center;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:999px;padding:.2rem .75rem;font-size:.8rem;cursor:pointer;white-space:nowrap">🧾 ${boxes.length} 条标注 ${warn}<span style="opacity:.6">点开查看</span></button>`;
 }
 // Detail popup: full annotation list for one statement.
-function bsOpenBoxDetail(id) {
-  const s = _bsStmtById[id];
+async function bsOpenBoxDetail(id) {
+  let s = _bsStmtById[id];
   if (!s) return;
   document.getElementById('bsBoxDetailTitle').textContent = s.file_name || '';
   document.getElementById('bsBoxDetailEditBtn').onclick = () => { bsCloseBoxDetail(); bsOpenEditor(id); };
+  // Show immediately, then ALWAYS re-fetch: links made on the invoice page (收款回执 /
+  // 分包付款 picking a transaction) since this page loaded must show up here without a
+  // manual page refresh. Falls back to the cached copy if the fetch fails.
+  const bodyEl = document.getElementById('bsBoxDetailBody');
+  bodyEl.innerHTML = '<div style="color:var(--gray-400);padding:1rem">加载最新关联…</div>';
+  document.getElementById('bsBoxDetailModal').classList.add('show');
+  try {
+    const list = await api('/admin/bank-statements');
+    if (Array.isArray(list) && list.length) list.forEach(x => { _bsPdfNames[x.id] = x.file_name || 'PDF'; _bsStmtById[x.id] = x; });
+    s = _bsStmtById[id] || s;
+  } catch (_) { /* use cache */ }
   const boxes = Array.isArray(s.boxes) ? s.boxes : [];
   const body = document.getElementById('bsBoxDetailBody');
   if (!boxes.length) {

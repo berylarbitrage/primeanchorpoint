@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11i · 关联徽标完整显示(两行)且可点击打开对应Invoice + 弹窗加宽',
+  tag: '2026-07-11j · 标注明细每次打开拉最新关联(发票页刚关联的立刻显示) + 徽标可点击',
   started: new Date().toISOString(),
 };
 
