@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11g · 分包回执缩略图改单列竖排 + 标注明细显示发票关联',
+  tag: '2026-07-11h · 关联列补齐:标注发票号也显示(含收款状态/找不到提醒) + 凭证选择器关联',
   started: new Date().toISOString(),
 };
 
@@ -28178,6 +28178,8 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
       WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
     const usedInvStmt = db.prepare('SELECT invoice_number, company_name FROM invoices WHERE id=?');
     const usedInvCache = new Map();
+    const invByNumStmt = db.prepare('SELECT id, invoice_number, company_name, payment_status FROM invoices WHERE invoice_number=?');
+    const invByNumCache = new Map();
     for (const r of rows) {
       r.file_url = r.file_path ? `/uploads/${path.basename(r.file_path)}` : '';
       r.boxes = boxStmt.all(r.id);
@@ -28193,6 +28195,18 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
           b.used_by = inv ? { invoice_id: b.used_invoice_id, invoice_number: inv.invoice_number, company_name: inv.company_name, kind: b.used_kind === 'recv' ? 'recv' : 'sub' } : null;
         } else b.used_by = null;
         delete b.used_invoice_id; delete b.used_kind;
+        // The annotation's own invoice_number (typed or auto-matched while annotating)
+        // is the OTHER link the user makes — resolve it so the 关联 column can show
+        // whether that invoice exists and whether it's been marked paid.
+        b.inv_ref = null;
+        if (!b.used_by && b.invoice_number && String(b.invoice_number).trim()) {
+          const key = String(b.invoice_number).trim();
+          if (!invByNumCache.has(key)) invByNumCache.set(key, invByNumStmt.get(key) || null);
+          const inv = invByNumCache.get(key);
+          b.inv_ref = inv
+            ? { invoice_id: inv.id, invoice_number: inv.invoice_number, company_name: inv.company_name, payment_status: inv.payment_status || 'unpaid' }
+            : { invoice_number: key, missing: true };
+        }
       }
     }
     res.json(rows);
