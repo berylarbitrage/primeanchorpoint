@@ -32197,13 +32197,22 @@ function _invpMatchRender() {
   const badge = gi => `<span style="background:${_INVP_GC[(dispNo[gi] - 1) % _INVP_GC.length]};color:#fff;border-radius:4px;font-size:.62rem;font-weight:700;padding:0 5px;margin-right:4px">#${dispNo[gi]}</span>`;
   const td = 'padding:4px 8px;border-top:1px solid var(--gray-100)';
   const keyTotal = M.items.reduce((s, i) => s + i.amt, 0);
+  // 组总金额标签：一对多/多对多的组（或有差额的组）在徽标旁标出本组
+  // 工资合计 ↔ 回执合计（及差额）；简单 1:1 且金额完全一致的不重复标。
+  const grpTag = gi => {
+    const g = M.groups[gi]; if (!g) return '';
+    const gs = _invpGroupState(g);
+    if (g.w.length <= 1 && g.t.length <= 1 && gs.d < 0.005) return '';
+    const col = gs.cls === 'exact' ? '#15803d' : gs.cls === 'near' ? '#a16207' : '#b91c1c';
+    return ` <span style="font-size:.66rem;font-weight:700;color:${col};background:#fff;border:1px solid currentColor;border-radius:999px;padding:0 6px;white-space:nowrap" title="该组：工资合计 ${_invpMoney(gs.wsum)}（${g.w.length} 行）· 回执合计 ${_invpMoney(gs.tsum)}（${g.t.length} 笔）· 差 ${_invpMoney(gs.d)}">组 工资${_invpMoney(gs.wsum)} ↔ 回执${_invpMoney(gs.tsum)}${gs.d > 0.005 ? ' · 差' + _invpMoney(gs.d) : ' ✓'}</span>`;
+  };
   const wrows = M.items.map((it, idx) => {
     const gi = gOfW(idx), gs = gi >= 0 ? _invpGroupState(M.groups[gi]) : null, sel = M.sel.w.has(idx);
     const bg = gi >= 0 ? clsBg(gs.cls) : (sel ? '#dbeafe' : '');
     const click = gi >= 0 ? `_invpMatchUngroup(${gi})` : `_invpMatchToggleW(${idx})`;
     const title = gi >= 0 ? '点击拆开该组' : (sel ? '已选，点击取消' : '点击选择');
     return `<tr onclick="${click}" title="${title}" style="cursor:pointer;${bg ? 'background:' + bg : ''}">
-      <td style="${td}">${gi >= 0 ? badge(gi) : (sel ? '<span style="color:#2563eb;font-weight:700">✓ </span>' : '')}${esc(it.label)}</td>
+      <td style="${td}">${gi >= 0 ? badge(gi) : (sel ? '<span style="color:#2563eb;font-weight:700">✓ </span>' : '')}${esc(it.label)}${gi >= 0 ? grpTag(gi) : ''}</td>
       <td style="${td};text-align:right;color:var(--gray-400);font-size:.72rem">${esc(it.sub)}</td>
       <td style="${td};text-align:right;font-weight:600">${_invpMoney(it.amt)}</td></tr>`;
   }).join('');
@@ -32235,7 +32244,7 @@ function _invpMatchRender() {
     const imgH = p ? `<a href="${p}" onclick="event.stopPropagation();invpOpenReceipt(this.href);return false" title="点击放大"><img src="${p}" loading="lazy" style="width:100%;max-height:120px;object-fit:contain;background:#f8fafc;border-radius:6px;margin-top:.3rem;cursor:zoom-in"></a>` : '';
     return `<div onclick="${click}" title="${gi >= 0 ? '点击拆开该组' : (sel ? '已选，点击取消' : '点击选择')}" style="cursor:pointer;border:1px solid #e2e8f0;border-radius:10px;padding:.5rem;margin-bottom:.5rem;background:${bg}">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-size:.8rem">
-          <span>${gi >= 0 ? badge(gi) : (sel ? '<span style="color:#2563eb;font-weight:700">✓ </span>' : '')}<b style="color:#b91c1c">${_invpMoney(t.amt)}</b> <span style="color:var(--gray-500);font-size:.75rem">${esc(t.date)} · ${esc(t.payee)}</span></span>
+          <span>${gi >= 0 ? badge(gi) : (sel ? '<span style="color:#2563eb;font-weight:700">✓ </span>' : '')}<b style="color:#b91c1c">${_invpMoney(t.amt)}</b> <span style="color:var(--gray-500);font-size:.75rem">${esc(t.date)} · ${esc(t.payee)}</span>${gi >= 0 ? grpTag(gi) : ''}</span>
         </div>${imgH}${t.stmt ? `<div style="color:var(--gray-400);font-size:.7rem;margin-top:.2rem">📄 ${esc(t.stmt)}</div>` : ''}</div>`;
   };
   // 回执按编号排序（#1 #2 …在前、未配对的空白在后），与上方工资表的编号阅读
