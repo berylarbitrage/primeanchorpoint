@@ -32236,7 +32236,7 @@ function _invpUpdateSubPaySelSummary(label) {
   if (hidVal.indexOf('box:') !== 0) { selEl.innerHTML = '已选凭证：' + esc(label || '📄 整份 PDF'); return; }
   const refs = _invpSelBoxRefs();
   const sum = _invpSelBoxSum();
-  let html = `已选 <b>${refs.length}</b> 条交易 · 合计 <b>$${sum.toFixed(2)}</b>`;
+  let html = `已选 <b>${refs.length}</b> 条交易 · 合计 <b style="font-size:1rem">$${sum.toFixed(2)}</b>`;
   const t = window._invpSubPayInvTotals;
   if (t && _invpVoucherCtx === 'sub') {
     // 分包付款对应工资：拿已选合计和工资比，差 > $5 标红。
@@ -32244,6 +32244,17 @@ function _invpUpdateSubPaySelSummary(label) {
     const targetLabel = esc(t.keyTotal != null ? (t.keyLabel || '工资') : '账单');
     if (Math.abs(sum - target) <= 5) html += ` <span style="color:#15803d;font-weight:700">✓ 与${targetLabel}对上</span>`;
     else html += ` <span style="color:#dc2626;font-weight:700">⚠ 与${targetLabel}差 $${Math.abs(sum - target).toFixed(2)} · 还需要修改</span>`;
+  }
+  // List every selected transaction (date · 付给谁 · 金额) so it's clear what makes up the total.
+  const boxesMap = window._invpBankStmtBoxes || {};
+  const items = refs.map(r => { const [, sid, bid] = r.split(':'); return (boxesMap[sid] || []).find(x => String(x.id) === String(bid)); }).filter(Boolean);
+  if (items.length) {
+    html += `<div style="margin-top:.35rem;max-height:130px;overflow:auto;border:1px solid var(--gray-200);border-radius:6px;background:#fff">` +
+      items.map(b => `<div style="display:flex;align-items:center;gap:.5rem;padding:.18rem .45rem;font-size:.74rem;border-bottom:1px solid var(--gray-100)">
+        <span style="color:var(--gray-500);white-space:nowrap">${esc(b.txn_date || '—')}</span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(_bsPayeeDisplay(b.payee) || '—')}</span>
+        <span style="font-weight:600;white-space:nowrap;color:${b.direction === 'in' ? '#047857' : '#b91c1c'}">$${Math.abs(Number(b.amount) || 0).toFixed(2)}</span>
+      </div>`).join('') + `</div>`;
   }
   if (_invpVoucherCtx === 'recv') {
     // 收款回执：实付金额 = 回执上的银行金额（已选交易合计），自动填入实付金额框。
