@@ -2523,6 +2523,9 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN used_invoice_id INTEGE
 // 'sub'/'' = 分包回执 (money out to the subcontractor; legacy rows predate the
 // column). An invoice can hold one of each, and each flow only clears its own.
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN used_kind TEXT DEFAULT ''`); } catch(e) {}
+// External links: JSON array of { system, ref, url, label, at } recording where this
+// transaction has been linked (e.g. to a payment on pallet.bintique.com).
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN links TEXT DEFAULT '[]'`); } catch(e) {}
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -28145,7 +28148,7 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
       FROM bank_statements ORDER BY created_at DESC`).all();
-    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion FROM bank_statement_txns
+    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, links FROM bank_statement_txns
       WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
     for (const r of rows) {
       r.file_url = r.file_path ? `/uploads/${path.basename(r.file_path)}` : '';
@@ -28153,6 +28156,7 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
       for (const b of r.boxes) {
         let keys = []; try { keys = JSON.parse(b.photos || '[]'); } catch { keys = []; }
         b.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+        try { b.links = JSON.parse(b.links || '[]'); } catch { b.links = []; }
       }
     }
     res.json(rows);
@@ -28182,13 +28186,14 @@ app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req,
 // GET the boxes for one statement.
 app.get('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, used_invoice_id, used_kind
+    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, used_invoice_id, used_kind, links
       FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`)
       .all(parseInt(req.params.id));
     for (const r of rows) {
       let keys = [];
       try { keys = JSON.parse(r.photos || '[]'); } catch { keys = []; }
       r.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+      try { r.links = JSON.parse(r.links || '[]'); } catch { r.links = []; }
     }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -28293,6 +28298,109 @@ app.delete('/api/admin/bank-statements/:id/boxes/:txnId/photos', requireAdmin, b
       .run(JSON.stringify(kept), tid, sid);
     if (removed) storage.deleteObject(storage.keyFrom(removed, 'uploads')).catch(() => {});
     res.json({ success: true, photos_urls: kept.map(k => `/uploads/${path.basename(k)}`) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ════════════════════ External API for pallet.bintique.com ════════════════════
+// Lets a trusted external site read each bank-statement transaction annotation and
+// link it to a payment on their side. Gated by an API key (env PALLET_API_KEY) —
+// if the key is unset the whole surface is disabled (503), so nothing leaks by
+// default. CORS is limited to the pallet origin (env PALLET_ORIGIN).
+const PALLET_ORIGIN = process.env.PALLET_ORIGIN || 'https://pallet.bintique.com';
+function _extCors(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', PALLET_ORIGIN);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, Authorization');
+  res.setHeader('Access-Control-Max-Age', '600');
+}
+function _extKeyOk(got) {
+  const key = process.env.PALLET_API_KEY || '';
+  if (!key || !got) return false;
+  const a = Buffer.from(String(got)), b = Buffer.from(key);
+  return a.length === b.length && require('crypto').timingSafeEqual(a, b);
+}
+function requireExtKey(req, res, next) {
+  _extCors(req, res);
+  if (!process.env.PALLET_API_KEY) return res.status(503).json({ error: 'external API not configured' });
+  const got = req.headers['x-api-key'] || String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!_extKeyOk(got)) return res.status(401).json({ error: 'invalid api key' });
+  next();
+}
+app.options('/api/ext/*', (req, res) => { _extCors(req, res); res.sendStatus(204); });
+// Decode the internal payee encoding into a human-readable label for external use.
+function _bsPayeeDisplaySrv(payee) {
+  const p = String(payee || '');
+  if (!p) return '';
+  if (p.indexOf('员工:') === 0) { const rest = p.slice(3), i = rest.indexOf('|'); const co = i < 0 ? '' : rest.slice(0, i); const nm = i < 0 ? rest : rest.slice(i + 1); return '员工 ' + [co, nm].filter(Boolean).join(' · '); }
+  if (p.indexOf('木板钱:') === 0) { const c = p.slice(4); return '木板钱' + (c ? ' · ' + c : ''); }
+  if (p.indexOf('卡车费:') === 0) { const c = p.slice(4); return '卡车费' + (c ? ' · ' + c : ''); }
+  if (p.indexOf('存支票:') === 0) { const n = p.slice(4).split('|').filter(Boolean); return '存支票' + (n.length ? ' · ' + n.join('、') : ''); }
+  if (p.indexOf('取支票:') === 0) { const n = p.slice(4).split('|').filter(Boolean); return '取支票' + (n.length ? ' · ' + n.join('、') : ''); }
+  return p;
+}
+// GET all transaction annotations (optionally ?statement_id= or ?since=YYYY-MM-DD).
+app.get('/api/ext/bank-txns', requireExtKey, (req, res) => {
+  try {
+    const where = ["t.kind='box'"], params = [];
+    if (req.query.statement_id) { where.push('t.statement_id=?'); params.push(parseInt(req.query.statement_id)); }
+    if (req.query.since) { where.push('t.txn_date>=?'); params.push(String(req.query.since).slice(0, 40)); }
+    if (req.query.linked === '1') where.push("t.links IS NOT NULL AND t.links<>'' AND t.links<>'[]'");
+    const rows = db.prepare(`SELECT t.id, t.statement_id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.purpose,
+        t.invoice_number, t.period_start, t.period_end, t.pay_portion, t.links,
+        s.bank, s.account_name, s.operator, s.period AS statement_period, s.file_name
+      FROM bank_statement_txns t JOIN bank_statements s ON t.statement_id=s.id
+      WHERE ${where.join(' AND ')} ORDER BY t.txn_date ASC, t.id ASC`).all(...params);
+    const txns = rows.map(r => {
+      let links = []; try { links = JSON.parse(r.links || '[]'); } catch { links = []; }
+      return {
+        id: r.id, statement_id: r.statement_id,
+        bank: r.bank, entity: r.account_name, operator: r.operator,
+        statement_period: r.statement_period, file_name: r.file_name,
+        date: r.txn_date, amount: r.amount, direction: r.direction,
+        payee: r.payee, payee_display: _bsPayeeDisplaySrv(r.payee),
+        note: r.note, purpose: r.purpose, invoice_number: r.invoice_number,
+        period_start: r.period_start, period_end: r.period_end, pay_portion: r.pay_portion,
+        linked: Array.isArray(links) && links.length > 0, links,
+      };
+    });
+    res.json({ count: txns.length, txns });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Attach a link (external payment reference) to one transaction.
+app.post('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const row = db.prepare("SELECT id, links FROM bank_statement_txns WHERE id=? AND kind='box'").get(id);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    let links = []; try { links = JSON.parse(row.links || '[]'); } catch { links = []; }
+    if (!Array.isArray(links)) links = [];
+    const link = {
+      system: String(b.system || 'pallet.bintique.com').slice(0, 60),
+      ref: String(b.ref || '').slice(0, 120),
+      url: String(b.url || '').slice(0, 300),
+      label: String(b.label || '').slice(0, 160),
+      at: new Date().toISOString(),
+    };
+    if (!link.ref && !link.url && !link.label) return res.status(400).json({ error: 'link needs ref, url or label' });
+    if (link.ref) links = links.filter(l => !(l.system === link.system && l.ref === link.ref)); // upsert by (system,ref)
+    links.push(link);
+    db.prepare("UPDATE bank_statement_txns SET links=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(links), id);
+    res.json({ success: true, id, links });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Remove a link (?ref= to remove one; omit to clear all).
+app.delete('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const row = db.prepare("SELECT id, links FROM bank_statement_txns WHERE id=? AND kind='box'").get(id);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let links = []; try { links = JSON.parse(row.links || '[]'); } catch { links = []; }
+    const ref = req.query.ref || (req.body && req.body.ref) || '';
+    links = ref ? links.filter(l => l.ref !== ref) : [];
+    db.prepare("UPDATE bank_statement_txns SET links=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(links), id);
+    res.json({ success: true, id, links });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
