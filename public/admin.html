@@ -12601,8 +12601,25 @@ function printSelectedPartnerLabels() {
 // Letter 纸批量标签：Avery 5160 版式（3 列 × 10 行 = 每页 30 个，1 × 2-5/8″）
 // 支持选择起始格：标签纸前面几格已用掉时，从第 N 格开始排，前面留空跳过。
 // 顶部下拉可选 1-30，也可以直接点击预览里的格子把它设为起点；超过 30 格自动分页。
+// 提取公司所在州（两字母缩写，去重、按出现顺序）——规则与服务端招工码一致：
+// 结构化地址 {state:'IL'} → 格式化地址串 '…, IL 60601' → 兜底公司编号 COMP-IL-…
+function _partnerStates(p) {
+  const states = [], seen = new Set();
+  const fromStr = s => { const m = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return m ? m[1] : ''; };
+  const add = raw => { const st = String(raw || '').trim().toUpperCase(); if (/^[A-Z]{2}$/.test(st) && !seen.has(st)) { seen.add(st); states.push(st); } };
+  const ofEntry = a => {
+    if (typeof a === 'string') return fromStr(a);
+    if (!a || typeof a !== 'object') return '';
+    const s = String(a.state || '').trim().toUpperCase();
+    return /^[A-Z]{2}$/.test(s) ? s : fromStr(a.address);
+  };
+  try { const arr = JSON.parse(p.addresses || '[]'); if (Array.isArray(arr)) for (const a of arr) add(ofEntry(a)); } catch (_) {}
+  if (!states.length && p.address) add(fromStr(p.address));
+  if (!states.length) { const m = String(p.company_number || '').match(/^COMP-([A-Z]{2})-/); if (m) add(m[1]); }
+  return states;
+}
 function openPartnerLabelSheetPrint(items) {
-  const data = items.map(p => ({ id: p.id, name: (p.name||'').trim() || '—', num: p.company_number || '' }));
+  const data = items.map(p => ({ id: p.id, name: (p.name||'').trim() || '—', num: p.company_number || '', st: _partnerStates(p).join(' / ') }));
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
   const startOpts = Array.from({ length: 30 }, (_, i) =>
     `<option value="${i + 1}">第 ${i + 1} 格（第 ${Math.floor(i / 3) + 1} 行第 ${i % 3 + 1} 列）</option>`).join('');
@@ -12637,6 +12654,7 @@ function openPartnerLabelSheetPrint(items) {
     margin-top: 0.05in; font-family: 'Courier New', monospace; font-size: 7.5pt; letter-spacing: .2px;
     color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
   }
+  .stx { font-family: 'Segoe UI', Arial, sans-serif; font-weight: 700; color: #111; }
   .skip { display: none; }
   @media screen {
     body { background: #64748b; padding: 20px; }
@@ -12703,7 +12721,7 @@ function openPartnerLabelSheetPrint(items) {
           if (!it) return '<div class="cell empty" title="已用格（点击可改成从此格开始）" onclick="setStart(' + slotNo + ')"><div class="skip">跳过</div></div>';
           return '<div class="cell" title="点击从此格开始" onclick="setStart(' + slotNo + ')"><div class="inner">' +
             '<div class="name">' + escp(it.name) + '</div>' +
-            (it.num ? '<div class="num">' + escp(it.num) + '</div>' : '') +
+            (it.num || it.st ? '<div class="num">' + escp(it.num) + (it.st ? '<span class="stx">' + (it.num ? ' · ' : '') + '📍 ' + escp(it.st) + '</span>' : '') + '</div>' : '') +
           '</div></div>';
         }).join('') + '</div>';
       }).join('');
@@ -12727,6 +12745,8 @@ function openPartnerLabelSheetPrint(items) {
 function openPartnerLabelPrint(id, name, number) {
   name = String(name || '').trim();
   number = String(number || '').trim();
+  const _p = (typeof allPartners !== 'undefined' && allPartners.find) ? allPartners.find(x => x.id === id) : null;
+  const stateTxt = _p ? _partnerStates(_p).join(' / ') : '';
   const esca = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esca(name||'公司标签')}</title>
 <style>
@@ -12751,6 +12771,7 @@ function openPartnerLabelPrint(id, name, number) {
     font-family: 'Courier New', monospace; font-size: 7.5pt; letter-spacing: .2px;
     color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
   }
+  .stx { font-family: 'Segoe UI', Arial, sans-serif; font-weight: 700; color: #111; }
   @media screen {
     body { background: #64748b; padding: 24px; }
     .label { background: #fff; border: 1px solid #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,.2); margin: 0 auto 10px; }
@@ -12773,6 +12794,7 @@ function openPartnerLabelPrint(id, name, number) {
     var PARTNER_ID = ${JSON.stringify(id || null)};
     var NAME = ${JSON.stringify(name || '—').replace(/</g, '\\u003c')};
     var NUM = ${JSON.stringify(number || '').replace(/</g, '\\u003c')};
+    var ST = ${JSON.stringify(stateTxt || '').replace(/</g, '\\u003c')};
     var copies = 1;
     function escp(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
     function setCopies(n) {
@@ -12780,7 +12802,8 @@ function openPartnerLabelPrint(id, name, number) {
       render();
     }
     function render() {
-      var one = '<div class="label"><div class="name">' + escp(NAME) + '<\/div>' + (NUM ? '<div class="num">' + escp(NUM) + '<\/div>' : '') + '<\/div>';
+      var one = '<div class="label"><div class="name">' + escp(NAME) + '<\/div>' +
+        (NUM || ST ? '<div class="num">' + escp(NUM) + (ST ? '<span class="stx">' + (NUM ? ' · ' : '') + '📍 ' + escp(ST) + '<\/span>' : '') + '<\/div>' : '') + '<\/div>';
       var out = '';
       for (var i = 0; i < copies; i++) out += one;
       document.getElementById('labels').innerHTML = out;
