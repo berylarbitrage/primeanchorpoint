@@ -15309,12 +15309,20 @@ app.post('/api/admin/partners/:id/abolish', requireAdmin, blockManager, (req, re
 });
 
 app.delete('/api/admin/partners/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  // Delete associated files
-  const files = db.prepare('SELECT * FROM partner_files WHERE partner_id=?').all(req.params.id);
-  files.forEach(f => { if (f.file_path) { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); } });
-  db.prepare('DELETE FROM partner_files WHERE partner_id=?').run(req.params.id);
-  db.prepare('DELETE FROM partners WHERE id=?').run(req.params.id);
-  res.json({ success: true });
+  const id = req.params.id;
+  try {
+    const files = db.prepare('SELECT * FROM partner_files WHERE partner_id=?').all(id);
+    // Remove DB rows in a transaction first; only unlink files if the DB delete succeeds.
+    db.transaction(() => {
+      db.prepare('DELETE FROM partner_files WHERE partner_id=?').run(id);
+      db.prepare('DELETE FROM partners WHERE id=?').run(id);
+    })();
+    files.forEach(f => { if (f.file_path) { const fp = path.join(docsDir, f.file_path); try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {} } });
+    res.json({ success: true });
+  } catch (e) {
+    // Could not hard-delete (e.g. related data). Report cleanly so the client can fall back to 作废.
+    res.status(200).json({ success: false, error: '无法彻底删除，该公司存在关联数据' });
+  }
 });
 
 // ════════ Container Submission QR — public mobile collection inbox ════════

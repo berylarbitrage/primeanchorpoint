@@ -14189,9 +14189,24 @@ function onPartnerDeleteInput() {
 }
 async function confirmDeletePartner() {
   if (!_deletePartnerId) return;
+  const id = _deletePartnerId;
   const btn = document.getElementById('partnerDeleteConfirmBtn');
-  btn.disabled = true; btn.textContent = '删除中…';
-  await api(`/admin/partners/${_deletePartnerId}`, { method:'DELETE' });
+  btn.disabled = true; btn.textContent = '处理中…';
+  let r = null;
+  try { r = await api(`/admin/partners/${id}`, { method:'DELETE' }); } catch {}
+  if (!r || !r.success) {
+    // 彻底删除失败（通常是该公司有关联的合同/发票/记录，数据库拒绝删除）
+    // → 自动退回到「作废」：变灰保留，不再显示为正常合作公司。
+    let ab = null;
+    try { ab = await api(`/admin/partners/${id}/abolish`, { method:'POST', body: JSON.stringify({ abolished:true }) }); } catch {}
+    const p = allPartners.find(x => x.id === id);
+    if (p) { p.abolished = 1; p.active = 0; }
+    if (ab && ab.success) {
+      alert('该公司有关联数据（合同/发票等），无法彻底删除，已改为「作废」——变灰保留，可随时点「↩ 恢复」还原。');
+    } else {
+      alert('删除失败，作废也未成功，请稍后重试或联系管理员。');
+    }
+  }
   document.getElementById('partnerDeleteModal').classList.remove('show');
   btn.disabled = false; btn.textContent = '确认删除'; btn.style.opacity = '.45';
   document.getElementById('partnerDeleteInput').value = '';
