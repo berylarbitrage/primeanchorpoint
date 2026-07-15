@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11n · 画廊户名明确标注(缺失时提示发票未填) + 收款账户带实际收款公司',
+  tag: '2026-07-11o · 收款+分包金额都核对无误的发票在编号前打绿色对勾',
   started: new Date().toISOString(),
 };
 
