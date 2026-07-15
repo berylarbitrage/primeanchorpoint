@@ -1022,20 +1022,33 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_doc_files (
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_wdocf ON worker_doc_files(submission_id)`); } catch(e) {}
 
-function generatePartnerNumber(stateAbbr) {
+// A short (≤4-letter) abbreviation of a company name, so the number hints at the
+// company: drops a leading "The" and common suffixes (Inc/LLC/…), then takes the
+// first letters. e.g. "The Element"→ELEM, "GOFO Inc"→GOFO, "SLM GROUP"→SLMG.
+function partnerAbbr(name) {
+  let n = String(name || '').trim();
+  n = n.replace(/^the\s+/i, '');
+  n = n.replace(/\b(inc|llc|ltd|corp|co|company|group|holdings|enterprises?)\b\.?/gi, ' ');
+  const words = n.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  let ab = '';
+  if (words.length >= 2) ab = words.map(w => w[0]).join('');       // initials of each word
+  if (ab.length < 2) ab = words.join('');                          // single word → its letters
+  ab = ab.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4);
+  return ab || 'CO';
+}
+function generatePartnerNumber(stateAbbr, name) {
   const s = (stateAbbr || 'XX').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2).padEnd(2, 'X');
   const now = new Date();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
   const yy = String(now.getFullYear()).slice(-2);
-  const prefix = `COMP-${s}-${mm}${dd}${yy}-`;
-  const existing = db.prepare(`SELECT company_number FROM partners WHERE company_number LIKE ? ORDER BY company_number DESC LIMIT 1`).get(prefix + '%');
-  let seq = 1;
-  if (existing) {
-    const parts = existing.company_number.split('-');
-    seq = (parseInt(parts[parts.length - 1], 10) || 0) + 1;
-  }
-  return prefix + String(seq).padStart(4, '0');
+  const ab = partnerAbbr(name);
+  const base = `COMP-${s}-${ab}-${mm}${dd}${yy}`;
+  // Ensure uniqueness: append -2, -3… only if the base is already taken.
+  const taken = n => db.prepare('SELECT 1 FROM partners WHERE company_number=? LIMIT 1').get(n);
+  if (!taken(base)) return base;
+  for (let i = 2; i < 100; i++) { const c = base + '-' + i; if (!taken(c)) return c; }
+  return base + '-' + Date.now().toString().slice(-4);
 }
 // Migrate jobs table (add new columns if missing)
 const jobMigrations = [
@@ -15267,7 +15280,7 @@ app.post('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
     const addrs = typeof d.addresses === 'string' ? JSON.parse(d.addresses) : (d.addresses || []);
     if (addrs.length && addrs[0].state) stateAbbr = addrs[0].state;
   } catch {}
-  const companyNumber = generatePartnerNumber(stateAbbr);
+  const companyNumber = generatePartnerNumber(stateAbbr, d.name);
   const r = db.prepare(`INSERT INTO partners (name,contact_person,phone,email,address,industry,services,notes,active,contacts,addresses,social_media,links,company_number)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
