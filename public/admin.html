@@ -12619,7 +12619,14 @@ function _partnerStates(p) {
   return states;
 }
 function openPartnerLabelSheetPrint(items) {
-  const data = items.map(p => ({ id: p.id, name: (p.name||'').trim() || '—', num: p.company_number || '', st: _partnerStates(p).join(' / ') }));
+  // 多个州的公司拆成多张标签：每个州一张
+  const data = [];
+  items.forEach(p => {
+    const base = { id: p.id, name: (p.name||'').trim() || '—', num: p.company_number || '' };
+    const sts = _partnerStates(p);
+    if (sts.length > 1) sts.forEach(st => data.push({ ...base, st }));
+    else data.push({ ...base, st: sts[0] || '' });
+  });
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
   const startOpts = Array.from({ length: 30 }, (_, i) =>
     `<option value="${i + 1}">第 ${i + 1} 格（第 ${Math.floor(i / 3) + 1} 行第 ${i % 3 + 1} 列）</option>`).join('');
@@ -12680,7 +12687,7 @@ function openPartnerLabelSheetPrint(items) {
     .sheet:last-child { page-break-after: auto; }
   }
 </style></head><body>
-  <p class="hint">Letter 纸 · Avery 5160（1 × 2-5/8″，每页 30 个）· 共 ${items.length} 个公司 ·
+  <p class="hint">Letter 纸 · Avery 5160（1 × 2-5/8″，每页 30 个）· ${items.length} 家公司 / ${data.length} 张标签（多州公司每州一张）·
     起始格 <select id="startSel" onchange="setStart(parseInt(this.value, 10))">${startOpts}</select> ·
     每个标签打 <input id="copiesInp" type="number" min="1" max="30" value="1" style="width:52px;font-size:13px;padding:3px 4px;text-align:center" onchange="setCopies(parseInt(this.value, 10))"> 份
     <button onclick="doPrint()">🖨 打印</button>
@@ -12746,7 +12753,7 @@ function openPartnerLabelPrint(id, name, number) {
   name = String(name || '').trim();
   number = String(number || '').trim();
   const _p = (typeof allPartners !== 'undefined' && allPartners.find) ? allPartners.find(x => x.id === id) : null;
-  const stateTxt = _p ? _partnerStates(_p).join(' / ') : '';
+  const stateList = _p ? _partnerStates(_p) : [];
   const esca = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esca(name||'公司标签')}</title>
 <style>
@@ -12794,7 +12801,7 @@ function openPartnerLabelPrint(id, name, number) {
     var PARTNER_ID = ${JSON.stringify(id || null)};
     var NAME = ${JSON.stringify(name || '—').replace(/</g, '\\u003c')};
     var NUM = ${JSON.stringify(number || '').replace(/</g, '\\u003c')};
-    var ST = ${JSON.stringify(stateTxt || '').replace(/</g, '\\u003c')};
+    var STS = ${JSON.stringify(stateList.length ? stateList : ['']).replace(/</g, '\\u003c')};
     var copies = 1;
     function escp(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
     function setCopies(n) {
@@ -12802,10 +12809,13 @@ function openPartnerLabelPrint(id, name, number) {
       render();
     }
     function render() {
-      var one = '<div class="label"><div class="name">' + escp(NAME) + '<\/div>' +
-        (NUM || ST ? '<div class="num">' + escp(NUM) + (ST ? '<span class="stx">' + (NUM ? ' · ' : '') + '📍 ' + escp(ST) + '<\/span>' : '') + '<\/div>' : '') + '<\/div>';
+      // 多个州 → 每个州一张标签；每张再按份数重复
       var out = '';
-      for (var i = 0; i < copies; i++) out += one;
+      STS.forEach(function(st) {
+        var one = '<div class="label"><div class="name">' + escp(NAME) + '<\/div>' +
+          (NUM || st ? '<div class="num">' + escp(NUM) + (st ? '<span class="stx">' + (NUM ? ' · ' : '') + '📍 ' + escp(st) + '<\/span>' : '') + '<\/div>' : '') + '<\/div>';
+        for (var i = 0; i < copies; i++) out += one;
+      });
       document.getElementById('labels').innerHTML = out;
       // 长公司名自动缩小字号以适应两行
       document.querySelectorAll('.name').forEach(function(el){
