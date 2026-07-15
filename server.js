@@ -856,6 +856,7 @@ partnerMigrations.forEach(col => {
 try { db.exec(`ALTER TABLE partners ADD COLUMN company_number TEXT DEFAULT ''`); } catch {}
 try { db.exec(`ALTER TABLE partners ADD COLUMN abolished INTEGER DEFAULT 0`); } catch {}
 try { db.exec(`ALTER TABLE partners ADD COLUMN container_submit_token TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE partners ADD COLUMN label_printed_at TEXT DEFAULT ''`); } catch {}
 
 // ─── Per-partner container submission inbox (mobile QR collection) ───
 db.exec(`CREATE TABLE IF NOT EXISTS container_submissions (
@@ -15270,6 +15271,15 @@ app.delete('/api/admin/quotes/:id', requireAdmin, blockManager, staffGuard('dele
 app.get('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
   const rows = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id) as file_count, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id AND f.ds_status='completed') as signed_contract_count, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id AND f.file_type IN ('contract','agreement')) as contract_file_count FROM partners p ORDER BY p.created_at DESC`).all();
   res.json(rows);
+});
+
+// 标签打印完成后标记这些公司为「已打印」（记录时间，前端显示已打印徽标）
+app.post('/api/admin/partners/labels-printed', requireAdmin, blockManager, (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(n => parseInt(n, 10)).filter(Number.isFinite) : [];
+  if (!ids.length) return res.status(400).json({ error: 'ids required' });
+  const stmt = db.prepare("UPDATE partners SET label_printed_at=datetime('now','localtime') WHERE id=?");
+  for (const id of ids) stmt.run(id);
+  res.json({ success: true, count: ids.length });
 });
 
 app.post('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
