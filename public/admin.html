@@ -40077,6 +40077,7 @@ function bsOpenBoxDetail(id) {
       const photos = (b.photos_urls && b.photos_urls.length)
         ? b.photos_urls.map(u => `<span style="display:inline-block;margin:1px">${_bsPhotoThumbInner(u, 38)}</span>`).join('')
         : '<span style="color:var(--gray-300)">—</span>';
+      const linkCell = _bsLinkBadges(b.links);
       return `<tr style="border-top:1px solid var(--gray-100)">
         <td style="padding:.4rem .5rem;color:var(--gray-400)">${i + 1}</td>
         <td style="padding:.4rem .5rem;color:${col};font-weight:600;white-space:nowrap">${isIn ? '收入' : '支出'}</td>
@@ -40085,16 +40086,31 @@ function bsOpenBoxDetail(id) {
         <td style="padding:.4rem .5rem;text-align:right;font-weight:600;color:${col};white-space:nowrap">${amt}</td>
         <td style="padding:.4rem .5rem">${reason}</td>
         <td style="padding:.4rem .5rem"><div style="display:flex;flex-wrap:wrap;max-width:140px">${photos}</div></td>
+        <td style="padding:.4rem .5rem"><div style="display:flex;flex-wrap:wrap;max-width:170px">${linkCell}</div></td>
       </tr>`;
     }).join('');
     body.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem">
       <thead><tr style="color:var(--gray-500);text-align:left;border-bottom:2px solid var(--gray-200)">
-        <th style="padding:.4rem .5rem">#</th><th style="padding:.4rem .5rem">收支</th><th style="padding:.4rem .5rem">日期</th><th style="padding:.4rem .5rem">付给谁 / 谁付的</th><th style="padding:.4rem .5rem;text-align:right">金额</th><th style="padding:.4rem .5rem">原因</th><th style="padding:.4rem .5rem">照片</th>
+        <th style="padding:.4rem .5rem">#</th><th style="padding:.4rem .5rem">收支</th><th style="padding:.4rem .5rem">日期</th><th style="padding:.4rem .5rem">付给谁 / 谁付的</th><th style="padding:.4rem .5rem;text-align:right">金额</th><th style="padding:.4rem .5rem">原因</th><th style="padding:.4rem .5rem">照片</th><th style="padding:.4rem .5rem" title="被链接到其它系统（如 pallet.bintique.com）">关联</th>
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   document.getElementById('bsBoxDetailModal').classList.add('show');
 }
 function bsCloseBoxDetail() { document.getElementById('bsBoxDetailModal').classList.remove('show'); }
+// Render "已关联到别处" badges for a transaction's links (set by external systems
+// like pallet.bintique.com via the /api/ext API). Clickable when a URL is present.
+function _bsLinkBadges(links) {
+  const arr = Array.isArray(links) ? links : [];
+  if (!arr.length) return '<span style="color:var(--gray-300)">—</span>';
+  return arr.map(l => {
+    const txt = esc(l.label || l.ref || l.system || '链接');
+    const tip = esc([l.system, l.ref, l.at ? String(l.at).slice(0, 10) : ''].filter(Boolean).join(' · '));
+    const style = 'display:inline-block;margin:1px;padding:.1rem .45rem;background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;border-radius:5px;font-size:.72rem;font-weight:600;text-decoration:none;white-space:nowrap';
+    return l.url
+      ? `<a href="${esc(l.url)}" target="_blank" rel="noopener" title="${tip}" style="${style}">🔗 ${txt}</a>`
+      : `<span title="${tip}" style="${style}">🔗 ${txt}</span>`;
+  }).join('');
+}
 async function bsSaveMeta(id) {
   const row = document.querySelector(`.bs-stmt-row[data-id="${id}"]`);
   if (!row) return;
