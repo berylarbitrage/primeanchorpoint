@@ -13065,7 +13065,9 @@ function _openQrPrintWindow(title, hintText, pagesHtml) {
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esca(title)}</title>
 <style>
-  @page { size: letter; margin: 0.45in; }
+  /* 页边距设为 0（留白由 .page 自己的 padding 提供）——浏览器打印页眉/页脚
+     （日期、标题、网址）只画在页边距里，边距为 0 时就不会被印出来 */
+  @page { size: letter; margin: 0; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #0f172a; }
   .head { border-bottom: 2.5px solid #0f172a; padding-bottom: 8px; margin-bottom: 14px; }
@@ -13090,7 +13092,7 @@ function _openQrPrintWindow(title, hintText, pagesHtml) {
   }
   @media print {
     .hint { display: none; }
-    .page { padding: 0; page-break-after: always; }
+    .page { padding: 0.45in; page-break-after: always; }
     .page:last-child { page-break-after: auto; }
   }
 </style></head><body>
