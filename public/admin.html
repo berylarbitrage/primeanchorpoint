@@ -12918,11 +12918,12 @@ function printDocChecklistLabels() {
   .cell { width: 2.625in; height: 1in; overflow: hidden; page-break-inside: avoid; }
   .inner { width: 100%; height: 100%; padding: 0.05in 0.13in; display: flex; flex-direction: column; justify-content: center; }
   .yr { font-size: 11pt; font-weight: 800; letter-spacing: .5px; line-height: 1.1; }
-  .grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 2px 8px; margin-top: 4px; }
+  /* 前三项一行三列，其后每项独占一行（长名如 Contractor Agreement /
+     Payment Authorization 不会被窄列截断） */
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px 8px; margin-top: 4px; }
   .it { font-size: 7.5pt; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .it:nth-child(n+4) { grid-column: 1 / -1; }
   .cb { display: inline-block; width: 9px; height: 9px; border: 1.2px solid #111; border-radius: 2px; flex: 0 0 auto; }
-  /* 落单的最后一项（如 Payment Authorization）横跨两列，避免窄列截断 */
-  .it:last-child:nth-child(odd) { grid-column: 1 / -1; }
   @media screen {
     body { background: #64748b; padding: 20px; }
     .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
