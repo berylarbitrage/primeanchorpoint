@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11z · 存量公司编号批量改为带公司名缩写格式(COMP-州-缩写-日期) + 创始人取款页',
+  tag: '2026-07-12a · 文件清单标签(Avery 5163,年份可选+SSN/EAD/W9/Agreement等勾选框)',
   started: new Date().toISOString(),
 };
 
