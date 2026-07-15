@@ -12670,9 +12670,16 @@ function openPartnerLabelSheetPrint(items) {
     .hint select { font-size: 13px; padding: 3px 6px; margin: 0 4px; }
     .hint .tip { opacity: .75; margin-left: 8px; }
     .sheet { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.25); margin: 0 auto 16px; }
-    .cell { outline: 1px dashed #e2e8f0; cursor: pointer; }
+    .cell { outline: 1px dashed #e2e8f0; }
+    .cell:not(.empty) { cursor: grab; }
     .cell:hover { outline: 2px solid #60a5fa; z-index: 1; }
     .cell.empty { background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 6px, #eef2f7 6px, #eef2f7 12px); }
+    .cell.picked { outline: 3px solid #f59e0b; z-index: 2; background: #fffbeb; }
+    .cell.droptarget { outline: 3px dashed #16a34a; z-index: 2; }
+    body.picking .cell.empty { cursor: copy; }
+    .slotno {
+      position: absolute; top: 2px; right: 5px; font-size: 8px; color: #cbd5e1; user-select: none;
+    }
     .skip {
       display: flex; align-items: center; justify-content: center;
       width: 100%; height: 100%; font-size: 11px; color: #94a3b8; user-select: none;
@@ -12682,7 +12689,8 @@ function openPartnerLabelSheetPrint(items) {
     .hint { display: none; }
     .cell { outline: none; }
     .cell.empty { background: none; }
-    .skip { display: none; }
+    .cell.picked { outline: none; background: none; }
+    .skip, .slotno { display: none; }
     .sheet { page-break-after: always; }
     .sheet:last-child { page-break-after: auto; }
   }
@@ -12691,23 +12699,57 @@ function openPartnerLabelSheetPrint(items) {
     起始格 <select id="startSel" onchange="setStart(parseInt(this.value, 10))">${startOpts}</select> ·
     每个标签打 <input id="copiesInp" type="number" min="1" max="30" value="1" style="width:52px;font-size:13px;padding:3px 4px;text-align:center" onchange="setCopies(parseInt(this.value, 10))"> 份
     <button onclick="doPrint()">🖨 打印</button>
-    <span class="tip">💡 也可以直接点格子选择从哪格开始（跳过已用掉的格子）</span>
+    <span class="tip">💡 拖动标签到任意格子可调整位置（或先点标签、再点目标格；两张标签互点可交换）</span>
   </p>
   <div id="pages"></div>
   <script>
     var ITEMS = ${dataJson};
     var start = 1;
     var copies = 1;
+    var slots = [];   // 手动排位状态：每格一个标签或 null
+    var picked = -1;  // 点选移动：当前拿起的格子下标
     function escp(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+    // 按起始格 + 份数重新自动排位（会清掉手动拖动的调整）
+    function pack() {
+      slots = [];
+      for (var i = 0; i < start - 1; i++) slots.push(null);
+      for (var j = 0; j < ITEMS.length; j++) for (var k = 0; k < copies; k++) slots.push(ITEMS[j]);
+      while (slots.length % 30 !== 0 || !slots.length) slots.push(null);
+      picked = -1;
+    }
     function setStart(n) {
       start = Math.max(1, Math.min(30, n || 1));
-      render();
+      pack(); render();
     }
     function setCopies(n) {
       copies = Math.max(1, Math.min(30, n || 1));
-      render();
+      pack(); render();
+    }
+    // 移动/交换：目标为空格 → 移过去；目标已有标签 → 两张互换
+    function moveLabel(from, to) {
+      if (from === to || from < 0 || to < 0 || from >= slots.length || to >= slots.length) { picked = -1; render(); return; }
+      var t = slots[to]; slots[to] = slots[from]; slots[from] = t;
+      picked = -1; render();
+    }
+    function onCellClick(i) {
+      if (picked === -1) {
+        if (slots[i]) { picked = i; render(); }
+        return;
+      }
+      if (picked === i) { picked = -1; render(); return; }
+      moveLabel(picked, i);
+    }
+    function onDragStart(ev, i) { try { ev.dataTransfer.setData('text/plain', String(i)); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {} }
+    function onDragOver(ev) { ev.preventDefault(); if (ev.currentTarget) ev.currentTarget.classList.add('droptarget'); }
+    function onDragLeave(ev) { if (ev.currentTarget) ev.currentTarget.classList.remove('droptarget'); }
+    function onDrop(ev, i) {
+      ev.preventDefault();
+      if (ev.currentTarget) ev.currentTarget.classList.remove('droptarget');
+      var f = parseInt(ev.dataTransfer.getData('text/plain'), 10);
+      if (!isNaN(f)) moveLabel(f, i);
     }
     function doPrint() {
+      picked = -1; render();
       window.print();
       // 通知主页面把这些公司标记为「标签已打印」
       try {
@@ -12717,21 +12759,22 @@ function openPartnerLabelSheetPrint(items) {
       } catch (e) {}
     }
     function render() {
-      var slots = [];
-      for (var i = 0; i < start - 1; i++) slots.push(null);
-      for (var j = 0; j < ITEMS.length; j++) for (var k = 0; k < copies; k++) slots.push(ITEMS[j]);
       var pages = [];
       for (var p = 0; p < slots.length; p += 30) pages.push(slots.slice(p, p + 30));
       document.getElementById('pages').innerHTML = pages.map(function(pg, pi){
         return '<div class="sheet">' + pg.map(function(it, ci){
-          var slotNo = pi * 30 + ci + 1;
-          if (!it) return '<div class="cell empty" title="已用格（点击可改成从此格开始）" onclick="setStart(' + slotNo + ')"><div class="skip">跳过</div></div>';
-          return '<div class="cell" title="点击从此格开始" onclick="setStart(' + slotNo + ')"><div class="inner">' +
+          var idx = pi * 30 + ci;
+          var slotNo = idx + 1;
+          var dnd = ' ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, ' + idx + ')" onclick="onCellClick(' + idx + ')"';
+          var no = '<div class="slotno">' + slotNo + '</div>';
+          if (!it) return '<div class="cell empty" title="第 ' + slotNo + ' 格（空）：拖标签过来，或先点一张标签再点这里"' + dnd + '>' + no + '</div>';
+          return '<div class="cell' + (picked === idx ? ' picked' : '') + '" draggable="true" ondragstart="onDragStart(event, ' + idx + ')" title="第 ' + slotNo + ' 格：拖动可换位置，点一下再点目标格也可以"' + dnd + '>' + no + '<div class="inner">' +
             '<div class="name">' + escp(it.name) + '</div>' +
             (it.num || it.st ? '<div class="num">' + escp(it.num) + (it.st ? '<span class="stx">' + (it.num ? ' · ' : '') + '📍 ' + escp(it.st) + '</span>' : '') + '</div>' : '') +
           '</div></div>';
         }).join('') + '</div>';
       }).join('');
+      document.body.classList.toggle('picking', picked !== -1);
       document.querySelectorAll('.name').forEach(function(el){
         var size = 10.5;
         while (el.scrollHeight > el.clientHeight && size > 7) { size -= 0.5; el.style.fontSize = size + 'pt'; }
@@ -12739,7 +12782,7 @@ function openPartnerLabelSheetPrint(items) {
       document.getElementById('startSel').value = String(start);
       document.getElementById('copiesInp').value = String(copies);
     }
-    render();
+    pack(); render();
   <\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=900,height=700');
