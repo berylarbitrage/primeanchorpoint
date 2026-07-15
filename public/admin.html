@@ -1110,6 +1110,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="top-actions">
       <button class="btn btn-outline" onclick="openPendingQrModal()">📱 待确认记录二维码</button>
       <button class="btn btn-outline" id="partnerBatchLabelBtn" onclick="printSelectedPartnerLabels()" title="批量打印所选公司的标签（Letter 纸，1 × 2-5/8″，每页 30 个）">🏷 批量打印标签 (0)</button>
+      <button class="btn btn-outline" id="partnerBatchQrBtn" onclick="printSelectedPartnerQrSheets()" title="批量打印所选公司的信息采集二维码（每公司每州一页，三行：招工申请/员工文件/周柜登记）">🖨 批量打印二维码 (0)</button>
       <button class="btn" onclick="openPartnerModal()">+ 新增公司</button>
     </div>
   </div>
@@ -12588,6 +12589,8 @@ function onPartnerSelectChange() {
   if (all) { all.checked = boxes.length > 0 && checked.length === boxes.length; all.indeterminate = checked.length > 0 && checked.length < boxes.length; }
   const btn = document.getElementById('partnerBatchLabelBtn');
   if (btn) { btn.textContent = `🏷 批量打印标签 (${checked.length})`; btn.disabled = checked.length === 0; btn.style.opacity = checked.length === 0 ? '.5' : '1'; }
+  const qrBtn = document.getElementById('partnerBatchQrBtn');
+  if (qrBtn) { qrBtn.textContent = `🖨 批量打印二维码 (${checked.length})`; qrBtn.disabled = checked.length === 0; qrBtn.style.opacity = checked.length === 0 ? '.5' : '1'; }
 }
 function printSelectedPartnerLabels() {
   const ids = _selectedPartnerCheckboxes().filter(x => x.checked).map(x => parseInt(x.value, 10));
@@ -12819,36 +12822,19 @@ async function markPartnerLabelsPrinted(ids) {
   showToast('已标记标签打印 ✓');
 }
 
-// 打印某公司的信息采集二维码：每张纸对应一个州（多州公司自动分页），
-// 每张纸三行 —— 招工申请（该州）、员工文件上传（W-9/Contract，全局码）、
-// 周柜登记。二维码在本页离屏生成成 dataURL，弹出的打印页只是静态图片。
-async function printPartnerQrSheet(id, name, number) {
-  showToast('正在生成二维码…');
-  const [ra, rc, rw] = await Promise.all([
-    api(`/admin/partners/${id}/applicant-qr`).catch(() => null),
-    api(`/admin/partners/${id}/container-qr`).catch(() => null),
-    api('/admin/worker-doc-qr').catch(() => null),
-  ]);
-  let applyQrs = Array.isArray(ra && ra.qrs) ? ra.qrs.filter(q => q && q.url) : [];
-  if (!applyQrs.length && ra && ra.url) applyQrs = [{ state: '', url: ra.url }];
-  const weekUrl = (rc && rc.token) ? `${location.origin}/cw/${rc.token}` : '';
-  const wdoc = (rw && rw.qr_data_url) ? { img: rw.qr_data_url, url: rw.url || '' } : null;
-  if (!applyQrs.length && !weekUrl && !wdoc) { showToast('二维码生成失败', 'error'); return; }
-  // 换成短链接（/s/xxxxxx，服务端 302 跳回原地址）：打印出来的网址不再是一长串
-  // 乱码，二维码内容更短也更好扫。短码取不到时回退用原链接。
-  const shorten = async (absUrl) => {
-    try {
-      const u = new URL(absUrl, location.origin);
-      const r = await api('/admin/short-link', { method: 'POST', body: JSON.stringify({ target: u.pathname + u.search }) });
-      if (r && r.code) return `${u.origin}/s/${r.code}`;
-    } catch (e) {}
-    return absUrl;
-  };
-  for (const q of applyQrs) q.url = await shorten(q.url);
-  const weekShort = weekUrl ? await shorten(weekUrl) : '';
-  if (wdoc && wdoc.url) wdoc.url = await shorten(wdoc.url);
-  await _loadQRLib();
-  const mkQr = (url, color) => new Promise(resolve => {
+// 信息采集二维码打印：每张纸对应一个州（多州公司自动分页），每张纸三行 ——
+// 招工申请（该州）、员工文件上传（W-9/Contract，全局码）、周柜登记。
+// 链接统一换成 /s/xxxxxx 短码；二维码离屏生成成 dataURL，打印页只是静态图片。
+async function _qrShorten(absUrl) {
+  try {
+    const u = new URL(absUrl, location.origin);
+    const r = await api('/admin/short-link', { method: 'POST', body: JSON.stringify({ target: u.pathname + u.search }) });
+    if (r && r.code) return `${u.origin}/s/${r.code}`;
+  } catch (e) {}
+  return absUrl;
+}
+function _mkQrDataUrl(url, color) {
+  return new Promise(resolve => {
     const div = document.createElement('div');
     div.style.cssText = 'position:fixed;left:-9999px;top:0';
     document.body.appendChild(div);
@@ -12860,10 +12846,27 @@ async function printPartnerQrSheet(id, name, number) {
       resolve(srcUrl);
     }, 80);
   });
-  const weekImg = weekShort ? await mkQr(weekShort, '#6D28D9') : '';
-  // 员工文件码改用短链接后需要在本地重新生成（服务端给的图内容是长链接）
-  if (wdoc && wdoc.url) wdoc.img = await mkQr(wdoc.url, '#0F2B5B');
-  // 每个州一页；没有招工码的公司也打一页（只有员工文件 + 周柜两行）
+}
+// 员工文件上传是全局码：批量打印时取一次、生成一次，各公司共用。
+async function _wdocQrShared() {
+  const rw = await api('/admin/worker-doc-qr').catch(() => null);
+  if (!rw || !rw.url) return null;
+  const url = await _qrShorten(rw.url);
+  return { url, img: await _mkQrDataUrl(url, '#0F2B5B') };
+}
+// 生成一家公司的全部打印页（每州一页），返回 { html, pageCount }。
+async function _partnerQrPagesHtml(id, name, number, wdoc) {
+  const [ra, rc] = await Promise.all([
+    api(`/admin/partners/${id}/applicant-qr`).catch(() => null),
+    api(`/admin/partners/${id}/container-qr`).catch(() => null),
+  ]);
+  let applyQrs = Array.isArray(ra && ra.qrs) ? ra.qrs.filter(q => q && q.url) : [];
+  if (!applyQrs.length && ra && ra.url) applyQrs = [{ state: '', url: ra.url }];
+  const weekRaw = (rc && rc.token) ? `${location.origin}/cw/${rc.token}` : '';
+  if (!applyQrs.length && !weekRaw && !wdoc) return { html: '', pageCount: 0 };
+  for (const q of applyQrs) q.url = await _qrShorten(q.url);
+  const weekShort = weekRaw ? await _qrShorten(weekRaw) : '';
+  const weekImg = weekShort ? await _mkQrDataUrl(weekShort, '#6D28D9') : '';
   const pageDefs = applyQrs.length ? applyQrs : [null];
   const pages = [];
   for (const q of pageDefs) {
@@ -12871,7 +12874,7 @@ async function printPartnerQrSheet(id, name, number) {
     if (q) {
       rows.push({
         title: '🪪 招工申请 / Job Application' + (q.state ? `（📍 ${q.state}）` : ''),
-        img: await mkQr(q.url, '#3730A3'),
+        img: await _mkQrDataUrl(q.url, '#3730A3'),
         url: q.url,
         note: '应聘者扫码填写资料并上传证件<br>Applicants scan to fill in info & upload documents',
       });
@@ -12895,7 +12898,7 @@ async function printPartnerQrSheet(id, name, number) {
     pages.push({ state: q && q.state ? q.state : '', rows });
   }
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const pageHtml = pages.map(pg => `
+  const html = pages.map(pg => `
     <div class="page">
       <div class="head">
         <h1>${esca(name || '—')}${pg.state ? ` <span class="st">📍 ${esca(pg.state)}</span>` : ''}</h1>
@@ -12911,7 +12914,11 @@ async function printPartnerQrSheet(id, name, number) {
         </div>
       </div>`).join('')}
     </div>`).join('');
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>信息采集二维码 - ${esca(name || '')}</title>
+  return { html, pageCount: pages.length };
+}
+function _openQrPrintWindow(title, hintText, pagesHtml) {
+  const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esca(title)}</title>
 <style>
   @page { size: letter; margin: 0.45in; }
   * { box-sizing: border-box; }
@@ -12929,7 +12936,7 @@ async function printPartnerQrSheet(id, name, number) {
   .rt { min-width: 0; }
   .ct { font-weight: 800; font-size: 15pt; margin-bottom: 6px; }
   .cn { font-size: 10.5pt; color: #334155; line-height: 1.55; margin-bottom: 8px; }
-  .cu { font-family: 'Courier New', monospace; font-size: 7pt; color: #64748b; word-break: break-all; }
+  .cu { font-family: 'Courier New', monospace; font-size: 8pt; color: #64748b; word-break: break-all; }
   @media screen {
     body { background: #64748b; padding: 20px; }
     .page { background: #fff; max-width: 8.5in; margin: 0 auto 20px; padding: 0.45in; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
@@ -12942,13 +12949,40 @@ async function printPartnerQrSheet(id, name, number) {
     .page:last-child { page-break-after: auto; }
   }
 </style></head><body>
-  <p class="hint">信息采集二维码 · ${esca(name || '')}${pages.length > 1 ? ` · 共 ${pages.length} 页（每州一页）` : ''}<button onclick="window.print()">🖨 打印</button></p>
-  ${pageHtml}
+  <p class="hint">${esca(hintText)}<button onclick="window.print()">🖨 打印</button></p>
+  ${pagesHtml}
   <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 300); });<\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=980,height=760');
   if (!w) { alert('请允许弹出窗口以打印二维码'); return; }
   w.document.open(); w.document.write(html); w.document.close();
+}
+async function printPartnerQrSheet(id, name, number) {
+  showToast('正在生成二维码…');
+  await _loadQRLib();
+  const wdoc = await _wdocQrShared();
+  const { html, pageCount } = await _partnerQrPagesHtml(id, name, number, wdoc);
+  if (!pageCount) { showToast('二维码生成失败', 'error'); return; }
+  _openQrPrintWindow(`信息采集二维码 - ${name || ''}`,
+    `信息采集二维码 · ${name || ''}${pageCount > 1 ? ` · 共 ${pageCount} 页（每州一页）` : ''}`, html);
+}
+// 批量：把所有勾选公司的二维码页合成一个打印任务（每公司每州一页）
+async function printSelectedPartnerQrSheets() {
+  const ids = _selectedPartnerCheckboxes().filter(x => x.checked).map(x => parseInt(x.value, 10));
+  const items = ids.map(pid => allPartners.find(p => p.id === pid)).filter(p => p && !p.abolished);
+  if (!items.length) { alert('请先勾选要打印二维码的公司'); return; }
+  showToast(`正在生成 ${items.length} 家公司的二维码…`);
+  await _loadQRLib();
+  const wdoc = await _wdocQrShared();
+  let html = '', pageCount = 0;
+  for (const p of items) {
+    const r = await _partnerQrPagesHtml(p.id, p.name || '', p.company_number || '', wdoc);
+    html += r.html;
+    pageCount += r.pageCount;
+  }
+  if (!pageCount) { showToast('二维码生成失败', 'error'); return; }
+  _openQrPrintWindow(`信息采集二维码 (${items.length} 家公司)`,
+    `信息采集二维码 · ${items.length} 家公司 · 共 ${pageCount} 页（每公司每州一页）`, html);
 }
 function editPartnerById(id) { const p=allPartners.find(x=>x.id===id); if(p) openPartnerModal(p); }
 
