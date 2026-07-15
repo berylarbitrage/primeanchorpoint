@@ -12851,7 +12851,10 @@ function openPartnerLabelSheetPrint(items) {
 
 // ── 员工文件清单标签（Avery 5163，2 × 4″，每页 10 个）──
 // 顶部大字年份（可选）+ 姓名栏，正文是勾选框文件项（可自定义）。
-const DOC_CHECKLIST_ITEMS = ['SSN', 'EAD', 'W-9', 'Agreement', 'Payment Form'];
+// 标准命名：SSN Card（社安卡）、EAD（工卡）、W-9（税表）、Contractor Agreement
+// （承包商合同）、Payment Authorization（收款方式选择+签字授权：本人/他人账户，
+// Zelle / PayPal / ACH / Cash App 等）。
+const DOC_CHECKLIST_ITEMS = ['SSN Card', 'EAD', 'W-9', 'Contractor Agreement', 'Payment Authorization'];
 function openDocChecklistLabelModal() {
   let ov = document.getElementById('dclModal'); if (ov) ov.remove();
   ov = document.createElement('div');
@@ -12915,7 +12918,7 @@ function printDocChecklistLabels() {
   .cell { width: 2.625in; height: 1in; overflow: hidden; page-break-inside: avoid; }
   .inner { width: 100%; height: 100%; padding: 0.05in 0.13in; display: flex; flex-direction: column; justify-content: center; }
   .yr { font-size: 11pt; font-weight: 800; letter-spacing: .5px; line-height: 1.1; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px 8px; margin-top: 4px; }
+  .grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 2px 8px; margin-top: 4px; }
   .it { font-size: 7.5pt; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cb { display: inline-block; width: 9px; height: 9px; border: 1.2px solid #111; border-radius: 2px; flex: 0 0 auto; }
   @media screen {
