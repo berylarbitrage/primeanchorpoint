@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11d · 已存分包付款金额一次性批量覆盖为账单(container除外) + 预填一律按账单',
+  tag: '2026-07-11e · 标注明细弹窗改版(汇总条/收支色块/标签胶囊/斑马纹) + 分包付款金额按账单覆盖',
   started: new Date().toISOString(),
 };
 
