@@ -13040,7 +13040,9 @@ async function _partnerQrPagesHtml(id, name, number, wdoc) {
         note: '工头扫码登记一周柜子 · 扫码后输入密码 <b>123456</b><br>Foreman logs weekly containers · password <b>123456</b>',
       });
     }
-    pages.push({ state: q && q.state ? q.state : '', rows });
+    const pgState = q && q.state ? q.state : '';
+    const partner = (typeof allPartners !== 'undefined' && allPartners.find) ? allPartners.find(x => x.id === id) : null;
+    pages.push({ state: pgState, addr: partner ? _partnerAddrForState(partner, pgState) : '', rows });
   }
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const html = pages.map(pg => `
@@ -13048,6 +13050,7 @@ async function _partnerQrPagesHtml(id, name, number, wdoc) {
       <div class="head">
         <h1>${esca(name || '—')}${pg.state ? ` <span class="st">📍 ${esca(pg.state)}</span>` : ''}</h1>
         <div class="sub">${esca(number || '')}</div>
+        ${pg.addr ? `<div class="haddr">🏭 ${esca(pg.addr)}</div>` : ''}
       </div>
       ${pg.rows.map(r => `
       <div class="row">
@@ -13074,6 +13077,7 @@ function _openQrPrintWindow(title, hintText, pagesHtml) {
   h1 { font-size: 19pt; margin: 0 0 2px; }
   h1 .st { font-size: 13pt; color: #3730a3; font-weight: 700; }
   .sub { font-family: 'Courier New', monospace; color: #64748b; font-size: 10pt; }
+  .haddr { color: #334155; font-size: 11pt; font-weight: 600; margin-top: 4px; }
   .row {
     display: flex; align-items: center; gap: 0.28in;
     border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 0.18in 0.25in; margin-bottom: 0.22in;
