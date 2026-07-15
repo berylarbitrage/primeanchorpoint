@@ -2638,7 +2638,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <div style="padding:1rem;text-align:center;color:var(--gray-400);font-size:.82rem">加载中…</div>
       </div>
       <div id="invpSubPaySelected" style="font-size:.78rem;color:var(--sky);font-weight:600;margin-top:.4rem;min-height:1.1em"></div>
-      <div style="font-size:.72rem;color:var(--gray-400);margin-top:.2rem">选某一条交易会自动截取该行作为凭证；选「整份 PDF」用整份对账单。<span style="color:var(--gray-500)">灰色 = 已被用过（收款/分包各占一条）</span>。可在「📄 对账备注」页上传/标注对账单。</div>
+      <div style="font-size:.72rem;color:var(--gray-400);margin-top:.2rem">交易<b>可多选</b>（再点一次取消），合计自动累加并与发票金额比对；每条选中的交易都会截取该行作为凭证。选「整份 PDF」用整份对账单。<span style="color:var(--gray-500)">灰色 = 已被用过</span>。可在「📄 对账备注」页上传/标注对账单。</div>
     </div>
     </div></div>
 
@@ -31949,6 +31949,7 @@ function _invpFillSubPayEntities(selectedVal) {
 async function _invpLoadSubPayInvoiceInfo(invoiceId) {
   const box = document.getElementById('invpSubPayInvInfo');
   if (!box) return;
+  window._invpSubPayInvTotals = null; // stale totals must not judge the new invoice
   box.style.display = '';
   box.innerHTML = '<div style="color:var(--gray-400)">加载 Invoice 明细…</div>';
   let inv = null;
@@ -31983,6 +31984,9 @@ async function _invpLoadSubPayInvoiceInfo(invoiceId) {
     }).join('');
   }
   const billed = Number(inv.subtotal) || 0;
+  // Remember the totals so the picker's selection summary can flag mismatches.
+  window._invpSubPayInvTotals = { billed, keyTotal, keyLabel };
+  _invpUpdateSubPaySelSummary();
   const fillBtn = (v, label) => `<a onclick="const a=document.getElementById('invpSubPayAmount');if(a){a.value='${v.toFixed(2)}';}" style="color:var(--sky);text-decoration:underline;cursor:pointer;font-size:.72rem" title="填入付款金额">填入</a>`;
   box.innerHTML = `
     <div style="display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;margin-bottom:.4rem">
@@ -32081,16 +32085,18 @@ function _invpMaybePreselectUsedBox() {
   if (!hid || hid.value) return;
   const curInvId = _invpVoucherInvoiceId();
   const boxesMap = window._invpBankStmtBoxes || {};
+  const refs = [];
   for (const sid of Object.keys(boxesMap)) {
-    const b = (boxesMap[sid] || []).find(x => x.used_invoice_id != null && String(x.used_invoice_id) === String(curInvId)
-      && _invpUsedKind(x) === _invpVoucherCtx);
-    if (b) {
-      const amt = (b.amount != null && b.amount !== 0) ? '$' + Number(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
-      const bits = [b.direction === 'in' ? '收入' : '支出', amt, _bsPayeeDisplay(b.payee), b.purpose, b.txn_date].filter(Boolean).join(' · ');
-      _invpPickSubPay(`box:${sid}:${b.id}`, '• ' + bits);
-      return;
-    }
+    (boxesMap[sid] || []).forEach(b => {
+      if (b.used_invoice_id != null && String(b.used_invoice_id) === String(curInvId)
+        && _invpUsedKind(b) === _invpVoucherCtx) refs.push(`box:${sid}:${b.id}`);
+    });
   }
+  if (!refs.length) return;
+  // 分包 side restores every previously-reserved transaction; 收款 keeps one.
+  hid.value = _invpVoucherCtx === 'sub' ? refs.join('|') : refs[0];
+  _invpUpdateSubPaySelSummary();
+  _invpRenderSubPayList();
 }
 
 // Statement label shown in the filter dropdown and above each group of transactions.
@@ -32141,22 +32147,64 @@ function _invpFillSubPayFilterOptions() {
   fill('invpSubPayFilterPurpose', purposes, '全部用途');
 }
 
-// Set the chosen voucher (hidden #invpSubPayStmt) and refresh the list + summary line.
-// Picking a statement/transaction clears any file already chosen (server prefers files).
+// Set/toggle the chosen voucher (hidden #invpSubPayStmt) and refresh list + summary.
+// On the 分包 side transactions are MULTI-select (a sub payment often spans several
+// per-worker transfers) — clicking toggles membership and the value stores every
+// ref joined by "|". Whole-PDF and the 收款 side stay single-select.
 function _invpPickSubPay(val, label) {
   const hid = document.getElementById('invpSubPayStmt');
   if (!hid) return;
-  hid.value = val || '';
-  if (val) {
+  if (!val) {
+    hid.value = '';
+  } else if (_invpVoucherCtx === 'sub' && val.indexOf('box:') === 0) {
+    const cur = hid.value.indexOf('box:') === 0 ? hid.value.split('|').filter(Boolean) : [];
+    const i = cur.indexOf(val);
+    if (i >= 0) cur.splice(i, 1); else cur.push(val);
+    hid.value = cur.join('|');
+  } else {
+    hid.value = val;
+  }
+  if (hid.value) {
     // Clear the file input of whichever modal currently hosts the picker.
     const fi = document.getElementById(_invpVoucherCtx === 'recv' ? 'invpReceiptFile' : 'invpSubPayFile');
     if (fi) fi.value = '';
     const fn = document.getElementById(_invpVoucherCtx === 'recv' ? 'invpReceiptFileName' : 'invpSubPayFileName');
     if (fn) fn.textContent = '未选择文件';
   }
-  const selEl = document.getElementById('invpSubPaySelected');
-  if (selEl) selEl.textContent = val ? ('已选凭证：' + (label || val)) : '';
+  _invpUpdateSubPaySelSummary(label);
   _invpRenderSubPayList();
+}
+// Currently-selected transaction refs ("box:sid:bid", multi on the 分包 side).
+function _invpSelBoxRefs() {
+  const v = (document.getElementById('invpSubPayStmt') || {}).value || '';
+  return v.indexOf('box:') === 0 ? v.split('|').filter(Boolean) : [];
+}
+// Selection summary: count + sum of the picked transactions, compared against the
+// invoice's 账单 / 工资(分包)合计 — green when it matches, red 差额 + 还需要修改 when not.
+function _invpUpdateSubPaySelSummary(label) {
+  const selEl = document.getElementById('invpSubPaySelected');
+  if (!selEl) return;
+  const hidVal = (document.getElementById('invpSubPayStmt') || {}).value || '';
+  if (!hidVal) { selEl.innerHTML = ''; return; }
+  if (hidVal.indexOf('box:') !== 0) { selEl.innerHTML = '已选凭证：' + esc(label || '📄 整份 PDF'); return; }
+  const refs = _invpSelBoxRefs();
+  const boxesMap = window._invpBankStmtBoxes || {};
+  let sum = 0;
+  refs.forEach(r => {
+    const [, sid, bid] = r.split(':');
+    const b = (boxesMap[sid] || []).find(x => String(x.id) === String(bid));
+    if (b) sum += Math.abs(Number(b.amount) || 0);
+  });
+  let html = `已选 <b>${refs.length}</b> 条交易 · 合计 <b>$${sum.toFixed(2)}</b>`;
+  const t = window._invpSubPayInvTotals;
+  if (t && _invpVoucherCtx === 'sub') {
+    const near = (a, b) => Math.abs(a - b) <= 0.005;
+    if (near(sum, t.billed)) html += ' <span style="color:#15803d;font-weight:700">✓ 与账单对上</span>';
+    else if (t.keyTotal && near(sum, t.keyTotal)) html += ` <span style="color:#15803d;font-weight:700">✓ 与${esc(t.keyLabel)}对上</span>`;
+    else html += ` <span style="color:#dc2626;font-weight:700">⚠ 与账单差 $${Math.abs(sum - t.billed).toFixed(2)}${t.keyTotal ? ' · 与' + esc(t.keyLabel) + '差 $' + Math.abs(sum - t.keyTotal).toFixed(2) : ''} · 还需要修改</span>`;
+  }
+  html += ` <a onclick="const a=document.getElementById('invpSubPayAmount');if(a)a.value='${sum.toFixed(2)}'" style="color:var(--sky);text-decoration:underline;cursor:pointer;font-size:.72rem">填入金额</a>`;
+  selEl.innerHTML = html;
 }
 
 // Render the filtered transaction list into #invpSubPayList. Rows already used by
@@ -32237,7 +32285,7 @@ function _invpRenderSubPayList() {
       const dir = b.direction === 'in' ? '收入' : '支出';
       const bits = [dir, amt, _bsPayeeDisplay(b.payee), b.purpose, b.txn_date].filter(Boolean).join(' · ');
       const val = `box:${s.id}:${b.id}`;
-      const isSel = selVal === val;
+      const isSel = selVal === val || (selVal.indexOf('box:') === 0 && selVal.split('|').includes(val));
       if (usedElsewhere) {
         const kindTag = _invpUsedKind(b) === 'recv' ? '收款回执' : '分包回执';
         const badge = (invNumById[usedBy] ? ('已用作' + kindTag + ' · ' + invNumById[usedBy]) : ('已用作' + kindTag));
@@ -32379,14 +32427,19 @@ async function submitInvpSubPay() {
     // No new file but the statement picker was used as the proof source.
     if (!fileInput.files.length && stmtId) {
       if (stmtId.indexOf('box:') === 0) {
-        // A specific annotation was picked → crop that transaction into an image proof.
-        const [, sid, bid] = stmtId.split(':');
-        const boxes = (window._invpBankStmtBoxes || {})[sid] || [];
-        const box = boxes.find(b => String(b.id) === String(bid));
-        if (!box) throw new Error('标注不存在，请重新选择');
-        formData.append('receipts', await _invpCropBoxImage(sid, box));
-        // Record which transaction was used so the picker can grey it out next time.
-        formData.append('sub_payment_stmt_box', sid + ':' + bid);
+        // One or more annotations picked → crop EACH transaction into an image
+        // proof, and reserve them all for this invoice.
+        const refs = stmtId.split('|').filter(Boolean);
+        const linkRefs = [];
+        for (const ref of refs) {
+          const [, sid, bid] = ref.split(':');
+          const boxes = (window._invpBankStmtBoxes || {})[sid] || [];
+          const box = boxes.find(b => String(b.id) === String(bid));
+          if (!box) throw new Error('标注不存在，请重新选择');
+          formData.append('receipts', await _invpCropBoxImage(sid, box));
+          linkRefs.push(sid + ':' + bid);
+        }
+        formData.append('sub_payment_stmt_box', linkRefs.join(','));
       } else {
         // Whole statement PDF reused as the proof.
         formData.append('bank_statement_id', stmtId);
