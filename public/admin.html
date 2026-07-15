@@ -32045,15 +32045,29 @@ async function invpOpenSubReceiptGallery(invoiceId) {
         <button class="btn btn-outline" onclick="document.getElementById('invpSubGalOverlay').remove()">✕ 关闭</button>
       </div>
     </div>
-    <div style="display:flex;gap:.9rem;flex-wrap:wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .7rem;margin-bottom:.7rem">
-      ${info('客户', esc(row.company_name || '—'))}
-      ${info('服务周期', esc((row.period_start || '') + ' ~ ' + (row.period_end || '')))}
-      ${info('账单', money(row.subtotal))}
-      ${info('工资', money(row.wage_cost))}
-      ${info('分包付款', money(row.sub_payment_amount), '#1d4ed8')}
-      ${info('付款日期', esc(row.sub_payment_date || '—'))}
-      ${info('收款方', esc(row.sub_payment_entity || '—'))}
-      ${info('经办', esc(row.sub_payment_handler || '—'))}
+    <div style="display:flex;flex-direction:column;gap:.35rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .7rem;margin-bottom:.7rem">
+      <div style="display:flex;gap:.9rem;flex-wrap:wrap;align-items:center">
+        ${info('客户', esc(row.company_name || '—'))}
+        ${info('INVOICE 日期', esc(row.invoice_date || '—'))}
+        ${info('服务周期', esc((row.period_start || '') + ' ~ ' + (row.period_end || '')))}
+        ${info('账单', money(row.subtotal))}
+        ${info('工资', money(row.wage_cost))}
+        ${info('利润', money((Number(row.subtotal) || 0) - (Number(row.wage_cost) || 0)), '#047857')}
+      </div>
+      <div style="display:flex;gap:.9rem;flex-wrap:wrap;align-items:center;border-top:1px dashed #e2e8f0;padding-top:.35rem">
+        ${info('收款银行', esc((row.bank_name || '—') + (row.bank_account_last4 ? ' ••' + row.bank_account_last4 : '')) + (row.bank_account_name ? ` <span style="color:var(--gray-500);font-weight:400">${esc(row.bank_account_name)}</span>` : ''))}
+        ${info('付款状态', row.payment_status === 'paid' ? '✓ 已付款' : '未收款', row.payment_status === 'paid' ? '#047857' : '#b45309')}
+        ${info('实付金额', money(row.payment_amount))}
+        ${info('付款日期', esc(row.payment_date || '—'))}
+        ${info('收款账户', esc(row.payment_bank || '—'))}
+      </div>
+      <div style="display:flex;gap:.9rem;flex-wrap:wrap;align-items:center;border-top:1px dashed #e2e8f0;padding-top:.35rem">
+        ${info('分包付款', money(row.sub_payment_amount), '#1d4ed8')}
+        ${info('分包付款日期', esc(row.sub_payment_date || '—'))}
+        ${info('收款方', esc(row.sub_payment_entity || '—'))}
+        ${info('付款方式', esc(row.sub_payment_bank || '—'))}
+        ${info('经办', esc(row.sub_payment_handler || '—'))}
+      </div>
     </div>
     <div id="invpSubGalInv" style="font-size:.85rem;color:#475569">加载 Invoice 明细…</div>
     <div id="invpSubGalBody" style="font-size:.85rem;color:#475569">加载交易明细…</div>

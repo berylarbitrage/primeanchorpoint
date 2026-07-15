@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11l · 分包回执画廊嵌入Invoice行项目明细(工人工时/时薪/小计) + 交易配对',
+  tag: '2026-07-11m · 分包回执画廊补齐公司/收款银行/利润/收款状态等列 + Invoice行项目明细',
   started: new Date().toISOString(),
 };
 
