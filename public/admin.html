@@ -12724,9 +12724,11 @@ function openPartnerLabelSheetPrint(items) {
     }
   }
   .pageno { display: none; }
+  .blankpage { display: none; }
   @media screen { .pageno { display: block; } }
   @media print {
     .hint { display: none; }
+    .blankpage { display: block; page-break-after: always; }
     .cell { outline: none; }
     .cell.empty { background: none; }
     .cell.picked { outline: none; background: none; }
@@ -12739,6 +12741,7 @@ function openPartnerLabelSheetPrint(items) {
   <p class="hint">Letter 纸 · Avery 5160（1 × 2-5/8″，每页 30 个）· ${items.length} 家公司 / ${data.length} 张标签（多州公司每州一张）·
     起始格 <select id="startSel" onchange="setStart(parseInt(this.value, 10))">${startOpts}</select> ·
     每个标签打 <input id="copiesInp" type="number" min="1" max="30" value="1" style="width:52px;font-size:13px;padding:3px 4px;text-align:center" onchange="setCopies(parseInt(this.value, 10))"> 份
+    <label style="cursor:pointer" title="勾选后每页后面垫一张空白页：打印机即使设了双面，每页内容也各占一张纸（背面空白）。打印机本来就是单面时可取消勾选，避免多出空白纸"><input type="checkbox" id="simplexCb" checked onchange="render()"> 防双面</label>
     <button onclick="addPage()" title="在后面加一页空白格子，把标签拖过去即可放到下一页">＋加一页</button>
     <button onclick="removePage()" title="删除最后一页（须为空页）">－减空页</button>
     <button onclick="doPrint()">🖨 打印</button>
@@ -12817,8 +12820,14 @@ function openPartnerLabelSheetPrint(items) {
     function render() {
       var pages = [];
       for (var p = 0; p < slots.length; p += 30) pages.push(slots.slice(p, p + 30));
+      var cb = document.getElementById('simplexCb');
+      var guardOn = cb && cb.checked;
+      // 打印时会出现的页（非空白页）——防双面垫页只垫在它们之间
+      var printable = pages.map(function(pg){ return pg.some(function(x){ return !!x; }); });
+      var lastPrintable = printable.lastIndexOf(true);
       document.getElementById('pages').innerHTML = pages.map(function(pg, pi){
-        var blank = !pg.some(function(x){ return !!x; });
+        var blank = !printable[pi];
+        var guard = (guardOn && !blank && pi < lastPrintable) ? '<div class="blankpage">&nbsp;</div>' : '';
         return '<div class="pageno">第 ' + (pi + 1) + ' 页 / 共 ' + pages.length + ' 页' + (blank ? '（空白页，打印时跳过）' : '') + '</div>' +
           '<div class="sheet' + (blank ? ' blank' : '') + '">' + pg.map(function(it, ci){
           var idx = pi * 30 + ci;
@@ -12831,7 +12840,7 @@ function openPartnerLabelSheetPrint(items) {
             (it.addr1 ? '<div class="adr">' + escp(it.addr1) + (it.addr2 ? '<br>' + escp(it.addr2) : '') + '</div>' : '') +
             (it.num || it.st ? '<div class="num">' + escp(it.num) + (it.st ? '<span class="stx">' + (it.num ? ' · ' : '') + '📍 ' + escp(it.st) + '</span>' : '') + '</div>' : '') +
           '</div></div>';
-        }).join('') + '</div>';
+        }).join('') + '</div>' + guard;
       }).join('');
       document.body.classList.toggle('picking', picked !== -1);
       document.querySelectorAll('.name').forEach(function(el){
@@ -12990,14 +12999,17 @@ function openPartnerLabelPrint(id, name, number) {
     .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
     .hint input { width: 52px; font-size: 13px; padding: 3px 4px; text-align: center; }
   }
+  .blankpage { display: none; }
   @media print {
     .hint { display: none; }
+    .blankpage { display: block; page-break-after: always; }
     .label { page-break-after: always; }
-    .label:last-child { page-break-after: auto; }
+    .label:last-of-type { page-break-after: auto; }
   }
 </style></head><body>
   <p class="hint">标签尺寸 1 × 2-5/8″（Avery 5160）· 打
     <input id="copiesInp" type="number" min="1" max="50" value="1" onchange="setCopies(parseInt(this.value, 10))"> 份
+    <label style="cursor:pointer" title="用普通打印机双面设置打多份时勾选：每份后垫一张空白页，各占一张纸正面。标签打印机不需要勾"><input type="checkbox" id="simplexCb" onchange="render()"> 防双面</label>
     <button onclick="doPrint()">🖨 打印</button>
   </p>
   <div id="labels"></div>
@@ -13014,15 +13026,17 @@ function openPartnerLabelPrint(id, name, number) {
     }
     function render() {
       // 多个州 → 每个州一张标签（带该州地址）；每张再按份数重复
-      var out = '';
+      var ones = [];
       LABELS.forEach(function(lb) {
         var st = lb.st || '';
         var one = '<div class="label"><div class="name">' + escp(NAME) + '<\/div>' +
           (lb.addr1 ? '<div class="adr">' + escp(lb.addr1) + (lb.addr2 ? '<br>' + escp(lb.addr2) : '') + '<\/div>' : '') +
           (NUM || st ? '<div class="num">' + escp(NUM) + (st ? '<span class="stx">' + (NUM ? ' · ' : '') + '📍 ' + escp(st) + '<\/span>' : '') + '<\/div>' : '') + '<\/div>';
-        for (var i = 0; i < copies; i++) out += one;
+        for (var i = 0; i < copies; i++) ones.push(one);
       });
-      document.getElementById('labels').innerHTML = out;
+      var cb = document.getElementById('simplexCb');
+      var sep = (cb && cb.checked) ? '<div class="blankpage">&nbsp;<\/div>' : '';
+      document.getElementById('labels').innerHTML = ones.join(sep);
       // 长公司名自动缩小字号以适应两行
       document.querySelectorAll('.name').forEach(function(el){
         var size = 10.5;
@@ -13189,8 +13203,10 @@ function _openQrPrintWindow(title, hintText, pagesHtml) {
     .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
     .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
   }
+  .blankpage { display: none; }
   @media print {
     .hint { display: none; }
+    .blankpage { display: block; page-break-after: always; }
     /* 固定一页高度并纵向居中，内容不再靠上（高度留 0.02in 余量防止
        四舍五入挤出空白页） */
     .page {
@@ -13198,12 +13214,30 @@ function _openQrPrintWindow(title, hintText, pagesHtml) {
       display: flex; flex-direction: column; justify-content: center;
       page-break-after: always;
     }
-    .page:last-child { page-break-after: auto; }
+    .page:last-of-type { page-break-after: auto; }
   }
 </style></head><body>
-  <p class="hint">${esca(hintText)}<button onclick="window.print()">🖨 打印</button></p>
+  <p class="hint">${esca(hintText)}
+    <label style="margin-left:8px;cursor:pointer" title="勾选后每页后面垫一张空白页：打印机即使设了双面，每页内容也各占一张纸（背面空白）。打印机本来就是单面时可取消勾选，避免多出空白纸"><input type="checkbox" id="simplexCb" checked onchange="applyGuards()"> 防双面（单面打印）</label>
+    <button onclick="window.print()">🖨 打印</button></p>
   ${pagesHtml}
-  <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 300); });<\/script>
+  <script>
+    // 防双面：在每页后垫一张空白页，双面设置下每页内容也各占一张纸的正面
+    function applyGuards() {
+      document.querySelectorAll('.blankpage').forEach(function(el){ el.remove(); });
+      var cb = document.getElementById('simplexCb');
+      if (!cb || !cb.checked) return;
+      var pgs = Array.prototype.slice.call(document.querySelectorAll('.page'));
+      pgs.slice(0, -1).forEach(function(pg){
+        var d = document.createElement('div');
+        d.className = 'blankpage';
+        d.innerHTML = '&nbsp;';
+        pg.parentNode.insertBefore(d, pg.nextSibling);
+      });
+    }
+    applyGuards();
+    window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 300); });
+  <\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=980,height=760');
   if (!w) { alert('请允许弹出窗口以打印二维码'); return; }
