@@ -32023,10 +32023,17 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
   }
   _ensureBankNameOption(document.getElementById('invpSubPayMethod'),  row.sub_payment_bank || '');
   _ensureBankNameOption(document.getElementById('invpSubPayHandler'), row.sub_payment_handler || '');
-  // Default amount ← the invoice's billed total (账单), date ← today.
+  // Default amount ← the invoice's billed total (账单), date ← today. A previously
+  // saved amount is kept — EXCEPT when it equals the wage total while the bill differs:
+  // that's the old (wrong) wage-based prefill, so show the bill for correction instead.
+  const _savedSubAmt = (row.sub_payment_amount != null && row.sub_payment_amount !== '') ? Number(row.sub_payment_amount) : null;
+  const _legacyWagePrefill = _savedSubAmt != null && row.wage_cost != null && row.subtotal != null
+    && Math.abs(_savedSubAmt - Number(row.wage_cost)) < 0.005
+    && Math.abs(Number(row.subtotal) - Number(row.wage_cost)) > 0.005;
   document.getElementById('invpSubPayAmount').value =
-    (row.sub_payment_amount != null && row.sub_payment_amount !== '') ? row.sub_payment_amount
+    (_savedSubAmt != null && !_legacyWagePrefill) ? _savedSubAmt
     : (row.subtotal != null ? row.subtotal : '');
+  if (_legacyWagePrefill) showToast(`原记录金额 $${_savedSubAmt.toFixed(2)} 是工资合计，已按账单 $${Number(row.subtotal).toFixed(2)} 预填，核对后点更新`, 'warning', 6000);
   document.getElementById('invpSubPayDate').value =
     row.sub_payment_date || new Date().toISOString().slice(0, 10);
 
