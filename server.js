@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12g · 表格二维码标签打印:Avery 5163 每页10张,带用途说明',
+  tag: '2026-07-12h · 二维码标签美化:公司名Prime Anchor Workforce Inc,表名中英分行',
   started: new Date().toISOString(),
 };
 
