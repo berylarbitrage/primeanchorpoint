@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>表格入口 · Prime Anchor Point</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f1f5f9; color: #0f172a; min-height: 100vh; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 24px 16px 40px; }
+  .brand { text-align: center; margin-bottom: 18px; }
+  .brand .logo { font-size: 30px; }
+  .brand .name { font-size: 15px; font-weight: 800; color: #0f2b5b; letter-spacing: .3px; margin-top: 2px; }
+  .card { background: #fff; border-radius: 16px; box-shadow: 0 2px 10px rgba(15,23,42,.08); padding: 20px 18px; }
+  .hidden { display: none !important; }
+  h1 { font-size: 17px; margin: 0 0 4px; line-height: 1.35; }
+  .sub { font-size: 12.5px; color: #64748b; margin-bottom: 14px; }
+  label { display: block; font-size: 13px; font-weight: 700; color: #334155; margin: 12px 0 5px; }
+  input { width: 100%; padding: 11px 12px; border: 1.5px solid #cbd5e1; border-radius: 10px; font-size: 15px; background: #f8fafc; }
+  input:focus { outline: none; border-color: #2563eb; background: #fff; }
+  button.primary { width: 100%; margin-top: 16px; padding: 12px; border: none; border-radius: 10px; background: #1d4ed8; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+  button.primary:disabled { opacity: .6; }
+  .err { color: #dc2626; font-size: 13px; margin-top: 10px; min-height: 1em; }
+  .ok { color: #16a34a; font-size: 13px; margin-top: 8px; }
+  .act { display: block; width: 100%; text-align: left; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 13px 14px; margin-top: 10px; background: #fff; cursor: pointer; text-decoration: none; color: #0f172a; font-size: 15px; font-weight: 700; }
+  .act small { display: block; font-size: 12px; font-weight: 500; color: #64748b; margin-top: 3px; }
+  .act.blue { border-color: #bfdbfe; background: #eff6ff; }
+  .act.purple { border-color: #ddd6fe; background: #f5f3ff; }
+  .act-group { border: 1.5px solid #bbf7d0; background: #f0fdf4; border-radius: 12px; padding: 13px 14px; margin-top: 10px; }
+  .act-group .ttl { font-size: 15px; font-weight: 700; }
+  .act-group .row { display: flex; gap: 8px; margin-top: 9px; }
+  .act-group input { flex: 1; padding: 10px 11px; font-size: 14px; }
+  .act-group button { flex: 0 0 auto; padding: 10px 16px; border: none; border-radius: 10px; background: #16a34a; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .act-group button:disabled { opacity: .6; }
+  .foot { text-align: center; font-size: 12.5px; color: #94a3b8; margin-top: 18px; }
+  .foot a { color: #2563eb; text-decoration: none; }
+  /* QR 打印视图 */
+  .qrcard { background: #fff; border: 2px solid #0f172a; border-radius: 14px; padding: 22px 18px; text-align: center; }
+  .qrcard .qrco { font-size: 13px; font-weight: 800; color: #0f2b5b; letter-spacing: .5px; }
+  .qrcard .qrname { font-size: 15px; font-weight: 800; margin: 6px 0 12px; line-height: 1.35; }
+  .qrcard img { width: 230px; max-width: 78%; height: auto; }
+  .qrcard .qrurl { font-size: 11px; color: #64748b; margin-top: 10px; word-break: break-all; }
+  .qrcard .qrhint { font-size: 11.5px; color: #475569; margin-top: 6px; }
+  .qractions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+  .qractions button { padding: 10px 22px; border-radius: 10px; border: 1.5px solid #cbd5e1; background: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .qractions button.pr { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+  @media print {
+    body { background: #fff; }
+    .noprint, .brand { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .qrcard { border-radius: 0; border-width: 0; padding-top: 60px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><div class="logo">⚓</div><div class="name">PRIME ANCHOR POINT</div></div>
+
+  <!-- 登录 -->
+  <div id="login" class="card hidden">
+    <h1>请登录 / Log in</h1>
+    <div class="sub">此表格入口需要管理账号登录后使用</div>
+    <label>用户名 / Username</label>
+    <input id="lgUser" autocomplete="username" autocapitalize="none">
+    <label>密码 / Password</label>
+    <input id="lgPass" type="password" autocomplete="current-password">
+    <button class="primary" id="lgBtn" onclick="doLogin()">登录 / Log in</button>
+    <div class="err" id="lgErr"></div>
+  </div>
+
+  <!-- 主界面 -->
+  <div id="main" class="card hidden">
+    <h1 id="tplName"></h1>
+    <div class="sub" id="tplSub"></div>
+
+    <a class="act blue" id="btnView" target="_blank">📄 查看表格 PDF<small>在线预览 / 下载这份表格</small></a>
+
+    <div class="act-group">
+      <div class="ttl">📧 发送 PDF 到邮箱</div>
+      <div class="row">
+        <input id="email" type="email" placeholder="name@example.com" autocomplete="email" autocapitalize="none">
+        <button id="btnEmail" onclick="doEmail()">发送</button>
+      </div>
+      <div class="err" id="emailErr"></div>
+      <div class="ok hidden" id="emailOk">✅ 已发送</div>
+    </div>
+
+    <a class="act purple" id="btnDs" target="_blank">🛠 打开 DocuSeal 管理页面<small>指定收件人姓名和邮箱、发起签署（需 DocuSeal 登录）</small></a>
+
+    <div class="foot noprint">
+      <span id="who"></span> · <a href="#" onclick="openQr();return false">🖨 打印二维码</a> · <a href="#" onclick="doLogout();return false">退出登录</a>
+    </div>
+  </div>
+
+  <!-- 出错 -->
+  <div id="errcard" class="card hidden">
+    <h1>⚠️ 无法加载</h1>
+    <div class="err" id="errMsg"></div>
+  </div>
+
+  <!-- 二维码打印视图 -->
+  <div id="qrview" class="hidden">
+    <div class="qrcard">
+      <div class="qrco">PRIME ANCHOR POINT</div>
+      <div class="qrname" id="qrName"></div>
+      <img id="qrImg" alt="QR">
+      <div class="qrurl" id="qrUrl"></div>
+      <div class="qrhint">扫码后请登录管理账号 · Scan &amp; log in with an admin account</div>
+    </div>
+    <div class="qractions noprint">
+      <button class="pr" onclick="window.print()">🖨 打印</button>
+      <button onclick="closeQr()">返回</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const qs = new URLSearchParams(location.search);
+  const idParam = (qs.get('id') || '').trim();
+  const tParam = (qs.get('t') || '').trim();
+  // 无参数时默认打开 Zelle EN+ES 授权表
+  const apiQ = idParam ? 'id=' + encodeURIComponent(idParam) : 't=' + encodeURIComponent(tParam || 'zelle_auth_es');
+  let INFO = null;
+
+  function show(id) {
+    ['login', 'main', 'errcard', 'qrview'].forEach(x => document.getElementById(x).classList.toggle('hidden', x !== id));
+  }
+
+  async function init() {
+    let r;
+    try { r = await fetch('/api/admin/form-portal/info?' + apiQ, { credentials: 'same-origin' }); }
+    catch (e) { document.getElementById('errMsg').textContent = '网络错误：' + e.message; show('errcard'); return; }
+    if (r.status === 401) { show('login'); return; }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { document.getElementById('errMsg').textContent = data.error || ('加载失败 ' + r.status); show('errcard'); return; }
+    INFO = data;
+    document.getElementById('tplName').textContent = INFO.name;
+    document.getElementById('tplSub').textContent = 'DocuSeal 模板 #' + INFO.template_id;
+    document.getElementById('btnView').href = '/api/admin/docuseal/templates/' + INFO.template_id + '/preview-pdf';
+    const dsBtn = document.getElementById('btnDs');
+    if (INFO.docuseal_url) { dsBtn.href = INFO.docuseal_url; dsBtn.classList.remove('hidden'); }
+    else dsBtn.classList.add('hidden');
+    document.getElementById('who').textContent = '已登录：' + (INFO.username || '');
+    show('main');
+    if (qs.get('qr') === '1') openQr();
+  }
+
+  async function doLogin() {
+    const btn = document.getElementById('lgBtn');
+    const err = document.getElementById('lgErr');
+    err.textContent = '';
+    const username = document.getElementById('lgUser').value.trim();
+    const password = document.getElementById('lgPass').value;
+    if (!username || !password) { err.textContent = '请输入用户名和密码'; return; }
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/admin/login', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (data.needs_activation) { err.textContent = '账号尚未激活，请先在管理后台完成激活'; return; }
+      if (!r.ok || !data.success) { err.textContent = data.error || '用户名或密码错误'; return; }
+      await init();
+    } catch (e) { err.textContent = '网络错误：' + e.message; }
+    finally { btn.disabled = false; }
+  }
+  document.getElementById('lgPass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+  async function doEmail() {
+    const btn = document.getElementById('btnEmail');
+    const err = document.getElementById('emailErr');
+    const ok = document.getElementById('emailOk');
+    err.textContent = ''; ok.classList.add('hidden');
+    const email = document.getElementById('email').value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = '请输入正确的邮箱地址'; return; }
+    btn.disabled = true; btn.textContent = '发送中…';
+    try {
+      const r = await fetch('/api/admin/form-portal/email-pdf', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: INFO.template_id, email }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { err.textContent = data.error || ('发送失败 ' + r.status); return; }
+      ok.classList.remove('hidden');
+      document.getElementById('email').value = '';
+    } catch (e) { err.textContent = '网络错误：' + e.message; }
+    finally { btn.disabled = false; btn.textContent = '发送'; }
+  }
+
+  async function openQr() {
+    try {
+      const r = await fetch('/api/admin/form-portal/qr?' + apiQ, { credentials: 'same-origin' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(data.error || '二维码生成失败'); return; }
+      document.getElementById('qrName').textContent = data.name;
+      document.getElementById('qrImg').src = data.qr;
+      document.getElementById('qrUrl').textContent = data.url;
+      show('qrview');
+    } catch (e) { alert('网络错误：' + e.message); }
+  }
+  function closeQr() { show('main'); }
+
+  async function doLogout() {
+    try { await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' }); } catch {}
+    show('login');
+  }
+
+  init();
+</script>
+</body>
+</html>

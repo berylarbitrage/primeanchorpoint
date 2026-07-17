@@ -14712,6 +14712,9 @@ app.get('/s/:code', (req, res) => {
   res.redirect(row.target);
 });
 
+// 表格二维码入口页：扫码 → 登录管理账号 → 查看/发送该 DocuSeal 表格
+app.get('/form-portal', (req, res) => res.sendFile(path.join(__dirname, 'public', 'form-portal.html')));
+
 // Get-or-create a short code for a same-origin path (only paths are accepted,
 // so the redirect can never leave this site).
 app.post('/api/admin/short-link', requireAdmin, blockManager, (req, res) => {
@@ -26025,6 +26028,105 @@ app.get('/api/admin/docuseal/templates/:id/preview-pdf', requireAdmin, async (re
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── 表格二维码入口（/form-portal 页面的后端） ───
+// 解析目标模板：优先按 DocuSeal 模板 ID，其次按自动模板类型键（配置槽 → 分类兜底）
+function _formPortalResolveTemplate(query) {
+  const idParam = String((query && query.id) || '').trim();
+  if (idParam) {
+    if (!/^\d+$/.test(idParam)) return null;
+    const row = db.prepare('SELECT name FROM docuseal_templates WHERE docuseal_template_id=?').get(idParam);
+    return { templateId: idParam, name: (row && row.name) || `DocuSeal 模板 #${idParam}` };
+  }
+  const type = String((query && query.t) || '').trim();
+  const def = DOCUSEAL_AUTO_TEMPLATES[type];
+  if (!def) return null;
+  let tid = null;
+  try {
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse((row && row.config) || '{}');
+    const cur = cfg[def.configKey];
+    if (cur && db.prepare('SELECT 1 FROM docuseal_templates WHERE docuseal_template_id=?').get(String(cur))) tid = String(cur);
+  } catch {}
+  if (!tid) {
+    const pick = db.prepare("SELECT docuseal_template_id FROM docuseal_templates WHERE category=? AND hidden=0 ORDER BY confirmed DESC, created_at DESC LIMIT 1").get(def.category);
+    if (pick && pick.docuseal_template_id) tid = String(pick.docuseal_template_id);
+  }
+  if (!tid) return null;
+  const local = db.prepare('SELECT name FROM docuseal_templates WHERE docuseal_template_id=?').get(tid);
+  return { templateId: tid, name: (local && local.name) || def.name };
+}
+
+// 把模板空白 PDF 从 DocuSeal 拉成 Buffer（邮件附件用）
+function _dsealFetchTemplatePdf(templateId) {
+  return dsealApiCall('GET', `/api/templates/${templateId}`, null).then(r => {
+    if (r.status !== 200) throw new Error(`DocuSeal 返回 ${r.status}`);
+    const documents = r.data?.documents || r.data?.schema || [];
+    const doc = documents[0] || {};
+    const docUrl = doc.url || doc.file_url || doc.pdf_url || null;
+    if (!docUrl) throw new Error('该模板暂无可下载的文档');
+    const { apiKey } = dsealGetCreds();
+    const parsedUrl = new URL(docUrl);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    return new Promise((resolve, reject) => {
+      const proxyReq = transport.request({
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (isHttps ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        headers: { 'X-Auth-Token': apiKey, 'Accept': 'application/pdf,*/*' }
+      }, (proxyRes) => {
+        if (proxyRes.statusCode >= 400) { proxyRes.resume(); return reject(new Error(`下载模板 PDF 失败 ${proxyRes.statusCode}`)); }
+        const chunks = [];
+        proxyRes.on('data', c => chunks.push(c));
+        proxyRes.on('end', () => resolve({ buffer: Buffer.concat(chunks) }));
+      });
+      proxyReq.setTimeout(30000, () => { proxyReq.destroy(new Error('下载模板 PDF 超时')); });
+      proxyReq.on('error', reject);
+      proxyReq.end();
+    });
+  });
+}
+
+// GET /api/admin/form-portal/info?id=… 或 ?t=zelle_auth_es — 模板名 + DocuSeal 管理页链接
+app.get('/api/admin/form-portal/info', requireAdmin, (req, res) => {
+  const t = _formPortalResolveTemplate(req.query);
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  res.json({
+    template_id: t.templateId,
+    name: t.name,
+    docuseal_url: dsealEnabled() ? `${dsealPublicHost()}/templates/${t.templateId}` : '',
+    username: req.userName,
+  });
+});
+
+// POST /api/admin/form-portal/email-pdf {id 或 t, email} — 把模板空白 PDF 发到指定邮箱
+app.post('/api/admin/form-portal/email-pdf', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const email = String((req.body && req.body.email) || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: '邮箱格式不正确' });
+  const t = _formPortalResolveTemplate(req.body || {});
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  try {
+    const { buffer } = await _dsealFetchTemplatePdf(t.templateId);
+    const fileName = `${t.name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'form'}.pdf`;
+    const ok = await sendEmailWithAttachment(email, t.name, `附件为「${t.name}」表格 PDF。\nAttached: ${t.name} (PDF).\n\nSent by ${req.userName} via Prime Anchor Point form portal.`, buffer, fileName);
+    if (!ok) return res.status(500).json({ error: '邮件发送失败，请检查邮件服务配置' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/form-portal/qr?id=… 或 ?t=… — 生成指向本入口页的二维码
+app.get('/api/admin/form-portal/qr', requireAdmin, async (req, res) => {
+  const t = _formPortalResolveTemplate(req.query);
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  try {
+    const url = `${_foremanBaseUrl(req)}/form-portal?id=${encodeURIComponent(t.templateId)}`;
+    const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 480 });
+    res.json({ url, qr, name: t.name, template_id: t.templateId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/admin/docuseal/templates/:id/debug — debug template response structure
