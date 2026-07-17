@@ -7023,18 +7023,17 @@ function _buildCashReceiptForm(lang) {
                            + '<br><span style="color:#065f46">Confirmo que estoy autorizando al tercero indicado a recibir este pago en efectivo en mi nombre y acepto la responsabilidad por la recepción.</span>'
                      :      'I confirm I am authorizing the above-named third party to receive this cash payment on my behalf and I accept responsibility for the receipt.';
 
-  const sNotice      = zh ? '<b>NOTICE 注意:</b> The recipient or authorized third party must sign in the applicable zone above. The company representative signs below to verify. This authorization is for record-keeping and tax documentation purposes only. 收款人或授权第三方须在上方适用区域签名。公司代表在下方签字核实。本授权仅用于留档及税务记录。'
-                     : es ? '<b>NOTICE / AVISO:</b> The recipient or authorized third party must sign in the applicable zone above. The company representative signs below to verify. This authorization is for record-keeping and tax documentation purposes only. El destinatario o tercero autorizado debe firmar en la zona aplicable. El representante de la empresa firma abajo para verificar. Esta autorización es solo para fines de registro y documentación fiscal.'
-                     :      '<b>NOTICE:</b> The recipient or authorized third party must sign in the applicable zone above. The company representative signs below to verify. This authorization is for record-keeping and tax documentation purposes only.';
+  // The trailing COMPANY VERIFICATION block was removed (2026-07) so every variant of this
+  // form prints on a single page, matching the other payment-authorization forms; the send
+  // flow only adds a Second Party submitter when the template actually has that role.
+  const sNotice      = zh ? '<b>NOTICE 注意:</b> The recipient or authorized third party must sign in the applicable zone above. This authorization is for record-keeping and tax documentation purposes only. 收款人或授权第三方须在上方适用区域签名。本授权仅用于留档及税务记录。'
+                     : es ? '<b>NOTICE / AVISO:</b> The recipient or authorized third party must sign in the applicable zone above. This authorization is for record-keeping and tax documentation purposes only. El destinatario o tercero autorizado debe firmar en la zona aplicable. Esta autorización es solo para fines de registro y documentación fiscal.'
+                     :      '<b>NOTICE:</b> The recipient or authorized third party must sign in the applicable zone above. This authorization is for record-keeping and tax documentation purposes only.';
 
-  const sCompVerify  = zh ? `COMPANY VERIFICATION 公司核实 — ${companyName}`
-                     : es ? `COMPANY VERIFICATION / Verificación de la Empresa — ${companyName}`
-                     :      `COMPANY VERIFICATION — ${companyName}`;
-  const sVerifiedBy  = zh ? 'Verified and confirmed by 核实确认人:' : es ? 'Verified and confirmed by / Verificado y confirmado por:' : 'Verified and confirmed by:';
   const sPrintedLbl  = zh ? 'Printed Name 正楷姓名:' : es ? 'Printed Name / Nombre en Letra de Molde:' : 'Printed Name:';
   const sSigLbl      = zh ? 'Signature 签名:' : es ? 'Signature / Firma:' : 'Signature:';
   const sDateLbl     = zh ? 'Date 日期:' : es ? 'Date / Fecha:' : 'Date:';
-  const sPrintedLbl2 = zh ? 'Printed Name 正楷姓名:' : es ? 'Printed Name / Nombre en Letra de Molde:' : 'Printed Name:';
+  const sPrintedLbl2 = sPrintedLbl;
 
   const sFooter      = zh ? `${companyName} — Cash Payment Authorization / 现金收款授权表 — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认付款方式，不改变任何税务申报义务或承包关系性质。`
                      : es ? `${companyName} — Cash Payment Authorization / Autorización de Pago en Efectivo — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para confirmar el método de pago y no altera ninguna obligación fiscal ni el estado de contratista independiente.`
@@ -7118,23 +7117,8 @@ function _buildCashReceiptForm(lang) {
   ${sNotice}
 </div>
 
-<div style="border-radius:8px;overflow:hidden;margin-top:6px;box-shadow:0 1px 3px rgba(0,0,0,.10)">
-  <div style="background:#92400e;padding:8px 14px">
-    <div style="font-size:8pt;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:.5px">${sCompVerify}</div>
-    <div style="font-size:7pt;color:#fde68a;margin-top:1px">${sVerifiedBy}</div>
-  </div>
-  <div style="background:#fffbeb;padding:10px 14px;border:1.5px solid #fcd34d;border-top:none;border-radius:0 0 8px 8px">
-    <div style="font-size:7pt;color:#92400e;margin-bottom:2px">${sPrintedLbl}</div>
-    <text-field name="cash_printed2" role="Second Party" required="true" style="${w}margin-bottom:4px"></text-field>
-    <div style="font-size:7pt;color:#92400e;margin:6px 0 2px">${sSigLbl}</div>
-    <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff"></signature-field>
-    <div style="font-size:7pt;color:#92400e;margin:6px 0 2px">${sDateLbl}</div>
-    <date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff"></date-field>
-  </div>
-</div>
-
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:8px">${sFooter}</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-04-18 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-07-17 CDT</div>
 </div>`;
 }
 
@@ -7389,6 +7373,48 @@ async function cleanupZelleAuthRepTemplates() {
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
     if (removed || generated) console.log(`[startup] Zelle auth-rep cleanup: removed ${removed} combined template(s), generated ${generated} self-receive template(s)`);
   } catch (e) { console.warn('[startup] Zelle auth-rep cleanup failed:', e.message); }
+}
+
+// One-time rebuild: the cash payment authorization / receipt forms dropped the trailing
+// COMPANY VERIFICATION block so every variant prints on a single page, matching the other
+// payment-authorization forms in the series. Force-regenerate the six cash templates in
+// DocuSeal — including confirmed ones, which autoRegenerateTemplatesForCompanyName skips —
+// carrying each slot's confirmed flag over to the rebuilt template.
+async function rebuildCashFormsOnePage() {
+  try {
+    if (!dsealEnabled()) return; // retry next startup once DocuSeal is configured
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    if (!row) return;
+    const cfg = JSON.parse(row.config || '{}');
+    if (cfg._cash_form_one_page_v1) return;
+    const types = ['cash_tp_auth', 'cash_tp_auth_en', 'cash_tp_auth_es', 'cash_receipt', 'cash_receipt_en', 'cash_receipt_es'];
+    let rebuilt = 0;
+    for (const type of types) {
+      const def = DOCUSEAL_AUTO_TEMPLATES[type];
+      if (!def) continue;
+      try {
+        const html = def.generator();
+        const hash = crypto.createHash('md5').update(html).digest('hex');
+        const r = await dsealApiCall('POST', '/api/templates/html', { name: def.name, documents: [{ name: def.name, html, size: 'Letter' }] });
+        if (r.status >= 400) { console.warn(`[startup] cash one-page rebuild ${type}: DocuSeal ${r.status}`); continue; }
+        const dsId = r.data?.id || r.data?.template_id;
+        if (!dsId) continue;
+        const oldId = cfg[def.configKey];
+        const oldRow = oldId ? db.prepare('SELECT confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(oldId) : null;
+        if (oldId && String(oldId) !== String(dsId)) {
+          await dsealApiCall('DELETE', `/api/templates/${oldId}`).catch(() => {});
+          db.prepare('DELETE FROM docuseal_templates WHERE docuseal_template_id=?').run(oldId);
+        }
+        db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category, content_hash, confirmed) VALUES (?,?,?,?,?)')
+          .run(def.name, String(dsId), def.category, hash, oldRow?.confirmed ? 1 : 0);
+        cfg[def.configKey] = String(dsId);
+        rebuilt++;
+      } catch (e) { console.warn(`[startup] cash one-page rebuild ${type} failed:`, e.message); }
+    }
+    cfg._cash_form_one_page_v1 = true;
+    db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+    if (rebuilt) console.log(`[startup] Cash forms rebuilt as one-pagers: ${rebuilt} template(s)`);
+  } catch (e) { console.warn('[startup] Cash one-page rebuild failed:', e.message); }
 }
 
 // One-time rename: the PayPal/Venmo/CashApp self-receive form was named "Third-Party Payment
@@ -29594,6 +29620,8 @@ app.listen(PORT, () => {
   setTimeout(() => { cleanupZelleAuthRepTemplates().catch(e => console.error('[startup] Zelle auth-rep cleanup error:', e.message)); }, 16000);
   // One-time: rename PayPal/Venmo/CashApp self-receive templates to name the platforms (clearer)
   setTimeout(() => { renamePlatformPayTemplates().catch(e => console.error('[startup] platform-pay rename error:', e.message)); }, 18000);
+  // One-time: rebuild cash authorization/receipt templates without the trailing company-verification block (one page)
+  setTimeout(() => { rebuildCashFormsOnePage().catch(e => console.error('[startup] cash one-page rebuild error:', e.message)); }, 20000);
   // SMS Inbox: start auto re-reminder check every 5 minutes
   setInterval(smsAutoReremind, SMS_REREMIND_INTERVAL);
   console.log('[startup] SMS auto-rereminder started (every 5 min)');
