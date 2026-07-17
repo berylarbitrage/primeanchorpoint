@@ -6038,9 +6038,11 @@ function generateWireAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildWireAut
 
 // ── Check / 支票 Instruction Form ──
 function _buildCheckInstructionForm(lang) {
-  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
-  const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const _zh0 = lang === 'zh-en', _es0 = lang === 'en-es';
+  const fh = (_es0 || _zh0) ? '15px' : '18px';
+  const f = `border:1px solid #999;border-radius:3px;padding:1px 3px;background:#fff;min-height:${fh};display:inline-block;`;
+  const w = `${f}width:100%;min-height:${fh};`;
+  const c = `padding:${(_es0 || _zh0) ? '2px 4px' : '3px 5px'};border:1px solid #ccc;vertical-align:top;`;
   const companyName = getCompanyLegalName();
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
@@ -6157,13 +6159,17 @@ function _buildCheckInstructionForm(lang) {
     ? 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir el cheque en persona en mi nombre y asumo plena responsabilidad.'
     : 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement.';
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:18px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
+  // 版式收紧保证一页：公司核验区已移除；双语版按语言分档缩小
+  const Z = es ? { base: '7.3pt', lh: '1.06', pad: '3px 12px', body: '6.7pt', sig: '26px', date: '14px' }
+        : zh ? { base: '7.6pt', lh: '1.12', pad: '5px 12px', body: '7pt', sig: '30px', date: '16px' }
+        : { base: '8.2pt', lh: '1.28', pad: '8px 14px', body: '7.6pt', sig: '40px', date: '20px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:6px">
   <div style="font-size:11.5pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
-  <div style="font-size:8pt;color:#555;margin-top:4px">${subtitle}</div>
+  <div style="font-size:7.5pt;color:#555;margin-top:2px">${subtitle}</div>
 </div>
 
-<p style="font-size:8pt;margin-bottom:10px;line-height:1.6">${introPara}</p>
+<p style="font-size:${Z.body};margin:0 0 6px;line-height:1.35">${introPara}</p>
 
 <div style="font-weight:700;margin:10px 0 4px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:2px">
@@ -6185,17 +6191,17 @@ function _buildCheckInstructionForm(lang) {
 </table>
 
 <!--A_ONLY_S--><!-- Zone A — Check Mailed to Own Address -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:5px 10px;cursor:pointer;margin:0">
     <checkbox-field name="check_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
       <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
     </div>
   </label>
-  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+  <div style="background:#eff6ff;padding:7px 10px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
     <!-- Payee signature sub-box (blue) -->
-    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:9px 12px;margin-top:6px">
+    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:6px 9px;margin-top:5px">
       <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
       <div style="display:flex;gap:10px;margin-bottom:6px">
         <div style="flex:1">
@@ -6208,10 +6214,10 @@ function _buildCheckInstructionForm(lang) {
         </div>
       </div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="check_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="check_sig" role="Contractor" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="check_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+      <date-field name="check_date" role="Contractor" style="width:100%;height:${Z.date};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:4px 6px">
         <checkbox-field name="check_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
       </label>
@@ -6220,16 +6226,16 @@ function _buildCheckInstructionForm(lang) {
 </div>
 
 <!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third Party Receives Check -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:5px 10px;cursor:pointer;margin:0">
     <checkbox-field name="check_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
       <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
     </div>
   </label>
-  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
+  <div style="background:#f0fdf4;padding:7px 10px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px;margin-bottom:6px">
       <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
       <table style="width:100%;border-collapse:collapse">
         <tr>
@@ -6249,18 +6255,18 @@ function _buildCheckInstructionForm(lang) {
           </td>
         </tr>
       </table>
-      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+      <div style="margin-top:5px;font-size:7pt;color:#374151;line-height:1.4;border-top:1px solid #a7f3d0;padding-top:4px;font-style:italic">${tpAuth}</div>
     </div>
     <!-- Authorizer signature sub-box (green) -->
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px">
       <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
       <text-field name="check_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="check_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="check_auth_sig" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="check_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+      <date-field name="check_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:4px 6px">
         <checkbox-field name="check_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
       </label>
@@ -6268,25 +6274,12 @@ function _buildCheckInstructionForm(lang) {
   </div>
 </div>
 
-<!--B_ONLY_E--><div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:4px;font-size:7.5pt;line-height:1.6">
+<!--B_ONLY_E--><div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:6px 8px;margin-top:4px;font-size:${Z.body};line-height:1.35">
   <div style="font-weight:700;margin-bottom:5px;font-size:8.5pt">${s5}</div>
   <div style="margin-bottom:3px">① ${confirmLine1}</div>
   <div style="margin-bottom:3px">② ${confirmLine2}</div>
   <div style="margin-bottom:3px">③ ${confirmLine3}</div>
   <div>④ ${confirmLine4}</div>
-</div>
-<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
-  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
-  <text-field name="check_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="check_co_sig" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="check_co_date" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="check_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
-  </label>
 </div>
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
