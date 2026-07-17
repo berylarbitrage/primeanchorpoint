@@ -58,6 +58,11 @@
   .badge.done { background: #dcfce7; color: #15803d; }
   .badge.wait { background: #fef3c7; color: #b45309; }
   .badge.dec { background: #fee2e2; color: #b91c1c; }
+  .chips { display: flex; gap: 6px; margin-top: 8px; }
+  .chip { padding: 4px 12px; border-radius: 999px; border: 1.5px solid #cbd5e1; background: #fff; color: #475569; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .chip.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+  .srow .p .by { display: inline-block; font-size: 10.5px; font-weight: 700; border-radius: 4px; padding: 1px 6px; margin-top: 2px; background: #e0e7ff; color: #4338ca; }
+  .srow .p .by.other { background: #f1f5f9; color: #94a3b8; }
   .foot { text-align: center; font-size: 12.5px; color: #94a3b8; margin-top: 18px; }
   .foot a { color: #2563eb; text-decoration: none; }
   /* QR 打印视图 */
@@ -114,6 +119,10 @@
 
     <div class="act-group subs">
       <div class="ttl">📋 签署情况 <a href="#" class="refresh" onclick="loadSubs();return false">↻ 刷新</a></div>
+      <div class="chips">
+        <button class="chip on" id="chipAll" onclick="setSubsFilter('all')">全部</button>
+        <button class="chip" id="chipMine" onclick="setSubsFilter('mine')">只看我发的</button>
+      </div>
       <div id="subsList" class="subslist">加载中…</div>
     </div>
 
@@ -298,6 +307,36 @@
     const p = n => String(n).padStart(2, '0');
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
+  let _subs = [];
+  let _subsMe = '';
+  let _subsFilter = 'all';
+  function setSubsFilter(f) {
+    _subsFilter = f;
+    document.getElementById('chipAll').classList.toggle('on', f === 'all');
+    document.getElementById('chipMine').classList.toggle('on', f === 'mine');
+    renderSubs();
+  }
+  function renderSubs() {
+    const box = document.getElementById('subsList');
+    const subs = _subsFilter === 'mine' ? _subs.filter(s => s.sent_by && s.sent_by === _subsMe) : _subs;
+    if (!subs.length) {
+      box.innerHTML = '<div class="empty">' + (_subsFilter === 'mine' ? '你还没有发起过签署' : '还没有发起过签署') + '</div>';
+      return;
+    }
+    box.innerHTML = subs.map(s => {
+      const badge = s.status === 'completed'
+        ? '<span class="badge done">✅ 已签署</span>'
+        : (s.status === 'declined' ? '<span class="badge dec">✖ 已拒签</span>' : '<span class="badge wait">⏳ 待签署</span>');
+      const when = s.status === 'completed' && s.completed_at
+        ? '签署于 ' + fmtDate(s.completed_at)
+        : '发送于 ' + fmtDate(s.created_at) + (s.opened_at ? ' · 已打开' : '');
+      const by = s.sent_by
+        ? '<span class="by' + (s.sent_by === _subsMe ? '' : ' other') + '">' + esc(s.sent_by) + ' 发送</span>'
+        : '<span class="by other">其他来源</span>';
+      return '<div class="srow"><div class="p"><div class="n">' + esc(s.name || '—') + '</div>' +
+        '<div class="e">' + esc(s.email) + '</div><div class="d">' + esc(when) + '</div>' + by + '</div>' + badge + '</div>';
+    }).join('');
+  }
   async function loadSubs() {
     const box = document.getElementById('subsList');
     box.textContent = '加载中…';
@@ -305,18 +344,9 @@
       const r = await fetch('/api/admin/form-portal/submissions?' + apiQ, { credentials: 'same-origin' });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) { box.innerHTML = '<div class="empty">' + esc(data.error || ('加载失败 ' + r.status)) + '</div>'; return; }
-      const subs = data.submissions || [];
-      if (!subs.length) { box.innerHTML = '<div class="empty">还没有发起过签署</div>'; return; }
-      box.innerHTML = subs.map(s => {
-        const badge = s.status === 'completed'
-          ? '<span class="badge done">✅ 已签署</span>'
-          : (s.status === 'declined' ? '<span class="badge dec">✖ 已拒签</span>' : '<span class="badge wait">⏳ 待签署</span>');
-        const when = s.status === 'completed' && s.completed_at
-          ? '签署于 ' + fmtDate(s.completed_at)
-          : '发送于 ' + fmtDate(s.created_at) + (s.opened_at ? ' · 已打开' : '');
-        return '<div class="srow"><div class="p"><div class="n">' + esc(s.name || '—') + '</div>' +
-          '<div class="e">' + esc(s.email) + '</div><div class="d">' + esc(when) + '</div></div>' + badge + '</div>';
-      }).join('');
+      _subs = data.submissions || [];
+      _subsMe = data.me || '';
+      renderSubs();
     } catch (e) { box.innerHTML = '<div class="empty">网络错误：' + esc(e.message) + '</div>'; }
   }
 

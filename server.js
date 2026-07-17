@@ -864,6 +864,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS short_links (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// 表格入口页（/form-portal）发出的签署邀请：记录发送人，用于区分各账号的操作
+db.exec(`CREATE TABLE IF NOT EXISTS form_portal_sends (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  submission_id TEXT UNIQUE,
+  template_id TEXT NOT NULL,
+  name TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  sent_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // ─── Per-partner container submission inbox (mobile QR collection) ───
 db.exec(`CREATE TABLE IF NOT EXISTS container_submissions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8060,6 +8071,16 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
     const hash = hashPassword(defaultPass, salt);
     db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)').run(defaultUser, hash, salt, 'admin', 'Administrator');
     console.log(`[Auth] Seeded default admin user: ${defaultUser} / ${defaultPass}`);
+  }
+  // 固定运营账号 abby（表格二维码入口页使用），操作以 actor=abby 与其他账号区分
+  {
+    const abby = db.prepare("SELECT id FROM admin_users WHERE username='abby'").get();
+    if (!abby) {
+      const abbySalt = crypto.randomBytes(16).toString('hex');
+      db.prepare("INSERT INTO admin_users (username, password_hash, salt, role, display_name, active) VALUES ('abby', ?, ?, 'staff', 'Abby', 1)")
+        .run(hashPassword('abby123', abbySalt), abbySalt);
+      console.log('[Auth] Seeded portal user: abby');
+    }
   }
   // Ensure the first user (original seeded admin) has admin role
   try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
@@ -26114,6 +26135,7 @@ app.post('/api/admin/form-portal/email-pdf', requireAdmin, async (req, res) => {
     const fileName = `${t.name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'form'}.pdf`;
     const ok = await sendEmailWithAttachment(email, t.name, `附件为「${t.name}」表格 PDF。\nAttached: ${t.name} (PDF).\n\nSent by ${req.userName} via Prime Anchor Point form portal.`, buffer, fileName);
     if (!ok) return res.status(500).json({ error: '邮件发送失败，请检查邮件服务配置' });
+    auditLog('form_portal_email_pdf', req, { targetType: 'docuseal_template', targetId: t.templateId, details: { template: t.name, email } });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -26165,6 +26187,11 @@ app.post('/api/admin/form-portal/send', requireAdmin, async (req, res) => {
       return res.status(502).json({ error: `DocuSeal 创建签署失败 ${r.status}: ${JSON.stringify(r.data).slice(0, 200)}` });
     }
     const submissionId = (r.data && r.data.id) || subs[0].submission_id || subs[0].id || '';
+    try {
+      db.prepare('INSERT OR IGNORE INTO form_portal_sends (submission_id, template_id, name, email, sent_by) VALUES (?,?,?,?,?)')
+        .run(String(submissionId), String(t.templateId), name, email, req.userName || '');
+    } catch (e2) { console.error('[form-portal] send record failed:', e2.message); }
+    auditLog('form_portal_send', req, { targetType: 'docuseal_submission', targetId: submissionId, details: { template_id: t.templateId, template: t.name, name, email } });
     res.json({ success: true, submission_id: String(submissionId) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -26178,6 +26205,12 @@ app.get('/api/admin/form-portal/submissions', requireAdmin, async (req, res) => 
     const r = await dsealApiCall('GET', `/api/submissions?template_id=${encodeURIComponent(t.templateId)}&limit=100`, null);
     if (r.status !== 200) return res.status(502).json({ error: `DocuSeal 返回 ${r.status}` });
     const list = Array.isArray(r.data && r.data.data) ? r.data.data : (Array.isArray(r.data) ? r.data : []);
+    const sentBy = {};
+    try {
+      for (const row of db.prepare('SELECT submission_id, sent_by FROM form_portal_sends WHERE template_id=?').all(String(t.templateId))) {
+        sentBy[row.submission_id] = row.sent_by;
+      }
+    } catch {}
     const submissions = list.filter(s => !s.archived_at).map(s => {
       const subm = (s.submitters || [])[0] || {};
       return {
@@ -26189,9 +26222,10 @@ app.get('/api/admin/form-portal/submissions', requireAdmin, async (req, res) => 
         created_at: s.created_at || '',
         completed_at: subm.completed_at || s.completed_at || '',
         opened_at: subm.opened_at || '',
+        sent_by: sentBy[String(s.id)] || '',
       };
     });
-    res.json({ submissions });
+    res.json({ submissions, me: req.userName || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
