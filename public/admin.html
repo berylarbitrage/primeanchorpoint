@@ -13033,106 +13033,221 @@ function _dsQrSplitName(name, category) {
   if (!en && zh) { en = ''; }
   return { en, zh };
 }
+// ── 二维码标签排版器：左边表格列表，右边整页实时预览，拖拽摆放 ──
+// 拖表格到格子里 / 格子之间拖动换位 / 点标签改说明 / ✕ 移除 / 多页。
+const _DSQR_K = 0.62;   // 预览缩放比例
+let _dsqrSt = null;     // { pages: [[dsId|null ×10]…], cur, descs: {dsId: 文字}, qrs: {dsId: dataURL}, filter }
+
 function dsOpenQrLabelPicker() {
   const tpls = (_dsMyTemplates || []).filter(t => !t.hidden);
   if (!tpls.length) { showToast('暂无模板，请先在下方加载 / 上传模板', 'error'); return; }
+  _dsqrSt = { pages: [Array(10).fill(null)], cur: 0, descs: {}, qrs: {}, filter: '' };
   let ov = document.getElementById('dsQrLblModal'); if (ov) ov.remove();
   ov = document.createElement('div');
   ov.id = 'dsQrLblModal';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:700;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:700;display:flex;align-items:center;justify-content:center;padding:.8rem';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  const rows = tpls.map(t => {
-    const desc = _dsQrLabelDefaultDesc(t.category, t.name);
-    return `<div style="border:1px solid var(--gray-200);border-radius:8px;padding:.55rem .65rem;margin-bottom:.5rem" data-dsid="${t.docuseal_template_id}">
-      <div style="display:flex;align-items:center;gap:.5rem">
-        <input type="checkbox" class="dsqr-pick" data-dsid="${t.docuseal_template_id}" style="width:16px;height:16px;flex:0 0 auto" onchange="this.closest('[data-dsid]').querySelector('.dsqr-body').style.display=this.checked?'block':'none'">
-        <div style="flex:1;min-width:0;font-size:.85rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.name)}">${esc(t.name)}</div>
-        <label style="font-size:.72rem;color:var(--gray-500);display:flex;align-items:center;gap:.25rem;flex:0 0 auto">张数
-          <input type="number" class="dsqr-copies" value="1" min="1" max="100" style="width:52px;padding:.2rem .3rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem"></label>
-      </div>
-      <div class="dsqr-body" style="display:none;margin-top:.4rem">
-        <textarea class="dsqr-desc" rows="2" style="width:100%;padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem;line-height:1.4;resize:vertical">${esc(desc)}</textarea>
-      </div>
-    </div>`;
-  }).join('');
-  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:640px;width:100%;padding:1.2rem;max-height:88vh;display:flex;flex-direction:column">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-      <h3 style="margin:0;font-size:1.05rem">🏷 表格二维码标签打印</h3>
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;width:98vw;max-width:1120px;height:94vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;padding:.75rem 1rem .35rem">
+      <h3 style="margin:0;font-size:1.02rem">🏷 表格二维码标签排版<span style="font-weight:500;color:var(--gray-400);font-size:.78rem;margin-left:.5rem">2 × 4″ 标签纸 · 每页 10 张（Avery 5163）</span></h3>
       <button class="btn btn-outline" onclick="document.getElementById('dsQrLblModal').remove()">✕ 关闭</button></div>
-    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.6rem">
-      2 × 4″ 标签纸（Avery 5163 规格，每页 10 张）。每张标签 = 左边二维码 + 右边表格名和用途说明（勾选后可以修改说明文字）。扫码后登录管理账号即可打开该表格。</div>
-    <div style="background:var(--gray-50,#f8fafc);border:1px solid var(--gray-200);border-radius:8px;padding:.55rem .7rem;margin-bottom:.55rem;font-size:.82rem">
-      <label style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;margin-right:1.1rem">
-        <input type="radio" name="dsqrMode" value="count" checked onchange="document.getElementById('dsqrPagesWrap').style.display='none'">按张数打印<span style="color:var(--gray-400);font-size:.72rem">（每个表格印右边填的张数）</span></label>
-      <label style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer">
-        <input type="radio" name="dsqrMode" value="fill" onchange="document.getElementById('dsqrPagesWrap').style.display='inline-flex'">铺满整页<span style="color:var(--gray-400);font-size:.72rem">（选中的轮流排满，张数当比例用）</span></label>
-      <label id="dsqrPagesWrap" style="display:none;align-items:center;gap:.3rem;margin-left:1.1rem;font-size:.78rem;color:var(--gray-600)">页数
-        <input type="number" id="dsqrPages" value="1" min="1" max="20" style="width:56px;padding:.2rem .3rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem"></label>
+    <div style="font-size:.75rem;color:var(--gray-500);padding:0 1rem .5rem">把左边的表格<b>拖到</b>右边纸上的格子（或点「+1」放到下一个空位、「铺满」填满本页）。格子之间可拖动换位；点已放的标签改说明文字；右上角 ✕ 移除。</div>
+    <div style="flex:1;display:flex;min-height:0;border-top:1px solid var(--gray-100)">
+      <div style="width:320px;flex:0 0 auto;display:flex;flex-direction:column;border-right:1px solid var(--gray-100)">
+        <div style="padding:.55rem .7rem .35rem"><input id="dsqrSearch" placeholder="🔍 搜索表格…" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem" oninput="_dsqrSt.filter=this.value;_dsqrRenderList()"></div>
+        <div id="dsqrList" style="flex:1;overflow-y:auto;padding:.2rem .7rem .7rem"></div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0;background:#eef2f7">
+        <div id="dsqrTabs" style="display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;padding:.55rem .8rem"></div>
+        <div style="flex:1;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:0 .8rem .8rem"><div id="dsqrPageWrap"></div></div>
+      </div>
     </div>
-    <div style="display:flex;gap:.5rem;margin-bottom:.5rem">
-      <button class="btn btn-outline" style="font-size:.78rem;padding:.3rem .7rem" onclick="document.querySelectorAll('#dsQrLblModal .dsqr-pick').forEach(c=>{c.checked=true;c.closest('[data-dsid]').querySelector('.dsqr-body').style.display='block'})">全选</button>
-      <button class="btn btn-outline" style="font-size:.78rem;padding:.3rem .7rem" onclick="document.querySelectorAll('#dsQrLblModal .dsqr-pick').forEach(c=>{c.checked=false;c.closest('[data-dsid]').querySelector('.dsqr-body').style.display='none'})">全不选</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.6rem 1rem;border-top:1px solid var(--gray-100)">
+      <div id="dsqrCount" style="font-size:.78rem;color:var(--gray-500)"></div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-outline" onclick="document.getElementById('dsQrLblModal').remove()">取消</button>
+        <button class="btn btn-green" id="dsqr-print-btn" onclick="dsPrintQrLabels()">🖨 打印</button></div>
     </div>
-    <div style="flex:1;overflow-y:auto;min-height:0;padding-right:.25rem">${rows}</div>
-    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.8rem">
-      <button class="btn btn-outline" onclick="document.getElementById('dsQrLblModal').remove()">取消</button>
-      <button class="btn btn-green" id="dsqr-print-btn" onclick="dsPrintQrLabels()">🖨 生成标签</button></div>
   </div>`;
   document.body.appendChild(ov);
+  _dsqrRenderList(); _dsqrRenderPage();
 }
-async function dsPrintQrLabels() {
-  const picked = [...document.querySelectorAll('#dsQrLblModal [data-dsid]')].filter(r => r.querySelector('.dsqr-pick')?.checked).map(r => ({
-    dsId: r.getAttribute('data-dsid'),
-    copies: Math.max(1, Math.min(100, parseInt(r.querySelector('.dsqr-copies')?.value, 10) || 1)),
-    desc: (r.querySelector('.dsqr-desc')?.value || '').trim(),
-  }));
-  if (!picked.length) { showToast('请至少勾选一个表格', 'error'); return; }
-  const mode = (document.querySelector('#dsQrLblModal input[name=dsqrMode]:checked') || {}).value || 'count';
-  const fillPages = Math.max(1, Math.min(20, parseInt((document.getElementById('dsqrPages') || {}).value, 10) || 1));
-  const btn = document.getElementById('dsqr-print-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⟳ 生成二维码中…'; }
-  let labels;
+
+function _dsqrRenderList() {
+  const el = document.getElementById('dsqrList'); if (!el || !_dsqrSt) return;
+  const q = (_dsqrSt.filter || '').trim().toLowerCase();
+  const tpls = (_dsMyTemplates || []).filter(t => !t.hidden)
+    .filter(t => !q || String(t.name).toLowerCase().includes(q) || (_dsQrSplitName(t.name, t.category).zh || '').toLowerCase().includes(q));
+  el.innerHTML = tpls.map(t => {
+    const nm = _dsQrSplitName(t.name, t.category);
+    const lang = _dsQrLabelLang(t.category);
+    return `<div draggable="true" ondragstart="event.dataTransfer.setData('text/plain','tpl:${t.docuseal_template_id}')"
+      style="border:1px solid var(--gray-200);border-radius:8px;padding:.45rem .55rem;margin-bottom:.45rem;background:#fff;cursor:grab;display:flex;align-items:center;gap:.4rem">
+      <span style="flex:0 0 auto;color:var(--gray-300);font-size:.9rem;cursor:grab">⠿</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.78rem;font-weight:700;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.name)}">${esc(nm.zh || nm.en)}</div>
+        ${nm.zh && nm.en ? `<div style="font-size:.68rem;color:var(--gray-400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nm.en)}</div>` : ''}
+      </div>
+      <span style="flex:0 0 auto;font-size:.6rem;font-weight:800;color:#0f2b5b;border:1px solid #0f2b5b;border-radius:999px;padding:0 5px">${esc(lang)}</span>
+      <button class="btn btn-outline" style="flex:0 0 auto;font-size:.7rem;padding:.16rem .45rem" onclick="_dsqrAppend('${t.docuseal_template_id}')" title="放到下一个空格">+1</button>
+      <button class="btn btn-outline" style="flex:0 0 auto;font-size:.7rem;padding:.16rem .45rem" onclick="_dsqrFill('${t.docuseal_template_id}')" title="铺满本页剩下的空格">铺满</button>
+    </div>`;
+  }).join('') || '<div style="text-align:center;color:var(--gray-400);font-size:.8rem;padding:1rem">没有匹配的表格</div>';
+}
+
+function _dsqrRenderPage() {
+  const st = _dsqrSt; if (!st) return;
+  const tabs = document.getElementById('dsqrTabs');
+  if (tabs) tabs.innerHTML = st.pages.map((p, i) =>
+      `<button class="btn ${i === st.cur ? 'btn-green' : 'btn-outline'}" style="font-size:.74rem;padding:.25rem .7rem" onclick="_dsqrSt.cur=${i};_dsqrRenderPage()">第${i + 1}页 (${p.filter(Boolean).length}/10)</button>`).join('')
+    + `<button class="btn btn-outline" style="font-size:.74rem;padding:.25rem .6rem" onclick="_dsqrSt.pages.push(Array(10).fill(null));_dsqrSt.cur=_dsqrSt.pages.length-1;_dsqrRenderPage()" title="添加一页">＋加页</button>`
+    + `<button class="btn btn-outline" style="font-size:.74rem;padding:.25rem .6rem" onclick="_dsqrSt.pages[_dsqrSt.cur]=Array(10).fill(null);_dsqrRenderPage()">清空本页</button>`
+    + (st.pages.length > 1 ? `<button class="btn btn-outline" style="font-size:.74rem;padding:.25rem .6rem;color:#ef4444" onclick="_dsqrSt.pages.splice(_dsqrSt.cur,1);_dsqrSt.cur=Math.max(0,Math.min(_dsqrSt.cur,_dsqrSt.pages.length-1));_dsqrRenderPage()">删本页</button>` : '');
+  const wrap = document.getElementById('dsqrPageWrap'); if (!wrap) return;
+  const K = _DSQR_K, W = Math.round(8.5 * 96 * K), H = Math.round(11 * 96 * K);
+  const slots = st.pages[st.cur].map((dsId, si) => _dsqrSlotHtml(dsId, si)).join('');
+  wrap.innerHTML = `<div style="width:${W}px;height:${H}px;overflow:hidden;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;background:#fff;flex:0 0 auto">
+    <div style="width:8.5in;height:11in;transform:scale(${K});transform-origin:top left;background:#fff;padding:0.5in 0.15625in;display:grid;grid-template-columns:repeat(2,4in);grid-auto-rows:2in;column-gap:0.1875in">${slots}</div></div>`;
+  const total = st.pages.reduce((n, p) => n + p.filter(Boolean).length, 0);
+  const cnt = document.getElementById('dsqrCount');
+  if (cnt) cnt.textContent = `已排 ${total} 张标签 · 共 ${st.pages.length} 页`;
+  // 预览需要但还没生成的二维码，逐个补取（'' 占位表示取货中，避免重复请求）
+  st.pages.forEach(p => p.forEach(id => { if (id && !(id in st.qrs)) { st.qrs[id] = ''; _dsqrFetchQr(id); } }));
+}
+
+function _dsqrSlotHtml(dsId, si) {
+  const drop = `ondragover="event.preventDefault();this.style.outline='2.5px solid #16a34a'" ondragleave="this.style.outline=''" ondrop="_dsqrDrop(event,${si})"`;
+  if (!dsId) return `<div ${drop} style="width:4in;height:2in;border:1.5px dashed #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#b6c2d1;font-size:11pt">拖到这里</div>`;
+  const t = (_dsMyTemplates || []).find(x => String(x.docuseal_template_id) === String(dsId)) || { name: '#' + dsId, category: '' };
+  const nm = _dsQrSplitName(t.name, t.category), lang = _dsQrLabelLang(t.category);
+  const desc = _dsqrSt.descs[dsId] != null ? _dsqrSt.descs[dsId] : _dsQrLabelDefaultDesc(t.category, t.name);
+  const qr = _dsqrSt.qrs[dsId];
+  return `<div ${drop} draggable="true" ondragstart="event.dataTransfer.setData('text/plain','mov:${si}')" onclick="_dsqrEditDesc('${dsId}')" title="点击修改说明文字；拖动可以换位置"
+    style="position:relative;width:4in;height:2in;overflow:hidden;cursor:grab;background:#fff;outline:1px dashed #e5eaf1">
+    <button onclick="event.stopPropagation();_dsqrSt.pages[_dsqrSt.cur][${si}]=null;_dsqrRenderPage()" title="移除" style="position:absolute;top:3px;right:3px;z-index:2;border:none;background:#fee2e2;color:#b91c1c;border-radius:5px;font-size:9pt;width:22px;height:22px;cursor:pointer;line-height:1">✕</button>
+    <div style="width:100%;height:100%;padding:0.1in 0.14in 0.1in 0.12in;display:flex;align-items:center;gap:0.13in">
+      <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center">
+        <div style="border:1.5px solid #0f2b5b;border-radius:7px;padding:3px;background:#fff">${qr ? `<img src="${qr}" style="width:1.4in;height:1.4in;display:block">` : `<div style="width:1.4in;height:1.4in;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:8pt">二维码生成中…</div>`}</div>
+        <div style="font-size:5.5pt;font-weight:600;color:#64748b;margin-top:2.5px;letter-spacing:.4px;white-space:nowrap">扫码填表 · SCAN TO OPEN</div>
+      </div>
+      <div style="flex:1;min-width:0;max-height:100%;display:flex;flex-direction:column;justify-content:center;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:4px">
+          <span style="font-size:6.3pt;font-weight:800;letter-spacing:.6px;color:#0f2b5b;text-transform:uppercase;white-space:nowrap">Prime Anchor Workforce Inc</span>
+          <span style="flex:0 0 auto;font-size:5.3pt;font-weight:800;color:#0f2b5b;border:1px solid #0f2b5b;border-radius:999px;padding:.5px 4.5px;white-space:nowrap">${esc(lang)}</span></div>
+        <div style="height:1.6px;background:#0f2b5b;border-radius:2px;width:.38in;margin:2.5px 0 3.5px"></div>
+        ${nm.en ? `<div style="font-size:8pt;font-weight:800;line-height:1.2;color:#0f2b5b">${esc(nm.en)}</div>` : ''}
+        ${nm.zh ? `<div style="font-size:9.2pt;font-weight:800;line-height:1.25;color:#111827;margin-top:1px">${esc(nm.zh)}</div>` : ''}
+        <div style="font-size:6.8pt;line-height:1.42;color:#374151;margin-top:3px">${esc(desc)}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _dsqrDrop(ev, si) {
+  ev.preventDefault(); ev.currentTarget.style.outline = '';
+  const d = ev.dataTransfer.getData('text/plain') || '';
+  const st = _dsqrSt; if (!st) return;
+  const page = st.pages[st.cur];
+  if (d.indexOf('tpl:') === 0) page[si] = d.slice(4);
+  else if (d.indexOf('mov:') === 0) {
+    const from = parseInt(d.slice(4), 10);
+    if (from !== si) { const tmp = page[si]; page[si] = page[from]; page[from] = tmp; }
+  }
+  _dsqrRenderPage();
+}
+
+function _dsqrAppend(dsId) {
+  const st = _dsqrSt; if (!st) return;
+  let page = st.pages[st.cur];
+  let i = page.indexOf(null);
+  if (i === -1) {
+    st.pages.push(Array(10).fill(null)); st.cur = st.pages.length - 1;
+    page = st.pages[st.cur]; i = 0;
+    showToast('本页已满，自动加了一页', 'success');
+  }
+  page[i] = String(dsId);
+  _dsqrRenderPage();
+}
+
+function _dsqrFill(dsId) {
+  const st = _dsqrSt; if (!st) return;
+  const page = st.pages[st.cur];
+  for (let i = 0; i < 10; i++) if (!page[i]) page[i] = String(dsId);
+  _dsqrRenderPage();
+}
+
+async function _dsqrFetchQr(dsId) {
   try {
-    labels = await Promise.all(picked.map(async p => {
-      const r = await api('/admin/form-portal/qr?id=' + encodeURIComponent(p.dsId));
-      const t = (_dsMyTemplates || []).find(x => String(x.docuseal_template_id) === String(p.dsId));
-      return { ...p, qr: r.qr, url: r.url, name: r.name, category: t ? t.category : '' };
+    const r = await api('/admin/form-portal/qr?id=' + encodeURIComponent(dsId));
+    if (_dsqrSt) { _dsqrSt.qrs[dsId] = r.qr; _dsqrRenderPage(); }
+  } catch (e) {
+    if (_dsqrSt) delete _dsqrSt.qrs[dsId];
+    showToast('二维码生成失败：' + e.message, 'error');
+  }
+}
+
+function _dsqrEditDesc(dsId) {
+  const t = (_dsMyTemplates || []).find(x => String(x.docuseal_template_id) === String(dsId)) || { name: '#' + dsId, category: '' };
+  const cur = _dsqrSt.descs[dsId] != null ? _dsqrSt.descs[dsId] : _dsQrLabelDefaultDesc(t.category, t.name);
+  let ed = document.getElementById('dsqrDescEd'); if (ed) ed.remove();
+  ed = document.createElement('div');
+  ed.id = 'dsqrDescEd';
+  ed.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:720;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ed.onclick = e => { if (e.target === ed) ed.remove(); };
+  ed.innerHTML = `<div style="background:#fff;border-radius:10px;max-width:480px;width:100%;padding:1rem">
+    <div style="font-size:.9rem;font-weight:700;margin-bottom:.35rem">✏️ 修改说明文字</div>
+    <div style="font-size:.74rem;color:var(--gray-500);margin-bottom:.45rem">${esc(t.name)}（改完对纸上这个表格的所有标签生效）</div>
+    <textarea id="dsqrDescTa" rows="4" style="width:100%;padding:.5rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;line-height:1.45;resize:vertical">${esc(cur)}</textarea>
+    <div style="display:flex;justify-content:space-between;gap:.5rem;margin-top:.6rem">
+      <button class="btn btn-outline" onclick="delete _dsqrSt.descs['${dsId}'];document.getElementById('dsqrDescEd').remove();_dsqrRenderPage()">恢复默认</button>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-outline" onclick="document.getElementById('dsqrDescEd').remove()">取消</button>
+        <button class="btn btn-green" onclick="_dsqrSt.descs['${dsId}']=document.getElementById('dsqrDescTa').value.trim();document.getElementById('dsqrDescEd').remove();_dsqrRenderPage()">保存</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(ed);
+}
+
+async function dsPrintQrLabels() {
+  const st = _dsqrSt; if (!st) return;
+  const used = [];
+  st.pages.forEach(p => p.forEach(id => { if (id) used.push(id); }));
+  if (!used.length) { showToast('还没有放任何标签，先把左边的表格拖到纸上', 'error'); return; }
+  const btn = document.getElementById('dsqr-print-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ 生成中…'; }
+  const uniq = [...new Set(used)];
+  try {
+    await Promise.all(uniq.map(async id => {
+      if (st.qrs[id]) return;
+      const r = await api('/admin/form-portal/qr?id=' + encodeURIComponent(id));
+      st.qrs[id] = r.qr;
     }));
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = '🖨 生成标签'; }
+    if (btn) { btn.disabled = false; btn.textContent = '🖨 打印'; }
     showToast('生成二维码失败：' + e.message, 'error');
     return;
   }
-  const m = document.getElementById('dsQrLblModal'); if (m) m.remove();
+  if (btn) { btn.disabled = false; btn.textContent = '🖨 打印'; }
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const mkCell = l => {
-    const nm = _dsQrSplitName(l.name, l.category);
-    const lang = _dsQrLabelLang(l.category);
+  const mkCell = id => {
+    if (!id) return '<div class="cell"></div>';
+    const t = (_dsMyTemplates || []).find(x => String(x.docuseal_template_id) === String(id)) || { name: '#' + id, category: '' };
+    const nm = _dsQrSplitName(t.name, t.category), lang = _dsQrLabelLang(t.category);
+    const desc = st.descs[id] != null ? st.descs[id] : _dsQrLabelDefaultDesc(t.category, t.name);
     return `<div class="cell"><div class="inner">
-      <div class="qrbox"><div class="qrfr"><img src="${l.qr}" alt="QR"></div><div class="scan">扫码填表 · SCAN TO OPEN</div></div>
+      <div class="qrbox"><div class="qrfr"><img src="${st.qrs[id]}" alt="QR"></div><div class="scan">扫码填表 · SCAN TO OPEN</div></div>
       <div class="txt">
         <div class="cohd"><span class="co">Prime Anchor Workforce Inc</span><span class="langpill">${esca(lang)}</span></div>
         <div class="rule"></div>
         ${nm.en ? `<div class="ten">${esca(nm.en)}</div>` : ''}
         ${nm.zh ? `<div class="tzh">${esca(nm.zh)}</div>` : ''}
-        <div class="desc">${esca(l.desc)}</div>
+        <div class="desc">${esca(desc)}</div>
       </div>
     </div></div>`;
   };
-  // 按张数：每个表格印指定张数。铺满整页：把选中的按「张数」比例排成一轮，
-  // 循环重复直到填满 页数 × 10 个标签位。
-  const cells = [];
-  const base = [];
-  labels.forEach(l => { const c = mkCell(l); for (let i = 0; i < l.copies; i++) base.push(c); });
-  if (mode === 'fill') {
-    const total = fillPages * 10;
-    for (let i = 0; i < total; i++) cells.push(base[i % base.length]);
-  } else {
-    cells.push(...base);
-  }
-  const sheets = [];
-  for (let i = 0; i < cells.length; i += 10) sheets.push(`<div class="sheet">${cells.slice(i, i + 10).join('')}</div>`);
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>表格二维码标签 (${cells.length})</title>
+  const sheets = st.pages.filter(p => p.some(Boolean)).map(p => `<div class="sheet">${p.map(mkCell).join('')}</div>`);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>表格二维码标签 (${used.length})</title>
 <style>
   @page { size: letter; margin: 0; }
   * { box-sizing: border-box; }
@@ -13172,7 +13287,7 @@ async function dsPrintQrLabels() {
   }
   @media print { .hint { display: none; } .cell { outline: none; } }
 </style></head><body>
-  <p class="hint">Letter 纸 · 2 × 4″ 标签（Avery 5163 规格，每页 10 张）· 共 ${cells.length} 张<button onclick="window.print()">🖨 打印</button></p>
+  <p class="hint">Letter 纸 · 2 × 4″ 标签（Avery 5163 规格，每页 10 张）· 共 ${used.length} 张<button onclick="window.print()">🖨 打印</button></p>
   ${sheets.join('')}
   <script>
     // 文字太长时自动缩小字号，保证不溢出标签：先缩说明，再缩英文/中文标题
