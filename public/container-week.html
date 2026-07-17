@@ -69,6 +69,10 @@
   <div id="errBox" class="err" style="display:none"></div>
 
   <div id="formMain" style="display:none">
+    <div class="card" id="siteCard" style="display:none">
+      <label style="font-size:.9rem">📍 仓库地址 / Location / Ubicación</label>
+      <div id="siteBtns" style="display:flex;flex-direction:column;gap:.45rem;margin-top:.35rem"></div>
+    </div>
     <div class="card">
       <label id="t-periodLabel" style="font-size:.9rem">🗓️ 周期</label>
       <div class="row2" style="margin-top:.35rem">
@@ -203,7 +207,7 @@ function applyLang() {
   document.getElementById('t-okFor').textContent = L.okFor;
   document.getElementById('t-okAgain').textContent = L.okAgain;
   document.querySelectorAll('#rowsBody input.cnoInput').forEach(i => { i.placeholder = 'TCNU1234567'; });
-  if (_partnerName) document.getElementById('partnerName').textContent = L.sendingTo + _partnerName;
+  if (_partnerName) { try { _updateHeader(); } catch (e) { document.getElementById('partnerName').textContent = L.sendingTo + _partnerName; } }
   document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b.dataset.lang === _lang));
 }
 function setLang(lang) {
@@ -220,9 +224,13 @@ const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
 // Optional submitter name baked into a per-person QR (?who=NAME). When present the
 // 提交人 field is pre-filled and locked so this person's records are auto-tagged.
 const WHO = (params.get('who') || '').trim().slice(0, 100);
-// Optional work-site address baked into a per-address QR (?site=ADDR) for companies
-// with multiple locations. Shown in the header and saved with every row.
+// Work-site (warehouse address) saved with every row. For companies with more
+// than one location the sheet shows a required picker; a legacy ?site=ADDR QR
+// parameter pre-selects it. The QR link itself never changes per location.
 const SITE = (params.get('site') || '').trim().slice(0, 120);
+let _sites = [];      // [{state, address}] from /c-submit/info
+let _siteSel = SITE;  // chosen warehouse address for this sheet
+const _escH = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 let _partnerName = '';
 let _pw = '';
@@ -331,6 +339,36 @@ function openForm() {
   }
 }
 
+function _updateHeader() {
+  const st = _siteSite(_siteSel);
+  document.getElementById('partnerName').textContent =
+    I18N[_lang].sendingTo + _partnerName + (_siteSel ? ' · 📍 ' + (st ? st + ' · ' : '') + _siteSel : '');
+}
+function _siteSite(addr) {
+  const s = _sites.find(x => (x.address || x.state) === addr);
+  return s ? (s.state || '') : '';
+}
+// Warehouse picker — only shown when the company has more than one location.
+function renderSites() {
+  const card = document.getElementById('siteCard'), box = document.getElementById('siteBtns');
+  if (!card || !box || _sites.length < 2) return;
+  card.style.display = '';
+  box.innerHTML = _sites.map((s, i) => {
+    const val = s.address || s.state || '';
+    const on = _siteSel === val;
+    return `<button type="button" onclick="pickSite(${i})" style="text-align:left;padding:.6rem .7rem;border-radius:10px;border:2px solid ${on ? '#7c3aed' : '#cbd5e1'};background:${on ? '#f5f3ff' : '#fff'};color:#0f172a;cursor:pointer;font-size:.92rem;line-height:1.4">` +
+      (s.state ? `<b style="color:#6d28d9">📍 ${_escH(s.state)}</b>${s.address ? ' · ' : ''}` : '📍 ') +
+      `${_escH(s.address || '')}${on ? ' <b style="color:#7c3aed">✓</b>' : ''}</button>`;
+  }).join('');
+}
+function pickSite(i) {
+  const s = _sites[i];
+  if (!s) return;
+  _siteSel = s.address || s.state || '';
+  renderSites();
+  _updateHeader();
+}
+
 // If a name came from the QR (?who=), pre-fill and lock the 提交人 field.
 function applyWho() {
   if (!WHO) return;
@@ -360,7 +398,11 @@ async function init() {
     }
     const info = await r.json();
     _partnerName = info.partner_name || '';
-    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName + (SITE ? ' · 📍 ' + SITE : '');
+    _sites = Array.isArray(info.sites) ? info.sites : [];
+    // 单地址公司自动带上地址；多地址公司必须在页面里选一个
+    if (!_siteSel && _sites.length === 1) _siteSel = _sites[0].address || _sites[0].state || '';
+    _updateHeader();
+    renderSites();
     const saved = sessionStorage.getItem(_PW_KEY);
     if (saved) { _pw = saved; openForm(); } else { showGate(); }
   } catch (e) {
@@ -412,6 +454,11 @@ function removePhoto(idx) {
 async function submitForm() {
   const rows = collectRows();
   if (!rows.length) { showErr(I18N[_lang].errAtLeastOne); return; }
+  if (_sites.length > 1 && !_siteSel) {
+    showErr('请先选择仓库地址 / Please select the location / Seleccione la ubicación');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
   document.getElementById('errBox').style.display = 'none';
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
@@ -421,7 +468,7 @@ async function submitForm() {
     fd.append('password', _pw || '');
     fd.append('service_period', servicePeriodStr());
     fd.append('submitter_name', document.getElementById('submitterName').value.trim());
-    fd.append('site', SITE);
+    fd.append('site', _siteSel || '');
     fd.append('rows', JSON.stringify(rows));
     _photos.forEach(f => fd.append('photos', f));
     const resp = await fetch('/cw-submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });

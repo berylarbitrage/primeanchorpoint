@@ -15499,6 +15499,35 @@ function _partnerByCsubToken(token) {
   return db.prepare('SELECT id, name FROM partners WHERE container_submit_token=? AND active=1').get(token);
 }
 
+// Distinct per-state warehouse addresses of a partner (addresses JSON, falling
+// back to the legacy single address field). The weekly sheet uses this to ask
+// which location the sheet is for when a company has more than one.
+function _partnerSites(partnerId) {
+  const row = db.prepare('SELECT address, addresses FROM partners WHERE id=?').get(partnerId);
+  if (!row) return [];
+  const stFrom = s => { const m = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return m ? m[1] : ''; };
+  const out = [], seen = new Set();
+  const push = (state, address) => {
+    address = String(address || '').trim().slice(0, 120);
+    state = String(state || '').trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(state)) state = stFrom(address);
+    if (!address && !state) return;
+    const key = state || address.toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ state, address });
+  };
+  try {
+    const arr = JSON.parse(row.addresses || '[]');
+    if (Array.isArray(arr)) for (const a of arr) {
+      if (typeof a === 'string') push('', a);
+      else if (a && typeof a === 'object') push(a.state, a.address);
+    }
+  } catch (e) {}
+  if (!out.length && row.address) push('', row.address);
+  return out;
+}
+
 // GET /api/admin/partners/:id/container-qr — get or lazily create the public token and QR
 app.get('/api/admin/partners/:id/container-qr', requireAdmin, blockManager, async (req, res) => {
   try {
@@ -15551,7 +15580,7 @@ app.get(['/container-week', '/container-week.html'], (req, res) => {
 app.get('/c-submit/info', (req, res) => {
   const p = _partnerByCsubToken(String(req.query.t || ''));
   if (!p) return res.status(404).json({ error: '链接无效或已失效' });
-  res.json({ partner_id: p.id, partner_name: p.name, needs_password: true });
+  res.json({ partner_id: p.id, partner_name: p.name, needs_password: true, sites: _partnerSites(p.id) });
 });
 
 // POST /c-submit/verify?t=TOKEN — public: check the shared access code (gate the page)

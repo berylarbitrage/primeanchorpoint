@@ -13502,18 +13502,11 @@ async function _partnerQrPagesHtml(id, name, number, wdoc) {
         note: '工人扫码验证手机号后上传 W-9、Contract 及付款方式签字文件<br>Workers scan to upload W-9, Contract & payment forms',
       });
     }
-    // 多州公司：每页的周柜码带上该州仓库地址（?site=…），登记记录自动标地址
-    let wShort = weekShort, wImg = weekImg;
-    if (weekRaw && q && q.state && pageDefs.length > 1) {
-      const site = (partner ? _partnerAddrForState(partner, q.state) : '') || q.state;
-      wShort = await _qrShorten(`${weekRaw}?site=${encodeURIComponent(site)}`);
-      wImg = await _mkQrDataUrl(wShort, '#6D28D9');
-    }
-    if (wShort) {
+    if (weekShort) {
       rows.push({
-        title: '📅 周柜登记 / Weekly Containers' + (q && q.state && pageDefs.length > 1 ? `（📍 ${q.state}）` : ''),
-        img: wImg,
-        url: wShort,
+        title: '📅 周柜登记 / Weekly Containers',
+        img: weekImg,
+        url: weekShort,
         note: '工头扫码登记一周柜子 · 扫码后输入密码 <b>123456</b><br>Foreman logs weekly containers · password <b>123456</b>',
       });
     }
@@ -13671,19 +13664,10 @@ async function openPartnerQrLabelModal() {
     }
     if (wdoc) items.push({ type: 'wdoc', name, num, state: '', url: wdoc.url, img: wdoc.img });
     if (rc && rc.token) {
-      // 多地址公司：每个州一个周柜码（?site=该州仓库地址），登记时自动带上地址
-      const weekBase = `${location.origin}/cw/${rc.token}`;
-      const sts = _partnerStates(p);
-      if (sts.length > 1) {
-        for (const st of sts) {
-          const site = _partnerAddrForState(p, st) || st;
-          const url = await _qrShorten(`${weekBase}?site=${encodeURIComponent(site)}`);
-          items.push({ type: 'week', name, num, state: st, url, img: await _mkQrDataUrl(url, _QRL_TYPES.week.color) });
-        }
-      } else {
-        const url = await _qrShorten(weekBase);
-        items.push({ type: 'week', name, num, state: '', url, img: await _mkQrDataUrl(url, _QRL_TYPES.week.color) });
-      }
+      // 周柜码保持每公司一个（链接不变，旧标签持续有效）；多地址公司在
+      // 表格页面里选仓库地址，提交自动带 work_site
+      const url = await _qrShorten(`${location.origin}/cw/${rc.token}`);
+      items.push({ type: 'week', name, num, state: '', url, img: await _mkQrDataUrl(url, _QRL_TYPES.week.color) });
     }
   }
   if (!items.length) { showToast('二维码生成失败', 'error'); return; }
