@@ -26118,6 +26118,83 @@ app.post('/api/admin/form-portal/email-pdf', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/admin/form-portal/people?q=… — 按姓名/邮箱模糊搜索员工，用于发起签署时自动补全
+app.get('/api/admin/form-portal/people', requireAdmin, (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.json({ people: [] });
+  const like = `%${q.replace(/[%_]/g, ' ')}%`;
+  const rows = db.prepare(`SELECT id, first_name, last_name, email, phone, status FROM employees
+    WHERE first_name || ' ' || last_name LIKE ? OR last_name || ' ' || first_name LIKE ? OR email LIKE ?
+    ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END, last_name, first_name LIMIT 10`).all(like, like, like);
+  res.json({ people: rows.map(r => ({
+    id: r.id,
+    name: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
+    email: r.email || '',
+    phone: r.phone || '',
+    status: r.status || '',
+  })) });
+});
+
+// POST /api/admin/form-portal/send {id 或 t, name, email, phone?} — 通过 DocuSeal 给对方发签署邀请
+app.post('/api/admin/form-portal/send', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const name = String((req.body && req.body.name) || '').trim();
+  const email = String((req.body && req.body.email) || '').trim();
+  const phone = String((req.body && req.body.phone) || '').trim();
+  if (!name) return res.status(400).json({ error: '请填写签署人姓名' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: '邮箱格式不正确' });
+  const t = _formPortalResolveTemplate(req.body || {});
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  try {
+    // 用模板自身的第一个角色名，兼容手动上传、角色名不是 First Party 的模板
+    let role = 'First Party';
+    try {
+      const tr = await dsealApiCall('GET', `/api/templates/${t.templateId}`, null);
+      const rs = tr.data && tr.data.submitters;
+      if (Array.isArray(rs) && rs[0] && rs[0].name) role = rs[0].name;
+    } catch {}
+    const submitter = { role, name, email };
+    if (phone) { try { submitter.phone = formatPhoneE164(phone); } catch {} }
+    const r = await dsealApiCall('POST', '/api/submissions', {
+      template_id: parseInt(t.templateId, 10),
+      send_email: true,
+      submitters: [submitter],
+    });
+    const subs = (r.data && r.data.submitters) || (Array.isArray(r.data) ? r.data : []);
+    if (r.status >= 400 || !subs.length) {
+      return res.status(502).json({ error: `DocuSeal 创建签署失败 ${r.status}: ${JSON.stringify(r.data).slice(0, 200)}` });
+    }
+    const submissionId = (r.data && r.data.id) || subs[0].submission_id || subs[0].id || '';
+    res.json({ success: true, submission_id: String(submissionId) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/form-portal/submissions?id=… 或 ?t=… — 该模板的签署记录与状态
+app.get('/api/admin/form-portal/submissions', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const t = _formPortalResolveTemplate(req.query);
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  try {
+    const r = await dsealApiCall('GET', `/api/submissions?template_id=${encodeURIComponent(t.templateId)}&limit=100`, null);
+    if (r.status !== 200) return res.status(502).json({ error: `DocuSeal 返回 ${r.status}` });
+    const list = Array.isArray(r.data && r.data.data) ? r.data.data : (Array.isArray(r.data) ? r.data : []);
+    const submissions = list.filter(s => !s.archived_at).map(s => {
+      const subm = (s.submitters || [])[0] || {};
+      return {
+        id: s.id,
+        name: subm.name || '',
+        email: subm.email || '',
+        status: (s.status === 'completed' || subm.status === 'completed') ? 'completed'
+              : (subm.status === 'declined' ? 'declined' : 'pending'),
+        created_at: s.created_at || '',
+        completed_at: subm.completed_at || s.completed_at || '',
+        opened_at: subm.opened_at || '',
+      };
+    });
+    res.json({ submissions });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/form-portal/qr?id=… 或 ?t=… — 生成指向本入口页的二维码
 app.get('/api/admin/form-portal/qr', requireAdmin, async (req, res) => {
   const t = _formPortalResolveTemplate(req.query);
