@@ -12959,7 +12959,6 @@ function printDocChecklistLabels() {
 function _dsQrLabelDefaultDesc(category, name) {
   const cat = String(category || '');
   const base = cat.replace(/_(en|es)$/, '');
-  const lang = /_es$/.test(cat) ? '（英文+西语版）' : /_en$/.test(cat) ? '（纯英文版）' : '（中英文版）';
   const MAP = {
     ach_auth: '本人 ACH 直存授权：工资打到员工自己的银行账户。填写银行 Routing / Account 号码，签字确认账户归本人所有。',
     wire_auth: '本人电汇授权：工资以银行电汇 (Wire) 方式付到员工自己的账户。填写银行信息并签字确认。',
@@ -12992,7 +12991,44 @@ function _dsQrLabelDefaultDesc(category, name) {
   if (!d && TP[base]) d = `委托他人代收（${TP[base]}·Option B）：工资付到别人的账户 / 由他人代领。员工本人填写并签字，写清代收人姓名和账户信息。`;
   if (!d && OP[base]) d = `第三方代收人签字表（${OP[base]}）：由代收人本人签字，确认同意用自己的账户 / 身份代收该员工的工资。`;
   if (!d) d = '扫码打开表格入口，登录管理账号后即可发送或填写此表格。';
-  return d + ' ' + lang;
+  return d;
+}
+// 语言版本徽章文字（印在标签右上角小圆角框里）
+function _dsQrLabelLang(category) {
+  const cat = String(category || '');
+  return /_es$/.test(cat) ? 'EN+ES' : /_en$/.test(cat) ? 'EN' : '中英';
+}
+// 各分类的标准中文表格名（模板名里没有中文时用它补上中文行）
+const _DSQR_ZH_TITLES = {
+  ach_auth: 'ACH 直接存款授权表', wire_auth: '电汇付款授权及银行账户确认表', zelle_auth: 'Zelle 收款授权及账户确认表',
+  check_instruction: '支票付款当面签收授权表', cash_receipt: '现金签收表', third_party_pay: '第三方支付平台收款授权表',
+  contractor_invoice: '员工工时账单 Invoice', invoice_approval: '发票审批表',
+  zelle_tp_auth: '委托他人代收授权表（Zelle）', ach_tp_auth: '委托他人代收授权表（ACH）', wire_tp_auth: '委托他人代收授权表（电汇）',
+  check_tp_auth: '委托他人代收授权表（支票）', cash_tp_auth: '委托他人代收授权表（现金）', paypal_tp_auth: '委托他人代收授权表（PayPal 等）',
+  zelle_op_auth: '第三方代收人签字表（Zelle）', ach_op_auth: '第三方代收人签字表（ACH）', wire_op_auth: '第三方代收人签字表（电汇）',
+  check_op_auth: '第三方代收人签字表（支票）', cash_op_auth: '第三方代收人签字表（现金）', paypal_op_auth: '第三方代收人签字表（PayPal 等）',
+  w9: 'W-9 税表', w9_individual: 'W-9 税表（个人）', w4: 'W-4 联邦预扣税表', i9: 'I-9 就业资格核验表',
+  w7: 'W-7 ITIN 申请表', w8ben: 'W-8BEN 外国个人税表', w8bene: 'W-8BEN-E 外国实体税表', form8233: '8233 免预扣税申请表',
+  il_w4: 'IL-W4 伊利诺伊州预扣税表', company_contract: '公司合作合同', worker_1099: '1099 用工协议', worker_w2: 'W-2 雇佣合同',
+};
+// 把模板名拆成「英文一行 + 中文一行」。规则：去掉 (ZH+EN)/(EN)/(EN+ES) 尾巴，
+// 按 “/” 分段，含汉字的段归中文行；没有 “/” 但中英混排时，从第一个汉字处切开；
+// 名字里完全没有中文时，用 _DSQR_ZH_TITLES 按分类补中文。
+function _dsQrSplitName(name, category) {
+  let s = String(name || '').replace(/[（(]\s*(ZH\s*\+\s*EN|EN\s*\+\s*ES|EN|ES|ZH)\s*[）)]/gi, '').trim();
+  const hasCjk = t => /[一-鿿]/.test(t);
+  let en = [], zh = [];
+  if (s.includes('/')) {
+    s.split('/').map(p => p.trim()).filter(Boolean).forEach(p => (hasCjk(p) ? zh : en).push(p));
+    en = en.join(' / '); zh = zh.join(' ');
+  } else if (hasCjk(s)) {
+    const i = s.search(/[一-鿿]/);
+    en = s.slice(0, i).replace(/[\s·—–\-]+$/, '').trim();
+    zh = s.slice(i).trim();
+  } else { en = s; zh = ''; }
+  if (!zh) zh = _DSQR_ZH_TITLES[String(category || '').replace(/_(en|es)$/, '')] || '';
+  if (!en && zh) { en = ''; }
+  return { en, zh };
 }
 function dsOpenQrLabelPicker() {
   const tpls = (_dsMyTemplates || []).filter(t => !t.hidden);
@@ -13046,7 +13082,8 @@ async function dsPrintQrLabels() {
   try {
     labels = await Promise.all(picked.map(async p => {
       const r = await api('/admin/form-portal/qr?id=' + encodeURIComponent(p.dsId));
-      return { ...p, qr: r.qr, url: r.url, name: r.name };
+      const t = (_dsMyTemplates || []).find(x => String(x.docuseal_template_id) === String(p.dsId));
+      return { ...p, qr: r.qr, url: r.url, name: r.name, category: t ? t.category : '' };
     }));
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '🖨 生成标签'; }
@@ -13057,11 +13094,15 @@ async function dsPrintQrLabels() {
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const cells = [];
   labels.forEach(l => {
+    const nm = _dsQrSplitName(l.name, l.category);
+    const lang = _dsQrLabelLang(l.category);
     const cell = `<div class="cell"><div class="inner">
-      <div class="qrbox"><img src="${l.qr}" alt="QR"><div class="scan">扫码填表 · Scan to open</div></div>
+      <div class="qrbox"><div class="qrfr"><img src="${l.qr}" alt="QR"></div><div class="scan">扫码填表 · SCAN TO OPEN</div></div>
       <div class="txt">
-        <div class="co">PRIME ANCHOR POINT</div>
-        <div class="ttl">${esca(l.name)}</div>
+        <div class="cohd"><span class="co">Prime Anchor Workforce Inc</span><span class="langpill">${esca(lang)}</span></div>
+        <div class="rule"></div>
+        ${nm.en ? `<div class="ten">${esca(nm.en)}</div>` : ''}
+        ${nm.zh ? `<div class="tzh">${esca(nm.zh)}</div>` : ''}
         <div class="desc">${esca(l.desc)}</div>
       </div>
     </div></div>`;
@@ -13087,14 +13128,19 @@ async function dsPrintQrLabels() {
   }
   .sheet:last-child { page-break-after: auto; }
   .cell { width: 4in; height: 2in; overflow: hidden; page-break-inside: avoid; }
-  .inner { width: 100%; height: 100%; padding: 0.1in 0.12in; display: flex; align-items: center; gap: 0.11in; }
-  .qrbox { flex: 0 0 auto; width: 1.55in; display: flex; flex-direction: column; align-items: center; }
-  .qrbox img { width: 1.5in; height: 1.5in; }
-  .scan { font-size: 5.5pt; color: #475569; margin-top: 2px; white-space: nowrap; }
+  .inner { width: 100%; height: 100%; padding: 0.1in 0.14in 0.1in 0.12in; display: flex; align-items: center; gap: 0.13in; }
+  .qrbox { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; }
+  .qrfr { border: 1.5px solid #0f2b5b; border-radius: 7px; padding: 3px; background: #fff; }
+  .qrfr img { width: 1.4in; height: 1.4in; display: block; }
+  .scan { font-size: 5.5pt; font-weight: 600; color: #64748b; margin-top: 2.5px; letter-spacing: .4px; white-space: nowrap; }
   .txt { flex: 1; min-width: 0; max-height: 100%; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
-  .co { font-size: 6pt; font-weight: 800; letter-spacing: 1.2px; color: #475569; }
-  .ttl { font-size: 8.5pt; font-weight: 800; line-height: 1.22; margin: 2px 0 3px; }
-  .desc { font-size: 7pt; line-height: 1.38; color: #111; }
+  .cohd { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .co { font-size: 6.3pt; font-weight: 800; letter-spacing: .6px; color: #0f2b5b; text-transform: uppercase; white-space: nowrap; }
+  .langpill { flex: 0 0 auto; font-size: 5.3pt; font-weight: 800; color: #0f2b5b; border: 1px solid #0f2b5b; border-radius: 999px; padding: .5px 4.5px; line-height: 1.5; white-space: nowrap; }
+  .rule { height: 1.6px; background: #0f2b5b; border-radius: 2px; width: .38in; margin: 2.5px 0 3.5px; }
+  .ten { font-size: 8pt; font-weight: 800; line-height: 1.2; color: #0f2b5b; }
+  .tzh { font-size: 9.2pt; font-weight: 800; line-height: 1.25; color: #111827; margin-top: 1px; }
+  .desc { font-size: 6.8pt; line-height: 1.42; color: #374151; margin-top: 3px; }
   @media screen {
     body { background: #64748b; padding: 20px; }
     .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
@@ -13107,15 +13153,16 @@ async function dsPrintQrLabels() {
   <p class="hint">Letter 纸 · 2 × 4″ 标签（Avery 5163 规格，每页 10 张）· 共 ${cells.length} 张<button onclick="window.print()">🖨 打印</button></p>
   ${sheets.join('')}
   <script>
-    // 说明文字太长时自动缩小字号，保证不溢出标签
+    // 文字太长时自动缩小字号，保证不溢出标签：先缩说明，再缩英文/中文标题
     window.addEventListener('load', function(){
       document.querySelectorAll('.txt').forEach(function(el){
-        var t = el.querySelector('.ttl'), d = el.querySelector('.desc');
-        var ts = 8.5, ds = 7;
+        var te = el.querySelector('.ten'), tz = el.querySelector('.tzh'), d = el.querySelector('.desc');
+        var tes = 8, tzs = 9.2, ds = 6.8;
         var guard = 0;
-        while (el.scrollHeight > el.clientHeight && guard++ < 20) {
-          if (ds > 5.5) { ds -= 0.25; d.style.fontSize = ds + 'pt'; }
-          else if (ts > 7) { ts -= 0.25; t.style.fontSize = ts + 'pt'; }
+        while (el.scrollHeight > el.clientHeight && guard++ < 30) {
+          if (ds > 5.4) { ds -= 0.2; d.style.fontSize = ds + 'pt'; }
+          else if (tz && tzs > 7.4) { tzs -= 0.2; tz.style.fontSize = tzs + 'pt'; }
+          else if (te && tes > 6.6) { tes -= 0.2; te.style.fontSize = tes + 'pt'; }
           else break;
         }
       });
