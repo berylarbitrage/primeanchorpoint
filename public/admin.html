@@ -1111,6 +1111,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="openPendingQrModal()">📱 待确认记录二维码</button>
       <button class="btn btn-outline" id="partnerBatchLabelBtn" onclick="printSelectedPartnerLabels()" title="批量打印所选公司的标签（Letter 纸，1 × 2-5/8″，每页 30 个）">🏷 批量打印标签 (0)</button>
       <button class="btn btn-outline" id="partnerBatchQrBtn" onclick="printSelectedPartnerQrSheets()" title="批量打印所选公司的信息采集二维码（每公司每州一页，三行：招工申请/员工文件/周柜登记）">🖨 批量打印二维码 (0)</button>
+      <button class="btn btn-outline" id="partnerQrLabelBtn" onclick="openPartnerQrLabelModal()" title="把所选公司的二维码打到 2 × 4″ 标签纸上（每页 10 个）：先选码，再点格子指定贴纸位置，用过的空位可跳过">🏷 二维码标签 (0)</button>
       <button class="btn btn-outline" onclick="openDocChecklistLabelModal()" title="打印带勾选框的员工文件清单标签（Avery 5160，1 × 2-5/8″，每页 30 个）">📋 文件清单标签</button>
       <button class="btn" onclick="openPartnerModal()">+ 新增公司</button>
     </div>
@@ -12594,6 +12595,8 @@ function onPartnerSelectChange() {
   if (btn) { btn.textContent = `🏷 批量打印标签 (${checked.length})`; btn.disabled = checked.length === 0; btn.style.opacity = checked.length === 0 ? '.5' : '1'; }
   const qrBtn = document.getElementById('partnerBatchQrBtn');
   if (qrBtn) { qrBtn.textContent = `🖨 批量打印二维码 (${checked.length})`; qrBtn.disabled = checked.length === 0; qrBtn.style.opacity = checked.length === 0 ? '.5' : '1'; }
+  const qrlBtn = document.getElementById('partnerQrLabelBtn');
+  if (qrlBtn) { qrlBtn.textContent = `🏷 二维码标签 (${checked.length})`; qrlBtn.disabled = checked.length === 0; qrlBtn.style.opacity = checked.length === 0 ? '.5' : '1'; }
 }
 function printSelectedPartnerLabels() {
   const ids = _selectedPartnerCheckboxes().filter(x => x.checked).map(x => parseInt(x.value, 10));
@@ -13494,6 +13497,177 @@ async function printSelectedPartnerQrSheets() {
   _openQrPrintWindow(`信息采集二维码 (${items.length} 家公司)`,
     `信息采集二维码 · ${items.length} 家公司 · 共 ${pageCount} 页（每公司每州一页）`, html);
 }
+
+// ── 二维码标签（L LIKED / Avery 5163，2 × 4″，每页 10 个）──
+// 把所选公司的二维码打到标签纸上：弹窗左边是可用的码（每公司：招工申请
+// 分州 / 员工文件上传 / 周柜登记），右边是 2 × 5 的标签纸示意图 —— 点左边
+// 选码、点右边格子放置；撕掉用过的位置留空即可，打印时空位不出内容。
+const _QRL_TYPES = {
+  apply: { icon: '🪪', zh: '招工申请', en: 'Job Application', color: '#3730A3', nzh: '应聘者扫码填写资料并上传证件', nen: 'Applicants scan to apply' },
+  wdoc:  { icon: '📎', zh: '员工文件上传', en: 'Worker Documents', color: '#0F2B5B', nzh: '扫码上传 W-9 / Contract / 付款表', nen: 'Scan to upload documents' },
+  week:  { icon: '📅', zh: '周柜登记', en: 'Weekly Containers', color: '#6D28D9', nzh: '工头扫码登记 · 密码 123456', nen: 'Foreman weekly log-in' }
+};
+let _qrlItems = [], _qrlSlots = [], _qrlSel = 0;
+async function openPartnerQrLabelModal() {
+  const ids = _selectedPartnerCheckboxes().filter(x => x.checked).map(x => parseInt(x.value, 10));
+  const partners = ids.map(pid => allPartners.find(p => p.id === pid)).filter(p => p && !p.abolished);
+  if (!partners.length) { alert('请先勾选要打标签的公司'); return; }
+  showToast('正在生成二维码…');
+  await _loadQRLib();
+  const wdoc = await _wdocQrShared();
+  const items = [];
+  for (const p of partners) {
+    const name = p.name || '—', num = p.company_number || '';
+    const [ra, rc] = await Promise.all([
+      api(`/admin/partners/${p.id}/applicant-qr`).catch(() => null),
+      api(`/admin/partners/${p.id}/container-qr`).catch(() => null),
+    ]);
+    let applyQrs = Array.isArray(ra && ra.qrs) ? ra.qrs.filter(q => q && q.url) : [];
+    if (!applyQrs.length && ra && ra.url) applyQrs = [{ state: '', url: ra.url }];
+    for (const q of applyQrs) {
+      const url = await _qrShorten(q.url);
+      items.push({ type: 'apply', name, num, state: q.state || '', url, img: await _mkQrDataUrl(url, _QRL_TYPES.apply.color) });
+    }
+    if (wdoc) items.push({ type: 'wdoc', name, num, state: '', url: wdoc.url, img: wdoc.img });
+    if (rc && rc.token) {
+      const url = await _qrShorten(`${location.origin}/cw/${rc.token}`);
+      items.push({ type: 'week', name, num, state: '', url, img: await _mkQrDataUrl(url, _QRL_TYPES.week.color) });
+    }
+  }
+  if (!items.length) { showToast('二维码生成失败', 'error'); return; }
+  _qrlItems = items; _qrlSlots = Array(10).fill(null); _qrlSel = 0;
+  let ov = document.getElementById('qrlModal'); if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'qrlModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:700;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:860px;width:100%;max-height:92vh;overflow:auto;padding:1.1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+      <h3 style="margin:0;font-size:1.05rem">🏷 二维码标签 <span style="font-weight:400;font-size:.8rem;color:var(--gray-500)">2 × 4″ · 每页 10 个（L LIKED / Avery 5163）</span></h3>
+      <button class="btn btn-outline" onclick="document.getElementById('qrlModal').remove()">✕ 关闭</button></div>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.7rem">① 点左边选一个码 → ② 点右边格子放到对应贴纸位置（再点一次清除）。撕掉用过的位置<b>留空</b>就行，打印时不会出内容。</div>
+    <div style="display:grid;grid-template-columns:300px 1fr;gap:1rem;align-items:start">
+      <div id="qrlPalette" style="display:flex;flex-direction:column;gap:.4rem;max-height:60vh;overflow:auto"></div>
+      <div>
+        <div id="qrlSheet" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#f8fafc;border:1.5px solid var(--gray-200);border-radius:10px;padding:10px"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.7rem;gap:.5rem;flex-wrap:wrap">
+          <div style="display:flex;gap:.5rem">
+            <button class="btn btn-outline" onclick="_qrlFillRest()" title="用当前选中的码填满所有空位">⤵ 填满剩余</button>
+            <button class="btn btn-outline" onclick="_qrlClear()">清空</button>
+          </div>
+          <button class="btn btn-green" id="qrlPrintBtn" onclick="_qrlPrint()">🖨 打印</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  _qrlRender();
+}
+function _qrlRender() {
+  const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const pal = document.getElementById('qrlPalette'), sheet = document.getElementById('qrlSheet');
+  if (!pal || !sheet) return;
+  pal.innerHTML = _qrlItems.map((it, i) => {
+    const T = _QRL_TYPES[it.type], on = i === _qrlSel;
+    const used = _qrlSlots.filter(s => s === i).length;
+    return `<div onclick="_qrlSel=${i};_qrlRender()" style="display:flex;align-items:center;gap:.5rem;padding:.4rem .55rem;border:2px solid ${on ? T.color : 'var(--gray-200)'};border-radius:8px;cursor:pointer;background:${on ? '#f8fafc' : '#fff'}">
+      <img src="${it.img}" style="width:34px;height:34px;flex:0 0 auto">
+      <div style="min-width:0;flex:1">
+        <div style="font-size:.8rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esca(it.name)}${it.state ? ` <span style="color:${T.color}">📍${esca(it.state)}</span>` : ''}</div>
+        <div style="font-size:.72rem;font-weight:600;color:${T.color}">${T.icon} ${T.zh} / ${T.en}</div>
+      </div>
+      ${used ? `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;background:${T.color};color:#fff;border-radius:99px;padding:1px 7px">${used}</span>` : ''}
+    </div>`;
+  }).join('');
+  sheet.innerHTML = _qrlSlots.map((s, k) => {
+    const it = s == null ? null : _qrlItems[s];
+    const T = it ? _QRL_TYPES[it.type] : null;
+    return `<div onclick="_qrlSlotClick(${k})" style="height:64px;border:1.5px ${it ? 'solid ' + T.color : 'dashed var(--gray-300)'};border-radius:8px;background:#fff;cursor:pointer;display:flex;align-items:center;gap:.45rem;padding:0 .5rem;overflow:hidden">
+      ${it ? `<img src="${it.img}" style="width:46px;height:46px;flex:0 0 auto">
+        <div style="min-width:0">
+          <div style="font-size:.72rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esca(it.name)}${it.state ? ` 📍${esca(it.state)}` : ''}</div>
+          <div style="font-size:.68rem;font-weight:600;color:${T.color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${T.icon} ${T.zh}</div>
+        </div>`
+      : `<span style="margin:0 auto;font-size:.72rem;color:var(--gray-400)">#${k + 1} 空</span>`}
+    </div>`;
+  }).join('');
+  const pb = document.getElementById('qrlPrintBtn');
+  const n = _qrlSlots.filter(s => s != null).length;
+  if (pb) { pb.textContent = `🖨 打印（${n} 个标签）`; pb.disabled = n === 0; pb.style.opacity = n === 0 ? '.5' : '1'; }
+}
+function _qrlSlotClick(k) {
+  _qrlSlots[k] = _qrlSlots[k] == null ? _qrlSel : null;
+  _qrlRender();
+}
+function _qrlFillRest() {
+  _qrlSlots = _qrlSlots.map(s => s == null ? _qrlSel : s);
+  _qrlRender();
+}
+function _qrlClear() { _qrlSlots = Array(10).fill(null); _qrlRender(); }
+function _qrlPrint() {
+  const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const cells = _qrlSlots.map(s => {
+    const it = s == null ? null : _qrlItems[s];
+    if (!it) return '<div class="cell"></div>';
+    const T = _QRL_TYPES[it.type];
+    return `<div class="cell"><div class="inner" style="border-left-color:${T.color}">
+      <img class="qr" src="${it.img}">
+      <div class="txt">
+        <div class="co">${esca(it.name)}${it.state ? ` <span class="st" style="color:${T.color}">📍 ${esca(it.state)}</span>` : ''}</div>
+        ${it.num ? `<div class="num">${esca(it.num)}</div>` : ''}
+        <div class="ti" style="color:${T.color}">${T.icon} ${T.zh}</div>
+        <div class="tien" style="color:${T.color}">${T.en}</div>
+        <div class="nt">${T.nzh}</div>
+        <div class="nten">${T.nen}</div>
+        <div class="cu">${esca(String(it.url).replace(/^https?:\/\/(www\.)?/, ''))}</div>
+      </div>
+    </div></div>`;
+  }).join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>二维码标签</title>
+<style>
+  @page { size: letter; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #0f172a; }
+  .sheet {
+    width: 8.5in; height: 11in;
+    padding: 0.5in 0.15625in;            /* Avery 5163: 上下 0.5in，左右 5/32in */
+    display: grid;
+    grid-template-columns: repeat(2, 4in);
+    grid-auto-rows: 2in;
+    column-gap: 0.1875in;                /* 列间距 3/16in */
+    row-gap: 0;
+  }
+  .cell { width: 4in; height: 2in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  .inner { width: 100%; height: 100%; padding: 0.12in 0.16in 0.12in 0.20in; display: flex; align-items: center; gap: 0.15in; border-left: 0.07in solid #3730A3; }
+  .qr { width: 1.55in; height: 1.55in; flex: 0 0 auto; }
+  .txt { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+  .co { font-size: 11.5pt; font-weight: 800; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+  .st { font-size: 9pt; font-weight: 800; white-space: nowrap; }
+  .num { font-family: 'Courier New', monospace; font-size: 8.5pt; font-weight: 700; color: #475569; letter-spacing: .3px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ti { font-size: 10.5pt; font-weight: 800; margin-top: 0.055in; line-height: 1.2; }
+  .tien { font-size: 9pt; font-weight: 700; line-height: 1.2; margin-top: 1px; }
+  .nt, .nten { font-size: 7pt; color: #475569; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nt { margin-top: 0.04in; }
+  .cu { font-family: 'Courier New', monospace; font-size: 6.5pt; color: #334155; margin-top: 0.045in; white-space: nowrap; overflow: hidden; }
+  @media screen {
+    body { background: #64748b; padding: 20px; }
+    .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
+    .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
+    .sheet { background: #fff; margin: 0 auto; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
+    .cell { outline: 1px dashed #cbd5e1; border-radius: 10px; }
+  }
+  @media print { .hint { display: none; } .cell { outline: none; } }
+</style></head><body>
+  <p class="hint">2 × 4″ 标签纸（每页 10 个）· 虚线框仅为屏幕参考，打印无 <button onclick="window.print()">🖨 打印</button></p>
+  <div class="sheet">${cells}</div>
+  <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 250); });<\/script>
+</body></html>`;
+  const w = window.open('', '_blank', 'width=920,height=760');
+  if (!w) { alert('请允许弹出窗口以打印标签'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
 function editPartnerById(id) { const p=allPartners.find(x=>x.id===id); if(p) openPartnerModal(p); }
 
 async function showPartnerById(id) {
