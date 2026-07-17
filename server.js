@@ -5541,23 +5541,26 @@ function _buildACHAuthForm(lang) {
     ? 'I confirm I am authorizing the above-named third party to receive all current and future payments on my behalf on an ongoing basis, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir todos los pagos actuales y futuros en mi nombre de forma continua y asumo plena responsabilidad.'
     : 'I confirm I am authorizing the above-named third party to receive all current and future payments on my behalf on an ongoing basis, and I take full responsibility for this arrangement.';
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:3px solid #1d4ed8;padding-bottom:12px;margin-bottom:14px">
-  <div style="font-size:12.5pt;font-weight:900;letter-spacing:.4px">${formTitle}</div>
+  // 版式收紧保证一页：公司核验区已移除，字号/间距压缩；西语版文本最长再小一档
+  const Z = es ? { base: '8pt', lh: '1.17', pad: '6px 12px', intro: '7.2pt', auth: '6.9pt', sig: '32px', date: '18px' }
+             : { base: '8.5pt', lh: '1.3', pad: '10px 12px', intro: '7.5pt', auth: '7.3pt', sig: '38px', date: '20px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:3px solid #1d4ed8;padding-bottom:6px;margin-bottom:8px">
+  <div style="font-size:11.5pt;font-weight:900;letter-spacing:.4px">${formTitle}</div>
   <div style="font-size:8pt;color:#6b7280;margin-top:4px">${subtitle}</div>
 </div>
 
-<div style="font-size:8pt;color:#374151;background:#f0f6ff;border-left:3px solid #93c5fd;padding:8px 12px;margin-bottom:16px;border-radius:0 4px 4px 0;line-height:1.6">${introPara}</div>
+<div style="font-size:${Z.intro};color:#374151;background:#f0f6ff;border-left:3px solid #93c5fd;padding:6px 10px;margin-bottom:8px;border-radius:0 4px 4px 0;line-height:1.45">${introPara}</div>
 
 <!-- 1. PAYEE INFORMATION -->
-<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 7px;color:#1e3a8a">${s1}</div>
-<table style="width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:6px">
+<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 5px;color:#1e3a8a">${s1}</div>
+<table style="width:100%;border-collapse:collapse;margin-bottom:8px;border:1px solid #e2e8f0;border-radius:6px">
   <tr>
-    <td style="padding:8px 10px;width:58%;border-right:1px solid #e2e8f0">
+    <td style="padding:5px 8px;width:58%;border-right:1px solid #e2e8f0">
       <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lPayeeName}</div>
       <text-field name="ach_name" role="First Party" required="true" style="${w}"></text-field>
     </td>
-    <td style="padding:8px 10px">
+    <td style="padding:5px 8px">
       <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lEmail}</div>
       <text-field name="ach_email" role="First Party" style="${w}"></text-field>
     </td>
@@ -5565,60 +5568,60 @@ function _buildACHAuthForm(lang) {
 </table>
 
 <!-- 2. PAYMENT RECIPIENT -->
-<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 10px;color:#1e3a8a">${s3}</div>
+<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 6px;color:#1e3a8a">${s3}</div>
 
 <!--A_ONLY_S--><!-- Zone A: Self / Direct -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:6px 10px;cursor:pointer;margin:0">
     <checkbox-field name="ach_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
       <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
     </div>
   </label>
-  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
-    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;overflow:hidden;margin-bottom:10px">
-      <div style="font-size:7.5pt;font-weight:700;color:#1e40af;padding:5px 10px;background:#dbeafe;border-bottom:1px solid #bfdbfe">${s2}</div>
+  <div style="background:#eff6ff;padding:8px 10px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;overflow:hidden;margin-bottom:6px">
+      <div style="font-size:7.5pt;font-weight:700;color:#1e40af;padding:3px 8px;background:#dbeafe;border-bottom:1px solid #bfdbfe">${s2}</div>
       <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
         <tr>
-          <td style="padding:7px 10px;width:50%;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
+          <td style="padding:4px 8px;width:50%;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lBankName}</div>
             <text-field name="ach_bank_name" role="First Party" style="${w}"></text-field>
           </td>
-          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0">
+          <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:4px">${acctTypeLabel}</div>
             <label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px"><checkbox-field name="ach_acct_checking" role="First Party" style="width:13px;height:13px"></checkbox-field><span style="font-size:8pt">${acctChecking}</span></label>
             <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="ach_acct_savings" role="First Party" style="width:13px;height:13px"></checkbox-field><span style="font-size:8pt">${acctSavings}</span></label>
           </td>
         </tr>
         <tr>
-          <td style="padding:7px 10px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
+          <td style="padding:4px 8px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lRouting}</div>
             <text-field name="ach_routing" role="First Party" style="${f}width:100%" placeholder="9 digits"></text-field>
           </td>
-          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0">
+          <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lAccount}</div>
             <text-field name="ach_account" role="First Party" style="${f}width:100%"></text-field>
           </td>
         </tr>
         <tr>
-          <td colspan="2" style="padding:7px 10px">
+          <td colspan="2" style="padding:4px 8px">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lConfirmAccount}</div>
             <text-field name="ach_account_confirm" role="First Party" style="${f}width:100%" placeholder="${confirmPlaceholder}"></text-field>
           </td>
         </tr>
       </table>
-      <div style="font-size:7pt;color:#6b7280;font-style:italic;padding:5px 10px;border-top:1px solid #e2e8f0">${ownershipNote}</div>
+      <div style="font-size:7pt;color:#6b7280;font-style:italic;padding:3px 8px;border-top:1px solid #e2e8f0">${ownershipNote}</div>
     </div>
-    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;padding:6px 9px">
       <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sPayeeSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="ach_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <text-field name="ach_printed_name" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="ach_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="ach_sig1" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="ach_date1" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+      <date-field name="ach_date1" role="First Party" style="width:100%;height:${Z.date};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:4px 6px">
         <checkbox-field name="ach_payee_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
       </label>
@@ -5627,16 +5630,16 @@ function _buildACHAuthForm(lang) {
 </div>
 
 <!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B: Third Party -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:6px 10px;cursor:pointer;margin:0">
     <checkbox-field name="ach_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
       <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
     </div>
   </label>
-  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
+  <div style="background:#f0fdf4;padding:8px 10px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px;margin-bottom:6px">
       <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
       <table style="width:100%;border-collapse:collapse">
         <tr>
@@ -5656,17 +5659,17 @@ function _buildACHAuthForm(lang) {
           </td>
         </tr>
       </table>
-      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+      <div style="margin-top:5px;font-size:7pt;color:#374151;line-height:1.45;border-top:1px solid #a7f3d0;padding-top:4px;font-style:italic">${tpAuth}</div>
     </div>
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px">
       <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="ach_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <text-field name="ach_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="ach_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="ach_auth_sig" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="ach_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+      <date-field name="ach_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:4px 6px">
         <checkbox-field name="ach_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
       </label>
@@ -5675,30 +5678,16 @@ function _buildACHAuthForm(lang) {
 </div>
 
 <!--B_ONLY_E--><!-- 3. AUTHORIZATION -->
-<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:10px 13px;margin-bottom:14px">
+<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:7px 10px;margin-bottom:8px">
   <div style="font-size:9pt;font-weight:800;color:#92400e;margin-bottom:6px">${s4}</div>
-  <div style="font-size:7.5pt;color:#374151;line-height:1.7">
-    <div style="margin-bottom:4px">① ${auth1}</div>
-    <div style="margin-bottom:4px">② ${auth2}</div>
+  <div style="font-size:${Z.auth};color:#374151;line-height:1.5">
+    <div style="margin-bottom:2px">① ${auth1}</div>
+    <div style="margin-bottom:2px">② ${auth2}</div>
     <div>③ ${auth3}</div>
   </div>
 </div>
 
-<!-- COMPANY VERIFICATION -->
-<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:2px">
-  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
-  <text-field name="ach_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="ach_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="ach_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="ach_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
-  </label>
-</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-07-17 CDT</div>
 </div>`;
 }
 function generateACHAuthHtmlTemplate() { return _zoneVariant(_buildACHAuthForm('zh-en'), 'a'); }
@@ -12139,7 +12128,13 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
         const companySignerName = getCompanySignerName();
         const submitters = [submitter1];
         if (companyEmail) {
-          submitters.push({ role: 'Second Party', name: companySignerName, email: companyEmail });
+          // 模板里确实有 Second Party 角色才追加公司签署人（公司核验区已从 ACH 模板移除）
+          let hasSecondParty = false;
+          try {
+            const tr = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
+            hasSecondParty = Array.isArray(tr.data?.submitters) && tr.data.submitters.some(s => s && s.name === 'Second Party');
+          } catch {}
+          if (hasSecondParty) submitters.push({ role: 'Second Party', name: companySignerName, email: companyEmail });
         }
         const subRes = await dsealApiCall('POST', '/api/submissions', {
           template_id: parseInt(templateId),
@@ -14980,6 +14975,9 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
 // Send the company a notification email for a new applicant submission.
 // Includes all form fields + attaches the uploaded SSN/EAD photos.
 const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@primeanchorpoint.com';
+// 每封新申请通知额外发送一份给以下收件人（逗号分隔可配多个）
+const APPLICATION_NOTIFY_CC = (process.env.APPLICATION_NOTIFY_CC || 'boyingwong02@gmail.com')
+  .split(',').map(s => s.trim()).filter(Boolean);
 async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta }) {
   const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
   const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
@@ -15018,10 +15016,13 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     <p style="color:#64748b;font-size:13px;margin-top:1rem">证件照片见附件。也可在管理后台「申请箱」查看。<br>Document photos are attached. You can also view them in the admin “Applicant Inbox”.</p>
   </div>`;
   const subject = `新入职申请 / New Application — ${name}（${partner.name || ''}）`;
-  const sent = files.length
-    ? await sendEmailWithFiles(APPLICATION_NOTIFY_EMAIL, subject, text, html, files)
-    : await sendEmail(APPLICATION_NOTIFY_EMAIL, subject, text, html);
-  console.log(`[apply-notify] submission #${subId} → ${APPLICATION_NOTIFY_EMAIL}: ${sent ? 'sent' : 'FAILED'} (${files.length} attachments)`);
+  const recipients = [...new Set([APPLICATION_NOTIFY_EMAIL, ...APPLICATION_NOTIFY_CC])];
+  for (const to of recipients) {
+    const sent = files.length
+      ? await sendEmailWithFiles(to, subject, text, html, files)
+      : await sendEmail(to, subject, text, html);
+    console.log(`[apply-notify] submission #${subId} → ${to}: ${sent ? 'sent' : 'FAILED'} (${files.length} attachments)`);
+  }
 }
 
 // ADMIN: list applicant submissions (optionally filtered by company).
