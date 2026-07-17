@@ -3982,7 +3982,9 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 
 <!-- DocuSeal 模板管理 -->
 <div id="tab-docuseal-templates" style="display:none">
-  <div class="top"><h1>📄 DocuSeal 模板管理</h1></div>
+  <div class="top"><h1>📄 DocuSeal 模板管理</h1>
+    <div class="top-actions"><button class="btn btn-outline" onclick="dsOpenQrLabelPicker()" title="勾选表格，把二维码打在 2 × 4″ 标签纸上（每页 10 个），每张带用途说明">🏷 二维码标签打印</button></div>
+  </div>
   <div style="max-width:960px;margin:1.5rem auto;padding:0 1rem 3rem">
 
     <!-- Connection status -->
@@ -12947,6 +12949,181 @@ function printDocChecklistLabels() {
   <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 250); });<\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=920,height=720');
+  if (!w) { alert('请允许弹出窗口以打印标签'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+// ── 表格二维码标签（Avery 5163，2 × 4″，每页 10 个）──
+// 勾选 DocuSeal 表格 → 每个表格一张标签：左边二维码（扫码进 /form-portal），
+// 右边表格名 + 用途详细说明（可在弹窗里改）。说明按分类自动带默认文案。
+function _dsQrLabelDefaultDesc(category, name) {
+  const cat = String(category || '');
+  const base = cat.replace(/_(en|es)$/, '');
+  const lang = /_es$/.test(cat) ? '（英文+西语版）' : /_en$/.test(cat) ? '（纯英文版）' : '（中英文版）';
+  const MAP = {
+    ach_auth: '本人 ACH 直存授权：工资打到员工自己的银行账户。填写银行 Routing / Account 号码，签字确认账户归本人所有。',
+    wire_auth: '本人电汇授权：工资以银行电汇 (Wire) 方式付到员工自己的账户。填写银行信息并签字确认。',
+    zelle_auth: '本人 Zelle 收款授权：工资通过 Zelle 转到员工自己的 Zelle 账户。确认绑定的手机号 / 邮箱并签字。',
+    check_instruction: '支票当面签收授权：以支票付款、当面领取时填写。员工签字确认收到支票及金额。',
+    cash_receipt: '现金签收表：现金发工资时，员工当场清点金额，签字确认收到的现金数额和日期。',
+    third_party_pay: 'PayPal / Venmo / Cash App 收款授权：通过第三方支付平台收工资时填写，确认账号归属并签字。',
+    contractor_invoice: '员工 Invoice：承包工人提交本期工时和金额的账单，作为发放工资的依据。',
+    invoice_approval: '发票审批表：内部审批发票 / 账单用，审批人签字确认。',
+    w9: 'W-9 税表：申报美国税务身份（SSN / EIN），1099 报税必备，员工填写并签字。',
+    w9_individual: 'W-9 税表（个人版）：个人承包工人申报 SSN 税务信息，1099 报税必备。',
+    w4: 'W-4 联邦预扣税表：W-2 员工入职时填写，决定工资预扣税额。',
+    i9: 'I-9 就业资格核验表：核验身份和工作许可（需出示证件），入职必填。',
+    w7: 'W-7 表：申请 ITIN（个人报税识别号），没有 SSN 的人报税用。',
+    w8ben: 'W-8BEN：外国个人税务身份声明，非美国税务居民收款时填写。',
+    w8bene: 'W-8BEN-E：外国公司 / 实体税务身份声明。',
+    form8233: 'Form 8233：外国人申请免预扣税（税收协定优惠）。',
+    il_w4: 'IL-W4：伊利诺伊州预扣税表，IL 州 W-2 员工填写。',
+    company_contract: '公司合作合同：与客户 / 合作公司签署的服务协议。',
+    worker_1099: '1099 用工协议：与承包工人签署的合作协议。',
+    worker_w2: 'W-2 雇佣协议：与 W-2 员工签署的雇佣合同。',
+  };
+  const TP = {
+    zelle_tp_auth: 'Zelle', ach_tp_auth: 'ACH', wire_tp_auth: '电汇', check_tp_auth: '支票', cash_tp_auth: '现金', paypal_tp_auth: 'PayPal/Venmo/CashApp',
+  };
+  const OP = {
+    zelle_op_auth: 'Zelle', ach_op_auth: 'ACH', wire_op_auth: '电汇', check_op_auth: '支票', cash_op_auth: '现金', paypal_op_auth: 'PayPal/Venmo/CashApp',
+  };
+  let d = MAP[base];
+  if (!d && TP[base]) d = `委托他人代收（${TP[base]}·Option B）：工资付到别人的账户 / 由他人代领。员工本人填写并签字，写清代收人姓名和账户信息。`;
+  if (!d && OP[base]) d = `第三方代收人签字表（${OP[base]}）：由代收人本人签字，确认同意用自己的账户 / 身份代收该员工的工资。`;
+  if (!d) d = '扫码打开表格入口，登录管理账号后即可发送或填写此表格。';
+  return d + ' ' + lang;
+}
+function dsOpenQrLabelPicker() {
+  const tpls = (_dsMyTemplates || []).filter(t => !t.hidden);
+  if (!tpls.length) { showToast('暂无模板，请先在下方加载 / 上传模板', 'error'); return; }
+  let ov = document.getElementById('dsQrLblModal'); if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'dsQrLblModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:700;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const rows = tpls.map(t => {
+    const desc = _dsQrLabelDefaultDesc(t.category, t.name);
+    return `<div style="border:1px solid var(--gray-200);border-radius:8px;padding:.55rem .65rem;margin-bottom:.5rem" data-dsid="${t.docuseal_template_id}">
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <input type="checkbox" class="dsqr-pick" data-dsid="${t.docuseal_template_id}" style="width:16px;height:16px;flex:0 0 auto" onchange="this.closest('[data-dsid]').querySelector('.dsqr-body').style.display=this.checked?'block':'none'">
+        <div style="flex:1;min-width:0;font-size:.85rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.name)}">${esc(t.name)}</div>
+        <label style="font-size:.72rem;color:var(--gray-500);display:flex;align-items:center;gap:.25rem;flex:0 0 auto">张数
+          <input type="number" class="dsqr-copies" value="1" min="1" max="100" style="width:52px;padding:.2rem .3rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem"></label>
+      </div>
+      <div class="dsqr-body" style="display:none;margin-top:.4rem">
+        <textarea class="dsqr-desc" rows="2" style="width:100%;padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem;line-height:1.4;resize:vertical">${esc(desc)}</textarea>
+      </div>
+    </div>`;
+  }).join('');
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:640px;width:100%;padding:1.2rem;max-height:88vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <h3 style="margin:0;font-size:1.05rem">🏷 表格二维码标签打印</h3>
+      <button class="btn btn-outline" onclick="document.getElementById('dsQrLblModal').remove()">✕ 关闭</button></div>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.6rem">
+      2 × 4″ 标签纸（Avery 5163 规格，每页 10 张）。每张标签 = 左边二维码 + 右边表格名和用途说明（勾选后可以修改说明文字）。扫码后登录管理账号即可打开该表格。</div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.5rem">
+      <button class="btn btn-outline" style="font-size:.78rem;padding:.3rem .7rem" onclick="document.querySelectorAll('#dsQrLblModal .dsqr-pick').forEach(c=>{c.checked=true;c.closest('[data-dsid]').querySelector('.dsqr-body').style.display='block'})">全选</button>
+      <button class="btn btn-outline" style="font-size:.78rem;padding:.3rem .7rem" onclick="document.querySelectorAll('#dsQrLblModal .dsqr-pick').forEach(c=>{c.checked=false;c.closest('[data-dsid]').querySelector('.dsqr-body').style.display='none'})">全不选</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;min-height:0;padding-right:.25rem">${rows}</div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.8rem">
+      <button class="btn btn-outline" onclick="document.getElementById('dsQrLblModal').remove()">取消</button>
+      <button class="btn btn-green" id="dsqr-print-btn" onclick="dsPrintQrLabels()">🖨 生成标签</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+async function dsPrintQrLabels() {
+  const picked = [...document.querySelectorAll('#dsQrLblModal [data-dsid]')].filter(r => r.querySelector('.dsqr-pick')?.checked).map(r => ({
+    dsId: r.getAttribute('data-dsid'),
+    copies: Math.max(1, Math.min(100, parseInt(r.querySelector('.dsqr-copies')?.value, 10) || 1)),
+    desc: (r.querySelector('.dsqr-desc')?.value || '').trim(),
+  }));
+  if (!picked.length) { showToast('请至少勾选一个表格', 'error'); return; }
+  const btn = document.getElementById('dsqr-print-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ 生成二维码中…'; }
+  let labels;
+  try {
+    labels = await Promise.all(picked.map(async p => {
+      const r = await api('/admin/form-portal/qr?id=' + encodeURIComponent(p.dsId));
+      return { ...p, qr: r.qr, url: r.url, name: r.name };
+    }));
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🖨 生成标签'; }
+    showToast('生成二维码失败：' + e.message, 'error');
+    return;
+  }
+  const m = document.getElementById('dsQrLblModal'); if (m) m.remove();
+  const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const cells = [];
+  labels.forEach(l => {
+    const cell = `<div class="cell"><div class="inner">
+      <div class="qrbox"><img src="${l.qr}" alt="QR"><div class="scan">扫码填表 · Scan to open</div></div>
+      <div class="txt">
+        <div class="co">PRIME ANCHOR POINT</div>
+        <div class="ttl">${esca(l.name)}</div>
+        <div class="desc">${esca(l.desc)}</div>
+      </div>
+    </div></div>`;
+    for (let i = 0; i < l.copies; i++) cells.push(cell);
+  });
+  const sheets = [];
+  for (let i = 0; i < cells.length; i += 10) sheets.push(`<div class="sheet">${cells.slice(i, i + 10).join('')}</div>`);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>表格二维码标签 (${cells.length})</title>
+<style>
+  @page { size: letter; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  .sheet {
+    width: 8.5in; height: 11in;
+    padding: 0.5in 0.15625in;            /* Avery 5163: 上下 0.5in，左右 5/32in */
+    display: grid;
+    grid-template-columns: repeat(2, 4in);
+    grid-auto-rows: 2in;
+    column-gap: 0.1875in;                /* 列间距 3/16in */
+    row-gap: 0;
+    page-break-after: always;
+  }
+  .sheet:last-child { page-break-after: auto; }
+  .cell { width: 4in; height: 2in; overflow: hidden; page-break-inside: avoid; }
+  .inner { width: 100%; height: 100%; padding: 0.1in 0.12in; display: flex; align-items: center; gap: 0.11in; }
+  .qrbox { flex: 0 0 auto; width: 1.55in; display: flex; flex-direction: column; align-items: center; }
+  .qrbox img { width: 1.5in; height: 1.5in; }
+  .scan { font-size: 5.5pt; color: #475569; margin-top: 2px; white-space: nowrap; }
+  .txt { flex: 1; min-width: 0; max-height: 100%; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+  .co { font-size: 6pt; font-weight: 800; letter-spacing: 1.2px; color: #475569; }
+  .ttl { font-size: 8.5pt; font-weight: 800; line-height: 1.22; margin: 2px 0 3px; }
+  .desc { font-size: 7pt; line-height: 1.38; color: #111; }
+  @media screen {
+    body { background: #64748b; padding: 20px; }
+    .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
+    .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
+    .sheet { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.25); margin: 0 auto 20px; }
+    .cell { outline: 1px dashed #e2e8f0; }
+  }
+  @media print { .hint { display: none; } .cell { outline: none; } }
+</style></head><body>
+  <p class="hint">Letter 纸 · 2 × 4″ 标签（Avery 5163 规格，每页 10 张）· 共 ${cells.length} 张<button onclick="window.print()">🖨 打印</button></p>
+  ${sheets.join('')}
+  <script>
+    // 说明文字太长时自动缩小字号，保证不溢出标签
+    window.addEventListener('load', function(){
+      document.querySelectorAll('.txt').forEach(function(el){
+        var t = el.querySelector('.ttl'), d = el.querySelector('.desc');
+        var ts = 8.5, ds = 7;
+        var guard = 0;
+        while (el.scrollHeight > el.clientHeight && guard++ < 20) {
+          if (ds > 5.5) { ds -= 0.25; d.style.fontSize = ds + 'pt'; }
+          else if (ts > 7) { ts -= 0.25; t.style.fontSize = ts + 'pt'; }
+          else break;
+        }
+      });
+      setTimeout(function(){ try { window.print(); } catch(e){} }, 300);
+    });
+  <\/script>
+</body></html>`;
+  const w = window.open('', '_blank', 'width=980,height=760');
   if (!w) { alert('请允许弹出窗口以打印标签'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
