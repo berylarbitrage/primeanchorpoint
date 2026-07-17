@@ -13526,7 +13526,7 @@ const _QRL_TYPES = {
   wdoc:  { icon: '📎', zh: '员工文件上传', en: 'Worker Documents', color: '#0F2B5B', nzh: '扫码上传 W-9 / Contract / 付款表', nen: 'Scan to upload documents' },
   week:  { icon: '📅', zh: '周柜登记', en: 'Weekly Containers', color: '#6D28D9', nzh: '工头扫码登记 · 密码 123456', nen: 'Foreman weekly log-in' }
 };
-let _qrlItems = [], _qrlSlots = [], _qrlSel = 0;
+let _qrlItems = [], _qrlPages = [], _qrlPage = 0, _qrlSel = 0;
 async function openPartnerQrLabelModal() {
   const ids = _selectedPartnerCheckboxes().filter(x => x.checked).map(x => parseInt(x.value, 10));
   const partners = ids.map(pid => allPartners.find(p => p.id === pid)).filter(p => p && !p.abolished);
@@ -13554,7 +13554,7 @@ async function openPartnerQrLabelModal() {
     }
   }
   if (!items.length) { showToast('二维码生成失败', 'error'); return; }
-  _qrlItems = items; _qrlSlots = Array(10).fill(null); _qrlSel = 0;
+  _qrlItems = items; _qrlPages = [Array(10).fill(null)]; _qrlPage = 0; _qrlSel = 0;
   let ov = document.getElementById('qrlModal'); if (ov) ov.remove();
   ov = document.createElement('div');
   ov.id = 'qrlModal';
@@ -13564,15 +13564,16 @@ async function openPartnerQrLabelModal() {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
       <h3 style="margin:0;font-size:1.05rem">🏷 二维码标签 <span style="font-weight:400;font-size:.8rem;color:var(--gray-500)">2 × 4″ · 每页 10 个（L LIKED / Avery 5163）</span></h3>
       <button class="btn btn-outline" onclick="document.getElementById('qrlModal').remove()">✕ 关闭</button></div>
-    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.7rem">① 点左边选一个码 → ② 点右边格子放到对应贴纸位置（再点一次清除）。撕掉用过的位置<b>留空</b>就行，打印时不会出内容。</div>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.7rem">① 点左边选一个码 → ② 点右边格子放到对应贴纸位置（再点一次清除），或直接用每个码右侧的 <b>＋/−</b> 定数量（自动放进空位，放满自动加页）。撕掉用过的位置<b>留空</b>就行，打印时不会出内容；全空的页不会打印。</div>
     <div style="display:grid;grid-template-columns:300px 1fr;gap:1rem;align-items:start">
       <div id="qrlPalette" style="display:flex;flex-direction:column;gap:.4rem;max-height:60vh;overflow:auto"></div>
       <div>
+        <div id="qrlTabs" style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.45rem"></div>
         <div id="qrlSheet" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#f8fafc;border:1.5px solid var(--gray-200);border-radius:10px;padding:10px"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.7rem;gap:.5rem;flex-wrap:wrap">
           <div style="display:flex;gap:.5rem">
-            <button class="btn btn-outline" onclick="_qrlFillRest()" title="用当前选中的码填满所有空位">⤵ 填满剩余</button>
-            <button class="btn btn-outline" onclick="_qrlClear()">清空</button>
+            <button class="btn btn-outline" onclick="_qrlFillRest()" title="用当前选中的码填满本页所有空位">⤵ 填满本页</button>
+            <button class="btn btn-outline" onclick="_qrlClear()">清空本页</button>
           </div>
           <button class="btn btn-green" id="qrlPrintBtn" onclick="_qrlPrint()">🖨 打印</button>
         </div>
@@ -13582,23 +13583,37 @@ async function openPartnerQrLabelModal() {
   document.body.appendChild(ov);
   _qrlRender();
 }
+function _qrlCount(i) { return _qrlPages.reduce((n, pg) => n + pg.filter(s => s === i).length, 0); }
 function _qrlRender() {
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const pal = document.getElementById('qrlPalette'), sheet = document.getElementById('qrlSheet');
-  if (!pal || !sheet) return;
+  const pal = document.getElementById('qrlPalette'), sheet = document.getElementById('qrlSheet'), tabs = document.getElementById('qrlTabs');
+  if (!pal || !sheet || !tabs) return;
+  if (_qrlPage >= _qrlPages.length) _qrlPage = _qrlPages.length - 1;
+  const slots = _qrlPages[_qrlPage];
+  const btnCss = 'width:22px;height:22px;border-radius:6px;border:1.5px solid var(--gray-300);background:#fff;cursor:pointer;font-weight:800;line-height:1;padding:0';
   pal.innerHTML = _qrlItems.map((it, i) => {
     const T = _QRL_TYPES[it.type], on = i === _qrlSel;
-    const used = _qrlSlots.filter(s => s === i).length;
+    const used = _qrlCount(i);
     return `<div onclick="_qrlSel=${i};_qrlRender()" style="display:flex;align-items:center;gap:.5rem;padding:.4rem .55rem;border:2px solid ${on ? T.color : 'var(--gray-200)'};border-radius:8px;cursor:pointer;background:${on ? '#f8fafc' : '#fff'}">
       <img src="${it.img}" style="width:34px;height:34px;flex:0 0 auto">
       <div style="min-width:0;flex:1">
         <div style="font-size:.8rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esca(it.name)}${it.state ? ` <span style="color:${T.color}">📍${esca(it.state)}</span>` : ''}</div>
         <div style="font-size:.72rem;font-weight:600;color:${T.color}">${T.icon} ${T.zh} / ${T.en}</div>
       </div>
-      ${used ? `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;background:${T.color};color:#fff;border-radius:99px;padding:1px 7px">${used}</span>` : ''}
+      <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto" onclick="event.stopPropagation()">
+        <button style="${btnCss}" onclick="_qrlMinus(${i})" title="减一张">−</button>
+        <span style="min-width:18px;text-align:center;font-size:.78rem;font-weight:800;color:${used ? T.color : 'var(--gray-400)'}">${used}</span>
+        <button style="${btnCss}" onclick="_qrlPlus(${i})" title="加一张（自动放进下一个空位）">＋</button>
+      </div>
     </div>`;
   }).join('');
-  sheet.innerHTML = _qrlSlots.map((s, k) => {
+  tabs.innerHTML = _qrlPages.map((pg, k) => {
+    const n = pg.filter(s => s != null).length, on = k === _qrlPage;
+    return `<button class="btn ${on ? 'btn-green' : 'btn-outline'}" style="padding:.25rem .6rem;font-size:.78rem" onclick="_qrlPage=${k};_qrlRender()">第${k + 1}页${n ? ` (${n})` : ''}</button>`;
+  }).join('') +
+    `<button class="btn btn-outline" style="padding:.25rem .6rem;font-size:.78rem" onclick="_qrlAddPage()" title="再加一张标签纸">＋ 加页</button>` +
+    (_qrlPages.length > 1 ? `<button class="btn btn-outline" style="padding:.25rem .6rem;font-size:.78rem;color:#dc2626" onclick="_qrlDelPage()" title="删除当前页">✕ 删本页</button>` : '');
+  sheet.innerHTML = slots.map((s, k) => {
     const it = s == null ? null : _qrlItems[s];
     const T = it ? _QRL_TYPES[it.type] : null;
     return `<div onclick="_qrlSlotClick(${k})" style="height:64px;border:1.5px ${it ? 'solid ' + T.color : 'dashed var(--gray-300)'};border-radius:8px;background:#fff;cursor:pointer;display:flex;align-items:center;gap:.45rem;padding:0 .5rem;overflow:hidden">
@@ -13611,21 +13626,46 @@ function _qrlRender() {
     </div>`;
   }).join('');
   const pb = document.getElementById('qrlPrintBtn');
-  const n = _qrlSlots.filter(s => s != null).length;
-  if (pb) { pb.textContent = `🖨 打印（${n} 个标签）`; pb.disabled = n === 0; pb.style.opacity = n === 0 ? '.5' : '1'; }
+  const total = _qrlPages.reduce((n, pg) => n + pg.filter(s => s != null).length, 0);
+  const pgN = _qrlPages.filter(pg => pg.some(s => s != null)).length;
+  if (pb) { pb.textContent = `🖨 打印（${total} 个标签 · ${pgN} 页）`; pb.disabled = total === 0; pb.style.opacity = total === 0 ? '.5' : '1'; }
 }
 function _qrlSlotClick(k) {
-  _qrlSlots[k] = _qrlSlots[k] == null ? _qrlSel : null;
+  const slots = _qrlPages[_qrlPage];
+  slots[k] = slots[k] == null ? _qrlSel : null;
+  _qrlRender();
+}
+function _qrlPlus(i) {
+  for (let p = 0; p < _qrlPages.length; p++) {
+    const k = _qrlPages[p].indexOf(null);
+    if (k !== -1) { _qrlPages[p][k] = i; _qrlPage = p; _qrlRender(); return; }
+  }
+  _qrlPages.push(Array(10).fill(null));
+  _qrlPages[_qrlPages.length - 1][0] = i;
+  _qrlPage = _qrlPages.length - 1;
+  _qrlRender();
+}
+function _qrlMinus(i) {
+  for (let p = _qrlPages.length - 1; p >= 0; p--) {
+    const k = _qrlPages[p].lastIndexOf(i);
+    if (k !== -1) { _qrlPages[p][k] = null; _qrlRender(); return; }
+  }
+}
+function _qrlAddPage() { _qrlPages.push(Array(10).fill(null)); _qrlPage = _qrlPages.length - 1; _qrlRender(); }
+function _qrlDelPage() {
+  if (_qrlPages.length <= 1) return;
+  _qrlPages.splice(_qrlPage, 1);
+  if (_qrlPage >= _qrlPages.length) _qrlPage = _qrlPages.length - 1;
   _qrlRender();
 }
 function _qrlFillRest() {
-  _qrlSlots = _qrlSlots.map(s => s == null ? _qrlSel : s);
+  _qrlPages[_qrlPage] = _qrlPages[_qrlPage].map(s => s == null ? _qrlSel : s);
   _qrlRender();
 }
-function _qrlClear() { _qrlSlots = Array(10).fill(null); _qrlRender(); }
+function _qrlClear() { _qrlPages[_qrlPage] = Array(10).fill(null); _qrlRender(); }
 function _qrlPrint() {
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const cells = _qrlSlots.map(s => {
+  const cellHtml = s => {
     const it = s == null ? null : _qrlItems[s];
     if (!it) return '<div class="cell"></div>';
     const T = _QRL_TYPES[it.type];
@@ -13641,7 +13681,11 @@ function _qrlPrint() {
         <div class="cu">${esca(String(it.url).replace(/^https?:\/\/(www\.)?/, ''))}</div>
       </div>
     </div></div>`;
-  }).join('');
+  };
+  // 全空的页跳过（要印到第二张贴纸时，把那张纸放进打印机就行，不用垫空白页）
+  const livePages = _qrlPages.filter(pg => pg.some(s => s != null));
+  const sheets = livePages.map(pg => `<div class="sheet">${pg.map(cellHtml).join('')}</div>`).join('');
+  const total = livePages.reduce((n, pg) => n + pg.filter(s => s != null).length, 0);
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>二维码标签</title>
 <style>
   @page { size: letter; margin: 0; }
@@ -13673,13 +13717,18 @@ function _qrlPrint() {
     body { background: #64748b; padding: 20px; }
     .hint { color: #fff; font-size: 13px; margin: 0 0 14px; text-align: center; }
     .hint button { font-size: 13px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
-    .sheet { background: #fff; margin: 0 auto; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
+    .sheet { background: #fff; margin: 0 auto 20px; box-shadow: 0 2px 12px rgba(0,0,0,.25); }
     .cell { outline: 1px dashed #cbd5e1; border-radius: 10px; }
   }
-  @media print { .hint { display: none; } .cell { outline: none; } }
+  @media print {
+    .hint { display: none; }
+    .cell { outline: none; }
+    .sheet { page-break-after: always; }
+    .sheet:last-of-type { page-break-after: auto; }
+  }
 </style></head><body>
-  <p class="hint">2 × 4″ 标签纸（每页 10 个）· 虚线框仅为屏幕参考，打印无 <button onclick="window.print()">🖨 打印</button></p>
-  <div class="sheet">${cells}</div>
+  <p class="hint">2 × 4″ 标签纸 · ${total} 个标签 · 共 ${livePages.length} 页 · 虚线框仅为屏幕参考，打印无 <button onclick="window.print()">🖨 打印</button></p>
+  ${sheets}
   <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 250); });<\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=920,height=760');
