@@ -29177,6 +29177,7 @@ function _dsRenderMyTemplates() {
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;white-space:nowrap" onclick="dsChangeLanguageModal(${t.id})">改语言</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;white-space:nowrap" onclick="dsReplaceDocumentModal(${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">替换PDF</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsOpenBuilderModal(${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">编辑</button>
+        <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#fff;color:#374151;white-space:nowrap" onclick="dsPrintBlankPdf(${t.docuseal_template_id})">🖨 打印PDF</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #a5f3fc;background:#ecfeff;color:#0e7490;white-space:nowrap" onclick="dsOpenTemplateQr(${t.docuseal_template_id})">二维码</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444;white-space:nowrap" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
       </div>
@@ -29188,6 +29189,11 @@ function _dsRenderMyTemplates() {
 // 打开该模板的二维码入口页（扫码 → 登录 → 查看/发送表格）
 function dsOpenTemplateQr(dsId) {
   window.open('/form-portal?id=' + encodeURIComponent(dsId) + '&qr=1', '_blank');
+}
+
+// 新标签页打开该模板的空白 PDF（浏览器里直接打印）
+function dsPrintBlankPdf(dsId) {
+  window.open('/api/admin/docuseal/templates/' + encodeURIComponent(dsId) + '/preview-pdf', '_blank');
 }
 
 async function dsToggleConfirm(id) {
