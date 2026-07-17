@@ -2452,6 +2452,15 @@ try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN clock_out_time TEX
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_minutes INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_start_time TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_end_time TEXT DEFAULT ''`); } catch(e) {}
+// 公司改名后，历史付款记录里的 partner_name 快照与新名不一致，会让按月/按周汇总把
+// 同一家公司拆成两行（如 "Eparcel" 与 "Eparcel Inc."）。启动时把快照同步为公司现名。
+try {
+  db.exec(`UPDATE company_worker_payments
+           SET partner_name = (SELECT name FROM partners WHERE partners.id = company_worker_payments.partner_id)
+           WHERE partner_id IS NOT NULL
+             AND EXISTS (SELECT 1 FROM partners WHERE partners.id = company_worker_payments.partner_id
+                           AND partners.name <> company_worker_payments.partner_name)`);
+} catch(e) {}
 
 // ─── Per-week-per-worker payout info (method / paying entity / proof) ───
 db.exec(`CREATE TABLE IF NOT EXISTS company_week_payments (
@@ -15369,6 +15378,10 @@ app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('updat
     .run(d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
       d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
       d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', req.params.id);
+  // 公司改名时同步付款记录里的名字快照，避免按月/按周汇总同一公司拆成两行
+  try {
+    db.prepare('UPDATE company_worker_payments SET partner_name=? WHERE partner_id=?').run(d.name, req.params.id);
+  } catch (e) {}
   res.json({ success: true });
 });
 
@@ -28100,17 +28113,20 @@ app.get('/api/admin/company-payments/summary', requireAdmin, blockManager, (req,
     const { year, partner_id } = req.query;
     const where = [];
     const params = [];
-    if (year) { where.push("substr(year_month,1,4) = ?"); params.push(String(year)); }
-    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
-    const sql = `SELECT year_month, partner_id, partner_name,
-                   SUM(amount) AS total_amount,
-                   SUM(bill_amount) AS total_bill_amount,
+    if (year) { where.push("substr(cwp.year_month,1,4) = ?"); params.push(String(year)); }
+    if (partner_id) { where.push('cwp.partner_id = ?'); params.push(parseInt(partner_id)); }
+    // 用 partners 表的现名分组（快照名可能是改名前的旧名），同一公司只出一行
+    const sql = `SELECT cwp.year_month AS year_month, cwp.partner_id AS partner_id,
+                   COALESCE(p.name, cwp.partner_name) AS partner_name,
+                   SUM(cwp.amount) AS total_amount,
+                   SUM(cwp.bill_amount) AS total_bill_amount,
                    COUNT(*) AS record_count,
-                   COUNT(DISTINCT COALESCE(employee_id, worker_name)) AS worker_count
-                 FROM company_worker_payments
+                   COUNT(DISTINCT COALESCE(cwp.employee_id, cwp.worker_name)) AS worker_count
+                 FROM company_worker_payments cwp
+                 LEFT JOIN partners p ON p.id = cwp.partner_id
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-                 GROUP BY year_month, partner_id, partner_name
-                 ORDER BY year_month DESC, partner_name ASC`;
+                 GROUP BY cwp.year_month, cwp.partner_id, COALESCE(p.name, cwp.partner_name)
+                 ORDER BY cwp.year_month DESC, partner_name ASC`;
     const rows = db.prepare(sql).all(...params);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
