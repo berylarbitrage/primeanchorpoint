@@ -913,6 +913,9 @@ try { db.exec(`ALTER TABLE container_submissions ADD COLUMN photos TEXT DEFAULT 
 // Payment proof file keys (JSON array) attached by the reviewer when approving a
 // scan record inline — e.g. the transfer screenshot showing this container was paid.
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN payment_proofs TEXT DEFAULT '[]'`); } catch(e) {}
+// Work-site address baked into a per-address QR (?site=ADDR) for companies with
+// multiple locations, so each sheet records which address it was filled for.
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN work_site TEXT DEFAULT ''`); } catch(e) {}
 // One-time cleanup: strip whitespace that phone keyboards / OCR sneak into scanned
 // container numbers ("TIIU 562 579 9" → "TIIU5625799") — spaced forms never match
 // the invoice's container_items. New submissions are normalized on save.
@@ -15624,6 +15627,7 @@ app.post('/cw-submit', containerSubmitPhotoUpload.array('photos', 12), (req, res
     }
     const servicePeriod = String(d.service_period || '').trim().slice(0, 100);
     const submitterName = String(d.submitter_name || '').trim().slice(0, 100);
+    const workSite = String(d.site || '').trim().slice(0, 120);
     let rawRows = [];
     try {
       rawRows = typeof d.rows === 'string' ? JSON.parse(d.rows) : (Array.isArray(d.rows) ? d.rows : []);
@@ -15641,11 +15645,11 @@ app.post('/cw-submit', containerSubmitPhotoUpload.array('photos', 12), (req, res
     const firstPhoto = photoKeys[0] || '';
     const ua = String(req.headers['user-agent'] || '').slice(0, 250);
     const stmt = db.prepare(`INSERT INTO container_submissions
-      (partner_id, partner_name, container_no, qty, unit_price, photo_path, photos, participants, submitter_name, submitter_phone, notes, user_agent, submit_type, service_period, work_date)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (partner_id, partner_name, container_no, qty, unit_price, photo_path, photos, participants, submitter_name, submitter_phone, notes, user_agent, submit_type, service_period, work_date, work_site)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const insertMany = db.transaction((list) => {
       for (const r of list) {
-        stmt.run(p.id, p.name, r.container_no, 1, 0, firstPhoto, photosJson, '[]', submitterName, '', '', ua, 'week', servicePeriod, r.work_date);
+        stmt.run(p.id, p.name, r.container_no, 1, 0, firstPhoto, photosJson, '[]', submitterName, '', '', ua, 'week', servicePeriod, r.work_date, workSite);
       }
     });
     insertMany(rows);
