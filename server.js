@@ -5064,11 +5064,12 @@ function _zoneVariant(html, variant) {
 
 function _buildThirdPartyPayForm(lang) {
   const companyName = getCompanyLegalName();
-  const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
-  const w = `${f}width:100%;min-height:16px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
+  const fh = (es || zh) ? '14px' : '16px';
+  const f = `border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:${fh};display:inline-block;`;
+  const w = `${f}width:100%;min-height:${fh};`;
+  const c = `padding:${(es || zh) ? '2px 4px' : '3px 5px'};border:1px solid #ccc;vertical-align:top;`;
   const L = (en, zhTxt, esTxt) => {
     if (zh && zhTxt) return `${en} ${zhTxt}`;
     if (es && esTxt) return `${en} / ${esTxt}`;
@@ -5191,12 +5192,16 @@ function _buildThirdPartyPayForm(lang) {
     ? 'I confirm I am authorizing the above-named third party to receive all current and future payments on my behalf on an ongoing basis, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir todos los pagos actuales y futuros en mi nombre de forma continua y asumo plena responsabilidad.'
     : 'I confirm I am authorizing the above-named third party to receive all current and future payments on my behalf on an ongoing basis, and I take full responsibility for this arrangement.';
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
+  // 版式收紧保证一页：公司核验区已移除；中英/英西双语文本较长用更小一档
+  const Z = es ? { base: '7.3pt', lh: '1.06', pad: '3px 12px', body: '6.7pt', sig: '26px', date: '14px' }
+        : zh ? { base: '7.6pt', lh: '1.12', pad: '5px 12px', body: '7pt', sig: '30px', date: '16px' }
+        : { base: '8.2pt', lh: '1.28', pad: '8px 14px', body: '7.6pt', sig: '40px', date: '20px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:660px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:6px">
   <div style="font-size:11pt;font-weight:900;letter-spacing:0.5px">${formTitle}</div>
   <div style="font-size:9pt;font-weight:600;color:#222;margin-top:3px">${companyName}</div>
 </div>
-<div style="font-size:8.5pt;margin-bottom:10px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc">
+<div style="font-size:${Z.base};margin-bottom:6px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc">
   ${intro}
 </div>
 
@@ -5209,15 +5214,15 @@ function _buildThirdPartyPayForm(lang) {
 </table>
 
 <!--A_ONLY_S--><!-- Zone A — Direct Receipt to Own Platform Account -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:5px 10px;cursor:pointer;margin:0">
     <checkbox-field name="tp_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
       <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
     </div>
   </label>
-  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+  <div style="background:#eff6ff;padding:7px 10px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
     <div style="font-weight:700;margin:0 0 4px;font-size:8.5pt">${s2}</div>
     <div style="font-size:7.5pt;color:#555;margin-bottom:4px">${lSelectOne}</div>
     <div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:8.5pt">
@@ -5258,15 +5263,15 @@ function _buildThirdPartyPayForm(lang) {
       </tr>
     </table>
     <!-- Payee signature sub-box (blue) -->
-    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:9px 12px;margin-top:6px">
+    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:6px 9px;margin-top:6px">
       <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="payee_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <text-field name="payee_printed_name" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="contractor_signature" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="contractor_signature" role="Contractor" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="signature_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+      <date-field name="signature_date" role="Contractor" style="width:100%;height:${Z.date};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:4px 6px">
         <checkbox-field name="tp_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
       </label>
@@ -5275,16 +5280,16 @@ function _buildThirdPartyPayForm(lang) {
 </div>
 
 <!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third-Party Authorization -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:5px 10px;cursor:pointer;margin:0">
     <checkbox-field name="tp_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
       <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
     </div>
   </label>
-  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
+  <div style="background:#f0fdf4;padding:7px 10px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px;margin-bottom:6px">
       <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
       <table style="width:100%;border-collapse:collapse">
         <tr>
@@ -5304,18 +5309,18 @@ function _buildThirdPartyPayForm(lang) {
           </td>
         </tr>
       </table>
-      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+      <div style="margin-top:5px;font-size:7pt;color:#374151;line-height:1.4;border-top:1px solid #a7f3d0;padding-top:4px;font-style:italic">${tpAuth}</div>
     </div>
     <!-- Authorizer signature sub-box (green) -->
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px">
       <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="tp_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <text-field name="tp_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="tp_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="tp_auth_sig" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="tp_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+      <date-field name="tp_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:4px 6px">
         <checkbox-field name="tp_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
       </label>
@@ -5324,26 +5329,13 @@ function _buildThirdPartyPayForm(lang) {
 </div>
 
 <!--B_ONLY_E--><div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
-<div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.5;background:#fafafa;margin-bottom:8px">
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack1}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack2}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack3}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack4}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack5}</span></div>
+<div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:${Z.body};line-height:1.3;background:#fafafa;margin-bottom:6px">
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack1}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack2}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack3}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack4}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack5}</span></div>
   <div style="display:flex;gap:5px"><span>☑</span><span>${ack6}</span></div>
-</div>
-<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
-  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
-  <text-field name="tp_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="tp_co_sig" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="tp_co_date" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="tp_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
-  </label>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
@@ -6881,21 +6873,25 @@ function _buildCheckTpAuthForm(lang) {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:12pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
+  // 版式收紧保证一页：双语段落间不再空行；中英/英西双语文本较长用更小一档
+  const one = t => String(t).replace(/\n{2,}/g, '\n');
+  const Z = (es || zh) ? { base: '7.8pt', lh: '1.15', pad: '5px 12px', intro: '7.2pt', tbl: '7.4pt', body: '7pt', sig: '30px', date: '17px' }
+             : { base: '8.5pt', lh: '1.3', pad: '10px 12px', intro: '8pt', tbl: '8pt', body: '7.6pt', sig: '38px', date: '20px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
+  <div style="font-size:11.5pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
+  <div style="font-size:8pt;color:#555;margin-top:2px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt;white-space:pre-line">${intro}</p>
+<p style="font-size:${Z.intro};white-space:pre-line;margin:0 0 6px">${one(intro)}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
   <tr><td style="${c}width:100%"><b>${lAuthName}</b><br><text-field name="authorizing_person_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s2}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
   <tr>
     <td style="${c}width:50%"><b>${lYourName}</b><br><text-field name="tp_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
     <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" required="true" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
@@ -6903,50 +6899,50 @@ function _buildCheckTpAuthForm(lang) {
 </table>
 <div style="font-size:7pt;color:#c00;margin-top:3px">${L('Please verify this information is correct before signing. Payments sent to this account will be treated as valid payment.','请在签署前确认所填信息准确无误。按该信息付款后将视为已有效完成付款。','Verifique que esta información sea correcta antes de firmar. Los pagos enviados a esta cuenta se considerarán como pago válido.')}</div>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s3}</div>
-<div style="font-size:8pt;margin-bottom:6px">${pickupNote}</div>
-<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;margin-bottom:8px">
-  <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s3}</div>
+<div style="font-size:${Z.body};margin-bottom:4px">${pickupNote}</div>
+<div style="border:1px solid #ccc;border-radius:4px;padding:6px 8px;background:#fafafa;margin-bottom:6px">
+  <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer">
     <checkbox-field name="ck_pickup_worker" role="First Party" style="width:14px;height:14px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:8.5pt">${pickupWorker}</span>
+    <span style="font-size:${Z.tbl}">${pickupWorker}</span>
   </label>
   <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
     <checkbox-field name="ck_pickup_third_party" role="First Party" style="width:14px;height:14px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:8.5pt">${pickupTP}</span>
+    <span style="font-size:${Z.tbl}">${pickupTP}</span>
   </label>
 </div>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s4}</div>
-<div style="font-size:8pt;white-space:pre-line">${certText}</div>
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s4}</div>
+<div style="font-size:${Z.body};white-space:pre-line">${one(certText)}</div>
 
-<p style="font-size:7.5pt;color:#666;margin-top:10px;font-style:italic">${disclaimer}</p>
+<p style="font-size:7pt;color:#666;margin-top:6px;font-style:italic">${disclaimer}</p>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:8px;font-size:${Z.base}">
   <b>${sigHeader}</b>
-  <table style="width:100%;margin-top:6px">
-    <tr><td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
+  <table style="width:100%;margin-top:4px">
+    <tr><td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
     <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
 
 <!-- Receipt Confirmation (orange) -->
-<div style="border-radius:8px;overflow:hidden;margin-top:14px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <div style="background:#c2410c;padding:10px 14px">
+<div style="border-radius:8px;overflow:hidden;margin-top:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <div style="background:#c2410c;padding:6px 10px">
     <div style="font-weight:800;font-size:9.5pt;color:#fff;letter-spacing:.3px">${receiptHeader}</div>
     <div style="font-size:7.5pt;color:#fed7aa;margin-top:2px">${receiptNote}</div>
   </div>
-  <div style="background:#fff7ed;padding:12px 14px;border:1.5px solid #fdba74;border-top:none;border-radius:0 0 8px 8px">
-    <table style="width:100%;font-size:8.5pt">
-      <tr><td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lReceivedBy}:</div><text-field name="ck_received_by" role="Contractor" required="true" style="${w}"></text-field></td></tr>
+  <div style="background:#fff7ed;padding:8px 10px;border:1.5px solid #fdba74;border-top:none;border-radius:0 0 8px 8px">
+    <table style="width:100%;font-size:${Z.tbl}">
+      <tr><td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lReceivedBy}:</div><text-field name="ck_received_by" role="Contractor" required="true" style="${w}"></text-field></td></tr>
       <tr>
-        <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="ck_receipt_sig" role="Contractor" style="width:100%;height:52px;display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></signature-field></td>
-        <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="ck_receipt_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></date-field></td>
+        <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="ck_receipt_sig" role="Contractor" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></signature-field></td>
+        <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="ck_receipt_date" role="Contractor" style="width:100%;height:${Z.date};display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></date-field></td>
       </tr>
     </table>
-    <label style="display:flex;align-items:flex-start;gap:6px;background:#ffedd5;border-radius:4px;padding:5px 7px;margin-top:8px">
+    <label style="display:flex;align-items:flex-start;gap:6px;background:#ffedd5;border-radius:4px;padding:4px 6px;margin-top:6px">
       <checkbox-field name="ck_receipt_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
       <span style="font-size:7pt;color:#c2410c;line-height:1.4">${lConfirmReceipt}</span>
     </label>
