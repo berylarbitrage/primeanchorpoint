@@ -6424,68 +6424,81 @@ function _buildZelleAuthForm(lang) {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:13pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
+  // 版式收紧保证一页：字号/行距/间距压缩，双语段落间不再空行；西语版文本最长，字号再小一档
+  const one = t => String(t).replace(/\n{2,}/g, '\n');
+  const Z = es ? {
+    base: '8pt', lh: '1.2', pad: '8px 12px', title: '11pt', sub: '7.5pt', hpb: '4px', hmb: '6px',
+    intro: '7.4pt', head: '8.5pt', hm: '5px 0 3px', hm2: '5px 0 2px', tbl: '7.4pt', red: '6.6pt',
+    box: '7.4pt', boxh: '7pt', note: '6.6pt', body: '7.1pt', disc: '6.6pt', green: '6.6pt',
+    cap: '6.8pt', sig: '36px', date: '20px'
+  } : {
+    base: '8.5pt', lh: '1.32', pad: '12px 14px', title: '12pt', sub: '8.5pt', hpb: '6px', hmb: '8px',
+    intro: '8pt', head: '9pt', hm: '8px 0 4px', hm2: '7px 0 3px', tbl: '8pt', red: '7pt',
+    box: '8pt', boxh: '7.5pt', note: '7pt', body: '7.8pt', disc: '7.2pt', green: '7.2pt',
+    cap: '7.2pt', sig: '42px', date: '22px'
+  };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:${Z.hpb};margin-bottom:${Z.hmb}">
+  <div style="font-size:${Z.title};font-weight:900;letter-spacing:1px">${formTitle}</div>
+  <div style="font-size:${Z.sub};color:#555;margin-top:2px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt;white-space:pre-line">${intro}</p>
+<p style="font-size:${Z.intro};white-space:pre-line;margin:0 0 6px">${one(intro)}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:${Z.hm};font-size:${Z.head}">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
   <tr>
     <td style="${c}width:50%"><b>${lName}</b><br><text-field name="payee_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
     <td style="${c}width:50%"><b>${lAccount}</b><br><text-field name="zelle_contact" role="First Party" required="true" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field>
-    <div style="font-size:7pt;color:#c00;margin-top:3px">${L('Please verify this information is correct before signing. Payments sent to the information provided will be treated as valid payment.','请在签署前确认所填信息准确无误。按该信息付款后，通常将视为已有效完成付款。','Verifique que esta información sea correcta antes de firmar. Los pagos enviados a la información indicada se considerarán como pago válido.')}</div></td>
+    <div style="font-size:${Z.red};color:#c00;margin-top:2px">${L('Please verify this information is correct before signing. Payments sent to the information provided will be treated as valid payment.','请在签署前确认所填信息准确无误。按该信息付款后，通常将视为已有效完成付款。','Verifique que esta información sea correcta antes de firmar. Los pagos enviados a la información indicada se considerarán como pago válido.')}</div></td>
   </tr>
 </table>
 
-<!--B_ONLY_S--><div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;margin-bottom:10px;background:#fafafa;font-size:8pt">
-  <div style="font-weight:700;color:#555;margin-bottom:5px;font-size:8pt">${authRepHeader}</div>
-  <table style="width:100%;border-collapse:collapse;font-size:8pt">
+<!--B_ONLY_S--><div style="border:1px solid #ccc;border-radius:4px;padding:6px 8px;margin-bottom:6px;background:#fafafa;font-size:${Z.box}">
+  <div style="font-weight:700;color:#555;margin-bottom:3px;font-size:${Z.boxh}">${authRepHeader}</div>
+  <table style="width:100%;border-collapse:collapse;font-size:${Z.box}">
     <tr>
-      <td style="padding:3px 4px;width:40%"><b>${lRepName}:</b><br><text-field name="auth_rep_name" role="First Party" style="${w}"></text-field></td>
-      <td style="padding:3px 4px;width:30%"><b>${lRepPhone}:</b><br><text-field name="auth_rep_phone" role="First Party" style="${w}"></text-field></td>
-      <td style="padding:3px 4px;width:30%"><b>${lRepEmail}:</b><br><text-field name="auth_rep_email" role="First Party" style="${w}"></text-field></td>
+      <td style="padding:2px 4px;width:40%"><b>${lRepName}:</b><br><text-field name="auth_rep_name" role="First Party" style="${w}"></text-field></td>
+      <td style="padding:2px 4px;width:30%"><b>${lRepPhone}:</b><br><text-field name="auth_rep_phone" role="First Party" style="${w}"></text-field></td>
+      <td style="padding:2px 4px;width:30%"><b>${lRepEmail}:</b><br><text-field name="auth_rep_email" role="First Party" style="${w}"></text-field></td>
     </tr>
   </table>
-  <div style="font-size:7.5pt;color:#555;margin-top:4px;font-style:italic">${authRepNote}</div>
+  <div style="font-size:${Z.note};color:#555;margin-top:2px;font-style:italic">${authRepNote}</div>
 </div>
 
-<!--B_ONLY_E--><div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
-<p style="font-size:8pt;white-space:pre-line">${certText}</p>
+<!--B_ONLY_E--><div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s2}</div>
+<p style="font-size:${Z.body};white-space:pre-line;margin:0 0 4px">${one(certText)}</p>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
-<div style="font-size:8pt;white-space:pre-line">${ackItems}</div>
+<div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s3}</div>
+<div style="font-size:${Z.body};white-space:pre-line">${one(ackItems)}</div>
 
-<p style="font-size:7.5pt;color:#666;margin-top:10px;font-style:italic">${disclaimer}</p>
+<p style="font-size:${Z.disc};color:#666;margin:6px 0 0;font-style:italic">${disclaimer}</p>
 
-<div style="background:#e8f5e9;border:1px solid #4caf50;padding:6px 10px;margin-top:12px;font-size:7.5pt;color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
+<div style="background:#e8f5e9;border:1px solid #4caf50;padding:5px 8px;margin-top:7px;font-size:${Z.green};color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
 
-<!--A_ONLY_S--><div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:6px;font-size:8.5pt">
+<!--A_ONLY_S--><div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:5px;font-size:${Z.base}">
   <b>${sigHeader}</b>
-  <table style="width:100%;margin-top:6px">
-    <tr>
-      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${w}"></text-field></td>
-    </tr>
-    <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="payee_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
-    </tr>
-  </table>
-</div>
-
-<!--A_ONLY_E--><!--B_ONLY_S--><div style="border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt;background:#f0f9ff">
-  <b>${authDelegateHeader}</b>
-  <p style="font-size:7.5pt;margin:6px 0 8px;color:#333">${authDelegateText}</p>
   <table style="width:100%;margin-top:4px">
     <tr>
-      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPayeePrintedName}:</div><text-field name="payee_auth_printed_name" role="First Party" style="${w}"></text-field></td>
+      <td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${w}"></text-field></td>
     </tr>
     <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPayeeSig}:</div><signature-field name="payee_auth_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lSig}:</div><signature-field name="payee_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_signature_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+    </tr>
+  </table>
+</div>
+
+<!--A_ONLY_E--><!--B_ONLY_S--><div style="border:1px solid #999;padding:6px 8px;margin-top:7px;font-size:${Z.base};background:#f0f9ff">
+  <b>${authDelegateHeader}</b>
+  <p style="font-size:${Z.cap};margin:4px 0 5px;color:#333">${authDelegateText}</p>
+  <table style="width:100%;margin-top:2px">
+    <tr>
+      <td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPayeePrintedName}:</div><text-field name="payee_auth_printed_name" role="First Party" style="${w}"></text-field></td>
+    </tr>
+    <tr>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPayeeSig}:</div><signature-field name="payee_auth_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
