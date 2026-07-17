@@ -33,6 +33,31 @@
   .act-group input { flex: 1; padding: 10px 11px; font-size: 14px; }
   .act-group button { flex: 0 0 auto; padding: 10px 16px; border: none; border-radius: 10px; background: #16a34a; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
   .act-group button:disabled { opacity: .6; }
+  .act-group.sign { border-color: #ddd6fe; background: #f5f3ff; }
+  .act-group .tip { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .act-group.sign input { width: 100%; padding: 10px 11px; font-size: 14px; margin-top: 8px; }
+  .act-group.sign .go { width: 100%; margin-top: 10px; padding: 11px; background: #7c3aed; border-radius: 10px; border: none; color: #fff; font-size: 14.5px; font-weight: 700; cursor: pointer; }
+  .namewrap { position: relative; }
+  .sug { position: absolute; left: 0; right: 0; top: 100%; z-index: 10; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 10px; margin-top: 3px; box-shadow: 0 6px 18px rgba(15,23,42,.14); overflow: hidden; }
+  .sug .it { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
+  .sug .it:last-child { border-bottom: none; }
+  .sug .it:hover, .sug .it:active { background: #f5f3ff; }
+  .sug .nm { font-size: 14px; font-weight: 700; }
+  .sug .em { font-size: 12px; color: #64748b; }
+  .sug .noemail { color: #d97706; }
+  .act-group.subs { border-color: #e2e8f0; background: #f8fafc; }
+  .act-group.subs .refresh { font-size: 12.5px; font-weight: 600; color: #2563eb; text-decoration: none; float: right; }
+  .subslist { margin-top: 8px; }
+  .subslist .empty { font-size: 13px; color: #94a3b8; padding: 6px 0; }
+  .srow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid #eef2f7; }
+  .srow:last-child { border-bottom: none; }
+  .srow .p .n { font-size: 13.5px; font-weight: 700; }
+  .srow .p .e { font-size: 11.5px; color: #64748b; word-break: break-all; }
+  .srow .p .d { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+  .badge { flex: 0 0 auto; font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+  .badge.done { background: #dcfce7; color: #15803d; }
+  .badge.wait { background: #fef3c7; color: #b45309; }
+  .badge.dec { background: #fee2e2; color: #b91c1c; }
   .foot { text-align: center; font-size: 12.5px; color: #94a3b8; margin-top: 18px; }
   .foot a { color: #2563eb; text-decoration: none; }
   /* QR 打印视图 */
@@ -74,10 +99,28 @@
     <h1 id="tplName"></h1>
     <div class="sub" id="tplSub"></div>
 
+    <div class="act-group sign">
+      <div class="ttl">✍️ 发起签署</div>
+      <div class="tip">输入姓名自动匹配员工资料，签署邀请会发到对方邮箱</div>
+      <div class="namewrap">
+        <input id="sName" placeholder="姓名 / Name" autocomplete="off" autocapitalize="words">
+        <div id="sSug" class="sug hidden"></div>
+      </div>
+      <input id="sEmail" type="email" placeholder="邮箱 / Email" autocomplete="off" autocapitalize="none" style="margin-top:8px">
+      <button class="go" id="sBtn" onclick="doSend()">发送签署邀请</button>
+      <div class="err" id="sErr"></div>
+      <div class="ok hidden" id="sOk">✅ 签署邀请已发送</div>
+    </div>
+
+    <div class="act-group subs">
+      <div class="ttl">📋 签署情况 <a href="#" class="refresh" onclick="loadSubs();return false">↻ 刷新</a></div>
+      <div id="subsList" class="subslist">加载中…</div>
+    </div>
+
     <a class="act blue" id="btnView" target="_blank">📄 查看表格 PDF<small>在线预览 / 下载这份表格</small></a>
 
     <div class="act-group">
-      <div class="ttl">📧 发送 PDF 到邮箱</div>
+      <div class="ttl">📧 发送空白 PDF 到邮箱</div>
       <div class="row">
         <input id="email" type="email" placeholder="name@example.com" autocomplete="email" autocapitalize="none">
         <button id="btnEmail" onclick="doEmail()">发送</button>
@@ -85,8 +128,6 @@
       <div class="err" id="emailErr"></div>
       <div class="ok hidden" id="emailOk">✅ 已发送</div>
     </div>
-
-    <a class="act purple" id="btnDs" target="_blank">🛠 打开 DocuSeal 管理页面<small>指定收件人姓名和邮箱、发起签署（需 DocuSeal 登录）</small></a>
 
     <div class="foot noprint">
       <span id="who"></span> · <a href="#" onclick="openQr();return false">🖨 打印二维码</a> · <a href="#" onclick="doLogout();return false">退出登录</a>
@@ -138,11 +179,9 @@
     document.getElementById('tplName').textContent = INFO.name;
     document.getElementById('tplSub').textContent = 'DocuSeal 模板 #' + INFO.template_id;
     document.getElementById('btnView').href = '/api/admin/docuseal/templates/' + INFO.template_id + '/preview-pdf';
-    const dsBtn = document.getElementById('btnDs');
-    if (INFO.docuseal_url) { dsBtn.href = INFO.docuseal_url; dsBtn.classList.remove('hidden'); }
-    else dsBtn.classList.add('hidden');
     document.getElementById('who').textContent = '已登录：' + (INFO.username || '');
     show('main');
+    loadSubs();
     if (qs.get('qr') === '1') openQr();
   }
 
@@ -189,6 +228,96 @@
       document.getElementById('email').value = '';
     } catch (e) { err.textContent = '网络错误：' + e.message; }
     finally { btn.disabled = false; btn.textContent = '发送'; }
+  }
+
+  // ── 发起签署：姓名自动补全 ──
+  let _sugTimer = null;
+  let _pickedPhone = '';
+  const sName = document.getElementById('sName');
+  const sSug = document.getElementById('sSug');
+  sName.addEventListener('input', () => {
+    _pickedPhone = '';
+    clearTimeout(_sugTimer);
+    const q = sName.value.trim();
+    if (!q) { sSug.classList.add('hidden'); return; }
+    _sugTimer = setTimeout(async () => {
+      try {
+        const r = await fetch('/api/admin/form-portal/people?q=' + encodeURIComponent(q), { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const { people } = await r.json();
+        if (!people.length || sName.value.trim() !== q) { sSug.classList.add('hidden'); return; }
+        sSug.innerHTML = people.map((p, i) =>
+          '<div class="it" data-i="' + i + '"><div class="nm">' + esc(p.name) + (p.status && p.status !== 'active' ? ' <span style="color:#94a3b8;font-weight:500">(' + esc(p.status) + ')</span>' : '') + '</div>' +
+          '<div class="em' + (p.email ? '' : ' noemail') + '">' + (p.email ? esc(p.email) : '⚠ 资料里没有邮箱，请手动填写') + '</div></div>'
+        ).join('');
+        sSug.classList.remove('hidden');
+        sSug.querySelectorAll('.it').forEach(el => el.addEventListener('mousedown', e => {
+          e.preventDefault();
+          const p = people[parseInt(el.dataset.i, 10)];
+          sName.value = p.name;
+          document.getElementById('sEmail').value = p.email || '';
+          _pickedPhone = p.phone || '';
+          sSug.classList.add('hidden');
+        }));
+      } catch {}
+    }, 250);
+  });
+  sName.addEventListener('blur', () => setTimeout(() => sSug.classList.add('hidden'), 200));
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  async function doSend() {
+    const btn = document.getElementById('sBtn');
+    const err = document.getElementById('sErr');
+    const ok = document.getElementById('sOk');
+    err.textContent = ''; ok.classList.add('hidden');
+    const name = sName.value.trim();
+    const email = document.getElementById('sEmail').value.trim();
+    if (!name) { err.textContent = '请填写签署人姓名'; return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = '请输入正确的邮箱地址'; return; }
+    btn.disabled = true; btn.textContent = '发送中…';
+    try {
+      const r = await fetch('/api/admin/form-portal/send', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: INFO.template_id, name, email, phone: _pickedPhone }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { err.textContent = data.error || ('发送失败 ' + r.status); return; }
+      ok.classList.remove('hidden');
+      sName.value = ''; document.getElementById('sEmail').value = ''; _pickedPhone = '';
+      loadSubs();
+    } catch (e) { err.textContent = '网络错误：' + e.message; }
+    finally { btn.disabled = false; btn.textContent = '发送签署邀请'; }
+  }
+
+  // ── 签署情况列表 ──
+  function fmtDate(s) {
+    if (!s) return '';
+    const d = new Date(s);
+    if (isNaN(d)) return s;
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  async function loadSubs() {
+    const box = document.getElementById('subsList');
+    box.textContent = '加载中…';
+    try {
+      const r = await fetch('/api/admin/form-portal/submissions?' + apiQ, { credentials: 'same-origin' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { box.innerHTML = '<div class="empty">' + esc(data.error || ('加载失败 ' + r.status)) + '</div>'; return; }
+      const subs = data.submissions || [];
+      if (!subs.length) { box.innerHTML = '<div class="empty">还没有发起过签署</div>'; return; }
+      box.innerHTML = subs.map(s => {
+        const badge = s.status === 'completed'
+          ? '<span class="badge done">✅ 已签署</span>'
+          : (s.status === 'declined' ? '<span class="badge dec">✖ 已拒签</span>' : '<span class="badge wait">⏳ 待签署</span>');
+        const when = s.status === 'completed' && s.completed_at
+          ? '签署于 ' + fmtDate(s.completed_at)
+          : '发送于 ' + fmtDate(s.created_at) + (s.opened_at ? ' · 已打开' : '');
+        return '<div class="srow"><div class="p"><div class="n">' + esc(s.name || '—') + '</div>' +
+          '<div class="e">' + esc(s.email) + '</div><div class="d">' + esc(when) + '</div></div>' + badge + '</div>';
+      }).join('');
+    } catch (e) { box.innerHTML = '<div class="empty">网络错误：' + esc(e.message) + '</div>'; }
   }
 
   async function openQr() {
