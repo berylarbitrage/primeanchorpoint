@@ -220,6 +220,9 @@ const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
 // Optional submitter name baked into a per-person QR (?who=NAME). When present the
 // 提交人 field is pre-filled and locked so this person's records are auto-tagged.
 const WHO = (params.get('who') || '').trim().slice(0, 100);
+// Optional work-site address baked into a per-address QR (?site=ADDR) for companies
+// with multiple locations. Shown in the header and saved with every row.
+const SITE = (params.get('site') || '').trim().slice(0, 120);
 
 let _partnerName = '';
 let _pw = '';
@@ -357,7 +360,7 @@ async function init() {
     }
     const info = await r.json();
     _partnerName = info.partner_name || '';
-    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName;
+    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName + (SITE ? ' · 📍 ' + SITE : '');
     const saved = sessionStorage.getItem(_PW_KEY);
     if (saved) { _pw = saved; openForm(); } else { showGate(); }
   } catch (e) {
@@ -418,6 +421,7 @@ async function submitForm() {
     fd.append('password', _pw || '');
     fd.append('service_period', servicePeriodStr());
     fd.append('submitter_name', document.getElementById('submitterName').value.trim());
+    fd.append('site', SITE);
     fd.append('rows', JSON.stringify(rows));
     _photos.forEach(f => fd.append('photos', f));
     const resp = await fetch('/cw-submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });

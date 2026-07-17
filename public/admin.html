@@ -13482,6 +13482,7 @@ async function _partnerQrPagesHtml(id, name, number, wdoc) {
   const weekShort = weekRaw ? await _qrShorten(weekRaw) : '';
   const weekImg = weekShort ? await _mkQrDataUrl(weekShort, '#6D28D9') : '';
   const pageDefs = applyQrs.length ? applyQrs : [null];
+  const partner = (typeof allPartners !== 'undefined' && allPartners.find) ? allPartners.find(x => x.id === id) : null;
   const pages = [];
   for (const q of pageDefs) {
     const rows = [];
@@ -13501,16 +13502,22 @@ async function _partnerQrPagesHtml(id, name, number, wdoc) {
         note: '工人扫码验证手机号后上传 W-9、Contract 及付款方式签字文件<br>Workers scan to upload W-9, Contract & payment forms',
       });
     }
-    if (weekShort) {
+    // 多州公司：每页的周柜码带上该州仓库地址（?site=…），登记记录自动标地址
+    let wShort = weekShort, wImg = weekImg;
+    if (weekRaw && q && q.state && pageDefs.length > 1) {
+      const site = (partner ? _partnerAddrForState(partner, q.state) : '') || q.state;
+      wShort = await _qrShorten(`${weekRaw}?site=${encodeURIComponent(site)}`);
+      wImg = await _mkQrDataUrl(wShort, '#6D28D9');
+    }
+    if (wShort) {
       rows.push({
-        title: '📅 周柜登记 / Weekly Containers',
-        img: weekImg,
-        url: weekShort,
+        title: '📅 周柜登记 / Weekly Containers' + (q && q.state && pageDefs.length > 1 ? `（📍 ${q.state}）` : ''),
+        img: wImg,
+        url: wShort,
         note: '工头扫码登记一周柜子 · 扫码后输入密码 <b>123456</b><br>Foreman logs weekly containers · password <b>123456</b>',
       });
     }
     const pgState = q && q.state ? q.state : '';
-    const partner = (typeof allPartners !== 'undefined' && allPartners.find) ? allPartners.find(x => x.id === id) : null;
     pages.push({ state: pgState, addr: partner ? _partnerAddrForState(partner, pgState) : '', rows });
   }
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -13664,8 +13671,19 @@ async function openPartnerQrLabelModal() {
     }
     if (wdoc) items.push({ type: 'wdoc', name, num, state: '', url: wdoc.url, img: wdoc.img });
     if (rc && rc.token) {
-      const url = await _qrShorten(`${location.origin}/cw/${rc.token}`);
-      items.push({ type: 'week', name, num, state: '', url, img: await _mkQrDataUrl(url, _QRL_TYPES.week.color) });
+      // 多地址公司：每个州一个周柜码（?site=该州仓库地址），登记时自动带上地址
+      const weekBase = `${location.origin}/cw/${rc.token}`;
+      const sts = _partnerStates(p);
+      if (sts.length > 1) {
+        for (const st of sts) {
+          const site = _partnerAddrForState(p, st) || st;
+          const url = await _qrShorten(`${weekBase}?site=${encodeURIComponent(site)}`);
+          items.push({ type: 'week', name, num, state: st, url, img: await _mkQrDataUrl(url, _QRL_TYPES.week.color) });
+        }
+      } else {
+        const url = await _qrShorten(weekBase);
+        items.push({ type: 'week', name, num, state: '', url, img: await _mkQrDataUrl(url, _QRL_TYPES.week.color) });
+      }
     }
   }
   if (!items.length) { showToast('二维码生成失败', 'error'); return; }
@@ -36038,7 +36056,8 @@ function _invpCsubRow(r) {
     <td style="padding:6px 8px;font-size:.8rem;white-space:nowrap">
       ${r.service_period ? '<div>' + esc(r.service_period) + '</div>' : ''}
       ${r.work_date ? '<div style="color:var(--gray-500)">' + esc(r.work_date) + '</div>' : ''}
-      ${(!r.service_period && !r.work_date) ? '<span style="color:var(--gray-300)">—</span>' : ''}
+      ${r.work_site ? '<div style="color:#6d28d9;max-width:170px;overflow:hidden;text-overflow:ellipsis" title="' + esc(r.work_site) + '">📍 ' + esc(r.work_site) + '</div>' : ''}
+      ${(!r.service_period && !r.work_date && !r.work_site) ? '<span style="color:var(--gray-300)">—</span>' : ''}
     </td>
     <td style="padding:6px 8px;text-align:center">${r.qty || 1}</td>
     <td style="padding:6px 8px;text-align:right">${r.unit_price ? '$' + Number(r.unit_price).toFixed(2) : '<span style="color:var(--gray-300)">—</span>'}</td>
@@ -39844,6 +39863,7 @@ function _csubBulkRowHtml(r) {
     <td style="padding:5px 8px;font-size:.78rem;white-space:nowrap;vertical-align:top">
       ${r.service_period ? '<div>' + esc(r.service_period) + '</div>' : ''}
       ${r.work_date ? '<div style="color:var(--gray-500)">' + esc(r.work_date) + '</div>' : ''}
+      ${r.work_site ? '<div style="color:#6d28d9;max-width:170px;overflow:hidden;text-overflow:ellipsis" title="' + esc(r.work_site) + '">📍 ' + esc(r.work_site) + '</div>' : ''}
     </td>
     <td style="padding:5px 8px;vertical-align:top">${_csubPhotoCell(r, 40)}</td>
     <td style="padding:5px 8px;vertical-align:top;min-width:120px">
