@@ -13058,6 +13058,14 @@ function dsOpenQrLabelPicker() {
       <button class="btn btn-outline" onclick="document.getElementById('dsQrLblModal').remove()">✕ 关闭</button></div>
     <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.6rem">
       2 × 4″ 标签纸（Avery 5163 规格，每页 10 张）。每张标签 = 左边二维码 + 右边表格名和用途说明（勾选后可以修改说明文字）。扫码后登录管理账号即可打开该表格。</div>
+    <div style="background:var(--gray-50,#f8fafc);border:1px solid var(--gray-200);border-radius:8px;padding:.55rem .7rem;margin-bottom:.55rem;font-size:.82rem">
+      <label style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;margin-right:1.1rem">
+        <input type="radio" name="dsqrMode" value="count" checked onchange="document.getElementById('dsqrPagesWrap').style.display='none'">按张数打印<span style="color:var(--gray-400);font-size:.72rem">（每个表格印右边填的张数）</span></label>
+      <label style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer">
+        <input type="radio" name="dsqrMode" value="fill" onchange="document.getElementById('dsqrPagesWrap').style.display='inline-flex'">铺满整页<span style="color:var(--gray-400);font-size:.72rem">（选中的轮流排满，张数当比例用）</span></label>
+      <label id="dsqrPagesWrap" style="display:none;align-items:center;gap:.3rem;margin-left:1.1rem;font-size:.78rem;color:var(--gray-600)">页数
+        <input type="number" id="dsqrPages" value="1" min="1" max="20" style="width:56px;padding:.2rem .3rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem"></label>
+    </div>
     <div style="display:flex;gap:.5rem;margin-bottom:.5rem">
       <button class="btn btn-outline" style="font-size:.78rem;padding:.3rem .7rem" onclick="document.querySelectorAll('#dsQrLblModal .dsqr-pick').forEach(c=>{c.checked=true;c.closest('[data-dsid]').querySelector('.dsqr-body').style.display='block'})">全选</button>
       <button class="btn btn-outline" style="font-size:.78rem;padding:.3rem .7rem" onclick="document.querySelectorAll('#dsQrLblModal .dsqr-pick').forEach(c=>{c.checked=false;c.closest('[data-dsid]').querySelector('.dsqr-body').style.display='none'})">全不选</button>
@@ -13076,6 +13084,8 @@ async function dsPrintQrLabels() {
     desc: (r.querySelector('.dsqr-desc')?.value || '').trim(),
   }));
   if (!picked.length) { showToast('请至少勾选一个表格', 'error'); return; }
+  const mode = (document.querySelector('#dsQrLblModal input[name=dsqrMode]:checked') || {}).value || 'count';
+  const fillPages = Math.max(1, Math.min(20, parseInt((document.getElementById('dsqrPages') || {}).value, 10) || 1));
   const btn = document.getElementById('dsqr-print-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⟳ 生成二维码中…'; }
   let labels;
@@ -13092,11 +13102,10 @@ async function dsPrintQrLabels() {
   }
   const m = document.getElementById('dsQrLblModal'); if (m) m.remove();
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const cells = [];
-  labels.forEach(l => {
+  const mkCell = l => {
     const nm = _dsQrSplitName(l.name, l.category);
     const lang = _dsQrLabelLang(l.category);
-    const cell = `<div class="cell"><div class="inner">
+    return `<div class="cell"><div class="inner">
       <div class="qrbox"><div class="qrfr"><img src="${l.qr}" alt="QR"></div><div class="scan">扫码填表 · SCAN TO OPEN</div></div>
       <div class="txt">
         <div class="cohd"><span class="co">Prime Anchor Workforce Inc</span><span class="langpill">${esca(lang)}</span></div>
@@ -13106,8 +13115,18 @@ async function dsPrintQrLabels() {
         <div class="desc">${esca(l.desc)}</div>
       </div>
     </div></div>`;
-    for (let i = 0; i < l.copies; i++) cells.push(cell);
-  });
+  };
+  // 按张数：每个表格印指定张数。铺满整页：把选中的按「张数」比例排成一轮，
+  // 循环重复直到填满 页数 × 10 个标签位。
+  const cells = [];
+  const base = [];
+  labels.forEach(l => { const c = mkCell(l); for (let i = 0; i < l.copies; i++) base.push(c); });
+  if (mode === 'fill') {
+    const total = fillPages * 10;
+    for (let i = 0; i < total; i++) cells.push(base[i % base.length]);
+  } else {
+    cells.push(...base);
+  }
   const sheets = [];
   for (let i = 0; i < cells.length; i += 10) sheets.push(`<div class="sheet">${cells.slice(i, i + 10).join('')}</div>`);
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>表格二维码标签 (${cells.length})</title>
