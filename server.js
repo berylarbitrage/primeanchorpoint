@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12o · Container发票支持装柜行:满载度%×满载金额,无需柜号',
+  tag: '2026-07-12p · 模板列表加直接下载:简短英文文件名',
   started: new Date().toISOString(),
 };
 
@@ -26122,7 +26122,13 @@ app.get('/api/admin/docuseal/templates/:id/preview-pdf', requireAdmin, async (re
     }, (proxyRes) => {
       const ct = proxyRes.headers['content-type'] || 'application/pdf';
       res.setHeader('Content-Type', ct);
-      res.setHeader('Content-Disposition', `inline; filename="template-${req.params.id}.pdf"`);
+      // ?dl=<name> → 以附件下载并使用指定文件名（仅允许安全字符）；否则内联预览。
+      const dl = String(req.query.dl || '').replace(/[^A-Za-z0-9._\- ]/g, '').trim().slice(0, 80);
+      if (dl) {
+        res.setHeader('Content-Disposition', `attachment; filename="${dl.endsWith('.pdf') ? dl : dl + '.pdf'}"`);
+      } else {
+        res.setHeader('Content-Disposition', `inline; filename="template-${req.params.id}.pdf"`);
+      }
       res.setHeader('Cache-Control', 'no-store');
       proxyRes.pipe(res);
     });

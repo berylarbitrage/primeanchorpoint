@@ -29773,6 +29773,7 @@ function _dsRenderMyTemplates() {
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;white-space:nowrap" onclick="dsReplaceDocumentModal(${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">替换PDF</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsOpenBuilderModal(${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">编辑</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#fff;color:#374151;white-space:nowrap" onclick="dsPrintBlankPdf(${t.docuseal_template_id})">🖨 打印PDF</button>
+        <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #86efac;background:#f0fdf4;color:#15803d;white-space:nowrap" onclick="dsDownloadBlankPdf(${t.docuseal_template_id})" title="直接下载空白 PDF（简短英文文件名，如 ${_dsEsc(_dsPdfFileName(t))}）">⬇ 下载</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #a5f3fc;background:#ecfeff;color:#0e7490;white-space:nowrap" onclick="dsOpenTemplateQr(${t.docuseal_template_id})">二维码</button>
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444;white-space:nowrap" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
       </div>
@@ -29789,6 +29790,38 @@ function dsOpenTemplateQr(dsId) {
 // 新标签页打开该模板的空白 PDF（浏览器里直接打印）
 function dsPrintBlankPdf(dsId) {
   window.open('/api/admin/docuseal/templates/' + encodeURIComponent(dsId) + '/preview-pdf', '_blank');
+}
+
+// ── 直接下载空白 PDF：文件名 = 简短英文表格名 + 语言后缀 ──
+// 例：Cash-Receipt-EN-ES.pdf / Zelle-Third-Party-ZH-EN.pdf / W9-EN.pdf
+const _DS_DL_NAMES = {
+  cash_receipt: 'Cash-Receipt',
+  zelle_auth: 'Zelle-Auth', ach_auth: 'ACH-Auth', wire_auth: 'Wire-Auth', check_instruction: 'Check-Auth',
+  third_party_pay: 'PayPal-Auth',
+  zelle_tp_auth: 'Zelle-Third-Party', ach_tp_auth: 'ACH-Third-Party', wire_tp_auth: 'Wire-Third-Party',
+  check_tp_auth: 'Check-Third-Party', cash_tp_auth: 'Cash-Third-Party', paypal_tp_auth: 'PayPal-Third-Party',
+  zelle_op_auth: 'Zelle-Payee-Form', ach_op_auth: 'ACH-Payee-Form', wire_op_auth: 'Wire-Payee-Form',
+  check_op_auth: 'Check-Payee-Form', cash_op_auth: 'Cash-Payee-Form', paypal_op_auth: 'PayPal-Payee-Form',
+  w9: 'W9', w9_individual: 'W9-Individual', w4: 'W4', i9: 'I9', w7: 'W7-ITIN',
+  w8ben: 'W8BEN', w8bene: 'W8BEN-E', form8233: 'Form-8233', il_w4: 'IL-W4',
+  company_contract: 'Company-Contract', worker_1099: '1099-Agreement', worker_w2: 'W2-Agreement',
+  contractor_invoice: 'Contractor-Invoice', invoice_approval: 'Invoice-Approval',
+};
+function _dsPdfFileName(t) {
+  const cat = String((t && t.category) || '');
+  const base = cat.replace(/_(en|es)$/, '');
+  const lang = /_es$/.test(cat) ? 'EN-ES' : /_en$/.test(cat) ? 'EN' : 'ZH-EN';
+  let n = _DS_DL_NAMES[base];
+  if (!n) {
+    n = String((t && t.name) || 'Form').replace(/[（(][^）)]*[）)]/g, ' ')
+      .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'Form';
+  }
+  return `${n}-${lang}.pdf`;
+}
+function dsDownloadBlankPdf(dsId) {
+  const t = (_dsMyTemplates || []).find(x => x.docuseal_template_id == dsId) || {};
+  const fn = _dsPdfFileName(t);
+  window.open('/api/admin/docuseal/templates/' + encodeURIComponent(dsId) + '/preview-pdf?dl=' + encodeURIComponent(fn), '_blank');
 }
 
 async function dsToggleConfirm(id) {
