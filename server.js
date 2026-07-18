@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12s · 赔偿事故可关联银行付款交易',
+  tag: '2026-07-12t · 新增开支账本页:银行开支/卡车开支等大类,link支出单独看',
   started: new Date().toISOString(),
 };
 
