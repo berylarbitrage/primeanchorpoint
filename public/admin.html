@@ -34545,7 +34545,8 @@ function openWhClaimModal(id) {
   whSel.innerHTML = '<option value="">-- 选择仓库（客户地址）--</option>'
     + _whClaimWarehouses.map(w => `<option value="${esc(w.warehouse_code)}" data-name="${esc(w.warehouse_name)}">${esc(w.warehouse_name)}</option>`).join('');
   document.getElementById('whClaimFile').value = '';
-  document.getElementById('whClaimFileName').textContent = '未选择文件';
+  window._whClaimNewFiles = [];
+  _whClaimRenderPending();
   const currentWrap = document.getElementById('whClaimCurrentWrap');
 
   const c = id ? _whClaims.find(x => x.id === id) : null;
@@ -34586,22 +34587,41 @@ function openWhClaimModal(id) {
   _whClaimInitDrop();
 }
 
+// 待上传文件列表（自己维护数组：浏览器的 input.files 每次重新选择会整体替换，
+// 这里改成每次选择/拖拽都「追加」，保存时统一上传）。
+function _whClaimRenderPending() {
+  const nameEl = document.getElementById('whClaimFileName');
+  if (!nameEl) return;
+  const files = window._whClaimNewFiles || [];
+  if (!files.length) { nameEl.textContent = '未选择文件'; return; }
+  nameEl.innerHTML = files.map((f, i) =>
+    `<div style="display:flex;align-items:center;justify-content:center;gap:.35rem;margin:.15rem 0">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px">📄 ${esc(f.name)}</span>
+      <a style="color:#ef4444;cursor:pointer;font-weight:700;flex:0 0 auto" title="移除" onclick="event.stopPropagation();_whClaimRemovePending(${i})">✕</a>
+    </div>`).join('') + `<div style="font-size:.72rem;color:var(--gray-400);font-weight:400;margin-top:.15rem">共 ${files.length} 个待上传 · 可继续添加</div>`;
+}
+function _whClaimRemovePending(i) {
+  (window._whClaimNewFiles || []).splice(i, 1);
+  _whClaimRenderPending();
+}
 function _whClaimInitDrop() {
   const drop = document.getElementById('whClaimDrop');
   const input = document.getElementById('whClaimFile');
-  const nameEl = document.getElementById('whClaimFileName');
   if (!drop || drop._wired) return;
   drop._wired = true;
-  const showName = () => { nameEl.textContent = input.files.length ? [...input.files].map(f => f.name).join('、') : '未选择文件'; };
+  const addFiles = list => {
+    if (!list || !list.length) return;
+    window._whClaimNewFiles = (window._whClaimNewFiles || []).concat([...list]);
+    _whClaimRenderPending();
+  };
   const lit = on => { drop.style.borderColor = on ? 'var(--green)' : ''; drop.style.background = on ? '#f0fdf4' : ''; };
   drop.addEventListener('click', () => input.click());
-  input.addEventListener('change', showName);
+  input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
   ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(true); }));
   ['dragleave', 'dragend'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); lit(false); }));
   drop.addEventListener('drop', e => {
     e.preventDefault(); lit(false);
-    const files = e.dataTransfer && e.dataTransfer.files;
-    if (files && files.length) { input.files = files; showName(); }
+    addFiles(e.dataTransfer && e.dataTransfer.files);
   });
 }
 
@@ -34642,8 +34662,7 @@ async function saveWhClaim() {
     fd.append('description', desc);
     fd.append('resolution', document.getElementById('whClaimResolution').value || '');
     fd.append('status', document.getElementById('whClaimStatus').value || 'open');
-    const fileInput = document.getElementById('whClaimFile');
-    [...fileInput.files].forEach(f => fd.append('invoice', f));
+    (window._whClaimNewFiles || []).forEach(f => fd.append('invoice', f));
     fd.append('remove_paths', JSON.stringify([...(window._whClaimRemove || [])]));
     const url = editId ? '/api/admin/warehouse-claims/' + editId : '/api/admin/warehouse-claims';
     const resp = await fetch(url, { method: editId ? 'PUT' : 'POST', body: fd });
