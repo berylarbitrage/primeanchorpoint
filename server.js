@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12q · 赔偿事故多文件修复:重复选择/拖拽改为追加不覆盖',
+  tag: '2026-07-12r · 修复Container发票工资列串值:成本一律=分包合计',
   started: new Date().toISOString(),
 };
 
@@ -19274,18 +19274,24 @@ function _invoiceWageCost(items_json, profile_json) {
   let cost = 0;
   try {
     const profile = profile_json ? JSON.parse(profile_json) : {};
+    // Container invoices: our cost is ALWAYS the subcontractor total (qty × sub_price).
+    // Deliberately ignore any stashed profile.wage_cost here — hourly wages could leak
+    // into it when a monthly-payments import was switched to container mode, which made
+    // every container invoice show the same bogus 工资 (e.g. 671.36).
+    if (profile.invoice_mode === 'container') {
+      const cs = Array.isArray(profile.container_items) ? profile.container_items : [];
+      cost = cs.reduce((s, c) => s + (c.sub_total != null
+        ? (Number(c.sub_total) || 0)
+        : (Number(c.qty) || 0) * (Number(c.sub_price) || 0)), 0);
+      return Math.round(cost * 100) / 100;
+    }
     // Invoices transferred from monthly worker payments bill the company rate (从公司收) on
     // their line items but stash the real 付给工人 wage here, so trust it when present.
     if (profile && profile.wage_cost != null && isFinite(Number(profile.wage_cost))) {
       return Math.round(Number(profile.wage_cost) * 100) / 100;
     }
-    if (profile.invoice_mode === 'container') {
-      const cs = Array.isArray(profile.container_items) ? profile.container_items : [];
-      cost = cs.reduce((s, c) => s + (Number(c.sub_price) || 0), 0);
-    } else {
-      const items = items_json ? JSON.parse(items_json) : [];
-      cost = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
-    }
+    const items = items_json ? JSON.parse(items_json) : [];
+    cost = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
   } catch (_) { /* malformed JSON → cost 0 */ }
   return Math.round(cost * 100) / 100;
 }

@@ -35333,9 +35333,15 @@ async function saveInvpInvoice(status) {
   // 两边分开记账：从「按月付款」转来的发票，行项目按公司价（从公司收）开给客户，真实「付给
   // 工人」工资单独存进 profile.wage_cost，后台列表才能正确显示工资/利润。由转入时留底的逐人
   // 工资时薪重算；重新编辑已存发票（行项目里没有工资时薪）时沿用原值，避免利润被清零。
-  const _wageCost = _invpComputeWageCost();
-  if (_wageCost != null) profileWithMode.wage_cost = _wageCost;
-  else if (window._invpLoadedWageCost != null) profileWithMode.wage_cost = window._invpLoadedWageCost;
+  // Container 发票的成本永远是分包合计——绝不沿用工时表/旧值，避免按月付款转入后
+  // 切到 Container 时把工人工资(如 671.36)串到每张 container 发票上。
+  if (mode === 'container') {
+    profileWithMode.wage_cost = Math.round(containerItems.reduce((s, i) => s + (Number(i.sub_total) || 0), 0) * 100) / 100;
+  } else {
+    const _wageCost = _invpComputeWageCost();
+    if (_wageCost != null) profileWithMode.wage_cost = _wageCost;
+    else if (window._invpLoadedWageCost != null) profileWithMode.wage_cost = window._invpLoadedWageCost;
+  }
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
     period_start: ps, period_end: pe, subtotal, items, markup_rate: markupRate, profile: profileWithMode, status
