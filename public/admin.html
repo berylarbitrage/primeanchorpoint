@@ -35307,7 +35307,9 @@ async function saveInvpInvoice(status) {
 
 async function loadInvpCompanies() {
   const res = await api('/admin/partners').catch(() => []);
-  const list = Array.isArray(res) ? res.filter(p => p.active) : (res?.partners || []).filter(p => p.active);
+  // 除「已作废」外全部可选（不再只限已签约/激活的），已激活的排在前面。
+  const list = (Array.isArray(res) ? res : (res?.partners || [])).filter(p => !p.abolished)
+    .sort((a, b) => (b.active ? 1 : 0) - (a.active ? 1 : 0) || String(a.name || '').localeCompare(String(b.name || ''), 'zh'));
   window._invpPartners = list;
 }
 
@@ -35330,7 +35332,7 @@ function onInvPageCompanySearch(val) {
     return `<div style="padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.88rem"
       onmousedown="selectInvPartner(${p.id})"
       onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background=''">
-      <div style="font-weight:600">${esc(p.name)}</div>
+      <div style="font-weight:600">${esc(p.name)}${p.active ? '' : ' <span style="font-size:.68rem;font-weight:600;color:var(--gray-400);background:var(--gray-100);border-radius:4px;padding:0 5px">未签约</span>'}</div>
       ${addrLine ? `<div style="font-size:.78rem;color:var(--gray-500)">${esc(addrLine)}</div>` : ''}
     </div>`;
   }).join('');
@@ -38310,7 +38312,8 @@ async function openInvoiceModal() {
   if (opts) opts.style.display = 'none';
   // Load companies from partners
   const partners = await api('/admin/partners').catch(() => []);
-  _invoiceCompanies = Array.isArray(partners) ? partners.filter(p => p.active) : (partners?.partners || []).filter(p => p.active);
+  _invoiceCompanies = (Array.isArray(partners) ? partners : (partners?.partners || [])).filter(p => !p.abolished)
+    .sort((a, b) => (b.active ? 1 : 0) - (a.active ? 1 : 0) || String(a.name || '').localeCompare(String(b.name || ''), 'zh'));
 
   const sel = document.getElementById('invCompanySelect');
   sel.innerHTML = '<option value="">— 请选择客户公司 —</option>'
