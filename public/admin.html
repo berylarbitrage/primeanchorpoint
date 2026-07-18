@@ -35099,63 +35099,115 @@ async function elUnlink(id) {
   } catch (e) { showToast(e.message, 'error'); }
 }
 
-// Link 弹窗：列出不在当前分类里的支出标注（未分类在前），勾选后批量归入当前分类。
+// Link 弹窗：和发票的凭证选择器同一套样子——按账单分组、可筛选；
+// 已 link 到当前分类的行带绿色「✓ 已Link」，点它标记移除；点普通行选中，保存时一起生效。
+let _elPickSel = new Set();     // 保存后应当「在当前分类里」的交易 id 集合
 function elOpenLinkPicker() {
+  _elPickSel = new Set(_elTxns.filter(t => t.category === _elCur).map(t => t.id));
   let ov = document.getElementById('elLinkModal'); if (ov) ov.remove();
   ov = document.createElement('div');
   ov.id = 'elLinkModal';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:710;display:flex;align-items:center;justify-content:center;padding:1rem';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:680px;width:100%;max-height:88vh;display:flex;flex-direction:column;padding:1.1rem">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+  const stmtNames = [];
+  const seenStmt = new Set();
+  _elTxns.forEach(t => { if (!seenStmt.has(t.statement_id)) { seenStmt.add(t.statement_id); stmtNames.push({ id: t.statement_id, name: t.file_name || ('账单 #' + t.statement_id), bank: t.bank || '' }); } });
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:90vh;display:flex;flex-direction:column;padding:1.1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
       <h3 style="margin:0;font-size:1rem">🔗 Link 开支到「${esc(_elCur)}」</h3>
       <button class="btn btn-outline" onclick="document.getElementById('elLinkModal').remove()">✕ 关闭</button></div>
-    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
-      <input id="elPickQ" placeholder="🔍 搜付给谁 / 备注 / 金额…" style="flex:1;padding:.42rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem" oninput="_elPickRender()">
-      <label style="font-size:.76rem;color:var(--gray-500);display:flex;align-items:center;gap:.3rem;white-space:nowrap"><input type="checkbox" id="elPickUncatOnly" checked onchange="_elPickRender()">只看未分类</label>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.4rem;margin-bottom:.5rem">
+      <select id="elPickStmt" onchange="_elPickRender()" style="min-width:0;padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+        <option value="">全部账单</option>
+        ${stmtNames.map(s => `<option value="${s.id}">${esc((s.bank ? s.bank + ' · ' : '') + s.name)}</option>`).join('')}
+      </select>
+      <input id="elPickQ" placeholder="搜付给谁 / 备注…" style="padding:.42rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem" oninput="_elPickRender()">
+      <input id="elPickAmtMin" type="number" step="0.01" placeholder="金额 ≥" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem" oninput="_elPickRender()">
+      <input id="elPickAmtMax" type="number" step="0.01" placeholder="金额 ≤" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem" oninput="_elPickRender()">
+      <label style="font-size:.76rem;color:var(--gray-500);display:flex;align-items:center;gap:.3rem;white-space:nowrap"><input type="checkbox" id="elPickUncatOnly" onchange="_elPickRender()">隐藏已在其他分类的</label>
     </div>
-    <div id="elPickList" style="flex:1;overflow-y:auto;min-height:0;border:1px solid var(--gray-100);border-radius:8px"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.7rem">
-      <span id="elPickCount" style="font-size:.78rem;color:var(--gray-500)">已勾选 0 笔</span>
-      <button class="btn btn-green" onclick="elConfirmLink()">关联到「${esc(_elCur)}」</button></div>
+    <div id="elPickList" style="flex:1;overflow-y:auto;min-height:0;border:1px solid var(--gray-200);border-radius:8px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.7rem;gap:.6rem">
+      <span id="elPickCount" style="font-size:.78rem;color:var(--gray-500)"></span>
+      <button class="btn btn-green" id="elPickSaveBtn" onclick="elConfirmLink()">保存 Link</button></div>
   </div>`;
   document.body.appendChild(ov);
   _elPickRender();
 }
+function _elPickToggle(id) {
+  if (_elPickSel.has(id)) _elPickSel.delete(id); else _elPickSel.add(id);
+  _elPickRender();
+}
+function _elPickCounts() {
+  const cur = new Set(_elTxns.filter(t => t.category === _elCur).map(t => t.id));
+  const adds = [..._elPickSel].filter(id => !cur.has(id));
+  const removes = [...cur].filter(id => !_elPickSel.has(id));
+  return { adds, removes };
+}
 function _elPickRender() {
   const box = document.getElementById('elPickList'); if (!box) return;
   const q = ((document.getElementById('elPickQ') || {}).value || '').trim().toLowerCase();
-  const uncatOnly = !!(document.getElementById('elPickUncatOnly') || {}).checked;
-  const prevChecked = new Set([...box.querySelectorAll('input:checked')].map(x => parseInt(x.value, 10)));
-  const cands = _elTxns.filter(t => t.category !== _elCur)
-    .filter(t => !uncatOnly || !t.category)
-    .filter(t => {
-      if (!q) return true;
-      const hay = [t.payee, t.note, t.purpose, t.invoice_number, String(Math.abs(t.amount || 0))].map(x => x || '').join(' ').toLowerCase();
-      return hay.includes(q);
-    })
-    .sort((a, b) => ((a.category ? 1 : 0) - (b.category ? 1 : 0)) || String(b.txn_date || '').localeCompare(String(a.txn_date || '')));
-  box.innerHTML = cands.length ? cands.map(t => {
-    const memo = [t.purpose, t.note].filter(Boolean).join(' · ');
-    return `<label style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-bottom:1px solid var(--gray-100);cursor:pointer;font-size:.82rem">
-      <input type="checkbox" value="${t.id}" ${prevChecked.has(t.id) ? 'checked' : ''} onchange="document.getElementById('elPickCount').textContent='已勾选 '+document.querySelectorAll('#elPickList input:checked').length+' 笔'">
-      <span style="white-space:nowrap;color:var(--gray-500)">${esc(t.txn_date || '—')}</span>
-      <span style="flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc((t.payee || '') + (memo ? ' · ' + memo : ''))}">${esc(t.payee || '—')}${memo ? ` <span style="font-weight:400;color:var(--gray-400)">· ${esc(memo)}</span>` : ''}</span>
-      ${t.category ? `<span style="flex:0 0 auto;font-size:.68rem;color:#92400e;background:#fef3c7;border-radius:5px;padding:1px 6px" title="已在其他分类，勾选会移动过来">${esc(t.category)}</span>` : ''}
-      <b style="flex:0 0 auto;color:#dc2626">${_elMoney(t.amount)}</b>
-      <span style="flex:0 0 auto;font-size:.7rem;color:var(--gray-400)">${esc(t.bank || '')}</span>
-    </label>`;
-  }).join('') : '<div style="padding:1rem;text-align:center;color:var(--gray-400);font-size:.82rem">没有符合条件的支出</div>';
+  const fStmt = (document.getElementById('elPickStmt') || {}).value || '';
+  const hideOtherCat = !!(document.getElementById('elPickUncatOnly') || {}).checked;
+  const _num = v => { const n = parseFloat(String(v == null ? '' : v)); return isNaN(n) ? null : n; };
+  const amtMin = _num((document.getElementById('elPickAmtMin') || {}).value);
+  const amtMax = _num((document.getElementById('elPickAmtMax') || {}).value);
+  // 按账单分组（保持接口返回的新→旧顺序）
+  const groups = new Map();
+  _elTxns.forEach(t => {
+    if (fStmt && String(t.statement_id) !== String(fStmt)) return;
+    const inCur = _elPickSel.has(t.id) || t.category === _elCur;
+    if (hideOtherCat && t.category && t.category !== _elCur && !inCur) return;
+    if (q) {
+      const hay = [t.payee, t.note, t.purpose, t.invoice_number].map(x => x || '').join(' ').toLowerCase();
+      if (!hay.includes(q)) return;
+    }
+    const amt = Math.abs(Number(t.amount) || 0);
+    if (amtMin != null && amt < amtMin) return;
+    if (amtMax != null && amt > amtMax) return;
+    const k = String(t.statement_id);
+    if (!groups.has(k)) groups.set(k, { name: t.file_name || ('账单 #' + t.statement_id), bank: t.bank || '', rows: [] });
+    groups.get(k).rows.push(t);
+  });
+  const curSet = new Set(_elTxns.filter(t => t.category === _elCur).map(t => t.id));
+  let html = '', shown = 0;
+  groups.forEach(g => {
+    html += `<div style="padding:.4rem .6rem;background:#f8fafc;border-top:1px solid var(--gray-100);font-size:.72rem;color:var(--gray-500);font-weight:700;position:sticky;top:0;z-index:1">🏦 ${esc((g.bank ? g.bank + ' · ' : '') + g.name)} <span style="font-weight:400">（${g.rows.length} 笔支出）</span></div>`;
+    g.rows.forEach(t => {
+      shown++;
+      const memo = [t.purpose, t.note].filter(Boolean).join(' · ');
+      const bits = [t.txn_date, esc(t.payee || '—'), memo ? esc(memo) : ''].filter(Boolean).join(' · ');
+      const willBeIn = _elPickSel.has(t.id);
+      const wasIn = curSet.has(t.id);
+      let rightBadge = '', rowBg = '', textStyle = '';
+      if (wasIn && willBeIn) { rightBadge = `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;color:#15803d;background:#dcfce7;border-radius:5px;padding:2px 7px">✓ 已Link</span>`; rowBg = 'background:#f0fdf4'; }
+      else if (!wasIn && willBeIn) { rightBadge = `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;color:#1d4ed8;background:#dbeafe;border-radius:5px;padding:2px 7px">✓ 将Link</span>`; rowBg = 'background:#eff6ff'; }
+      else if (wasIn && !willBeIn) { rightBadge = `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;color:#b91c1c;background:#fee2e2;border-radius:5px;padding:2px 7px">将移除</span>`; textStyle = 'text-decoration:line-through;opacity:.6'; }
+      else if (t.category) { rightBadge = `<span style="flex:0 0 auto;font-size:.68rem;color:#92400e;background:#fef3c7;border-radius:5px;padding:1px 6px" title="已在其他分类，点击会移动到「${esc(_elCur)}」">${esc(t.category)}</span>`; }
+      return html += `<div onclick="_elPickToggle(${t.id})" style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;${rowBg}">
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${textStyle}" title="${esc((t.payee || '') + (memo ? ' · ' + memo : ''))}">${bits}</span>
+        <b style="flex:0 0 auto;color:#dc2626;${textStyle}">${_elMoney(t.amount)}</b>
+        ${rightBadge}
+      </div>`;
+    });
+  });
+  box.innerHTML = html || '<div style="padding:1rem;text-align:center;color:var(--gray-400);font-size:.82rem">没有符合条件的支出</div>';
+  const { adds, removes } = _elPickCounts();
+  const cnt = document.getElementById('elPickCount');
+  if (cnt) cnt.textContent = `共 ${shown} 笔 · 新 Link ${adds.length} 笔${removes.length ? ` · 移除 ${removes.length} 笔` : ''}`;
+  const btn = document.getElementById('elPickSaveBtn');
+  if (btn) btn.disabled = !(adds.length || removes.length);
 }
 async function elConfirmLink() {
-  const ids = [...document.querySelectorAll('#elPickList input:checked')].map(x => parseInt(x.value, 10));
-  if (!ids.length) { showToast('请先勾选要关联的开支', 'error'); return; }
+  const { adds, removes } = _elPickCounts();
+  if (!adds.length && !removes.length) { showToast('没有改动', 'error'); return; }
   try {
-    await api('/admin/bank-txns/category', { method: 'POST', body: JSON.stringify({ ids, category: _elCur }) });
-    const set = new Set(ids);
-    _elTxns.forEach(t => { if (set.has(t.id)) t.category = _elCur; });
+    if (adds.length) await api('/admin/bank-txns/category', { method: 'POST', body: JSON.stringify({ ids: adds, category: _elCur }) });
+    if (removes.length) await api('/admin/bank-txns/category', { method: 'POST', body: JSON.stringify({ ids: removes, category: '' }) });
+    const addSet = new Set(adds), rmSet = new Set(removes);
+    _elTxns.forEach(t => { if (addSet.has(t.id)) t.category = _elCur; else if (rmSet.has(t.id)) t.category = ''; });
     const m = document.getElementById('elLinkModal'); if (m) m.remove();
-    showToast(`已关联 ${ids.length} 笔到「${_elCur}」`, 'success');
+    showToast(`已保存：Link ${adds.length} 笔${removes.length ? `，移除 ${removes.length} 笔` : ''}`, 'success');
     renderExpenseLedger();
   } catch (e) { showToast(e.message, 'error'); }
 }
