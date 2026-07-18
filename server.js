@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12k · 赔偿事故仓库下拉改为直接调取客户地址',
+  tag: '2026-07-12l · 新增收支分类分析页:标注按分类打钱,分类/按月统计',
   started: new Date().toISOString(),
 };
 
@@ -2572,6 +2572,8 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN used_kind TEXT DEFAULT
 // External links: JSON array of { system, ref, url, label, at } recording where this
 // transaction has been linked (e.g. to a payment on pallet.bintique.com).
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN links TEXT DEFAULT '[]'`); } catch(e) {}
+// 收支分类：用于「收支分类分析」页按类别统计（自由文本，前端提供常用预设）。
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -28791,6 +28793,40 @@ app.get('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// ── 收支分类分析：全部标注拉平成一张表 ──
+// GET /api/admin/bank-txns — 所有账单的 box 标注（附账单信息 + 发票关联），供分类统计页用。
+app.get('/api/admin/bank-txns', requireAdmin, blockManager, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT t.id, t.statement_id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.purpose, t.invoice_number, t.category, t.used_invoice_id, t.used_kind,
+        s.bank, s.operator, s.file_name, s.period_start AS stmt_period_start, s.period_end AS stmt_period_end
+      FROM bank_statement_txns t LEFT JOIN bank_statements s ON t.statement_id = s.id
+      WHERE t.kind='box' ORDER BY t.id DESC`).all();
+    const invStmt = db.prepare('SELECT invoice_number, company_name FROM invoices WHERE id=?');
+    const cache = new Map();
+    for (const r of rows) {
+      if (r.used_invoice_id) {
+        if (!cache.has(r.used_invoice_id)) cache.set(r.used_invoice_id, invStmt.get(r.used_invoice_id) || null);
+        const inv = cache.get(r.used_invoice_id);
+        r.linked = inv ? { invoice_id: r.used_invoice_id, invoice_number: inv.invoice_number, company_name: inv.company_name, kind: r.used_kind === 'recv' ? 'recv' : 'sub' } : null;
+      } else r.linked = null;
+      delete r.used_invoice_id; delete r.used_kind;
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// POST /api/admin/bank-txns/category — 给一批标注设置分类（单笔也走这里）。
+app.post('/api/admin/bank-txns/category', requireAdmin, blockManager, (req, res) => {
+  try {
+    const ids = (Array.isArray(req.body && req.body.ids) ? req.body.ids : []).map(x => parseInt(x)).filter(Number.isFinite);
+    if (!ids.length) return res.status(400).json({ error: '缺少 ids' });
+    const cat = String((req.body && req.body.category) || '').trim().slice(0, 60);
+    const up = db.prepare(`UPDATE bank_statement_txns SET category=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND kind='box'`);
+    const tx = db.transaction(list => { for (const id of list) up.run(cat, id); });
+    tx(ids);
+    res.json({ success: true, updated: ids.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Create a box annotation.
 app.post('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
   try {
