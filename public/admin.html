@@ -42616,7 +42616,11 @@ function _bsDetailRender() {
           : _linkPill(r.invoice_id, r.invoice_number, '🧾 已用作分包付款', '#eff6ff', '#1d4ed8', '#bfdbfe', `已关联发票 ${esc(r.invoice_number)}${nm} · 这笔支出是该发票的分包付款`);
       })() : '';
       const extLinks = (Array.isArray(b.links) && b.links.length) ? _bsLinkBadges(b.links) : '';
-      const linkCell = (usedBadge + invRefBadge + extLinks) || '<span style="color:var(--gray-300)">—</span>';
+      // 开支账本分类：这笔已被 link 到哪个分类（点击直接打开开支账本对应分类）。
+      const catBadge = b.category
+        ? `<a onclick="bsOpenLedgerCat('${esc(b.category).replace(/'/g, "\\'")}')" title="已 Link 到开支账本「${esc(b.category)}」（点击打开）" style="display:inline-block;padding:.2rem .55rem;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;font-weight:700;font-size:.72rem;white-space:nowrap;cursor:pointer;text-decoration:none">📒 已Link「${esc(b.category)}」</a>`
+        : '';
+      const linkCell = (usedBadge + invRefBadge + extLinks + catBadge) || '<span style="color:var(--gray-300)">—</span>';
       return `<tr style="border-top:1px solid var(--gray-100);background:${i % 2 ? '#fafbfc' : '#fff'}">
         <td style="padding:.55rem .5rem;color:var(--gray-400);font-size:.76rem;text-align:right">${i + 1}</td>
         <td style="padding:.55rem .5rem;white-space:nowrap">${dirPill}</td>
@@ -42640,6 +42644,12 @@ function _bsDetailRender() {
   }
 }
 function bsCloseBoxDetail() { document.getElementById('bsBoxDetailModal').classList.remove('show'); }
+// 从标注的分类徽章跳到开支账本对应分类
+function bsOpenLedgerCat(cat) {
+  bsCloseBoxDetail();
+  _elCur = cat;
+  showTab('expense-ledger');
+}
 
 // ═══════ 创始人取款统计 ═══════
 const FD_FOUNDERS = ['Beryl Zhang', 'Niki Zhao', 'Tiexiong Zhou'];
