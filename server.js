@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12p · 模板列表加直接下载:简短英文文件名',
+  tag: '2026-07-12q · 赔偿事故多文件修复:重复选择/拖拽改为追加不覆盖',
   started: new Date().toISOString(),
 };
 
