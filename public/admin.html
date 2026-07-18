@@ -34400,12 +34400,31 @@ let _whClaimWarehouses = [];
 async function loadWarehouseClaims() {
   const wrap = document.getElementById('whClaimsWrap');
   if (!wrap) return;
-  const [claims, whRes] = await Promise.all([
+  const [claims, partners] = await Promise.all([
     api('/admin/warehouse-claims').catch(() => []),
-    fetch('/api/admin/warehouses').then(r => r.json()).catch(() => ({ warehouses: [] })),
+    (typeof allPartners !== 'undefined' && allPartners.length) ? Promise.resolve(allPartners) : api('/admin/partners').catch(() => []),
   ]);
   _whClaims = Array.isArray(claims) ? claims : [];
-  _whClaimWarehouses = (whRes && whRes.warehouses) || [];
+  // 仓库选项直接取客户（合作公司）的地址：每个公司的每个州地址一条，
+  // 复用公司标签打印的取址规则（_partnerStates / _partnerAddrForState）。
+  _whClaimWarehouses = [];
+  (Array.isArray(partners) ? partners : []).filter(p => !p.abolished).forEach(p => {
+    const name = (p.name || '').trim();
+    if (!name) return;
+    const sts = _partnerStates(p);
+    const seen = new Set();
+    (sts.length ? sts : ['']).forEach(st => {
+      const addr = _partnerAddrForState(p, st);
+      const key = st + '|' + addr;
+      if (seen.has(key)) return;
+      seen.add(key);
+      _whClaimWarehouses.push({
+        warehouse_code: 'P' + p.id + (st ? '-' + st : ''),
+        warehouse_name: name + (addr ? ' — ' + addr : (st ? '（' + st + '）' : '')),
+      });
+    });
+  });
+  _whClaimWarehouses.sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name, 'zh'));
   renderWhClaims();
 }
 
@@ -34472,8 +34491,8 @@ function openWhClaimModal(id) {
   document.getElementById('whClaimEditId').value = id || '';
   document.getElementById('whClaimModalTitle').textContent = id ? '查看 / 编辑赔偿事故' : '新建赔偿事故';
   const whSel = document.getElementById('whClaimWarehouse');
-  whSel.innerHTML = '<option value="">-- 选择仓库 --</option>'
-    + _whClaimWarehouses.map(w => `<option value="${esc(w.warehouse_code)}" data-name="${esc(w.warehouse_name)}">${esc(w.warehouse_name)}${w.warehouse_code ? ' (' + esc(w.warehouse_code) + ')' : ''}</option>`).join('');
+  whSel.innerHTML = '<option value="">-- 选择仓库（客户地址）--</option>'
+    + _whClaimWarehouses.map(w => `<option value="${esc(w.warehouse_code)}" data-name="${esc(w.warehouse_name)}">${esc(w.warehouse_name)}</option>`).join('');
   document.getElementById('whClaimFile').value = '';
   document.getElementById('whClaimFileName').textContent = '未选择文件';
   const currentWrap = document.getElementById('whClaimCurrentWrap');
