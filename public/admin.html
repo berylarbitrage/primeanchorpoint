@@ -35051,7 +35051,7 @@ function renderExpenseLedger() {
     return `<tr style="border-top:1px solid var(--gray-100)">
       <td style="padding:7px 8px;color:var(--gray-400)">${i + 1}</td>
       <td style="padding:7px 8px;white-space:nowrap;color:var(--gray-600)">${esc(t.txn_date || '—')}</td>
-      <td style="padding:7px 8px;font-weight:600;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.payee || '')}">${esc(t.payee || '—')}</td>
+      <td style="padding:7px 8px;font-weight:600;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_elPayee(t.payee))}">${esc(_elPayee(t.payee))}</td>
       <td style="padding:7px 8px;text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_elMoney(t.amount)}</td>
       <td style="padding:7px 8px;color:var(--gray-500);font-size:.78rem;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(memo)}">${esc(memo) || '—'}</td>
       <td style="padding:7px 8px;text-align:center">${link}</td>
@@ -35138,6 +35138,24 @@ function _elPickToggle(id) {
   if (_elPickSel.has(id)) _elPickSel.delete(id); else _elPickSel.add(id);
   _elPickRender();
 }
+// 每个分类固定一种颜色的小徽章（按名字哈希取色，颜色稳定），未分类是灰色虚线框。
+const _EL_CHIP_COLORS = [
+  ['#dbeafe', '#1e40af'], ['#dcfce7', '#166534'], ['#fef3c7', '#92400e'], ['#fce7f3', '#9d174d'],
+  ['#ede9fe', '#5b21b6'], ['#e0f2fe', '#0c4a6e'], ['#ffedd5', '#9a3412'], ['#f0fdfa', '#0f766e'],
+];
+function _elCatChip(cat, big) {
+  const fs = big ? '.74rem' : '.68rem';
+  if (!cat) return `<span style="flex:0 0 auto;font-size:${fs};color:#94a3b8;border:1px dashed #cbd5e1;border-radius:999px;padding:1px 8px;white-space:nowrap">未分类</span>`;
+  let h = 0; const s = String(cat);
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 9973;
+  const [bg, fg] = _EL_CHIP_COLORS[h % _EL_CHIP_COLORS.length];
+  return `<span style="flex:0 0 auto;font-size:${fs};font-weight:700;color:${fg};background:${bg};border-radius:999px;padding:1.5px 8px;white-space:nowrap">${esc(s)}</span>`;
+}
+// 付款人显示美化：优先用对账页同款 _bsPayeeDisplay（员工:公司|姓名 → 👷 公司 · 姓名）。
+function _elPayee(p) {
+  try { const d = _bsPayeeDisplay(p); if (d) return d; } catch (_) {}
+  return p || '—';
+}
 function _elPickCounts() {
   const cur = new Set(_elTxns.filter(t => t.category === _elCur).map(t => t.id));
   const adds = [..._elPickSel].filter(id => !cur.has(id));
@@ -35172,22 +35190,27 @@ function _elPickRender() {
   const curSet = new Set(_elTxns.filter(t => t.category === _elCur).map(t => t.id));
   let html = '', shown = 0;
   groups.forEach(g => {
-    html += `<div style="padding:.4rem .6rem;background:#f8fafc;border-top:1px solid var(--gray-100);font-size:.72rem;color:var(--gray-500);font-weight:700;position:sticky;top:0;z-index:1">🏦 ${esc((g.bank ? g.bank + ' · ' : '') + g.name)} <span style="font-weight:400">（${g.rows.length} 笔支出）</span></div>`;
+    const gTot = g.rows.reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+    html += `<div style="display:flex;align-items:center;gap:.5rem;padding:.45rem .7rem;background:#f1f5f9;border-top:1px solid var(--gray-200);font-size:.74rem;color:#334155;font-weight:700;position:sticky;top:0;z-index:1">
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏦 ${esc((g.bank ? g.bank + ' · ' : '') + g.name)}</span>
+      <span style="flex:0 0 auto;font-weight:400;color:#64748b">${g.rows.length} 笔</span>
+      <b style="flex:0 0 auto;color:#dc2626">${_elMoney(gTot)}</b></div>`;
     g.rows.forEach(t => {
       shown++;
       const memo = [t.purpose, t.note].filter(Boolean).join(' · ');
-      const bits = [t.txn_date, esc(t.payee || '—'), memo ? esc(memo) : ''].filter(Boolean).join(' · ');
       const willBeIn = _elPickSel.has(t.id);
       const wasIn = curSet.has(t.id);
-      let rightBadge = '', rowBg = '', textStyle = '';
-      if (wasIn && willBeIn) { rightBadge = `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;color:#15803d;background:#dcfce7;border-radius:5px;padding:2px 7px">✓ 已Link</span>`; rowBg = 'background:#f0fdf4'; }
-      else if (!wasIn && willBeIn) { rightBadge = `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;color:#1d4ed8;background:#dbeafe;border-radius:5px;padding:2px 7px">✓ 将Link</span>`; rowBg = 'background:#eff6ff'; }
-      else if (wasIn && !willBeIn) { rightBadge = `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;color:#b91c1c;background:#fee2e2;border-radius:5px;padding:2px 7px">将移除</span>`; textStyle = 'text-decoration:line-through;opacity:.6'; }
-      else if (t.category) { rightBadge = `<span style="flex:0 0 auto;font-size:.68rem;color:#92400e;background:#fef3c7;border-radius:5px;padding:1px 6px" title="已在其他分类，点击会移动到「${esc(_elCur)}」">${esc(t.category)}</span>`; }
-      return html += `<div onclick="_elPickToggle(${t.id})" style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;${rowBg}">
-        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${textStyle}" title="${esc((t.payee || '') + (memo ? ' · ' + memo : ''))}">${bits}</span>
-        <b style="flex:0 0 auto;color:#dc2626;${textStyle}">${_elMoney(t.amount)}</b>
-        ${rightBadge}
+      let rightBadge = '', rowBg = '', textStyle = '', barColor = 'transparent';
+      if (wasIn && willBeIn) { rightBadge = `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;color:#15803d;background:#dcfce7;border-radius:5px;padding:2px 8px">✓ 已Link</span>`; rowBg = 'background:#f0fdf4'; barColor = '#22c55e'; }
+      else if (!wasIn && willBeIn) { rightBadge = `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;color:#1d4ed8;background:#dbeafe;border-radius:5px;padding:2px 8px">＋ 将Link</span>`; rowBg = 'background:#eff6ff'; barColor = '#3b82f6'; }
+      else if (wasIn && !willBeIn) { rightBadge = `<span style="flex:0 0 auto;font-size:.7rem;font-weight:700;color:#b91c1c;background:#fee2e2;border-radius:5px;padding:2px 8px">－ 将移除</span>`; textStyle = 'text-decoration:line-through;opacity:.55'; barColor = '#ef4444'; }
+      return html += `<div onclick="_elPickToggle(${t.id})" style="display:flex;align-items:center;gap:.5rem;padding:.5rem .7rem .5rem .55rem;border-top:1px solid var(--gray-100);border-left:3px solid ${barColor};cursor:pointer;font-size:.82rem;${rowBg}">
+        <span style="flex:0 0 auto;white-space:nowrap;color:var(--gray-400);font-size:.76rem;${textStyle}">${esc(t.txn_date || '—')}</span>
+        <span style="flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${textStyle}" title="${esc(_elPayee(t.payee) + (memo ? ' · ' + memo : ''))}">${esc(_elPayee(t.payee))}</span>
+        ${memo ? `<span style="flex:0 1 auto;min-width:0;font-size:.7rem;color:#64748b;background:#f8fafc;border:1px solid var(--gray-200);border-radius:999px;padding:1px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;${textStyle}" title="${esc(memo)}">${esc(memo)}</span>` : ''}
+        ${_elCatChip(t.category)}
+        <b style="flex:0 0 auto;color:#dc2626;min-width:76px;text-align:right;${textStyle}">${_elMoney(t.amount)}</b>
+        ${rightBadge || '<span style="flex:0 0 auto;width:64px"></span>'}
       </div>`;
     });
   });
