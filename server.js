@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12w · 开支账本加入收入:收绿支红,卡片/明细/弹窗都分开显示',
+  tag: '2026-07-12x · 银行费用/卡车费标注自动归入对应开支分类(含历史回填)',
   started: new Date().toISOString(),
 };
 
@@ -2733,6 +2733,27 @@ try {
     if (_pnCount) console.log(`[migration] 公司编号改为带公司名缩写: ${_pnCount} 家`);
   }
 } catch (e) { console.log('[migration] partner number rename error:', e.message); }
+
+// 标注自动分类：按「付给谁」推断开支账本分类（银行费用 → 银行开支，卡车费 → 卡车开支）。
+// 新建/编辑标注时自动打上；不覆盖用户手动设置的分类。
+function _bsAutoCategory(payee) {
+  const p = String(payee || '').trim();
+  if (p === '银行费用') return '银行开支';
+  if (p.startsWith('卡车费:')) return '卡车开支';
+  return '';
+}
+// 一次性回填：已存在的银行费用/卡车费标注里还没有分类的，自动归入对应分类。
+try {
+  const _acDone = db.prepare("SELECT value FROM app_settings WHERE key='bank_fee_autocat_migrated'").get();
+  if (!_acDone) {
+    const r1 = db.prepare(`UPDATE bank_statement_txns SET category='银行开支'
+      WHERE kind='box' AND (category IS NULL OR category='') AND TRIM(payee)='银行费用'`).run();
+    const r2 = db.prepare(`UPDATE bank_statement_txns SET category='卡车开支'
+      WHERE kind='box' AND (category IS NULL OR category='') AND payee LIKE '卡车费:%'`).run();
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('bank_fee_autocat_migrated','1')").run();
+    if (r1.changes || r2.changes) console.log(`[migration] 标注自动分类回填: 银行开支 ${r1.changes} 条, 卡车开支 ${r2.changes} 条`);
+  }
+} catch (e) { console.log('[migration] auto-category backfill error:', e.message); }
 
 // ─── SMS Inbox Module — Database Schema ───
 db.exec(`CREATE TABLE IF NOT EXISTS sms_contacts (
@@ -28885,16 +28906,18 @@ app.post('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (re
     const b = req.body || {};
     const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
     const dir = b.direction === 'in' ? 'in' : 'out';
+    const payee = String(b.payee || '').slice(0, 120);
     const ins = db.prepare(`INSERT INTO bank_statement_txns
-      (statement_id, kind, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, purpose, invoice_number, period_start, period_end, pay_portion)
-      VALUES (?, 'box', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      (statement_id, kind, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, purpose, invoice_number, period_start, period_end, pay_portion, category)
+      VALUES (?, 'box', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         sid, Math.max(1, parseInt(b.page) || 1),
         clamp01(b.box_x), clamp01(b.box_y), clamp01(b.box_w), clamp01(b.box_h),
         String(b.txn_date || '').slice(0, 40), parseFloat(b.amount) || 0, String(b.note || '').slice(0, 200),
-        String(b.payee || '').slice(0, 120), dir,
+        payee, dir,
         String(b.purpose || '').slice(0, 80), String(b.invoice_number || '').slice(0, 80),
         String(b.period_start || '').slice(0, 40), String(b.period_end || '').slice(0, 40),
-        String(b.pay_portion || '').slice(0, 20)
+        String(b.pay_portion || '').slice(0, 20),
+        _bsAutoCategory(payee)   // 银行费用/卡车费自动归入对应开支分类
       );
     res.json({ success: true, id: ins.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -28928,6 +28951,13 @@ app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManage
         has('pay_portion') ? String(b.pay_portion || '').slice(0, 20) : row.pay_portion,
         tid, sid
       );
+    // 编辑后自动分类：分类还是空的（用户没手动设置过）且付给谁是银行费用/卡车费
+    // 时自动打上；不覆盖已有分类。
+    if (!row.category) {
+      const newPayee = has('payee') ? String(b.payee || '').slice(0, 120) : row.payee;
+      const autoCat = _bsAutoCategory(newPayee);
+      if (autoCat) db.prepare('UPDATE bank_statement_txns SET category=? WHERE id=?').run(autoCat, tid);
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
