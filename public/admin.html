@@ -35016,7 +35016,7 @@ async function loadExpenseLedger() {
   wrap.innerHTML = '<div style="color:var(--gray-400);padding:1rem">加载中…</div>';
   try {
     const all = await api('/admin/bank-txns');
-    _elTxns = (Array.isArray(all) ? all : []).filter(t => t.direction !== 'in');
+    _elTxns = Array.isArray(all) ? all : [];   // 收入支出都进账本：支出红、收入绿
   } catch (e) { wrap.innerHTML = `<div style="color:#ef4444;padding:1rem">${esc(e.message)}</div>`; return; }
   renderExpenseLedger();
 }
@@ -35028,14 +35028,18 @@ function renderExpenseLedger() {
   const extras = _elExtraCats();
   const cards = cats.map(c => {
     const list = _elTxns.filter(t => t.category === c);
-    const tot = list.reduce((s, t) => s + Math.abs(t.amount || 0), 0);
+    const outTot = list.filter(t => t.direction !== 'in').reduce((s, t) => s + Math.abs(t.amount || 0), 0);
+    const inTot = list.filter(t => t.direction === 'in').reduce((s, t) => s + Math.abs(t.amount || 0), 0);
     const on = c === _elCur;
     const cq = esc(c).replace(/'/g, "\\'");
     const removable = extras.includes(c) && !list.length && !EL_DEFAULT_CATS.includes(c);
+    const mainLine = (inTot && !outTot)
+      ? `<div style="font-size:1.25rem;font-weight:800;color:#16a34a;margin-top:.2rem">${_elMoney(inTot)}</div>`
+      : `<div style="font-size:1.25rem;font-weight:800;color:#dc2626;margin-top:.2rem">${_elMoney(outTot)}</div>${inTot ? `<div style="font-size:.78rem;font-weight:700;color:#16a34a">收入 ${_elMoney(inTot)}</div>` : ''}`;
     return `<div onclick="_elCur='${cq}';renderExpenseLedger()" style="position:relative;flex:1 1 190px;min-width:190px;max-width:280px;cursor:pointer;background:${on ? '#eff6ff' : '#fff'};border:2px solid ${on ? '#3b82f6' : 'var(--gray-200)'};border-radius:12px;padding:.8rem 1rem">
       ${removable ? `<a onclick="event.stopPropagation();elRemoveCategory('${cq}')" title="删除这个空分类" style="position:absolute;top:6px;right:8px;color:var(--gray-300);cursor:pointer;font-weight:700">✕</a>` : ''}
       <div style="font-size:.86rem;font-weight:700;${on ? 'color:#1d4ed8' : ''}">${esc(c)}</div>
-      <div style="font-size:1.25rem;font-weight:800;color:#dc2626;margin-top:.2rem">${_elMoney(tot)}</div>
+      ${mainLine}
       <div style="font-size:.72rem;color:var(--gray-400)">${list.length} 笔</div>
     </div>`;
   }).join('');
@@ -35043,16 +35047,22 @@ function renderExpenseLedger() {
 
   const rows = _elTxns.filter(t => t.category === _elCur)
     .sort((a, b) => String(b.txn_date || '').localeCompare(String(a.txn_date || '')));
-  const tot = rows.reduce((s, t) => s + Math.abs(t.amount || 0), 0);
+  const outTot = rows.filter(t => t.direction !== 'in').reduce((s, t) => s + Math.abs(t.amount || 0), 0);
+  const inTot = rows.filter(t => t.direction === 'in').reduce((s, t) => s + Math.abs(t.amount || 0), 0);
   const detail = rows.map((t, i) => {
     const memo = [t.purpose, t.note].filter(Boolean).join(' · ');
+    const isIn = t.direction === 'in';
+    const dirBadge = isIn
+      ? '<span style="display:inline-block;padding:1px 7px;border-radius:9px;font-size:.7rem;background:#dcfce7;color:#166534">收入</span>'
+      : '<span style="display:inline-block;padding:1px 7px;border-radius:9px;font-size:.7rem;background:#fee2e2;color:#991b1b">支出</span>';
     const link = t.linked ? `<span style="font-size:.72rem;color:#075985;background:#e0f2fe;border-radius:5px;padding:1px 6px" title="${esc(t.linked.company_name || '')}">${esc(t.linked.invoice_number || '')}</span>`
       : (t.invoice_number ? `<span style="font-size:.72rem;color:var(--gray-500)">${esc(t.invoice_number)}</span>` : '<span style="color:var(--gray-300)">—</span>');
     return `<tr style="border-top:1px solid var(--gray-100)">
       <td style="padding:7px 8px;color:var(--gray-400)">${i + 1}</td>
       <td style="padding:7px 8px;white-space:nowrap;color:var(--gray-600)">${esc(t.txn_date || '—')}</td>
+      <td style="padding:7px 8px;text-align:center">${dirBadge}</td>
       <td style="padding:7px 8px;font-weight:600;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(_elPayee(t.payee))}">${esc(_elPayee(t.payee))}</td>
-      <td style="padding:7px 8px;text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_elMoney(t.amount)}</td>
+      <td style="padding:7px 8px;text-align:right;font-weight:700;color:${isIn ? '#16a34a' : '#dc2626'};white-space:nowrap">${_elMoney(t.amount)}</td>
       <td style="padding:7px 8px;color:var(--gray-500);font-size:.78rem;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(memo)}">${esc(memo) || '—'}</td>
       <td style="padding:7px 8px;text-align:center">${link}</td>
       <td style="padding:7px 8px;font-size:.72rem;color:var(--gray-400);white-space:nowrap">${esc(t.bank || '')}</td>
@@ -35064,13 +35074,14 @@ function renderExpenseLedger() {
     <div style="background:#fff;border:1px solid var(--gray-200);border-radius:10px;overflow:hidden">
       <div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;padding:.65rem .9rem;border-bottom:1px solid var(--gray-100)">
         <span style="font-weight:700;font-size:.95rem">${esc(_elCur)}</span>
-        <span style="font-size:.8rem;color:var(--gray-500)">共 ${rows.length} 笔 · 合计 <b style="color:#dc2626">${_elMoney(tot)}</b></span>
+        <span style="font-size:.8rem;color:var(--gray-500)">共 ${rows.length} 笔${outTot ? ` · 支出 <b style="color:#dc2626">${_elMoney(outTot)}</b>` : ''}${inTot ? ` · 收入 <b style="color:#16a34a">${_elMoney(inTot)}</b>` : ''}</span>
         <button class="btn btn-blue" style="margin-left:auto;font-size:.8rem;padding:.35rem .9rem" onclick="elOpenLinkPicker()">🔗 Link 开支进来</button>
       </div>
       ${rows.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.84rem">
         <thead><tr style="background:var(--gray-50);font-size:.76rem;color:var(--gray-500)">
           <th style="padding:6px 8px;text-align:left">#</th><th style="padding:6px 8px;text-align:left">日期</th>
-          <th style="padding:6px 8px;text-align:left">付给谁</th><th style="padding:6px 8px;text-align:right">金额</th>
+          <th style="padding:6px 8px;text-align:center">收支</th>
+          <th style="padding:6px 8px;text-align:left">付给谁 / 谁付的</th><th style="padding:6px 8px;text-align:right">金额</th>
           <th style="padding:6px 8px;text-align:left">用途 / 备注</th><th style="padding:6px 8px;text-align:center">关联发票</th>
           <th style="padding:6px 8px;text-align:left">银行</th><th style="padding:6px 8px"></th></tr></thead>
         <tbody>${detail}</tbody></table></div>`
@@ -35121,6 +35132,9 @@ function elOpenLinkPicker() {
         <option value="">全部账单</option>
         ${stmtNames.map(s => `<option value="${s.id}">${esc((s.bank ? s.bank + ' · ' : '') + s.name)}</option>`).join('')}
       </select>
+      <select id="elPickDir" onchange="_elPickRender()" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+        <option value="">全部收支</option><option value="out">只看支出</option><option value="in">只看收入</option>
+      </select>
       <input id="elPickQ" placeholder="搜付给谁 / 备注…" style="padding:.42rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem" oninput="_elPickRender()">
       <input id="elPickAmtMin" type="number" step="0.01" placeholder="金额 ≥" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem" oninput="_elPickRender()">
       <input id="elPickAmtMax" type="number" step="0.01" placeholder="金额 ≤" style="padding:.42rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem" oninput="_elPickRender()">
@@ -35170,10 +35184,12 @@ function _elPickRender() {
   const _num = v => { const n = parseFloat(String(v == null ? '' : v)); return isNaN(n) ? null : n; };
   const amtMin = _num((document.getElementById('elPickAmtMin') || {}).value);
   const amtMax = _num((document.getElementById('elPickAmtMax') || {}).value);
+  const fDir = (document.getElementById('elPickDir') || {}).value || '';
   // 按账单分组（保持接口返回的新→旧顺序）
   const groups = new Map();
   _elTxns.forEach(t => {
     if (fStmt && String(t.statement_id) !== String(fStmt)) return;
+    if (fDir && (t.direction === 'in' ? 'in' : 'out') !== fDir) return;
     const inCur = _elPickSel.has(t.id) || t.category === _elCur;
     if (hideOtherCat && t.category && t.category !== _elCur && !inCur) return;
     if (q) {
@@ -35190,11 +35206,13 @@ function _elPickRender() {
   const curSet = new Set(_elTxns.filter(t => t.category === _elCur).map(t => t.id));
   let html = '', shown = 0;
   groups.forEach(g => {
-    const gTot = g.rows.reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+    const gOut = g.rows.filter(t => t.direction !== 'in').reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
+    const gIn = g.rows.filter(t => t.direction === 'in').reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
     html += `<div style="display:flex;align-items:center;gap:.5rem;padding:.45rem .7rem;background:#f1f5f9;border-top:1px solid var(--gray-200);font-size:.74rem;color:#334155;font-weight:700;position:sticky;top:0;z-index:1">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏦 ${esc((g.bank ? g.bank + ' · ' : '') + g.name)}</span>
       <span style="flex:0 0 auto;font-weight:400;color:#64748b">${g.rows.length} 笔</span>
-      <b style="flex:0 0 auto;color:#dc2626">${_elMoney(gTot)}</b></div>`;
+      ${gOut ? `<b style="flex:0 0 auto;color:#dc2626">支 ${_elMoney(gOut)}</b>` : ''}
+      ${gIn ? `<b style="flex:0 0 auto;color:#16a34a">收 ${_elMoney(gIn)}</b>` : ''}</div>`;
     g.rows.forEach(t => {
       shown++;
       const memo = [t.purpose, t.note].filter(Boolean).join(' · ');
@@ -35209,7 +35227,7 @@ function _elPickRender() {
         <span style="flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${textStyle}" title="${esc(_elPayee(t.payee) + (memo ? ' · ' + memo : ''))}">${esc(_elPayee(t.payee))}</span>
         ${memo ? `<span style="flex:0 1 auto;min-width:0;font-size:.7rem;color:#64748b;background:#f8fafc;border:1px solid var(--gray-200);border-radius:999px;padding:1px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;${textStyle}" title="${esc(memo)}">${esc(memo)}</span>` : ''}
         ${_elCatChip(t.category)}
-        <b style="flex:0 0 auto;color:#dc2626;min-width:76px;text-align:right;${textStyle}">${_elMoney(t.amount)}</b>
+        <b style="flex:0 0 auto;color:${t.direction === 'in' ? '#16a34a' : '#dc2626'};min-width:76px;text-align:right;${textStyle}">${t.direction === 'in' ? '+' : ''}${_elMoney(t.amount)}</b>
         ${rightBadge || '<span style="flex:0 0 auto;width:64px"></span>'}
       </div>`;
     });
