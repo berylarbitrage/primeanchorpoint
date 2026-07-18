@@ -1570,6 +1570,13 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">解决方式（怎么解决的）</label>
         <textarea id="whClaimResolution" rows="3" placeholder="如何处理、赔付给谁、结果如何…" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;font-family:inherit;resize:vertical"></textarea>
       </div>
+      <div style="grid-column:1/-1">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">关联银行付款（可选，账单里标注过的支出）</label>
+        <select id="whClaimTxn" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.83rem">
+          <option value="">— 不关联 —</option>
+        </select>
+        <div style="font-size:.72rem;color:var(--gray-400);margin-top:.25rem">选中后若金额栏为空会自动带入该笔交易金额</div>
+      </div>
     </div>
 
     <div style="margin-bottom:1rem">
@@ -34508,6 +34515,9 @@ function renderWhClaims() {
     const invoiceLink = _atts.length
       ? _atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:var(--green);text-decoration:underline;margin:0 3px;white-space:nowrap">${_atts.length > 1 ? '文件' + (i + 1) : '查看'}</a>`).join('')
       : '<span style="color:var(--gray-400)">—</span>';
+    const bankCell = c.stmt_txn_id
+      ? `<span style="display:inline-block;background:#e0f2fe;color:#075985;border-radius:6px;padding:2px 8px;font-size:.74rem;font-weight:600;white-space:nowrap" title="${esc(c.stmt_name || '')}">🏦 ${esc(c.txn_date || '')} · $${Math.abs(Number(c.txn_amount) || 0).toFixed(2)}${c.txn_payee ? ' · ' + esc(String(c.txn_payee).slice(0, 20)) : ''}</span>`
+      : '<span style="color:var(--gray-400)">—</span>';
     const desc = (c.description || '').length > 60 ? esc(c.description.slice(0, 60)) + '…' : esc(c.description || '');
     return `<tr style="border-top:1px solid var(--gray-100)">
       <td style="padding:8px 10px;font-weight:600">${esc(c.warehouse_name || c.warehouse_code || '—')}</td>
@@ -34516,6 +34526,7 @@ function renderWhClaims() {
       <td style="padding:8px 10px;color:var(--gray-600);max-width:280px">${desc || '<span style="color:var(--gray-400)">—</span>'}</td>
       <td style="padding:8px 10px;text-align:center">${_whClaimStatusBadge(c.status)}</td>
       <td style="padding:8px 10px;text-align:center">${invoiceLink}</td>
+      <td style="padding:8px 10px;text-align:center">${bankCell}</td>
       <td style="padding:8px 10px;text-align:center;white-space:nowrap">
         <button class="btn btn-sm btn-outline" onclick="openWhClaimModal(${c.id})">查看/编辑</button>
         <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteWhClaim(${c.id})">删除</button>
@@ -34532,6 +34543,7 @@ function renderWhClaims() {
         <th style="padding:8px 10px;text-align:left">事故描述</th>
         <th style="padding:8px 10px;text-align:center">状态</th>
         <th style="padding:8px 10px;text-align:center">发票</th>
+        <th style="padding:8px 10px;text-align:center">银行付款</th>
         <th style="padding:8px 10px;text-align:center">操作</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -34585,6 +34597,32 @@ function openWhClaimModal(id) {
   }
   document.getElementById('whClaimModal').style.display = 'flex';
   _whClaimInitDrop();
+  _whClaimFillTxnPicker(c ? c.stmt_txn_id : null);
+}
+
+// 关联银行付款下拉：所有账单的支出标注，新到旧。选中时金额为空则自动带入。
+async function _whClaimFillTxnPicker(currentId) {
+  const sel = document.getElementById('whClaimTxn');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— 不关联 —</option>';
+  try {
+    const stmts = await api('/admin/bank-statements');
+    const opts = [];
+    (Array.isArray(stmts) ? stmts : []).forEach(s => (s.boxes || []).forEach(b => {
+      if (b.direction === 'in') return;
+      const payee = String((typeof _bsPayeeDisplay === 'function' && _bsPayeeDisplay(b.payee)) || b.payee || '');
+      const amt = Math.abs(Number(b.amount) || 0);
+      opts.push({ id: b.id, amt, date: b.txn_date || '', label: `${b.txn_date || '?'} · $${amt.toFixed(2)} · ${payee || '—'} · ${s.file_name || ''}` });
+    }));
+    opts.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    sel.innerHTML = '<option value="">— 不关联 —</option>'
+      + opts.map(o => `<option value="${o.id}" data-amt="${o.amt}" data-date="${esc(o.date)}" ${currentId === o.id ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
+    sel.onchange = () => {
+      const o = sel.selectedOptions[0]; if (!o || !o.value) return;
+      const a = document.getElementById('whClaimAmount');
+      if (a && o.dataset.amt && !(Number(a.value) > 0)) a.value = o.dataset.amt;
+    };
+  } catch (_) { /* picker stays empty */ }
 }
 
 // 待上传文件列表（自己维护数组：浏览器的 input.files 每次重新选择会整体替换，
@@ -34664,6 +34702,7 @@ async function saveWhClaim() {
     fd.append('status', document.getElementById('whClaimStatus').value || 'open');
     (window._whClaimNewFiles || []).forEach(f => fd.append('invoice', f));
     fd.append('remove_paths', JSON.stringify([...(window._whClaimRemove || [])]));
+    fd.append('stmt_txn_id', (document.getElementById('whClaimTxn') || {}).value || '');
     const url = editId ? '/api/admin/warehouse-claims/' + editId : '/api/admin/warehouse-claims';
     const resp = await fetch(url, { method: editId ? 'PUT' : 'POST', body: fd });
     if (!resp.ok) throw new Error(await resp.text());
