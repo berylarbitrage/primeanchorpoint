@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12r · 修复Container发票工资列串值:成本一律=分包合计',
+  tag: '2026-07-12s · 赔偿事故可关联银行付款交易',
   started: new Date().toISOString(),
 };
 
@@ -774,6 +774,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS warehouse_claims (
 )`); } catch(e) {}
 // 赔偿事故支持多个发票/凭证文件：JSON 数组 [{path, name}]；旧的 invoice_path 继续兼容显示。
 try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN attachments TEXT DEFAULT '[]'`); } catch(e) {}
+// 赔偿事故可关联一笔银行账单标注（支出），和创始人取款的 stmt_txn_id 同一套做法。
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN stmt_txn_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -20174,7 +20176,12 @@ function _claimDeleteFile(p) {
 }
 
 app.get('/api/admin/warehouse-claims', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT * FROM warehouse_claims ORDER BY incident_date DESC, created_at DESC`).all();
+  const rows = db.prepare(`SELECT c.*, t.txn_date AS txn_date, t.amount AS txn_amount, t.payee AS txn_payee,
+      s.file_name AS stmt_name
+    FROM warehouse_claims c
+    LEFT JOIN bank_statement_txns t ON c.stmt_txn_id = t.id
+    LEFT JOIN bank_statements s ON t.statement_id = s.id
+    ORDER BY c.incident_date DESC, c.created_at DESC`).all();
   for (const r of rows) r.attachments = _claimAtts(r);
   res.json(rows);
 });
@@ -20183,11 +20190,12 @@ app.post('/api/admin/warehouse-claims', requireAdmin, claimUpload.array('invoice
   const f = _claimFields(req);
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  const stmtTxnId = parseInt(req.body.stmt_txn_id) || null;
   const r = db.prepare(`INSERT INTO warehouse_claims
-    (warehouse_code, warehouse_name, incident_date, amount, description, resolution, status, invoice_path, attachments)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    (warehouse_code, warehouse_name, incident_date, amount, description, resolution, status, invoice_path, attachments, stmt_txn_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status,
-      atts.length ? atts[0].path : null, JSON.stringify(atts));
+      atts.length ? atts[0].path : null, JSON.stringify(atts), stmtTxnId);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -20206,10 +20214,11 @@ app.put('/api/admin/warehouse-claims/:id', requireAdmin, claimUpload.array('invo
   }
   const files = Array.isArray(req.files) ? req.files : [];
   files.forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  const stmtTxnId = ('stmt_txn_id' in (req.body || {})) ? (parseInt(req.body.stmt_txn_id) || null) : cur.stmt_txn_id;
   db.prepare(`UPDATE warehouse_claims SET warehouse_code=?, warehouse_name=?, incident_date=?, amount=?,
-    description=?, resolution=?, status=?, invoice_path=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
+    description=?, resolution=?, status=?, invoice_path=?, attachments=?, stmt_txn_id=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status,
-      atts.length ? atts[0].path : null, JSON.stringify(atts), req.params.id);
+      atts.length ? atts[0].path : null, JSON.stringify(atts), stmtTxnId, req.params.id);
   res.json({ success: true });
 });
 
