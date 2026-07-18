@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12n · 赔偿事故支持上传多个发票/凭证文件',
+  tag: '2026-07-12o · Container发票支持装柜行:满载度%×满载金额,无需柜号',
   started: new Date().toISOString(),
 };
 

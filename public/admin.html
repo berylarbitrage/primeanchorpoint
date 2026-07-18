@@ -2893,6 +2893,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         </div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddContainer()">＋ 添加 Container</button>
+          <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#a7f3d0" onclick="invpAddLoadContainer()" title="装柜行：不需要柜号，按 满载度% × 满载金额 计费">＋ 添加装柜</button>
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#0E7BB8;border-color:#0E7BB8" onclick="openInvpBulkContainer()" title="粘贴一组 container 号，批量生成行并自动检测重复">📋 批量粘贴</button>
           <button type="button" id="invpInboxBtn" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#92400E;border-color:#FDE68A;background:#fffbeb;display:none" onclick="openInvpCsubInbox()" title="查看本公司扫码录入的待审核记录">📥 扫码收件箱 <span id="invpInboxCount" style="font-weight:700">(0)</span></button>
           <span style="color:var(--gray-300);font-size:.85rem">|</span>
@@ -32270,11 +32271,14 @@ async function openInvpForEdit(id) {
   if (mode === 'container' && inv.profile && Array.isArray(inv.profile.container_items)) {
     window._invpContainerItems = inv.profile.container_items.map(c => ({
       uid: _invpContainerUidSeq++,
+      line_type: c.line_type === 'load' ? 'load' : 'unload',
       container_no: c.container_no || '',
       week: c.week || '',
       staffing: c.staffing || '',
       qty: String(c.qty || ''),
       unit_price: String(c.unit_price || ''),
+      full_price: String(c.full_price || ''),
+      full_pct: String(c.full_pct || ''),
       sub_price: String(c.sub_price || ''),
       staff_list: Array.isArray(c.staff_list)
         ? c.staff_list.map(s => ({ name: (s && s.name || '').trim(), employee_id: s && s.employee_id || null, employee_code: s && s.employee_code || '' })).filter(s => s.name)
@@ -33517,7 +33521,7 @@ function _invpMatchInit(invoiceId, inv, txns, rcpts) {
   const cs = Array.isArray(profile.container_items) ? profile.container_items : [];
   if (profile.invoice_mode === 'container' && (cs.length || !(inv && Array.isArray(inv.items) && inv.items.length))) {
     keyLabel = '分包合计';
-    cs.forEach(c => items.push({ label: c.container_no || '—', sub: (c.qty || 0) + ' × ' + _invpMoney(c.sub_price), amt: (Number(c.qty) || 0) * (Number(c.sub_price) || 0) }));
+    cs.forEach(c => items.push({ label: c.container_no || (c.line_type === 'load' ? `装柜 ${(Number(c.full_pct)||0)}%` : '—'), sub: (c.qty || 0) + ' × ' + _invpMoney(c.sub_price), amt: (Number(c.qty) || 0) * (Number(c.sub_price) || 0) }));
   } else {
     (inv && Array.isArray(inv.items) ? inv.items : []).forEach(it => items.push({ label: it.name || '—', sub: (it.hours != null ? it.hours : '—') + 'h × ' + (it.rate != null ? _invpMoney(it.rate) : '—'), amt: Number(it.total) || 0 }));
   }
@@ -36133,10 +36137,16 @@ function _invpSaveContainerState() {
     const uid = parseInt(row.dataset.uid, 10);
     const item = window._invpContainerItems.find(i => i.uid === uid);
     if (!item) return;
-    item.container_no  = (row.querySelector('.invp-cont-no').value || '').toUpperCase();
+    const noEl = row.querySelector('.invp-cont-no');
+    if (noEl) item.container_no = (noEl.value || '').toUpperCase();
     item.week          = row.querySelector('.invp-cont-week').value;
     item.qty           = row.querySelector('.invp-cont-qty').value;
-    item.unit_price    = row.querySelector('.invp-cont-price').value;
+    const priceEl      = row.querySelector('.invp-cont-price');
+    if (priceEl) item.unit_price = priceEl.value;
+    const fpEl         = row.querySelector('.invp-cont-fullprice');
+    if (fpEl) item.full_price = fpEl.value;
+    const pctEl        = row.querySelector('.invp-cont-fullpct');
+    if (pctEl) item.full_pct = pctEl.value;
     const subEl        = row.querySelector('.invp-cont-sub');
     if (subEl) item.sub_price = subEl.value;
     // staffing display string is derived from staff_list (managed via the staff dialog);
@@ -36169,7 +36179,8 @@ function renderInvpContainerTable(skipSave) {
   const defaultStaffing = _invpDefaultStaffing();
   const rows = items.map((it, idx) => {
     const qty = parseFloat(it.qty) || 0;
-    const price = parseFloat(it.unit_price) || 0;
+    const isLoad = it.line_type === 'load';
+    const price = _invpContEffPrice(it);
     const total = qty * price;
     const subPrice = parseFloat(it.sub_price) || 0;
     const subTotal = qty * subPrice;
@@ -36196,14 +36207,19 @@ function renderInvpContainerTable(skipSave) {
     const staffBtnColor = staffSummary ? '#0f172a' : '#94a3b8';
     return `<tr class="invp-cont-row" data-uid="${it.uid}" style="${rowStyle}">
       <td style="padding:4px 6px;text-align:center;color:var(--gray-500);font-size:.85rem">${idx + 1}</td>
-      <td style="padding:3px 4px;position:sticky;left:0;z-index:1;background:${stickyBg};box-shadow:1px 0 0 var(--gray-200)"><input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase" oninput="invpOnContainerNoInput(this)" onblur="invpCheckDuplicateContainerNo(this)"></td>
+      <td style="padding:3px 4px;position:sticky;left:0;z-index:1;background:${stickyBg};box-shadow:1px 0 0 var(--gray-200)">${isLoad
+        ? `<span style="display:inline-block;width:130px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:5px;padding:3px 6px;font-size:.8rem;font-weight:700;text-align:center;white-space:nowrap" title="装柜行：不需要柜号">🚛 装柜 Loading</span>`
+        : `<input type="text" class="invp-cont-no" value="${esc(it.container_no || '')}" placeholder="如 TCNU2960705" style="width:130px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem;font-family:monospace;text-transform:uppercase" oninput="invpOnContainerNoInput(this)" onblur="invpCheckDuplicateContainerNo(this)">`}</td>
       <td style="padding:3px 4px"><input type="text" class="invp-cont-week" value="${esc(it.week || defaultWeek || '')}" placeholder="MM.DD.YY - MM.DD.YY" style="width:140px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem"></td>
       <td style="padding:3px 4px">
         <button type="button" onclick="invpOpenStaffDialog(${it.uid})" title="管理卸柜人员（最多5人）与介绍人" style="width:180px;text-align:left;border:1px solid var(--gray-200);border-radius:4px;padding:4px 8px;font-size:.82rem;background:#fff;cursor:pointer;color:${staffBtnColor};display:block">👥 ${esc(staffBtnLabel)}${staffNames.length ? ` <span style="color:#94a3b8;font-size:.74rem">(${staffNames.length}人)</span>` : ''}</button>
         ${referrer ? `<div style="font-size:.72rem;color:#64748b;margin-top:2px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">介绍人: ${esc(referrer)}</div>` : ''}
       </td>
       <td style="padding:3px 4px"><input type="number" class="invp-cont-qty" value="${esc(String(it.qty || ''))}" min="0" step="1" placeholder="1" style="width:60px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
-      <td style="padding:3px 4px"><input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" title="超过 $200 时本行会自动高亮" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
+      <td style="padding:3px 4px;white-space:nowrap">${isLoad
+        ? `<input type="number" class="invp-cont-fullprice" value="${esc(String(it.full_price || ''))}" min="0" step="0.01" placeholder="满载$" title="满载金额（100% 满载时的价格）" style="width:76px;text-align:right;border:1px solid #a7f3d0;border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"> ×
+           <input type="number" class="invp-cont-fullpct" value="${esc(String(it.full_pct || ''))}" min="0" max="100" step="0.1" placeholder="%" title="满载度（百分比）" style="width:54px;text-align:right;border:1px solid #a7f3d0;border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))">%`
+        : `<input type="number" class="invp-cont-price" value="${esc(String(it.unit_price || ''))}" min="0" step="0.01" placeholder="$" title="超过 $200 时本行会自动高亮" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem" oninput="invpUpdateContainerRowTotal(this.closest('tr'))">`}</td>
       <td class="invp-cont-total" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap">$${total.toFixed(2)}</td>
       <td style="padding:3px 4px;background:#f0f9ff"><input type="number" class="invp-cont-sub" value="${esc(String(it.sub_price || ''))}" min="0" step="0.01" placeholder="$" title="付给分包商/装卸公司的价格（仅出现在分包商对账单）" style="width:80px;text-align:right;border:1px solid #bae6fd;border-radius:4px;padding:3px 6px;font-size:.84rem;background:#fff" oninput="invpUpdateContainerRowTotal(this.closest('tr'))"></td>
       <td class="invp-cont-subtotal" style="padding:3px 6px;text-align:right;font-weight:600;font-size:.88rem;white-space:nowrap;color:#0369a1;background:#f0f9ff">$${subTotal.toFixed(2)}</td>
@@ -36212,7 +36228,7 @@ function renderInvpContainerTable(skipSave) {
       <td style="padding:3px 4px"><button onclick="invpRemoveContainer(${it.uid})" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.85rem;padding:0 4px" title="删除">✕</button></td>
     </tr>`;
   }).join('');
-  const grandTotal = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0), 0);
+  const grandTotal = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * _invpContEffPrice(i), 0);
   const grandSubTotal = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.sub_price)||0), 0);
   wrap.innerHTML = `<table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
     <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
@@ -36245,7 +36261,14 @@ function renderInvpContainerTable(skipSave) {
 function invpUpdateContainerRowTotal(row) {
   const qty = parseFloat(row.querySelector('.invp-cont-qty').value) || 0;
   const priceInp = row.querySelector('.invp-cont-price');
-  const price = parseFloat(priceInp.value) || 0;
+  let price;
+  if (priceInp) price = parseFloat(priceInp.value) || 0;
+  else {
+    // 装柜行：满载金额 × 满载度%
+    const fp = parseFloat((row.querySelector('.invp-cont-fullprice') || {}).value) || 0;
+    const pct = parseFloat((row.querySelector('.invp-cont-fullpct') || {}).value) || 0;
+    price = fp * pct / 100;
+  }
   const subEl = row.querySelector('.invp-cont-sub');
   const subPrice = subEl ? (parseFloat(subEl.value) || 0) : 0;
   const cell = row.querySelector('.invp-cont-total');
@@ -36267,7 +36290,7 @@ function invpUpdateContainerRowTotal(row) {
   // Update grand totals too
   _invpSaveContainerState();
   const items = window._invpContainerItems || [];
-  const grand = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0), 0);
+  const grand = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * _invpContEffPrice(i), 0);
   const grandSub = items.reduce((s, i) => s + (parseFloat(i.qty)||0) * (parseFloat(i.sub_price)||0), 0);
   const tfootCell = document.querySelector('#invpContainerWrap tfoot td:nth-child(2)');
   if (tfootCell) tfootCell.textContent = '$' + grand.toFixed(2);
@@ -36509,6 +36532,7 @@ function invpAddContainer() {
   window._invpDirty = true;
   window._invpContainerItems.push({
     uid: _invpContainerUidSeq++,
+    line_type: 'unload',
     container_no: '',
     week: _invpFmtPeriodForContainer(),
     staffing: _invpDefaultStaffing(),
@@ -36522,7 +36546,38 @@ function invpAddContainer() {
   renderInvpContainerTable(true);
   // Focus new container number input
   const rows = document.querySelectorAll('.invp-cont-row');
-  if (rows.length) rows[rows.length - 1].querySelector('.invp-cont-no').focus();
+  if (rows.length) { const el = rows[rows.length - 1].querySelector('.invp-cont-no'); if (el) el.focus(); }
+}
+
+// 装柜行：不需要柜号，金额 = 满载度% × 满载金额
+function invpAddLoadContainer() {
+  _invpSaveContainerState();
+  window._invpDirty = true;
+  window._invpContainerItems.push({
+    uid: _invpContainerUidSeq++,
+    line_type: 'load',
+    container_no: '',
+    week: _invpFmtPeriodForContainer(),
+    staffing: _invpDefaultStaffing(),
+    qty: '1',
+    unit_price: '',
+    full_price: '',
+    full_pct: '',
+    sub_price: '',
+    staff_list: [],
+    referrer: '',
+    highlighted: false,
+  });
+  renderInvpContainerTable(true);
+  const rows = document.querySelectorAll('.invp-cont-row');
+  if (rows.length) { const el = rows[rows.length - 1].querySelector('.invp-cont-fullprice'); if (el) el.focus(); }
+}
+
+// 行的有效单价：装柜 = 满载金额 × 满载度%；卸柜 = 单价。
+function _invpContEffPrice(i) {
+  return (i && i.line_type === 'load')
+    ? (parseFloat(i.full_price) || 0) * (parseFloat(i.full_pct) || 0) / 100
+    : (parseFloat(i && i.unit_price) || 0);
 }
 
 // ── Bulk-paste container numbers ─────────────────────────────────────────
@@ -37158,7 +37213,7 @@ async function generateInvpSubcontractorStatement() {
         : '';
       return `<tr style="background:${stripe}">
         <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;color:#64748b;vertical-align:top">${idx + 1}</td>
-        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:#0f172a;vertical-align:top">${esc(i.container_no || '—')}</td>
+        <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:#0f172a;vertical-align:top">${i.line_type === 'load' ? `<span style="color:#047857;text-transform:none">Loading · ${(Number(i.full_pct)||0)}% Full</span>` : esc(i.container_no || '—')}</td>
         <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:left;white-space:nowrap;vertical-align:top">${esc(i.week || servicePeriodLabel)}</td>
         <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:center;vertical-align:top">${i.qty || 0}</td>
         <td style="padding:9px 8px ${metaParts.length ? '2px' : '9px'} 8px;${metaParts.length ? '' : 'border-bottom:1px solid #e2e8f0;'}text-align:right;vertical-align:top">$${(i.sub_price || 0).toFixed(2)}</td>
@@ -37447,20 +37502,27 @@ function invpDownloadCurrentPreview() {
 function getInvpContainerItems() {
   _invpSaveContainerState();
   return (window._invpContainerItems||[])
-    .filter(i => (i.container_no || '').trim() || parseFloat(i.unit_price) > 0)
+    .filter(i => i.line_type === 'load'
+      ? (parseFloat(i.full_price) > 0 || parseFloat(i.full_pct) > 0)
+      : ((i.container_no || '').trim() || parseFloat(i.unit_price) > 0))
     .map(i => {
       const staffList = (Array.isArray(i.staff_list) ? i.staff_list : [])
         .map(s => ({ name: (s && s.name || '').trim(), employee_id: s && s.employee_id || null, employee_code: s && s.employee_code || '' }))
         .filter(s => s.name);
+      const isLoad = i.line_type === 'load';
+      const eff = Math.round(_invpContEffPrice(i) * 100) / 100;   // 装柜 = 满载金额×满载度%
       return {
+        line_type: isLoad ? 'load' : 'unload',
         container_no: (i.container_no || '').trim(),
         week: (i.week || '').trim(),
         staffing: staffList.map(s => s.name).join('、') || (i.staffing || '').trim(),
         staff_list: staffList,
         referrer: (i.referrer || '').trim(),
         qty: parseFloat(i.qty) || 0,
-        unit_price: parseFloat(i.unit_price) || 0,
-        total: (parseFloat(i.qty)||0) * (parseFloat(i.unit_price)||0),
+        unit_price: eff,
+        full_price: parseFloat(i.full_price) || 0,
+        full_pct: parseFloat(i.full_pct) || 0,
+        total: Math.round((parseFloat(i.qty)||0) * eff * 100) / 100,
         sub_price: parseFloat(i.sub_price) || 0,
         sub_total: (parseFloat(i.qty)||0) * (parseFloat(i.sub_price)||0),
         highlighted: !!i.highlighted,
@@ -37989,13 +38051,20 @@ async function generateInvpPreview() {
       const rowExtra = highlight ? 'box-shadow:inset 4px 0 0 #d97706;' : '';
       const noColor = highlight ? '#92400e' : '#0f172a';
       const idxColor = highlight ? '#92400e' : '#64748b';
+      const isLoad = i.line_type === 'load';
+      const noCell = isLoad
+        ? `<span style="font-family:inherit;font-weight:700;color:#047857;text-transform:none">Loading · ${(Number(i.full_pct) || 0)}% Full</span>`
+        : esc(i.container_no || '—');
+      const priceCell = isLoad
+        ? `$${(i.unit_price||0).toFixed(2)}<div style="font-size:.66rem;color:#64748b;font-weight:400;white-space:nowrap">$${(Number(i.full_price)||0).toFixed(2)} × ${(Number(i.full_pct)||0)}%</div>`
+        : `$${(i.unit_price||0).toFixed(2)}`;
       return `<tr style="background:${rowBg};${rowExtra}">
         <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:center;color:${idxColor}">${idx + 1}</td>
-        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:${noColor}">${esc(i.container_no || '—')}</td>
+        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-family:'Menlo',monospace;font-weight:600;text-transform:uppercase;color:${noColor}">${noCell}</td>
         <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap">${esc(i.week || servicePeriodLabel)}</td>
         <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${esc(i.staffing || profile.sender_name || '')}</td>
         <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:center">${i.qty || 0}</td>
-        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(i.unit_price||0).toFixed(2)}</td>
+        <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${priceCell}</td>
         <td style="padding:${padV}px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
       </tr>`;
     });
