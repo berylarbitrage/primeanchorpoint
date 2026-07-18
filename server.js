@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12j · 二维码标签改为拖拽排版器:整页实时预览,所见即所得',
+  tag: '2026-07-12k · 赔偿事故仓库下拉改为直接调取客户地址',
   started: new Date().toISOString(),
 };
 
