@@ -1573,14 +1573,14 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
 
     <div style="margin-bottom:1rem">
-      <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">发票 / 凭证（截图 / PDF）</label>
+      <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">发票 / 凭证（截图 / PDF，可多个）</label>
       <div id="whClaimDrop" style="border:2px dashed var(--gray-300);border-radius:10px;padding:1.1rem;text-align:center;cursor:pointer;color:var(--gray-500);font-size:.85rem;transition:all .15s">
         <div style="font-size:1.4rem;line-height:1">⬆️</div>
-        <div style="margin-top:.3rem">把发票拖到这里，或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span></div>
+        <div style="margin-top:.3rem">把发票拖到这里（可一次多个），或 <span style="color:var(--sky);text-decoration:underline">点击选择文件</span></div>
         <div id="whClaimFileName" style="margin-top:.4rem;font-weight:600;color:var(--gray-700)">未选择文件</div>
-        <input type="file" id="whClaimFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="display:none">
+        <input type="file" id="whClaimFile" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="display:none">
       </div>
-      <div id="whClaimCurrentWrap" style="display:none;margin-top:.5rem;font-size:.82rem">当前文件：<a id="whClaimCurrentLink" href="#" target="_blank" style="color:var(--green)">查看</a></div>
+      <div id="whClaimCurrentWrap" style="display:none;margin-top:.5rem;font-size:.82rem"></div>
     </div>
 
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
@@ -34467,8 +34467,9 @@ function renderWhClaims() {
       </div>
     </div>`;
   const rows = _whClaims.map(c => {
-    const invoiceLink = c.invoice_path
-      ? `<a href="${c.invoice_path}" target="_blank" style="color:var(--green);text-decoration:underline">查看</a>`
+    const _atts = Array.isArray(c.attachments) ? c.attachments : [];
+    const invoiceLink = _atts.length
+      ? _atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:var(--green);text-decoration:underline;margin:0 3px;white-space:nowrap">${_atts.length > 1 ? '文件' + (i + 1) : '查看'}</a>`).join('')
       : '<span style="color:var(--gray-400)">—</span>';
     const desc = (c.description || '').length > 60 ? esc(c.description.slice(0, 60)) + '…' : esc(c.description || '');
     return `<tr style="border-top:1px solid var(--gray-100)">
@@ -34524,10 +34525,16 @@ function openWhClaimModal(id) {
     document.getElementById('whClaimStatus').value = c.status || 'open';
     document.getElementById('whClaimDesc').value = c.description || '';
     document.getElementById('whClaimResolution').value = c.resolution || '';
-    if (c.invoice_path) {
+    window._whClaimRemove = new Set();
+    const atts = Array.isArray(c.attachments) ? c.attachments : [];
+    if (atts.length) {
       currentWrap.style.display = 'block';
-      document.getElementById('whClaimCurrentLink').href = c.invoice_path;
-    } else { currentWrap.style.display = 'none'; }
+      currentWrap.innerHTML = '已有文件（点 ✕ 标记删除，保存时生效）：<br>' + atts.map((a, i) =>
+        `<span id="whClaimAtt${i}" style="display:inline-flex;align-items:center;gap:.3rem;margin:.2rem .7rem .2rem 0;max-width:100%">
+          <a href="${esc(a.path)}" target="_blank" style="color:var(--green);text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px">${esc(a.name || ('文件' + (i + 1)))}</a>
+          <a style="color:#ef4444;cursor:pointer;font-weight:700" title="删除此文件" onclick="_whClaimToggleRemove(${i}, '${esc(a.path).replace(/'/g, "\\'")}')">✕</a>
+        </span>`).join('');
+    } else { currentWrap.style.display = 'none'; currentWrap.innerHTML = ''; }
   } else {
     whSel.value = '';
     document.getElementById('whClaimDate').value = new Date().toISOString().slice(0, 10);
@@ -34535,7 +34542,8 @@ function openWhClaimModal(id) {
     document.getElementById('whClaimStatus').value = 'open';
     document.getElementById('whClaimDesc').value = '';
     document.getElementById('whClaimResolution').value = '';
-    currentWrap.style.display = 'none';
+    window._whClaimRemove = new Set();
+    currentWrap.style.display = 'none'; currentWrap.innerHTML = '';
   }
   document.getElementById('whClaimModal').style.display = 'flex';
   _whClaimInitDrop();
@@ -34547,7 +34555,7 @@ function _whClaimInitDrop() {
   const nameEl = document.getElementById('whClaimFileName');
   if (!drop || drop._wired) return;
   drop._wired = true;
-  const showName = () => { nameEl.textContent = input.files.length ? input.files[0].name : '未选择文件'; };
+  const showName = () => { nameEl.textContent = input.files.length ? [...input.files].map(f => f.name).join('、') : '未选择文件'; };
   const lit = on => { drop.style.borderColor = on ? 'var(--green)' : ''; drop.style.background = on ? '#f0fdf4' : ''; };
   drop.addEventListener('click', () => input.click());
   input.addEventListener('change', showName);
@@ -34562,6 +34570,19 @@ function _whClaimInitDrop() {
 
 function closeWhClaimModal() {
   document.getElementById('whClaimModal').style.display = 'none';
+}
+
+// 已有附件点 ✕：标记/取消标记删除（保存时才真正删）
+function _whClaimToggleRemove(i, p) {
+  window._whClaimRemove = window._whClaimRemove || new Set();
+  const el = document.getElementById('whClaimAtt' + i);
+  if (window._whClaimRemove.has(p)) {
+    window._whClaimRemove.delete(p);
+    if (el) { el.style.textDecoration = ''; el.style.opacity = ''; }
+  } else {
+    window._whClaimRemove.add(p);
+    if (el) { el.style.textDecoration = 'line-through'; el.style.opacity = '.45'; }
+  }
 }
 
 async function saveWhClaim() {
@@ -34585,7 +34606,8 @@ async function saveWhClaim() {
     fd.append('resolution', document.getElementById('whClaimResolution').value || '');
     fd.append('status', document.getElementById('whClaimStatus').value || 'open');
     const fileInput = document.getElementById('whClaimFile');
-    if (fileInput.files.length) fd.append('invoice', fileInput.files[0]);
+    [...fileInput.files].forEach(f => fd.append('invoice', f));
+    fd.append('remove_paths', JSON.stringify([...(window._whClaimRemove || [])]));
     const url = editId ? '/api/admin/warehouse-claims/' + editId : '/api/admin/warehouse-claims';
     const resp = await fetch(url, { method: editId ? 'PUT' : 'POST', body: fd });
     if (!resp.ok) throw new Error(await resp.text());

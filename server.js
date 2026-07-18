@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12m · Invoice客户搜索显示全部未作废公司(未签约加灰标)',
+  tag: '2026-07-12n · 赔偿事故支持上传多个发票/凭证文件',
   started: new Date().toISOString(),
 };
 
@@ -772,6 +772,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS warehouse_claims (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(e) {}
+// 赔偿事故支持多个发票/凭证文件：JSON 数组 [{path, name}]；旧的 invoice_path 继续兼容显示。
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN attachments TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -20143,45 +20145,71 @@ function _claimFields(req) {
   };
 }
 
+// 一条记录的附件列表：attachments JSON + 兼容旧的单文件 invoice_path。
+function _claimAtts(row) {
+  let atts = [];
+  try { atts = JSON.parse(row.attachments || '[]'); } catch { atts = []; }
+  if (!Array.isArray(atts)) atts = [];
+  if (row.invoice_path && !atts.some(a => a && a.path === row.invoice_path)) {
+    atts.unshift({ path: row.invoice_path, name: path.basename(row.invoice_path) });
+  }
+  return atts.filter(a => a && a.path);
+}
+// multer 的 originalname 中文会按 latin1 解码，转回 utf8。
+function _claimFname(fl) {
+  try { return Buffer.from(fl.originalname || '', 'latin1').toString('utf8') || fl.filename; } catch { return fl.originalname || fl.filename; }
+}
+function _claimDeleteFile(p) {
+  try {
+    const oldPath = path.join(uploadsDir, path.basename(p));
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  } catch (e) {}
+  try { storage.deleteObject(storage.keyFrom(p, 'uploads')).catch(() => {}); } catch (e) {}
+}
+
 app.get('/api/admin/warehouse-claims', requireAdmin, (req, res) => {
-  res.json(db.prepare(`SELECT * FROM warehouse_claims ORDER BY incident_date DESC, created_at DESC`).all());
+  const rows = db.prepare(`SELECT * FROM warehouse_claims ORDER BY incident_date DESC, created_at DESC`).all();
+  for (const r of rows) r.attachments = _claimAtts(r);
+  res.json(rows);
 });
 
-app.post('/api/admin/warehouse-claims', requireAdmin, claimUpload.single('invoice'), (req, res) => {
+app.post('/api/admin/warehouse-claims', requireAdmin, claimUpload.array('invoice', 20), (req, res) => {
   const f = _claimFields(req);
-  const invoicePath = req.file ? `/uploads/${req.file.filename}` : null;
+  const files = Array.isArray(req.files) ? req.files : [];
+  const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const r = db.prepare(`INSERT INTO warehouse_claims
-    (warehouse_code, warehouse_name, incident_date, amount, description, resolution, status, invoice_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status, invoicePath);
+    (warehouse_code, warehouse_name, incident_date, amount, description, resolution, status, invoice_path, attachments)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status,
+      atts.length ? atts[0].path : null, JSON.stringify(atts));
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
-app.put('/api/admin/warehouse-claims/:id', requireAdmin, claimUpload.single('invoice'), (req, res) => {
+app.put('/api/admin/warehouse-claims/:id', requireAdmin, claimUpload.array('invoice', 20), (req, res) => {
   const cur = db.prepare('SELECT * FROM warehouse_claims WHERE id=?').get(req.params.id);
   if (!cur) return res.status(404).json({ error: 'Not found' });
   const f = _claimFields(req);
-  // Replace the file only when a new one is uploaded; otherwise keep the old one.
-  let invoicePath = cur.invoice_path;
-  if (req.file) {
-    if (cur.invoice_path) {
-      const oldPath = path.join(uploadsDir, path.basename(cur.invoice_path));
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
-    invoicePath = `/uploads/${req.file.filename}`;
+  let atts = _claimAtts(cur);
+  // 先删用户标记移除的旧文件，再追加新上传的（不再整体替换）。
+  let removePaths = [];
+  try { removePaths = JSON.parse(req.body.remove_paths || '[]'); } catch { removePaths = []; }
+  if (Array.isArray(removePaths) && removePaths.length) {
+    const rm = new Set(removePaths);
+    atts.filter(a => rm.has(a.path)).forEach(a => _claimDeleteFile(a.path));
+    atts = atts.filter(a => !rm.has(a.path));
   }
+  const files = Array.isArray(req.files) ? req.files : [];
+  files.forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   db.prepare(`UPDATE warehouse_claims SET warehouse_code=?, warehouse_name=?, incident_date=?, amount=?,
-    description=?, resolution=?, status=?, invoice_path=?, updated_at=datetime('now') WHERE id=?`)
-    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status, invoicePath, req.params.id);
+    description=?, resolution=?, status=?, invoice_path=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
+    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status,
+      atts.length ? atts[0].path : null, JSON.stringify(atts), req.params.id);
   res.json({ success: true });
 });
 
 app.delete('/api/admin/warehouse-claims/:id', requireAdmin, (req, res) => {
-  const cur = db.prepare('SELECT invoice_path FROM warehouse_claims WHERE id=?').get(req.params.id);
-  if (cur && cur.invoice_path) {
-    const oldPath = path.join(uploadsDir, path.basename(cur.invoice_path));
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-  }
+  const cur = db.prepare('SELECT * FROM warehouse_claims WHERE id=?').get(req.params.id);
+  if (cur) _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
   db.prepare('DELETE FROM warehouse_claims WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
