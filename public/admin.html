@@ -665,6 +665,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <a onclick="showTab('bank-statement-files')" data-tab="bank-statement-files" data-role="admin,staff">🏦 银行账单</a>
       <a onclick="showTab('bank-statements')" data-tab="bank-statements" data-role="admin,staff">📄 对账备注</a>
       <a onclick="showTab('founder-draws')" data-tab="founder-draws" data-role="admin">👑 创始人取款</a>
+      <a onclick="showTab('txn-analysis')" data-tab="txn-analysis" data-role="admin">📊 收支分类</a>
     </div>
   </div>
 
@@ -1716,6 +1717,15 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 </div></div>
 
 <!-- ════════ 对账备注 Tab（付款记录 → 复制备注） ════════ -->
+<!-- ════════ 收支分类分析 ════════ -->
+<div id="tab-txn-analysis" style="display:none">
+  <div class="top">
+    <h1>📊 收支分类分析</h1>
+    <div class="top-actions"><button class="btn btn-outline" onclick="loadTxnAnalysis()">⟳ 刷新</button></div>
+  </div>
+  <div id="txnAnaWrap" style="max-width:1250px;margin:1rem auto;padding:0 1rem 3rem"></div>
+</div>
+
 <!-- ════════ 创始人取款统计 ════════ -->
 <div id="tab-founder-draws" style="display:none">
   <div class="top">
@@ -8801,7 +8811,7 @@ const _TAB_TO_SEC = {
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time', 'ts-emp-invoice-history':'sec-time', 'warehouse-claims':'sec-time',
   'company-payments':'sec-company-pay', 'container-scans':'sec-company-pay',
-  'bank-statements':'sec-company-statements', 'bank-statement-files':'sec-company-statements',
+  'bank-statements':'sec-company-statements', 'bank-statement-files':'sec-company-statements', 'founder-draws':'sec-company-statements', 'txn-analysis':'sec-company-statements',
   'ts-dividend':'sec-dividend', 'sys-dividend':'sec-dividend', 'sys-dividend-history':'sec-dividend',
   approvals:'sec-system', accounts:'sec-system', 'internal-staff':'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
@@ -8932,6 +8942,7 @@ function showTab(t) {
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
   if (t === 'warehouse-claims') loadWarehouseClaims();
   if (t === 'founder-draws') loadFounderDraws();
+  if (t === 'txn-analysis') loadTxnAnalysis();
   if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
   if (t === 'ts-emp-invoice-history') loadEmpInvoiceHistoryTab();
   if (t === 'company-payments') initCompanyPayPage();
@@ -34597,6 +34608,264 @@ async function deleteWhClaim(id) {
     alert('删除失败：' + e.message);
   }
 }
+
+// ════════════════════ 收支分类分析 (TXN CATEGORY ANALYSIS) ════════════════════
+// 汇总所有银行账单的 box 标注，每笔可打分类，按分类/按月统计收支。
+const TXN_CAT_PRESETS = ['劳务收入', '分包工资', '创始人取款', '银行费用', '运费物流', '材料耗材', '房租', '税费', '保险', '内部转账', '退款', '其他'];
+let _txnAll = [];
+let _txnSel = new Set();
+let _txnF = { dir: '', cat: '', q: '', from: '', to: '', bank: '' };
+
+async function loadTxnAnalysis() {
+  const wrap = document.getElementById('txnAnaWrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="color:var(--gray-400);padding:1rem">加载中…</div>';
+  try { _txnAll = await api('/admin/bank-txns'); } catch (e) { wrap.innerHTML = `<div style="color:#ef4444;padding:1rem">${esc(e.message)}</div>`; return; }
+  if (!Array.isArray(_txnAll)) _txnAll = [];
+  _txnSel = new Set();
+  renderTxnAnalysis();
+}
+
+function _txnCats() {
+  const set = new Set(TXN_CAT_PRESETS);
+  _txnAll.forEach(t => { if (t.category) set.add(t.category); });
+  return [...set];
+}
+
+// 标注日期归一化成 YYYY-MM-DD（尽力解析；MM/DD 没写年份时借用账单周期的年份）
+function _txnDateKey(t) {
+  const s = String(t.txn_date || '').trim();
+  let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (m) return `20${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})/);
+  if (m) {
+    const y = String(t.stmt_period_start || t.stmt_period_end || '').slice(0, 4);
+    if (/^\d{4}$/.test(y)) return `${y}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  }
+  return '';
+}
+
+function _txnFiltered(ignoreCat) {
+  const f = _txnF;
+  return _txnAll.filter(t => {
+    if (f.dir && t.direction !== f.dir) return false;
+    if (!ignoreCat) {
+      if (f.cat === '__none__') { if (t.category) return false; }
+      else if (f.cat && t.category !== f.cat) return false;
+    }
+    if (f.bank && (t.bank || '') !== f.bank) return false;
+    if (f.q) {
+      const q = f.q.toLowerCase();
+      const hay = [t.payee, t.note, t.purpose, t.invoice_number, t.file_name, t.category].map(x => x || '').join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (f.from || f.to) {
+      const d = _txnDateKey(t);
+      if (f.from && (!d || d < f.from)) return false;
+      if (f.to && (!d || d > f.to)) return false;
+    }
+    return true;
+  });
+}
+
+const _txnMoney = n => '$' + Math.abs(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function _txnCatSelect(idsJson, current, extraStyle) {
+  const cats = _txnCats();
+  const opts = ['<option value="">— 未分类 —</option>']
+    .concat(cats.map(c => `<option value="${esc(c)}" ${c === current ? 'selected' : ''}>${esc(c)}</option>`))
+    .concat([`<option value="__new__">➕ 新建分类…</option>`]);
+  return `<select onchange="_txnSetCat(${esc(idsJson)}, this.value)" style="max-width:150px;padding:.25rem .35rem;border:1px solid ${current ? 'var(--gray-200)' : '#fbbf24'};border-radius:6px;font-size:.78rem;background:${current ? '#fff' : '#fffbeb'};${extraStyle || ''}">${opts.join('')}</select>`;
+}
+
+async function _txnSetCat(ids, cat) {
+  if (!Array.isArray(ids)) ids = [ids];
+  if (cat === '__new__') {
+    cat = (prompt('新分类名称：') || '').trim();
+    if (!cat) { renderTxnAnalysis(); return; }
+  }
+  try {
+    await api('/admin/bank-txns/category', { method: 'POST', body: JSON.stringify({ ids, category: cat }) });
+    const set = new Set(ids.map(Number));
+    _txnAll.forEach(t => { if (set.has(t.id)) t.category = cat; });
+    _txnSel.clear();
+    renderTxnAnalysis();
+    showToast(cat ? `已归入「${cat}」` : '已清除分类', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+function _txnToggleSel(id, on) {
+  if (on) _txnSel.add(id); else _txnSel.delete(id);
+  const bar = document.getElementById('txnBatchBar');
+  if (bar) bar.style.display = _txnSel.size ? 'flex' : 'none';
+  const n = document.getElementById('txnSelCount');
+  if (n) n.textContent = _txnSel.size;
+}
+
+function _txnSelAll(on) {
+  _txnSel = new Set(on ? _txnFiltered().map(t => t.id) : []);
+  renderTxnAnalysis();
+}
+
+function renderTxnAnalysis() {
+  const wrap = document.getElementById('txnAnaWrap'); if (!wrap) return;
+  if (!_txnAll.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);padding:1rem">还没有任何账单标注。先到「银行账单」里给账单画框标注，再回来分类分析。</div>';
+    return;
+  }
+  const f = _txnF;
+  const rows = _txnFiltered();
+  const rowsNoCatF = _txnFiltered(true);
+  const banks = [...new Set(_txnAll.map(t => t.bank || '').filter(Boolean))];
+  const cats = _txnCats();
+  const inSum = rows.filter(t => t.direction === 'in').reduce((s, t) => s + Math.abs(t.amount || 0), 0);
+  const outSum = rows.filter(t => t.direction !== 'in').reduce((s, t) => s + Math.abs(t.amount || 0), 0);
+  const uncat = rows.filter(t => !t.category).length;
+
+  // ── 分类汇总（对除分类外的筛选结果统计，点行可筛选）──
+  const agg = new Map();
+  rowsNoCatF.forEach(t => {
+    const c = t.category || '__none__';
+    if (!agg.has(c)) agg.set(c, { cat: c, inS: 0, outS: 0, n: 0 });
+    const a = agg.get(c);
+    if (t.direction === 'in') a.inS += Math.abs(t.amount || 0); else a.outS += Math.abs(t.amount || 0);
+    a.n++;
+  });
+  const aggRows = [...agg.values()].sort((a, b) => (b.inS + b.outS) - (a.inS + a.outS));
+  const maxFlow = Math.max(1, ...aggRows.map(a => Math.max(a.inS, a.outS)));
+  const catTable = aggRows.map(a => {
+    const label = a.cat === '__none__' ? '<span style="color:#b45309">⚠ 未分类</span>' : esc(a.cat);
+    const active = f.cat === a.cat;
+    const inBar = Math.round(a.inS / maxFlow * 100), outBar = Math.round(a.outS / maxFlow * 100);
+    return `<tr onclick="_txnF.cat=_txnF.cat==='${esc(a.cat).replace(/'/g, "\\'")}'?'':'${esc(a.cat).replace(/'/g, "\\'")}';renderTxnAnalysis()" style="cursor:pointer;border-top:1px solid var(--gray-100)${active ? ';background:#eff6ff' : ''}">
+      <td style="padding:6px 10px;font-weight:600">${label}${active ? ' <span style="font-size:.7rem;color:#2563eb">✓ 筛选中</span>' : ''}</td>
+      <td style="padding:6px 10px;text-align:right;white-space:nowrap;color:#16a34a;font-weight:700">${a.inS ? _txnMoney(a.inS) : '—'}</td>
+      <td style="padding:6px 10px;width:90px"><div style="height:8px;border-radius:4px;background:#dcfce7;overflow:hidden"><div style="height:100%;width:${inBar}%;background:#16a34a"></div></div></td>
+      <td style="padding:6px 10px;text-align:right;white-space:nowrap;color:#dc2626;font-weight:700">${a.outS ? _txnMoney(a.outS) : '—'}</td>
+      <td style="padding:6px 10px;width:90px"><div style="height:8px;border-radius:4px;background:#fee2e2;overflow:hidden"><div style="height:100%;width:${outBar}%;background:#dc2626"></div></div></td>
+      <td style="padding:6px 10px;text-align:right;white-space:nowrap;font-weight:700;color:${a.inS - a.outS >= 0 ? '#16a34a' : '#dc2626'}">${a.inS - a.outS >= 0 ? '+' : '-'}${_txnMoney(a.inS - a.outS)}</td>
+      <td style="padding:6px 10px;text-align:center;color:var(--gray-500)">${a.n}</td>
+    </tr>`;
+  }).join('');
+
+  // ── 按月汇总 ──
+  const mAgg = new Map();
+  rows.forEach(t => {
+    const d = _txnDateKey(t);
+    const mo = d ? d.slice(0, 7) : '未知月份';
+    if (!mAgg.has(mo)) mAgg.set(mo, { inS: 0, outS: 0, n: 0 });
+    const a = mAgg.get(mo);
+    if (t.direction === 'in') a.inS += Math.abs(t.amount || 0); else a.outS += Math.abs(t.amount || 0);
+    a.n++;
+  });
+  const moRows = [...mAgg.entries()].sort((a, b) => String(b[0]).localeCompare(String(a[0])));
+  const moTable = moRows.map(([mo, a]) => `<tr style="border-top:1px solid var(--gray-100)">
+    <td style="padding:6px 10px;font-weight:600;white-space:nowrap">${esc(mo)}</td>
+    <td style="padding:6px 10px;text-align:right;color:#16a34a;font-weight:700;white-space:nowrap">${a.inS ? _txnMoney(a.inS) : '—'}</td>
+    <td style="padding:6px 10px;text-align:right;color:#dc2626;font-weight:700;white-space:nowrap">${a.outS ? _txnMoney(a.outS) : '—'}</td>
+    <td style="padding:6px 10px;text-align:right;font-weight:700;white-space:nowrap;color:${a.inS - a.outS >= 0 ? '#16a34a' : '#dc2626'}">${a.inS - a.outS >= 0 ? '+' : '-'}${_txnMoney(a.inS - a.outS)}</td>
+    <td style="padding:6px 10px;text-align:center;color:var(--gray-500)">${a.n}</td>
+  </tr>`).join('');
+
+  // ── 明细表 ──
+  const detail = rows.map((t, i) => {
+    const d = _txnDateKey(t) || esc(t.txn_date || '—');
+    const dirBadge = t.direction === 'in'
+      ? '<span style="display:inline-block;padding:1px 8px;border-radius:9px;font-size:.72rem;background:#dcfce7;color:#166534">收入</span>'
+      : '<span style="display:inline-block;padding:1px 8px;border-radius:9px;font-size:.72rem;background:#fee2e2;color:#991b1b">支出</span>';
+    const link = t.linked
+      ? `<span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:.7rem;background:${t.linked.kind === 'recv' ? '#dcfce7' : '#e0f2fe'};color:${t.linked.kind === 'recv' ? '#166534' : '#075985'}" title="${esc(t.linked.company_name || '')}">${esc(t.linked.invoice_number || '')}</span>`
+      : (t.invoice_number ? `<span style="font-size:.72rem;color:var(--gray-500)">${esc(t.invoice_number)}</span>` : '<span style="color:var(--gray-300)">—</span>');
+    const memo = [t.purpose, t.note].filter(Boolean).join(' · ');
+    return `<tr style="border-top:1px solid var(--gray-100)">
+      <td style="padding:6px 8px;text-align:center"><input type="checkbox" ${_txnSel.has(t.id) ? 'checked' : ''} onchange="_txnToggleSel(${t.id}, this.checked)"></td>
+      <td style="padding:6px 8px;color:var(--gray-400)">${i + 1}</td>
+      <td style="padding:6px 8px;white-space:nowrap;color:var(--gray-600)">${d}</td>
+      <td style="padding:6px 8px;text-align:center">${dirBadge}</td>
+      <td style="padding:6px 8px;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.payee || '')}">${esc(t.payee || '—')}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700;white-space:nowrap;color:${t.direction === 'in' ? '#16a34a' : '#dc2626'}">${_txnMoney(t.amount)}</td>
+      <td style="padding:6px 8px">${_txnCatSelect(`[${t.id}]`, t.category || '')}</td>
+      <td style="padding:6px 8px;color:var(--gray-500);font-size:.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(memo)}">${esc(memo) || '—'}</td>
+      <td style="padding:6px 8px;text-align:center">${link}</td>
+      <td style="padding:6px 8px;font-size:.72rem;color:var(--gray-400);white-space:nowrap">${esc(t.bank || '')}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem">
+      <div style="flex:1 1 160px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:.55rem .85rem">
+        <div style="font-size:.72rem;color:#166534">收入合计（筛选后）</div>
+        <div style="font-size:1.2rem;font-weight:800;color:#16a34a">${_txnMoney(inSum)}</div></div>
+      <div style="flex:1 1 160px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:.55rem .85rem">
+        <div style="font-size:.72rem;color:#991b1b">支出合计（筛选后）</div>
+        <div style="font-size:1.2rem;font-weight:800;color:#dc2626">${_txnMoney(outSum)}</div></div>
+      <div style="flex:1 1 160px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
+        <div style="font-size:.72rem;color:var(--gray-500)">净额</div>
+        <div style="font-size:1.2rem;font-weight:800;color:${inSum - outSum >= 0 ? '#16a34a' : '#dc2626'}">${inSum - outSum >= 0 ? '+' : '-'}${_txnMoney(inSum - outSum)}</div></div>
+      <div style="flex:1 1 160px;background:${uncat ? '#fffbeb' : 'var(--gray-50)'};border:1px solid ${uncat ? '#fde68a' : 'var(--gray-200)'};border-radius:10px;padding:.55rem .85rem;cursor:pointer" onclick="_txnF.cat=_txnF.cat==='__none__'?'':'__none__';renderTxnAnalysis()" title="点击只看未分类">
+        <div style="font-size:.72rem;color:${uncat ? '#92400e' : 'var(--gray-500)'}">未分类笔数${f.cat === '__none__' ? ' ✓ 筛选中' : ''}</div>
+        <div style="font-size:1.2rem;font-weight:800;color:${uncat ? '#b45309' : 'var(--gray-600)'}">${uncat}</div></div>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .7rem;margin-bottom:1rem">
+      <select onchange="_txnF.dir=this.value;renderTxnAnalysis()" style="padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+        <option value="">全部收支</option><option value="in" ${f.dir === 'in' ? 'selected' : ''}>只看收入</option><option value="out" ${f.dir === 'out' ? 'selected' : ''}>只看支出</option></select>
+      <select onchange="_txnF.cat=this.value;renderTxnAnalysis()" style="padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;max-width:160px">
+        <option value="">全部分类</option><option value="__none__" ${f.cat === '__none__' ? 'selected' : ''}>⚠ 未分类</option>
+        ${cats.map(c => `<option value="${esc(c)}" ${f.cat === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+      ${banks.length ? `<select onchange="_txnF.bank=this.value;renderTxnAnalysis()" style="padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem"><option value="">全部银行</option>${banks.map(b => `<option ${f.bank === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select>` : ''}
+      <input placeholder="搜付给谁 / 备注 / 发票号" value="${esc(f.q)}" onchange="_txnF.q=this.value.trim();renderTxnAnalysis()" style="padding:.32rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;width:180px">
+      <input type="date" value="${esc(f.from)}" onchange="_txnF.from=this.value;renderTxnAnalysis()" style="padding:.28rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+      <span style="color:var(--gray-400)">~</span>
+      <input type="date" value="${esc(f.to)}" onchange="_txnF.to=this.value;renderTxnAnalysis()" style="padding:.28rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+      <a onclick="_txnF={dir:'',cat:'',q:'',from:'',to:'',bank:''};renderTxnAnalysis()" style="font-size:.78rem;color:#2563eb;cursor:pointer;text-decoration:underline">清除筛选</a>
+      <span style="margin-left:auto;font-size:.78rem;color:var(--gray-400)">共 ${rows.length} 笔</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr;gap:1rem;margin-bottom:1rem">
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:10px;overflow:hidden">
+        <div style="padding:.6rem .9rem;font-weight:700;font-size:.9rem;border-bottom:1px solid var(--gray-100)">按分类统计 <span style="font-weight:400;font-size:.74rem;color:var(--gray-400)">点行筛选明细</span></div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.84rem">
+          <thead><tr style="background:var(--gray-50);font-size:.76rem;color:var(--gray-500)">
+            <th style="padding:6px 10px;text-align:left">分类</th><th style="padding:6px 10px;text-align:right">收入</th><th></th>
+            <th style="padding:6px 10px;text-align:right">支出</th><th></th><th style="padding:6px 10px;text-align:right">净额</th><th style="padding:6px 10px;text-align:center">笔数</th></tr></thead>
+          <tbody>${catTable}</tbody></table></div>
+      </div>
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:10px;overflow:hidden">
+        <div style="padding:.6rem .9rem;font-weight:700;font-size:.9rem;border-bottom:1px solid var(--gray-100)">按月统计（筛选后）</div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.84rem">
+          <thead><tr style="background:var(--gray-50);font-size:.76rem;color:var(--gray-500)">
+            <th style="padding:6px 10px;text-align:left">月份</th><th style="padding:6px 10px;text-align:right">收入</th>
+            <th style="padding:6px 10px;text-align:right">支出</th><th style="padding:6px 10px;text-align:right">净额</th><th style="padding:6px 10px;text-align:center">笔数</th></tr></thead>
+          <tbody>${moTable}</tbody></table></div>
+      </div>
+    </div>
+
+    <div id="txnBatchBar" style="display:${_txnSel.size ? 'flex' : 'none'};align-items:center;gap:.6rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:.5rem .8rem;margin-bottom:.6rem;font-size:.82rem">
+      已选 <b id="txnSelCount">${_txnSel.size}</b> 笔，批量归入：
+      ${_txnCatSelect('[...__txnSelIds()]', '', 'max-width:180px')}
+      <a onclick="_txnSelAll(false)" style="color:#2563eb;cursor:pointer;text-decoration:underline;margin-left:auto">清除选择</a>
+    </div>
+
+    <div style="background:#fff;border:1px solid var(--gray-200);border-radius:10px;overflow:hidden">
+      <div style="padding:.6rem .9rem;font-weight:700;font-size:.9rem;border-bottom:1px solid var(--gray-100)">交易明细 <span style="font-weight:400;font-size:.74rem;color:var(--gray-400)">在「分类」列直接选择即保存</span></div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.83rem">
+        <thead><tr style="background:var(--gray-50);font-size:.76rem;color:var(--gray-500)">
+          <th style="padding:6px 8px"><input type="checkbox" ${rows.length && rows.every(t => _txnSel.has(t.id)) ? 'checked' : ''} onchange="_txnSelAll(this.checked)" title="全选筛选结果"></th>
+          <th style="padding:6px 8px;text-align:left">#</th><th style="padding:6px 8px;text-align:left">日期</th><th style="padding:6px 8px;text-align:center">收支</th>
+          <th style="padding:6px 8px;text-align:left">付给谁 / 谁付的</th><th style="padding:6px 8px;text-align:right">金额</th>
+          <th style="padding:6px 8px;text-align:left">分类</th><th style="padding:6px 8px;text-align:left">用途 / 备注</th>
+          <th style="padding:6px 8px;text-align:center">关联发票</th><th style="padding:6px 8px;text-align:left">银行</th></tr></thead>
+        <tbody>${detail || `<tr><td colspan="10" style="padding:1rem;text-align:center;color:var(--gray-400)">没有符合筛选条件的交易</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function __txnSelIds() { return [..._txnSel]; }
 
 async function showInvpBuilder() {
   const today = new Date();
