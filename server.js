@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12y · 分类规则纠正:银行费用全手动,卡车费bintique链接后才入账本',
+  tag: '2026-07-12z · 开支分类完全手动:去掉全部自动link,清历史自动分类',
   started: new Date().toISOString(),
 };
 
@@ -2734,26 +2734,20 @@ try {
   }
 } catch (e) { console.log('[migration] partner number rename error:', e.message); }
 
-// 开支账本分类规则（按用户要求调整）：
-//   银行费用 → 不自动 link，全部由用户手动选择；
-//   卡车费   → 只有在 bintique(pallet) 系统里 link 过（links 非空）才自动归入「卡车开支」。
-// 一次性纠正迁移：撤销此前的自动回填 —— 清掉自动打上的银行费用分类，以及没有
-// bintique 链接的卡车费分类；有 bintique 链接的卡车费补上分类。
+// 开支账本分类完全手动：系统不做任何自动归类（银行费用、卡车费都由用户自己 link）。
+// 一次性纠正迁移 v2：撤销此前所有自动打上的分类 —— 银行费用 → 银行开支、
+// 卡车费 → 卡车开支（含"有 bintique 链接自动归入"的那批）。之后全部手动 link。
 try {
-  const _fixDone = db.prepare("SELECT value FROM app_settings WHERE key='autocat_manual_only_fixed'").get();
+  const _fixDone = db.prepare("SELECT value FROM app_settings WHERE key='autocat_all_manual_v2'").get();
   if (!_fixDone) {
     const r1 = db.prepare(`UPDATE bank_statement_txns SET category=''
       WHERE kind='box' AND category='银行开支' AND TRIM(payee)='银行费用'`).run();
     const r2 = db.prepare(`UPDATE bank_statement_txns SET category=''
-      WHERE kind='box' AND category='卡车开支' AND payee LIKE '卡车费:%'
-        AND (links IS NULL OR links='' OR links='[]')`).run();
-    const r3 = db.prepare(`UPDATE bank_statement_txns SET category='卡车开支'
-      WHERE kind='box' AND (category IS NULL OR category='') AND payee LIKE '卡车费:%'
-        AND links IS NOT NULL AND links != '' AND links != '[]'`).run();
-    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('autocat_manual_only_fixed','1')").run();
-    console.log(`[migration] 分类纠正: 清银行费用自动分类 ${r1.changes} 条, 清未link卡车费 ${r2.changes} 条, 补已link卡车费 ${r3.changes} 条`);
+      WHERE kind='box' AND category='卡车开支' AND payee LIKE '卡车费:%'`).run();
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('autocat_all_manual_v2','1')").run();
+    console.log(`[migration] 分类全手动: 清银行费用自动分类 ${r1.changes} 条, 清卡车费自动分类 ${r2.changes} 条`);
   }
-} catch (e) { console.log('[migration] auto-category fix error:', e.message); }
+} catch (e) { console.log('[migration] auto-category manual-only error:', e.message); }
 
 // ─── SMS Inbox Module — Database Schema ───
 db.exec(`CREATE TABLE IF NOT EXISTS sms_contacts (
@@ -29086,10 +29080,6 @@ app.post('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
     if (link.ref) links = links.filter(l => !(l.system === link.system && l.ref === link.ref)); // upsert by (system,ref)
     links.push(link);
     db.prepare("UPDATE bank_statement_txns SET links=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(links), id);
-    // 卡车费在 bintique 里 link 之后才进「卡车开支」：此刻自动归入（不覆盖手动分类）。
-    if (!row.category && String(row.payee || '').startsWith('卡车费:')) {
-      db.prepare("UPDATE bank_statement_txns SET category='卡车开支' WHERE id=?").run(id);
-    }
     res.json({ success: true, id, links });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -29103,10 +29093,6 @@ app.delete('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
     const ref = req.query.ref || (req.body && req.body.ref) || '';
     links = ref ? links.filter(l => l.ref !== ref) : [];
     db.prepare("UPDATE bank_statement_txns SET links=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(links), id);
-    // bintique 链接全部取消后，自动打上的「卡车开支」也一并撤下。
-    if (!links.length && row.category === '卡车开支' && String(row.payee || '').startsWith('卡车费:')) {
-      db.prepare("UPDATE bank_statement_txns SET category='' WHERE id=?").run(id);
-    }
     res.json({ success: true, id, links });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
