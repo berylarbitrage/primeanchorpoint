@@ -29110,6 +29110,55 @@ app.delete('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
     res.json({ success: true, id, links });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// Read-only mirror endpoints for pallet.bintique.com's 银行账单 page: the full
+// statement list with box annotations, plus the PDF and referenced attachment
+// bytes — so the pallet side can show these statements 一模一样 without
+// re-uploading anything. Same PALLET_API_KEY gate as the rest of /api/ext.
+app.get('/api/ext/bank-statements', requireExtKey, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, notes, created_by, created_at
+      FROM bank_statements ORDER BY created_at DESC`).all();
+    const boxStmt = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, links
+      FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
+    for (const r of rows) {
+      r.file_available = !!r.file_path;
+      delete r.file_path;
+      r.boxes = boxStmt.all(r.id).map(b => {
+        let keys = []; try { keys = JSON.parse(b.photos || '[]'); } catch { keys = []; }
+        b.photo_files = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => path.basename(k));
+        delete b.photos;
+        try { b.links = JSON.parse(b.links || '[]'); } catch { b.links = []; }
+        b.payee_display = _bsPayeeDisplaySrv(b.payee);
+        return b;
+      });
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Raw statement PDF bytes for the pallet mirror.
+app.get('/api/ext/bank-statements/:id/file', requireExtKey, async (req, res) => {
+  try {
+    const s = db.prepare('SELECT file_path FROM bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s || !s.file_path) return res.status(404).json({ error: 'not found' });
+    const buf = await storage.getBuffer(storage.keyFrom(s.file_path, 'uploads'));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.send(buf);
+  } catch (e) { res.status(404).json({ error: 'File not found' }); }
+});
+// Attachment bytes (box-annotation photos). Only files actually referenced by
+// bank-statement data are served — nothing else in /uploads is reachable here.
+app.get('/api/ext/bank-files/:name', requireExtKey, async (req, res) => {
+  try {
+    const name = path.basename(String(req.params.name || ''));
+    if (!name) return res.status(400).json({ error: 'missing name' });
+    const referenced = db.prepare(`SELECT 1 FROM bank_statement_txns WHERE kind='box' AND photos LIKE ? LIMIT 1`).get('%' + name + '%');
+    if (!referenced) return res.status(404).json({ error: 'not found' });
+    const buf = await storage.getBuffer('uploads/' + name);
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.send(buf);
+  } catch (e) { res.status(404).json({ error: 'File not found' }); }
+});
 
 // One statement + its transactions.
 app.get('/api/admin/bank-statements/:id', requireAdmin, blockManager, (req, res) => {
