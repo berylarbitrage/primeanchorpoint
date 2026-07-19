@@ -28756,8 +28756,9 @@ app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req,
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── 创始人取款 (founder draws): money taken by the founders, with screenshots and an
-// optional link to an annotated bank-statement transaction ───
+// ─── 创始人取款/付款 (founder draws & payments): money taken by OR paid in by the
+// founders, with screenshots and an optional link to an annotated bank-statement
+// transaction ───
 db.exec(`CREATE TABLE IF NOT EXISTS founder_draws (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   founder TEXT NOT NULL,
@@ -28770,6 +28771,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS founder_draws (
   created_by TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// 类型：'draw' = 取款（创始人拿钱）, 'pay' = 付款（创始人垫付/存入公司）。
+try { db.exec(`ALTER TABLE founder_draws ADD COLUMN kind TEXT DEFAULT 'draw'`); } catch (e) {}
 const founderDrawUpload = multer({
   storage: r2Storage({
     subdir: 'uploads',
@@ -28811,10 +28814,11 @@ app.post('/api/admin/founder-draws', requireAdmin, founderDrawUpload.array('phot
     if (!(amount > 0)) return res.status(400).json({ error: '金额无效' });
     const keys = (req.files || []).map(f => f.key || f.filename || (f.path ? path.basename(f.path) : '')).filter(Boolean);
     const txnId = parseInt(b.stmt_txn_id, 10) || null;
-    const info = db.prepare(`INSERT INTO founder_draws (founder, amount, draw_date, purpose, notes, photos, stmt_txn_id, created_by)
-      VALUES (?,?,?,?,?,?,?,?)`)
+    const kind = b.kind === 'pay' ? 'pay' : 'draw';
+    const info = db.prepare(`INSERT INTO founder_draws (founder, amount, draw_date, purpose, notes, photos, stmt_txn_id, created_by, kind)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
       .run(founder, amount, String(b.draw_date || '').slice(0, 10), String(b.purpose || '').slice(0, 300),
-           String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, (req.adminUser && req.adminUser.username) || '');
+           String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, (req.adminUser && req.adminUser.username) || '', kind);
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -28828,9 +28832,10 @@ app.put('/api/admin/founder-draws/:id', requireAdmin, founderDrawUpload.array('p
     let keys = []; try { keys = JSON.parse(d.photos || '[]'); } catch { keys = []; }
     keys = keys.concat((req.files || []).map(f => f.key || f.filename || (f.path ? path.basename(f.path) : '')).filter(Boolean));
     const txnId = parseInt(b.stmt_txn_id, 10) || null;
-    db.prepare(`UPDATE founder_draws SET founder=?, amount=?, draw_date=?, purpose=?, notes=?, photos=?, stmt_txn_id=? WHERE id=?`)
+    const kind = b.kind === 'pay' ? 'pay' : (b.kind === 'draw' ? 'draw' : (d.kind || 'draw'));
+    db.prepare(`UPDATE founder_draws SET founder=?, amount=?, draw_date=?, purpose=?, notes=?, photos=?, stmt_txn_id=?, kind=? WHERE id=?`)
       .run(String(b.founder || d.founder).trim(), amount, String(b.draw_date || '').slice(0, 10),
-           String(b.purpose || '').slice(0, 300), String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, d.id);
+           String(b.purpose || '').slice(0, 300), String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, kind, d.id);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

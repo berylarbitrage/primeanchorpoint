@@ -664,7 +664,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="nav-group-items">
       <a onclick="showTab('bank-statement-files')" data-tab="bank-statement-files" data-role="admin,staff">🏦 银行账单</a>
       <a onclick="showTab('bank-statements')" data-tab="bank-statements" data-role="admin,staff">📄 对账备注</a>
-      <a onclick="showTab('founder-draws')" data-tab="founder-draws" data-role="admin">👑 创始人取款</a>
+      <a onclick="showTab('founder-draws')" data-tab="founder-draws" data-role="admin">👑 创始人取款/付款</a>
       <a onclick="showTab('txn-analysis')" data-tab="txn-analysis" data-role="admin">📊 收支分类</a>
       <a onclick="showTab('expense-ledger')" data-tab="expense-ledger" data-role="admin">💸 开支账本</a>
     </div>
@@ -1746,17 +1746,22 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <!-- ════════ 创始人取款统计 ════════ -->
 <div id="tab-founder-draws" style="display:none">
   <div class="top">
-    <h1>👑 创始人取款统计</h1>
+    <h1>👑 创始人取款 / 付款统计</h1>
     <button class="btn btn-green" onclick="openFounderDrawModal()">＋ 记一笔</button>
   </div>
   <p style="color:var(--gray-500);font-size:.85rem;margin:.25rem 0 1rem">
-    记录三位创始人拿到的钱：日期、金额、用途、截图；可关联「对账备注」里标注的银行交易。统计随下方筛选实时变化。
+    记录三位创始人<strong>拿到的钱（取款）</strong>和<strong>垫付/存入公司的钱（付款）</strong>：日期、金额、用途、截图；可关联「对账备注」里标注的银行交易。统计随下方筛选实时变化。
   </p>
   <div id="fdStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.8rem;margin-bottom:1rem"></div>
   <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.8rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;font-size:.82rem">
     <select id="fdFounder" onchange="renderFounderDraws()" style="padding:.35rem .45rem;border:1px solid var(--gray-200);border-radius:6px">
       <option value="">全部创始人</option>
       <option>Beryl Zhang</option><option>Niki Zhao</option><option>Tiexiong Zhou</option>
+    </select>
+    <select id="fdKind" onchange="renderFounderDraws()" style="padding:.35rem .45rem;border:1px solid var(--gray-200);border-radius:6px">
+      <option value="">取款 + 付款</option>
+      <option value="draw">只看取款</option>
+      <option value="pay">只看付款</option>
     </select>
     <input type="date" id="fdFrom" onchange="renderFounderDraws()" style="padding:.35rem .45rem;border:1px solid var(--gray-200);border-radius:6px">
     <input type="date" id="fdTo" onchange="renderFounderDraws()" style="padding:.35rem .45rem;border:1px solid var(--gray-200);border-radius:6px">
@@ -42662,32 +42667,42 @@ async function loadFounderDraws() {
   renderFounderDraws();
 }
 function fdClearFilters() {
-  for (const id of ['fdFounder', 'fdFrom', 'fdTo', 'fdQ']) { const el = document.getElementById(id); if (el) el.value = ''; }
+  for (const id of ['fdFounder', 'fdKind', 'fdFrom', 'fdTo', 'fdQ']) { const el = document.getElementById(id); if (el) el.value = ''; }
   renderFounderDraws();
 }
 function renderFounderDraws() {
   const wrap = document.getElementById('fdTableWrap'); if (!wrap) return;
   const gv = id => { const el = document.getElementById(id); return el ? el.value : ''; };
-  const fF = gv('fdFounder'), from = gv('fdFrom'), to = gv('fdTo'), q = gv('fdQ').trim().toLowerCase();
+  const fF = gv('fdFounder'), fK = gv('fdKind'), from = gv('fdFrom'), to = gv('fdTo'), q = gv('fdQ').trim().toLowerCase();
+  const kindOf = d => d.kind === 'pay' ? 'pay' : 'draw';
   const list = _fdAll.filter(d =>
     (!fF || d.founder === fF) &&
+    (!fK || kindOf(d) === fK) &&
     (!from || (d.draw_date || '') >= from) && (!to || (d.draw_date || '') <= to) &&
     (!q || [d.purpose || '', d.notes || '', d.founder || ''].join(' ').toLowerCase().includes(q)));
   const stats = document.getElementById('fdStats');
   if (stats) {
+    const sums = rows => {
+      const draw = rows.filter(d => kindOf(d) === 'draw').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+      const pay = rows.filter(d => kindOf(d) === 'pay').reduce((s, d) => s + (Number(d.amount) || 0), 0);
+      return { draw, pay, net: draw - pay };
+    };
+    const cardBody = (rows, cMain) => {
+      const t = sums(rows);
+      return `<div style="font-size:1.35rem;font-weight:800;color:${cMain};margin-top:.2rem">${_fdMoney(t.net)} <span style="font-size:.7rem;font-weight:600;color:var(--gray-400)">净</span></div>
+        <div style="font-size:.74rem;margin-top:.2rem"><span style="color:#b91c1c;font-weight:700">取 ${_fdMoney(t.draw)}</span> · <span style="color:#047857;font-weight:700">付 ${_fdMoney(t.pay)}</span></div>
+        <div style="font-size:.72rem;color:var(--gray-500)">${rows.length} 笔</div>`;
+    };
     const cards = FD_FOUNDERS.map(f => {
       const rows = list.filter(d => d.founder === f);
       const c = FD_COLORS[f];
       return `<div style="background:${c[0]};border:1px solid ${c[2]};border-radius:12px;padding:.8rem 1rem">
         <div style="font-size:.82rem;color:${c[1]};font-weight:700">👑 ${esc(f)}</div>
-        <div style="font-size:1.35rem;font-weight:800;color:${c[1]};margin-top:.2rem">${_fdMoney(rows.reduce((s, d) => s + (Number(d.amount) || 0), 0))}</div>
-        <div style="font-size:.72rem;color:var(--gray-500)">${rows.length} 笔</div></div>`;
+        ${cardBody(rows, c[1])}</div>`;
     }).join('');
-    const total = list.reduce((s, d) => s + (Number(d.amount) || 0), 0);
     stats.innerHTML = cards + `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:.8rem 1rem">
       <div style="font-size:.82rem;color:var(--gray-600);font-weight:700">Σ 合计</div>
-      <div style="font-size:1.35rem;font-weight:800;margin-top:.2rem">${_fdMoney(total)}</div>
-      <div style="font-size:.72rem;color:var(--gray-500)">${list.length} 笔</div></div>`;
+      ${cardBody(list, '#0f172a')}</div>`;
   }
   const th = (t, extra) => `<th style="padding:.5rem .6rem;font-size:.76rem;color:var(--gray-500);text-align:left;white-space:nowrap;${extra || ''}">${t}</th>`;
   const rows = list.map(d => {
@@ -42696,10 +42711,15 @@ function renderFounderDraws() {
     const bank = d.stmt_txn_id
       ? `<div style="font-size:.76rem"><span style="color:#1d4ed8;font-weight:600">🔗 ${esc(d.txn_date || '')} · ${_fdMoney(Math.abs(Number(d.txn_amount) || 0))}</span>${d.stmt_name ? `<div style="color:var(--gray-400);font-size:.7rem">📄 ${esc(d.stmt_name)}</div>` : ''}</div>`
       : '<span style="color:var(--gray-300)">—</span>';
+    const isPay = kindOf(d) === 'pay';
+    const kindPill = isPay
+      ? '<span style="display:inline-block;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700;white-space:nowrap">↓ 付款</span>'
+      : '<span style="display:inline-block;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700;white-space:nowrap">↑ 取款</span>';
     return `<tr style="border-top:1px solid var(--gray-100)">
       <td style="padding:.5rem .6rem;white-space:nowrap">${esc(d.draw_date || '—')}</td>
+      <td style="padding:.5rem .6rem;white-space:nowrap">${kindPill}</td>
       <td style="padding:.5rem .6rem;white-space:nowrap"><span style="background:${c[0]};color:${c[1]};border:1px solid ${c[2]};border-radius:999px;padding:.1rem .6rem;font-size:.76rem;font-weight:700">${esc(d.founder)}</span></td>
-      <td style="padding:.5rem .6rem;text-align:right;font-weight:700;color:#b91c1c;white-space:nowrap">${_fdMoney(d.amount)}</td>
+      <td style="padding:.5rem .6rem;text-align:right;font-weight:700;color:${isPay ? '#047857' : '#b91c1c'};white-space:nowrap">${isPay ? '+' : ''}${_fdMoney(d.amount)}</td>
       <td style="padding:.5rem .6rem;max-width:240px">${esc(d.purpose || '') || '<span style="color:var(--gray-300)">—</span>'}${d.notes ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(d.notes)}</div>` : ''}</td>
       <td style="padding:.5rem .6rem"><div style="display:flex;flex-wrap:wrap;max-width:140px">${photos}</div></td>
       <td style="padding:.5rem .6rem">${bank}</td>
@@ -42709,8 +42729,8 @@ function renderFounderDraws() {
     </tr>`;
   }).join('');
   wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.86rem">
-    <thead><tr>${th('日期')}${th('创始人')}${th('金额', 'text-align:right')}${th('用途 / 备注')}${th('截图')}${th('银行关联')}${th('操作')}</tr></thead>
-    <tbody>${rows || `<tr><td colspan="7" style="padding:1rem;color:var(--gray-400)">还没有记录，点右上「＋ 记一笔」。</td></tr>`}</tbody></table>`;
+    <thead><tr>${th('日期')}${th('类型')}${th('创始人')}${th('金额', 'text-align:right')}${th('用途 / 备注')}${th('截图')}${th('银行关联')}${th('操作')}</tr></thead>
+    <tbody>${rows || `<tr><td colspan="8" style="padding:1rem;color:var(--gray-400)">还没有记录，点右上「＋ 记一笔」。</td></tr>`}</tbody></table>`;
 }
 async function openFounderDrawModal(id) {
   const d = id ? _fdAll.find(x => x.id === id) : null;
@@ -42723,9 +42743,14 @@ async function openFounderDrawModal(id) {
   const lbl = 'display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.25rem';
   ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;padding:1.2rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
-      <h3 style="margin:0;font-size:1.05rem">${d ? '✏️ 编辑取款记录' : '＋ 记一笔创始人取款'}</h3>
+      <h3 style="margin:0;font-size:1.05rem">${d ? '✏️ 编辑取款/付款记录' : '＋ 记一笔创始人取款/付款'}</h3>
       <button class="btn btn-outline" onclick="document.getElementById('fdModal').remove()">✕ 关闭</button></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem">
+      <div style="grid-column:1/-1"><label style="${lbl}">类型</label>
+        <select id="fdmKind" style="${inp}">
+          <option value="draw"${!d || d.kind !== 'pay' ? ' selected' : ''}>↑ 取款（创始人拿到的钱）</option>
+          <option value="pay"${d && d.kind === 'pay' ? ' selected' : ''}>↓ 付款（创始人垫付 / 存入公司的钱）</option>
+        </select></div>
       <div><label style="${lbl}">创始人</label>
         <select id="fdmFounder" style="${inp}">${FD_FOUNDERS.map(f => `<option ${d && d.founder === f ? 'selected' : ''}>${f}</option>`).join('')}</select></div>
       <div><label style="${lbl}">日期</label>
@@ -42733,7 +42758,7 @@ async function openFounderDrawModal(id) {
       <div><label style="${lbl}">金额 (USD)</label>
         <input type="number" step="0.01" min="0" id="fdmAmount" value="${d ? (Number(d.amount) || '') : ''}" placeholder="0.00" style="${inp}"></div>
       <div><label style="${lbl}">用途</label>
-        <input id="fdmPurpose" value="${esc((d && d.purpose) || '')}" placeholder="生活费 / 分红 / 报销…" style="${inp}"></div>
+        <input id="fdmPurpose" value="${esc((d && d.purpose) || '')}" placeholder="生活费 / 分红 / 报销 / 垫付货款 / 注资…" style="${inp}"></div>
       <div style="grid-column:1/-1"><label style="${lbl}">备注（可选）</label>
         <input id="fdmNotes" value="${esc((d && d.notes) || '')}" style="${inp}"></div>
       <div style="grid-column:1/-1"><label style="${lbl}">截图（可多选${d ? '，新选的会追加' : ''}）</label>
@@ -42741,7 +42766,7 @@ async function openFounderDrawModal(id) {
         ${d && (d.photos_urls || []).length ? `<div style="margin-top:.3rem">${d.photos_urls.map(u => `<a href="${u}" onclick="invpOpenReceipt(this.href);return false"><img src="${u}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);margin:1px"></a>`).join('')}</div>` : ''}</div>
       <div style="grid-column:1/-1"><label style="${lbl}">关联银行交易（可选）</label>
         <select id="fdmTxn" style="${inp}"><option value="">— 不关联 —</option></select>
-        <div style="font-size:.7rem;color:var(--gray-400);margin-top:.2rem">候选来自「对账备注」里标注的支出交易，⭐ = 付给该创始人的；选中后自动带出金额/日期。</div></div>
+        <div id="fdmTxnHint" style="font-size:.7rem;color:var(--gray-400);margin-top:.2rem">候选来自「对账备注」里标注的交易（取款对应支出、付款对应收入），⭐ = 与该创始人相关的；选中后自动带出金额/日期。</div></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
       <button class="btn btn-outline" onclick="document.getElementById('fdModal').remove()">取消</button>
@@ -42756,9 +42781,11 @@ async function openFounderDrawModal(id) {
     const fill = () => {
       if (!sel) return;
       const fname = ((document.getElementById('fdmFounder') || {}).value || '').toLowerCase();
+      // 取款 = 银行支出（钱付给创始人）；付款 = 银行收入（创始人把钱打进来）
+      const wantIn = ((document.getElementById('fdmKind') || {}).value === 'pay');
       const opts = [];
       (Array.isArray(stmts) ? stmts : []).forEach(s => (s.boxes || []).forEach(b => {
-        if (b.direction === 'in') return;
+        if ((b.direction === 'in') !== wantIn) return;
         const payee = String(_bsPayeeDisplay(b.payee) || b.payee || '');
         opts.push({ id: b.id, mine: payee.toLowerCase().includes(fname), amt: Math.abs(Number(b.amount) || 0), date: b.txn_date || '', label: `${b.txn_date || '?'} · ${_fdMoney(Math.abs(Number(b.amount) || 0))} · ${payee || '—'} · ${s.file_name || ''}` });
       }));
@@ -42768,6 +42795,7 @@ async function openFounderDrawModal(id) {
     };
     fill();
     const fSel = document.getElementById('fdmFounder'); if (fSel) fSel.addEventListener('change', fill);
+    const kSel = document.getElementById('fdmKind'); if (kSel) kSel.addEventListener('change', fill);
     sel.addEventListener('change', () => {
       const o = sel.selectedOptions[0]; if (!o || !o.value) return;
       const a = document.getElementById('fdmAmount'), dt = document.getElementById('fdmDate');
@@ -42782,6 +42810,7 @@ async function saveFounderDraw(id) {
   if (!(amount > 0)) { showToast('请填写金额', 'error'); return; }
   const fd = new FormData();
   fd.append('founder', gv('fdmFounder'));
+  fd.append('kind', gv('fdmKind') === 'pay' ? 'pay' : 'draw');
   fd.append('amount', String(amount));
   fd.append('draw_date', gv('fdmDate'));
   fd.append('purpose', gv('fdmPurpose'));
