@@ -421,9 +421,41 @@ function renderBoxes() {
     const color = isIn ? '#059669' : '#dc2626';
     const el = document.createElement('div');
     el.className = 'ed-box';
-    el.style.cssText = `position:absolute;left:${b.box_x * pg.clientWidth}px;top:${b.box_y * pg.clientHeight}px;width:${b.box_w * pg.clientWidth}px;height:${b.box_h * pg.clientHeight}px;border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'};box-sizing:border-box;z-index:6;cursor:pointer`;
-    el.innerHTML = `<span style="position:absolute;left:-5px;top:50%;transform:translate(-100%,-50%);background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px">${i + 1}</span>`;
-    el.onclick = () => focusItem(b.id);
+    el.style.cssText = `position:absolute;left:${b.box_x * pg.clientWidth}px;top:${b.box_y * pg.clientHeight}px;width:${b.box_w * pg.clientWidth}px;height:${b.box_h * pg.clientHeight}px;border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'};box-sizing:border-box;z-index:6;cursor:move;touch-action:none`;
+    el.innerHTML = `<span style="position:absolute;left:-5px;top:50%;transform:translate(-100%,-50%);background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px;pointer-events:none">${i + 1}</span>
+      <span class="ed-rs" title="拖动调整大小" style="position:absolute;right:-6px;bottom:-6px;width:12px;height:12px;background:${color};border:2px solid #fff;border-radius:3px;cursor:nwse-resize;box-sizing:border-box;z-index:7"></span>`;
+    // 框整体可拖动改位置，右下角小方块拉伸改大小；几乎没动时当作点击（聚焦右侧表单）
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const isResize = e.target.classList && e.target.classList.contains('ed-rs');
+      const startX = e.clientX, startY = e.clientY;
+      const orig = { x: b.box_x, y: b.box_y, w: b.box_w, h: b.box_h };
+      let moved = false;
+      const move = ev => {
+        const dx = (ev.clientX - startX) / pg.clientWidth, dy = (ev.clientY - startY) / pg.clientHeight;
+        if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 3) moved = true;
+        if (isResize) {
+          b.box_w = Math.max(0.01, Math.min(1 - orig.x, orig.w + dx));
+          b.box_h = Math.max(0.006, Math.min(1 - orig.y, orig.h + dy));
+        } else {
+          b.box_x = Math.max(0, Math.min(1 - orig.w, orig.x + dx));
+          b.box_y = Math.max(0, Math.min(1 - orig.h, orig.y + dy));
+        }
+        el.style.left = (b.box_x * pg.clientWidth) + 'px';
+        el.style.top = (b.box_y * pg.clientHeight) + 'px';
+        el.style.width = (b.box_w * pg.clientWidth) + 'px';
+        el.style.height = (b.box_h * pg.clientHeight) + 'px';
+      };
+      const up = async () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        if (!moved) { focusItem(b.id); return; }
+        const r = await api('/pb/statements/' + _edId + '/boxes/' + b.id, { method: 'PUT', body: JSON.stringify({ box_x: b.box_x, box_y: b.box_y, box_w: b.box_w, box_h: b.box_h }) });
+        if (r.error) toast('保存失败：' + r.error, true); else setStatus('位置已保存 ✓');
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
     pg.appendChild(el);
   });
   const panel = document.getElementById('edPanel');
