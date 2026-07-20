@@ -93,7 +93,7 @@ input,select{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;
 </div>
 
 <script>
-const CATEGORIES = ['工资 Salary', '公司往来 Company', '转账 Transfer', '房租 Rent', '生活 Living', '餐饮 Food', '购物 Shopping', '投资 Investment', '取现 Cash', '银行费用 Fee', '其他 Other'];
+const CATEGORIES = ['工资 Salary', '公司往来 Company', '转账 Transfer', '房租 Rent', '生活 Living', '餐饮 Food', '购物 Shopping', '投资 Investment', '取现 Cash', '银行费用 Fee', '退回入账 Returned Posted Credit', '其他 Other'];
 let PW = sessionStorage.getItem('pb_pw') || '';
 let _list = [];
 function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
