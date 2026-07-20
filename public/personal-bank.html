@@ -566,9 +566,20 @@ function wireDrawing() {
 function setStatus(t) { const s = document.getElementById('edStatus'); if (s) { s.textContent = t; if (t) setTimeout(() => { if (s.textContent === t) s.textContent = ''; }, 1200); } }
 async function edUpdate(id, field, value) {
   const b = _edBoxes.find(x => x.id === id); if (!b) return;
+  // 日期必须在账单起止日期内，超出直接报错并还原
+  if (field === 'txn_date' && value) {
+    const stmt = _list.find(x => x.id === _edId) || {};
+    if ((stmt.period_start && value < stmt.period_start) || (stmt.period_end && value > stmt.period_end)) {
+      toast(`日期必须在账单周期内（${stmt.period_start || '?'} ~ ${stmt.period_end || '?'}）`, true);
+      renderBoxes();
+      return;
+    }
+  }
+  const prev = b[field];
   b[field] = value;
   const r = await api('/pb/statements/' + _edId + '/boxes/' + id, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
-  if (r.error) toast('保存失败：' + r.error, true); else setStatus('已保存 ✓');
+  if (r.error) { b[field] = prev; toast('保存失败：' + r.error, true); renderBoxes(); return; }
+  setStatus('已保存 ✓');
   // 换方向要重画框颜色；换分类要刷新「对方」候选；填金额/分类要刷新未填完提醒
   if (field === 'direction' || field === 'category' || field === 'amount') renderBoxes();
 }
@@ -639,6 +650,8 @@ function renderBoxes() {
     panel.innerHTML = '<div style="color:var(--g400);font-size:.82rem;padding:.6rem .2rem">还没有标注。在左侧 PDF 上拖动画框圈出一笔交易。</div>';
     return;
   }
+  const _stmt = _list.find(x => x.id === _edId) || {};
+  const _dateLim = `${_stmt.period_start ? ` min="${esc(_stmt.period_start)}"` : ''}${_stmt.period_end ? ` max="${esc(_stmt.period_end)}"` : ''}`;
   panel.innerHTML = _edBoxes.map((b, i) => {
     const isIn = b.direction === 'in';
     const color = isIn ? '#059669' : '#dc2626';
@@ -655,7 +668,7 @@ function renderBoxes() {
           <option value="out"${!isIn ? ' selected' : ''}>支出</option>
           <option value="in"${isIn ? ' selected' : ''}>收入</option>
         </select>
-        <input type="date" value="${esc(b.txn_date || '')}" onchange="edUpdate(${b.id},'txn_date',this.value)" style="flex:1;padding:.3rem;border:1px solid var(--g200);border-radius:6px;font-size:.78rem">
+        <input type="date" value="${esc(b.txn_date || '')}"${_dateLim} onchange="edUpdate(${b.id},'txn_date',this.value)" title="日期必须在账单周期内${_stmt.period_start ? `（${_stmt.period_start} ~ ${_stmt.period_end || ''}）` : ''}" style="flex:1;padding:.3rem;border:1px solid var(--g200);border-radius:6px;font-size:.78rem">
       </div>
       <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.3rem">
         <span style="color:#94a3b8;font-size:.82rem">$</span>

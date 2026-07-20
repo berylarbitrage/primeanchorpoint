@@ -15668,6 +15668,13 @@ try {
   const pbCols = db.prepare("PRAGMA table_info(personal_bank_txns)").all().map(c => c.name);
   if (!pbCols.includes('photos')) db.exec("ALTER TABLE personal_bank_txns ADD COLUMN photos TEXT DEFAULT '[]'");
 } catch (e) {}
+// 标注日期必须落在账单起止日期内（起止没填的那头不限制）
+function pbDateInPeriod(stmt, d) {
+  if (!d || !stmt) return true;
+  if (stmt.period_start && d < stmt.period_start) return false;
+  if (stmt.period_end && d > stmt.period_end) return false;
+  return true;
+}
 function pbBoxOut(bx) {
   let p = []; try { p = JSON.parse(bx.photos || '[]'); } catch { p = []; }
   bx.photos_urls = (Array.isArray(p) ? p : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
@@ -15765,8 +15772,12 @@ app.get('/pb/statements/:id/boxes', requirePbPw, (req, res) => {
 app.post('/pb/statements/:id/boxes', requirePbPw, (req, res) => {
   try {
     const sid = parseInt(req.params.id);
-    if (!db.prepare('SELECT id FROM personal_bank_statements WHERE id=?').get(sid)) return res.status(404).json({ error: 'not found' });
+    const stmt0 = db.prepare('SELECT id, period_start, period_end FROM personal_bank_statements WHERE id=?').get(sid);
+    if (!stmt0) return res.status(404).json({ error: 'not found' });
     const b = req.body || {};
+    if (b.txn_date && !pbDateInPeriod(stmt0, String(b.txn_date).slice(0, 10))) {
+      return res.status(400).json({ error: `日期必须在账单周期内（${stmt0.period_start || '?'} ~ ${stmt0.period_end || '?'}）` });
+    }
     const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
     const ins = db.prepare(`INSERT INTO personal_bank_txns (statement_id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
@@ -15785,6 +15796,12 @@ app.put('/pb/statements/:id/boxes/:boxId', requirePbPw, (req, res) => {
     if (!row) return res.status(404).json({ error: 'not found' });
     const b = req.body || {};
     const has = k => Object.prototype.hasOwnProperty.call(b, k);
+    if (has('txn_date') && b.txn_date) {
+      const stmt0 = db.prepare('SELECT period_start, period_end FROM personal_bank_statements WHERE id=?').get(sid);
+      if (!pbDateInPeriod(stmt0, String(b.txn_date).slice(0, 10))) {
+        return res.status(400).json({ error: `日期必须在账单周期内（${(stmt0 && stmt0.period_start) || '?'} ~ ${(stmt0 && stmt0.period_end) || '?'}）` });
+      }
+    }
     const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
     db.prepare(`UPDATE personal_bank_txns SET page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, direction=?, payee=?, category=?, note=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND statement_id=?`).run(
