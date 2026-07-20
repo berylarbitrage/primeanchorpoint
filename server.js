@@ -29083,7 +29083,7 @@ app.get('/api/admin/bank-txns', requireAdmin, blockManager, (req, res) => {
       delete r.used_invoice_id; delete r.used_kind;
     }
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error('[admin/bank-txns]', e); res.status(500).json({ error: e.message }); }
 });
 // POST /api/admin/bank-txns/category — 给一批标注设置分类（单笔也走这里）。
 app.post('/api/admin/bank-txns/category', requireAdmin, blockManager, (req, res) => {
