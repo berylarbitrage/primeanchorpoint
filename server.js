@@ -29247,7 +29247,7 @@ app.get('/api/ext/bank-txns', requireExtKey, (req, res) => {
     if (req.query.since) { where.push('t.txn_date>=?'); params.push(String(req.query.since).slice(0, 40)); }
     if (req.query.linked === '1') where.push("t.links IS NOT NULL AND t.links<>'' AND t.links<>'[]'");
     const rows = db.prepare(`SELECT t.id, t.statement_id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.purpose,
-        t.invoice_number, t.period_start, t.period_end, t.pay_portion, t.links,
+        t.invoice_number, t.period_start, t.period_end, t.pay_portion, t.links, t.category,
         s.bank, s.account_name, s.operator, s.period AS statement_period, s.file_name
       FROM bank_statement_txns t JOIN bank_statements s ON t.statement_id=s.id
       WHERE ${where.join(' AND ')} ORDER BY t.txn_date ASC, t.id ASC`).all(...params);
@@ -29259,7 +29259,7 @@ app.get('/api/ext/bank-txns', requireExtKey, (req, res) => {
         statement_period: r.statement_period, file_name: r.file_name,
         date: r.txn_date, amount: r.amount, direction: r.direction,
         payee: r.payee, payee_display: _bsPayeeDisplaySrv(r.payee),
-        note: r.note, purpose: r.purpose, invoice_number: r.invoice_number,
+        note: r.note, purpose: r.purpose, invoice_number: r.invoice_number, category: r.category || '',
         period_start: r.period_start, period_end: r.period_end, pay_portion: r.pay_portion,
         linked: Array.isArray(links) && links.length > 0, links,
       };
