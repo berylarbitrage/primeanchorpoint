@@ -290,6 +290,7 @@ function ensureEditor() {
     <div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--g200)">
       <strong id="edTitle" style="font-size:.92rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></strong>
       <span id="edStatus" style="font-size:.78rem;color:var(--g400)"></span>
+      <button class="btn btn-sm" id="edDrawBtn" onclick="edToggleDraw()" style="border:1px solid var(--g200)">✏️ 框选标注：关</button>
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('edModal').style.display='none';pbLoad()">✕ 关闭</button>
     </div>
     <div style="flex:1;display:flex;overflow:hidden">
@@ -320,6 +321,7 @@ async function pbOpenEditor(id) {
     const bytes = new Uint8Array(await res.arrayBuffer());
     await renderPages(bytes, pages);
     wireDrawing();
+    _edDraw = false; edApplyDraw();   // 打开时默认关着，点「框选标注」再画
     _edBoxes = await api('/pb/statements/' + id + '/boxes');
     if (!Array.isArray(_edBoxes)) _edBoxes = [];
     renderBoxes();
@@ -340,7 +342,7 @@ async function renderPages(bytes, cont) {
     const wrap = document.createElement('div');
     wrap.className = 'ed-page';
     wrap.dataset.page = i;
-    wrap.style.cssText = 'position:relative;flex:0 0 auto;width:' + Math.round(vp.width) + 'px;height:' + Math.round(vp.height) + 'px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25);cursor:crosshair';
+    wrap.style.cssText = 'position:relative;flex:0 0 auto;width:' + Math.round(vp.width) + 'px;height:' + Math.round(vp.height) + 'px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25);cursor:default';
     const cv = document.createElement('canvas');
     cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
     cv.style.width = Math.round(vp.width) + 'px'; cv.style.height = Math.round(vp.height) + 'px';
@@ -349,11 +351,25 @@ async function renderPages(bytes, cont) {
     await page.render({ canvasContext: cv.getContext('2d'), viewport: page.getViewport({ scale: scale * dpr }) }).promise;
   }
 }
+// 框选标注开关：开着才能在 PDF 上画新框；关着时正常光标，框仍可拖动/点击。
+let _edDraw = false;
+function edApplyDraw() {
+  const btn = document.getElementById('edDrawBtn');
+  if (btn) {
+    btn.textContent = _edDraw ? '✏️ 框选标注：开' : '✏️ 框选标注：关';
+    btn.style.cssText = _edDraw
+      ? 'border:1px solid #16a34a;background:#dcfce7;color:#166534;font-weight:700'
+      : 'border:1px solid var(--g200)';
+  }
+  document.querySelectorAll('#edPages .ed-page').forEach(p => { p.style.cursor = _edDraw ? 'crosshair' : 'default'; });
+}
+function edToggleDraw() { _edDraw = !_edDraw; edApplyDraw(); }
 function wireDrawing() {
   document.querySelectorAll('#edPages .ed-page').forEach(page => {
     if (page._wired) return;
     page._wired = true;
     page.addEventListener('pointerdown', e => {
+      if (!_edDraw) return;
       if (e.target.closest('.ed-box')) return;
       e.preventDefault();
       const rect = page.getBoundingClientRect();
