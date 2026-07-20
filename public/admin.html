@@ -42556,7 +42556,7 @@ function _bsDetailRender() {
   const fFrom = gv('bsDetFFrom'), fTo = gv('bsDetFTo');
   const fmtM = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const hasNote = b => !!(b.note && String(b.note).trim());
-  const isLinked = b => !!(b.used_by || (b.inv_ref && !b.inv_ref.missing));
+  const isLinked = b => !!(b.used_by || (Array.isArray(b.inv_refs) && b.inv_refs.some(r => !r.missing)) || (b.inv_ref && !b.inv_ref.missing));
   const isPending = b => !hasNote(b) && !_bsNoteSatisfied(b);
   const filtered = boxes.filter(b => {
     if (fDir === 'in' && b.direction !== 'in') return false;
@@ -42628,15 +42628,15 @@ function _bsDetailRender() {
       // Annotation-side link: the invoice number filled/matched while annotating. The
       // role follows the transaction's direction — an income row IS that invoice's
       // 收款回执, an expense row IS its 分包付款 — same wording as the picker-made links.
-      const invRefBadge = (!b.used_by && b.inv_ref) ? (() => {
-        const r = b.inv_ref;
+      // 一笔支出可以填多张发票 —— inv_refs 逐张出一个徽章（老数据回退到单个 inv_ref）。
+      const invRefBadge = (!b.used_by) ? ((Array.isArray(b.inv_refs) && b.inv_refs.length ? b.inv_refs : (b.inv_ref ? [b.inv_ref] : [])).map(r => {
         if (r.missing) return _linkPill(null, r.invoice_number, '⚠ 找不到该发票', '#fef2f2', '#b91c1c', '#fecaca', '标注里填的发票号在系统中不存在，请核对');
         const nm = r.company_name ? '（' + esc(r.company_name) + '）' : '';
         const isIn = b.direction === 'in';
         return isIn
           ? _linkPill(r.invoice_id, r.invoice_number, '🧾 已用作收款回执', '#ecfdf5', '#047857', '#a7f3d0', `已关联发票 ${esc(r.invoice_number)}${nm} · 这笔收入是该发票的收款`)
           : _linkPill(r.invoice_id, r.invoice_number, '🧾 已用作分包付款', '#eff6ff', '#1d4ed8', '#bfdbfe', `已关联发票 ${esc(r.invoice_number)}${nm} · 这笔支出是该发票的分包付款`);
-      })() : '';
+      }).join('')) : '';
       const extLinks = (Array.isArray(b.links) && b.links.length) ? _bsLinkBadges(b.links) : '';
       // 开支账本分类：这笔已被 link 到哪个分类（点击直接打开开支账本对应分类）。
       const catBadge = b.category
@@ -43795,7 +43795,7 @@ function _bsRenderBoxPanel() {
         <div class="bs-purpose-row" style="display:${(isIn && _bsPayeeKind(box) === 'company') ? '' : 'none'}">
           <input type="text" class="bs-bx-purpose" list="bsPurposeList" placeholder="用途（如：劳务工资）" value="${esc(box.purpose || '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
         </div>
-        <input type="text" class="bs-bx-inv" placeholder="Invoice number" value="${esc(box.invoice_number || '')}" onchange="bsUpdateBoxField(${box.id},'invoice_number',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
+        <input type="text" class="bs-bx-inv" placeholder="Invoice number（多张用逗号/空格分开）" value="${esc(box.invoice_number || '')}" onchange="bsUpdateBoxField(${box.id},'invoice_number',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
         <input type="text" class="bs-bx-period" placeholder="账期：可粘贴 2026-03-16 ~ 2026-03-22" value="${(box.period_start || box.period_end) ? esc((box.period_start || '') + ' ~ ' + (box.period_end || '')) : ''}" oninput="bsParsePeriod(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem">
         <div style="display:flex;gap:.3rem">
           <input type="date" class="bs-bx-pstart" title="账期开始" value="${esc(box.period_start || '')}" onchange="bsPeriodDate(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
