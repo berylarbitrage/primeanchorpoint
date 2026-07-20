@@ -247,6 +247,21 @@ function renderPayeeFilters() {
     sel.innerHTML = '<option value="">全部分类</option>' + present.map(c => `<option value="${esc(c)}"${c === prev ? ' selected' : ''}>${esc(c)}</option>`).join('');
   }
 }
+// 勾选状态：_paPick = 选中的具体标注 id；_paOpen = 展开明细的对方名
+let _paPick = new Set(), _paOpen = new Set(), _paKeys = [], _paMap = {};
+function paClearPick() { _paPick = new Set(); renderPayeeStats(); }
+function paPickBox(id) { if (_paPick.has(id)) _paPick.delete(id); else _paPick.add(id); renderPayeeStats(); }
+function paPickPayee(ki) {
+  const v = _paMap[_paKeys[ki]]; if (!v) return;
+  const allOn = v.boxes.every(b => _paPick.has(b.id));
+  v.boxes.forEach(b => { if (allOn) _paPick.delete(b.id); else _paPick.add(b.id); });
+  renderPayeeStats();
+}
+function paOpenPayee(ki) {
+  const k = _paKeys[ki];
+  if (_paOpen.has(k)) _paOpen.delete(k); else _paOpen.add(k);
+  renderPayeeStats();
+}
 function renderPayeeStats() {
   const tableEl = document.getElementById('paTable'), sumEl = document.getElementById('paSummary');
   if (!tableEl) return;
@@ -264,7 +279,21 @@ function renderPayeeStats() {
   const t = sums(boxes);
   const net = +(t.inc - t.out).toFixed(2);
   const balanced = Math.abs(net) < 0.01;
-  sumEl.innerHTML = boxes.length
+  // 勾选的部分（只算还在当前筛选范围里的）单独出一条盈亏
+  const picked = boxes.filter(b => _paPick.has(b.id));
+  const pt = sums(picked);
+  const pnet = +(pt.inc - pt.out).toFixed(2);
+  const pickBar = picked.length
+    ? `<span class="chip" style="background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;font-weight:700">已选 ${picked.length} 笔</span>` +
+      `<span class="chip">收 <b style="color:#047857">${money(pt.inc)}</b></span>` +
+      `<span class="chip">支 <b style="color:#b91c1c">${money(pt.out)}</b></span>` +
+      (Math.abs(pnet) < 0.01
+        ? '<span class="chip" style="background:#dcfce7;border-color:#86efac;color:#166534;font-weight:800">✓ 持平</span>'
+        : `<span class="chip" style="background:${pnet > 0 ? '#dcfce7;border-color:#86efac;color:#166534' : '#fee2e2;border-color:#fca5a5;color:#b91c1c'};font-weight:800">${pnet > 0 ? '盈' : '亏'} ${money(Math.abs(pnet))}</span>`) +
+      `<button onclick="paClearPick()" style="border:1px solid var(--g200);background:#fff;color:var(--g500);border-radius:14px;padding:.15rem .6rem;font-size:.76rem;cursor:pointer">✕ 清除选择</button>` +
+      `<span style="flex-basis:100%;height:0"></span>`
+    : '';
+  sumEl.innerHTML = pickBar + (boxes.length
     ? `<span class="chip">↓ 收入 <b style="color:#047857">${money(t.inc)}</b></span>` +
       `<span class="chip">↑ 支出 <b style="color:#b91c1c">${money(t.out)}</b></span>` +
       `<span class="chip">净 <b style="color:${net >= 0 ? '#047857' : '#b91c1c'}">${money(net)}</b></span>` +
@@ -272,25 +301,47 @@ function renderPayeeStats() {
         ? '<span class="chip" style="background:#dcfce7;border-color:#86efac;color:#166534;font-weight:700">✓ 收支平衡</span>'
         : `<span class="chip" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;font-weight:700">未平衡 差 ${money(Math.abs(net))}（${net > 0 ? '收多付少' : '付多收少'}）</span>`) +
       `<span class="chip">共 <b>${boxes.length} 笔</b></span>`
-    : '';
+    : '');
   const map = {};
   for (const b of boxes) {
     const p = String(b.payee || '').trim() || '未填对方';
-    if (!map[p]) map[p] = { inc: 0, out: 0, n: 0 };
+    if (!map[p]) map[p] = { inc: 0, out: 0, n: 0, boxes: [] };
     map[p][b.direction === 'in' ? 'inc' : 'out'] += Number(b.amount) || 0;
-    map[p].n++;
+    map[p].n++; map[p].boxes.push(b);
   }
-  const keys2 = Object.keys(map).sort((a, b) => (map[b].inc + map[b].out) - (map[a].inc + map[a].out));
-  tableEl.innerHTML = keys2.length
-    ? `<table><thead><tr><th>对方</th><th style="text-align:right">收入</th><th style="text-align:right">支出</th><th style="text-align:right">净（收-支）</th><th>笔数</th></tr></thead><tbody>` +
-      keys2.map(k => {
+  _paMap = map;
+  _paKeys = Object.keys(map).sort((a, b) => (map[b].inc + map[b].out) - (map[a].inc + map[a].out));
+  tableEl.innerHTML = _paKeys.length
+    ? `<table><thead><tr><th style="width:26px"></th><th>对方</th><th style="text-align:right">收入</th><th style="text-align:right">支出</th><th style="text-align:right">净（收-支）</th><th>笔数</th></tr></thead><tbody>` +
+      _paKeys.map((k, ki) => {
         const v = map[k], n2 = +(v.inc - v.out).toFixed(2);
         const bal = Math.abs(n2) < 0.01;
-        return `<tr><td style="font-weight:600">${esc(k)}</td>
+        const nSel = v.boxes.filter(b => _paPick.has(b.id)).length;
+        const allSel = nSel === v.boxes.length && nSel > 0;
+        const open = _paOpen.has(k);
+        let row = `<tr style="${nSel ? 'background:#eff6ff' : ''}">
+          <td><input type="checkbox" ${allSel ? 'checked' : ''} onclick="event.stopPropagation();paPickPayee(${ki})" title="选中/取消这个人的全部 ${v.boxes.length} 笔" style="cursor:pointer"></td>
+          <td style="font-weight:600;cursor:pointer" onclick="paOpenPayee(${ki})">${open ? '▼' : '▶'} ${esc(k)}${nSel && !allSel ? ` <span style="font-size:.72rem;color:#1d4ed8">(已选 ${nSel}/${v.boxes.length} 笔)</span>` : ''}</td>
           <td style="text-align:right;color:#047857;font-weight:700">${v.inc ? money(v.inc) : '—'}</td>
           <td style="text-align:right;color:#b91c1c;font-weight:700">${v.out ? money(v.out) : '—'}</td>
           <td style="text-align:right;font-weight:800;color:${bal ? '#166534' : (n2 > 0 ? '#047857' : '#b91c1c')}">${bal ? '✓ 平' : money(n2)}</td>
           <td>${v.n}</td></tr>`;
+        if (open) {
+          row += v.boxes.slice().sort((a, b) => String(a.txn_date || '').localeCompare(String(b.txn_date || ''))).map(b => `
+            <tr style="background:${_paPick.has(b.id) ? '#dbeafe' : '#fafafa'}">
+              <td></td>
+              <td colspan="5" style="padding:.25rem .5rem">
+                <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.8rem">
+                  <input type="checkbox" ${_paPick.has(b.id) ? 'checked' : ''} onclick="paPickBox(${b.id})" style="cursor:pointer">
+                  <span style="color:var(--g500);white-space:nowrap">${esc(b.txn_date || '—')}</span>
+                  <b style="color:${b.direction === 'in' ? '#047857' : '#b91c1c'};white-space:nowrap">${b.direction === 'in' ? '+' : '-'}${money(b.amount)}</b>
+                  <span style="color:var(--g500)">${esc((b.category || '').trim() || '未分类')}</span>
+                  ${b.note ? `<span style="color:var(--g400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.note)}</span>` : ''}
+                </label>
+              </td>
+            </tr>`).join('');
+        }
+        return row;
       }).join('') + '</tbody></table>'
     : '没有符合筛选的标注。';
 }
