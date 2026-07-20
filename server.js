@@ -15597,6 +15597,38 @@ app.get(['/container-week', '/container-week.html'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'container-week.html'));
 });
 
+// GET /cw-check/:token — 排查工具：显示"这台服务器实例 + 它的数据库"是否认得
+// 这把钥匙。二维码扫出来提示失效但后台明明刚生成时，在手机和电脑上各打开
+// 一次本页对比 实例ID/数据库路径/结果，即可分辨是否两边访问到了不同的
+// 部署或不同的数据库。只读、不泄露密钥本身以外的敏感信息。
+const _BOOT_ID = require('crypto').randomBytes(4).toString('hex');
+const _BOOT_AT = new Date().toISOString();
+app.get('/cw-check/:token', (req, res) => {
+  let found = null, partnerCount = -1, err = '';
+  try {
+    found = _partnerByCsubToken(String(req.params.token || ''));
+    partnerCount = db.prepare('SELECT COUNT(*) AS n FROM partners').get().n;
+  } catch (e) { err = e.message; }
+  const row = (k, v) => `<tr><td style="padding:6px 10px;color:#64748b;white-space:nowrap">${k}</td><td style="padding:6px 10px;font-family:monospace;word-break:break-all">${v}</td></tr>`;
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>钥匙自检</title></head>
+  <body style="font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;background:#f8fafc;padding:20px">
+    <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px">
+      <h2 style="margin:0 0 10px;font-size:1.1rem">🔍 周柜钥匙自检</h2>
+      <div style="font-size:2rem;margin:.3rem 0">${found ? '✅' : '❌'}</div>
+      <div style="font-weight:700;margin-bottom:12px">${found ? `这台服务器认得这把钥匙：${found.name}` : (err ? '服务器查询出错：' + err : '这台服务器的数据库里没有这把钥匙（或公司已停用）')}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;background:#f8fafc;border-radius:8px">
+        ${row('访问域名', req.headers['x-forwarded-host'] || req.headers.host || '?')}
+        ${row('服务器实例', _BOOT_ID + ' · 启动于 ' + _BOOT_AT.slice(0, 16).replace('T', ' ') + ' UTC')}
+        ${row('数据库位置', path.resolve(dataDir))}
+        ${row('公司总数', String(partnerCount))}
+        ${row('钥匙前 8 位', String(req.params.token || '').slice(0, 8) + '…')}
+      </table>
+      <div style="font-size:.78rem;color:#94a3b8;margin-top:12px">用法：把出问题的二维码链接里 /cw/ 改成 /cw-check/，分别在电脑和手机上打开。两边"服务器实例"或"结果"不一致 = 两台设备访问到了不同的部署/数据库。</div>
+    </div>
+  </body></html>`);
+});
+
 // GET /c-submit/info?t=TOKEN — public: minimal info so the mobile page knows which company it's for
 app.get('/c-submit/info', (req, res) => {
   const p = _partnerByCsubToken(String(req.query.t || ''));
