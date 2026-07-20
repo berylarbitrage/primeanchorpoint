@@ -34754,6 +34754,10 @@ async function loadTxnAnalysis() {
   if (!wrap) return;
   wrap.innerHTML = '<div style="color:var(--gray-400);padding:1rem">加载中…</div>';
   try { _txnAll = await api('/admin/bank-txns'); } catch (e) { wrap.innerHTML = `<div style="color:#ef4444;padding:1rem">${esc(e.message)}</div>`; return; }
+  if (_txnAll && !Array.isArray(_txnAll) && _txnAll.error) {
+    wrap.innerHTML = `<div style="color:#ef4444;padding:1rem">加载失败：${esc(_txnAll.error)}</div>`;
+    return;
+  }
   if (!Array.isArray(_txnAll)) _txnAll = [];
   _txnSel = new Set();
   renderTxnAnalysis();
@@ -35021,6 +35025,12 @@ async function loadExpenseLedger() {
   wrap.innerHTML = '<div style="color:var(--gray-400);padding:1rem">加载中…</div>';
   try {
     const all = await api('/admin/bank-txns');
+    // api() 出错时返回 {error} 而不是抛异常——以前这里静默变成空账本，
+    // 看起来像「没有开支」；现在把服务器的真实报错显示出来。
+    if (all && !Array.isArray(all) && all.error) {
+      wrap.innerHTML = `<div style="color:#ef4444;padding:1rem">加载失败：${esc(all.error)}<br><span style="color:var(--gray-400);font-size:.8rem">请截图给管理员，或刷新重试</span></div>`;
+      return;
+    }
     _elTxns = Array.isArray(all) ? all : [];   // 收入支出都进账本：支出红、收入绿
   } catch (e) { wrap.innerHTML = `<div style="color:#ef4444;padding:1rem">${esc(e.message)}</div>`; return; }
   renderExpenseLedger();
