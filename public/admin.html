@@ -36566,10 +36566,11 @@ function renderInvpContainerTable(skipSave) {
     const subPrice = parseFloat(it.sub_price) || 0;
     const subTotal = qty * subPrice;
     const hl = !!it.highlighted;
-    const pricey = price > 200;
+    const pricey = _invpAutoHlEnabled() && price > 200;
     // Both manual star (★) and auto price>200 use the same amber highlight
     // (#fef3c7 background + orange #d97706 left bar). Visually identical
-    // — both mean "this row needs attention".
+    // — both mean "this row needs attention". Auto price>200 only applies
+    // to Wecharmer invoices (see _invpAutoHlEnabled).
     const highlight = hl || pricey;
     const rowBg = highlight ? '#fef3c7' : '';
     const rowStyle = highlight ? 'background:#fef3c7;box-shadow:inset 3px 0 0 #d97706' : '';
@@ -36661,7 +36662,7 @@ function invpUpdateContainerRowTotal(row) {
   const _allItems = window._invpContainerItems || [];
   const item = _allItems.find(i => String(i.uid) === String(row.dataset.uid));
   const starred = item && !!item.highlighted;
-  const pricey = price > 200;
+  const pricey = _invpAutoHlEnabled() && price > 200;
   const highlight = starred || pricey;
   row.style.background = highlight ? '#fef3c7' : '';
   row.style.boxShadow = highlight ? 'inset 3px 0 0 #d97706' : '';
@@ -38304,6 +38305,12 @@ function invpUnlinkEmp(uid) {
   renderInvpManualTable(true);
 }
 
+// 单价 > $200 自动变黄的规则只对 Wecharmer 的发票生效：其他客户（比如
+// Smart Supply Chain）的柜子即使高价也保持正常底色。手动 ★ 标黄不受影响。
+function _invpAutoHlEnabled() {
+  const el = document.getElementById('invPageBillName');
+  return ((el && el.value) || '').toLowerCase().includes('wecharmer');
+}
 function applyInvUniformRate(val) {
   const rate = parseFloat(val);
   if (!rate || rate <= 0) return;
@@ -38425,8 +38432,9 @@ async function generateInvpPreview() {
     const rowArr = containerItems.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
       const hl = !!i.highlighted;
-      const pricey = (Number(i.unit_price) || 0) > 200;
+      const pricey = _invpAutoHlEnabled() && (Number(i.unit_price) || 0) > 200;
       // Manual star and auto unit-price>200 share the same amber highlight.
+      // Auto highlight is Wecharmer-only; other customers' rows stay normal.
       const highlight = hl || pricey;
       const rowBg = highlight ? '#fef3c7' : stripe;
       const rowExtra = highlight ? 'box-shadow:inset 4px 0 0 #d97706;' : '';
