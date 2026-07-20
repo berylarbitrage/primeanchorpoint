@@ -15629,6 +15629,176 @@ app.get('/cw-check/:token', (req, res) => {
   </body></html>`);
 });
 
+// ════════ 个人银行账单 (Beryl Zhang)：独立密码页，上传个人账单 PDF + 框选标注收支 ════════
+// 与公司银行账单完全分表隔离：不进公司页面、不进收支分类、不被 pallet 镜像同步。
+// 页面 /personal-bank，密码经 PERSONAL_BANK_PASSWORD 配置（默认 649671），
+// 每个请求都带密码校验（与周柜提交页同一信任模型）。
+const PERSONAL_BANK_PASSWORD = process.env.PERSONAL_BANK_PASSWORD || '649671';
+db.exec(`CREATE TABLE IF NOT EXISTS personal_bank_statements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner TEXT DEFAULT 'Beryl Zhang',
+  bank TEXT DEFAULT '',
+  period_start TEXT DEFAULT '',
+  period_end TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS personal_bank_txns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  statement_id INTEGER NOT NULL,
+  page INTEGER DEFAULT 1,
+  box_x REAL DEFAULT 0,
+  box_y REAL DEFAULT 0,
+  box_w REAL DEFAULT 0,
+  box_h REAL DEFAULT 0,
+  txn_date TEXT DEFAULT '',
+  amount REAL DEFAULT 0,
+  direction TEXT DEFAULT 'out',
+  payee TEXT DEFAULT '',
+  category TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pbtxn_stmt ON personal_bank_txns(statement_id)`); } catch (e) {}
+
+function _pbPwOk(got) {
+  const a = Buffer.from(String(got || '')), b = Buffer.from(PERSONAL_BANK_PASSWORD);
+  return a.length === b.length && require('crypto').timingSafeEqual(a, b);
+}
+function requirePbPw(req, res, next) {
+  const got = req.headers['x-pb-pw'] || req.query.pw || (req.body && req.body.pw) || '';
+  if (!_pbPwOk(got)) return res.status(401).json({ error: '密码错误' });
+  next();
+}
+const pbStmtUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /pdf$/i.test(file.mimetype) || /\.pdf$/i.test(file.originalname || '')),
+});
+
+app.get('/personal-bank', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'personal-bank.html'));
+});
+app.post('/pb/verify', (req, res) => {
+  res.json({ ok: _pbPwOk((req.body && req.body.pw) || '') });
+});
+// List statements with their annotations (page computes totals client-side)
+app.get('/pb/statements', requirePbPw, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, owner, bank, period_start, period_end, file_name, file_path, notes, created_at
+      FROM personal_bank_statements ORDER BY period_start DESC, id DESC`).all();
+    const boxStmt = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note
+      FROM personal_bank_txns WHERE statement_id=? ORDER BY page ASC, box_y ASC, id ASC`);
+    for (const r of rows) { r.has_file = !!r.file_path; delete r.file_path; r.boxes = boxStmt.all(r.id); }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Upload a personal statement PDF
+app.post('/pb/statements', pbStmtUpload.single('file'), requirePbPw, async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 PDF 文件' });
+    const fname = `pbstmt-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+    const key = `uploads/${fname}`;
+    try { await storage.putObject(key, req.file.buffer, { contentType: 'application/pdf' }); }
+    catch (e) { return res.status(500).json({ error: '保存文件失败：' + (e.message || e) }); }
+    const b = req.body || {};
+    const bank = String(b.bank || '').slice(0, 40);
+    const ps = String(b.period_start || '').slice(0, 10), pe = String(b.period_end || '').slice(0, 10);
+    const fileName = ([('BerylZhang'), bank.replace(/\s+/g, ''), ps && pe ? ps + '_' + pe : (ps || pe)].filter(Boolean).join('_') || 'statement')
+      .replace(/[\/\\:*?"<>|]+/g, '-').slice(0, 180) + '.pdf';
+    const ins = db.prepare(`INSERT INTO personal_bank_statements (owner, bank, period_start, period_end, file_path, file_name)
+      VALUES ('Beryl Zhang', ?, ?, ?, ?, ?)`).run(bank, ps, pe, key, fileName);
+    res.json({ success: true, id: ins.lastInsertRowid, file_name: fileName });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/pb/statements/:id/file', requirePbPw, async (req, res) => {
+  try {
+    const s = db.prepare('SELECT file_path FROM personal_bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s || !s.file_path) return res.status(404).json({ error: 'not found' });
+    const buf = await storage.getBuffer(storage.keyFrom(s.file_path, 'uploads'));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.send(buf);
+  } catch (e) { res.status(404).json({ error: 'File not found' }); }
+});
+app.put('/pb/statements/:id/meta', requirePbPw, (req, res) => {
+  try {
+    const s = db.prepare('SELECT id FROM personal_bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    db.prepare('UPDATE personal_bank_statements SET bank=?, period_start=?, period_end=? WHERE id=?')
+      .run(String(b.bank || '').slice(0, 40), String(b.period_start || '').slice(0, 10), String(b.period_end || '').slice(0, 10), s.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/pb/statements/:id', requirePbPw, (req, res) => {
+  try {
+    const s = db.prepare('SELECT * FROM personal_bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s) return res.status(404).json({ error: 'not found' });
+    if (s.file_path) storage.deleteObject(storage.keyFrom(s.file_path, 'uploads')).catch(() => {});
+    db.prepare('DELETE FROM personal_bank_txns WHERE statement_id=?').run(s.id);
+    db.prepare('DELETE FROM personal_bank_statements WHERE id=?').run(s.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Boxes CRUD
+app.get('/pb/statements/:id/boxes', requirePbPw, (req, res) => {
+  try {
+    res.json(db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note
+      FROM personal_bank_txns WHERE statement_id=? ORDER BY page ASC, box_y ASC, id ASC`).all(parseInt(req.params.id)));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/pb/statements/:id/boxes', requirePbPw, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id);
+    if (!db.prepare('SELECT id FROM personal_bank_statements WHERE id=?').get(sid)) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
+    const ins = db.prepare(`INSERT INTO personal_bank_txns (statement_id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        sid, Math.max(1, parseInt(b.page) || 1),
+        clamp01(b.box_x), clamp01(b.box_y), clamp01(b.box_w), clamp01(b.box_h),
+        String(b.txn_date || '').slice(0, 40), parseFloat(b.amount) || 0,
+        b.direction === 'in' ? 'in' : 'out',
+        String(b.payee || '').slice(0, 120), String(b.category || '').slice(0, 60), String(b.note || '').slice(0, 200));
+    res.json({ success: true, id: ins.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/pb/statements/:id/boxes/:boxId', requirePbPw, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id), bid = parseInt(req.params.boxId);
+    const row = db.prepare('SELECT * FROM personal_bank_txns WHERE id=? AND statement_id=?').get(bid, sid);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    const has = k => Object.prototype.hasOwnProperty.call(b, k);
+    const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
+    db.prepare(`UPDATE personal_bank_txns SET page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, direction=?, payee=?, category=?, note=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND statement_id=?`).run(
+        has('page') ? Math.max(1, parseInt(b.page) || 1) : row.page,
+        has('box_x') ? clamp01(b.box_x) : row.box_x,
+        has('box_y') ? clamp01(b.box_y) : row.box_y,
+        has('box_w') ? clamp01(b.box_w) : row.box_w,
+        has('box_h') ? clamp01(b.box_h) : row.box_h,
+        has('txn_date') ? String(b.txn_date || '').slice(0, 40) : row.txn_date,
+        has('amount') ? (parseFloat(b.amount) || 0) : row.amount,
+        has('direction') ? (b.direction === 'in' ? 'in' : 'out') : row.direction,
+        has('payee') ? String(b.payee || '').slice(0, 120) : row.payee,
+        has('category') ? String(b.category || '').slice(0, 60) : row.category,
+        has('note') ? String(b.note || '').slice(0, 200) : row.note,
+        bid, sid);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/pb/statements/:id/boxes/:boxId', requirePbPw, (req, res) => {
+  try {
+    db.prepare('DELETE FROM personal_bank_txns WHERE id=? AND statement_id=?').run(parseInt(req.params.boxId), parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /c-submit/info?t=TOKEN — public: minimal info so the mobile page knows which company it's for
 app.get('/c-submit/info', (req, res) => {
   const p = _partnerByCsubToken(String(req.query.t || ''));
