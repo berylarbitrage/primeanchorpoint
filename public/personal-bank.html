@@ -93,7 +93,17 @@ input,select{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;
 </div>
 
 <script>
-const CATEGORIES = ['工资 Salary', '公司往来 Company', '转账 Transfer', '房租 Rent', '生活 Living', '餐饮 Food', '购物 Shopping', '投资 Investment', '取现 Cash', '银行费用 Fee', '退回入账 Returned Posted Credit', '其他 Other'];
+const CATEGORIES = ['工资 Salary', '公司往来 Company', '转账 Transfer', 'Whatnot', '赔偿 Claim', '付信用卡 Credit Card', '房租 Rent', '生活 Living', '餐饮 Food', '购物 Shopping', '投资 Investment', '取现 Cash', '银行费用 Fee', '退回入账 Returned Posted Credit', '其他 Other'];
+// 每个分类常用的「对方」候选：选好分类后，对方输入框自动给这些选项（也可自由填写）
+const CAT_PAYEES = {
+  '工资 Salary': ['Prime Anchor Workforce Inc', 'Swiftx Inc', 'Superior Brands Corp Inc'],
+  '转账 Transfer': ['Tiexiong Zhou', 'Niki Zhao', 'Yizhao Cai'],
+  '公司往来 Company': ['Prime Anchor Point LLC', 'Surplus Lane Inc'],
+  'Whatnot': ['Whatnot'],
+  '赔偿 Claim': ['State Farm'],
+  '付信用卡 Credit Card': ['Wells Fargo', 'BCU', 'Citi', 'Apple'],
+};
+const ALL_PAYEES = [...new Set(Object.values(CAT_PAYEES).flat())];
 let PW = sessionStorage.getItem('pb_pw') || '';
 let _list = [];
 function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
@@ -382,7 +392,8 @@ async function edUpdate(id, field, value) {
   b[field] = value;
   const r = await api('/pb/statements/' + _edId + '/boxes/' + id, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
   if (r.error) toast('保存失败：' + r.error, true); else setStatus('已保存 ✓');
-  if (field === 'direction') renderBoxes();
+  // 换方向要重画框颜色；换分类要刷新「对方」候选列表
+  if (field === 'direction' || field === 'category') renderBoxes();
 }
 async function edDelete(id) {
   if (!confirm('删除这个标注？')) return;
@@ -439,8 +450,9 @@ function renderBoxes() {
         <span style="color:#94a3b8;font-size:.82rem">$</span>
         <input type="number" step="0.01" class="ed-amt" placeholder="金额" value="${b.amount || ''}" onchange="edUpdate(${b.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--g200);border-radius:6px;font-size:.82rem">
       </div>
-      <input type="text" placeholder="对方（谁付的 / 付给谁）" value="${esc(b.payee || '')}" onchange="edUpdate(${b.id},'payee',this.value)" style="${inp}">
-      <input type="text" list="pbCats" placeholder="分类（工资 / 房租 / 生活…）" value="${esc(b.category || '')}" onchange="edUpdate(${b.id},'category',this.value)" style="${inp}">
+      <input type="text" list="pbCats" placeholder="分类（工资 / 转账 / 付信用卡…）" value="${esc(b.category || '')}" onchange="edUpdate(${b.id},'category',this.value)" style="${inp}">
+      <input type="text" list="pbPayee-${b.id}" placeholder="对方（谁付的 / 付给谁）" value="${esc(b.payee || '')}" onchange="edUpdate(${b.id},'payee',this.value)" style="${inp}">
+      <datalist id="pbPayee-${b.id}">${(CAT_PAYEES[b.category] || ALL_PAYEES).map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>
       <input type="text" placeholder="备注（可选）" value="${esc(b.note || '')}" onchange="edUpdate(${b.id},'note',this.value)" style="${inp};margin-bottom:0">
     </div>`;
   }).join('') + `<datalist id="pbCats">${CATEGORIES.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>`;
