@@ -67,6 +67,20 @@ input,select{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;
     <div style="font-weight:700;font-size:.9rem;color:var(--g600);margin-bottom:.4rem">📊 分类统计（全部账单）</div>
     <div id="catStats" style="font-size:.84rem;color:var(--g500)">还没有标注。</div>
   </div>
+
+  <div class="card" style="overflow-x:auto;margin-top:1rem">
+    <div style="font-weight:700;font-size:.9rem;color:var(--g600);margin-bottom:.45rem">👥 对方收支分析 <span style="font-weight:400;font-size:.76rem;color:var(--g400)">勾选账单或选日期段，看给每个人/公司的收支和是否平衡</span></div>
+    <div id="paStmts" style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.45rem"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem;font-size:.82rem">
+      <label style="color:var(--g500)">从 <input type="date" id="paFrom" onchange="renderPayeeStats()"></label>
+      <label style="color:var(--g500)">到 <input type="date" id="paTo" onchange="renderPayeeStats()"></label>
+      <select id="paCat" onchange="renderPayeeStats()" style="padding:.3rem .4rem;border:1px solid var(--g200);border-radius:6px;font-size:.8rem"></select>
+      <input type="text" id="paSearch" placeholder="搜对方…" oninput="renderPayeeStats()" style="padding:.3rem .5rem;border:1px solid var(--g200);border-radius:6px;font-size:.8rem;width:130px">
+      <button class="btn btn-sm btn-outline" onclick="paReset()">重置</button>
+    </div>
+    <div id="paSummary" style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.55rem"></div>
+    <div id="paTable" style="font-size:.84rem;color:var(--g500)">还没有标注。</div>
+  </div>
 </div>
 
 <!-- 上传信息弹窗 -->
@@ -193,6 +207,92 @@ function render() {
         <td style="text-align:right;color:#b91c1c;font-weight:700">${cats[k].out ? money(cats[k].out) : '—'}</td>
         <td>${cats[k].n}</td></tr>`).join('') + '</tbody></table>'
     : '还没有标注。';
+  renderPayeeFilters();
+  renderPayeeStats();
+}
+
+// ── 对方收支分析：勾选账单 / 选日期段，按对方汇总收入支出并看是否平衡 ──
+let _paSel = null;   // Set(statement id)；null = 全部账单
+function paToggleStmt(id) {
+  if (_paSel === null) _paSel = new Set(_list.map(s => s.id));
+  if (_paSel.has(id)) _paSel.delete(id); else _paSel.add(id);
+  if (_paSel.size === _list.length) _paSel = null;
+  renderPayeeFilters(); renderPayeeStats();
+}
+function paSelAll(v) { _paSel = v ? null : new Set(); renderPayeeFilters(); renderPayeeStats(); }
+function paReset() {
+  _paSel = null;
+  document.getElementById('paFrom').value = '';
+  document.getElementById('paTo').value = '';
+  document.getElementById('paCat').value = '';
+  document.getElementById('paSearch').value = '';
+  renderPayeeFilters(); renderPayeeStats();
+}
+function renderPayeeFilters() {
+  const wrap = document.getElementById('paStmts');
+  if (!wrap) return;
+  const allOn = _paSel === null;
+  const chip = (on, label, onclick, title) => `<button onclick="${onclick}" title="${esc(title || '')}" style="border:1px solid ${on ? '#16a34a' : 'var(--g200)'};background:${on ? '#dcfce7' : '#fff'};color:${on ? '#166534' : 'var(--g500)'};border-radius:14px;padding:.15rem .6rem;font-size:.76rem;cursor:pointer;font-weight:${on ? 700 : 400};white-space:nowrap">${esc(label)}</button>`;
+  wrap.innerHTML = chip(allOn, '全部账单', 'paSelAll(true)') + (allOn ? '' : chip(false, '清空', 'paSelAll(false)')) +
+    _list.map(s => {
+      const on = allOn || (_paSel && _paSel.has(s.id));
+      const label = `${s.bank || ''} ${String(s.period_start || '').slice(5)}~${String(s.period_end || '').slice(5)}`.trim() || (s.file_name || '').slice(0, 24);
+      return chip(on, label, `paToggleStmt(${s.id})`, s.file_name);
+    }).join('');
+  // 分类下拉：保留当前选择
+  const sel = document.getElementById('paCat');
+  if (sel) {
+    const prev = sel.value;
+    const present = [...new Set(_list.flatMap(s => (s.boxes || []).map(b => (b.category || '').trim() || '未分类')))].sort();
+    sel.innerHTML = '<option value="">全部分类</option>' + present.map(c => `<option value="${esc(c)}"${c === prev ? ' selected' : ''}>${esc(c)}</option>`).join('');
+  }
+}
+function renderPayeeStats() {
+  const tableEl = document.getElementById('paTable'), sumEl = document.getElementById('paSummary');
+  if (!tableEl) return;
+  const from = document.getElementById('paFrom')?.value || '';
+  const to = document.getElementById('paTo')?.value || '';
+  const cat = document.getElementById('paCat')?.value || '';
+  const q = (document.getElementById('paSearch')?.value || '').toLowerCase();
+  let boxes = _list
+    .filter(s => _paSel === null || _paSel.has(s.id))
+    .flatMap(s => s.boxes || []);
+  if (from) boxes = boxes.filter(b => (b.txn_date || '') >= from);
+  if (to) boxes = boxes.filter(b => (b.txn_date || '') <= to);
+  if (cat) boxes = boxes.filter(b => ((b.category || '').trim() || '未分类') === cat);
+  if (q) boxes = boxes.filter(b => String(b.payee || '').toLowerCase().includes(q));
+  const t = sums(boxes);
+  const net = +(t.inc - t.out).toFixed(2);
+  const balanced = Math.abs(net) < 0.01;
+  sumEl.innerHTML = boxes.length
+    ? `<span class="chip">↓ 收入 <b style="color:#047857">${money(t.inc)}</b></span>` +
+      `<span class="chip">↑ 支出 <b style="color:#b91c1c">${money(t.out)}</b></span>` +
+      `<span class="chip">净 <b style="color:${net >= 0 ? '#047857' : '#b91c1c'}">${money(net)}</b></span>` +
+      (balanced
+        ? '<span class="chip" style="background:#dcfce7;border-color:#86efac;color:#166534;font-weight:700">✓ 收支平衡</span>'
+        : `<span class="chip" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;font-weight:700">未平衡 差 ${money(Math.abs(net))}（${net > 0 ? '收多付少' : '付多收少'}）</span>`) +
+      `<span class="chip">共 <b>${boxes.length} 笔</b></span>`
+    : '';
+  const map = {};
+  for (const b of boxes) {
+    const p = String(b.payee || '').trim() || '未填对方';
+    if (!map[p]) map[p] = { inc: 0, out: 0, n: 0 };
+    map[p][b.direction === 'in' ? 'inc' : 'out'] += Number(b.amount) || 0;
+    map[p].n++;
+  }
+  const keys2 = Object.keys(map).sort((a, b) => (map[b].inc + map[b].out) - (map[a].inc + map[a].out));
+  tableEl.innerHTML = keys2.length
+    ? `<table><thead><tr><th>对方</th><th style="text-align:right">收入</th><th style="text-align:right">支出</th><th style="text-align:right">净（收-支）</th><th>笔数</th></tr></thead><tbody>` +
+      keys2.map(k => {
+        const v = map[k], n2 = +(v.inc - v.out).toFixed(2);
+        const bal = Math.abs(n2) < 0.01;
+        return `<tr><td style="font-weight:600">${esc(k)}</td>
+          <td style="text-align:right;color:#047857;font-weight:700">${v.inc ? money(v.inc) : '—'}</td>
+          <td style="text-align:right;color:#b91c1c;font-weight:700">${v.out ? money(v.out) : '—'}</td>
+          <td style="text-align:right;font-weight:800;color:${bal ? '#166534' : (n2 > 0 ? '#047857' : '#b91c1c')}">${bal ? '✓ 平' : money(n2)}</td>
+          <td>${v.n}</td></tr>`;
+      }).join('') + '</tbody></table>'
+    : '没有符合筛选的标注。';
 }
 async function pbMeta(id, field, value) {
   const s = _list.find(x => x.id === id); if (!s) return;
