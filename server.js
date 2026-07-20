@@ -15663,6 +15663,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS personal_bank_txns (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pbtxn_stmt ON personal_bank_txns(statement_id)`); } catch (e) {}
+// 每笔标注可挂照片证据（图片/PDF，存 uploads，JSON key 数组）
+try {
+  const pbCols = db.prepare("PRAGMA table_info(personal_bank_txns)").all().map(c => c.name);
+  if (!pbCols.includes('photos')) db.exec("ALTER TABLE personal_bank_txns ADD COLUMN photos TEXT DEFAULT '[]'");
+} catch (e) {}
+function pbBoxOut(bx) {
+  let p = []; try { p = JSON.parse(bx.photos || '[]'); } catch { p = []; }
+  bx.photos_urls = (Array.isArray(p) ? p : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+  delete bx.photos;
+  return bx;
+}
 
 function _pbPwOk(got) {
   const a = Buffer.from(String(got || '')), b = Buffer.from(PERSONAL_BANK_PASSWORD);
@@ -15690,9 +15701,9 @@ app.get('/pb/statements', requirePbPw, (req, res) => {
   try {
     const rows = db.prepare(`SELECT id, owner, bank, period_start, period_end, file_name, file_path, notes, created_at
       FROM personal_bank_statements ORDER BY period_start DESC, id DESC`).all();
-    const boxStmt = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note
+    const boxStmt = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note, photos
       FROM personal_bank_txns WHERE statement_id=? ORDER BY page ASC, box_y ASC, id ASC`);
-    for (const r of rows) { r.has_file = !!r.file_path; delete r.file_path; r.boxes = boxStmt.all(r.id); }
+    for (const r of rows) { r.has_file = !!r.file_path; delete r.file_path; r.boxes = boxStmt.all(r.id).map(pbBoxOut); }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -15747,8 +15758,8 @@ app.delete('/pb/statements/:id', requirePbPw, (req, res) => {
 // Boxes CRUD
 app.get('/pb/statements/:id/boxes', requirePbPw, (req, res) => {
   try {
-    res.json(db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note
-      FROM personal_bank_txns WHERE statement_id=? ORDER BY page ASC, box_y ASC, id ASC`).all(parseInt(req.params.id)));
+    res.json(db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note, photos
+      FROM personal_bank_txns WHERE statement_id=? ORDER BY page ASC, box_y ASC, id ASC`).all(parseInt(req.params.id)).map(pbBoxOut));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/pb/statements/:id/boxes', requirePbPw, (req, res) => {
@@ -15796,6 +15807,38 @@ app.delete('/pb/statements/:id/boxes/:boxId', requirePbPw, (req, res) => {
   try {
     db.prepare('DELETE FROM personal_bank_txns WHERE id=? AND statement_id=?').run(parseInt(req.params.boxId), parseInt(req.params.id));
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 给一笔标注上传照片证据（图片/PDF，可多张，拖拽或点选）
+app.post('/pb/statements/:id/boxes/:boxId/photos', containerSubmitPhotoUpload.array('photos', 12), requirePbPw, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id), bid = parseInt(req.params.boxId);
+    const row = db.prepare('SELECT photos FROM personal_bank_txns WHERE id=? AND statement_id=?').get(bid, sid);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let keys = []; try { keys = JSON.parse(row.photos || '[]'); } catch { keys = []; }
+    if (!Array.isArray(keys)) keys = [];
+    (req.files || []).forEach(f => { const k = f.key || f.path; if (k) keys.push(k); });
+    keys = keys.slice(0, 24);
+    db.prepare('UPDATE personal_bank_txns SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND statement_id=?')
+      .run(JSON.stringify(keys), bid, sid);
+    res.json({ success: true, photos_urls: keys.map(k => `/uploads/${path.basename(k)}`) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 删除一笔标注上的某张照片
+app.delete('/pb/statements/:id/boxes/:boxId/photos', requirePbPw, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id), bid = parseInt(req.params.boxId);
+    const target = path.basename(String((req.body && req.body.photo) || req.query.photo || ''));
+    if (!target) return res.status(400).json({ error: 'missing photo' });
+    const row = db.prepare('SELECT photos FROM personal_bank_txns WHERE id=? AND statement_id=?').get(bid, sid);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let keys = []; try { keys = JSON.parse(row.photos || '[]'); } catch { keys = []; }
+    const kept = (Array.isArray(keys) ? keys : []).filter(k => path.basename(k) !== target);
+    const removed = (Array.isArray(keys) ? keys : []).find(k => path.basename(k) === target);
+    db.prepare('UPDATE personal_bank_txns SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND statement_id=?')
+      .run(JSON.stringify(kept), bid, sid);
+    if (removed) storage.deleteObject(storage.keyFrom(removed, 'uploads')).catch(() => {});
+    res.json({ success: true, photos_urls: kept.map(k => `/uploads/${path.basename(k)}`) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
