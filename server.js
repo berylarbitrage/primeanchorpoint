@@ -28952,13 +28952,18 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
         // is the OTHER link the user makes — resolve it so the 关联 column can show
         // whether that invoice exists and whether it's been marked paid.
         b.inv_ref = null;
+        b.inv_refs = [];
         if (!b.used_by && b.invoice_number && String(b.invoice_number).trim()) {
-          const key = String(b.invoice_number).trim();
-          if (!invByNumCache.has(key)) invByNumCache.set(key, invByNumStmt.get(key) || null);
-          const inv = invByNumCache.get(key);
-          b.inv_ref = inv
-            ? { invoice_id: inv.id, invoice_number: inv.invoice_number, company_name: inv.company_name, payment_status: inv.payment_status || 'unpaid' }
-            : { invoice_number: key, missing: true };
+          // 一笔支出可以对应多张发票：逗号/空格/顿号/斜杠分隔，逐张解析。
+          const keys2 = String(b.invoice_number).split(/[,，、;；\/\s]+/).map(x => x.trim()).filter(Boolean);
+          b.inv_refs = keys2.map(key => {
+            if (!invByNumCache.has(key)) invByNumCache.set(key, invByNumStmt.get(key) || null);
+            const inv = invByNumCache.get(key);
+            return inv
+              ? { invoice_id: inv.id, invoice_number: inv.invoice_number, company_name: inv.company_name, payment_status: inv.payment_status || 'unpaid' }
+              : { invoice_number: key, missing: true };
+          });
+          b.inv_ref = b.inv_refs[0] || null;
         }
       }
     }
