@@ -52,6 +52,8 @@ input,select{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;
   </div>
   <p style="color:var(--g500);font-size:.85rem;margin:.35rem 0 1rem">上传个人账单 PDF 后点「✏️ 标注」，在 PDF 上<strong>拖框标注每一笔钱的来往</strong>（收入/支出、日期、金额、对方、分类、备注），下方自动算出<strong>收支合计和分类统计</strong>。</p>
 
+  <div id="dropZone" onclick="document.getElementById('upInput').click()" style="border:2px dashed var(--g300,#d1d5db);border-radius:10px;padding:.9rem 1rem;text-align:center;color:var(--g400,#9ca3af);font-size:.85rem;margin-bottom:.9rem;cursor:pointer;transition:background .15s,border-color .15s,color .15s">⬇️ 把账单 PDF 拖到这里（会弹窗让你选银行和账单起止日期，文件按日期自动重命名）</div>
+
   <div id="stats" style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem"></div>
 
   <div class="card" style="margin-bottom:1rem;overflow-x:auto">
@@ -77,10 +79,11 @@ input,select{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;
     <div id="upFiles" style="font-size:.8rem;color:var(--g600);background:#f8fafc;border:1px solid var(--g200);border-radius:8px;padding:.5rem .6rem;margin-bottom:.6rem"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem .6rem">
       <div style="grid-column:1/-1"><label style="font-size:.78rem;font-weight:600;color:var(--g600);display:block;margin-bottom:.2rem">🏦 银行</label>
-        <select id="upBank" style="width:100%"><option>Chase</option><option>BoA</option><option>Cash App</option><option>其他</option></select></div>
-      <div><label style="font-size:.78rem;font-weight:600;color:var(--g600);display:block;margin-bottom:.2rem">账单起始</label><input type="date" id="upStart" style="width:100%"></div>
-      <div><label style="font-size:.78rem;font-weight:600;color:var(--g600);display:block;margin-bottom:.2rem">账单结束</label><input type="date" id="upEnd" style="width:100%"></div>
+        <select id="upBank" onchange="pbUpdateNamePreview()" style="width:100%"><option>Chase</option><option>BoA</option><option>Cash App</option><option>其他</option></select></div>
+      <div><label style="font-size:.78rem;font-weight:600;color:var(--g600);display:block;margin-bottom:.2rem">账单起始</label><input type="date" id="upStart" onchange="pbUpdateNamePreview()" style="width:100%"></div>
+      <div><label style="font-size:.78rem;font-weight:600;color:var(--g600);display:block;margin-bottom:.2rem">账单结束</label><input type="date" id="upEnd" onchange="pbUpdateNamePreview()" style="width:100%"></div>
     </div>
+    <div style="margin-top:.6rem;font-size:.78rem;color:var(--g500)">重命名后：<span id="upNamePreview" style="font-family:monospace;color:#0369a1;word-break:break-all">—</span></div>
     <div id="upErr" style="color:#dc2626;font-size:.8rem;min-height:1em;margin-top:.4rem"></div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.6rem">
       <button class="btn btn-outline" onclick="pbCloseUpload()">取消</button>
@@ -195,16 +198,41 @@ function pbDelete(id) {
 }
 // ── 上传 ──
 let _upFiles = [];
+// 与服务端 /pb/statements 的重命名规则保持一致：BerylZhang_银行_起始_结束.pdf
+function pbUpdateNamePreview() {
+  const bank = (document.getElementById('upBank').value || '').replace(/\s+/g, '');
+  const ps = document.getElementById('upStart').value, pe = document.getElementById('upEnd').value;
+  const name = (['BerylZhang', bank, ps && pe ? ps + '_' + pe : (ps || pe)].filter(Boolean).join('_') || 'statement')
+    .replace(/[\/\\:*?"<>|]+/g, '-').slice(0, 180) + '.pdf';
+  const el = document.getElementById('upNamePreview');
+  if (el) el.textContent = (ps && pe) ? name + (_upFiles.length > 1 ? `（共 ${_upFiles.length} 份，同名时自动区分）` : '') : '请先选择账单起止日期';
+}
 function pbOpenUpload(files) {
   const pdfs = Array.from(files || []).filter(f => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
   if (!pdfs.length) { toast('只支持 PDF 文件', true); return; }
   _upFiles = pdfs;
   document.getElementById('upFiles').innerHTML = '📄 ' + pdfs.map(f => esc(f.name)).join('<br>📄 ');
   document.getElementById('upErr').textContent = '';
+  pbUpdateNamePreview();
   const m = document.getElementById('upModal');
   m.style.display = 'flex';
   document.getElementById('upInput').value = '';
 }
+// ── 拖拽上传：拖 PDF 到虚线框（或页面任意位置）即弹出上传窗 ──
+(() => {
+  const zone = document.getElementById('dropZone');
+  if (!zone) return;
+  const on = () => { zone.style.background = '#ecfdf5'; zone.style.borderColor = '#16a34a'; zone.style.color = '#166534'; };
+  const off = () => { zone.style.background = ''; zone.style.borderColor = ''; zone.style.color = ''; };
+  ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); on(); }));
+  ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); off(); }));
+  zone.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) pbOpenUpload(e.dataTransfer.files); });
+  // 拖到页面其他地方也接住，不让浏览器直接打开 PDF
+  ['dragover', 'drop'].forEach(ev => document.addEventListener(ev, e => {
+    e.preventDefault();
+    if (ev === 'drop' && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) pbOpenUpload(e.dataTransfer.files);
+  }));
+})();
 function pbCloseUpload() { document.getElementById('upModal').style.display = 'none'; _upFiles = []; }
 async function pbDoUpload() {
   const bank = document.getElementById('upBank').value;
