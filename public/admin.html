@@ -42405,6 +42405,7 @@ function _bsBoxExtraInfo(b) {
   // Compact chips instead of stacked <br> lines — the detail table reads row-per-txn.
   const chip = (txt, bg, col, bd, mono) => `<span style="display:inline-block;padding:.06rem .45rem;background:${bg};color:${col};border:1px solid ${bd};border-radius:5px;font-size:.7rem;font-weight:600;white-space:nowrap${mono ? ';font-family:monospace' : ''}">${txt}</span>`;
   if (kind === 'bankfee') return b.purpose ? chip('费用 · ' + esc(b.purpose), '#f8fafc', '#475569', '#e2e8f0') : '';
+  if (kind === 'office' || kind === 'compfee') return b.purpose ? chip('分类 · ' + esc(b.purpose), '#f8fafc', '#475569', '#e2e8f0') : '';
   if (kind === 'personal') return b.purpose ? chip('类别 · ' + esc(b.purpose), '#f8fafc', '#475569', '#e2e8f0') : '';
   if (kind === 'employee' || (kind === 'company' && b.direction === 'in')) {
     const bits = [];
@@ -42467,7 +42468,7 @@ function _bsNoteSatisfied(box) {
   // 仓库押金: a chosen warehouse already describes the transaction.
   if (kind === 'whdep' && _bsWhdepParse(box.payee)) return true;
   // Bank fee type / office-expense category / personal category chosen.
-  if ((kind === 'bankfee' || kind === 'office' || kind === 'personal') && String(box.purpose || '').trim()) return true;
+  if ((kind === 'bankfee' || kind === 'office' || kind === 'compfee' || kind === 'personal') && String(box.purpose || '').trim()) return true;
   // Employee wage: invoice + billing period filled.
   if (kind === 'employee' && String(box.invoice_number || '').trim()
     && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
@@ -43442,6 +43443,9 @@ const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费
 // 公司办公费用 (office expenses): pick a category (datalist; free text still allowed).
 const BS_PAYEE_OFFICE = '办公费用';
 const BS_OFFICE_TYPES = ['Claude (Anthropic)', 'ChatGPT (OpenAI)', '软件订阅 Software', '办公用品 Supplies', '网络/电话 Internet & Phone', '域名/服务器 Domain & Hosting', '邮寄快递 Postage', '打印耗材 Printing', '会员/年费 Membership', '差旅 Travel', '其他 Other'];
+// 公司相关费用 (company/legal expenses): 税务、成立费之类 — pick a category (datalist; free text allowed).
+const BS_PAYEE_COMPFEE = '公司相关费用';
+const BS_COMPFEE_TYPES = ['税务 Tax', '成立费 Incorporation', '注册代理 Registered Agent', '年报/年审 Annual Report', '执照/许可 License & Permit', '政府罚款 Penalty', '律师费 Legal', '会计/报税 Accounting', '公司保险 Insurance', '其他 Other'];
 // Category options when paying an individual (个人：拿回家那部分).
 const BS_PERSONAL_CATS = ['换汇 FX', '自己工资 Own Salary', '公司转账 Company Transfer'];
 // Classify the payee to decide which detail sub-section to show.
@@ -43449,6 +43453,7 @@ function _bsPayeeKind(box) {
   const p = (box && box.payee) || '';
   if (p === BS_PAYEE_BANKFEE) return 'bankfee';
   if (p === BS_PAYEE_OFFICE) return 'office';
+  if (p === BS_PAYEE_COMPFEE) return 'compfee';
   if (_bsIsEmp(p)) return 'employee';
   if (_bsIsPallet(p)) return 'pallet';
   if (_bsIsCheck(p)) return 'check';
@@ -43487,6 +43492,7 @@ function _bsPayeeOptions(current, direction) {
   const parts = [`<option value="">— 选择${_bsPayeeLabel(direction)} —</option>`,
     `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`,
     `<option value="${esc(BS_PAYEE_OFFICE)}"${current === BS_PAYEE_OFFICE ? ' selected' : ''}>🧾 公司办公费用（选分类）</option>`,
+    `<option value="${esc(BS_PAYEE_COMPFEE)}"${current === BS_PAYEE_COMPFEE ? ' selected' : ''}>🏛️ 公司相关费用（税务/成立费，选分类）</option>`,
     `<option value="${esc(BS_PAYEE_CLAIM)}"${current === BS_PAYEE_CLAIM ? ' selected' : ''}>📋 Claim</option>`,
     `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
     `<option value="${esc(BS_PAYEE_PAP)}"${current === BS_PAYEE_PAP ? ' selected' : ''}>🔁 Prime Anchor Point 转账</option>`,
@@ -43504,7 +43510,7 @@ function _bsPayeeOptions(current, direction) {
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_RENT, BS_PAYEE_WHDEP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_RENT, BS_PAYEE_WHDEP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
@@ -43754,6 +43760,10 @@ function _bsRenderBoxPanel() {
         <div style="font-size:.72rem;color:#0369a1;margin-bottom:.3rem">办公费用分类</div>
         <input type="text" class="bs-bx-office" list="bsOfficeList" placeholder="如：Claude (Anthropic) / ChatGPT (OpenAI)" value="${esc(box.payee === BS_PAYEE_OFFICE ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
+      <div class="bs-compfee-wrap" style="display:${box.payee === BS_PAYEE_COMPFEE ? '' : 'none'};background:#faf5ff;border:1px dashed #e9d5ff;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#7e22ce;margin-bottom:.3rem">公司相关费用分类</div>
+        <input type="text" class="bs-bx-compfee" list="bsCompFeeList" placeholder="如：税务 Tax / 成立费 Incorporation" value="${esc(box.payee === BS_PAYEE_COMPFEE ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
       <div class="bs-personal-wrap" style="display:${_bsPayeeKind(box) === 'personal' ? '' : 'none'};background:#eff6ff;border:1px dashed #bfdbfe;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#1d4ed8;margin-bottom:.3rem">类别（拿回家）</div>
         <input type="text" class="bs-bx-cat" list="bsPersonalCatList" placeholder="换汇 / 自己工资 / 公司转账" value="${esc(_bsPayeeKind(box) === 'personal' ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
@@ -43795,6 +43805,7 @@ function _bsRenderBoxPanel() {
     + '<datalist id="bsPurposeList"><option value="劳务工资"></option></datalist>'
     + '<datalist id="bsFeeList">' + BS_FEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsOfficeList">' + BS_OFFICE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
+    + '<datalist id="bsCompFeeList">' + BS_COMPFEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsPersonalCatList">' + BS_PERSONAL_CATS.map(c => `<option value="${esc(c)}"></option>`).join('') + '</datalist>';
   _bsBoxList.forEach(b => bsValidateBoxDates(b.id)); // flag out-of-period transaction dates
 }
@@ -43816,6 +43827,8 @@ function bsUpdateBoxSections(id) {
   const rtw = item.querySelector('.bs-rent-wrap');
   const whw = item.querySelector('.bs-whdep-wrap');
   const ofw = item.querySelector('.bs-office-wrap');
+  const cfw = item.querySelector('.bs-compfee-wrap');
+  if (cfw) cfw.style.display = kind === 'compfee' ? '' : 'none';
   if (plw) plw.style.display = kind === 'pallet' ? '' : 'none';
   if (ckw) ckw.style.display = kind === 'check' ? '' : 'none';
   if (tkw) tkw.style.display = kind === 'truck' ? '' : 'none';
