@@ -336,6 +336,7 @@ function renderPayeeStats() {
                   <span style="color:var(--g500);white-space:nowrap">${esc(b.txn_date || '—')}</span>
                   <b style="color:${b.direction === 'in' ? '#047857' : '#b91c1c'};white-space:nowrap">${b.direction === 'in' ? '+' : '-'}${money(b.amount)}</b>
                   <span style="color:var(--g500)">${esc((b.category || '').trim() || '未分类')}</span>
+                  ${(b.photos_urls || []).length ? `<span title="有 ${b.photos_urls.length} 张证据照片" style="color:#1d4ed8">📷${b.photos_urls.length}</span>` : ''}
                   ${b.note ? `<span style="color:var(--g400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.note)}</span>` : ''}
                 </label>
               </td>
@@ -663,9 +664,46 @@ function renderBoxes() {
       <input type="text" list="pbCats" placeholder="分类（工资 / 转账 / 付信用卡…）" value="${esc(b.category || '')}" onchange="edUpdate(${b.id},'category',this.value)" style="${inp}">
       <input type="text" list="pbPayee-${b.id}" placeholder="对方（谁付的 / 付给谁）" value="${esc(b.payee || '')}" onchange="edUpdate(${b.id},'payee',this.value)" style="${inp}">
       <datalist id="pbPayee-${b.id}">${(CAT_PAYEES[b.category] || ALL_PAYEES).map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>
-      <input type="text" placeholder="备注（可选）" value="${esc(b.note || '')}" onchange="edUpdate(${b.id},'note',this.value)" style="${inp};margin-bottom:0">
+      <input type="text" placeholder="备注（可选）" value="${esc(b.note || '')}" onchange="edUpdate(${b.id},'note',this.value)" style="${inp}">
+      <div style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
+        ${(b.photos_urls || []).map(u => `<span style="position:relative;display:inline-block"><img src="${esc(u)}" onclick="window.open('${esc(u)}','_blank')" title="点击查看大图" style="height:36px;width:36px;object-fit:cover;border-radius:5px;border:1px solid var(--g200);cursor:pointer"><span onclick="pbPhotoDel(${b.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border-radius:50%;width:15px;height:15px;font-size:11px;line-height:15px;text-align:center;cursor:pointer">×</span></span>`).join('')}
+        <label title="拖照片到这一项任意位置，或点这里选择" style="border:1px dashed var(--g300);border-radius:6px;padding:.18rem .45rem;font-size:.72rem;color:var(--g400);cursor:pointer;white-space:nowrap">📷 证据照片
+          <input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="pbPhotoAdd(${b.id}, this.files); this.value=''">
+        </label>
+      </div>
     </div>`;
   }).join('') + `<datalist id="pbCats">${CATEGORIES.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>`;
+  // 每一项整体都是照片拖放区：把截图/照片拖到某笔标注上就传到那一笔
+  panel.querySelectorAll('.ed-item').forEach(item => {
+    const id = parseInt(item.dataset.id);
+    const orig = item.style.background || '';
+    ['dragenter', 'dragover'].forEach(ev => item.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); item.style.background = '#eff6ff'; }));
+    ['dragleave', 'drop'].forEach(ev => item.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); item.style.background = orig; }));
+    item.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) pbPhotoAdd(id, e.dataTransfer.files); });
+  });
+}
+// ── 每笔标注的照片证据：拖放/点选上传，点缩略图看大图，× 删除 ──
+async function pbPhotoAdd(boxId, files) {
+  const ok = Array.from(files || []).filter(f => /^image\//i.test(f.type) || f.type === 'application/pdf' || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(f.name || ''));
+  if (!ok.length) { toast('只支持图片或 PDF', true); return; }
+  const fd = new FormData();
+  ok.forEach(f => fd.append('photos', f));
+  setStatus('照片上传中…');
+  const r = await fetch('/pb/statements/' + _edId + '/boxes/' + boxId + '/photos?pw=' + encodeURIComponent(PW), { method: 'POST', body: fd }).then(x => x.json()).catch(e => ({ error: String(e) }));
+  if (r.error) { toast('上传失败：' + r.error, true); return; }
+  const b = _edBoxes.find(x => x.id === boxId);
+  if (b) b.photos_urls = r.photos_urls || [];
+  renderBoxes();
+  setStatus('已保存 ✓');
+  toast('证据照片已上传 ✓');
+}
+async function pbPhotoDel(boxId, url) {
+  if (!confirm('删除这张证据照片？')) return;
+  const r = await api('/pb/statements/' + _edId + '/boxes/' + boxId + '/photos?photo=' + encodeURIComponent(url), { method: 'DELETE' });
+  if (r.error) { toast('删除失败：' + r.error, true); return; }
+  const b = _edBoxes.find(x => x.id === boxId);
+  if (b) b.photos_urls = r.photos_urls || (b.photos_urls || []).filter(u => u !== url);
+  renderBoxes();
 }
 // ── init ──
 (async () => {
