@@ -564,17 +564,26 @@ function wireDrawing() {
   });
 }
 function setStatus(t) { const s = document.getElementById('edStatus'); if (s) { s.textContent = t; if (t) setTimeout(() => { if (s.textContent === t) s.textContent = ''; }, 1200); } }
-async function edUpdate(id, field, value) {
+async function edUpdate(id, field, value, el) {
   const b = _edBoxes.find(x => x.id === id); if (!b) return;
-  // 日期必须在账单起止日期内，超出直接报错并还原
+  // 日期必须在账单起止日期内。还在输入中（年份只敲了两位就触发 change）时
+  // 只把输入框标红、不打断；离开输入框（blur）才报错并还原。
   if (field === 'txn_date' && value) {
     const stmt = _list.find(x => x.id === _edId) || {};
     if ((stmt.period_start && value < stmt.period_start) || (stmt.period_end && value > stmt.period_end)) {
+      if (el && document.activeElement === el) {
+        el.style.borderColor = '#fca5a5';
+        el.style.background = '#fff7f7';
+        return;
+      }
       toast(`日期必须在账单周期内（${stmt.period_start || '?'} ~ ${stmt.period_end || '?'}）`, true);
       renderBoxes();
       return;
     }
+    if (el) { el.style.borderColor = ''; el.style.background = ''; }
   }
+  if (field === 'txn_date' && b.txn_date === value && !value) return;  // 空值重复 blur 不打请求
+  if (field === 'txn_date' && b.txn_date === value) { renderBoxes(); return; }  // 值没变只刷新提醒
   const prev = b[field];
   b[field] = value;
   const r = await api('/pb/statements/' + _edId + '/boxes/' + id, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
@@ -687,7 +696,7 @@ function renderBoxes() {
           <option value="out"${!isIn ? ' selected' : ''}>支出</option>
           <option value="in"${isIn ? ' selected' : ''}>收入</option>
         </select>
-        <input type="date" value="${esc(b.txn_date || '')}"${_dateLim} onchange="edUpdate(${b.id},'txn_date',this.value)" title="日期必须在账单周期内${_stmt.period_start ? `（${_stmt.period_start} ~ ${_stmt.period_end || ''}）` : ''}" style="flex:1;padding:.3rem;border:1px solid ${dateBad ? '#fca5a5' : 'var(--g200)'};border-radius:6px;font-size:.78rem${dateBad ? ';background:#fff7f7' : ''}">
+        <input type="date" value="${esc(b.txn_date || '')}"${_dateLim} onchange="edUpdate(${b.id},'txn_date',this.value,this)" onblur="edUpdate(${b.id},'txn_date',this.value)" title="日期必须在账单周期内${_stmt.period_start ? `（${_stmt.period_start} ~ ${_stmt.period_end || ''}）` : ''}" style="flex:1;padding:.3rem;border:1px solid ${dateBad ? '#fca5a5' : 'var(--g200)'};border-radius:6px;font-size:.78rem${dateBad ? ';background:#fff7f7' : ''}">
       </div>
       <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.3rem">
         <span style="color:#94a3b8;font-size:.82rem">$</span>

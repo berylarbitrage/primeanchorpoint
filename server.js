@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ag · 周柜表格支持填一周/只填一天两种方式',
+  tag: '2026-07-12ah · 修日期输入中途误报错(输入时只标红,离开输入框才校验)',
   started: new Date().toISOString(),
 };
 
