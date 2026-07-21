@@ -2323,6 +2323,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-sm btn-outline" id="cwDownloadBtn" onclick="cwDownloadQr()">⬇ 下载</button>
     </div>
     <div style="margin-top:.35rem;text-align:center"><a id="cwCheckLink" href="#" target="_blank" style="font-size:.7rem;color:#7c3aed">🔍 扫码提示「链接失效」？点此自检（手机和电脑各开一次对比）</a></div>
+    <div id="cwDiagLine" style="margin-top:.25rem;text-align:center;font-size:.68rem;font-family:monospace"></div>
   </div>
   <div style="display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.7rem">
     <button class="btn btn-sm btn-outline" id="cwDownloadAllBtn" onclick="downloadAllCwQr()" title="下载全部二维码">⬇ 下载全部</button>
@@ -41137,6 +41138,14 @@ async function openContainerWeekQrModal(partnerId, partnerName) {
     if (!r || !r.token) throw new Error(r && r.error || '生成失败');
     _cwQrState.token = r.token;
     _cwQrState.names = _cwLoadNames();
+    // 本机侧确认：这台实例是否认得刚拿到的钥匙（和扫码失败页的诊断行对比）
+    fetch('/c-submit/diag?t=' + encodeURIComponent(r.token)).then(x => x.json()).then(d => {
+      const el = document.getElementById('cwDiagLine');
+      if (!el) return;
+      el.innerHTML = d.reason === 'ok'
+        ? `<span style="color:#059669">✓ 服务器已确认钥匙有效 · 实例 ${d.instance} · 版本 ${d.commit}</span>`
+        : `<span style="color:#dc2626">⚠ 服务器报告 ${d.reason} · 实例 ${d.instance}</span>`;
+    }).catch(() => {});
     await _loadQRLib();
     document.getElementById('cwQrLoading').style.display = 'none';
     _cwRenderDropdown();

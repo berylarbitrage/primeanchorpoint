@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ae · 回滚www跳转(与Render域名跳转冲突),规范域改为www',
+  tag: '2026-07-12af · 周柜扫码失败页自动显示诊断(实例/钥匙状态),区分公司停用',
   started: new Date().toISOString(),
 };
 
@@ -15565,7 +15565,8 @@ const CONTAINER_SUBMIT_PASSWORD = String(process.env.CONTAINER_SUBMIT_PASSWORD |
 // Look up a partner by their public submit token. Returns null if not found.
 function _partnerByCsubToken(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null;
-  return db.prepare('SELECT id, name FROM partners WHERE container_submit_token=? AND active=1').get(token);
+  // COALESCE：老数据 active 为 NULL 时视为启用，避免误判「链接失效」
+  return db.prepare('SELECT id, name FROM partners WHERE container_submit_token=? AND COALESCE(active,1)=1').get(token);
 }
 
 // Distinct per-state warehouse addresses of a partner (addresses JSON, falling
@@ -15909,9 +15910,32 @@ app.delete('/pb/statements/:id/boxes/:boxId/photos', requirePbPw, (req, res) => 
 
 // GET /c-submit/info?t=TOKEN — public: minimal info so the mobile page knows which company it's for
 app.get('/c-submit/info', (req, res) => {
-  const p = _partnerByCsubToken(String(req.query.t || ''));
-  if (!p) return res.status(404).json({ error: '链接无效或已失效' });
+  const t = String(req.query.t || '');
+  const p = _partnerByCsubToken(t);
+  if (!p) {
+    // 区分「公司已停用」和「钥匙不存在」，页面能给出准确提示
+    const anyRow = t.length >= 16 ? db.prepare('SELECT id, name, active FROM partners WHERE container_submit_token=?').get(t) : null;
+    if (anyRow) return res.status(404).json({ error: `该公司（${anyRow.name}）已停用，二维码暂不可用`, code: 'inactive' });
+    return res.status(404).json({ error: '链接无效或已失效', code: 'not_found' });
+  }
   res.json({ partner_id: p.id, partner_name: p.name, needs_password: true, sites: _partnerSites(p.id) });
+});
+
+// GET /c-submit/diag?t=TOKEN — public、只读：扫码报「链接失效」时的自动诊断。
+// 返回这台实例是否认得该钥匙 + 实例标识；周柜页把它显示在错误下方，一张
+// 截图即可判断是多实例/不同数据库（实例 ID 与后台显示的不同）还是钥匙问题。
+app.get('/c-submit/diag', (req, res) => {
+  const t = String(req.query.t || '');
+  let reason = 'ok', name = '', partners = -1;
+  try {
+    const row = t.length >= 16 ? db.prepare('SELECT id, name, active FROM partners WHERE container_submit_token=?').get(t) : null;
+    if (!row) reason = t.length >= 16 ? 'not_found' : 'bad_token';
+    else if (row.active != null && Number(row.active) === 0) { reason = 'inactive'; name = row.name; }
+    else name = row.name;
+    partners = db.prepare('SELECT COUNT(*) AS n FROM partners').get().n;
+  } catch (e) { reason = 'error:' + e.message; }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ reason, name, instance: _BOOT_ID, boot_at: _BOOT_AT, commit: BUILD_INFO.commit, tag: BUILD_INFO.tag, partners });
 });
 
 // POST /c-submit/verify?t=TOKEN — public: check the shared access code (gate the page)
