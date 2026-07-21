@@ -2322,6 +2322,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-sm btn-outline" id="cwCopyBtn" onclick="cwCopyUrl()">📋 复制</button>
       <button class="btn btn-sm btn-outline" id="cwDownloadBtn" onclick="cwDownloadQr()">⬇ 下载</button>
     </div>
+    <div style="margin-top:.35rem;text-align:center"><a id="cwCheckLink" href="#" target="_blank" style="font-size:.7rem;color:#7c3aed">🔍 扫码提示「链接失效」？点此自检（手机和电脑各开一次对比）</a></div>
   </div>
   <div style="display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.7rem">
     <button class="btn btn-sm btn-outline" id="cwDownloadAllBtn" onclick="downloadAllCwQr()" title="下载全部二维码">⬇ 下载全部</button>
@@ -13478,7 +13479,7 @@ async function _qrShorten(absUrl) {
   try {
     const u = new URL(absUrl, location.origin);
     const r = await api('/admin/short-link', { method: 'POST', body: JSON.stringify({ target: u.pathname + u.search }) });
-    if (r && r.code) return `${u.origin}/s/${r.code}`;
+    if (r && r.code) return `${_pubOrigin()}/s/${r.code}`;
   } catch (e) {}
   return absUrl;
 }
@@ -13511,7 +13512,7 @@ async function _partnerQrPagesHtml(id, name, number, wdoc) {
   ]);
   let applyQrs = Array.isArray(ra && ra.qrs) ? ra.qrs.filter(q => q && q.url) : [];
   if (!applyQrs.length && ra && ra.url) applyQrs = [{ state: '', url: ra.url }];
-  const weekRaw = (rc && rc.token) ? `${location.origin}/cw/${rc.token}` : '';
+  const weekRaw = (rc && rc.token) ? `${_pubOrigin()}/cw/${rc.token}` : '';
   if (!applyQrs.length && !weekRaw && !wdoc) return { html: '', pageCount: 0 };
   for (const q of applyQrs) q.url = await _qrShorten(q.url);
   const weekShort = weekRaw ? await _qrShorten(weekRaw) : '';
@@ -13701,7 +13702,7 @@ async function openPartnerQrLabelModal() {
     if (rc && rc.token) {
       // 周柜码保持每公司一个（链接不变，旧标签持续有效）；多地址公司在
       // 表格页面里选仓库地址，提交自动带 work_site
-      const url = await _qrShorten(`${location.origin}/cw/${rc.token}`);
+      const url = await _qrShorten(`${_pubOrigin()}/cw/${rc.token}`);
       items.push({ type: 'week', name, num, state: '', url, img: await _mkQrDataUrl(url, _QRL_TYPES.week.color) });
     }
   }
@@ -41147,9 +41148,14 @@ async function openContainerWeekQrModal(partnerId, partnerName) {
 function closeContainerWeekQrModal() {
   document.getElementById('cwQrModal').classList.remove('show');
 }
+// 公开二维码链接一律用主域：管理员在 www 下操作时不把 www 打进码里
+// （www 若命中不同实例会导致扫码「链接失效」）。本地/预览环境保持原 origin。
+function _pubOrigin() {
+  return /(^|\.)primeanchorpoint\.com$/i.test(location.hostname) ? 'https://primeanchorpoint.com' : location.origin;
+}
 // Build the /cw URL for a given submitter name ('' = generic, no name).
 function _cwUrlFor(name) {
-  const base = `${location.origin}/cw/${_cwQrState.token}`;
+  const base = `${_pubOrigin()}/cw/${_cwQrState.token}`;
   return name ? `${base}?who=${encodeURIComponent(name)}` : base;
 }
 function cwAddName() {
@@ -41202,6 +41208,9 @@ function _cwRenderCard() {
   document.getElementById('cwCardTitle').textContent = name ? T.person(name) : T.generic;
   const url = _cwUrlFor(name);
   document.getElementById('cwCardUrl').textContent = url;
+  // 自检入口：扫码提示失效时，手机和电脑各开一次对比实例/数据库
+  const chk = document.getElementById('cwCheckLink');
+  if (chk) { chk.href = url.replace('/cw/', '/cw-check/').replace(/\?.*$/, ''); }
   document.getElementById('cwCopyBtn').textContent = T.copy;
   document.getElementById('cwDownloadBtn').textContent = T.download;
   const box = document.getElementById('cwCardBox');
