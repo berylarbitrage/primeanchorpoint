@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ab · Chase双routing纠正:ACH 071000013 / Wire 021000021',
+  tag: '2026-07-12ac · Chase预设补SWIFT CHASUS33',
   started: new Date().toISOString(),
 };
 
@@ -2769,6 +2769,32 @@ try {
     if (fixed) console.log(`[migration] Chase 双 routing 纠正: 修复银行预设 ${fixed} 条`);
   }
 } catch (e) { console.log('[migration] chase dual routing error:', e.message); }
+
+// 一次性补充 v2：Chase 预设再补上 SWIFT code（CHASUS33，全行固定）；同时
+// 幂等重跑双 routing 纠正，防止 v1 未部署过。
+try {
+  const _fixDone2 = db.prepare("SELECT value FROM app_settings WHERE key='chase_dual_routing_fix_v2'").get();
+  if (!_fixDone2) {
+    let fixed = 0;
+    for (const row of db.prepare("SELECT id, data FROM invoice_profiles WHERE section='bank'").all()) {
+      let d = {}; try { d = JSON.parse(row.data || '{}'); } catch { continue; }
+      const isChase = String(d.bank_name || '').trim() === 'Chase' || String(d.bank_wire_routing || '').trim() === '071000013';
+      if (!isChase) continue;
+      let changed = false;
+      if (String(d.bank_wire_routing || '').trim() === '071000013') {
+        if (!String(d.bank_paper_routing || '').trim()) d.bank_paper_routing = '071000013';
+        d.bank_wire_routing = '021000021'; changed = true;
+      }
+      if (!String(d.bank_swift_code || '').trim()) { d.bank_swift_code = 'CHASUS33'; changed = true; }
+      if (changed) {
+        db.prepare('UPDATE invoice_profiles SET data=? WHERE id=?').run(JSON.stringify(d), row.id);
+        fixed++;
+      }
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('chase_dual_routing_fix_v2','1')").run();
+    if (fixed) console.log(`[migration] Chase SWIFT 补充: 修复银行预设 ${fixed} 条`);
+  }
+} catch (e) { console.log('[migration] chase swift error:', e.message); }
 
 // ─── SMS Inbox Module — Database Schema ───
 db.exec(`CREATE TABLE IF NOT EXISTS sms_contacts (
