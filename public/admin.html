@@ -41148,10 +41148,10 @@ async function openContainerWeekQrModal(partnerId, partnerName) {
 function closeContainerWeekQrModal() {
   document.getElementById('cwQrModal').classList.remove('show');
 }
-// 公开二维码链接一律用主域：管理员在 www 下操作时不把 www 打进码里
-// （www 若命中不同实例会导致扫码「链接失效」）。本地/预览环境保持原 origin。
+// 公开二维码链接统一用 www 主服务域名（Render 上 www 是主域，裸域是平台级
+// 跳转）。管理员无论在哪个域名下操作，码里都是同一个域。本地环境保持原 origin。
 function _pubOrigin() {
-  return /(^|\.)primeanchorpoint\.com$/i.test(location.hostname) ? 'https://primeanchorpoint.com' : location.origin;
+  return /(^|\.)primeanchorpoint\.com$/i.test(location.hostname) ? 'https://www.primeanchorpoint.com' : location.origin;
 }
 // Build the /cw URL for a given submitter name ('' = generic, no name).
 function _cwUrlFor(name) {
