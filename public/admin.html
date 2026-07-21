@@ -38634,14 +38634,12 @@ async function generateInvpPreview() {
       <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;text-align:center;font-size:.78rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">THANK YOU FOR YOUR BUSINESS!</div>`;
 
   // Inject the letterhead into the line-item table's <thead> (repeats every
-  // page) and the payment/footer into a <tfoot> (repeats every page). Replace
-  // </table>→tfoot FIRST (the raw line-item table has exactly one), then <thead>.
-  // Function replacements keep `$` in dollar amounts literal.
-  // Container mode: render ONE self-contained table per page — each with its own
-  // repeating letterhead (thead) and payment/footer (tfoot), page-broken between
-  // them. Because each page IS a complete table, its tfoot always renders (no
-  // orphan page, footer on every page), and rows are evenly distributed by the
-  // pagination above. Other modes keep the single flowing table.
+  // page). The payment/footer appears ONCE at the very end — NOT in a <tfoot>
+  // (tfoot repeats on every printed page, which duplicated TOTAL DUE + payment
+  // info when the invoice spilled onto a second page).
+  // Container mode: one self-contained table per page (repeating letterhead),
+  // footer appended only to the LAST page's table. Other modes: single flowing
+  // table with the footer as the final body row.
   let invoiceTable;
   if (invPages && invPages.length) {
     invoiceTable = invPages.map((rows, pi) => {
@@ -38649,14 +38647,13 @@ async function generateInvpPreview() {
       const brk = isLast ? '' : 'page-break-after:always;break-after:page;';
       return `<table style="width:100%;border-collapse:collapse;font-size:.82rem;${brk}">
         <thead><tr class="inv-letterhead"><td colspan="20" style="padding:0;border:none">${headerBlock}</td></tr>${invColHead}</thead>
-        <tfoot><tr class="inv-paytail"><td colspan="20" style="padding:0;border:none">${footerBlock}</td></tr></tfoot>
-        <tbody>${rows.join('')}${isLast ? invTotalRow : ''}</tbody>
+        <tbody>${rows.join('')}${isLast ? invTotalRow + `<tr class="inv-paytail" style="page-break-inside:avoid;break-inside:avoid"><td colspan="20" style="padding:0;border:none">${footerBlock}</td></tr>` : ''}</tbody>
       </table>`;
     }).join('');
   } else {
     invoiceTable = lineItemTableHtml
       .replace(/border:1px solid #29AAE1/g, 'border:none')
-      .replace('</table>', () => `<tfoot><tr class="inv-paytail"><td colspan="20" style="padding:0;border:none">${footerBlock}</td></tr></tfoot></table>`)
+      .replace('</table>', () => `<tr class="inv-paytail" style="page-break-inside:avoid;break-inside:avoid"><td colspan="20" style="padding:0;border:none">${footerBlock}</td></tr></table>`)
       .replace('<thead>', () => `<thead><tr class="inv-letterhead"><td colspan="20" style="padding:0;border:none">${headerBlock}</td></tr>`);
   }
 
