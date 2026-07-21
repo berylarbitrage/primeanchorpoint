@@ -38427,8 +38427,11 @@ async function generateInvpPreview() {
     const CAP = 10;                                   // max containers per page
     const pageCount = Math.max(1, Math.ceil(N / CAP));
     const perPage = Math.max(1, Math.ceil(N / pageCount));
-    let padV = Math.round((430 / perPage - 20) / 2);  // ~430px row band/page (conservative so a page's table never overflows onto a 2nd page)
-    padV = Math.max(9, Math.min(30, padV));
+    // ~350px row band/page：信头 + BILL TO + 行 + TOTAL + TOTAL DUE + 付款信息
+    // + 页脚全在同一页时的行区预算。收紧一点保证一页装完，不把合计/付款
+    // 信息挤到第二页。
+    let padV = Math.round((350 / perPage - 20) / 2);
+    padV = Math.max(6, Math.min(24, padV));
 
     const rowArr = containerItems.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
