@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12aa · 个人账单页支持拖拽上传+重命名预览',
+  tag: '2026-07-12ab · Chase双routing纠正:ACH 071000013 / Wire 021000021',
   started: new Date().toISOString(),
 };
 
@@ -2748,6 +2748,27 @@ try {
     console.log(`[migration] 分类全手动: 清银行费用自动分类 ${r1.changes} 条, 清卡车费自动分类 ${r2.changes} 条`);
   }
 } catch (e) { console.log('[migration] auto-category manual-only error:', e.message); }
+
+// 一次性纠正：Chase 有两个 routing——071000013 只用于 ACH/直接存款，电汇要用
+// 021000021。把银行预设里误填在 Wire 栏的 071000013 挪到 ACH/Paper 栏，
+// Wire 栏改成 021000021（发票显示两行：ACH / Electronic 和 Wire Routing）。
+try {
+  const _fixDone = db.prepare("SELECT value FROM app_settings WHERE key='chase_dual_routing_fix_v1'").get();
+  if (!_fixDone) {
+    let fixed = 0;
+    for (const row of db.prepare("SELECT id, data FROM invoice_profiles WHERE section='bank'").all()) {
+      let d = {}; try { d = JSON.parse(row.data || '{}'); } catch { continue; }
+      if (String(d.bank_wire_routing || '').trim() === '071000013') {
+        if (!String(d.bank_paper_routing || '').trim()) d.bank_paper_routing = '071000013';
+        d.bank_wire_routing = '021000021';
+        db.prepare('UPDATE invoice_profiles SET data=? WHERE id=?').run(JSON.stringify(d), row.id);
+        fixed++;
+      }
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('chase_dual_routing_fix_v1','1')").run();
+    if (fixed) console.log(`[migration] Chase 双 routing 纠正: 修复银行预设 ${fixed} 条`);
+  }
+} catch (e) { console.log('[migration] chase dual routing error:', e.message); }
 
 // ─── SMS Inbox Module — Database Schema ───
 db.exec(`CREATE TABLE IF NOT EXISTS sms_contacts (
