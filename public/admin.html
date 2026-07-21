@@ -42443,6 +42443,18 @@ function _bsBoxExtraInfo(b) {
     const bits = [];
     if (kind !== 'employee' && b.purpose) bits.push(chip(esc(b.purpose), '#eff6ff', '#1d4ed8', '#bfdbfe'));
     if (kind === 'employee' && b.pay_portion) bits.push(chip(b.pay_portion === 'full' ? '全额 Full' : '部分 Partial', '#f0fdf4', '#166534', '#bbf7d0'));
+    // 多张发票：每张一行（发票号 + 各自账期 + 各自金额）；单张走老的合并展示。
+    const items = (Array.isArray(b.inv_items) ? b.inv_items : []).filter(x => x && (String(x.inv || '').trim() || x.ps || x.pe || x.amt));
+    if (items.length > 1 || (items.length === 1 && items[0].amt)) {
+      const lines = items.map(it => {
+        const ln = [];
+        if (it.inv) ln.push(chip(esc(it.inv), '#fffbeb', '#92400e', '#fde68a', true));
+        if (it.ps || it.pe) ln.push(chip('账期 ' + esc((it.ps || '') + ' ~ ' + (it.pe || '')), '#f8fafc', '#64748b', '#e2e8f0'));
+        if (it.amt) ln.push(chip('$' + (Number(it.amt) || 0).toFixed(2), '#ecfdf5', '#047857', '#a7f3d0'));
+        return `<div style="display:flex;flex-wrap:wrap;gap:3px">${ln.join('')}</div>`;
+      });
+      return `<div style="display:flex;flex-direction:column;gap:2px;margin-top:.2rem">${bits.length ? `<div style="display:flex;flex-wrap:wrap;gap:3px">${bits.join('')}</div>` : ''}${lines.join('')}</div>`;
+    }
     if (b.invoice_number) bits.push(chip(esc(b.invoice_number), '#fffbeb', '#92400e', '#fde68a', true));
     if (b.period_start || b.period_end) bits.push(chip('账期 ' + esc((b.period_start || '') + ' ~ ' + (b.period_end || '')), '#f8fafc', '#64748b', '#e2e8f0'));
     return `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:.2rem">${bits.join('')}</div>`;
@@ -43827,12 +43839,7 @@ function _bsRenderBoxPanel() {
         <div class="bs-purpose-row" style="display:${(isIn && _bsPayeeKind(box) === 'company') ? '' : 'none'}">
           <input type="text" class="bs-bx-purpose" list="bsPurposeList" placeholder="用途（如：劳务工资）" value="${esc(box.purpose || '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
         </div>
-        <input type="text" class="bs-bx-inv" placeholder="Invoice number（多张用逗号/空格分开）" value="${esc(box.invoice_number || '')}" onchange="bsUpdateBoxField(${box.id},'invoice_number',this.value)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
-        <input type="text" class="bs-bx-period" placeholder="账期：可粘贴 2026-03-16 ~ 2026-03-22" value="${(box.period_start || box.period_end) ? esc((box.period_start || '') + ' ~ ' + (box.period_end || '')) : ''}" oninput="bsParsePeriod(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem">
-        <div style="display:flex;gap:.3rem">
-          <input type="date" class="bs-bx-pstart" title="账期开始" value="${esc(box.period_start || '')}" onchange="bsPeriodDate(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
-          <input type="date" class="bs-bx-pend" title="账期结束" value="${esc(box.period_end || '')}" onchange="bsPeriodDate(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
-        </div>
+        ${_bsInvItemsHtml(box)}
       </div>
       <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.35rem">
         <span style="color:#94a3b8;font-size:.82rem">$</span>
@@ -44199,6 +44206,105 @@ function _bsParseDateRange(text) {
     }
   }
   return null;
+}
+// ── 多张发票：一笔支出可以覆盖多张发票，每张各自的发票号 / 账期 / 金额 ──
+// 存 box.inv_items = [{inv, ps, pe, amt}]；同时把号码逗号相连写回
+// invoice_number（关联徽章逐张识别）、第一张的账期写回 period_start/end（兼容旧展示）。
+function _bsInvItems(box) {
+  let a = box.inv_items;
+  if (typeof a === 'string') { try { a = JSON.parse(a || '[]'); } catch { a = []; } }
+  if (!Array.isArray(a)) a = [];
+  a = a.map(x => ({ inv: String((x && x.inv) || ''), ps: String((x && x.ps) || ''), pe: String((x && x.pe) || ''), amt: String((x && x.amt) || '') }));
+  if (!a.length) a = [{ inv: box.invoice_number || '', ps: box.period_start || '', pe: box.period_end || '', amt: '' }];
+  return a;
+}
+function _bsInvSumLineHtml(box, items) {
+  if (items.length <= 1) return '';
+  const sum = items.reduce((s, it) => s + (parseFloat(it.amt) || 0), 0);
+  const boxAmt = Number(box.amount) || 0;
+  const match = !boxAmt || !sum || Math.abs(sum - boxAmt) < 0.01;
+  return `<span style="color:${match ? '#059669' : '#dc2626'}">各张金额合计 $${sum.toFixed(2)}${boxAmt ? `（这笔支出 $${boxAmt.toFixed(2)}${Math.abs(sum - boxAmt) < 0.01 ? ' ✓' : sum ? '，不一致 ⚠' : ''}）` : ''}</span>`;
+}
+function _bsInvItemsHtml(box) {
+  const items = _bsInvItems(box);
+  const many = items.length > 1;
+  const rows = items.map((it, i) => `
+    <div class="bs-inv-item" style="${many ? 'border:1px solid #bbf7d0;border-radius:6px;padding:.35rem .4rem;background:#fff;' : ''}margin-bottom:.3rem">
+      <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem">
+        ${many ? `<span style="font-size:.7rem;color:#059669;font-weight:700;flex:0 0 auto">#${i + 1}</span>` : ''}
+        <input type="text" class="bs-bx-inv" placeholder="Invoice number" value="${esc(it.inv)}" onchange="bsInvItemField(${box.id},${i},'inv',this.value)" style="flex:1;min-width:0;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+        ${many ? `<a onclick="bsInvItemDel(${box.id},${i})" title="删除这张发票" style="flex:0 0 auto;color:#dc2626;cursor:pointer;font-weight:700;padding:0 .2rem">✕</a>` : ''}
+      </div>
+      <input type="text" class="bs-bx-period" placeholder="账期：可粘贴 2026-03-16 ~ 2026-03-22" value="${(it.ps || it.pe) ? esc((it.ps || '') + ' ~ ' + (it.pe || '')) : ''}" oninput="bsInvItemPeriod(${box.id},${i},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem">
+      <div style="display:flex;gap:.3rem">
+        <input type="date" class="bs-bx-pstart" title="账期开始" value="${esc(it.ps)}" onchange="bsInvItemField(${box.id},${i},'ps',this.value)" style="flex:1;min-width:0;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+        <input type="date" class="bs-bx-pend" title="账期结束" value="${esc(it.pe)}" onchange="bsInvItemField(${box.id},${i},'pe',this.value)" style="flex:1;min-width:0;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+        <input type="number" step="0.01" class="bs-bx-inv-amt" placeholder="这张金额" title="这张发票对应的金额" value="${esc(it.amt)}" onchange="bsInvItemField(${box.id},${i},'amt',this.value)" style="flex:0 0 96px;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+      </div>
+    </div>`).join('');
+  return rows
+    + `<div class="bs-inv-sum" style="font-size:.72rem;margin-bottom:.25rem">${_bsInvSumLineHtml(box, items)}</div>`
+    + `<button type="button" onclick="bsInvItemAdd(${box.id})" style="font-size:.74rem;padding:.2rem .6rem;border:1px dashed #059669;background:#f0fdf4;color:#047857;border-radius:6px;cursor:pointer;font-weight:600">＋ 再加一张发票（各自账期/金额）</button>`;
+}
+const _bsInvSaveTimers = {};
+async function _bsInvItemsSave(box, items) {
+  box.inv_items = items;
+  box.invoice_number = items.map(x => String(x.inv || '').trim()).filter(Boolean).join(', ');
+  box.period_start = (items[0] && items[0].ps) || '';
+  box.period_end = (items[0] && items[0].pe) || '';
+  // Debounced: rapid edits fire one PUT with the final state, so concurrent
+  // out-of-order writes can't clobber a fresher save.
+  clearTimeout(_bsInvSaveTimers[box.id]);
+  _bsInvSaveTimers[box.id] = setTimeout(async () => {
+    try {
+      await api(`/admin/bank-statements/${_bsEdId}/boxes/${box.id}`, { method: 'PUT', body: JSON.stringify({
+        inv_items: JSON.stringify(_bsInvItems(box)), invoice_number: box.invoice_number,
+        period_start: box.period_start, period_end: box.period_end,
+      }) });
+      const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
+    } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+    bsRefreshNoteState(box.id);
+  }, 250);
+}
+function bsInvItemField(boxId, idx, key, val) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsInvItems(box);
+  if (!items[idx]) return;
+  items[idx][key] = String(val || '');
+  _bsInvItemsSave(box, items);
+  const item = document.querySelector(`.bs-box-item[data-id="${boxId}"]`);
+  const sumEl = item && item.querySelector('.bs-inv-sum');
+  if (sumEl) sumEl.innerHTML = _bsInvSumLineHtml(box, items);
+}
+function bsInvItemPeriod(boxId, idx, el) {
+  const rng = _bsParseDateRange(el.value);
+  if (!rng) return;
+  const wrap = el.closest('.bs-inv-item');
+  if (wrap) {
+    const ds = wrap.querySelector('.bs-bx-pstart'), de = wrap.querySelector('.bs-bx-pend');
+    if (ds) ds.value = rng.start;
+    if (de) de.value = rng.end;
+  }
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsInvItems(box); if (!items[idx]) return;
+  items[idx].ps = rng.start; items[idx].pe = rng.end;
+  _bsInvItemsSave(box, items);
+}
+function bsInvItemAdd(boxId) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsInvItems(box);
+  items.push({ inv: '', ps: '', pe: '', amt: '' });
+  box.inv_items = items;
+  _bsInvItemsSave(box, items);
+  _bsRenderBoxPanel();
+}
+function bsInvItemDel(boxId, idx) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsInvItems(box);
+  items.splice(idx, 1);
+  box.inv_items = items;
+  _bsInvItemsSave(box, items);
+  _bsRenderBoxPanel();
 }
 function bsParsePeriod(id, el) {
   const rng = _bsParseDateRange(el.value);

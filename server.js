@@ -2579,6 +2579,8 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN used_kind TEXT DEFAULT
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN links TEXT DEFAULT '[]'`); } catch(e) {}
 // 收支分类：用于「收支分类分析」页按类别统计（自由文本，前端提供常用预设）。
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
+// 一笔支出可以覆盖多张发票，每张各自的账期和金额：JSON [{inv, ps, pe, amt}]
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN inv_items TEXT DEFAULT '[]'`); } catch(e) {}
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -29016,7 +29018,7 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
       FROM bank_statements ORDER BY created_at DESC`).all();
-    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, links, used_invoice_id, used_kind, category FROM bank_statement_txns
+    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, links, used_invoice_id, used_kind, category FROM bank_statement_txns
       WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
     const usedInvStmt = db.prepare('SELECT invoice_number, company_name FROM invoices WHERE id=?');
     const usedInvCache = new Map();
@@ -29029,6 +29031,8 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
         let keys = []; try { keys = JSON.parse(b.photos || '[]'); } catch { keys = []; }
         b.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
         try { b.links = JSON.parse(b.links || '[]'); } catch { b.links = []; }
+        try { b.inv_items = JSON.parse(b.inv_items || '[]'); } catch { b.inv_items = []; }
+        if (!Array.isArray(b.inv_items)) b.inv_items = [];
         // Which invoice reserved this transaction as its proof (voucher picker link),
         // so the annotation views can show "已被 INV-… 用作收款/分包付款凭证".
         if (b.used_invoice_id) {
@@ -29267,8 +29271,21 @@ app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManage
     const b = req.body || {};
     const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
     const has = k => Object.prototype.hasOwnProperty.call(b, k);
+    let invItemsVal = row.inv_items;
+    if (has('inv_items')) {
+      // Validate: must be a JSON array of {inv, ps, pe, amt}; cap the size.
+      try {
+        const arr = typeof b.inv_items === 'string' ? JSON.parse(b.inv_items) : b.inv_items;
+        invItemsVal = JSON.stringify((Array.isArray(arr) ? arr : []).slice(0, 30).map(x => ({
+          inv: String((x && x.inv) || '').slice(0, 80),
+          ps: String((x && x.ps) || '').slice(0, 40),
+          pe: String((x && x.pe) || '').slice(0, 40),
+          amt: String((x && x.amt) || '').slice(0, 20),
+        })));
+      } catch (e2) { invItemsVal = row.inv_items; }
+    }
     db.prepare(`UPDATE bank_statement_txns SET
-        page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, note=?, payee=?, direction=?, purpose=?, invoice_number=?, period_start=?, period_end=?, pay_portion=?, updated_at=CURRENT_TIMESTAMP
+        page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, note=?, payee=?, direction=?, purpose=?, invoice_number=?, period_start=?, period_end=?, pay_portion=?, inv_items=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND statement_id=?`).run(
         has('page') ? Math.max(1, parseInt(b.page) || 1) : row.page,
         has('box_x') ? clamp01(b.box_x) : row.box_x,
@@ -29281,10 +29298,11 @@ app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManage
         has('payee') ? String(b.payee || '').slice(0, 120) : row.payee,
         has('direction') ? (b.direction === 'in' ? 'in' : 'out') : row.direction,
         has('purpose') ? String(b.purpose || '').slice(0, 80) : row.purpose,
-        has('invoice_number') ? String(b.invoice_number || '').slice(0, 80) : row.invoice_number,
+        has('invoice_number') ? String(b.invoice_number || '').slice(0, 400) : row.invoice_number,
         has('period_start') ? String(b.period_start || '').slice(0, 40) : row.period_start,
         has('period_end') ? String(b.period_end || '').slice(0, 40) : row.period_end,
         has('pay_portion') ? String(b.pay_portion || '').slice(0, 20) : row.pay_portion,
+        invItemsVal,
         tid, sid
       );
     res.json({ success: true });
@@ -29449,7 +29467,7 @@ app.get('/api/ext/bank-statements', requireExtKey, (req, res) => {
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, notes, created_by, created_at
       FROM bank_statements ORDER BY created_at DESC`).all();
-    const boxStmt = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, links
+    const boxStmt = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, links
       FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
     for (const r of rows) {
       r.file_available = !!r.file_path;
@@ -29459,6 +29477,7 @@ app.get('/api/ext/bank-statements', requireExtKey, (req, res) => {
         b.photo_files = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => path.basename(k));
         delete b.photos;
         try { b.links = JSON.parse(b.links || '[]'); } catch { b.links = []; }
+        try { b.inv_items = JSON.parse(b.inv_items || '[]'); } catch { b.inv_items = []; }
         b.payee_display = _bsPayeeDisplaySrv(b.payee);
         return b;
       });
