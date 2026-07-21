@@ -523,11 +523,11 @@ function wireDrawing() {
     page.addEventListener('pointerdown', e => {
       if (!_edDraw) return;
       if (e.target.closest('.ed-box')) return;
-      // 上一笔的金额和分类没填完之前，不让开始画下一笔
-      const bad = _edBoxes.find(x => !(Number(x.amount) > 0) || !String(x.category || '').trim());
+      // 上一笔的金额/分类/日期（必须在账期内）没填好之前，不让开始画下一笔
+      const bad = _edBoxes.find(x => _pbMissing(x).length);
       if (bad) {
         const n = _edBoxes.indexOf(bad) + 1;
-        toast(`#${n} 的${!(Number(bad.amount) > 0) ? '金额' : ''}${!(Number(bad.amount) > 0) && !String(bad.category || '').trim() ? '和' : ''}${!String(bad.category || '').trim() ? '分类' : ''}还没填，填完才能标下一笔`, true);
+        toast(`#${n} 的${_pbMissing(bad).join('、')}还没填好，填完才能标下一笔`, true);
         focusItem(bad.id);
         return;
       }
@@ -580,8 +580,8 @@ async function edUpdate(id, field, value) {
   const r = await api('/pb/statements/' + _edId + '/boxes/' + id, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
   if (r.error) { b[field] = prev; toast('保存失败：' + r.error, true); renderBoxes(); return; }
   setStatus('已保存 ✓');
-  // 换方向要重画框颜色；换分类要刷新「对方」候选；填金额/分类要刷新未填完提醒
-  if (field === 'direction' || field === 'category' || field === 'amount') renderBoxes();
+  // 换方向要重画框颜色；换分类要刷新「对方」候选；金额/分类/日期要刷新未填完提醒
+  if (field === 'direction' || field === 'category' || field === 'amount' || field === 'txn_date') renderBoxes();
 }
 async function edDelete(id) {
   if (!confirm('删除这个标注？')) return;
@@ -596,6 +596,23 @@ function focusItem(id) {
   item.scrollIntoView({ block: 'center', behavior: 'smooth' });
   item.style.boxShadow = '0 0 0 3px rgba(37,99,235,.35)';
   setTimeout(() => { item.style.boxShadow = ''; }, 900);
+}
+// 日期必须已填且落在账单账期内
+function _pbDateOk(b) {
+  const stmt = _list.find(x => x.id === _edId) || {};
+  const d = b.txn_date || '';
+  if (!d) return false;
+  if (stmt.period_start && d < stmt.period_start) return false;
+  if (stmt.period_end && d > stmt.period_end) return false;
+  return true;
+}
+// 一笔标注还缺什么（空数组 = 齐了）
+function _pbMissing(b) {
+  const out = [];
+  if (!(Number(b.amount) > 0)) out.push('金额');
+  if (!String(b.category || '').trim()) out.push('分类');
+  if (!_pbDateOk(b)) out.push(b.txn_date ? '日期（不在账期内）' : '日期');
+  return out;
 }
 function renderBoxes() {
   document.querySelectorAll('#edPages .ed-box').forEach(e => e.remove());
@@ -656,19 +673,21 @@ function renderBoxes() {
     const isIn = b.direction === 'in';
     const color = isIn ? '#059669' : '#dc2626';
     const inp = 'width:100%;padding:.3rem .4rem;border:1px solid var(--g200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem';
-    const incomplete = !(Number(b.amount) > 0) || !String(b.category || '').trim();
+    const missing = _pbMissing(b);
+    const incomplete = missing.length > 0;
+    const dateBad = !_pbDateOk(b);
     return `<div class="ed-item" data-id="${b.id}" style="border:1px solid ${incomplete ? '#fca5a5' : 'var(--g200)'};border-left:3px solid ${color};border-radius:8px;padding:.5rem .55rem;margin-bottom:.5rem${incomplete ? ';background:#fff7f7' : ''}">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
         <span style="font-weight:700;font-size:.82rem;color:${color}">#${i + 1} · 第 ${b.page} 页</span>
         <button onclick="edDelete(${b.id})" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:.78rem;padding:.1rem .45rem">🗑 删除</button>
       </div>
-      ${incomplete ? `<div style="font-size:.74rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:.15rem .4rem;margin-bottom:.3rem">⚠ ${!(Number(b.amount) > 0) ? '金额' : ''}${!(Number(b.amount) > 0) && !String(b.category || '').trim() ? '、' : ''}${!String(b.category || '').trim() ? '分类' : ''}未填——填完才能标下一笔</div>` : ''}
+      ${incomplete ? `<div style="font-size:.74rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:.15rem .4rem;margin-bottom:.3rem">⚠ ${missing.join('、')}未填好——填完才能标下一笔</div>` : ''}
       <div style="display:flex;gap:.3rem;margin-bottom:.3rem">
         <select onchange="edUpdate(${b.id},'direction',this.value)" style="flex:0 0 auto;padding:.3rem;border:1px solid var(--g200);border-radius:6px;font-size:.8rem">
           <option value="out"${!isIn ? ' selected' : ''}>支出</option>
           <option value="in"${isIn ? ' selected' : ''}>收入</option>
         </select>
-        <input type="date" value="${esc(b.txn_date || '')}"${_dateLim} onchange="edUpdate(${b.id},'txn_date',this.value)" title="日期必须在账单周期内${_stmt.period_start ? `（${_stmt.period_start} ~ ${_stmt.period_end || ''}）` : ''}" style="flex:1;padding:.3rem;border:1px solid var(--g200);border-radius:6px;font-size:.78rem">
+        <input type="date" value="${esc(b.txn_date || '')}"${_dateLim} onchange="edUpdate(${b.id},'txn_date',this.value)" title="日期必须在账单周期内${_stmt.period_start ? `（${_stmt.period_start} ~ ${_stmt.period_end || ''}）` : ''}" style="flex:1;padding:.3rem;border:1px solid ${dateBad ? '#fca5a5' : 'var(--g200)'};border-radius:6px;font-size:.78rem${dateBad ? ';background:#fff7f7' : ''}">
       </div>
       <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.3rem">
         <span style="color:#94a3b8;font-size:.82rem">$</span>
