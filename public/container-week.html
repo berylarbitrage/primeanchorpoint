@@ -394,6 +394,16 @@ async function init() {
       const j = await r.json().catch(() => ({}));
       showErr(j.error || I18N[_lang].invalid);
       document.getElementById('partnerName').textContent = '—';
+      // 自动诊断：显示这台服务器实例的身份和钥匙状态，截图即可定位
+      // （实例 ID 与后台弹窗里显示的不同 = 手机和电脑打到了不同的部署/数据库）
+      try {
+        const d = await fetch('/c-submit/diag?t=' + encodeURIComponent(TOKEN)).then(x => x.json());
+        const box = document.getElementById('errBox');
+        const dl = document.createElement('div');
+        dl.style.cssText = 'margin-top:.5rem;font-size:.72rem;color:#94a3b8;font-family:monospace;word-break:break-all';
+        dl.textContent = `诊断: ${d.reason} · 实例 ${d.instance} · 启动 ${String(d.boot_at || '').slice(0, 16)} · 版本 ${d.commit} · 公司 ${d.partners} 家`;
+        box.appendChild(dl);
+      } catch (e) {}
       return;
     }
     const info = await r.json();
