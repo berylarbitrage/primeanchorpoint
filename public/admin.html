@@ -38543,26 +38543,31 @@ async function generateInvpPreview() {
       </table>`;
   }
 
-  const bankRows = [
-    profile.bank_account_name  ? ['Payable To',      `<strong>${esc(profile.bank_account_name)}</strong>`] : null,
-    profile.bank_name          ? ['Bank',            esc(profile.bank_name)]                                : null,
-    profile.bank_account_no    ? ['Account No',      esc(profile.bank_account_no)]                          : null,
-    profile.bank_paper_routing ? ['ACH / Electronic', esc(profile.bank_paper_routing)]                      : null,
-    profile.bank_wire_routing  ? ['Wire Routing',    esc(profile.bank_wire_routing)]                        : null,
+  // Two simple lines: ①收款方/银行/账号 ②三个汇款号码（ACH / Wire / SWIFT）
+  const _bkItem = (k, v) => v ? `<span style="white-space:nowrap"><span style="color:#64748b">${k}:</span>&nbsp;${v}</span>` : '';
+  const bankLine1 = [
+    _bkItem('Payable To', profile.bank_account_name ? `<strong>${esc(profile.bank_account_name)}</strong>` : ''),
+    _bkItem('Bank', profile.bank_name ? esc(profile.bank_name) : ''),
+    _bkItem('Account No', profile.bank_account_no ? esc(profile.bank_account_no) : ''),
+  ].filter(Boolean);
+  const bankLine2 = [
+    _bkItem('ACH / Electronic', profile.bank_paper_routing ? esc(profile.bank_paper_routing) : ''),
+    _bkItem('Wire Routing', profile.bank_wire_routing ? esc(profile.bank_wire_routing) : ''),
     // Generic single routing: shown only when no specific ACH/Wire routing is
     // set, so it never duplicates them (no need to manually clear it).
     (profile.bank_routing_no && !(profile.bank_wire_routing || profile.bank_paper_routing))
-                               ? ['Routing No',      esc(profile.bank_routing_no)]                          : null,
-    profile.bank_swift_code    ? ['SWIFT / BIC',     esc(profile.bank_swift_code), true]                    : null,
+      ? _bkItem('Routing No', esc(profile.bank_routing_no)) : '',
+    _bkItem('SWIFT / BIC', profile.bank_swift_code ? esc(profile.bank_swift_code) : ''),
   ].filter(Boolean);
-  const bankBlock = bankRows.length ? `
+  const bankBlock = (bankLine1.length || bankLine2.length) ? `
     <div style="margin-bottom:.7rem;padding:.6rem .9rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem;color:#1e293b">
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:.4rem;border-bottom:1px solid #e2e8f0;padding-bottom:.3rem">
         <span style="font-weight:700;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;color:#29AAE1">Payment Information</span>
         <span style="font-size:.72rem;color:#64748b">Payment due upon receipt</span>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.25rem 1.25rem;line-height:1.55">
-        ${bankRows.map(([k,v,full]) => `<div style="display:flex;gap:.5rem${full ? ';grid-column:1/-1' : ''}"><span style="color:#64748b;min-width:78px">${k}:</span><span>${v}</span></div>`).join('')}
+      <div style="line-height:1.7">
+        ${bankLine1.length ? `<div style="display:flex;gap:1.4rem;flex-wrap:wrap">${bankLine1.join('')}</div>` : ''}
+        ${bankLine2.length ? `<div style="display:flex;gap:1.4rem;flex-wrap:wrap">${bankLine2.join('')}</div>` : ''}
       </div>
     </div>` : '';
 
