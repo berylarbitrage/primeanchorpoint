@@ -16,12 +16,24 @@ const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Render, Railway, etc.) for correct req.protocol
 const PORT = process.env.PORT || 3000;
 
+// www → 主域 301：全站规范到 primeanchorpoint.com。管理员在 www 域名下操作时
+// 生成的二维码会把 www 打进码里；若 www 与主域命中不同实例/数据库，扫码就会
+// 「链接已失效」。统一跳主域后，新旧二维码都落到同一个部署上。
+app.use((req, res, next) => {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '')
+    .split(',')[0].trim().toLowerCase().replace(/:\d+$/, '');
+  if (host === 'www.primeanchorpoint.com') {
+    return res.redirect(301, 'https://primeanchorpoint.com' + req.originalUrl);
+  }
+  next();
+});
+
 // Build/version info so the admin UI can show whether the *running* server is on the latest
 // code (handy for confirming a deploy actually took effect). `tag` is bumped by hand on
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ac · Chase预设补SWIFT CHASUS33',
+  tag: '2026-07-12ad · www统一301到主域+二维码链接规范化(修扫码链接失效)',
   started: new Date().toISOString(),
 };
 
