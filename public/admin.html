@@ -32558,6 +32558,18 @@ function invpSetSort(key) {
   renderInvpList();
 }
 
+// 手动修正一张发票的工资成本（profile.wage_cost）：重算口径出错或历史数据
+// 串值时直接在列表里改，利润随之修正。Container 发票的工资=分包合计，不走这里。
+async function invpEditWageCost(id, cur, mode) {
+  if (mode === 'container') { showToast('Container 发票的工资＝分包合计，请打开发票修改分包单价', 'error'); return; }
+  const v = prompt('修正这张发票的工资成本（实际付给工人的总额）：', String(cur || ''));
+  if (v == null) return;
+  const n = Number(String(v).replace(/[$,\s]/g, ''));
+  if (!isFinite(n) || n < 0) { showToast('无效金额', 'error'); return; }
+  const r = await api('/admin/invoices/' + id + '/wage-cost', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wage_cost: n }) }).catch(e => ({ error: e.message }));
+  if (r && r.success) { showToast('工资已修正 ✓'); loadInvpList(); }
+  else showToast('修正失败：' + ((r && r.error) || ''), 'error');
+}
 async function loadInvpList() {
   const wrap = document.getElementById('invpListWrap');
   if (!wrap) return;
@@ -32928,7 +32940,7 @@ function renderInvpList() {
             : '—'}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
           <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap${amtMismatch ? ';color:#dc2626' : ''}" ${amtMismatch ? 'title="实收金额与账单不一致"' : ''}>$${(r.subtotal||0).toFixed(2)}</td>
-          <td class="invp-frz" style="padding:8px 10px;text-align:right;white-space:nowrap;color:${subMismatch ? '#dc2626' : 'var(--gray-600)'}" ${subMismatch ? 'title="分包付款金额与工资不一致"' : ''}>$${(r.wage_cost||0).toFixed(2)}</td>
+          <td class="invp-frz" style="padding:8px 10px;text-align:right;white-space:nowrap;color:${subMismatch ? '#dc2626' : 'var(--gray-600)'}" ${subMismatch ? 'title="分包付款金额与工资不一致"' : ''}>$${(r.wage_cost||0).toFixed(2)} <span onclick="event.stopPropagation();invpEditWageCost(${r.id},${r.wage_cost||0},'${esc(r.invoice_mode||'')}')" title="手动修正这张发票的工资成本" style="cursor:pointer;color:#b45309;font-size:.72rem">✎</span></td>
           <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${profit>=0?'#16a34a':'#dc2626'}">$${profit.toFixed(2)}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
           <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
@@ -35534,12 +35546,14 @@ async function invpSaveDraft() {
 // 没有任何行带工资时薪（即非「按月付款」转入的发票）时返回 null，让后端沿用按行额计的工资。
 function _invpComputeWageCost() {
   const emps = window._invpManualEmps || [];
-  if (!emps.some(e => Number(e.wage_rate) > 0)) return null;
+  // 只有每一行都带工资时薪（按月付款完整转入的场景）才重算工资；
+  // 编辑旧发票/手工加行时部分行没有时薪或逐日工时，重算会把工资覆盖成
+  // 一两行的小数（利润虚高），这种情况返回 null 沿用原存的 wage_cost。
+  if (!emps.length || !emps.every(e => Number(e.wage_rate) > 0)) return null;
   let cost = 0;
   emps.forEach(e => {
     const hrs = Object.values(e.days || {}).reduce((s, v) => s + (Number(v) || 0), 0);
-    const wr = Number(e.wage_rate) || 0;
-    cost += hrs * (wr > 0 ? wr : (Number(e.rate) || 0));
+    cost += hrs * Number(e.wage_rate);
   });
   return Math.round(cost * 100) / 100;
 }
