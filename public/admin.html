@@ -57,6 +57,10 @@ table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 12px;font-size:.75rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--gray-200);white-space:nowrap}
 td{padding:10px 12px;font-size:.85rem;border-bottom:1px solid var(--gray-200);color:var(--gray-600)}
 tr:hover td{background:var(--sky-light)}
+.partner-ops::-webkit-scrollbar{height:6px}
+.partner-ops::-webkit-scrollbar-thumb{background:var(--gray-300);border-radius:4px}
+.partner-ops::-webkit-scrollbar-track{background:transparent}
+.partner-ops>*{flex:0 0 auto}
 /* Invoice list: freeze the leftmost identity/billing columns on horizontal
    scroll. Position, background and stacking live here; the per-column `left`
    offsets are assigned by applyInvpFreeze() since the columns are variable-width. */
@@ -12580,7 +12584,7 @@ function renderPartners(partners) {
       <td>${esc(p.industry)}</td>
       <td>${statusCell}</td>
       <td>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;max-width:600px">
+        <div class="partner-ops" style="display:flex;flex-wrap:nowrap;gap:4px;align-items:center;max-width:600px;overflow-x:auto;padding-bottom:3px;white-space:nowrap">
         <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
         ${abolished
           ? `<button class="btn btn-sm" style="background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="event.stopPropagation();setPartnerAbolished(${p.id},false)" title="恢复该公司">↩ 恢复</button>`
