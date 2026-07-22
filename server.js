@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12aj · 自动修复被覆盖的劳务发票工资(按付款源数据重算,bill对账后才改)',
+  tag: '2026-07-12ak · 工资修复v2(老数据无bill也能修)+手动修正弹窗带建议值',
   started: new Date().toISOString(),
 };
 
@@ -19702,6 +19702,62 @@ try {
     console.log(`[migration] labor wage repair: 修复 ${fixedN} 张发票`);
   }
 } catch (e) { console.log('[migration] labor wage repair error:', e.message); }
+
+// v2：v1 的「bill 对账后才修」在老数据上永远匹配不上——bill_amount 列是后
+// 加的，历史付款记录里全是 0。对明显被覆盖坏的发票（工资缺失或 < 账单的
+// 30%）放宽：bill 合计为 0（老数据）时，amount 合计落在账单 40%~100% 区间
+// 也采用。仍然只动坏的，正确的和 Container 不碰。
+try {
+  const _wageFix2 = db.prepare("SELECT value FROM app_settings WHERE key='labor_wage_cost_repair_v2'").get();
+  if (!_wageFix2) {
+    const invRows2 = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, subtotal, profile_json FROM invoices').all();
+    const byWeek2 = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND week_start>=? AND week_start<=?`);
+    const byDate2 = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND payment_date>=? AND payment_date<=?`);
+    let fixed2 = 0;
+    for (const inv of invRows2) {
+      let prof = {}; try { prof = JSON.parse(inv.profile_json || '{}'); } catch { continue; }
+      if (prof.invoice_mode === 'container') continue;
+      if (!inv.period_start || !inv.period_end || !(Number(inv.subtotal) > 0)) continue;
+      const sub = Number(inv.subtotal);
+      const cur = (prof.wage_cost != null && isFinite(Number(prof.wage_cost))) ? Number(prof.wage_cost) : null;
+      const suspect = cur == null || cur < sub * 0.3;
+      if (!suspect) continue;
+      const tol = Math.max(1, sub * 0.01);
+      let pick = null;
+      for (const q of [byWeek2, byDate2]) {
+        const r0 = q.get(inv.company_name, inv.period_start, inv.period_end);
+        if (!r0 || !(r0.n > 0) || !(Number(r0.wage) > 0)) continue;
+        const billOk = Math.abs(Number(r0.bill) - sub) <= tol;
+        const wageOk = Number(r0.bill) === 0 && Number(r0.wage) >= sub * 0.4 && Number(r0.wage) <= sub;
+        if (billOk || wageOk) { pick = r0; break; }
+      }
+      if (!pick) continue;
+      const wage = Math.round(Number(pick.wage) * 100) / 100;
+      if (cur != null && Math.abs(cur - wage) <= Math.max(1, wage * 0.02)) continue;
+      prof.wage_cost = wage;
+      db.prepare('UPDATE invoices SET profile_json=? WHERE id=?').run(JSON.stringify(prof), inv.id);
+      console.log(`[migration] 工资修复v2 ${inv.invoice_number}: ${cur == null ? '(空)' : cur} → ${wage}`);
+      fixed2++;
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('labor_wage_cost_repair_v2','1')").run();
+    console.log(`[migration] labor wage repair v2: 修复 ${fixed2} 张发票`);
+  }
+} catch (e) { console.log('[migration] labor wage repair v2 error:', e.message); }
+
+// 手动修正的参考值：按付款记录算这张发票账期的 工资/开票 合计，✎ 弹窗预填。
+app.get('/api/admin/invoices/:id/wage-suggest', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT company_name, period_start, period_end, subtotal FROM invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'not found' });
+    const q1 = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND week_start>=? AND week_start<=?`).get(inv.company_name, inv.period_start, inv.period_end);
+    const q2 = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND payment_date>=? AND payment_date<=?`).get(inv.company_name, inv.period_start, inv.period_end);
+    res.json({ subtotal: inv.subtotal, by_week: q1, by_date: q2 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
