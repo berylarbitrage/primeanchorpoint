@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12an · 申请电话重复自动提醒:邮件标⚠️并列出撞号的人和电话',
+  tag: '2026-07-12ao · 公司Invoice搜索支持工人名(找到含此人的所有账单并标出)',
   started: new Date().toISOString(),
 };
 
@@ -19818,7 +19818,17 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
       const citems = Array.isArray(p.container_items) ? p.container_items : [];
       r.container_nos = [...new Set(citems.map(c => String(c.container_no || '').trim().toUpperCase()).filter(Boolean))];
       r.invoice_mode = p.invoice_mode === 'container' ? 'container' : 'hourly';
-    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; r.invoice_mode = 'hourly'; }
+      // 工人/分包商名字：让列表搜索能按人名找到含此人的所有账单。
+      let its = []; try { its = r.items_json ? JSON.parse(r.items_json) : []; } catch (_) { its = []; }
+      const names = new Set();
+      for (const it of (Array.isArray(its) ? its : [])) {
+        for (const v of [it.name, it.subcontractor, it.referrer]) {
+          const t = String(v || '').trim();
+          if (t) names.add(t);
+        }
+      }
+      r.worker_names = [...names];
+    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; r.invoice_mode = 'hourly'; r.worker_names = []; }
     delete r.items_json; delete r.profile_json;
   }
   res.json(rows);

@@ -32639,8 +32639,8 @@ async function loadInvpList() {
       </div>
       <div style="display:flex;align-items:center;gap:.3rem;font-size:.72rem;color:var(--gray-400);white-space:nowrap;padding-bottom:.45rem">💡 点击表头排序</div>
       <div style="display:flex;flex-direction:column;gap:.2rem;flex:1 1 160px">
-        <label style="${lbl}">搜索（编号 / 公司）</label>
-        <input type="text" id="invpFltQ" oninput="renderInvpList()" placeholder="输入关键字…" style="${fld}">
+        <label style="${lbl}">搜索（编号 / 公司 / 工人名）</label>
+        <input type="text" id="invpFltQ" oninput="renderInvpList()" placeholder="编号、公司或工人名字…" style="${fld}">
       </div>
       <div style="display:flex;flex-direction:column;gap:.2rem;flex:1 1 180px">
         <label style="${lbl}">📦 搜索 Container 号</label>
@@ -32713,7 +32713,7 @@ function renderInvpList() {
   // invoice_date is stored ISO (YYYY-MM-DD), so string compare = date compare.
   if (_invpFilter.from) list = list.filter(r => (r.invoice_date || '') >= _invpFilter.from);
   if (_invpFilter.to) list = list.filter(r => (r.invoice_date || '') <= _invpFilter.to);
-  if (_invpFilter.q) list = list.filter(r => ((r.invoice_number || '') + ' ' + (r.company_name || '')).toLowerCase().includes(_invpFilter.q));
+  if (_invpFilter.q) list = list.filter(r => ((r.invoice_number || '') + ' ' + (r.company_name || '') + ' ' + ((r.worker_names || []).join(' '))).toLowerCase().includes(_invpFilter.q));
   // Container search: keep invoices billing a 柜号 that contains the query (partial
   // match, case-insensitive). container_nos comes from the list endpoint.
   if (_invpFilter.container) list = list.filter(r => (r.container_nos || []).some(cn => cn.toLowerCase().includes(_invpFilter.container)));
@@ -32970,7 +32970,15 @@ function renderInvpList() {
             : '';
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td class="invp-frz" style="padding:8px 10px;font-weight:600">${settledMark}<a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
-          <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}</td>
+          <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}${(() => {
+            const q = _invpFilter.q;
+            if (!q) return '';
+            const hitNames = (r.worker_names || []).filter(n => n.toLowerCase().includes(q));
+            const hitByNameOnly = hitNames.length && !((r.invoice_number||'') + ' ' + (r.company_name||'')).toLowerCase().includes(q);
+            return hitByNameOnly
+              ? `<div style="font-size:.72rem;color:#1d4ed8;margin-top:2px">👤 ${hitNames.map(esc).join('、')}</div>`
+              : '';
+          })()}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${invpBankLabel(r)
             ? `${esc(invpBankLabel(r))}${_rowEntity(r) ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_rowEntity(r))}</div>` : ''}`
             : '—'}</td>
