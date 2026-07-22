@@ -32562,7 +32562,15 @@ function invpSetSort(key) {
 // 串值时直接在列表里改，利润随之修正。Container 发票的工资=分包合计，不走这里。
 async function invpEditWageCost(id, cur, mode) {
   if (mode === 'container') { showToast('Container 发票的工资＝分包合计，请打开发票修改分包单价', 'error'); return; }
-  const v = prompt('修正这张发票的工资成本（实际付给工人的总额）：', String(cur || ''));
+  // 按付款记录给出建议值（同公司同账期的 付给工人 合计），预填进弹窗
+  let hint = '', prefill = String(cur || '');
+  try {
+    const sg = await api('/admin/invoices/' + id + '/wage-suggest');
+    const cand = (sg && sg.by_week && sg.by_week.n > 0 && Number(sg.by_week.wage) > 0) ? sg.by_week
+               : (sg && sg.by_date && sg.by_date.n > 0 && Number(sg.by_date.wage) > 0) ? sg.by_date : null;
+    if (cand) { hint = `\n按付款记录建议：$${Number(cand.wage).toFixed(2)}（${cand.n} 条记录）`; prefill = String(Math.round(Number(cand.wage) * 100) / 100); }
+  } catch (e) {}
+  const v = prompt('修正这张发票的工资成本（实际付给工人的总额）：' + hint, prefill);
   if (v == null) return;
   const n = Number(String(v).replace(/[$,\s]/g, ''));
   if (!isFinite(n) || n < 0) { showToast('无效金额', 'error'); return; }
