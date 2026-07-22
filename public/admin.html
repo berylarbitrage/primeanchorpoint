@@ -32823,9 +32823,31 @@ function renderInvpList() {
         style="padding:8px 10px;text-align:${align};cursor:pointer;user-select:none;white-space:nowrap${on ? ';color:var(--sky)' : ''}">${label} <span style="font-size:.72em">${ind}</span></th>`;
   };
 
+  // ── 分页：每页条数可选（10/20/50/100，记住选择）；筛选/排序变化回到第 1 页 ──
+  const _pgSig = JSON.stringify(_invpFilter);
+  if (window._invpLastFilterSig !== _pgSig) { window._invpLastFilterSig = _pgSig; window._invpPage = 1; }
+  const pageSize = Number(localStorage.getItem('invp_page_size')) || 50;
+  const pageCount = Math.max(1, Math.ceil(list.length / pageSize));
+  window._invpPage = Math.min(Math.max(1, window._invpPage || 1), pageCount);
+  const pageList = list.slice((window._invpPage - 1) * pageSize, window._invpPage * pageSize);
+  const pagerHtml = `
+    <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.45rem .2rem;font-size:.82rem;color:var(--gray-500)">
+      <span>每页
+        <select onchange="invpSetPageSize(this.value)" style="padding:.2rem .35rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+          ${[10, 20, 50, 100].map(n => `<option value="${n}"${n === pageSize ? ' selected' : ''}>${n}</option>`).join('')}
+        </select> 张
+      </span>
+      <span style="display:flex;align-items:center;gap:.25rem">
+        <button class="btn btn-sm btn-outline" ${window._invpPage <= 1 ? 'disabled style="opacity:.4"' : ''} onclick="invpGoPage(${window._invpPage - 1})">‹ 上一页</button>
+        <span style="padding:0 .4rem">第 <b style="color:var(--gray-700)">${window._invpPage}</b> / ${pageCount} 页</span>
+        <button class="btn btn-sm btn-outline" ${window._invpPage >= pageCount ? 'disabled style="opacity:.4"' : ''} onclick="invpGoPage(${window._invpPage + 1})">下一页 ›</button>
+      </span>
+      <span style="margin-left:auto">本页 ${pageList.length} 张 · 共 ${list.length} 张</span>
+    </div>`;
   tableWrap.innerHTML = `
     ${containerNote}
-    <div style="overflow:auto;max-height:calc(100vh - 185px)">
+    ${pagerHtml}
+    <div style="overflow:auto;max-height:calc(100vh - 225px)">
     <table style="width:100%;border-collapse:collapse;font-size:.88rem;white-space:nowrap">
       <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
         ${th('Invoice 编号', 'num', 'left', true)}
@@ -32848,7 +32870,7 @@ function renderInvpList() {
         ${th('操作', null, 'center')}
       </tr></thead>
       <tbody>
-        ${list.map(r => {
+        ${pageList.map(r => {
           const isPaid = r.payment_status === 'paid';
           // 账单 = what the client pays (subtotal); 工资 = what we pay out
           // (wage_cost, from the server); 利润 = the difference we keep.
@@ -32972,9 +32994,19 @@ function renderInvpList() {
         </tr>`;
         }).join('')}
       </tbody>
-    </table></div>`;
+    </table></div>
+    ${pageCount > 1 ? pagerHtml : ''}`;
   // Keep the leftmost identity/billing columns pinned during horizontal scroll.
   applyInvpFreeze();
+}
+function invpSetPageSize(v) {
+  localStorage.setItem('invp_page_size', String(parseInt(v, 10) || 50));
+  window._invpPage = 1;
+  renderInvpList();
+}
+function invpGoPage(p) {
+  window._invpPage = Math.max(1, parseInt(p, 10) || 1);
+  renderInvpList();
 }
 
 // Freeze the first 8 invoice-list columns (编号 … Invoice 日期) on horizontal
