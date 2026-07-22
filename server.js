@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12al · 工时计费发票工资=行底价合计(markup前),不再被坏stash覆盖',
+  tag: '2026-07-12am · 公司Invoice列表分页:每页10/20/50/100可选',
   started: new Date().toISOString(),
 };
 
