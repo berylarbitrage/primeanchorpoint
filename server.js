@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12am · 公司Invoice列表分页:每页10/20/50/100可选',
+  tag: '2026-07-12an · 申请电话重复自动提醒:邮件标⚠️并列出撞号的人和电话',
   started: new Date().toISOString(),
 };
 
@@ -15011,9 +15011,23 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
       }
     }
     res.json({ success: true, id: subId });
+    // 电话重复检测：同一号码在别的申请或员工档案里出现过 → 通知邮件升级为
+    // ⚠️ 提醒（标题标红、正文列出重复的人和电话）。
+    let dup = null;
+    try {
+      const norm = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+      const digits = norm(phone);
+      if (digits.length >= 7) {
+        const dupSubs = db.prepare('SELECT id, name, partner_name, phone, created_at FROM applicant_submissions WHERE id != ?').all(subId)
+          .filter(x => norm(x.phone) === digits).slice(0, 10);
+        const dupEmps = db.prepare('SELECT id, employee_id, first_name, last_name, phone FROM employees').all()
+          .filter(x => norm(x.phone) === digits).slice(0, 10);
+        if (dupSubs.length || dupEmps.length) dup = { dupSubs, dupEmps };
+      }
+    } catch (e) { console.error('[apply-dup] check failed:', e.message); }
     // Fire-and-forget: notify the company inbox with all applicant details + photo attachments.
     const address = { address1, address2, city, state, zip, verified: addressVerified };
-    notifyNewApplication({ subId, partner: p, name, position, phone, email, address, applyState, docMeta })
+    notifyNewApplication({ subId, partner: p, name, position, phone, email, address, applyState, docMeta, dup })
       .catch(e => console.error('[apply-notify] failed:', e.message));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -15071,7 +15085,7 @@ const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@p
 // 每封新申请通知额外发送一份给以下收件人（逗号分隔可配多个）
 const APPLICATION_NOTIFY_CC = (process.env.APPLICATION_NOTIFY_CC || 'boyingwong02@gmail.com')
   .split(',').map(s => s.trim()).filter(Boolean);
-async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta }) {
+async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta, dup }) {
   const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
   const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
   // Read each uploaded photo back from storage to attach.
@@ -15099,6 +15113,15 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     ['提交时间 / Submitted', when + ' (PT)'],
     ['已上传证件 / Documents', docMeta.map(d => docLabels[d.docType] || d.docType).join('、') || '无'],
   ];
+  // 电话重复：把重复的人（含电话）列出来，一眼看到和谁撞号
+  const hasDup = dup && ((dup.dupSubs || []).length || (dup.dupEmps || []).length);
+  if (hasDup) {
+    const parts = [
+      ...(dup.dupSubs || []).map(x => `申请 #${x.id} ${x.name}（${x.partner_name || ''}，${String(x.created_at || '').slice(0, 10)}）· ${x.phone}`),
+      ...(dup.dupEmps || []).map(x => `员工 ${[x.first_name, x.last_name].filter(Boolean).join(' ')}${x.employee_id ? '（' + x.employee_id + '）' : ''} · ${x.phone}`),
+    ];
+    rows.splice(4, 0, ['⚠️ 电话重复 / Duplicate Phone', parts.join('；')]);
+  }
   const text = '新入职申请 / New Application\n\n' + rows.map(([k, v]) => `${k}: ${v}`).join('\n')
     + `\n\n证件照片见附件。也可在管理后台「申请箱」查看。\nDocument photos are attached. You can also view them in the admin “Applicant Inbox”.`;
   const html = `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:560px">
@@ -15108,7 +15131,7 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     </table>
     <p style="color:#64748b;font-size:13px;margin-top:1rem">证件照片见附件。也可在管理后台「申请箱」查看。<br>Document photos are attached. You can also view them in the admin “Applicant Inbox”.</p>
   </div>`;
-  const subject = `新入职申请 / New Application — ${name}（${partner.name || ''}）`;
+  const subject = `${hasDup ? '⚠️ 电话重复 · ' : ''}新入职申请 / New Application — ${name}（${partner.name || ''}）`;
   const recipients = [...new Set([APPLICATION_NOTIFY_EMAIL, ...APPLICATION_NOTIFY_CC])];
   for (const to of recipients) {
     const sent = files.length
