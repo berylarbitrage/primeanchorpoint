@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ah · 修日期输入中途误报错(输入时只标红,离开输入框才校验)',
+  tag: '2026-07-12ai · 工资重算只在整表带时薪时进行;列表可手动修正工资成本',
   started: new Date().toISOString(),
 };
 
@@ -19649,6 +19649,21 @@ function _invoiceWageCost(items_json, profile_json) {
   return Math.round(cost * 100) / 100;
 }
 
+// 手动修正一张发票的工资成本（profile.wage_cost）。Container 发票的成本
+// 由分包合计实时计算，不受此字段影响。
+app.post('/api/admin/invoices/:id/wage-cost', requireAdmin, blockManager, (req, res) => {
+  try {
+    const row = db.prepare('SELECT id, profile_json FROM invoices WHERE id=?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    const v = Number(req.body && req.body.wage_cost);
+    if (!isFinite(v) || v < 0) return res.status(400).json({ error: '无效金额' });
+    let prof = {}; try { prof = JSON.parse(row.profile_json || '{}'); } catch { prof = {}; }
+    prof.wage_cost = Math.round(v * 100) / 100;
+    db.prepare('UPDATE invoices SET profile_json=? WHERE id=?').run(JSON.stringify(prof), row.id);
+    res.json({ success: true, wage_cost: prof.wage_cost });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
   const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, payment_receipt_paths, sub_payment_receipt_paths, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
@@ -19665,6 +19680,7 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
     // dialog can default its dropdowns — without shipping the whole profile_json.
     try {
       const p = r.profile_json ? JSON.parse(r.profile_json) : {};
+      r.invoice_mode = p.invoice_mode || '';
       r.bank_name = p.bank_name || '';
       r.bank_account_name = p.bank_account_name || '';
       const acct = String(p.bank_account_no || '').replace(/\D/g, '');
