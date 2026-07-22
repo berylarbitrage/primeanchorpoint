@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ai · 工资重算只在整表带时薪时进行;列表可手动修正工资成本',
+  tag: '2026-07-12aj · 自动修复被覆盖的劳务发票工资(按付款源数据重算,bill对账后才改)',
   started: new Date().toISOString(),
 };
 
@@ -19663,6 +19663,45 @@ app.post('/api/admin/invoices/:id/wage-cost', requireAdmin, blockManager, (req, 
     res.json({ success: true, wage_cost: prof.wage_cost });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// 一次性修复：劳务发票的工资成本此前会被编辑流程覆盖成偏小值（利润虚高，
+// 如 SGI 账单 15333 的发票工资只剩 1310）。用付款源数据重算：同公司、同账期
+// 的 company_worker_payments 里 amount=付给工人、bill_amount=向公司开票；
+// 只有当 bill_amount 合计与发票账单金额对得上（±1% 或 ±$1）才认定匹配，
+// 然后把 wage_cost 修成 amount 合计。Container 发票、已对得上的不动。
+try {
+  const _wageFixDone = db.prepare("SELECT value FROM app_settings WHERE key='labor_wage_cost_repair_v1'").get();
+  if (!_wageFixDone) {
+    const invRows = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, subtotal, profile_json FROM invoices').all();
+    const byWeek = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND week_start>=? AND week_start<=?`);
+    const byDate = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND payment_date>=? AND payment_date<=?`);
+    let fixedN = 0;
+    for (const inv of invRows) {
+      let prof = {}; try { prof = JSON.parse(inv.profile_json || '{}'); } catch { continue; }
+      if (prof.invoice_mode === 'container') continue;
+      if (!inv.period_start || !inv.period_end || !(Number(inv.subtotal) > 0)) continue;
+      const sub = Number(inv.subtotal);
+      const tol = Math.max(1, sub * 0.01);
+      let pick = null;
+      for (const q of [byWeek, byDate]) {
+        const r0 = q.get(inv.company_name, inv.period_start, inv.period_end);
+        if (r0 && r0.n > 0 && Number(r0.wage) > 0 && Math.abs(Number(r0.bill) - sub) <= tol) { pick = r0; break; }
+      }
+      if (!pick) continue;
+      const wage = Math.round(Number(pick.wage) * 100) / 100;
+      const cur = (prof.wage_cost != null && isFinite(Number(prof.wage_cost))) ? Number(prof.wage_cost) : null;
+      if (cur != null && Math.abs(cur - wage) <= Math.max(1, wage * 0.02)) continue;
+      prof.wage_cost = wage;
+      db.prepare('UPDATE invoices SET profile_json=? WHERE id=?').run(JSON.stringify(prof), inv.id);
+      console.log(`[migration] 工资修复 ${inv.invoice_number}: ${cur == null ? '(空)' : cur} → ${wage}`);
+      fixedN++;
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('labor_wage_cost_repair_v1','1')").run();
+    console.log(`[migration] labor wage repair: 修复 ${fixedN} 张发票`);
+  }
+} catch (e) { console.log('[migration] labor wage repair error:', e.message); }
 
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
