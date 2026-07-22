@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ak · 工资修复v2(老数据无bill也能修)+手动修正弹窗带建议值',
+  tag: '2026-07-12al · 工时计费发票工资=行底价合计(markup前),不再被坏stash覆盖',
   started: new Date().toISOString(),
 };
 
@@ -19623,7 +19623,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
 //   hourly  → sum of each worker's wage (items[].total = hours × rate)
 //   container → sum of each line's subcontractor price (sub_price)
 // The bill (subtotal) minus this is our profit.
-function _invoiceWageCost(items_json, profile_json) {
+function _invoiceWageCost(items_json, profile_json, subtotal) {
   let cost = 0;
   try {
     const profile = profile_json ? JSON.parse(profile_json) : {};
@@ -19638,13 +19638,21 @@ function _invoiceWageCost(items_json, profile_json) {
         : (Number(c.qty) || 0) * (Number(c.sub_price) || 0)), 0);
       return Math.round(cost * 100) / 100;
     }
+    const items = items_json ? JSON.parse(items_json) : [];
+    const base = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
+    const sub = Number(subtotal) || 0;
+    // 工时计费（账单 = 行小计 × markup）：行小计本身就是工资底价（时薪×工时），
+    // 工资=底价合计。stash 的 wage_cost 在这类发票上曾被编辑流程写坏（如 1310），
+    // 不可信，直接用明细算。
+    if (base > 0 && sub > base + Math.max(1, sub * 0.02)) {
+      return Math.round(base * 100) / 100;
+    }
     // Invoices transferred from monthly worker payments bill the company rate (从公司收) on
-    // their line items but stash the real 付给工人 wage here, so trust it when present.
+    // their line items (subtotal ≈ 行合计) but stash the real 付给工人 wage here, so trust it.
     if (profile && profile.wage_cost != null && isFinite(Number(profile.wage_cost))) {
       return Math.round(Number(profile.wage_cost) * 100) / 100;
     }
-    const items = items_json ? JSON.parse(items_json) : [];
-    cost = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
+    cost = base;
   } catch (_) { /* malformed JSON → cost 0 */ }
   return Math.round(cost * 100) / 100;
 }
@@ -19767,7 +19775,7 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
   // ("所有上传凭证的加和"), independent of any hand-entered amount.
   const linkedSumStmt = db.prepare(`SELECT COALESCE(SUM(ABS(amount)),0) AS s FROM bank_statement_txns WHERE used_invoice_id=? AND used_kind=? AND kind='box'`);
   for (const r of rows) {
-    r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json);
+    r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json, r.subtotal);
     try { r.payment_txn_sum = Number(linkedSumStmt.get(r.id, 'recv').s) || 0; } catch (_) { r.payment_txn_sum = 0; }
     try { r.sub_payment_txn_sum = Number(linkedSumStmt.get(r.id, 'sub').s) || 0; } catch (_) { r.sub_payment_txn_sum = 0; }
     // Surface a lightweight bank label (bank name + account last-4) and the payee
