@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ap · 合作公司列表:底部常驻横向滚动条+左三列冻结+表头吸顶',
+  tag: '2026-07-12aq · 发票三板块默认预设设为Prime Anchor Workforce(银行优先Chase)',
   started: new Date().toISOString(),
 };
 
@@ -2798,6 +2798,29 @@ try {
     if (fixed) console.log(`[migration] Chase SWIFT 补充: 修复银行预设 ${fixed} 条`);
   }
 } catch (e) { console.log('[migration] chase swift error:', e.message); }
+
+// 一次性设置：发票的 发票抬头/收款银行/联系人页脚 三个板块默认选
+// Prime Anchor Workforce 的预设（银行板块有多条时优先 Chase 那条）。
+// 浏览器本地已选过的仍以本地选择优先，这里保证换浏览器/清缓存后也默认它。
+try {
+  const _pawDone = db.prepare("SELECT value FROM app_settings WHERE key='paw_default_presets_v1'").get();
+  if (!_pawDone) {
+    for (const section of ['sender', 'bank', 'contact']) {
+      const rows = db.prepare('SELECT id, name, data FROM invoice_profiles WHERE section=?').all(section);
+      const paw = rows.filter(r => ((r.name || '') + ' ' + (r.data || '')).toLowerCase().includes('prime anchor workforce'));
+      if (!paw.length) continue;
+      let pick = paw[0];
+      if (section === 'bank' && paw.length > 1) {
+        const chase = paw.find(r => { try { return String(JSON.parse(r.data || '{}').bank_name || '').toLowerCase().includes('chase'); } catch (_) { return false; } });
+        if (chase) pick = chase;
+      }
+      db.prepare('UPDATE invoice_profiles SET is_default=0 WHERE section=?').run(section);
+      db.prepare('UPDATE invoice_profiles SET is_default=1 WHERE id=?').run(pick.id);
+      console.log(`[migration] 默认预设 ${section} → #${pick.id} ${pick.name || ''}`);
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('paw_default_presets_v1','1')").run();
+  }
+} catch (e) { console.log('[migration] paw default presets error:', e.message); }
 
 // ─── SMS Inbox Module — Database Schema ───
 db.exec(`CREATE TABLE IF NOT EXISTS sms_contacts (
