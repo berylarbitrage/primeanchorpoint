@@ -2854,7 +2854,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         </div>
         <div class="field">
           <label>公司名称 <span style="color:var(--red)">*</span></label>
-          <input type="text" id="invPageBillName" placeholder="客户公司名称" oninput="onInvBillNameInput()">
+          <input type="text" id="invPageBillName" placeholder="客户公司名称" oninput="onInvBillNameInput()" onchange="_invpApplyCustomerPresets(this.value)">
         </div>
         <div class="field">
           <label>地址 <span id="invPageAddrHint" style="display:none;font-size:.72rem;color:var(--sky);font-weight:600">· 该公司有多个地址，请选择</span></label>
@@ -36001,6 +36001,44 @@ function selectInvPartner(id) {
   refreshInvpInboxBadge();
   // Default to the first address (also sets state + refreshes invoice number).
   _invpApplyBillAddr(addrs[0] || partner.address || '');
+  // Per-customer memory: bring out the 抬头/银行/联系人 this customer was last billed with.
+  _invpApplyCustomerPresets(partner.name);
+}
+
+// When a customer is chosen for a NEW invoice, default the sender / bank / contact
+// presets to whatever that customer's most recent invoice used — so different clients
+// keep their own billing entity/bank instead of everyone sharing one global default.
+// Does not change the global default (uses _suppressApi) and never overrides an edit.
+async function _invpApplyCustomerPresets(companyName) {
+  companyName = (companyName || '').trim();
+  if (!companyName) return;
+  const editEl = document.getElementById('invPageEditId');
+  if (editEl && editEl.value) return; // editing an existing invoice → keep its own profile
+  let rows = window._invpAllRows;
+  if (!Array.isArray(rows) || !rows.length) { try { rows = await api('/admin/invoices'); } catch (e) { rows = []; } }
+  const key = companyName.toLowerCase();
+  const mine = (rows || []).filter(r => String(r.company_name || '').trim().toLowerCase() === key);
+  if (!mine.length) return;
+  mine.sort((a, b) => String(b.invoice_date || '').localeCompare(String(a.invoice_date || '')) || (Number(b.id) - Number(a.id)));
+  let inv = mine[0], prof = inv.profile_json;
+  if (!prof) { try { inv = await api('/admin/invoices/' + inv.id); prof = inv && inv.profile_json; } catch (e) {} }
+  try { if (typeof prof === 'string') prof = JSON.parse(prof); } catch (e) { prof = null; }
+  if (!prof) return;
+  // Bail if the user switched company while we were fetching.
+  if (String((document.getElementById('invPageBillName') || {}).value || '').trim().toLowerCase() !== key) return;
+  const map = { sender: 'invpSenderSelect', bank: 'invpBankSelect', contact: 'invpContactSelect' };
+  let applied = 0;
+  ['sender', 'bank', 'contact'].forEach(section => {
+    const pid = prof[section + '_preset_id'];
+    if (!pid || !_invpPresets.some(p => String(p.id) === String(pid))) return; // missing / deleted preset
+    const sel = document.getElementById(map[section]);
+    if (!sel) return;
+    sel.value = String(pid);
+    if (sel.value !== String(pid)) return; // option not in the list
+    onInvpPresetSelect._suppressApi = true;
+    try { onInvpPresetSelect(section); applied++; } finally { onInvpPresetSelect._suppressApi = false; }
+  });
+  if (applied && window.showToast) showToast('已按「' + companyName + '」上次开票带出 抬头/银行/联系人', 'success');
 }
 
 function onInvBillNameInput() {

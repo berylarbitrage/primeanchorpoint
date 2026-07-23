@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12at · 发票公司名统一:对齐合作公司标准名(能带Inc都带Inc)',
+  tag: '2026-07-12at · 新建invoice按客户带出上次的抬头/银行/联系人',
   started: new Date().toISOString(),
 };
 
