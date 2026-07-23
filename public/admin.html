@@ -32588,6 +32588,12 @@ async function invpOpenRecover() {
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('invpRecoverOverlay').remove()">✕ 关闭</button>
     </div>
     <div style="font-size:.78rem;color:var(--gray-500);padding:.55rem 1.1rem;line-height:1.5">删除的发票会先进「回收站」，可直接找回；更早删除的会从<b>每小时自动备份</b>里找回。找到后点「恢复」放回列表。<span style="color:#b45309">备份只保留最近约 10 小时，越早恢复越稳。</span></div>
+    <div style="padding:.5rem 1.1rem;border-top:1px dashed var(--gray-200);border-bottom:1px dashed var(--gray-200);background:#fffbeb;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.75rem">
+      <span style="color:#92400e">找不到？上传一份更早的数据库（<b>prime.db</b>，可从 Render 磁盘快照导出）再扫描：</span>
+      <input type="file" id="invpRecoverUpload" accept=".db,.sqlite,application/octet-stream,application/x-sqlite3" style="font-size:.72rem;max-width:200px">
+      <button class="btn btn-sm btn-outline" onclick="invpUploadBackupRecover(this)">上传并扫描</button>
+      <a href="javascript:void(0)" onclick="showTab('backups')" style="color:var(--sky);white-space:nowrap">查看备份清单 →</a>
+    </div>
     <div id="invpRecoverList" style="flex:1;overflow:auto;padding:.2rem 1.1rem 1rem"></div>
   </div>`;
   document.body.appendChild(ov);
@@ -32631,6 +32637,25 @@ async function invpDoRecover(btn) {
     if (list && !list.querySelector('button')) invpRenderRecoverList([]);
     loadInvpList();
   } catch (e) { btn.disabled = false; btn.textContent = '恢复'; showToast('恢复失败：' + (e.message || e), 'error'); }
+}
+
+// Upload an older prime.db (e.g. pulled off a Render disk snapshot) so the recover
+// scan can find invoices that predate / outlived the app's own hourly backups.
+async function invpUploadBackupRecover(btn) {
+  const fileEl = document.getElementById('invpRecoverUpload');
+  const f = fileEl && fileEl.files && fileEl.files[0];
+  if (!f) { showToast('请先选择一个数据库备份文件（.db）', 'error'); return; }
+  btn.disabled = true; btn.textContent = '上传中…';
+  try {
+    const fd = new FormData(); fd.append('db', f);
+    const r = await fetch(API + '/admin/upload-backup-db', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || (d && d.error)) throw new Error((d && d.error) || ('HTTP ' + r.status));
+    showToast('已上传备份，重新扫描…', 'success');
+    const rr = await api('/admin/invoices/recoverable');
+    invpRenderRecoverList((rr && rr.invoices) || []);
+  } catch (e) { showToast('上传失败：' + (e.message || e), 'error'); }
+  btn.disabled = false; btn.textContent = '上传并扫描';
 }
 
 // 手动修正一张发票的工资成本（profile.wage_cost）：重算口径出错或历史数据
