@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ar · 发票可恢复删除 + 备份改到持久磁盘(不再随部署丢失)',
+  tag: '2026-07-12at · 发票公司名统一:对齐合作公司标准名(能带Inc都带Inc)',
   started: new Date().toISOString(),
 };
 
@@ -20001,10 +20001,70 @@ function _dupInvoiceError(dup) {
     : `已存在细节完全相同的发票：${dup.existing.invoice_number}（同客户公司、同服务周期、同账单金额${dup.existing.invoice_date ? '，开票日期 ' + dup.existing.invoice_date : ''}）`;
 }
 
+// ── 公司名统一：发票上的客户公司名归一到「合作公司」里的标准名 ──
+// （如 "Eparcel"/"EPARCEL" → "Eparcel Inc."、"SLM GROUP" → "SLM Group Inc"；
+// 比较时忽略大小写、标点和 Inc/LLC/Corp 等后缀）。对不上合作公司的保持原样。
+function _companyNameKey(s) {
+  const SUF = new Set(['inc', 'llc', 'corp', 'co', 'ltd', 'corporation', 'incorporated', 'company']);
+  const parts = String(s || '').toLowerCase().replace(/[.,]/g, ' ').split(/\s+/).filter(Boolean);
+  while (parts.length > 1 && SUF.has(parts[parts.length - 1])) parts.pop();
+  return parts.join(' ');
+}
+function _canonCompanyName(name) {
+  try {
+    const key = _companyNameKey(name);
+    if (!key) return name;
+    const cands = db.prepare('SELECT name, abolished FROM partners').all()
+      .filter(p => _companyNameKey(p.name) === key);
+    if (!cands.length) return name;
+    // 优先未作废的；同 key 多条时取名字更长的（通常是带 Inc 的完整写法）
+    cands.sort((a, b) => ((a.abolished ? 1 : 0) - (b.abolished ? 1 : 0)) || (String(b.name).length - String(a.name).length));
+    return cands[0].name;
+  } catch (_) { return name; }
+}
+// 一次性迁移：历史发票的公司名统一（先对齐合作公司标准名；合作公司里没有
+// 的，同一公司多种写法时统一成其中最长的写法——通常是带 Inc 的那个）。
+try {
+  const _unifyDone = db.prepare("SELECT value FROM app_settings WHERE key='invoice_company_name_unify_v1'").get();
+  if (!_unifyDone) {
+    const distinct = db.prepare('SELECT DISTINCT company_name FROM invoices').all().map(r => r.company_name).filter(Boolean);
+    const map = {};
+    for (const n of distinct) {
+      const c = _canonCompanyName(n);
+      if (c && c !== n) map[n] = c;
+    }
+    const groups = {};
+    for (const n of distinct) {
+      const target = map[n] || n;
+      const k = _companyNameKey(target);
+      (groups[k] = groups[k] || new Set()).add(target);
+    }
+    for (const k of Object.keys(groups)) {
+      const arr = [...groups[k]];
+      if (arr.length < 2) continue;
+      arr.sort((a, b) => b.length - a.length);
+      for (const n of distinct) {
+        const cur = map[n] || n;
+        if (_companyNameKey(cur) === k && cur !== arr[0]) map[n] = arr[0];
+      }
+    }
+    let fixed = 0;
+    for (const [oldN, newN] of Object.entries(map)) {
+      const r = db.prepare('UPDATE invoices SET company_name=? WHERE company_name=?').run(newN, oldN);
+      if (r.changes) { console.log(`[migration] 公司名统一: "${oldN}" → "${newN}" (${r.changes} 张)`); fixed += r.changes; }
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('invoice_company_name_unify_v1','1')").run();
+    console.log(`[migration] invoice company unify: ${fixed} 张发票已统一`);
+  }
+} catch (e) { console.log('[migration] invoice company unify error:', e.message); }
+
 // Save invoice
 app.post('/api/admin/invoices', requireAdmin, (req, res) => {
   const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
+  // 公司名统一到合作公司标准名（"Eparcel" → "Eparcel Inc."），避免筛选下拉出现同一公司多种写法
+  req.body.company_name = _canonCompanyName(company_name);
+  const companyName = req.body.company_name;
   const dup = _findDupInvoice(req.body, null);
   if (dup && (dup.kind === 'number' || !req.body.force)) {
     return res.status(409).json({ error: _dupInvoiceError(dup), kind: dup.kind, duplicate: dup.existing });
@@ -20012,7 +20072,7 @@ app.post('/api/admin/invoices', requireAdmin, (req, res) => {
   const result = db.prepare(`
     INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json, status, markup_rate)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0);
+  `).run(invoice_number, invoice_date||null, companyName, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(result.lastInsertRowid, '创建', `Invoice 编号: ${invoice_number}`);
   res.json({ id: result.lastInsertRowid });
@@ -20074,6 +20134,9 @@ app.post('/api/admin/invoices/:id/sub-match-groups', requireAdmin, (req, res) =>
 app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
+  // 公司名统一到合作公司标准名（与新建时一致）
+  req.body.company_name = _canonCompanyName(company_name);
+  const companyName = req.body.company_name;
   const dup = _findDupInvoice(req.body, req.params.id);
   if (dup && (dup.kind === 'number' || !req.body.force)) {
     return res.status(409).json({ error: _dupInvoiceError(dup), kind: dup.kind, duplicate: dup.existing });
@@ -20085,7 +20148,7 @@ app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   db.prepare(`
     UPDATE invoices SET invoice_number=?, invoice_date=?, company_name=?, bill_to_addr=?, period_start=?, period_end=?, for_label=?, subtotal=?, items_json=?, profile_json=?, status=?, markup_rate=?
     WHERE id=?
-  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0, req.params.id);
+  `).run(invoice_number, invoice_date||null, companyName, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0, req.params.id);
 
   // Log an 编辑 entry describing exactly what changed. Never let the history
   // bookkeeping break the actual save.
