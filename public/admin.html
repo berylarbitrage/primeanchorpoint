@@ -31333,6 +31333,64 @@ function invpSetSort(key) {
   renderInvpList();
 }
 
+// ── Recover deleted invoices (recycle bin + hourly backup snapshots) ──
+async function invpOpenRecover() {
+  const old = document.getElementById('invpRecoverOverlay'); if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'invpRecoverOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(0,0,0,.3)">
+    <div style="padding:.9rem 1.1rem;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between">
+      <strong style="font-size:1rem">🗄 恢复已删除的发票</strong>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('invpRecoverOverlay').remove()">✕ 关闭</button>
+    </div>
+    <div style="font-size:.78rem;color:var(--gray-500);padding:.55rem 1.1rem;line-height:1.5">删除的发票会先进「回收站」，可直接找回；更早删除的会从<b>每小时自动备份</b>里找回。找到后点「恢复」放回列表。<span style="color:#b45309">备份只保留最近约 10 小时，越早恢复越稳。</span></div>
+    <div id="invpRecoverList" style="flex:1;overflow:auto;padding:.2rem 1.1rem 1rem"></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const list = document.getElementById('invpRecoverList');
+  list.innerHTML = '<div style="color:var(--gray-400);padding:1.5rem;text-align:center">扫描回收站和备份中…</div>';
+  try {
+    const r = await api('/admin/invoices/recoverable');
+    invpRenderRecoverList((r && r.invoices) || []);
+  } catch (e) { list.innerHTML = `<div style="color:#b91c1c;padding:1rem">扫描失败：${esc(e.message || e)}</div>`; }
+}
+
+function invpRenderRecoverList(invs) {
+  const list = document.getElementById('invpRecoverList');
+  if (!list) return;
+  if (!invs.length) { list.innerHTML = '<div style="color:var(--gray-400);padding:1.5rem;text-align:center">没有可恢复的已删除发票 🎉</div>'; return; }
+  list.innerHTML = invs.map(v => {
+    const srcBadge = v.source === 'trash'
+      ? '<span style="font-size:.68rem;background:#dcfce7;color:#166534;border-radius:6px;padding:1px 6px">回收站</span>'
+      : `<span style="font-size:.68rem;background:#fef3c7;color:#92400e;border-radius:6px;padding:1px 6px" title="${esc(v.backup_name || '')}">备份</span>`;
+    const amt = (v.subtotal != null && v.subtotal !== '') ? ('$' + Number(v.subtotal).toFixed(2)) : '';
+    const meta = [esc(v.company_name || '—'), esc(v.invoice_date || ''), amt, v.deleted_at ? '删于 ' + esc(String(v.deleted_at).slice(0, 16)) : ''].filter(Boolean).join(' · ');
+    return `<div style="display:flex;align-items:center;gap:.7rem;padding:.55rem .2rem;border-bottom:1px solid var(--gray-100)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:.86rem">${esc(v.invoice_number)} ${srcBadge}</div>
+        <div style="font-size:.74rem;color:var(--gray-500)">${meta}</div>
+      </div>
+      <button class="btn btn-sm btn-green" data-num="${esc(v.invoice_number)}" data-bk="${esc(v.backup_name || '')}" onclick="invpDoRecover(this)">恢复</button>
+    </div>`;
+  }).join('');
+}
+
+async function invpDoRecover(btn) {
+  const num = btn.dataset.num, bk = btn.dataset.bk || '';
+  btn.disabled = true; btn.textContent = '恢复中…';
+  try {
+    const r = await api('/admin/invoices/recover', { method: 'POST', body: JSON.stringify({ invoice_number: num, backup_name: bk }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast('已恢复发票 ' + num + ' ✓', 'success');
+    const row = btn.parentElement; if (row) row.remove();
+    const list = document.getElementById('invpRecoverList');
+    if (list && !list.querySelector('button')) invpRenderRecoverList([]);
+    loadInvpList();
+  } catch (e) { btn.disabled = false; btn.textContent = '恢复'; showToast('恢复失败：' + (e.message || e), 'error'); }
+}
+
 async function loadInvpList() {
   const wrap = document.getElementById('invpListWrap');
   if (!wrap) return;
@@ -31396,6 +31454,7 @@ async function loadInvpList() {
         <input type="text" id="invpFltContainer" oninput="renderInvpList()" placeholder="输入柜号，如 TCNU2960705…" style="${fld};font-family:monospace;text-transform:uppercase">
       </div>
       <button class="btn btn-sm btn-outline" onclick="resetInvpFilter()" style="white-space:nowrap">清除筛选</button>
+      <button class="btn btn-sm btn-outline" onclick="invpOpenRecover()" style="white-space:nowrap;color:#b45309;border-color:#fcd34d" title="从回收站或每小时自动备份里找回被删除的发票">🗄 恢复已删除</button>
     </div>
     <div id="invpSummaryBar"></div>
     <div id="invpTableWrap"></div>`;

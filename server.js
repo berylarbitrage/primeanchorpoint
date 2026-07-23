@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-11y · 新增创始人取款统计页(日期/金额/用途/截图/银行交易关联+按人统计)',
+  tag: '2026-06-18 · 发票可恢复删除:回收站+每小时备份找回 + 入职离职备注',
   started: new Date().toISOString(),
 };
 
@@ -19412,9 +19412,113 @@ app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
 });
 
 // Delete invoice
+// Recycle bin: keep a full copy of every invoice on delete so an accidental delete
+// can be undone directly (no need to wait for / dig through a backup snapshot).
+db.exec(`CREATE TABLE IF NOT EXISTS deleted_invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER,
+  invoice_number TEXT,
+  data_json TEXT,
+  history_json TEXT DEFAULT '[]',
+  deleted_by TEXT DEFAULT '',
+  deleted_at TEXT DEFAULT (datetime('now'))
+)`);
+
 app.delete('/api/admin/invoices/:id', requireAdmin, (req, res) => {
-  db.prepare(`DELETE FROM invoices WHERE id=?`).run(req.params.id);
-  res.json({ success: true });
+  try {
+    const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(req.params.id);
+    if (inv) {
+      let hist = [];
+      try { hist = db.prepare('SELECT action, detail, created_at FROM invoice_history WHERE invoice_id=?').all(inv.id); } catch (e) {}
+      try {
+        db.prepare(`INSERT INTO deleted_invoices (invoice_id, invoice_number, data_json, history_json, deleted_by) VALUES (?,?,?,?,?)`)
+          .run(inv.id, String(inv.invoice_number || ''), JSON.stringify(inv), JSON.stringify(hist), req.userName || '');
+      } catch (e) {}
+    }
+    db.prepare(`DELETE FROM invoices WHERE id=?`).run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// List all recoverable (deleted) invoices — from the recycle bin AND from the
+// hourly prime-<ts>.db backup snapshots (fills anything deleted before the recycle
+// bin existed). Deduped by invoice_number; the recycle bin wins.
+function _bkAllBackupFiles() {
+  const out = [];
+  for (const dir of [...BACKUP_DIRS, UPLOADED_BACKUP_DIR]) {
+    let files = [];
+    try { files = fs.readdirSync(dir).filter(f => f.startsWith('prime-') && f.endsWith('.db')); } catch (e) { continue; }
+    for (const f of files) out.push({ dir, name: f, full: path.join(dir, f) });
+  }
+  out.sort((a, b) => b.name.localeCompare(a.name)); // newest first (ISO filename sorts chronologically)
+  return out;
+}
+
+app.get('/api/admin/invoices/recoverable', requireAdmin, blockManager, (req, res) => {
+  try {
+    const liveNums = new Set(db.prepare('SELECT invoice_number FROM invoices').all().map(r => String(r.invoice_number)));
+    const out = new Map();
+    for (const t of db.prepare('SELECT * FROM deleted_invoices ORDER BY id DESC').all()) {
+      const num = String(t.invoice_number || '');
+      if (!num || liveNums.has(num) || out.has(num)) continue;
+      let d = {}; try { d = JSON.parse(t.data_json || '{}'); } catch (e) {}
+      out.set(num, { invoice_number: num, company_name: d.company_name, invoice_date: d.invoice_date, subtotal: d.subtotal, status: d.status, source: 'trash', deleted_at: t.deleted_at, deleted_by: t.deleted_by });
+    }
+    for (const bk of _bkAllBackupFiles()) {
+      let bdb; try { bdb = new Database(bk.full, { readonly: true, fileMustExist: true }); } catch (e) { continue; }
+      try {
+        for (const r of bdb.prepare('SELECT invoice_number, invoice_date, company_name, subtotal, status FROM invoices').all()) {
+          const num = String(r.invoice_number || '');
+          if (!num || liveNums.has(num) || out.has(num)) continue;
+          out.set(num, { invoice_number: num, company_name: r.company_name, invoice_date: r.invoice_date, subtotal: r.subtotal, status: r.status, source: 'backup', backup_name: bk.name });
+        }
+      } catch (e) {}
+      try { bdb.close(); } catch (e) {}
+    }
+    const list = [...out.values()].sort((a, b) => String(b.invoice_date || '').localeCompare(String(a.invoice_date || '')));
+    res.json({ count: list.length, invoices: list });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/invoices/recover', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const num = String((req.body && req.body.invoice_number) || '').trim();
+    if (!num) return res.status(400).json({ error: '缺少发票号' });
+    if (db.prepare('SELECT 1 FROM invoices WHERE invoice_number=?').get(num)) return res.status(409).json({ error: '同号发票已存在（可能已恢复过）' });
+    const liveCols = new Set(db.prepare('PRAGMA table_info(invoices)').all().map(c => c.name));
+    let inv = null, hist = [], src = '', srcName = '', trashId = null;
+    const t = db.prepare('SELECT * FROM deleted_invoices WHERE invoice_number=? ORDER BY id DESC').get(num);
+    if (t) {
+      try { inv = JSON.parse(t.data_json || 'null'); } catch (e) {}
+      try { hist = JSON.parse(t.history_json || '[]'); } catch (e) {}
+      src = 'trash'; trashId = t.id;
+    }
+    if (!inv) {
+      const files = _bkAllBackupFiles();
+      const bkName = String((req.body && req.body.backup_name) || '').trim();
+      const bk = (bkName && files.find(b => b.name === bkName)) || files.find(b => {
+        try { const d = new Database(b.full, { readonly: true, fileMustExist: true }); const hit = d.prepare('SELECT 1 FROM invoices WHERE invoice_number=?').get(num); d.close(); return !!hit; } catch (e) { return false; }
+      });
+      if (!bk) return res.status(404).json({ error: '回收站和备份里都找不到这张发票' });
+      const bdb = new Database(bk.full, { readonly: true, fileMustExist: true });
+      inv = bdb.prepare('SELECT * FROM invoices WHERE invoice_number=?').get(num);
+      if (inv) { try { hist = bdb.prepare('SELECT action, detail FROM invoice_history WHERE invoice_id=?').all(inv.id); } catch (e) {} }
+      bdb.close();
+      src = 'backup'; srcName = bk.name;
+    }
+    if (!inv) return res.status(404).json({ error: '找不到发票数据' });
+    const idFree = inv.id != null && !db.prepare('SELECT 1 FROM invoices WHERE id=?').get(inv.id);
+    const cols = Object.keys(inv).filter(c => liveCols.has(c) && (idFree || c !== 'id'));
+    const info = db.prepare(`INSERT INTO invoices (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map(c => inv[c]));
+    const newId = idFree ? inv.id : info.lastInsertRowid;
+    try {
+      const insH = db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)');
+      for (const h of (hist || [])) insH.run(newId, h.action || '', h.detail || '');
+      insH.run(newId, '恢复', src === 'trash' ? '从回收站恢复' : ('从备份 ' + srcName + ' 恢复'));
+    } catch (e) {}
+    if (trashId != null) { try { db.prepare('DELETE FROM deleted_invoices WHERE id=?').run(trashId); } catch (e) {} }
+    res.json({ success: true, id: newId, invoice_number: num, source: src });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Check duplicate container number across all invoices for a company
