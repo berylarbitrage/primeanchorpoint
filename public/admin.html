@@ -32769,6 +32769,22 @@ function renderInvpList() {
     ? `<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.1rem">${breakdownRows.join('')}</div>`
     : '';
 
+  // 搜索命中工人名时：这个人在所有筛选结果里的行合计（几条 · 总工时 · 工资 · 账单）
+  let nameHitHtml = '';
+  if (_invpFilter.q) {
+    let hn = 0, hh = 0, hw = 0, hb = 0;
+    for (const r of list) for (const l of (r.worker_lines || [])) {
+      if ((l.n || '').toLowerCase().includes(_invpFilter.q)) { hn++; hh += Number(l.h) || 0; hw += Number(l.w) || 0; hb += Number(l.b) || 0; }
+    }
+    if (hn) nameHitHtml = `<div style="display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.45rem .75rem;font-size:.8rem;color:#1d4ed8;margin-bottom:1.1rem">
+        <span style="font-weight:700;white-space:nowrap">👤 「${esc(_invpFilter.q)}」命中的工人行</span>
+        <span>${hn} 条 · ${hh.toFixed(1)}h</span>
+        <span style="margin-left:auto;display:flex;gap:.9rem;white-space:nowrap">
+          <span>工资合计 <b style="color:#b45309">${money(hw)}</b></span>
+          <span>账单合计 <b>${money(hb)}</b></span>
+        </span>
+      </div>`;
+  }
   sumWrap.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem">
       <span style="font-weight:600;font-size:.9rem">📊 汇总${isFiltered ? '（按当前筛选）' : '（全部）'}</span>
@@ -32779,7 +32795,8 @@ function renderInvpList() {
       ${card('工资总额（发出）', money(totWage), '#b45309')}
       ${card('利润总额（赚取）', money(totProfit), totProfit >= 0 ? '#16a34a' : '#dc2626')}
     </div>
-    ${breakdownHtml}`;
+    ${breakdownHtml}
+    ${nameHitHtml}`;
 
   const statusBadge = s => s === 'saved'
     ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#dcfce7;color:#166534">已保存</span>'
@@ -32984,9 +33001,16 @@ function renderInvpList() {
           <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}${(() => {
             const q = _invpFilter.q;
             if (!q) return '';
+            // 搜索命中工人名时：把这个人在本张账单里的行明细直接列出来
+            // （工时 · 工资底价 → 账单价），多行/多人都逐条显示。
+            const hitLines = (r.worker_lines || []).filter(l => (l.n || '').toLowerCase().includes(q));
+            if (hitLines.length) {
+              return `<div style="font-size:.72rem;color:#1d4ed8;margin-top:2px;line-height:1.55;white-space:nowrap">${hitLines.map(l =>
+                `👤 ${esc(l.n)} · ${(Number(l.h) || 0).toFixed(1)}h · 工资 $${(Number(l.w) || 0).toFixed(2)} → 账单 $${(Number(l.b) || 0).toFixed(2)}`
+              ).join('<br>')}</div>`;
+            }
             const hitNames = (r.worker_names || []).filter(n => n.toLowerCase().includes(q));
-            const hitByNameOnly = hitNames.length && !((r.invoice_number||'') + ' ' + (r.company_name||'')).toLowerCase().includes(q);
-            return hitByNameOnly
+            return hitNames.length
               ? `<div style="font-size:.72rem;color:#1d4ed8;margin-top:2px">👤 ${hitNames.map(esc).join('、')}</div>`
               : '';
           })()}</td>
