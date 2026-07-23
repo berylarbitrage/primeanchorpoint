@@ -42705,6 +42705,10 @@ function _bsPayeeDisplay(payee) {
     const co = p.slice('卡车费:'.length);
     return '🚚 卡车费' + (co ? ' · ' + co : '');
   }
+  if (p.indexOf('卸柜费:') === 0) {
+    const co = p.slice('卸柜费:'.length);
+    return '📦 卸柜账单' + (co ? ' · ' + co : '');
+  }
   if (p.indexOf('房租:') === 0) {
     const co = p.slice('房租:'.length);
     return '🏠 房租' + (co ? ' · ' + co : '');
@@ -42733,6 +42737,7 @@ function _bsNoteSatisfied(box) {
   if (kind === 'check' && _bsCheckParse(box.payee).names.length) return true;
   // 卡车费: a chosen company already describes the transaction.
   if (kind === 'truck' && _bsTruckParse(box.payee)) return true;
+  if (kind === 'unload' && _bsUnloadParse(box.payee)) return true;
   // 房租: a chosen landlord already describes the transaction.
   if (kind === 'rent' && _bsRentParse(box.payee)) return true;
   // 换汇: a chosen counterparty already describes the transaction.
@@ -43693,6 +43698,10 @@ const BS_CHECK_WD_PREFIX = '取支票:';
 const BS_PAYEE_TRUCK = '__truck__'; // sentinel: 卡车费
 const BS_TRUCK_PREFIX = '卡车费:';    // stored payee = prefix + company name
 const BS_TRUCK_COMPANIES = ['BOOKFREIGHT INC', 'Dando Chemicals US LLC', 'Nova Express'];
+// 支付卸柜账单 (paying a container-unloading bill): after choosing, pick/type the
+// subcontractor company whose 卸柜 bill this payment settled. Stored as "卸柜费:<company>".
+const BS_PAYEE_UNLOAD = '__unload__'; // sentinel: 支付卸柜账单（选公司）
+const BS_UNLOAD_PREFIX = '卸柜费:';    // stored payee = prefix + company name
 // 房租 (rent): after choosing, pick who the rent goes to.
 const BS_PAYEE_RENT = '__rent__'; // sentinel: 付房租
 const BS_RENT_PREFIX = '房租:';    // stored payee = prefix + landlord/company name
@@ -43733,6 +43742,7 @@ function _bsPayeeKind(box) {
   if (_bsIsPallet(p)) return 'pallet';
   if (_bsIsCheck(p)) return 'check';
   if (_bsIsTruck(p)) return 'truck';
+  if (_bsIsUnload(p)) return 'unload';
   if (_bsIsRent(p)) return 'rent';
   if (_bsIsFx(p)) return 'fx';
   if (_bsIsWhdep(p)) return 'whdep';
@@ -43776,6 +43786,7 @@ function _bsPayeeOptions(current, direction) {
     `<option value="${esc(BS_PAYEE_CASH)}"${current === BS_PAYEE_CASH ? ' selected' : ''}>💵 取现金</option>`,
     `<option value="${esc(BS_PAYEE_RETURNED)}"${current === BS_PAYEE_RETURNED ? ' selected' : ''}>↩️ 退回款 Returned Payment</option>`,
     `<option value="${BS_PAYEE_TRUCK}"${current === BS_PAYEE_TRUCK ? ' selected' : ''}>🚚 卡车费（选公司）</option>`,
+    `<option value="${BS_PAYEE_UNLOAD}"${current === BS_PAYEE_UNLOAD ? ' selected' : ''}>📦 支付卸柜账单（选公司）</option>`,
     `<option value="${BS_PAYEE_RENT}"${current === BS_PAYEE_RENT ? ' selected' : ''}>🏠 付房租（选公司）</option>`,
     `<option value="${BS_PAYEE_FX}"${current === BS_PAYEE_FX ? ' selected' : ''}>💱 换汇（选对方）</option>`,
     `<option value="${BS_PAYEE_WHDEP}"${current === BS_PAYEE_WHDEP ? ' selected' : ''}>🏭 仓库押金（选仓库）</option>`,
@@ -43787,7 +43798,7 @@ function _bsPayeeOptions(current, direction) {
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_RENT, BS_PAYEE_FX, BS_PAYEE_WHDEP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_FX, BS_PAYEE_WHDEP, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
@@ -44003,7 +44014,7 @@ function _bsRenderBoxPanel() {
         <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value);bsValidateBoxDates(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
       <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
-      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (box.payee || ''))))))), box.direction)}</select>
+      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (box.payee || '')))))))), box.direction)}</select>
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
         <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
@@ -44020,6 +44031,11 @@ function _bsRenderBoxPanel() {
       <div class="bs-truck-wrap" style="display:${_bsIsTruck(box.payee) ? '' : 'none'};background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#475569;margin-bottom:.25rem">选择公司</div>
         <select class="bs-bx-truck-co" onchange="bsTruckUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsTruckCoOptions(_bsTruckParse(box.payee))}</select>
+      </div>
+      <div class="bs-unload-wrap" style="display:${_bsIsUnload(box.payee) ? '' : 'none'};background:#ecfeff;border:1px dashed #a5f3fc;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#0e7490;margin-bottom:.25rem">卸柜账单付给哪个公司</div>
+        <input class="bs-bx-unload-co" list="bsUnloadCoList-${box.id}" value="${esc(_bsUnloadParse(box.payee))}" onchange="bsUnloadUpdate(${box.id},this)" placeholder="公司名（可打字或从列表选）" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
+        <datalist id="bsUnloadCoList-${box.id}">${(_bsCompanies || []).map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
       </div>
       <div class="bs-fx-wrap" style="display:${_bsIsFx(box.payee) ? '' : 'none'};background:#fefce8;border:1px dashed #fde047;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#a16207;margin-bottom:.25rem">选择对方（和谁换汇）</div>
@@ -44100,6 +44116,7 @@ function bsUpdateBoxSections(id) {
   const plw = item.querySelector('.bs-pallet-wrap');
   const ckw = item.querySelector('.bs-check-wrap');
   const tkw = item.querySelector('.bs-truck-wrap');
+  const ulw = item.querySelector('.bs-unload-wrap');
   const rtw = item.querySelector('.bs-rent-wrap');
   const whw = item.querySelector('.bs-whdep-wrap');
   const ofw = item.querySelector('.bs-office-wrap');
@@ -44108,6 +44125,7 @@ function bsUpdateBoxSections(id) {
   if (plw) plw.style.display = kind === 'pallet' ? '' : 'none';
   if (ckw) ckw.style.display = kind === 'check' ? '' : 'none';
   if (tkw) tkw.style.display = kind === 'truck' ? '' : 'none';
+  if (ulw) ulw.style.display = kind === 'unload' ? '' : 'none';
   if (rtw) rtw.style.display = kind === 'rent' ? '' : 'none';
   const fxwEl = item.querySelector('.bs-fx-wrap');
   if (fxwEl) fxwEl.style.display = kind === 'fx' ? '' : 'none';
@@ -44160,6 +44178,15 @@ function _bsTruckCoOptions(current) {
 // Save "卡车费:<company>" from the company select.
 function bsTruckUpdate(id, el) {
   bsUpdateBoxField(id, 'payee', _bsTruckJoin(el.value));
+  bsUpdateBoxSections(id);
+}
+// ── 支付卸柜账单: pick/type the subcontractor company paid ──
+function _bsIsUnload(payee) { return typeof payee === 'string' && payee.indexOf(BS_UNLOAD_PREFIX) === 0; }
+function _bsUnloadParse(payee) { return _bsIsUnload(payee) ? payee.slice(BS_UNLOAD_PREFIX.length) : ''; }
+function _bsUnloadJoin(co) { return BS_UNLOAD_PREFIX + (co || ''); }
+// Save "卸柜费:<company>" from the company input.
+function bsUnloadUpdate(id, el) {
+  bsUpdateBoxField(id, 'payee', _bsUnloadJoin((el.value || '').trim()));
   bsUpdateBoxSections(id);
 }
 // ── 房租: pick who the rent goes to ──
@@ -44267,10 +44294,11 @@ function bsPayeeSelChange(id, sel) {
   const pwrap = item.querySelector('.bs-pallet-wrap');
   const cwrap = item.querySelector('.bs-check-wrap');
   const twrap = item.querySelector('.bs-truck-wrap');
+  const uwrap = item.querySelector('.bs-unload-wrap');
   const rwrap = item.querySelector('.bs-rent-wrap');
   const wwrap = item.querySelector('.bs-whdep-wrap');
   const xwrap = item.querySelector('.bs-fx-wrap');
-  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; };
+  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (uwrap) uwrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; };
   if (sel.value === BS_PAYEE_EMP) {
     hideAll();
     if (wrap) { wrap.style.display = ''; const co = wrap.querySelector('.bs-bx-emp-co'); if (co) co.focus(); bsEmpUpdate(id, co); }
@@ -44280,6 +44308,9 @@ function bsPayeeSelChange(id, sel) {
   } else if (sel.value === BS_PAYEE_TRUCK) {
     hideAll();
     if (twrap) { twrap.style.display = ''; const c = twrap.querySelector('.bs-bx-truck-co'); if (c) { c.focus(); bsTruckUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_UNLOAD) {
+    hideAll();
+    if (uwrap) { uwrap.style.display = ''; const c = uwrap.querySelector('.bs-bx-unload-co'); if (c) { c.focus(); bsUnloadUpdate(id, c); } }
   } else if (sel.value === BS_PAYEE_RENT) {
     hideAll();
     if (rwrap) {
