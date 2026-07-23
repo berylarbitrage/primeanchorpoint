@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ar · 发票可恢复删除:回收站+每小时备份找回',
+  tag: '2026-07-12ar · 发票可恢复删除 + 备份改到持久磁盘(不再随部署丢失)',
   started: new Date().toISOString(),
 };
 
@@ -2990,7 +2990,10 @@ function getCompanySignerEmail() {
 }
 
 // ─── Backup System ───
-const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
+// Default the backup dirs UNDER dataDir so they sit on the SAME persistent disk as
+// the DB. A bare relative ./data is ephemeral on Render (wiped on every deploy), which
+// would silently destroy every auto-backup — set BACKUP_DIRS env to override.
+const BACKUP_DIRS = (process.env.BACKUP_DIRS || ['copy1', 'copy2', 'copy3'].map(n => path.join(dataDir, 'backups', n)).join(','))
   .split(',').map(d => d.trim()).filter(Boolean);
 const BACKUP_INTERVAL = parseInt(process.env.BACKUP_INTERVAL_MIN || '60', 10) * 60 * 1000; // default 60 min
 const BACKUP_KEEP = parseInt(process.env.BACKUP_KEEP || '10', 10); // keep last N backups per location
