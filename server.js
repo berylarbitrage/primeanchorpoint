@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12ar · 新建invoice按客户带出上次的抬头/银行/联系人',
+  tag: '2026-07-12at · 对账标注新增付款类型「支付卸柜账单」',
   started: new Date().toISOString(),
 };
 
