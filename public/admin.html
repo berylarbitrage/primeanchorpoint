@@ -57,10 +57,21 @@ table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 12px;font-size:.75rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--gray-200);white-space:nowrap}
 td{padding:10px 12px;font-size:.85rem;border-bottom:1px solid var(--gray-200);color:var(--gray-600)}
 tr:hover td{background:var(--sky-light)}
-.partner-ops::-webkit-scrollbar{height:6px}
-.partner-ops::-webkit-scrollbar-thumb{background:var(--gray-300);border-radius:4px}
-.partner-ops::-webkit-scrollbar-track{background:transparent}
+/* 合作公司列表：整表在 #partnersScroll 里横向滚动（底部常驻粗滚动条、
+   随时可见），左侧 勾选/公司编号/公司名称 三列冻结不动，表头吸顶 */
 .partner-ops>*{flex:0 0 auto}
+#partnersScroll::-webkit-scrollbar{height:12px;width:10px}
+#partnersScroll::-webkit-scrollbar-thumb{background:var(--gray-400);border-radius:6px;border:2px solid var(--gray-200)}
+#partnersScroll::-webkit-scrollbar-track{background:var(--gray-200);border-radius:6px}
+#partnersScroll thead th{position:sticky;top:0;background:var(--white);z-index:3}
+#partnersScroll tbody tr{background:#fff}
+#partnersScroll tbody tr:hover{background:var(--sky-light)}
+#partnersScroll .pt-frz{position:sticky;box-sizing:border-box}
+#partnersScroll td.pt-frz{background:inherit;z-index:1}
+#partnersScroll thead th.pt-frz{z-index:5}
+#partnersScroll .pt-c1{left:0;width:40px;min-width:40px;max-width:40px}
+#partnersScroll .pt-c2{left:40px;width:175px;min-width:175px;max-width:175px}
+#partnersScroll .pt-c3{left:215px;width:240px;min-width:240px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-shadow:2px 0 4px -2px rgba(0,0,0,.15)}
 /* Invoice list: freeze the leftmost identity/billing columns on horizontal
    scroll. Position, background and stacking live here; the per-column `left`
    offsets are assigned by applyInvpFreeze() since the columns are variable-width. */
@@ -1130,7 +1141,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="0">已停止</option>
     </select>
   </div>
-  <div class="card"><table><thead><tr><th style="width:34px;text-align:center"><input type="checkbox" id="partnerSelectAll" onclick="togglePartnerSelectAll(this)" title="全选/取消"></th><th>公司编号</th><th>公司名称</th><th>联系人</th><th>电话</th><th>行业</th><th>状态</th><th>操作</th></tr></thead><tbody id="partnersTable"></tbody></table></div>
+  <div class="card" style="padding:1rem 1.25rem"><div id="partnersScroll" style="overflow:auto;max-height:calc(100vh - 250px)"><table style="width:max-content;min-width:100%"><thead><tr><th class="pt-frz pt-c1" style="text-align:center"><input type="checkbox" id="partnerSelectAll" onclick="togglePartnerSelectAll(this)" title="全选/取消"></th><th class="pt-frz pt-c2">公司编号</th><th class="pt-frz pt-c3">公司名称</th><th>联系人</th><th>电话</th><th>行业</th><th>状态</th><th>操作</th></tr></thead><tbody id="partnersTable"></tbody></table></div></div>
 </div>
 
 <!-- Subcontractors -->
@@ -12576,15 +12587,15 @@ function renderPartners(partners) {
       ? '<span class="badge" style="background:#E2E8F0;color:#64748B;border:1px solid #CBD5E1;padding:2px 8px;border-radius:4px;font-size:.75rem">已作废</span>'
       : (p.active?'<span class="badge badge-completed">合作中</span>':(p.signed_contract_count||0)>0?'<span class="badge badge-cancelled">已停止</span>':'<span class="badge" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;padding:2px 8px;border-radius:4px;font-size:.75rem">待签约</span>');
     return `<tr style="${rowStyle}" onclick="showPartnerById(${p.id})">
-      <td style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="partner-select" value="${p.id}" ${abolished ? 'disabled title="已作废的公司不能选择"' : ''} onclick="onPartnerSelectChange()"></td>
-      <td style="font-size:.75rem;color:var(--gray-500);font-family:monospace;white-space:nowrap">${esc(p.company_number||'-')}</td>
-      <td><strong style="${abolished?'text-decoration:line-through':''}">${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}</td>
+      <td class="pt-frz pt-c1" style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="partner-select" value="${p.id}" ${abolished ? 'disabled title="已作废的公司不能选择"' : ''} onclick="onPartnerSelectChange()"></td>
+      <td class="pt-frz pt-c2" style="font-size:.75rem;color:var(--gray-500);font-family:monospace;white-space:nowrap">${esc(p.company_number||'-')}</td>
+      <td class="pt-frz pt-c3" title="${esc(p.name)}"><strong style="${abolished?'text-decoration:line-through':''}">${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}</td>
       <td>${esc(mainContact)}${contacts.length>1?` <span style="color:var(--gray-400)">(+${contacts.length-1})</span>`:''}</td>
       <td>${esc(mainPhone)}</td>
       <td>${esc(p.industry)}</td>
       <td>${statusCell}</td>
       <td>
-        <div class="partner-ops" style="display:flex;flex-wrap:nowrap;gap:4px;align-items:center;max-width:600px;overflow-x:auto;padding-bottom:3px;white-space:nowrap">
+        <div class="partner-ops" style="display:flex;flex-wrap:nowrap;gap:4px;align-items:center;white-space:nowrap">
         <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
         ${abolished
           ? `<button class="btn btn-sm" style="background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="event.stopPropagation();setPartnerAbolished(${p.id},false)" title="恢复该公司">↩ 恢复</button>`
