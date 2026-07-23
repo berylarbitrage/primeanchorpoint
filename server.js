@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12aq · 发票三板块默认预设设为Prime Anchor Workforce(银行优先Chase)',
+  tag: '2026-07-12ar · 搜工人名显示他每张账单的行金额(工时/工资/账单价)+合计条',
   started: new Date().toISOString(),
 };
 
@@ -19815,7 +19815,7 @@ app.get('/api/admin/invoices/:id/wage-suggest', requireAdmin, (req, res) => {
 
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, payment_receipt_paths, sub_payment_receipt_paths, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, markup_rate, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, payment_receipt_paths, sub_payment_receipt_paths, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
   // Sum of the bank-statement transactions linked to an invoice as its proof, per
   // side (recv = 收款回执 / sub = 分包回执). This IS the real 实付 / 分包付款金额
   // ("所有上传凭证的加和"), independent of any hand-entered amount.
@@ -19841,17 +19841,28 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
       const citems = Array.isArray(p.container_items) ? p.container_items : [];
       r.container_nos = [...new Set(citems.map(c => String(c.container_no || '').trim().toUpperCase()).filter(Boolean))];
       r.invoice_mode = p.invoice_mode === 'container' ? 'container' : 'hourly';
-      // 工人/分包商名字：让列表搜索能按人名找到含此人的所有账单。
+      // 工人/分包商名字 + 每人的行明细（工时/工资底价/账单价），让列表搜索
+      // 能按人名找到账单，并直接显示这个人在每张账单里的金额。
       let its = []; try { its = r.items_json ? JSON.parse(r.items_json) : []; } catch (_) { its = []; }
+      const mk = Number(r.markup_rate) > 0 ? Number(r.markup_rate) : 1;
       const names = new Set();
+      const lines = [];
       for (const it of (Array.isArray(its) ? its : [])) {
-        for (const v of [it.name, it.subcontractor, it.referrer]) {
+        const nm = String(it.name || '').trim();
+        if (nm) {
+          names.add(nm);
+          const w = Number(it.total) || 0;
+          const eff = Number(it.markup) > 0 ? Number(it.markup) : mk;
+          lines.push({ n: nm, h: Number(it.hours) || 0, w: Math.round(w * 100) / 100, b: Math.round(w * eff * 100) / 100 });
+        }
+        for (const v of [it.subcontractor, it.referrer]) {
           const t = String(v || '').trim();
           if (t) names.add(t);
         }
       }
       r.worker_names = [...names];
-    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; r.invoice_mode = 'hourly'; r.worker_names = []; }
+      r.worker_lines = lines;
+    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; r.invoice_mode = 'hourly'; r.worker_names = []; r.worker_lines = []; }
     delete r.items_json; delete r.profile_json;
   }
   res.json(rows);
