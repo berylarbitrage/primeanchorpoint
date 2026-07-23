@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12at · 新建invoice按客户带出上次的抬头/银行/联系人',
+  tag: '2026-07-12au · 修重复markup输入框(填了不生效)+行markup=1坏数据修复+蓝行规则',
   started: new Date().toISOString(),
 };
 
@@ -20057,6 +20057,38 @@ try {
     console.log(`[migration] invoice company unify: ${fixed} 张发票已统一`);
   }
 } catch (e) { console.log('[migration] invoice company unify error:', e.message); }
+
+// 一次性修复：行级 markup 被误存成 1（重复的 markup 输入框导致），而发票
+// 本身设了整单 markup（>1）——按行 markup=1 计费让账单跌回工资底价、利润
+// 归零。特征明确的（整单 markup>1 且每行 markup 只有空或 1、且账单确实
+// 低于应收）才修：清掉行级 markup、按整单 markup 重算账单金额。
+try {
+  const _rmDone = db.prepare("SELECT value FROM app_settings WHERE key='row_markup_one_fix_v1'").get();
+  if (!_rmDone) {
+    let fixedN = 0;
+    for (const inv of db.prepare('SELECT id, invoice_number, subtotal, markup_rate, items_json, profile_json FROM invoices').all()) {
+      let prof = {}; try { prof = JSON.parse(inv.profile_json || '{}'); } catch (_) { continue; }
+      if (prof.invoice_mode === 'container') continue;
+      const g = Number(inv.markup_rate) || 0;
+      if (!(g > 1.0001)) continue;
+      let items = []; try { items = JSON.parse(inv.items_json || '[]'); } catch (_) { continue; }
+      if (!Array.isArray(items) || !items.length) continue;
+      const mks = items.map(it => Number(it.markup) || 0);
+      const onlyZeroOrOne = mks.every(m => m === 0 || Math.abs(m - 1) < 0.0001);
+      const anyOne = mks.some(m => Math.abs(m - 1) < 0.0001);
+      if (!onlyZeroOrOne || !anyOne) continue;
+      const base = items.reduce((sum, it) => sum + (Number(it.total) || 0), 0);
+      const shouldBill = Math.round(base * g * 100) / 100;
+      if (!(shouldBill > Number(inv.subtotal) + 0.01)) continue;
+      items.forEach(it => { delete it.markup; });
+      db.prepare('UPDATE invoices SET items_json=?, subtotal=? WHERE id=?').run(JSON.stringify(items), shouldBill, inv.id);
+      console.log(`[migration] 行markup=1修复 ${inv.invoice_number}: 账单 ${inv.subtotal} → ${shouldBill} (整单 markup ×${g})`);
+      fixedN++;
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('row_markup_one_fix_v1','1')").run();
+    console.log(`[migration] row markup=1 fix: 修复 ${fixedN} 张发票`);
+  }
+} catch (e) { console.log('[migration] row markup=1 fix error:', e.message); }
 
 // Save invoice
 app.post('/api/admin/invoices', requireAdmin, (req, res) => {
