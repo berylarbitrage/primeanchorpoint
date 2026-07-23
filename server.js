@@ -16,12 +16,13 @@ const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Render, Railway, etc.) for correct req.protocol
 const PORT = process.env.PORT || 3000;
 
+
 // Build/version info so the admin UI can show whether the *running* server is on the latest
 // code (handy for confirming a deploy actually took effect). `tag` is bumped by hand on
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-06-18 · 发票可恢复删除:回收站+每小时备份找回 + 入职离职备注',
+  tag: '2026-07-12ar · 发票可恢复删除:回收站+每小时备份找回',
   started: new Date().toISOString(),
 };
 
@@ -772,6 +773,10 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS warehouse_claims (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(e) {}
+// 赔偿事故支持多个发票/凭证文件：JSON 数组 [{path, name}]；旧的 invoice_path 继续兼容显示。
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN attachments TEXT DEFAULT '[]'`); } catch(e) {}
+// 赔偿事故可关联一笔银行账单标注（支出），和创始人取款的 stmt_txn_id 同一套做法。
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN stmt_txn_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -856,6 +861,24 @@ partnerMigrations.forEach(col => {
 try { db.exec(`ALTER TABLE partners ADD COLUMN company_number TEXT DEFAULT ''`); } catch {}
 try { db.exec(`ALTER TABLE partners ADD COLUMN abolished INTEGER DEFAULT 0`); } catch {}
 try { db.exec(`ALTER TABLE partners ADD COLUMN container_submit_token TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE partners ADD COLUMN label_printed_at TEXT DEFAULT ''`); } catch {}
+// Short links for printed QR codes: /s/<code> 302-redirects to a same-origin path
+db.exec(`CREATE TABLE IF NOT EXISTS short_links (
+  code TEXT PRIMARY KEY,
+  target TEXT NOT NULL UNIQUE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// 表格入口页（/form-portal）发出的签署邀请：记录发送人，用于区分各账号的操作
+db.exec(`CREATE TABLE IF NOT EXISTS form_portal_sends (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  submission_id TEXT UNIQUE,
+  template_id TEXT NOT NULL,
+  name TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  sent_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 
 // ─── Per-partner container submission inbox (mobile QR collection) ───
 db.exec(`CREATE TABLE IF NOT EXISTS container_submissions (
@@ -895,6 +918,9 @@ try { db.exec(`ALTER TABLE container_submissions ADD COLUMN photos TEXT DEFAULT 
 // Payment proof file keys (JSON array) attached by the reviewer when approving a
 // scan record inline — e.g. the transfer screenshot showing this container was paid.
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN payment_proofs TEXT DEFAULT '[]'`); } catch(e) {}
+// Work-site address baked into a per-address QR (?site=ADDR) for companies with
+// multiple locations, so each sheet records which address it was filled for.
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN work_site TEXT DEFAULT ''`); } catch(e) {}
 // One-time cleanup: strip whitespace that phone keyboards / OCR sneak into scanned
 // container numbers ("TIIU 562 579 9" → "TIIU5625799") — spaced forms never match
 // the invoice's container_items. New submissions are normalized on save.
@@ -2445,6 +2471,15 @@ try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN clock_out_time TEX
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_minutes INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_start_time TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE company_worker_payments ADD COLUMN break_end_time TEXT DEFAULT ''`); } catch(e) {}
+// 公司改名后，历史付款记录里的 partner_name 快照与新名不一致，会让按月/按周汇总把
+// 同一家公司拆成两行（如 "Eparcel" 与 "Eparcel Inc."）。启动时把快照同步为公司现名。
+try {
+  db.exec(`UPDATE company_worker_payments
+           SET partner_name = (SELECT name FROM partners WHERE partners.id = company_worker_payments.partner_id)
+           WHERE partner_id IS NOT NULL
+             AND EXISTS (SELECT 1 FROM partners WHERE partners.id = company_worker_payments.partner_id
+                           AND partners.name <> company_worker_payments.partner_name)`);
+} catch(e) {}
 
 // ─── Per-week-per-worker payout info (method / paying entity / proof) ───
 db.exec(`CREATE TABLE IF NOT EXISTS company_week_payments (
@@ -2542,6 +2577,10 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN used_kind TEXT DEFAULT
 // External links: JSON array of { system, ref, url, label, at } recording where this
 // transaction has been linked (e.g. to a payment on pallet.bintique.com).
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN links TEXT DEFAULT '[]'`); } catch(e) {}
+// 收支分类：用于「收支分类分析」页按类别统计（自由文本，前端提供常用预设）。
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
+// 一笔支出可以覆盖多张发票，每张各自的账期和金额：JSON [{inv, ps, pe, amt}]
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN inv_items TEXT DEFAULT '[]'`); } catch(e) {}
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -2671,6 +2710,117 @@ try {
     if (_spRows.length) console.log(`[migration] 分包付款金额统一按账单覆盖: ${_spRows.length} 张发票`);
   }
 } catch (e) { console.log('[migration] sub_payment_amount→subtotal error:', e.message); }
+
+// One-time rename: existing partner numbers in the old COMP-ST-MMDDYY-#### format are
+// rewritten to the name-abbreviated format (#1689) new companies already use —
+// COMP-ST-ABBR-MMDDYY — keeping the ORIGINAL date segment. company_number has no
+// foreign references (everything links by partner id), so this is a pure relabel.
+try {
+  const _pnDone = db.prepare("SELECT value FROM app_settings WHERE key='partner_number_name_migrated'").get();
+  if (!_pnDone) {
+    const _pnRows = db.prepare("SELECT id, name, company_number FROM partners WHERE company_number LIKE 'COMP-%'").all();
+    const _pnUpd = db.prepare('UPDATE partners SET company_number=? WHERE id=?');
+    const _pnTaken = n => db.prepare('SELECT 1 FROM partners WHERE company_number=? LIMIT 1').get(n);
+    let _pnCount = 0;
+    db.transaction(() => {
+      for (const p of _pnRows) {
+        const m = String(p.company_number || '').match(/^COMP-([A-Z]{2})-(\d{6})-\d{4}$/);
+        if (!m) continue;   // already the new format (or a custom number) — leave it
+        const base = `COMP-${m[1]}-${partnerAbbr(p.name)}-${m[2]}`;
+        let num = base;
+        if (_pnTaken(num)) { for (let i = 2; i < 100; i++) { const c = base + '-' + i; if (!_pnTaken(c)) { num = c; break; } } }
+        if (num !== p.company_number) { _pnUpd.run(num, p.id); _pnCount++; }
+      }
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('partner_number_name_migrated','1')").run();
+    })();
+    if (_pnCount) console.log(`[migration] 公司编号改为带公司名缩写: ${_pnCount} 家`);
+  }
+} catch (e) { console.log('[migration] partner number rename error:', e.message); }
+
+// 开支账本分类完全手动：系统不做任何自动归类（银行费用、卡车费都由用户自己 link）。
+// 一次性纠正迁移 v2：撤销此前所有自动打上的分类 —— 银行费用 → 银行开支、
+// 卡车费 → 卡车开支（含"有 bintique 链接自动归入"的那批）。之后全部手动 link。
+try {
+  const _fixDone = db.prepare("SELECT value FROM app_settings WHERE key='autocat_all_manual_v2'").get();
+  if (!_fixDone) {
+    const r1 = db.prepare(`UPDATE bank_statement_txns SET category=''
+      WHERE kind='box' AND category='银行开支' AND TRIM(payee)='银行费用'`).run();
+    const r2 = db.prepare(`UPDATE bank_statement_txns SET category=''
+      WHERE kind='box' AND category='卡车开支' AND payee LIKE '卡车费:%'`).run();
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('autocat_all_manual_v2','1')").run();
+    console.log(`[migration] 分类全手动: 清银行费用自动分类 ${r1.changes} 条, 清卡车费自动分类 ${r2.changes} 条`);
+  }
+} catch (e) { console.log('[migration] auto-category manual-only error:', e.message); }
+
+// 一次性纠正：Chase 有两个 routing——071000013 只用于 ACH/直接存款，电汇要用
+// 021000021。把银行预设里误填在 Wire 栏的 071000013 挪到 ACH/Paper 栏，
+// Wire 栏改成 021000021（发票显示两行：ACH / Electronic 和 Wire Routing）。
+try {
+  const _fixDone = db.prepare("SELECT value FROM app_settings WHERE key='chase_dual_routing_fix_v1'").get();
+  if (!_fixDone) {
+    let fixed = 0;
+    for (const row of db.prepare("SELECT id, data FROM invoice_profiles WHERE section='bank'").all()) {
+      let d = {}; try { d = JSON.parse(row.data || '{}'); } catch { continue; }
+      if (String(d.bank_wire_routing || '').trim() === '071000013') {
+        if (!String(d.bank_paper_routing || '').trim()) d.bank_paper_routing = '071000013';
+        d.bank_wire_routing = '021000021';
+        db.prepare('UPDATE invoice_profiles SET data=? WHERE id=?').run(JSON.stringify(d), row.id);
+        fixed++;
+      }
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('chase_dual_routing_fix_v1','1')").run();
+    if (fixed) console.log(`[migration] Chase 双 routing 纠正: 修复银行预设 ${fixed} 条`);
+  }
+} catch (e) { console.log('[migration] chase dual routing error:', e.message); }
+
+// 一次性补充 v2：Chase 预设再补上 SWIFT code（CHASUS33，全行固定）；同时
+// 幂等重跑双 routing 纠正，防止 v1 未部署过。
+try {
+  const _fixDone2 = db.prepare("SELECT value FROM app_settings WHERE key='chase_dual_routing_fix_v2'").get();
+  if (!_fixDone2) {
+    let fixed = 0;
+    for (const row of db.prepare("SELECT id, data FROM invoice_profiles WHERE section='bank'").all()) {
+      let d = {}; try { d = JSON.parse(row.data || '{}'); } catch { continue; }
+      const isChase = String(d.bank_name || '').trim() === 'Chase' || String(d.bank_wire_routing || '').trim() === '071000013';
+      if (!isChase) continue;
+      let changed = false;
+      if (String(d.bank_wire_routing || '').trim() === '071000013') {
+        if (!String(d.bank_paper_routing || '').trim()) d.bank_paper_routing = '071000013';
+        d.bank_wire_routing = '021000021'; changed = true;
+      }
+      if (!String(d.bank_swift_code || '').trim()) { d.bank_swift_code = 'CHASUS33'; changed = true; }
+      if (changed) {
+        db.prepare('UPDATE invoice_profiles SET data=? WHERE id=?').run(JSON.stringify(d), row.id);
+        fixed++;
+      }
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('chase_dual_routing_fix_v2','1')").run();
+    if (fixed) console.log(`[migration] Chase SWIFT 补充: 修复银行预设 ${fixed} 条`);
+  }
+} catch (e) { console.log('[migration] chase swift error:', e.message); }
+
+// 一次性设置：发票的 发票抬头/收款银行/联系人页脚 三个板块默认选
+// Prime Anchor Workforce 的预设（银行板块有多条时优先 Chase 那条）。
+// 浏览器本地已选过的仍以本地选择优先，这里保证换浏览器/清缓存后也默认它。
+try {
+  const _pawDone = db.prepare("SELECT value FROM app_settings WHERE key='paw_default_presets_v1'").get();
+  if (!_pawDone) {
+    for (const section of ['sender', 'bank', 'contact']) {
+      const rows = db.prepare('SELECT id, name, data FROM invoice_profiles WHERE section=?').all(section);
+      const paw = rows.filter(r => ((r.name || '') + ' ' + (r.data || '')).toLowerCase().includes('prime anchor workforce'));
+      if (!paw.length) continue;
+      let pick = paw[0];
+      if (section === 'bank' && paw.length > 1) {
+        const chase = paw.find(r => { try { return String(JSON.parse(r.data || '{}').bank_name || '').toLowerCase().includes('chase'); } catch (_) { return false; } });
+        if (chase) pick = chase;
+      }
+      db.prepare('UPDATE invoice_profiles SET is_default=0 WHERE section=?').run(section);
+      db.prepare('UPDATE invoice_profiles SET is_default=1 WHERE id=?').run(pick.id);
+      console.log(`[migration] 默认预设 ${section} → #${pick.id} ${pick.name || ''}`);
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('paw_default_presets_v1','1')").run();
+  }
+} catch (e) { console.log('[migration] paw default presets error:', e.message); }
 
 // ─── SMS Inbox Module — Database Schema ───
 db.exec(`CREATE TABLE IF NOT EXISTS sms_contacts (
@@ -5011,11 +5161,12 @@ function _zoneVariant(html, variant) {
 
 function _buildThirdPartyPayForm(lang) {
   const companyName = getCompanyLegalName();
-  const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
-  const w = `${f}width:100%;min-height:16px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
+  const fh = (es || zh) ? '14px' : '16px';
+  const f = `border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:${fh};display:inline-block;`;
+  const w = `${f}width:100%;min-height:${fh};`;
+  const c = `padding:${(es || zh) ? '2px 4px' : '3px 5px'};border:1px solid #ccc;vertical-align:top;`;
   const L = (en, zhTxt, esTxt) => {
     if (zh && zhTxt) return `${en} ${zhTxt}`;
     if (es && esTxt) return `${en} / ${esTxt}`;
@@ -5138,12 +5289,16 @@ function _buildThirdPartyPayForm(lang) {
     ? 'I confirm I am authorizing the above-named third party to receive all current and future payments on my behalf on an ongoing basis, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir todos los pagos actuales y futuros en mi nombre de forma continua y asumo plena responsabilidad.'
     : 'I confirm I am authorizing the above-named third party to receive all current and future payments on my behalf on an ongoing basis, and I take full responsibility for this arrangement.';
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:660px;margin:0 auto;padding:12px 18px;color:#111;line-height:1.4">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:7px;margin-bottom:8px">
+  // 版式收紧保证一页：公司核验区已移除；中英/英西双语文本较长用更小一档
+  const Z = es ? { base: '7.3pt', lh: '1.06', pad: '3px 12px', body: '6.7pt', sig: '26px', date: '14px' }
+        : zh ? { base: '7.6pt', lh: '1.12', pad: '5px 12px', body: '7pt', sig: '30px', date: '16px' }
+        : { base: '8.2pt', lh: '1.28', pad: '8px 14px', body: '7.6pt', sig: '40px', date: '20px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:660px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:6px">
   <div style="font-size:11pt;font-weight:900;letter-spacing:0.5px">${formTitle}</div>
   <div style="font-size:9pt;font-weight:600;color:#222;margin-top:3px">${companyName}</div>
 </div>
-<div style="font-size:8.5pt;margin-bottom:10px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc">
+<div style="font-size:${Z.base};margin-bottom:6px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc">
   ${intro}
 </div>
 
@@ -5156,15 +5311,15 @@ function _buildThirdPartyPayForm(lang) {
 </table>
 
 <!--A_ONLY_S--><!-- Zone A — Direct Receipt to Own Platform Account -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:5px 10px;cursor:pointer;margin:0">
     <checkbox-field name="tp_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
       <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
     </div>
   </label>
-  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+  <div style="background:#eff6ff;padding:7px 10px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
     <div style="font-weight:700;margin:0 0 4px;font-size:8.5pt">${s2}</div>
     <div style="font-size:7.5pt;color:#555;margin-bottom:4px">${lSelectOne}</div>
     <div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:8.5pt">
@@ -5205,15 +5360,15 @@ function _buildThirdPartyPayForm(lang) {
       </tr>
     </table>
     <!-- Payee signature sub-box (blue) -->
-    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:9px 12px;margin-top:6px">
+    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:6px 9px;margin-top:6px">
       <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="payee_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <text-field name="payee_printed_name" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="contractor_signature" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="contractor_signature" role="Contractor" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="signature_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+      <date-field name="signature_date" role="Contractor" style="width:100%;height:${Z.date};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:4px 6px">
         <checkbox-field name="tp_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
       </label>
@@ -5222,16 +5377,16 @@ function _buildThirdPartyPayForm(lang) {
 </div>
 
 <!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third-Party Authorization -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:5px 10px;cursor:pointer;margin:0">
     <checkbox-field name="tp_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
       <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
     </div>
   </label>
-  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
+  <div style="background:#f0fdf4;padding:7px 10px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px;margin-bottom:6px">
       <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
       <table style="width:100%;border-collapse:collapse">
         <tr>
@@ -5251,18 +5406,18 @@ function _buildThirdPartyPayForm(lang) {
           </td>
         </tr>
       </table>
-      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+      <div style="margin-top:5px;font-size:7pt;color:#374151;line-height:1.4;border-top:1px solid #a7f3d0;padding-top:4px;font-style:italic">${tpAuth}</div>
     </div>
     <!-- Authorizer signature sub-box (green) -->
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px">
       <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="tp_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <text-field name="tp_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="tp_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="tp_auth_sig" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="tp_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+      <date-field name="tp_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:4px 6px">
         <checkbox-field name="tp_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
       </label>
@@ -5271,26 +5426,13 @@ function _buildThirdPartyPayForm(lang) {
 </div>
 
 <!--B_ONLY_E--><div style="font-weight:700;margin:8px 0 4px;font-size:9pt">${s3}</div>
-<div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:8pt;line-height:1.5;background:#fafafa;margin-bottom:8px">
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack1}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack2}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack3}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack4}</span></div>
-  <div style="display:flex;gap:5px;margin-bottom:5px"><span>☑</span><span>${ack5}</span></div>
+<div style="border:1px solid #ccc;border-radius:3px;padding:6px 8px;font-size:${Z.body};line-height:1.3;background:#fafafa;margin-bottom:6px">
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack1}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack2}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack3}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack4}</span></div>
+  <div style="display:flex;gap:5px;margin-bottom:3px"><span>☑</span><span>${ack5}</span></div>
   <div style="display:flex;gap:5px"><span>☑</span><span>${ack6}</span></div>
-</div>
-<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
-  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
-  <text-field name="tp_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="tp_co_sig" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="tp_co_date" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="tp_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
-  </label>
 </div>
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${footer}</div>
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
@@ -5488,23 +5630,26 @@ function _buildACHAuthForm(lang) {
     ? 'I confirm I am authorizing the above-named third party to receive all current and future payments on my behalf on an ongoing basis, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir todos los pagos actuales y futuros en mi nombre de forma continua y asumo plena responsabilidad.'
     : 'I confirm I am authorizing the above-named third party to receive all current and future payments on my behalf on an ongoing basis, and I take full responsibility for this arrangement.';
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:3px solid #1d4ed8;padding-bottom:12px;margin-bottom:14px">
-  <div style="font-size:12.5pt;font-weight:900;letter-spacing:.4px">${formTitle}</div>
+  // 版式收紧保证一页：公司核验区已移除，字号/间距压缩；西语版文本最长再小一档
+  const Z = es ? { base: '8pt', lh: '1.17', pad: '6px 12px', intro: '7.2pt', auth: '6.9pt', sig: '32px', date: '18px' }
+             : { base: '8.5pt', lh: '1.3', pad: '10px 12px', intro: '7.5pt', auth: '7.3pt', sig: '38px', date: '20px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:3px solid #1d4ed8;padding-bottom:6px;margin-bottom:8px">
+  <div style="font-size:11.5pt;font-weight:900;letter-spacing:.4px">${formTitle}</div>
   <div style="font-size:8pt;color:#6b7280;margin-top:4px">${subtitle}</div>
 </div>
 
-<div style="font-size:8pt;color:#374151;background:#f0f6ff;border-left:3px solid #93c5fd;padding:8px 12px;margin-bottom:16px;border-radius:0 4px 4px 0;line-height:1.6">${introPara}</div>
+<div style="font-size:${Z.intro};color:#374151;background:#f0f6ff;border-left:3px solid #93c5fd;padding:6px 10px;margin-bottom:8px;border-radius:0 4px 4px 0;line-height:1.45">${introPara}</div>
 
 <!-- 1. PAYEE INFORMATION -->
-<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 7px;color:#1e3a8a">${s1}</div>
-<table style="width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:6px">
+<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 5px;color:#1e3a8a">${s1}</div>
+<table style="width:100%;border-collapse:collapse;margin-bottom:8px;border:1px solid #e2e8f0;border-radius:6px">
   <tr>
-    <td style="padding:8px 10px;width:58%;border-right:1px solid #e2e8f0">
+    <td style="padding:5px 8px;width:58%;border-right:1px solid #e2e8f0">
       <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lPayeeName}</div>
       <text-field name="ach_name" role="First Party" required="true" style="${w}"></text-field>
     </td>
-    <td style="padding:8px 10px">
+    <td style="padding:5px 8px">
       <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lEmail}</div>
       <text-field name="ach_email" role="First Party" style="${w}"></text-field>
     </td>
@@ -5512,60 +5657,60 @@ function _buildACHAuthForm(lang) {
 </table>
 
 <!-- 2. PAYMENT RECIPIENT -->
-<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 10px;color:#1e3a8a">${s3}</div>
+<div style="font-size:9pt;font-weight:800;border-left:3px solid #3b82f6;padding-left:8px;margin:0 0 6px;color:#1e3a8a">${s3}</div>
 
 <!--A_ONLY_S--><!-- Zone A: Self / Direct -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:6px 10px;cursor:pointer;margin:0">
     <checkbox-field name="ach_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
       <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
     </div>
   </label>
-  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
-    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;overflow:hidden;margin-bottom:10px">
-      <div style="font-size:7.5pt;font-weight:700;color:#1e40af;padding:5px 10px;background:#dbeafe;border-bottom:1px solid #bfdbfe">${s2}</div>
+  <div style="background:#eff6ff;padding:8px 10px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;overflow:hidden;margin-bottom:6px">
+      <div style="font-size:7.5pt;font-weight:700;color:#1e40af;padding:3px 8px;background:#dbeafe;border-bottom:1px solid #bfdbfe">${s2}</div>
       <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
         <tr>
-          <td style="padding:7px 10px;width:50%;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
+          <td style="padding:4px 8px;width:50%;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lBankName}</div>
             <text-field name="ach_bank_name" role="First Party" style="${w}"></text-field>
           </td>
-          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0">
+          <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:4px">${acctTypeLabel}</div>
             <label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px"><checkbox-field name="ach_acct_checking" role="First Party" style="width:13px;height:13px"></checkbox-field><span style="font-size:8pt">${acctChecking}</span></label>
             <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="ach_acct_savings" role="First Party" style="width:13px;height:13px"></checkbox-field><span style="font-size:8pt">${acctSavings}</span></label>
           </td>
         </tr>
         <tr>
-          <td style="padding:7px 10px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
+          <td style="padding:4px 8px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lRouting}</div>
             <text-field name="ach_routing" role="First Party" style="${f}width:100%" placeholder="9 digits"></text-field>
           </td>
-          <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0">
+          <td style="padding:4px 8px;border-bottom:1px solid #e2e8f0">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lAccount}</div>
             <text-field name="ach_account" role="First Party" style="${f}width:100%"></text-field>
           </td>
         </tr>
         <tr>
-          <td colspan="2" style="padding:7px 10px">
+          <td colspan="2" style="padding:4px 8px">
             <div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:3px">${lConfirmAccount}</div>
             <text-field name="ach_account_confirm" role="First Party" style="${f}width:100%" placeholder="${confirmPlaceholder}"></text-field>
           </td>
         </tr>
       </table>
-      <div style="font-size:7pt;color:#6b7280;font-style:italic;padding:5px 10px;border-top:1px solid #e2e8f0">${ownershipNote}</div>
+      <div style="font-size:7pt;color:#6b7280;font-style:italic;padding:3px 8px;border-top:1px solid #e2e8f0">${ownershipNote}</div>
     </div>
-    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #bfdbfe;border-radius:5px;padding:6px 9px">
       <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sPayeeSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="ach_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <text-field name="ach_printed_name" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="ach_sig1" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="ach_sig1" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="ach_date1" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+      <date-field name="ach_date1" role="First Party" style="width:100%;height:${Z.date};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:4px 6px">
         <checkbox-field name="ach_payee_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
       </label>
@@ -5574,16 +5719,16 @@ function _buildACHAuthForm(lang) {
 </div>
 
 <!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B: Third Party -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:6px 10px;cursor:pointer;margin:0">
     <checkbox-field name="ach_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
       <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
     </div>
   </label>
-  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
+  <div style="background:#f0fdf4;padding:8px 10px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px;margin-bottom:6px">
       <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
       <table style="width:100%;border-collapse:collapse">
         <tr>
@@ -5603,17 +5748,17 @@ function _buildACHAuthForm(lang) {
           </td>
         </tr>
       </table>
-      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+      <div style="margin-top:5px;font-size:7pt;color:#374151;line-height:1.45;border-top:1px solid #a7f3d0;padding-top:4px;font-style:italic">${tpAuth}</div>
     </div>
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px">
       <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="ach_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
+      <text-field name="ach_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:4px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="ach_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="ach_auth_sig" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="ach_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+      <date-field name="ach_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:4px 6px">
         <checkbox-field name="ach_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
       </label>
@@ -5622,30 +5767,16 @@ function _buildACHAuthForm(lang) {
 </div>
 
 <!--B_ONLY_E--><!-- 3. AUTHORIZATION -->
-<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:10px 13px;margin-bottom:14px">
+<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:7px 10px;margin-bottom:8px">
   <div style="font-size:9pt;font-weight:800;color:#92400e;margin-bottom:6px">${s4}</div>
-  <div style="font-size:7.5pt;color:#374151;line-height:1.7">
-    <div style="margin-bottom:4px">① ${auth1}</div>
-    <div style="margin-bottom:4px">② ${auth2}</div>
+  <div style="font-size:${Z.auth};color:#374151;line-height:1.5">
+    <div style="margin-bottom:2px">① ${auth1}</div>
+    <div style="margin-bottom:2px">② ${auth2}</div>
     <div>③ ${auth3}</div>
   </div>
 </div>
 
-<!-- COMPANY VERIFICATION -->
-<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:2px">
-  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
-  <text-field name="ach_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="ach_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="ach_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="ach_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
-  </label>
-</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-07-17 CDT</div>
 </div>`;
 }
 function generateACHAuthHtmlTemplate() { return _zoneVariant(_buildACHAuthForm('zh-en'), 'a'); }
@@ -6004,9 +6135,11 @@ function generateWireAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildWireAut
 
 // ── Check / 支票 Instruction Form ──
 function _buildCheckInstructionForm(lang) {
-  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
-  const w = `${f}width:100%;min-height:22px;`;
-  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const _zh0 = lang === 'zh-en', _es0 = lang === 'en-es';
+  const fh = (_es0 || _zh0) ? '15px' : '18px';
+  const f = `border:1px solid #999;border-radius:3px;padding:1px 3px;background:#fff;min-height:${fh};display:inline-block;`;
+  const w = `${f}width:100%;min-height:${fh};`;
+  const c = `padding:${(_es0 || _zh0) ? '2px 4px' : '3px 5px'};border:1px solid #ccc;vertical-align:top;`;
   const companyName = getCompanyLegalName();
   const zh = lang === 'zh-en';
   const es = lang === 'en-es';
@@ -6123,13 +6256,17 @@ function _buildCheckInstructionForm(lang) {
     ? 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir el cheque en persona en mi nombre y asumo plena responsabilidad.'
     : 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement.';
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:18px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
+  // 版式收紧保证一页：公司核验区已移除；双语版按语言分档缩小
+  const Z = es ? { base: '7.3pt', lh: '1.06', pad: '3px 12px', body: '6.7pt', sig: '26px', date: '14px' }
+        : zh ? { base: '7.6pt', lh: '1.12', pad: '5px 12px', body: '7pt', sig: '30px', date: '16px' }
+        : { base: '8.2pt', lh: '1.28', pad: '8px 14px', body: '7.6pt', sig: '40px', date: '20px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:6px">
   <div style="font-size:11.5pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
-  <div style="font-size:8pt;color:#555;margin-top:4px">${subtitle}</div>
+  <div style="font-size:7.5pt;color:#555;margin-top:2px">${subtitle}</div>
 </div>
 
-<p style="font-size:8pt;margin-bottom:10px;line-height:1.6">${introPara}</p>
+<p style="font-size:${Z.body};margin:0 0 6px;line-height:1.35">${introPara}</p>
 
 <div style="font-weight:700;margin:10px 0 4px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:2px">
@@ -6151,17 +6288,17 @@ function _buildCheckInstructionForm(lang) {
 </table>
 
 <!--A_ONLY_S--><!-- Zone A — Check Mailed to Own Address -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#1e40af;padding:5px 10px;cursor:pointer;margin:0">
     <checkbox-field name="check_recipient_self" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneATitle}</div>
       <div style="font-size:7pt;color:#bfdbfe;margin-top:2px">${tpSelf}</div>
     </div>
   </label>
-  <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+  <div style="background:#eff6ff;padding:7px 10px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
     <!-- Payee signature sub-box (blue) -->
-    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:9px 12px;margin-top:6px">
+    <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:6px 9px;margin-top:5px">
       <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
       <div style="display:flex;gap:10px;margin-bottom:6px">
         <div style="flex:1">
@@ -6174,10 +6311,10 @@ function _buildCheckInstructionForm(lang) {
         </div>
       </div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="check_sig" role="Contractor" style="width:100%;height:50px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="check_sig" role="Contractor" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="check_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:5px 7px">
+      <date-field name="check_date" role="Contractor" style="width:100%;height:${Z.date};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#dbeafe;border-radius:4px;padding:4px 6px">
         <checkbox-field name="check_payee_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#1e40af;line-height:1.4">${lConfirmSig}</span>
       </label>
@@ -6186,16 +6323,16 @@ function _buildCheckInstructionForm(lang) {
 </div>
 
 <!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third Party Receives Check -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:5px 10px;cursor:pointer;margin:0">
     <checkbox-field name="check_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
       <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
     </div>
   </label>
-  <div style="background:#f0fdf4;padding:12px 14px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
+  <div style="background:#f0fdf4;padding:7px 10px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px;margin-bottom:6px">
       <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
       <table style="width:100%;border-collapse:collapse">
         <tr>
@@ -6215,18 +6352,18 @@ function _buildCheckInstructionForm(lang) {
           </td>
         </tr>
       </table>
-      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+      <div style="margin-top:5px;font-size:7pt;color:#374151;line-height:1.4;border-top:1px solid #a7f3d0;padding-top:4px;font-style:italic">${tpAuth}</div>
     </div>
     <!-- Authorizer signature sub-box (green) -->
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:6px 9px">
       <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
       <text-field name="check_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="check_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+      <signature-field name="check_auth_sig" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="check_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+      <date-field name="check_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:5px"></date-field>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:4px 6px">
         <checkbox-field name="check_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
       </label>
@@ -6234,25 +6371,12 @@ function _buildCheckInstructionForm(lang) {
   </div>
 </div>
 
-<!--B_ONLY_E--><div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:8px 10px;margin-top:4px;font-size:7.5pt;line-height:1.6">
+<!--B_ONLY_E--><div style="background:#f0f4ff;border:1px solid #b0c0e8;border-radius:4px;padding:6px 8px;margin-top:4px;font-size:${Z.body};line-height:1.35">
   <div style="font-weight:700;margin-bottom:5px;font-size:8.5pt">${s5}</div>
   <div style="margin-bottom:3px">① ${confirmLine1}</div>
   <div style="margin-bottom:3px">② ${confirmLine2}</div>
   <div style="margin-bottom:3px">③ ${confirmLine3}</div>
   <div>④ ${confirmLine4}</div>
-</div>
-<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
-  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${sCompany}</div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
-  <text-field name="check_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="check_co_sig" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="check_co_date" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="check_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
-  </label>
 </div>
 <div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
 </div>`;
@@ -6382,68 +6506,81 @@ function _buildZelleAuthForm(lang) {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:13pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
+  // 版式收紧保证一页：字号/行距/间距压缩，双语段落间不再空行；西语版文本最长，字号再小一档
+  const one = t => String(t).replace(/\n{2,}/g, '\n');
+  const Z = es ? {
+    base: '8pt', lh: '1.2', pad: '8px 12px', title: '11pt', sub: '7.5pt', hpb: '4px', hmb: '6px',
+    intro: '7.4pt', head: '8.5pt', hm: '5px 0 3px', hm2: '5px 0 2px', tbl: '7.4pt', red: '6.6pt',
+    box: '7.4pt', boxh: '7pt', note: '6.6pt', body: '7.1pt', disc: '6.6pt', green: '6.6pt',
+    cap: '6.8pt', sig: '36px', date: '20px'
+  } : {
+    base: '8.5pt', lh: '1.32', pad: '12px 14px', title: '12pt', sub: '8.5pt', hpb: '6px', hmb: '8px',
+    intro: '8pt', head: '9pt', hm: '8px 0 4px', hm2: '7px 0 3px', tbl: '8pt', red: '7pt',
+    box: '8pt', boxh: '7.5pt', note: '7pt', body: '7.8pt', disc: '7.2pt', green: '7.2pt',
+    cap: '7.2pt', sig: '42px', date: '22px'
+  };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:${Z.hpb};margin-bottom:${Z.hmb}">
+  <div style="font-size:${Z.title};font-weight:900;letter-spacing:1px">${formTitle}</div>
+  <div style="font-size:${Z.sub};color:#555;margin-top:2px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt;white-space:pre-line">${intro}</p>
+<p style="font-size:${Z.intro};white-space:pre-line;margin:0 0 6px">${one(intro)}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:${Z.hm};font-size:${Z.head}">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
   <tr>
     <td style="${c}width:50%"><b>${lName}</b><br><text-field name="payee_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
     <td style="${c}width:50%"><b>${lAccount}</b><br><text-field name="zelle_contact" role="First Party" required="true" style="${w}" placeholder="email@example.com or (xxx) xxx-xxxx"></text-field>
-    <div style="font-size:7pt;color:#c00;margin-top:3px">${L('Please verify this information is correct before signing. Payments sent to the information provided will be treated as valid payment.','请在签署前确认所填信息准确无误。按该信息付款后，通常将视为已有效完成付款。','Verifique que esta información sea correcta antes de firmar. Los pagos enviados a la información indicada se considerarán como pago válido.')}</div></td>
+    <div style="font-size:${Z.red};color:#c00;margin-top:2px">${L('Please verify this information is correct before signing. Payments sent to the information provided will be treated as valid payment.','请在签署前确认所填信息准确无误。按该信息付款后，通常将视为已有效完成付款。','Verifique que esta información sea correcta antes de firmar. Los pagos enviados a la información indicada se considerarán como pago válido.')}</div></td>
   </tr>
 </table>
 
-<!--B_ONLY_S--><div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;margin-bottom:10px;background:#fafafa;font-size:8pt">
-  <div style="font-weight:700;color:#555;margin-bottom:5px;font-size:8pt">${authRepHeader}</div>
-  <table style="width:100%;border-collapse:collapse;font-size:8pt">
+<!--B_ONLY_S--><div style="border:1px solid #ccc;border-radius:4px;padding:6px 8px;margin-bottom:6px;background:#fafafa;font-size:${Z.box}">
+  <div style="font-weight:700;color:#555;margin-bottom:3px;font-size:${Z.boxh}">${authRepHeader}</div>
+  <table style="width:100%;border-collapse:collapse;font-size:${Z.box}">
     <tr>
-      <td style="padding:3px 4px;width:40%"><b>${lRepName}:</b><br><text-field name="auth_rep_name" role="First Party" style="${w}"></text-field></td>
-      <td style="padding:3px 4px;width:30%"><b>${lRepPhone}:</b><br><text-field name="auth_rep_phone" role="First Party" style="${w}"></text-field></td>
-      <td style="padding:3px 4px;width:30%"><b>${lRepEmail}:</b><br><text-field name="auth_rep_email" role="First Party" style="${w}"></text-field></td>
+      <td style="padding:2px 4px;width:40%"><b>${lRepName}:</b><br><text-field name="auth_rep_name" role="First Party" style="${w}"></text-field></td>
+      <td style="padding:2px 4px;width:30%"><b>${lRepPhone}:</b><br><text-field name="auth_rep_phone" role="First Party" style="${w}"></text-field></td>
+      <td style="padding:2px 4px;width:30%"><b>${lRepEmail}:</b><br><text-field name="auth_rep_email" role="First Party" style="${w}"></text-field></td>
     </tr>
   </table>
-  <div style="font-size:7.5pt;color:#555;margin-top:4px;font-style:italic">${authRepNote}</div>
+  <div style="font-size:${Z.note};color:#555;margin-top:2px;font-style:italic">${authRepNote}</div>
 </div>
 
-<!--B_ONLY_E--><div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
-<p style="font-size:8pt;white-space:pre-line">${certText}</p>
+<!--B_ONLY_E--><div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s2}</div>
+<p style="font-size:${Z.body};white-space:pre-line;margin:0 0 4px">${one(certText)}</p>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
-<div style="font-size:8pt;white-space:pre-line">${ackItems}</div>
+<div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s3}</div>
+<div style="font-size:${Z.body};white-space:pre-line">${one(ackItems)}</div>
 
-<p style="font-size:7.5pt;color:#666;margin-top:10px;font-style:italic">${disclaimer}</p>
+<p style="font-size:${Z.disc};color:#666;margin:6px 0 0;font-style:italic">${disclaimer}</p>
 
-<div style="background:#e8f5e9;border:1px solid #4caf50;padding:6px 10px;margin-top:12px;font-size:7.5pt;color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
+<div style="background:#e8f5e9;border:1px solid #4caf50;padding:5px 8px;margin-top:7px;font-size:${Z.green};color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
 
-<!--A_ONLY_S--><div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:6px;font-size:8.5pt">
+<!--A_ONLY_S--><div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:5px;font-size:${Z.base}">
   <b>${sigHeader}</b>
-  <table style="width:100%;margin-top:6px">
-    <tr>
-      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${w}"></text-field></td>
-    </tr>
-    <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="payee_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
-    </tr>
-  </table>
-</div>
-
-<!--A_ONLY_E--><!--B_ONLY_S--><div style="border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt;background:#f0f9ff">
-  <b>${authDelegateHeader}</b>
-  <p style="font-size:7.5pt;margin:6px 0 8px;color:#333">${authDelegateText}</p>
   <table style="width:100%;margin-top:4px">
     <tr>
-      <td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPayeePrintedName}:</div><text-field name="payee_auth_printed_name" role="First Party" style="${w}"></text-field></td>
+      <td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${w}"></text-field></td>
     </tr>
     <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPayeeSig}:</div><signature-field name="payee_auth_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lSig}:</div><signature-field name="payee_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_signature_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+    </tr>
+  </table>
+</div>
+
+<!--A_ONLY_E--><!--B_ONLY_S--><div style="border:1px solid #999;padding:6px 8px;margin-top:7px;font-size:${Z.base};background:#f0f9ff">
+  <b>${authDelegateHeader}</b>
+  <p style="font-size:${Z.cap};margin:4px 0 5px;color:#333">${authDelegateText}</p>
+  <table style="width:100%;margin-top:2px">
+    <tr>
+      <td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPayeePrintedName}:</div><text-field name="payee_auth_printed_name" role="First Party" style="${w}"></text-field></td>
+    </tr>
+    <tr>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPayeeSig}:</div><signature-field name="payee_auth_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
@@ -6687,42 +6824,46 @@ function _buildThirdPartyPayAuthForm(lang, method) {
   const lDate = L('Date', '日期', 'Fecha');
   const today = new Date().toISOString().slice(0, 10);
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:12pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
+  // 版式收紧保证一页：双语段落间不再空行；西语版文本最长再小一档
+  const one = t => String(t).replace(/\n{2,}/g, '\n');
+  const Z = (es || zh) ? { base: '8pt', lh: '1.18', pad: '6px 12px', intro: '7.3pt', tbl: '7.5pt', body: '7.1pt', sig: '34px', date: '18px' }
+             : { base: '8.5pt', lh: '1.3', pad: '10px 12px', intro: '8pt', tbl: '8pt', body: '7.6pt', sig: '40px', date: '20px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
+  <div style="font-size:11.5pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
+  <div style="font-size:8pt;color:#555;margin-top:2px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt;white-space:pre-line">${intro}</p>
+<p style="font-size:${Z.intro};white-space:pre-line;margin:0 0 6px">${one(intro)}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
   <tr><td style="${c}width:100%"><b>${lAuthName}</b><br><text-field name="authorizing_person_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s2}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
   <tr>
     <td style="${c}width:50%"><b>${lYourName}</b><br><text-field name="tp_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
     <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" required="true" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
   </tr>${accountFieldsHtml}
 </table>${verifyNote}
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s3}</div>
-<div style="font-size:8pt;white-space:pre-line">${certText}</div>
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s3}</div>
+<div style="font-size:${Z.body};white-space:pre-line">${one(certText)}</div>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s4}</div>
-<div style="font-size:8pt;white-space:pre-line">${ackText}</div>
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s4}</div>
+<div style="font-size:${Z.body};white-space:pre-line">${one(ackText)}</div>
 
-<p style="font-size:7.5pt;color:#666;margin-top:10px;font-style:italic">${disclaimer}</p>
+<p style="font-size:7pt;color:#666;margin-top:6px;font-style:italic">${disclaimer}</p>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:8px;font-size:${Z.base}">
   <b>${sigHeader}</b>
-  <table style="width:100%;margin-top:6px">
-    <tr><td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
+  <table style="width:100%;margin-top:4px">
+    <tr><td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
     <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
@@ -6822,21 +6963,25 @@ function _buildCheckTpAuthForm(lang) {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:14px">
-  <div style="font-size:12pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">${subtitle}</div>
+  // 版式收紧保证一页：双语段落间不再空行；中英/英西双语文本较长用更小一档
+  const one = t => String(t).replace(/\n{2,}/g, '\n');
+  const Z = (es || zh) ? { base: '7.8pt', lh: '1.15', pad: '5px 12px', intro: '7.2pt', tbl: '7.4pt', body: '7pt', sig: '30px', date: '17px' }
+             : { base: '8.5pt', lh: '1.3', pad: '10px 12px', intro: '8pt', tbl: '8pt', body: '7.6pt', sig: '38px', date: '20px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
+  <div style="font-size:11.5pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
+  <div style="font-size:8pt;color:#555;margin-top:2px">${subtitle}</div>
 </div>
 
-<p style="font-size:8.5pt;white-space:pre-line">${intro}</p>
+<p style="font-size:${Z.intro};white-space:pre-line;margin:0 0 6px">${one(intro)}</p>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
   <tr><td style="${c}width:100%"><b>${lAuthName}</b><br><text-field name="authorizing_person_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s2}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:8px">
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s2}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
   <tr>
     <td style="${c}width:50%"><b>${lYourName}</b><br><text-field name="tp_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
     <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" required="true" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
@@ -6844,50 +6989,50 @@ function _buildCheckTpAuthForm(lang) {
 </table>
 <div style="font-size:7pt;color:#c00;margin-top:3px">${L('Please verify this information is correct before signing. Payments sent to this account will be treated as valid payment.','请在签署前确认所填信息准确无误。按该信息付款后将视为已有效完成付款。','Verifique que esta información sea correcta antes de firmar. Los pagos enviados a esta cuenta se considerarán como pago válido.')}</div>
 
-<div style="font-weight:700;margin:12px 0 5px;font-size:9.5pt">${s3}</div>
-<div style="font-size:8pt;margin-bottom:6px">${pickupNote}</div>
-<div style="border:1px solid #ccc;border-radius:4px;padding:8px 10px;background:#fafafa;margin-bottom:8px">
-  <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s3}</div>
+<div style="font-size:${Z.body};margin-bottom:4px">${pickupNote}</div>
+<div style="border:1px solid #ccc;border-radius:4px;padding:6px 8px;background:#fafafa;margin-bottom:6px">
+  <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer">
     <checkbox-field name="ck_pickup_worker" role="First Party" style="width:14px;height:14px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:8.5pt">${pickupWorker}</span>
+    <span style="font-size:${Z.tbl}">${pickupWorker}</span>
   </label>
   <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
     <checkbox-field name="ck_pickup_third_party" role="First Party" style="width:14px;height:14px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:8.5pt">${pickupTP}</span>
+    <span style="font-size:${Z.tbl}">${pickupTP}</span>
   </label>
 </div>
 
-<div style="font-weight:700;margin:10px 0 5px;font-size:9.5pt">${s4}</div>
-<div style="font-size:8pt;white-space:pre-line">${certText}</div>
+<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s4}</div>
+<div style="font-size:${Z.body};white-space:pre-line">${one(certText)}</div>
 
-<p style="font-size:7.5pt;color:#666;margin-top:10px;font-style:italic">${disclaimer}</p>
+<p style="font-size:7pt;color:#666;margin-top:6px;font-style:italic">${disclaimer}</p>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:8px;margin-top:14px;font-size:8.5pt">
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:8px;font-size:${Z.base}">
   <b>${sigHeader}</b>
-  <table style="width:100%;margin-top:6px">
-    <tr><td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
+  <table style="width:100%;margin-top:4px">
+    <tr><td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
     <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:52px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:24px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
 
 <!-- Receipt Confirmation (orange) -->
-<div style="border-radius:8px;overflow:hidden;margin-top:14px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <div style="background:#c2410c;padding:10px 14px">
+<div style="border-radius:8px;overflow:hidden;margin-top:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <div style="background:#c2410c;padding:6px 10px">
     <div style="font-weight:800;font-size:9.5pt;color:#fff;letter-spacing:.3px">${receiptHeader}</div>
     <div style="font-size:7.5pt;color:#fed7aa;margin-top:2px">${receiptNote}</div>
   </div>
-  <div style="background:#fff7ed;padding:12px 14px;border:1.5px solid #fdba74;border-top:none;border-radius:0 0 8px 8px">
-    <table style="width:100%;font-size:8.5pt">
-      <tr><td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lReceivedBy}:</div><text-field name="ck_received_by" role="Contractor" required="true" style="${w}"></text-field></td></tr>
+  <div style="background:#fff7ed;padding:8px 10px;border:1.5px solid #fdba74;border-top:none;border-radius:0 0 8px 8px">
+    <table style="width:100%;font-size:${Z.tbl}">
+      <tr><td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lReceivedBy}:</div><text-field name="ck_received_by" role="Contractor" required="true" style="${w}"></text-field></td></tr>
       <tr>
-        <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="ck_receipt_sig" role="Contractor" style="width:100%;height:52px;display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></signature-field></td>
-        <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="ck_receipt_date" role="Contractor" style="width:100%;height:24px;display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></date-field></td>
+        <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="ck_receipt_sig" role="Contractor" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></signature-field></td>
+        <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="ck_receipt_date" role="Contractor" style="width:100%;height:${Z.date};display:block;border:1.5px solid #fdba74;border-radius:4px;background:#fff"></date-field></td>
       </tr>
     </table>
-    <label style="display:flex;align-items:flex-start;gap:6px;background:#ffedd5;border-radius:4px;padding:5px 7px;margin-top:8px">
+    <label style="display:flex;align-items:flex-start;gap:6px;background:#ffedd5;border-radius:4px;padding:4px 6px;margin-top:6px">
       <checkbox-field name="ck_receipt_confirm" role="Contractor" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
       <span style="font-size:7pt;color:#c2410c;line-height:1.4">${lConfirmReceipt}</span>
     </label>
@@ -6975,18 +7120,17 @@ function _buildCashReceiptForm(lang) {
                            + '<br><span style="color:#065f46">Confirmo que estoy autorizando al tercero indicado a recibir este pago en efectivo en mi nombre y acepto la responsabilidad por la recepción.</span>'
                      :      'I confirm I am authorizing the above-named third party to receive this cash payment on my behalf and I accept responsibility for the receipt.';
 
-  const sNotice      = zh ? '<b>NOTICE 注意:</b> The recipient or authorized third party must sign in the applicable zone above. The company representative signs below to verify. This authorization is for record-keeping and tax documentation purposes only. 收款人或授权第三方须在上方适用区域签名。公司代表在下方签字核实。本授权仅用于留档及税务记录。'
-                     : es ? '<b>NOTICE / AVISO:</b> The recipient or authorized third party must sign in the applicable zone above. The company representative signs below to verify. This authorization is for record-keeping and tax documentation purposes only. El destinatario o tercero autorizado debe firmar en la zona aplicable. El representante de la empresa firma abajo para verificar. Esta autorización es solo para fines de registro y documentación fiscal.'
-                     :      '<b>NOTICE:</b> The recipient or authorized third party must sign in the applicable zone above. The company representative signs below to verify. This authorization is for record-keeping and tax documentation purposes only.';
+  // The trailing COMPANY VERIFICATION block was removed (2026-07) so every variant of this
+  // form prints on a single page, matching the other payment-authorization forms; the send
+  // flow only adds a Second Party submitter when the template actually has that role.
+  const sNotice      = zh ? '<b>NOTICE 注意:</b> The recipient or authorized third party must sign in the applicable zone above. This authorization is for record-keeping and tax documentation purposes only. 收款人或授权第三方须在上方适用区域签名。本授权仅用于留档及税务记录。'
+                     : es ? '<b>NOTICE / AVISO:</b> The recipient or authorized third party must sign in the applicable zone above. This authorization is for record-keeping and tax documentation purposes only. El destinatario o tercero autorizado debe firmar en la zona aplicable. Esta autorización es solo para fines de registro y documentación fiscal.'
+                     :      '<b>NOTICE:</b> The recipient or authorized third party must sign in the applicable zone above. This authorization is for record-keeping and tax documentation purposes only.';
 
-  const sCompVerify  = zh ? `COMPANY VERIFICATION 公司核实 — ${companyName}`
-                     : es ? `COMPANY VERIFICATION / Verificación de la Empresa — ${companyName}`
-                     :      `COMPANY VERIFICATION — ${companyName}`;
-  const sVerifiedBy  = zh ? 'Verified and confirmed by 核实确认人:' : es ? 'Verified and confirmed by / Verificado y confirmado por:' : 'Verified and confirmed by:';
   const sPrintedLbl  = zh ? 'Printed Name 正楷姓名:' : es ? 'Printed Name / Nombre en Letra de Molde:' : 'Printed Name:';
   const sSigLbl      = zh ? 'Signature 签名:' : es ? 'Signature / Firma:' : 'Signature:';
   const sDateLbl     = zh ? 'Date 日期:' : es ? 'Date / Fecha:' : 'Date:';
-  const sPrintedLbl2 = zh ? 'Printed Name 正楷姓名:' : es ? 'Printed Name / Nombre en Letra de Molde:' : 'Printed Name:';
+  const sPrintedLbl2 = sPrintedLbl;
 
   const sFooter      = zh ? `${companyName} — Cash Payment Authorization / 现金收款授权表 — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认付款方式，不改变任何税务申报义务或承包关系性质。`
                      : es ? `${companyName} — Cash Payment Authorization / Autorización de Pago en Efectivo — This authorization is for payment method confirmation only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para confirmar el método de pago y no altera ninguna obligación fiscal ni el estado de contratista independiente.`
@@ -7070,23 +7214,8 @@ function _buildCashReceiptForm(lang) {
   ${sNotice}
 </div>
 
-<div style="border-radius:8px;overflow:hidden;margin-top:6px;box-shadow:0 1px 3px rgba(0,0,0,.10)">
-  <div style="background:#92400e;padding:8px 14px">
-    <div style="font-size:8pt;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:.5px">${sCompVerify}</div>
-    <div style="font-size:7pt;color:#fde68a;margin-top:1px">${sVerifiedBy}</div>
-  </div>
-  <div style="background:#fffbeb;padding:10px 14px;border:1.5px solid #fcd34d;border-top:none;border-radius:0 0 8px 8px">
-    <div style="font-size:7pt;color:#92400e;margin-bottom:2px">${sPrintedLbl}</div>
-    <text-field name="cash_printed2" role="Second Party" required="true" style="${w}margin-bottom:4px"></text-field>
-    <div style="font-size:7pt;color:#92400e;margin:6px 0 2px">${sSigLbl}</div>
-    <signature-field name="cash_sig2" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff"></signature-field>
-    <div style="font-size:7pt;color:#92400e;margin:6px 0 2px">${sDateLbl}</div>
-    <date-field name="cash_date2" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff"></date-field>
-  </div>
-</div>
-
 <div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:8px">${sFooter}</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-04-18 CDT</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: 2026-07-17 CDT</div>
 </div>`;
 }
 
@@ -7341,6 +7470,48 @@ async function cleanupZelleAuthRepTemplates() {
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
     if (removed || generated) console.log(`[startup] Zelle auth-rep cleanup: removed ${removed} combined template(s), generated ${generated} self-receive template(s)`);
   } catch (e) { console.warn('[startup] Zelle auth-rep cleanup failed:', e.message); }
+}
+
+// One-time rebuild: the cash payment authorization / receipt forms dropped the trailing
+// COMPANY VERIFICATION block so every variant prints on a single page, matching the other
+// payment-authorization forms in the series. Force-regenerate the six cash templates in
+// DocuSeal — including confirmed ones, which autoRegenerateTemplatesForCompanyName skips —
+// carrying each slot's confirmed flag over to the rebuilt template.
+async function rebuildCashFormsOnePage() {
+  try {
+    if (!dsealEnabled()) return; // retry next startup once DocuSeal is configured
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    if (!row) return;
+    const cfg = JSON.parse(row.config || '{}');
+    if (cfg._cash_form_one_page_v1) return;
+    const types = ['cash_tp_auth', 'cash_tp_auth_en', 'cash_tp_auth_es', 'cash_receipt', 'cash_receipt_en', 'cash_receipt_es'];
+    let rebuilt = 0;
+    for (const type of types) {
+      const def = DOCUSEAL_AUTO_TEMPLATES[type];
+      if (!def) continue;
+      try {
+        const html = def.generator();
+        const hash = crypto.createHash('md5').update(html).digest('hex');
+        const r = await dsealApiCall('POST', '/api/templates/html', { name: def.name, documents: [{ name: def.name, html, size: 'Letter' }] });
+        if (r.status >= 400) { console.warn(`[startup] cash one-page rebuild ${type}: DocuSeal ${r.status}`); continue; }
+        const dsId = r.data?.id || r.data?.template_id;
+        if (!dsId) continue;
+        const oldId = cfg[def.configKey];
+        const oldRow = oldId ? db.prepare('SELECT confirmed FROM docuseal_templates WHERE docuseal_template_id=?').get(oldId) : null;
+        if (oldId && String(oldId) !== String(dsId)) {
+          await dsealApiCall('DELETE', `/api/templates/${oldId}`).catch(() => {});
+          db.prepare('DELETE FROM docuseal_templates WHERE docuseal_template_id=?').run(oldId);
+        }
+        db.prepare('INSERT OR REPLACE INTO docuseal_templates (name, docuseal_template_id, category, content_hash, confirmed) VALUES (?,?,?,?,?)')
+          .run(def.name, String(dsId), def.category, hash, oldRow?.confirmed ? 1 : 0);
+        cfg[def.configKey] = String(dsId);
+        rebuilt++;
+      } catch (e) { console.warn(`[startup] cash one-page rebuild ${type} failed:`, e.message); }
+    }
+    cfg._cash_form_one_page_v1 = true;
+    db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+    if (rebuilt) console.log(`[startup] Cash forms rebuilt as one-pagers: ${rebuilt} template(s)`);
+  } catch (e) { console.warn('[startup] Cash one-page rebuild failed:', e.message); }
 }
 
 // One-time rename: the PayPal/Venmo/CashApp self-receive form was named "Third-Party Payment
@@ -8005,6 +8176,16 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
     const hash = hashPassword(defaultPass, salt);
     db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)').run(defaultUser, hash, salt, 'admin', 'Administrator');
     console.log(`[Auth] Seeded default admin user: ${defaultUser} / ${defaultPass}`);
+  }
+  // 固定运营账号 abby（表格二维码入口页使用），操作以 actor=abby 与其他账号区分
+  {
+    const abby = db.prepare("SELECT id FROM admin_users WHERE username='abby'").get();
+    if (!abby) {
+      const abbySalt = crypto.randomBytes(16).toString('hex');
+      db.prepare("INSERT INTO admin_users (username, password_hash, salt, role, display_name, active) VALUES ('abby', ?, ?, 'staff', 'Abby', 1)")
+        .run(hashPassword('abby123', abbySalt), abbySalt);
+      console.log('[Auth] Seeded portal user: abby');
+    }
   }
   // Ensure the first user (original seeded admin) has admin role
   try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
@@ -12063,7 +12244,13 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
         const companySignerName = getCompanySignerName();
         const submitters = [submitter1];
         if (companyEmail) {
-          submitters.push({ role: 'Second Party', name: companySignerName, email: companyEmail });
+          // 模板里确实有 Second Party 角色才追加公司签署人（公司核验区已从 ACH 模板移除）
+          let hasSecondParty = false;
+          try {
+            const tr = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
+            hasSecondParty = Array.isArray(tr.data?.submitters) && tr.data.submitters.some(s => s && s.name === 'Second Party');
+          } catch {}
+          if (hasSecondParty) submitters.push({ role: 'Second Party', name: companySignerName, email: companyEmail });
         }
         const subRes = await dsealApiCall('POST', '/api/submissions', {
           template_id: parseInt(templateId),
@@ -14649,6 +14836,40 @@ app.post('/api/admin/partners/:id/applicant-qr/regenerate', requireAdmin, blockM
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// PUBLIC: printed-QR short link → 302 to the stored same-origin path.
+app.get('/s/:code', (req, res) => {
+  const code = String(req.params.code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const row = code ? db.prepare('SELECT target FROM short_links WHERE code=?').get(code) : null;
+  if (!row) return res.status(404).send('Link not found');
+  res.redirect(row.target);
+});
+
+// 表格二维码入口页：扫码 → 登录管理账号 → 查看/发送该 DocuSeal 表格
+app.get('/form-portal', (req, res) => res.sendFile(path.join(__dirname, 'public', 'form-portal.html')));
+
+// Get-or-create a short code for a same-origin path (only paths are accepted,
+// so the redirect can never leave this site).
+app.post('/api/admin/short-link', requireAdmin, blockManager, (req, res) => {
+  try {
+    let target = String((req.body && req.body.target) || '').trim();
+    if (!target.startsWith('/') || target.startsWith('//') || target.length > 500) {
+      return res.status(400).json({ error: 'target must be a same-origin path' });
+    }
+    const existing = db.prepare('SELECT code FROM short_links WHERE target=?').get(target);
+    if (existing) return res.json({ success: true, code: existing.code });
+    let code = '';
+    for (let i = 0; i < 20; i++) {
+      code = crypto.randomBytes(5).toString('hex').slice(0, 6);
+      const clash = db.prepare('SELECT code FROM short_links WHERE code=?').get(code);
+      if (!clash) break;
+      code = '';
+    }
+    if (!code) return res.status(500).json({ error: 'could not allocate code' });
+    db.prepare('INSERT INTO short_links (code, target) VALUES (?,?)').run(code, target);
+    res.json({ success: true, code });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // PUBLIC: short URL that serves the mobile applicant form.
 app.get('/apply/:token', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'apply.html'));
@@ -14813,9 +15034,23 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
       }
     }
     res.json({ success: true, id: subId });
+    // 电话重复检测：同一号码在别的申请或员工档案里出现过 → 通知邮件升级为
+    // ⚠️ 提醒（标题标红、正文列出重复的人和电话）。
+    let dup = null;
+    try {
+      const norm = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+      const digits = norm(phone);
+      if (digits.length >= 7) {
+        const dupSubs = db.prepare('SELECT id, name, partner_name, phone, created_at FROM applicant_submissions WHERE id != ?').all(subId)
+          .filter(x => norm(x.phone) === digits).slice(0, 10);
+        const dupEmps = db.prepare('SELECT id, employee_id, first_name, last_name, phone FROM employees').all()
+          .filter(x => norm(x.phone) === digits).slice(0, 10);
+        if (dupSubs.length || dupEmps.length) dup = { dupSubs, dupEmps };
+      }
+    } catch (e) { console.error('[apply-dup] check failed:', e.message); }
     // Fire-and-forget: notify the company inbox with all applicant details + photo attachments.
     const address = { address1, address2, city, state, zip, verified: addressVerified };
-    notifyNewApplication({ subId, partner: p, name, position, phone, email, address, applyState, docMeta })
+    notifyNewApplication({ subId, partner: p, name, position, phone, email, address, applyState, docMeta, dup })
       .catch(e => console.error('[apply-notify] failed:', e.message));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -14870,7 +15105,10 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
 // Send the company a notification email for a new applicant submission.
 // Includes all form fields + attaches the uploaded SSN/EAD photos.
 const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@primeanchorpoint.com';
-async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta }) {
+// 每封新申请通知额外发送一份给以下收件人（逗号分隔可配多个）
+const APPLICATION_NOTIFY_CC = (process.env.APPLICATION_NOTIFY_CC || 'boyingwong02@gmail.com')
+  .split(',').map(s => s.trim()).filter(Boolean);
+async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta, dup }) {
   const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
   const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
   // Read each uploaded photo back from storage to attach.
@@ -14898,6 +15136,15 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     ['提交时间 / Submitted', when + ' (PT)'],
     ['已上传证件 / Documents', docMeta.map(d => docLabels[d.docType] || d.docType).join('、') || '无'],
   ];
+  // 电话重复：把重复的人（含电话）列出来，一眼看到和谁撞号
+  const hasDup = dup && ((dup.dupSubs || []).length || (dup.dupEmps || []).length);
+  if (hasDup) {
+    const parts = [
+      ...(dup.dupSubs || []).map(x => `申请 #${x.id} ${x.name}（${x.partner_name || ''}，${String(x.created_at || '').slice(0, 10)}）· ${x.phone}`),
+      ...(dup.dupEmps || []).map(x => `员工 ${[x.first_name, x.last_name].filter(Boolean).join(' ')}${x.employee_id ? '（' + x.employee_id + '）' : ''} · ${x.phone}`),
+    ];
+    rows.splice(4, 0, ['⚠️ 电话重复 / Duplicate Phone', parts.join('；')]);
+  }
   const text = '新入职申请 / New Application\n\n' + rows.map(([k, v]) => `${k}: ${v}`).join('\n')
     + `\n\n证件照片见附件。也可在管理后台「申请箱」查看。\nDocument photos are attached. You can also view them in the admin “Applicant Inbox”.`;
   const html = `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:560px">
@@ -14907,11 +15154,14 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     </table>
     <p style="color:#64748b;font-size:13px;margin-top:1rem">证件照片见附件。也可在管理后台「申请箱」查看。<br>Document photos are attached. You can also view them in the admin “Applicant Inbox”.</p>
   </div>`;
-  const subject = `新入职申请 / New Application — ${name}（${partner.name || ''}）`;
-  const sent = files.length
-    ? await sendEmailWithFiles(APPLICATION_NOTIFY_EMAIL, subject, text, html, files)
-    : await sendEmail(APPLICATION_NOTIFY_EMAIL, subject, text, html);
-  console.log(`[apply-notify] submission #${subId} → ${APPLICATION_NOTIFY_EMAIL}: ${sent ? 'sent' : 'FAILED'} (${files.length} attachments)`);
+  const subject = `${hasDup ? '⚠️ 电话重复 · ' : ''}新入职申请 / New Application — ${name}（${partner.name || ''}）`;
+  const recipients = [...new Set([APPLICATION_NOTIFY_EMAIL, ...APPLICATION_NOTIFY_CC])];
+  for (const to of recipients) {
+    const sent = files.length
+      ? await sendEmailWithFiles(to, subject, text, html, files)
+      : await sendEmail(to, subject, text, html);
+    console.log(`[apply-notify] submission #${subId} → ${to}: ${sent ? 'sent' : 'FAILED'} (${files.length} attachments)`);
+  }
 }
 
 // ADMIN: list applicant submissions (optionally filtered by company).
@@ -15272,6 +15522,15 @@ app.get('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
   res.json(rows);
 });
 
+// 标签打印完成后标记这些公司为「已打印」（记录时间，前端显示已打印徽标）
+app.post('/api/admin/partners/labels-printed', requireAdmin, blockManager, (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(n => parseInt(n, 10)).filter(Number.isFinite) : [];
+  if (!ids.length) return res.status(400).json({ error: 'ids required' });
+  const stmt = db.prepare("UPDATE partners SET label_printed_at=datetime('now','localtime') WHERE id=?");
+  for (const id of ids) stmt.run(id);
+  res.json({ success: true, count: ids.length });
+});
+
 app.post('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.name) return res.status(400).json({ error: 'Name required' });
@@ -15296,6 +15555,10 @@ app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('updat
     .run(d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
       d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
       d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', req.params.id);
+  // 公司改名时同步付款记录里的名字快照，避免按月/按周汇总同一公司拆成两行
+  try {
+    db.prepare('UPDATE company_worker_payments SET partner_name=? WHERE partner_id=?').run(d.name, req.params.id);
+  } catch (e) {}
   res.json({ success: true });
 });
 
@@ -15350,7 +15613,37 @@ const CONTAINER_SUBMIT_PASSWORD = String(process.env.CONTAINER_SUBMIT_PASSWORD |
 // Look up a partner by their public submit token. Returns null if not found.
 function _partnerByCsubToken(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null;
-  return db.prepare('SELECT id, name FROM partners WHERE container_submit_token=? AND active=1').get(token);
+  // COALESCE：老数据 active 为 NULL 时视为启用，避免误判「链接失效」
+  return db.prepare('SELECT id, name FROM partners WHERE container_submit_token=? AND COALESCE(active,1)=1').get(token);
+}
+
+// Distinct per-state warehouse addresses of a partner (addresses JSON, falling
+// back to the legacy single address field). The weekly sheet uses this to ask
+// which location the sheet is for when a company has more than one.
+function _partnerSites(partnerId) {
+  const row = db.prepare('SELECT address, addresses FROM partners WHERE id=?').get(partnerId);
+  if (!row) return [];
+  const stFrom = s => { const m = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return m ? m[1] : ''; };
+  const out = [], seen = new Set();
+  const push = (state, address) => {
+    address = String(address || '').trim().slice(0, 120);
+    state = String(state || '').trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(state)) state = stFrom(address);
+    if (!address && !state) return;
+    const key = state || address.toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ state, address });
+  };
+  try {
+    const arr = JSON.parse(row.addresses || '[]');
+    if (Array.isArray(arr)) for (const a of arr) {
+      if (typeof a === 'string') push('', a);
+      else if (a && typeof a === 'object') push(a.state, a.address);
+    }
+  } catch (e) {}
+  if (!out.length && row.address) push('', row.address);
+  return out;
 }
 
 // GET /api/admin/partners/:id/container-qr — get or lazily create the public token and QR
@@ -15401,11 +15694,296 @@ app.get(['/container-week', '/container-week.html'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'container-week.html'));
 });
 
+// GET /cw-check/:token — 排查工具：显示"这台服务器实例 + 它的数据库"是否认得
+// 这把钥匙。二维码扫出来提示失效但后台明明刚生成时，在手机和电脑上各打开
+// 一次本页对比 实例ID/数据库路径/结果，即可分辨是否两边访问到了不同的
+// 部署或不同的数据库。只读、不泄露密钥本身以外的敏感信息。
+const _BOOT_ID = require('crypto').randomBytes(4).toString('hex');
+const _BOOT_AT = new Date().toISOString();
+app.get('/cw-check/:token', (req, res) => {
+  let found = null, partnerCount = -1, err = '';
+  try {
+    found = _partnerByCsubToken(String(req.params.token || ''));
+    partnerCount = db.prepare('SELECT COUNT(*) AS n FROM partners').get().n;
+  } catch (e) { err = e.message; }
+  const row = (k, v) => `<tr><td style="padding:6px 10px;color:#64748b;white-space:nowrap">${k}</td><td style="padding:6px 10px;font-family:monospace;word-break:break-all">${v}</td></tr>`;
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>钥匙自检</title></head>
+  <body style="font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;background:#f8fafc;padding:20px">
+    <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px">
+      <h2 style="margin:0 0 10px;font-size:1.1rem">🔍 周柜钥匙自检</h2>
+      <div style="font-size:2rem;margin:.3rem 0">${found ? '✅' : '❌'}</div>
+      <div style="font-weight:700;margin-bottom:12px">${found ? `这台服务器认得这把钥匙：${found.name}` : (err ? '服务器查询出错：' + err : '这台服务器的数据库里没有这把钥匙（或公司已停用）')}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;background:#f8fafc;border-radius:8px">
+        ${row('访问域名', req.headers['x-forwarded-host'] || req.headers.host || '?')}
+        ${row('服务器实例', _BOOT_ID + ' · 启动于 ' + _BOOT_AT.slice(0, 16).replace('T', ' ') + ' UTC')}
+        ${row('数据库位置', path.resolve(dataDir))}
+        ${row('公司总数', String(partnerCount))}
+        ${row('钥匙前 8 位', String(req.params.token || '').slice(0, 8) + '…')}
+      </table>
+      <div style="font-size:.78rem;color:#94a3b8;margin-top:12px">用法：把出问题的二维码链接里 /cw/ 改成 /cw-check/，分别在电脑和手机上打开。两边"服务器实例"或"结果"不一致 = 两台设备访问到了不同的部署/数据库。</div>
+    </div>
+  </body></html>`);
+});
+
+// ════════ 个人银行账单 (Beryl Zhang)：独立密码页，上传个人账单 PDF + 框选标注收支 ════════
+// 与公司银行账单完全分表隔离：不进公司页面、不进收支分类、不被 pallet 镜像同步。
+// 页面 /personal-bank，密码经 PERSONAL_BANK_PASSWORD 配置（默认 649671），
+// 每个请求都带密码校验（与周柜提交页同一信任模型）。
+const PERSONAL_BANK_PASSWORD = process.env.PERSONAL_BANK_PASSWORD || '649671';
+db.exec(`CREATE TABLE IF NOT EXISTS personal_bank_statements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner TEXT DEFAULT 'Beryl Zhang',
+  bank TEXT DEFAULT '',
+  period_start TEXT DEFAULT '',
+  period_end TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS personal_bank_txns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  statement_id INTEGER NOT NULL,
+  page INTEGER DEFAULT 1,
+  box_x REAL DEFAULT 0,
+  box_y REAL DEFAULT 0,
+  box_w REAL DEFAULT 0,
+  box_h REAL DEFAULT 0,
+  txn_date TEXT DEFAULT '',
+  amount REAL DEFAULT 0,
+  direction TEXT DEFAULT 'out',
+  payee TEXT DEFAULT '',
+  category TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_pbtxn_stmt ON personal_bank_txns(statement_id)`); } catch (e) {}
+// 每笔标注可挂照片证据（图片/PDF，存 uploads，JSON key 数组）
+try {
+  const pbCols = db.prepare("PRAGMA table_info(personal_bank_txns)").all().map(c => c.name);
+  if (!pbCols.includes('photos')) db.exec("ALTER TABLE personal_bank_txns ADD COLUMN photos TEXT DEFAULT '[]'");
+} catch (e) {}
+// 标注日期必须落在账单起止日期内（起止没填的那头不限制）
+function pbDateInPeriod(stmt, d) {
+  if (!d || !stmt) return true;
+  if (stmt.period_start && d < stmt.period_start) return false;
+  if (stmt.period_end && d > stmt.period_end) return false;
+  return true;
+}
+function pbBoxOut(bx) {
+  let p = []; try { p = JSON.parse(bx.photos || '[]'); } catch { p = []; }
+  bx.photos_urls = (Array.isArray(p) ? p : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+  delete bx.photos;
+  return bx;
+}
+
+function _pbPwOk(got) {
+  const a = Buffer.from(String(got || '')), b = Buffer.from(PERSONAL_BANK_PASSWORD);
+  return a.length === b.length && require('crypto').timingSafeEqual(a, b);
+}
+function requirePbPw(req, res, next) {
+  const got = req.headers['x-pb-pw'] || req.query.pw || (req.body && req.body.pw) || '';
+  if (!_pbPwOk(got)) return res.status(401).json({ error: '密码错误' });
+  next();
+}
+const pbStmtUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /pdf$/i.test(file.mimetype) || /\.pdf$/i.test(file.originalname || '')),
+});
+
+app.get('/personal-bank', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'personal-bank.html'));
+});
+app.post('/pb/verify', (req, res) => {
+  res.json({ ok: _pbPwOk((req.body && req.body.pw) || '') });
+});
+// List statements with their annotations (page computes totals client-side)
+app.get('/pb/statements', requirePbPw, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, owner, bank, period_start, period_end, file_name, file_path, notes, created_at
+      FROM personal_bank_statements ORDER BY period_start DESC, id DESC`).all();
+    const boxStmt = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note, photos
+      FROM personal_bank_txns WHERE statement_id=? ORDER BY page ASC, box_y ASC, id ASC`);
+    for (const r of rows) { r.has_file = !!r.file_path; delete r.file_path; r.boxes = boxStmt.all(r.id).map(pbBoxOut); }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Upload a personal statement PDF
+app.post('/pb/statements', pbStmtUpload.single('file'), requirePbPw, async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 PDF 文件' });
+    const fname = `pbstmt-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+    const key = `uploads/${fname}`;
+    try { await storage.putObject(key, req.file.buffer, { contentType: 'application/pdf' }); }
+    catch (e) { return res.status(500).json({ error: '保存文件失败：' + (e.message || e) }); }
+    const b = req.body || {};
+    const bank = String(b.bank || '').slice(0, 40);
+    const ps = String(b.period_start || '').slice(0, 10), pe = String(b.period_end || '').slice(0, 10);
+    const fileName = ([('BerylZhang'), bank.replace(/\s+/g, ''), ps && pe ? ps + '_' + pe : (ps || pe)].filter(Boolean).join('_') || 'statement')
+      .replace(/[\/\\:*?"<>|]+/g, '-').slice(0, 180) + '.pdf';
+    const ins = db.prepare(`INSERT INTO personal_bank_statements (owner, bank, period_start, period_end, file_path, file_name)
+      VALUES ('Beryl Zhang', ?, ?, ?, ?, ?)`).run(bank, ps, pe, key, fileName);
+    res.json({ success: true, id: ins.lastInsertRowid, file_name: fileName });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/pb/statements/:id/file', requirePbPw, async (req, res) => {
+  try {
+    const s = db.prepare('SELECT file_path FROM personal_bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s || !s.file_path) return res.status(404).json({ error: 'not found' });
+    const buf = await storage.getBuffer(storage.keyFrom(s.file_path, 'uploads'));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.send(buf);
+  } catch (e) { res.status(404).json({ error: 'File not found' }); }
+});
+app.put('/pb/statements/:id/meta', requirePbPw, (req, res) => {
+  try {
+    const s = db.prepare('SELECT id FROM personal_bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    db.prepare('UPDATE personal_bank_statements SET bank=?, period_start=?, period_end=? WHERE id=?')
+      .run(String(b.bank || '').slice(0, 40), String(b.period_start || '').slice(0, 10), String(b.period_end || '').slice(0, 10), s.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/pb/statements/:id', requirePbPw, (req, res) => {
+  try {
+    const s = db.prepare('SELECT * FROM personal_bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s) return res.status(404).json({ error: 'not found' });
+    if (s.file_path) storage.deleteObject(storage.keyFrom(s.file_path, 'uploads')).catch(() => {});
+    db.prepare('DELETE FROM personal_bank_txns WHERE statement_id=?').run(s.id);
+    db.prepare('DELETE FROM personal_bank_statements WHERE id=?').run(s.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Boxes CRUD
+app.get('/pb/statements/:id/boxes', requirePbPw, (req, res) => {
+  try {
+    res.json(db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note, photos
+      FROM personal_bank_txns WHERE statement_id=? ORDER BY page ASC, box_y ASC, id ASC`).all(parseInt(req.params.id)).map(pbBoxOut));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/pb/statements/:id/boxes', requirePbPw, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id);
+    const stmt0 = db.prepare('SELECT id, period_start, period_end FROM personal_bank_statements WHERE id=?').get(sid);
+    if (!stmt0) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    if (b.txn_date && !pbDateInPeriod(stmt0, String(b.txn_date).slice(0, 10))) {
+      return res.status(400).json({ error: `日期必须在账单周期内（${stmt0.period_start || '?'} ~ ${stmt0.period_end || '?'}）` });
+    }
+    const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
+    const ins = db.prepare(`INSERT INTO personal_bank_txns (statement_id, page, box_x, box_y, box_w, box_h, txn_date, amount, direction, payee, category, note)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        sid, Math.max(1, parseInt(b.page) || 1),
+        clamp01(b.box_x), clamp01(b.box_y), clamp01(b.box_w), clamp01(b.box_h),
+        String(b.txn_date || '').slice(0, 40), parseFloat(b.amount) || 0,
+        b.direction === 'in' ? 'in' : 'out',
+        String(b.payee || '').slice(0, 120), String(b.category || '').slice(0, 60), String(b.note || '').slice(0, 200));
+    res.json({ success: true, id: ins.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/pb/statements/:id/boxes/:boxId', requirePbPw, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id), bid = parseInt(req.params.boxId);
+    const row = db.prepare('SELECT * FROM personal_bank_txns WHERE id=? AND statement_id=?').get(bid, sid);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {};
+    const has = k => Object.prototype.hasOwnProperty.call(b, k);
+    if (has('txn_date') && b.txn_date) {
+      const stmt0 = db.prepare('SELECT period_start, period_end FROM personal_bank_statements WHERE id=?').get(sid);
+      if (!pbDateInPeriod(stmt0, String(b.txn_date).slice(0, 10))) {
+        return res.status(400).json({ error: `日期必须在账单周期内（${(stmt0 && stmt0.period_start) || '?'} ~ ${(stmt0 && stmt0.period_end) || '?'}）` });
+      }
+    }
+    const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
+    db.prepare(`UPDATE personal_bank_txns SET page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, direction=?, payee=?, category=?, note=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND statement_id=?`).run(
+        has('page') ? Math.max(1, parseInt(b.page) || 1) : row.page,
+        has('box_x') ? clamp01(b.box_x) : row.box_x,
+        has('box_y') ? clamp01(b.box_y) : row.box_y,
+        has('box_w') ? clamp01(b.box_w) : row.box_w,
+        has('box_h') ? clamp01(b.box_h) : row.box_h,
+        has('txn_date') ? String(b.txn_date || '').slice(0, 40) : row.txn_date,
+        has('amount') ? (parseFloat(b.amount) || 0) : row.amount,
+        has('direction') ? (b.direction === 'in' ? 'in' : 'out') : row.direction,
+        has('payee') ? String(b.payee || '').slice(0, 120) : row.payee,
+        has('category') ? String(b.category || '').slice(0, 60) : row.category,
+        has('note') ? String(b.note || '').slice(0, 200) : row.note,
+        bid, sid);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/pb/statements/:id/boxes/:boxId', requirePbPw, (req, res) => {
+  try {
+    db.prepare('DELETE FROM personal_bank_txns WHERE id=? AND statement_id=?').run(parseInt(req.params.boxId), parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 给一笔标注上传照片证据（图片/PDF，可多张，拖拽或点选）
+app.post('/pb/statements/:id/boxes/:boxId/photos', containerSubmitPhotoUpload.array('photos', 12), requirePbPw, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id), bid = parseInt(req.params.boxId);
+    const row = db.prepare('SELECT photos FROM personal_bank_txns WHERE id=? AND statement_id=?').get(bid, sid);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let keys = []; try { keys = JSON.parse(row.photos || '[]'); } catch { keys = []; }
+    if (!Array.isArray(keys)) keys = [];
+    (req.files || []).forEach(f => { const k = f.key || f.path; if (k) keys.push(k); });
+    keys = keys.slice(0, 24);
+    db.prepare('UPDATE personal_bank_txns SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND statement_id=?')
+      .run(JSON.stringify(keys), bid, sid);
+    res.json({ success: true, photos_urls: keys.map(k => `/uploads/${path.basename(k)}`) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 删除一笔标注上的某张照片
+app.delete('/pb/statements/:id/boxes/:boxId/photos', requirePbPw, (req, res) => {
+  try {
+    const sid = parseInt(req.params.id), bid = parseInt(req.params.boxId);
+    const target = path.basename(String((req.body && req.body.photo) || req.query.photo || ''));
+    if (!target) return res.status(400).json({ error: 'missing photo' });
+    const row = db.prepare('SELECT photos FROM personal_bank_txns WHERE id=? AND statement_id=?').get(bid, sid);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let keys = []; try { keys = JSON.parse(row.photos || '[]'); } catch { keys = []; }
+    const kept = (Array.isArray(keys) ? keys : []).filter(k => path.basename(k) !== target);
+    const removed = (Array.isArray(keys) ? keys : []).find(k => path.basename(k) === target);
+    db.prepare('UPDATE personal_bank_txns SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND statement_id=?')
+      .run(JSON.stringify(kept), bid, sid);
+    if (removed) storage.deleteObject(storage.keyFrom(removed, 'uploads')).catch(() => {});
+    res.json({ success: true, photos_urls: kept.map(k => `/uploads/${path.basename(k)}`) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /c-submit/info?t=TOKEN — public: minimal info so the mobile page knows which company it's for
 app.get('/c-submit/info', (req, res) => {
-  const p = _partnerByCsubToken(String(req.query.t || ''));
-  if (!p) return res.status(404).json({ error: '链接无效或已失效' });
-  res.json({ partner_id: p.id, partner_name: p.name, needs_password: true });
+  const t = String(req.query.t || '');
+  const p = _partnerByCsubToken(t);
+  if (!p) {
+    // 区分「公司已停用」和「钥匙不存在」，页面能给出准确提示
+    const anyRow = t.length >= 16 ? db.prepare('SELECT id, name, active FROM partners WHERE container_submit_token=?').get(t) : null;
+    if (anyRow) return res.status(404).json({ error: `该公司（${anyRow.name}）已停用，二维码暂不可用`, code: 'inactive' });
+    return res.status(404).json({ error: '链接无效或已失效', code: 'not_found' });
+  }
+  res.json({ partner_id: p.id, partner_name: p.name, needs_password: true, sites: _partnerSites(p.id) });
+});
+
+// GET /c-submit/diag?t=TOKEN — public、只读：扫码报「链接失效」时的自动诊断。
+// 返回这台实例是否认得该钥匙 + 实例标识；周柜页把它显示在错误下方，一张
+// 截图即可判断是多实例/不同数据库（实例 ID 与后台显示的不同）还是钥匙问题。
+app.get('/c-submit/diag', (req, res) => {
+  const t = String(req.query.t || '');
+  let reason = 'ok', name = '', partners = -1;
+  try {
+    const row = t.length >= 16 ? db.prepare('SELECT id, name, active FROM partners WHERE container_submit_token=?').get(t) : null;
+    if (!row) reason = t.length >= 16 ? 'not_found' : 'bad_token';
+    else if (row.active != null && Number(row.active) === 0) { reason = 'inactive'; name = row.name; }
+    else name = row.name;
+    partners = db.prepare('SELECT COUNT(*) AS n FROM partners').get().n;
+  } catch (e) { reason = 'error:' + e.message; }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ reason, name, instance: _BOOT_ID, boot_at: _BOOT_AT, commit: BUILD_INFO.commit, tag: BUILD_INFO.tag, partners });
 });
 
 // POST /c-submit/verify?t=TOKEN — public: check the shared access code (gate the page)
@@ -15481,6 +16059,7 @@ app.post('/cw-submit', containerSubmitPhotoUpload.array('photos', 12), (req, res
     }
     const servicePeriod = String(d.service_period || '').trim().slice(0, 100);
     const submitterName = String(d.submitter_name || '').trim().slice(0, 100);
+    const workSite = String(d.site || '').trim().slice(0, 120);
     let rawRows = [];
     try {
       rawRows = typeof d.rows === 'string' ? JSON.parse(d.rows) : (Array.isArray(d.rows) ? d.rows : []);
@@ -15498,11 +16077,11 @@ app.post('/cw-submit', containerSubmitPhotoUpload.array('photos', 12), (req, res
     const firstPhoto = photoKeys[0] || '';
     const ua = String(req.headers['user-agent'] || '').slice(0, 250);
     const stmt = db.prepare(`INSERT INTO container_submissions
-      (partner_id, partner_name, container_no, qty, unit_price, photo_path, photos, participants, submitter_name, submitter_phone, notes, user_agent, submit_type, service_period, work_date)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (partner_id, partner_name, container_no, qty, unit_price, photo_path, photos, participants, submitter_name, submitter_phone, notes, user_agent, submit_type, service_period, work_date, work_site)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const insertMany = db.transaction((list) => {
       for (const r of list) {
-        stmt.run(p.id, p.name, r.container_no, 1, 0, firstPhoto, photosJson, '[]', submitterName, '', '', ua, 'week', servicePeriod, r.work_date);
+        stmt.run(p.id, p.name, r.container_no, 1, 0, firstPhoto, photosJson, '[]', submitterName, '', '', ua, 'week', servicePeriod, r.work_date, workSite);
       }
     });
     insertMany(rows);
@@ -19090,35 +19669,159 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
 //   hourly  → sum of each worker's wage (items[].total = hours × rate)
 //   container → sum of each line's subcontractor price (sub_price)
 // The bill (subtotal) minus this is our profit.
-function _invoiceWageCost(items_json, profile_json) {
+function _invoiceWageCost(items_json, profile_json, subtotal) {
   let cost = 0;
   try {
     const profile = profile_json ? JSON.parse(profile_json) : {};
+    // Container invoices: our cost is ALWAYS the subcontractor total (qty × sub_price).
+    // Deliberately ignore any stashed profile.wage_cost here — hourly wages could leak
+    // into it when a monthly-payments import was switched to container mode, which made
+    // every container invoice show the same bogus 工资 (e.g. 671.36).
+    if (profile.invoice_mode === 'container') {
+      const cs = Array.isArray(profile.container_items) ? profile.container_items : [];
+      cost = cs.reduce((s, c) => s + (c.sub_total != null
+        ? (Number(c.sub_total) || 0)
+        : (Number(c.qty) || 0) * (Number(c.sub_price) || 0)), 0);
+      return Math.round(cost * 100) / 100;
+    }
+    const items = items_json ? JSON.parse(items_json) : [];
+    const base = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
+    const sub = Number(subtotal) || 0;
+    // 工时计费（账单 = 行小计 × markup）：行小计本身就是工资底价（时薪×工时），
+    // 工资=底价合计。stash 的 wage_cost 在这类发票上曾被编辑流程写坏（如 1310），
+    // 不可信，直接用明细算。
+    if (base > 0 && sub > base + Math.max(1, sub * 0.02)) {
+      return Math.round(base * 100) / 100;
+    }
     // Invoices transferred from monthly worker payments bill the company rate (从公司收) on
-    // their line items but stash the real 付给工人 wage here, so trust it when present.
+    // their line items (subtotal ≈ 行合计) but stash the real 付给工人 wage here, so trust it.
     if (profile && profile.wage_cost != null && isFinite(Number(profile.wage_cost))) {
       return Math.round(Number(profile.wage_cost) * 100) / 100;
     }
-    if (profile.invoice_mode === 'container') {
-      const cs = Array.isArray(profile.container_items) ? profile.container_items : [];
-      cost = cs.reduce((s, c) => s + (Number(c.sub_price) || 0), 0);
-    } else {
-      const items = items_json ? JSON.parse(items_json) : [];
-      cost = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
-    }
+    cost = base;
   } catch (_) { /* malformed JSON → cost 0 */ }
   return Math.round(cost * 100) / 100;
 }
 
+// 手动修正一张发票的工资成本（profile.wage_cost）。Container 发票的成本
+// 由分包合计实时计算，不受此字段影响。
+app.post('/api/admin/invoices/:id/wage-cost', requireAdmin, blockManager, (req, res) => {
+  try {
+    const row = db.prepare('SELECT id, profile_json FROM invoices WHERE id=?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    const v = Number(req.body && req.body.wage_cost);
+    if (!isFinite(v) || v < 0) return res.status(400).json({ error: '无效金额' });
+    let prof = {}; try { prof = JSON.parse(row.profile_json || '{}'); } catch { prof = {}; }
+    prof.wage_cost = Math.round(v * 100) / 100;
+    db.prepare('UPDATE invoices SET profile_json=? WHERE id=?').run(JSON.stringify(prof), row.id);
+    res.json({ success: true, wage_cost: prof.wage_cost });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 一次性修复：劳务发票的工资成本此前会被编辑流程覆盖成偏小值（利润虚高，
+// 如 SGI 账单 15333 的发票工资只剩 1310）。用付款源数据重算：同公司、同账期
+// 的 company_worker_payments 里 amount=付给工人、bill_amount=向公司开票；
+// 只有当 bill_amount 合计与发票账单金额对得上（±1% 或 ±$1）才认定匹配，
+// 然后把 wage_cost 修成 amount 合计。Container 发票、已对得上的不动。
+try {
+  const _wageFixDone = db.prepare("SELECT value FROM app_settings WHERE key='labor_wage_cost_repair_v1'").get();
+  if (!_wageFixDone) {
+    const invRows = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, subtotal, profile_json FROM invoices').all();
+    const byWeek = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND week_start>=? AND week_start<=?`);
+    const byDate = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND payment_date>=? AND payment_date<=?`);
+    let fixedN = 0;
+    for (const inv of invRows) {
+      let prof = {}; try { prof = JSON.parse(inv.profile_json || '{}'); } catch { continue; }
+      if (prof.invoice_mode === 'container') continue;
+      if (!inv.period_start || !inv.period_end || !(Number(inv.subtotal) > 0)) continue;
+      const sub = Number(inv.subtotal);
+      const tol = Math.max(1, sub * 0.01);
+      let pick = null;
+      for (const q of [byWeek, byDate]) {
+        const r0 = q.get(inv.company_name, inv.period_start, inv.period_end);
+        if (r0 && r0.n > 0 && Number(r0.wage) > 0 && Math.abs(Number(r0.bill) - sub) <= tol) { pick = r0; break; }
+      }
+      if (!pick) continue;
+      const wage = Math.round(Number(pick.wage) * 100) / 100;
+      const cur = (prof.wage_cost != null && isFinite(Number(prof.wage_cost))) ? Number(prof.wage_cost) : null;
+      if (cur != null && Math.abs(cur - wage) <= Math.max(1, wage * 0.02)) continue;
+      prof.wage_cost = wage;
+      db.prepare('UPDATE invoices SET profile_json=? WHERE id=?').run(JSON.stringify(prof), inv.id);
+      console.log(`[migration] 工资修复 ${inv.invoice_number}: ${cur == null ? '(空)' : cur} → ${wage}`);
+      fixedN++;
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('labor_wage_cost_repair_v1','1')").run();
+    console.log(`[migration] labor wage repair: 修复 ${fixedN} 张发票`);
+  }
+} catch (e) { console.log('[migration] labor wage repair error:', e.message); }
+
+// v2：v1 的「bill 对账后才修」在老数据上永远匹配不上——bill_amount 列是后
+// 加的，历史付款记录里全是 0。对明显被覆盖坏的发票（工资缺失或 < 账单的
+// 30%）放宽：bill 合计为 0（老数据）时，amount 合计落在账单 40%~100% 区间
+// 也采用。仍然只动坏的，正确的和 Container 不碰。
+try {
+  const _wageFix2 = db.prepare("SELECT value FROM app_settings WHERE key='labor_wage_cost_repair_v2'").get();
+  if (!_wageFix2) {
+    const invRows2 = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, subtotal, profile_json FROM invoices').all();
+    const byWeek2 = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND week_start>=? AND week_start<=?`);
+    const byDate2 = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND payment_date>=? AND payment_date<=?`);
+    let fixed2 = 0;
+    for (const inv of invRows2) {
+      let prof = {}; try { prof = JSON.parse(inv.profile_json || '{}'); } catch { continue; }
+      if (prof.invoice_mode === 'container') continue;
+      if (!inv.period_start || !inv.period_end || !(Number(inv.subtotal) > 0)) continue;
+      const sub = Number(inv.subtotal);
+      const cur = (prof.wage_cost != null && isFinite(Number(prof.wage_cost))) ? Number(prof.wage_cost) : null;
+      const suspect = cur == null || cur < sub * 0.3;
+      if (!suspect) continue;
+      const tol = Math.max(1, sub * 0.01);
+      let pick = null;
+      for (const q of [byWeek2, byDate2]) {
+        const r0 = q.get(inv.company_name, inv.period_start, inv.period_end);
+        if (!r0 || !(r0.n > 0) || !(Number(r0.wage) > 0)) continue;
+        const billOk = Math.abs(Number(r0.bill) - sub) <= tol;
+        const wageOk = Number(r0.bill) === 0 && Number(r0.wage) >= sub * 0.4 && Number(r0.wage) <= sub;
+        if (billOk || wageOk) { pick = r0; break; }
+      }
+      if (!pick) continue;
+      const wage = Math.round(Number(pick.wage) * 100) / 100;
+      if (cur != null && Math.abs(cur - wage) <= Math.max(1, wage * 0.02)) continue;
+      prof.wage_cost = wage;
+      db.prepare('UPDATE invoices SET profile_json=? WHERE id=?').run(JSON.stringify(prof), inv.id);
+      console.log(`[migration] 工资修复v2 ${inv.invoice_number}: ${cur == null ? '(空)' : cur} → ${wage}`);
+      fixed2++;
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('labor_wage_cost_repair_v2','1')").run();
+    console.log(`[migration] labor wage repair v2: 修复 ${fixed2} 张发票`);
+  }
+} catch (e) { console.log('[migration] labor wage repair v2 error:', e.message); }
+
+// 手动修正的参考值：按付款记录算这张发票账期的 工资/开票 合计，✎ 弹窗预填。
+app.get('/api/admin/invoices/:id/wage-suggest', requireAdmin, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT company_name, period_start, period_end, subtotal FROM invoices WHERE id=?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'not found' });
+    const q1 = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND week_start>=? AND week_start<=?`).get(inv.company_name, inv.period_start, inv.period_end);
+    const q2 = db.prepare(`SELECT COALESCE(SUM(amount),0) AS wage, COALESCE(SUM(bill_amount),0) AS bill, COUNT(*) AS n
+      FROM company_worker_payments WHERE partner_name=? AND payment_date>=? AND payment_date<=?`).get(inv.company_name, inv.period_start, inv.period_end);
+    res.json({ subtotal: inv.subtotal, by_week: q1, by_date: q2 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, payment_receipt_paths, sub_payment_receipt_paths, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, markup_rate, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, payment_receipt_paths, sub_payment_receipt_paths, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
   // Sum of the bank-statement transactions linked to an invoice as its proof, per
   // side (recv = 收款回执 / sub = 分包回执). This IS the real 实付 / 分包付款金额
   // ("所有上传凭证的加和"), independent of any hand-entered amount.
   const linkedSumStmt = db.prepare(`SELECT COALESCE(SUM(ABS(amount)),0) AS s FROM bank_statement_txns WHERE used_invoice_id=? AND used_kind=? AND kind='box'`);
   for (const r of rows) {
-    r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json);
+    r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json, r.subtotal);
     try { r.payment_txn_sum = Number(linkedSumStmt.get(r.id, 'recv').s) || 0; } catch (_) { r.payment_txn_sum = 0; }
     try { r.sub_payment_txn_sum = Number(linkedSumStmt.get(r.id, 'sub').s) || 0; } catch (_) { r.sub_payment_txn_sum = 0; }
     // Surface a lightweight bank label (bank name + account last-4) and the payee
@@ -19126,6 +19829,7 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
     // dialog can default its dropdowns — without shipping the whole profile_json.
     try {
       const p = r.profile_json ? JSON.parse(r.profile_json) : {};
+      r.invoice_mode = p.invoice_mode || '';
       r.bank_name = p.bank_name || '';
       r.bank_account_name = p.bank_account_name || '';
       const acct = String(p.bank_account_no || '').replace(/\D/g, '');
@@ -19137,7 +19841,28 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
       const citems = Array.isArray(p.container_items) ? p.container_items : [];
       r.container_nos = [...new Set(citems.map(c => String(c.container_no || '').trim().toUpperCase()).filter(Boolean))];
       r.invoice_mode = p.invoice_mode === 'container' ? 'container' : 'hourly';
-    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; r.invoice_mode = 'hourly'; }
+      // 工人/分包商名字 + 每人的行明细（工时/工资底价/账单价），让列表搜索
+      // 能按人名找到账单，并直接显示这个人在每张账单里的金额。
+      let its = []; try { its = r.items_json ? JSON.parse(r.items_json) : []; } catch (_) { its = []; }
+      const mk = Number(r.markup_rate) > 0 ? Number(r.markup_rate) : 1;
+      const names = new Set();
+      const lines = [];
+      for (const it of (Array.isArray(its) ? its : [])) {
+        const nm = String(it.name || '').trim();
+        if (nm) {
+          names.add(nm);
+          const w = Number(it.total) || 0;
+          const eff = Number(it.markup) > 0 ? Number(it.markup) : mk;
+          lines.push({ n: nm, h: Number(it.hours) || 0, w: Math.round(w * 100) / 100, b: Math.round(w * eff * 100) / 100 });
+        }
+        for (const v of [it.subcontractor, it.referrer]) {
+          const t = String(v || '').trim();
+          if (t) names.add(t);
+        }
+      }
+      r.worker_names = [...names];
+      r.worker_lines = lines;
+    } catch (_) { r.bank_name = ''; r.bank_account_name = ''; r.bank_account_last4 = ''; r.container_nos = []; r.invoice_mode = 'hourly'; r.worker_names = []; r.worker_lines = []; }
     delete r.items_json; delete r.profile_json;
   }
   res.json(rows);
@@ -20069,45 +20794,78 @@ function _claimFields(req) {
   };
 }
 
+// 一条记录的附件列表：attachments JSON + 兼容旧的单文件 invoice_path。
+function _claimAtts(row) {
+  let atts = [];
+  try { atts = JSON.parse(row.attachments || '[]'); } catch { atts = []; }
+  if (!Array.isArray(atts)) atts = [];
+  if (row.invoice_path && !atts.some(a => a && a.path === row.invoice_path)) {
+    atts.unshift({ path: row.invoice_path, name: path.basename(row.invoice_path) });
+  }
+  return atts.filter(a => a && a.path);
+}
+// multer 的 originalname 中文会按 latin1 解码，转回 utf8。
+function _claimFname(fl) {
+  try { return Buffer.from(fl.originalname || '', 'latin1').toString('utf8') || fl.filename; } catch { return fl.originalname || fl.filename; }
+}
+function _claimDeleteFile(p) {
+  try {
+    const oldPath = path.join(uploadsDir, path.basename(p));
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  } catch (e) {}
+  try { storage.deleteObject(storage.keyFrom(p, 'uploads')).catch(() => {}); } catch (e) {}
+}
+
 app.get('/api/admin/warehouse-claims', requireAdmin, (req, res) => {
-  res.json(db.prepare(`SELECT * FROM warehouse_claims ORDER BY incident_date DESC, created_at DESC`).all());
+  const rows = db.prepare(`SELECT c.*, t.txn_date AS txn_date, t.amount AS txn_amount, t.payee AS txn_payee,
+      s.file_name AS stmt_name
+    FROM warehouse_claims c
+    LEFT JOIN bank_statement_txns t ON c.stmt_txn_id = t.id
+    LEFT JOIN bank_statements s ON t.statement_id = s.id
+    ORDER BY c.incident_date DESC, c.created_at DESC`).all();
+  for (const r of rows) r.attachments = _claimAtts(r);
+  res.json(rows);
 });
 
-app.post('/api/admin/warehouse-claims', requireAdmin, claimUpload.single('invoice'), (req, res) => {
+app.post('/api/admin/warehouse-claims', requireAdmin, claimUpload.array('invoice', 20), (req, res) => {
   const f = _claimFields(req);
-  const invoicePath = req.file ? `/uploads/${req.file.filename}` : null;
+  const files = Array.isArray(req.files) ? req.files : [];
+  const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  const stmtTxnId = parseInt(req.body.stmt_txn_id) || null;
   const r = db.prepare(`INSERT INTO warehouse_claims
-    (warehouse_code, warehouse_name, incident_date, amount, description, resolution, status, invoice_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status, invoicePath);
+    (warehouse_code, warehouse_name, incident_date, amount, description, resolution, status, invoice_path, attachments, stmt_txn_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status,
+      atts.length ? atts[0].path : null, JSON.stringify(atts), stmtTxnId);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
-app.put('/api/admin/warehouse-claims/:id', requireAdmin, claimUpload.single('invoice'), (req, res) => {
+app.put('/api/admin/warehouse-claims/:id', requireAdmin, claimUpload.array('invoice', 20), (req, res) => {
   const cur = db.prepare('SELECT * FROM warehouse_claims WHERE id=?').get(req.params.id);
   if (!cur) return res.status(404).json({ error: 'Not found' });
   const f = _claimFields(req);
-  // Replace the file only when a new one is uploaded; otherwise keep the old one.
-  let invoicePath = cur.invoice_path;
-  if (req.file) {
-    if (cur.invoice_path) {
-      const oldPath = path.join(uploadsDir, path.basename(cur.invoice_path));
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
-    invoicePath = `/uploads/${req.file.filename}`;
+  let atts = _claimAtts(cur);
+  // 先删用户标记移除的旧文件，再追加新上传的（不再整体替换）。
+  let removePaths = [];
+  try { removePaths = JSON.parse(req.body.remove_paths || '[]'); } catch { removePaths = []; }
+  if (Array.isArray(removePaths) && removePaths.length) {
+    const rm = new Set(removePaths);
+    atts.filter(a => rm.has(a.path)).forEach(a => _claimDeleteFile(a.path));
+    atts = atts.filter(a => !rm.has(a.path));
   }
+  const files = Array.isArray(req.files) ? req.files : [];
+  files.forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  const stmtTxnId = ('stmt_txn_id' in (req.body || {})) ? (parseInt(req.body.stmt_txn_id) || null) : cur.stmt_txn_id;
   db.prepare(`UPDATE warehouse_claims SET warehouse_code=?, warehouse_name=?, incident_date=?, amount=?,
-    description=?, resolution=?, status=?, invoice_path=?, updated_at=datetime('now') WHERE id=?`)
-    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status, invoicePath, req.params.id);
+    description=?, resolution=?, status=?, invoice_path=?, attachments=?, stmt_txn_id=?, updated_at=datetime('now') WHERE id=?`)
+    .run(f.warehouse_code, f.warehouse_name, f.incident_date, f.amount, f.description, f.resolution, f.status,
+      atts.length ? atts[0].path : null, JSON.stringify(atts), stmtTxnId, req.params.id);
   res.json({ success: true });
 });
 
 app.delete('/api/admin/warehouse-claims/:id', requireAdmin, (req, res) => {
-  const cur = db.prepare('SELECT invoice_path FROM warehouse_claims WHERE id=?').get(req.params.id);
-  if (cur && cur.invoice_path) {
-    const oldPath = path.join(uploadsDir, path.basename(cur.invoice_path));
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-  }
+  const cur = db.prepare('SELECT * FROM warehouse_claims WHERE id=?').get(req.params.id);
+  if (cur) _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
   db.prepare('DELETE FROM warehouse_claims WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -26020,7 +26778,13 @@ app.get('/api/admin/docuseal/templates/:id/preview-pdf', requireAdmin, async (re
     }, (proxyRes) => {
       const ct = proxyRes.headers['content-type'] || 'application/pdf';
       res.setHeader('Content-Type', ct);
-      res.setHeader('Content-Disposition', `inline; filename="template-${req.params.id}.pdf"`);
+      // ?dl=<name> → 以附件下载并使用指定文件名（仅允许安全字符）；否则内联预览。
+      const dl = String(req.query.dl || '').replace(/[^A-Za-z0-9._\- ]/g, '').trim().slice(0, 80);
+      if (dl) {
+        res.setHeader('Content-Disposition', `attachment; filename="${dl.endsWith('.pdf') ? dl : dl + '.pdf'}"`);
+      } else {
+        res.setHeader('Content-Disposition', `inline; filename="template-${req.params.id}.pdf"`);
+      }
       res.setHeader('Cache-Control', 'no-store');
       proxyRes.pipe(res);
     });
@@ -26030,6 +26794,195 @@ app.get('/api/admin/docuseal/templates/:id/preview-pdf', requireAdmin, async (re
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ─── 表格二维码入口（/form-portal 页面的后端） ───
+// 解析目标模板：优先按 DocuSeal 模板 ID，其次按自动模板类型键（配置槽 → 分类兜底）
+function _formPortalResolveTemplate(query) {
+  const idParam = String((query && query.id) || '').trim();
+  if (idParam) {
+    if (!/^\d+$/.test(idParam)) return null;
+    const row = db.prepare('SELECT name FROM docuseal_templates WHERE docuseal_template_id=?').get(idParam);
+    return { templateId: idParam, name: (row && row.name) || `DocuSeal 模板 #${idParam}` };
+  }
+  const type = String((query && query.t) || '').trim();
+  const def = DOCUSEAL_AUTO_TEMPLATES[type];
+  if (!def) return null;
+  let tid = null;
+  try {
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse((row && row.config) || '{}');
+    const cur = cfg[def.configKey];
+    if (cur && db.prepare('SELECT 1 FROM docuseal_templates WHERE docuseal_template_id=?').get(String(cur))) tid = String(cur);
+  } catch {}
+  if (!tid) {
+    const pick = db.prepare("SELECT docuseal_template_id FROM docuseal_templates WHERE category=? AND hidden=0 ORDER BY confirmed DESC, created_at DESC LIMIT 1").get(def.category);
+    if (pick && pick.docuseal_template_id) tid = String(pick.docuseal_template_id);
+  }
+  if (!tid) return null;
+  const local = db.prepare('SELECT name FROM docuseal_templates WHERE docuseal_template_id=?').get(tid);
+  return { templateId: tid, name: (local && local.name) || def.name };
+}
+
+// 把模板空白 PDF 从 DocuSeal 拉成 Buffer（邮件附件用）
+function _dsealFetchTemplatePdf(templateId) {
+  return dsealApiCall('GET', `/api/templates/${templateId}`, null).then(r => {
+    if (r.status !== 200) throw new Error(`DocuSeal 返回 ${r.status}`);
+    const documents = r.data?.documents || r.data?.schema || [];
+    const doc = documents[0] || {};
+    const docUrl = doc.url || doc.file_url || doc.pdf_url || null;
+    if (!docUrl) throw new Error('该模板暂无可下载的文档');
+    const { apiKey } = dsealGetCreds();
+    const parsedUrl = new URL(docUrl);
+    const isHttps = parsedUrl.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    return new Promise((resolve, reject) => {
+      const proxyReq = transport.request({
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (isHttps ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        headers: { 'X-Auth-Token': apiKey, 'Accept': 'application/pdf,*/*' }
+      }, (proxyRes) => {
+        if (proxyRes.statusCode >= 400) { proxyRes.resume(); return reject(new Error(`下载模板 PDF 失败 ${proxyRes.statusCode}`)); }
+        const chunks = [];
+        proxyRes.on('data', c => chunks.push(c));
+        proxyRes.on('end', () => resolve({ buffer: Buffer.concat(chunks) }));
+      });
+      proxyReq.setTimeout(30000, () => { proxyReq.destroy(new Error('下载模板 PDF 超时')); });
+      proxyReq.on('error', reject);
+      proxyReq.end();
+    });
+  });
+}
+
+// GET /api/admin/form-portal/info?id=… 或 ?t=zelle_auth_es — 模板名 + DocuSeal 管理页链接
+app.get('/api/admin/form-portal/info', requireAdmin, (req, res) => {
+  const t = _formPortalResolveTemplate(req.query);
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  res.json({
+    template_id: t.templateId,
+    name: t.name,
+    docuseal_url: dsealEnabled() ? `${dsealPublicHost()}/templates/${t.templateId}` : '',
+    username: req.userName,
+  });
+});
+
+// POST /api/admin/form-portal/email-pdf {id 或 t, email} — 把模板空白 PDF 发到指定邮箱
+app.post('/api/admin/form-portal/email-pdf', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const email = String((req.body && req.body.email) || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: '邮箱格式不正确' });
+  const t = _formPortalResolveTemplate(req.body || {});
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  try {
+    const { buffer } = await _dsealFetchTemplatePdf(t.templateId);
+    const fileName = `${t.name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'form'}.pdf`;
+    const ok = await sendEmailWithAttachment(email, t.name, `附件为「${t.name}」表格 PDF。\nAttached: ${t.name} (PDF).\n\nSent by ${req.userName} via Prime Anchor Point form portal.`, buffer, fileName);
+    if (!ok) return res.status(500).json({ error: '邮件发送失败，请检查邮件服务配置' });
+    auditLog('form_portal_email_pdf', req, { targetType: 'docuseal_template', targetId: t.templateId, details: { template: t.name, email } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/form-portal/people?q=… — 按姓名/邮箱模糊搜索员工，用于发起签署时自动补全
+app.get('/api/admin/form-portal/people', requireAdmin, (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.json({ people: [] });
+  const like = `%${q.replace(/[%_]/g, ' ')}%`;
+  const rows = db.prepare(`SELECT id, first_name, last_name, email, phone, status FROM employees
+    WHERE first_name || ' ' || last_name LIKE ? OR last_name || ' ' || first_name LIKE ? OR email LIKE ?
+    ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END, last_name, first_name LIMIT 10`).all(like, like, like);
+  res.json({ people: rows.map(r => ({
+    id: r.id,
+    name: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
+    email: r.email || '',
+    phone: r.phone || '',
+    status: r.status || '',
+  })) });
+});
+
+// POST /api/admin/form-portal/send {id 或 t, name, email, phone?} — 通过 DocuSeal 给对方发签署邀请
+app.post('/api/admin/form-portal/send', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const name = String((req.body && req.body.name) || '').trim();
+  const email = String((req.body && req.body.email) || '').trim();
+  const phone = String((req.body && req.body.phone) || '').trim();
+  if (!name) return res.status(400).json({ error: '请填写签署人姓名' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: '邮箱格式不正确' });
+  const t = _formPortalResolveTemplate(req.body || {});
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  try {
+    // 用模板自身的第一个角色名，兼容手动上传、角色名不是 First Party 的模板
+    let role = 'First Party';
+    try {
+      const tr = await dsealApiCall('GET', `/api/templates/${t.templateId}`, null);
+      const rs = tr.data && tr.data.submitters;
+      if (Array.isArray(rs) && rs[0] && rs[0].name) role = rs[0].name;
+    } catch {}
+    const submitter = { role, name, email };
+    if (phone) { try { submitter.phone = formatPhoneE164(phone); } catch {} }
+    const r = await dsealApiCall('POST', '/api/submissions', {
+      template_id: parseInt(t.templateId, 10),
+      send_email: true,
+      submitters: [submitter],
+    });
+    const subs = (r.data && r.data.submitters) || (Array.isArray(r.data) ? r.data : []);
+    if (r.status >= 400 || !subs.length) {
+      return res.status(502).json({ error: `DocuSeal 创建签署失败 ${r.status}: ${JSON.stringify(r.data).slice(0, 200)}` });
+    }
+    const submissionId = (r.data && r.data.id) || subs[0].submission_id || subs[0].id || '';
+    try {
+      db.prepare('INSERT OR IGNORE INTO form_portal_sends (submission_id, template_id, name, email, sent_by) VALUES (?,?,?,?,?)')
+        .run(String(submissionId), String(t.templateId), name, email, req.userName || '');
+    } catch (e2) { console.error('[form-portal] send record failed:', e2.message); }
+    auditLog('form_portal_send', req, { targetType: 'docuseal_submission', targetId: submissionId, details: { template_id: t.templateId, template: t.name, name, email } });
+    res.json({ success: true, submission_id: String(submissionId) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/form-portal/submissions?id=… 或 ?t=… — 该模板的签署记录与状态
+app.get('/api/admin/form-portal/submissions', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const t = _formPortalResolveTemplate(req.query);
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  try {
+    const r = await dsealApiCall('GET', `/api/submissions?template_id=${encodeURIComponent(t.templateId)}&limit=100`, null);
+    if (r.status !== 200) return res.status(502).json({ error: `DocuSeal 返回 ${r.status}` });
+    const list = Array.isArray(r.data && r.data.data) ? r.data.data : (Array.isArray(r.data) ? r.data : []);
+    const sentBy = {};
+    try {
+      for (const row of db.prepare('SELECT submission_id, sent_by FROM form_portal_sends WHERE template_id=?').all(String(t.templateId))) {
+        sentBy[row.submission_id] = row.sent_by;
+      }
+    } catch {}
+    const submissions = list.filter(s => !s.archived_at).map(s => {
+      const subm = (s.submitters || [])[0] || {};
+      return {
+        id: s.id,
+        name: subm.name || '',
+        email: subm.email || '',
+        status: (s.status === 'completed' || subm.status === 'completed') ? 'completed'
+              : (subm.status === 'declined' ? 'declined' : 'pending'),
+        created_at: s.created_at || '',
+        completed_at: subm.completed_at || s.completed_at || '',
+        opened_at: subm.opened_at || '',
+        sent_by: sentBy[String(s.id)] || '',
+      };
+    });
+    res.json({ submissions, me: req.userName || '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/form-portal/qr?id=… 或 ?t=… — 生成指向本入口页的二维码
+app.get('/api/admin/form-portal/qr', requireAdmin, async (req, res) => {
+  const t = _formPortalResolveTemplate(req.query);
+  if (!t) return res.status(404).json({ error: '未找到对应模板' });
+  try {
+    const url = `${_foremanBaseUrl(req)}/form-portal?id=${encodeURIComponent(t.templateId)}`;
+    const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 480 });
+    res.json({ url, qr, name: t.name, template_id: t.templateId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/admin/docuseal/templates/:id/debug — debug template response structure
@@ -28131,17 +29084,20 @@ app.get('/api/admin/company-payments/summary', requireAdmin, blockManager, (req,
     const { year, partner_id } = req.query;
     const where = [];
     const params = [];
-    if (year) { where.push("substr(year_month,1,4) = ?"); params.push(String(year)); }
-    if (partner_id) { where.push('partner_id = ?'); params.push(parseInt(partner_id)); }
-    const sql = `SELECT year_month, partner_id, partner_name,
-                   SUM(amount) AS total_amount,
-                   SUM(bill_amount) AS total_bill_amount,
+    if (year) { where.push("substr(cwp.year_month,1,4) = ?"); params.push(String(year)); }
+    if (partner_id) { where.push('cwp.partner_id = ?'); params.push(parseInt(partner_id)); }
+    // 用 partners 表的现名分组（快照名可能是改名前的旧名），同一公司只出一行
+    const sql = `SELECT cwp.year_month AS year_month, cwp.partner_id AS partner_id,
+                   COALESCE(p.name, cwp.partner_name) AS partner_name,
+                   SUM(cwp.amount) AS total_amount,
+                   SUM(cwp.bill_amount) AS total_bill_amount,
                    COUNT(*) AS record_count,
-                   COUNT(DISTINCT COALESCE(employee_id, worker_name)) AS worker_count
-                 FROM company_worker_payments
+                   COUNT(DISTINCT COALESCE(cwp.employee_id, cwp.worker_name)) AS worker_count
+                 FROM company_worker_payments cwp
+                 LEFT JOIN partners p ON p.id = cwp.partner_id
                  ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-                 GROUP BY year_month, partner_id, partner_name
-                 ORDER BY year_month DESC, partner_name ASC`;
+                 GROUP BY cwp.year_month, cwp.partner_id, COALESCE(p.name, cwp.partner_name)
+                 ORDER BY cwp.year_month DESC, partner_name ASC`;
     const rows = db.prepare(sql).all(...params);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -28352,7 +29308,7 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
       FROM bank_statements ORDER BY created_at DESC`).all();
-    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, links, used_invoice_id, used_kind FROM bank_statement_txns
+    const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, links, used_invoice_id, used_kind, category FROM bank_statement_txns
       WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
     const usedInvStmt = db.prepare('SELECT invoice_number, company_name FROM invoices WHERE id=?');
     const usedInvCache = new Map();
@@ -28365,6 +29321,8 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
         let keys = []; try { keys = JSON.parse(b.photos || '[]'); } catch { keys = []; }
         b.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
         try { b.links = JSON.parse(b.links || '[]'); } catch { b.links = []; }
+        try { b.inv_items = JSON.parse(b.inv_items || '[]'); } catch { b.inv_items = []; }
+        if (!Array.isArray(b.inv_items)) b.inv_items = [];
         // Which invoice reserved this transaction as its proof (voucher picker link),
         // so the annotation views can show "已被 INV-… 用作收款/分包付款凭证".
         if (b.used_invoice_id) {
@@ -28377,13 +29335,18 @@ app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => 
         // is the OTHER link the user makes — resolve it so the 关联 column can show
         // whether that invoice exists and whether it's been marked paid.
         b.inv_ref = null;
+        b.inv_refs = [];
         if (!b.used_by && b.invoice_number && String(b.invoice_number).trim()) {
-          const key = String(b.invoice_number).trim();
-          if (!invByNumCache.has(key)) invByNumCache.set(key, invByNumStmt.get(key) || null);
-          const inv = invByNumCache.get(key);
-          b.inv_ref = inv
-            ? { invoice_id: inv.id, invoice_number: inv.invoice_number, company_name: inv.company_name, payment_status: inv.payment_status || 'unpaid' }
-            : { invoice_number: key, missing: true };
+          // 一笔支出可以对应多张发票：逗号/空格/顿号/斜杠分隔，逐张解析。
+          const keys2 = String(b.invoice_number).split(/[,，、;；\/\s]+/).map(x => x.trim()).filter(Boolean);
+          b.inv_refs = keys2.map(key => {
+            if (!invByNumCache.has(key)) invByNumCache.set(key, invByNumStmt.get(key) || null);
+            const inv = invByNumCache.get(key);
+            return inv
+              ? { invoice_id: inv.id, invoice_number: inv.invoice_number, company_name: inv.company_name, payment_status: inv.payment_status || 'unpaid' }
+              : { invoice_number: key, missing: true };
+          });
+          b.inv_ref = b.inv_refs[0] || null;
         }
       }
     }
@@ -28426,8 +29389,9 @@ app.put('/api/admin/bank-statements/:id/meta', requireAdmin, blockManager, (req,
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── 创始人取款 (founder draws): money taken by the founders, with screenshots and an
-// optional link to an annotated bank-statement transaction ───
+// ─── 创始人取款/付款 (founder draws & payments): money taken by OR paid in by the
+// founders, with screenshots and an optional link to an annotated bank-statement
+// transaction ───
 db.exec(`CREATE TABLE IF NOT EXISTS founder_draws (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   founder TEXT NOT NULL,
@@ -28440,6 +29404,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS founder_draws (
   created_by TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// 类型：'draw' = 取款（创始人拿钱）, 'pay' = 付款（创始人垫付/存入公司）。
+try { db.exec(`ALTER TABLE founder_draws ADD COLUMN kind TEXT DEFAULT 'draw'`); } catch (e) {}
 const founderDrawUpload = multer({
   storage: r2Storage({
     subdir: 'uploads',
@@ -28481,10 +29447,11 @@ app.post('/api/admin/founder-draws', requireAdmin, founderDrawUpload.array('phot
     if (!(amount > 0)) return res.status(400).json({ error: '金额无效' });
     const keys = (req.files || []).map(f => f.key || f.filename || (f.path ? path.basename(f.path) : '')).filter(Boolean);
     const txnId = parseInt(b.stmt_txn_id, 10) || null;
-    const info = db.prepare(`INSERT INTO founder_draws (founder, amount, draw_date, purpose, notes, photos, stmt_txn_id, created_by)
-      VALUES (?,?,?,?,?,?,?,?)`)
+    const kind = b.kind === 'pay' ? 'pay' : 'draw';
+    const info = db.prepare(`INSERT INTO founder_draws (founder, amount, draw_date, purpose, notes, photos, stmt_txn_id, created_by, kind)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
       .run(founder, amount, String(b.draw_date || '').slice(0, 10), String(b.purpose || '').slice(0, 300),
-           String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, (req.adminUser && req.adminUser.username) || '');
+           String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, (req.adminUser && req.adminUser.username) || '', kind);
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -28498,9 +29465,10 @@ app.put('/api/admin/founder-draws/:id', requireAdmin, founderDrawUpload.array('p
     let keys = []; try { keys = JSON.parse(d.photos || '[]'); } catch { keys = []; }
     keys = keys.concat((req.files || []).map(f => f.key || f.filename || (f.path ? path.basename(f.path) : '')).filter(Boolean));
     const txnId = parseInt(b.stmt_txn_id, 10) || null;
-    db.prepare(`UPDATE founder_draws SET founder=?, amount=?, draw_date=?, purpose=?, notes=?, photos=?, stmt_txn_id=? WHERE id=?`)
+    const kind = b.kind === 'pay' ? 'pay' : (b.kind === 'draw' ? 'draw' : (d.kind || 'draw'));
+    db.prepare(`UPDATE founder_draws SET founder=?, amount=?, draw_date=?, purpose=?, notes=?, photos=?, stmt_txn_id=?, kind=? WHERE id=?`)
       .run(String(b.founder || d.founder).trim(), amount, String(b.draw_date || '').slice(0, 10),
-           String(b.purpose || '').slice(0, 300), String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, d.id);
+           String(b.purpose || '').slice(0, 300), String(b.notes || '').slice(0, 500), JSON.stringify(keys), txnId, kind, d.id);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -28515,7 +29483,7 @@ app.delete('/api/admin/founder-draws/:id', requireAdmin, (req, res) => {
 // GET the boxes for one statement.
 app.get('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, used_invoice_id, used_kind, links
+    const rows = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, used_invoice_id, used_kind, links, category
       FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`)
       .all(parseInt(req.params.id));
     for (const r of rows) {
@@ -28527,6 +29495,40 @@ app.get('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// ── 收支分类分析：全部标注拉平成一张表 ──
+// GET /api/admin/bank-txns — 所有账单的 box 标注（附账单信息 + 发票关联），供分类统计页用。
+app.get('/api/admin/bank-txns', requireAdmin, blockManager, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT t.id, t.statement_id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.purpose, t.invoice_number, t.category, t.used_invoice_id, t.used_kind,
+        s.bank, s.operator, s.file_name, s.period_start AS stmt_period_start, s.period_end AS stmt_period_end
+      FROM bank_statement_txns t LEFT JOIN bank_statements s ON t.statement_id = s.id
+      WHERE t.kind='box' ORDER BY t.id DESC`).all();
+    const invStmt = db.prepare('SELECT invoice_number, company_name FROM invoices WHERE id=?');
+    const cache = new Map();
+    for (const r of rows) {
+      if (r.used_invoice_id) {
+        if (!cache.has(r.used_invoice_id)) cache.set(r.used_invoice_id, invStmt.get(r.used_invoice_id) || null);
+        const inv = cache.get(r.used_invoice_id);
+        r.linked = inv ? { invoice_id: r.used_invoice_id, invoice_number: inv.invoice_number, company_name: inv.company_name, kind: r.used_kind === 'recv' ? 'recv' : 'sub' } : null;
+      } else r.linked = null;
+      delete r.used_invoice_id; delete r.used_kind;
+    }
+    res.json(rows);
+  } catch (e) { console.error('[admin/bank-txns]', e); res.status(500).json({ error: e.message }); }
+});
+// POST /api/admin/bank-txns/category — 给一批标注设置分类（单笔也走这里）。
+app.post('/api/admin/bank-txns/category', requireAdmin, blockManager, (req, res) => {
+  try {
+    const ids = (Array.isArray(req.body && req.body.ids) ? req.body.ids : []).map(x => parseInt(x)).filter(Number.isFinite);
+    if (!ids.length) return res.status(400).json({ error: '缺少 ids' });
+    const cat = String((req.body && req.body.category) || '').trim().slice(0, 60);
+    const up = db.prepare(`UPDATE bank_statement_txns SET category=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND kind='box'`);
+    const tx = db.transaction(list => { for (const id of list) up.run(cat, id); });
+    tx(ids);
+    res.json({ success: true, updated: ids.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Create a box annotation.
 app.post('/api/admin/bank-statements/:id/boxes', requireAdmin, blockManager, (req, res) => {
   try {
@@ -28559,8 +29561,21 @@ app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManage
     const b = req.body || {};
     const clamp01 = v => Math.max(0, Math.min(1, parseFloat(v) || 0));
     const has = k => Object.prototype.hasOwnProperty.call(b, k);
+    let invItemsVal = row.inv_items;
+    if (has('inv_items')) {
+      // Validate: must be a JSON array of {inv, ps, pe, amt}; cap the size.
+      try {
+        const arr = typeof b.inv_items === 'string' ? JSON.parse(b.inv_items) : b.inv_items;
+        invItemsVal = JSON.stringify((Array.isArray(arr) ? arr : []).slice(0, 30).map(x => ({
+          inv: String((x && x.inv) || '').slice(0, 80),
+          ps: String((x && x.ps) || '').slice(0, 40),
+          pe: String((x && x.pe) || '').slice(0, 40),
+          amt: String((x && x.amt) || '').slice(0, 20),
+        })));
+      } catch (e2) { invItemsVal = row.inv_items; }
+    }
     db.prepare(`UPDATE bank_statement_txns SET
-        page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, note=?, payee=?, direction=?, purpose=?, invoice_number=?, period_start=?, period_end=?, pay_portion=?, updated_at=CURRENT_TIMESTAMP
+        page=?, box_x=?, box_y=?, box_w=?, box_h=?, txn_date=?, amount=?, note=?, payee=?, direction=?, purpose=?, invoice_number=?, period_start=?, period_end=?, pay_portion=?, inv_items=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND statement_id=?`).run(
         has('page') ? Math.max(1, parseInt(b.page) || 1) : row.page,
         has('box_x') ? clamp01(b.box_x) : row.box_x,
@@ -28573,10 +29588,11 @@ app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManage
         has('payee') ? String(b.payee || '').slice(0, 120) : row.payee,
         has('direction') ? (b.direction === 'in' ? 'in' : 'out') : row.direction,
         has('purpose') ? String(b.purpose || '').slice(0, 80) : row.purpose,
-        has('invoice_number') ? String(b.invoice_number || '').slice(0, 80) : row.invoice_number,
+        has('invoice_number') ? String(b.invoice_number || '').slice(0, 400) : row.invoice_number,
         has('period_start') ? String(b.period_start || '').slice(0, 40) : row.period_start,
         has('period_end') ? String(b.period_end || '').slice(0, 40) : row.period_end,
         has('pay_portion') ? String(b.pay_portion || '').slice(0, 20) : row.pay_portion,
+        invItemsVal,
         tid, sid
       );
     res.json({ success: true });
@@ -28666,6 +29682,7 @@ function _bsPayeeDisplaySrv(payee) {
   if (p.indexOf('卡车费:') === 0) { const c = p.slice(4); return '卡车费' + (c ? ' · ' + c : ''); }
   if (p.indexOf('存支票:') === 0) { const n = p.slice(4).split('|').filter(Boolean); return '存支票' + (n.length ? ' · ' + n.join('、') : ''); }
   if (p.indexOf('取支票:') === 0) { const n = p.slice(4).split('|').filter(Boolean); return '取支票' + (n.length ? ' · ' + n.join('、') : ''); }
+  if (p.indexOf('换汇:') === 0) { const n = p.slice(3); return '换汇' + (n ? ' · ' + n : ''); }
   return p;
 }
 // GET all transaction annotations (optionally ?statement_id= or ?since=YYYY-MM-DD).
@@ -28676,7 +29693,7 @@ app.get('/api/ext/bank-txns', requireExtKey, (req, res) => {
     if (req.query.since) { where.push('t.txn_date>=?'); params.push(String(req.query.since).slice(0, 40)); }
     if (req.query.linked === '1') where.push("t.links IS NOT NULL AND t.links<>'' AND t.links<>'[]'");
     const rows = db.prepare(`SELECT t.id, t.statement_id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.purpose,
-        t.invoice_number, t.period_start, t.period_end, t.pay_portion, t.links,
+        t.invoice_number, t.period_start, t.period_end, t.pay_portion, t.links, t.category,
         s.bank, s.account_name, s.operator, s.period AS statement_period, s.file_name
       FROM bank_statement_txns t JOIN bank_statements s ON t.statement_id=s.id
       WHERE ${where.join(' AND ')} ORDER BY t.txn_date ASC, t.id ASC`).all(...params);
@@ -28688,7 +29705,7 @@ app.get('/api/ext/bank-txns', requireExtKey, (req, res) => {
         statement_period: r.statement_period, file_name: r.file_name,
         date: r.txn_date, amount: r.amount, direction: r.direction,
         payee: r.payee, payee_display: _bsPayeeDisplaySrv(r.payee),
-        note: r.note, purpose: r.purpose, invoice_number: r.invoice_number,
+        note: r.note, purpose: r.purpose, invoice_number: r.invoice_number, category: r.category || '',
         period_start: r.period_start, period_end: r.period_end, pay_portion: r.pay_portion,
         linked: Array.isArray(links) && links.length > 0, links,
       };
@@ -28700,7 +29717,7 @@ app.get('/api/ext/bank-txns', requireExtKey, (req, res) => {
 app.post('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const row = db.prepare("SELECT id, links FROM bank_statement_txns WHERE id=? AND kind='box'").get(id);
+    const row = db.prepare("SELECT id, links, payee, category FROM bank_statement_txns WHERE id=? AND kind='box'").get(id);
     if (!row) return res.status(404).json({ error: 'not found' });
     const b = req.body || {};
     let links = []; try { links = JSON.parse(row.links || '[]'); } catch { links = []; }
@@ -28723,7 +29740,7 @@ app.post('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
 app.delete('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const row = db.prepare("SELECT id, links FROM bank_statement_txns WHERE id=? AND kind='box'").get(id);
+    const row = db.prepare("SELECT id, links, payee, category FROM bank_statement_txns WHERE id=? AND kind='box'").get(id);
     if (!row) return res.status(404).json({ error: 'not found' });
     let links = []; try { links = JSON.parse(row.links || '[]'); } catch { links = []; }
     const ref = req.query.ref || (req.body && req.body.ref) || '';
@@ -28731,6 +29748,56 @@ app.delete('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
     db.prepare("UPDATE bank_statement_txns SET links=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(links), id);
     res.json({ success: true, id, links });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Read-only mirror endpoints for pallet.bintique.com's 银行账单 page: the full
+// statement list with box annotations, plus the PDF and referenced attachment
+// bytes — so the pallet side can show these statements 一模一样 without
+// re-uploading anything. Same PALLET_API_KEY gate as the rest of /api/ext.
+app.get('/api/ext/bank-statements', requireExtKey, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, notes, created_by, created_at
+      FROM bank_statements ORDER BY created_at DESC`).all();
+    const boxStmt = db.prepare(`SELECT id, page, box_x, box_y, box_w, box_h, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, links
+      FROM bank_statement_txns WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
+    for (const r of rows) {
+      r.file_available = !!r.file_path;
+      delete r.file_path;
+      r.boxes = boxStmt.all(r.id).map(b => {
+        let keys = []; try { keys = JSON.parse(b.photos || '[]'); } catch { keys = []; }
+        b.photo_files = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => path.basename(k));
+        delete b.photos;
+        try { b.links = JSON.parse(b.links || '[]'); } catch { b.links = []; }
+        try { b.inv_items = JSON.parse(b.inv_items || '[]'); } catch { b.inv_items = []; }
+        b.payee_display = _bsPayeeDisplaySrv(b.payee);
+        return b;
+      });
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Raw statement PDF bytes for the pallet mirror.
+app.get('/api/ext/bank-statements/:id/file', requireExtKey, async (req, res) => {
+  try {
+    const s = db.prepare('SELECT file_path FROM bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s || !s.file_path) return res.status(404).json({ error: 'not found' });
+    const buf = await storage.getBuffer(storage.keyFrom(s.file_path, 'uploads'));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.send(buf);
+  } catch (e) { res.status(404).json({ error: 'File not found' }); }
+});
+// Attachment bytes (box-annotation photos). Only files actually referenced by
+// bank-statement data are served — nothing else in /uploads is reachable here.
+app.get('/api/ext/bank-files/:name', requireExtKey, async (req, res) => {
+  try {
+    const name = path.basename(String(req.params.name || ''));
+    if (!name) return res.status(400).json({ error: 'missing name' });
+    const referenced = db.prepare(`SELECT 1 FROM bank_statement_txns WHERE kind='box' AND photos LIKE ? LIMIT 1`).get('%' + name + '%');
+    if (!referenced) return res.status(404).json({ error: 'not found' });
+    const buf = await storage.getBuffer('uploads/' + name);
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.send(buf);
+  } catch (e) { res.status(404).json({ error: 'File not found' }); }
 });
 
 // One statement + its transactions.
@@ -29389,6 +30456,8 @@ app.listen(PORT, () => {
   setTimeout(() => { cleanupZelleAuthRepTemplates().catch(e => console.error('[startup] Zelle auth-rep cleanup error:', e.message)); }, 16000);
   // One-time: rename PayPal/Venmo/CashApp self-receive templates to name the platforms (clearer)
   setTimeout(() => { renamePlatformPayTemplates().catch(e => console.error('[startup] platform-pay rename error:', e.message)); }, 18000);
+  // One-time: rebuild cash authorization/receipt templates without the trailing company-verification block (one page)
+  setTimeout(() => { rebuildCashFormsOnePage().catch(e => console.error('[startup] cash one-page rebuild error:', e.message)); }, 20000);
   // SMS Inbox: start auto re-reminder check every 5 minutes
   setInterval(smsAutoReremind, SMS_REREMIND_INTERVAL);
   console.log('[startup] SMS auto-rereminder started (every 5 min)');

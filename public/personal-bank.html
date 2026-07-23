@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Beryl Zhang · 个人银行账单</title>
+<style>
+:root{--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;--g500:#6b7280;--g600:#4b5563;--g700:#374151}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;background:#fbf3e2;color:#1f2937}
+.wrap{max-width:1100px;margin:0 auto;padding:18px 16px 60px}
+h1{font-size:1.25rem;font-weight:800;color:#92400e;margin:0;display:flex;align-items:center;gap:.4rem}
+.btn{display:inline-flex;align-items:center;gap:.25rem;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.85rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn-green{background:#16a34a;color:#fff}.btn-green:hover{background:#15803d}
+.btn-outline{background:#fff;color:var(--g600);border:1px solid var(--g300)}
+.btn-amber{background:#b45309;color:#fff}
+.btn-red{background:#fff;color:#dc2626;border:1px solid #fecaca}
+.btn-sm{padding:.3rem .6rem;font-size:.78rem;border-radius:6px}
+.card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:14px 16px}
+.chip{display:inline-block;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.5rem .9rem;font-size:.8rem;color:var(--g500)}
+.chip b{font-size:1.05rem;margin-left:.3rem}
+table{width:100%;border-collapse:collapse}
+th{padding:.5rem .55rem;font-size:.76rem;font-weight:700;color:var(--g500);text-align:left;white-space:nowrap;border-bottom:2px solid var(--g200)}
+td{padding:.5rem .55rem;font-size:.84rem;border-top:1px solid var(--g100);vertical-align:middle}
+input,select{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;font-size:.85rem;background:#fff}
+.modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;z-index:900}
+.modal-bg.show{display:block}
+.pill-in{display:inline-block;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
+.pill-out{display:inline-block;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
+</style>
+</head>
+<body>
+
+<!-- 密码门 -->
+<div id="gate" style="position:fixed;inset:0;background:#fbf3e2;display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px">
+  <div class="card" style="max-width:340px;width:100%;text-align:center;padding:26px 22px">
+    <div style="font-size:2rem">🔒</div>
+    <div style="font-weight:800;font-size:1.05rem;margin:.4rem 0">Beryl Zhang · 个人银行账单</div>
+    <div style="font-size:.82rem;color:var(--g500);margin-bottom:12px">请输入访问密码</div>
+    <input type="password" id="gatePw" placeholder="密码" style="width:100%;text-align:center;font-size:1rem;letter-spacing:.2em" onkeydown="if(event.key==='Enter')pbVerify()">
+    <div id="gateErr" style="color:#dc2626;font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
+    <button class="btn btn-green" style="width:100%;justify-content:center;margin-top:.4rem" onclick="pbVerify()">进入</button>
+  </div>
+</div>
+
+<div class="wrap" id="main" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">
+    <h1>💼 Beryl Zhang · 个人银行账单</h1>
+    <label class="btn btn-green" style="cursor:pointer">+ 上传账单 PDF
+      <input type="file" id="upInput" accept="application/pdf" multiple style="display:none" onchange="pbOpenUpload(this.files)">
+    </label>
+  </div>
+  <p style="color:var(--g500);font-size:.85rem;margin:.35rem 0 1rem">上传个人账单 PDF 后点「✏️ 标注」，在 PDF 上<strong>拖框标注每一笔钱的来往</strong>（收入/支出、日期、金额、对方、分类、备注），下方自动算出<strong>收支合计和分类统计</strong>。</p>
+
+  <div id="dropZone" onclick="document.getElementById('upInput').click()" style="border:2px dashed var(--g300,#d1d5db);border-radius:10px;padding:.9rem 1rem;text-align:center;color:var(--g400,#9ca3af);font-size:.85rem;margin-bottom:.9rem;cursor:pointer;transition:background .15s,border-color .15s,color .15s">⬇️ 把账单 PDF 拖到这里（会弹窗让你选银行和账单起止日期，文件按日期自动重命名）</div>
+
+  <div id="stats" style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem"></div>
+
+  <div class="card" style="margin-bottom:1rem;overflow-x:auto">
+    <div style="font-weight:700;font-size:.9rem;color:var(--g600);margin-bottom:.4rem">📎 已上传的账单</div>
+    <table id="listTable"><thead><tr>
+      <th>文件</th><th>银行</th><th>账单起始</th><th>账单结束</th><th style="text-align:right">收入</th><th style="text-align:right">支出</th><th>笔数</th><th>操作</th>
+    </tr></thead><tbody id="listBody"></tbody></table>
+  </div>
+
+  <div class="card" style="overflow-x:auto">
+    <div style="font-weight:700;font-size:.9rem;color:var(--g600);margin-bottom:.4rem">📊 分类统计（全部账单）</div>
+    <div id="catStats" style="font-size:.84rem;color:var(--g500)">还没有标注。</div>
+  </div>
+
+  <div class="card" style="overflow-x:auto;margin-top:1rem">
+    <div style="font-weight:700;font-size:.9rem;color:var(--g600);margin-bottom:.45rem">👥 对方收支分析 <span style="font-weight:400;font-size:.76rem;color:var(--g400)">勾选账单或选日期段，看给每个人/公司的收支和是否平衡</span></div>
+    <div id="paStmts" style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.45rem"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem;font-size:.82rem">
+      <label style="color:var(--g500)">从 <input type="date" id="paFrom" onchange="renderPayeeStats()"></label>
+      <label style="color:var(--g500)">到 <input type="date" id="paTo" onchange="renderPayeeStats()"></label>
+      <select id="paCat" onchange="renderPayeeStats()" style="padding:.3rem .4rem;border:1px solid var(--g200);border-radius:6px;font-size:.8rem"></select>
+      <input type="text" id="paSearch" placeholder="搜对方…" oninput="renderPayeeStats()" style="padding:.3rem .5rem;border:1px solid var(--g200);border-radius:6px;font-size:.8rem;width:130px">
+      <button class="btn btn-sm btn-outline" onclick="paReset()">重置</button>
+    </div>
+    <div id="paSummary" style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.55rem"></div>
+    <div id="paTable" style="font-size:.84rem;color:var(--g500)">还没有标注。</div>
+  </div>
+</div>
+
+<!-- 上传信息弹窗 -->
+<div class="modal-bg" id="upModal" style="display:none;align-items:center;justify-content:center;padding:16px">
+  <div class="card" style="max-width:420px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+      <div style="font-weight:800">上传个人账单</div>
+      <button class="btn btn-sm btn-outline" onclick="pbCloseUpload()">× 关闭</button>
+    </div>
+    <div id="upFiles" style="font-size:.8rem;color:var(--g600);background:#f8fafc;border:1px solid var(--g200);border-radius:8px;padding:.5rem .6rem;margin-bottom:.6rem"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem .6rem">
+      <div style="grid-column:1/-1"><label style="font-size:.78rem;font-weight:600;color:var(--g600);display:block;margin-bottom:.2rem">🏦 银行</label>
+        <select id="upBank" onchange="pbUpdateNamePreview()" style="width:100%"><option>Chase</option><option>BoA</option><option>Cash App</option><option>其他</option></select></div>
+      <div><label style="font-size:.78rem;font-weight:600;color:var(--g600);display:block;margin-bottom:.2rem">账单起始</label><input type="date" id="upStart" onchange="pbUpdateNamePreview()" style="width:100%"></div>
+      <div><label style="font-size:.78rem;font-weight:600;color:var(--g600);display:block;margin-bottom:.2rem">账单结束</label><input type="date" id="upEnd" onchange="pbUpdateNamePreview()" style="width:100%"></div>
+    </div>
+    <div style="margin-top:.6rem;font-size:.78rem;color:var(--g500)">重命名后：<span id="upNamePreview" style="font-family:monospace;color:#0369a1;word-break:break-all">—</span></div>
+    <div id="upErr" style="color:#dc2626;font-size:.8rem;min-height:1em;margin-top:.4rem"></div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.6rem">
+      <button class="btn btn-outline" onclick="pbCloseUpload()">取消</button>
+      <button class="btn btn-green" id="upConfirmBtn" onclick="pbDoUpload()">上传</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORIES = ['工资 Salary', '公司往来 Company', '转账 Transfer', 'Whatnot', 'Bintique 卖货款', '赔偿 Claim', '保险 Insurance', '付信用卡 Credit Card', '付学费 Tuition', '捐款 Donation', 'MOOMOO炒股', '医疗 Medical/Dental', '房租 Rent', '生活 Living', '餐饮 Food', '购物 Shopping', '投资 Investment', '取现 Cash', '银行存款 Deposit', '银行费用 Fee', '退回入账 Returned Posted Credit', '其他 Other'];
+// 每个分类常用的「对方」候选：选好分类后，对方输入框自动给这些选项（也可自由填写）
+const CAT_PAYEES = {
+  '工资 Salary': ['Prime Anchor Workforce Inc', 'Swiftx Inc', 'Superior Brands Corp Inc'],
+  '转账 Transfer': ['Tiexiong Zhou', 'Niki Zhao', 'Yizhao Cai', 'Boying Wang', 'Guiping Ma'],
+  '公司往来 Company': ['Prime Anchor Point LLC', 'Surplus Lane Inc'],
+  'Whatnot': ['Whatnot'],
+  '保险 Insurance': ['State Farm'],
+  'Bintique 卖货款': ['Bintique'],
+  '付信用卡 Credit Card': ['Wells Fargo', 'BCU', 'Citi', 'Apple', 'Capital One', 'American Express'],
+};
+const ALL_PAYEES = [...new Set(Object.values(CAT_PAYEES).flat())];
+let PW = sessionStorage.getItem('pb_pw') || '';
+let _list = [];
+function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+function money(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function toast(msg, bad) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);background:${bad ? '#dc2626' : '#16a34a'};color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:.85rem;z-index:2000;box-shadow:0 6px 20px rgba(0,0,0,.25)`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+async function api(path, opts = {}) {
+  const url = path + (path.includes('?') ? '&' : '?') + 'pw=' + encodeURIComponent(PW);
+  const r = await fetch(url, { method: opts.method || 'GET', headers: opts.body && !(opts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : undefined, body: opts.body });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401) { sessionStorage.removeItem('pb_pw'); location.reload(); throw new Error('密码失效'); }
+  if (!r.ok && !j.error) j.error = 'HTTP ' + r.status;
+  return j;
+}
+async function pbVerify() {
+  const pw = document.getElementById('gatePw').value;
+  const r = await fetch('/pb/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pw }) }).then(x => x.json()).catch(() => ({}));
+  if (r.ok) {
+    PW = pw; sessionStorage.setItem('pb_pw', pw);
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('main').style.display = '';
+    pbLoad();
+  } else {
+    document.getElementById('gateErr').textContent = '密码错误';
+  }
+}
+async function pbLoad() {
+  _list = await api('/pb/statements').catch(() => []);
+  if (!Array.isArray(_list)) _list = [];
+  render();
+}
+function sums(boxes) {
+  const inc = boxes.filter(b => b.direction === 'in').reduce((s, b) => s + (Number(b.amount) || 0), 0);
+  const out = boxes.filter(b => b.direction !== 'in').reduce((s, b) => s + (Number(b.amount) || 0), 0);
+  return { inc, out };
+}
+function render() {
+  const all = _list.flatMap(s => s.boxes || []);
+  const t = sums(all);
+  document.getElementById('stats').innerHTML =
+    `<span class="chip">账单 <b style="color:#1f2937">${_list.length} 份</b></span>` +
+    `<span class="chip">↓ 收入 <b style="color:#047857">${money(t.inc)}</b></span>` +
+    `<span class="chip">↑ 支出 <b style="color:#b91c1c">${money(t.out)}</b></span>` +
+    `<span class="chip">净 <b style="color:${t.inc - t.out >= 0 ? '#047857' : '#b91c1c'}">${money(t.inc - t.out)}</b></span>` +
+    `<span class="chip">标注 <b style="color:#1f2937">${all.length} 笔</b></span>`;
+  const body = document.getElementById('listBody');
+  if (!_list.length) {
+    body.innerHTML = '<tr><td colspan="8" style="color:var(--g400);padding:1rem">还没上传账单，点右上「+ 上传账单 PDF」。</td></tr>';
+  } else {
+    body.innerHTML = _list.map(s => {
+      const st = sums(s.boxes || []);
+      return `<tr>
+        <td><div style="font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.file_name)}">📄 ${esc(s.file_name || 'PDF')}</div>
+          <div style="font-size:.72rem;color:var(--g400)">${esc(String(s.created_at || '').slice(0, 16).replace('T', ' '))}</div></td>
+        <td><select onchange="pbMeta(${s.id},'bank',this.value)" style="min-width:90px">${['Chase', 'BoA', 'Cash App', '其他'].map(b => `<option${b === s.bank ? ' selected' : ''}>${b}</option>`).join('')}</select></td>
+        <td><input type="date" value="${esc(s.period_start || '')}" onchange="pbMeta(${s.id},'period_start',this.value)"></td>
+        <td><input type="date" value="${esc(s.period_end || '')}" onchange="pbMeta(${s.id},'period_end',this.value)"></td>
+        <td style="text-align:right;font-weight:700;color:#047857">${st.inc ? money(st.inc) : '—'}</td>
+        <td style="text-align:right;font-weight:700;color:#b91c1c">${st.out ? money(st.out) : '—'}</td>
+        <td>${(s.boxes || []).length ? (s.boxes.length + ' 笔') : '<span style="color:var(--g300)">还没标注</span>'}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm btn-amber" onclick="pbOpenEditor(${s.id})">✏️ 标注</button>
+          <button class="btn btn-sm btn-red" onclick="pbDelete(${s.id})">删除</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+  // 分类统计
+  const cats = {};
+  for (const b of all) {
+    const c = (b.category || '').trim() || '未分类';
+    if (!cats[c]) cats[c] = { inc: 0, out: 0, n: 0 };
+    cats[c][b.direction === 'in' ? 'inc' : 'out'] += Number(b.amount) || 0;
+    cats[c].n++;
+  }
+  const keys = Object.keys(cats).sort((a, b) => (cats[b].inc + cats[b].out) - (cats[a].inc + cats[a].out));
+  document.getElementById('catStats').innerHTML = keys.length
+    ? `<table><thead><tr><th>分类</th><th style="text-align:right">收入</th><th style="text-align:right">支出</th><th>笔数</th></tr></thead><tbody>` +
+      keys.map(k => `<tr><td style="font-weight:600">${esc(k)}</td>
+        <td style="text-align:right;color:#047857;font-weight:700">${cats[k].inc ? money(cats[k].inc) : '—'}</td>
+        <td style="text-align:right;color:#b91c1c;font-weight:700">${cats[k].out ? money(cats[k].out) : '—'}</td>
+        <td>${cats[k].n}</td></tr>`).join('') + '</tbody></table>'
+    : '还没有标注。';
+  renderPayeeFilters();
+  renderPayeeStats();
+}
+
+// ── 对方收支分析：勾选账单 / 选日期段，按对方汇总收入支出并看是否平衡 ──
+let _paSel = null;   // Set(statement id)；null = 全部账单
+function paToggleStmt(id) {
+  if (_paSel === null) _paSel = new Set(_list.map(s => s.id));
+  if (_paSel.has(id)) _paSel.delete(id); else _paSel.add(id);
+  if (_paSel.size === _list.length) _paSel = null;
+  renderPayeeFilters(); renderPayeeStats();
+}
+function paSelAll(v) { _paSel = v ? null : new Set(); renderPayeeFilters(); renderPayeeStats(); }
+function paReset() {
+  _paSel = null;
+  document.getElementById('paFrom').value = '';
+  document.getElementById('paTo').value = '';
+  document.getElementById('paCat').value = '';
+  document.getElementById('paSearch').value = '';
+  renderPayeeFilters(); renderPayeeStats();
+}
+function renderPayeeFilters() {
+  const wrap = document.getElementById('paStmts');
+  if (!wrap) return;
+  const allOn = _paSel === null;
+  const chip = (on, label, onclick, title) => `<button onclick="${onclick}" title="${esc(title || '')}" style="border:1px solid ${on ? '#16a34a' : 'var(--g200)'};background:${on ? '#dcfce7' : '#fff'};color:${on ? '#166534' : 'var(--g500)'};border-radius:14px;padding:.15rem .6rem;font-size:.76rem;cursor:pointer;font-weight:${on ? 700 : 400};white-space:nowrap">${esc(label)}</button>`;
+  wrap.innerHTML = chip(allOn, '全部账单', 'paSelAll(true)') + (allOn ? '' : chip(false, '清空', 'paSelAll(false)')) +
+    _list.map(s => {
+      const on = allOn || (_paSel && _paSel.has(s.id));
+      const label = `${s.bank || ''} ${String(s.period_start || '').slice(5)}~${String(s.period_end || '').slice(5)}`.trim() || (s.file_name || '').slice(0, 24);
+      return chip(on, label, `paToggleStmt(${s.id})`, s.file_name);
+    }).join('');
+  // 分类下拉：保留当前选择
+  const sel = document.getElementById('paCat');
+  if (sel) {
+    const prev = sel.value;
+    const present = [...new Set(_list.flatMap(s => (s.boxes || []).map(b => (b.category || '').trim() || '未分类')))].sort();
+    sel.innerHTML = '<option value="">全部分类</option>' + present.map(c => `<option value="${esc(c)}"${c === prev ? ' selected' : ''}>${esc(c)}</option>`).join('');
+  }
+}
+// 勾选状态：_paPick = 选中的具体标注 id；_paOpen = 展开明细的对方名
+let _paPick = new Set(), _paOpen = new Set(), _paKeys = [], _paMap = {};
+function paClearPick() { _paPick = new Set(); renderPayeeStats(); }
+function paPickBox(id) { if (_paPick.has(id)) _paPick.delete(id); else _paPick.add(id); renderPayeeStats(); }
+function paPickPayee(ki) {
+  const v = _paMap[_paKeys[ki]]; if (!v) return;
+  const allOn = v.boxes.every(b => _paPick.has(b.id));
+  v.boxes.forEach(b => { if (allOn) _paPick.delete(b.id); else _paPick.add(b.id); });
+  renderPayeeStats();
+}
+function paOpenPayee(ki) {
+  const k = _paKeys[ki];
+  if (_paOpen.has(k)) _paOpen.delete(k); else _paOpen.add(k);
+  renderPayeeStats();
+}
+function renderPayeeStats() {
+  const tableEl = document.getElementById('paTable'), sumEl = document.getElementById('paSummary');
+  if (!tableEl) return;
+  const from = document.getElementById('paFrom')?.value || '';
+  const to = document.getElementById('paTo')?.value || '';
+  const cat = document.getElementById('paCat')?.value || '';
+  const q = (document.getElementById('paSearch')?.value || '').toLowerCase();
+  let boxes = _list
+    .filter(s => _paSel === null || _paSel.has(s.id))
+    .flatMap(s => s.boxes || []);
+  if (from) boxes = boxes.filter(b => (b.txn_date || '') >= from);
+  if (to) boxes = boxes.filter(b => (b.txn_date || '') <= to);
+  if (cat) boxes = boxes.filter(b => ((b.category || '').trim() || '未分类') === cat);
+  if (q) boxes = boxes.filter(b => String(b.payee || '').toLowerCase().includes(q));
+  const t = sums(boxes);
+  const net = +(t.inc - t.out).toFixed(2);
+  const balanced = Math.abs(net) < 0.01;
+  // 勾选的部分（只算还在当前筛选范围里的）单独出一条盈亏
+  const picked = boxes.filter(b => _paPick.has(b.id));
+  const pt = sums(picked);
+  const pnet = +(pt.inc - pt.out).toFixed(2);
+  const pickBar = picked.length
+    ? `<span class="chip" style="background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;font-weight:700">已选 ${picked.length} 笔</span>` +
+      `<span class="chip">收 <b style="color:#047857">${money(pt.inc)}</b></span>` +
+      `<span class="chip">支 <b style="color:#b91c1c">${money(pt.out)}</b></span>` +
+      (Math.abs(pnet) < 0.01
+        ? '<span class="chip" style="background:#dcfce7;border-color:#86efac;color:#166534;font-weight:800">✓ 持平</span>'
+        : `<span class="chip" style="background:${pnet > 0 ? '#dcfce7;border-color:#86efac;color:#166534' : '#fee2e2;border-color:#fca5a5;color:#b91c1c'};font-weight:800">${pnet > 0 ? '盈' : '亏'} ${money(Math.abs(pnet))}</span>`) +
+      `<button onclick="paClearPick()" style="border:1px solid var(--g200);background:#fff;color:var(--g500);border-radius:14px;padding:.15rem .6rem;font-size:.76rem;cursor:pointer">✕ 清除选择</button>` +
+      `<span style="flex-basis:100%;height:0"></span>`
+    : '';
+  sumEl.innerHTML = pickBar + (boxes.length
+    ? `<span class="chip">↓ 收入 <b style="color:#047857">${money(t.inc)}</b></span>` +
+      `<span class="chip">↑ 支出 <b style="color:#b91c1c">${money(t.out)}</b></span>` +
+      `<span class="chip">净 <b style="color:${net >= 0 ? '#047857' : '#b91c1c'}">${money(net)}</b></span>` +
+      (balanced
+        ? '<span class="chip" style="background:#dcfce7;border-color:#86efac;color:#166534;font-weight:700">✓ 收支平衡</span>'
+        : `<span class="chip" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;font-weight:700">未平衡 差 ${money(Math.abs(net))}（${net > 0 ? '收多付少' : '付多收少'}）</span>`) +
+      `<span class="chip">共 <b>${boxes.length} 笔</b></span>`
+    : '');
+  const map = {};
+  for (const b of boxes) {
+    const p = String(b.payee || '').trim() || '未填对方';
+    if (!map[p]) map[p] = { inc: 0, out: 0, n: 0, boxes: [] };
+    map[p][b.direction === 'in' ? 'inc' : 'out'] += Number(b.amount) || 0;
+    map[p].n++; map[p].boxes.push(b);
+  }
+  _paMap = map;
+  _paKeys = Object.keys(map).sort((a, b) => (map[b].inc + map[b].out) - (map[a].inc + map[a].out));
+  tableEl.innerHTML = _paKeys.length
+    ? `<table><thead><tr><th style="width:26px"></th><th>对方</th><th style="text-align:right">收入</th><th style="text-align:right">支出</th><th style="text-align:right">净（收-支）</th><th>笔数</th></tr></thead><tbody>` +
+      _paKeys.map((k, ki) => {
+        const v = map[k], n2 = +(v.inc - v.out).toFixed(2);
+        const bal = Math.abs(n2) < 0.01;
+        const nSel = v.boxes.filter(b => _paPick.has(b.id)).length;
+        const allSel = nSel === v.boxes.length && nSel > 0;
+        const open = _paOpen.has(k);
+        let row = `<tr style="${nSel ? 'background:#eff6ff' : ''}">
+          <td><input type="checkbox" ${allSel ? 'checked' : ''} onclick="event.stopPropagation();paPickPayee(${ki})" title="选中/取消这个人的全部 ${v.boxes.length} 笔" style="cursor:pointer"></td>
+          <td style="font-weight:600;cursor:pointer" onclick="paOpenPayee(${ki})">${open ? '▼' : '▶'} ${esc(k)}${nSel && !allSel ? ` <span style="font-size:.72rem;color:#1d4ed8">(已选 ${nSel}/${v.boxes.length} 笔)</span>` : ''}</td>
+          <td style="text-align:right;color:#047857;font-weight:700">${v.inc ? money(v.inc) : '—'}</td>
+          <td style="text-align:right;color:#b91c1c;font-weight:700">${v.out ? money(v.out) : '—'}</td>
+          <td style="text-align:right;font-weight:800;color:${bal ? '#166534' : (n2 > 0 ? '#047857' : '#b91c1c')}">${bal ? '✓ 平' : money(n2)}</td>
+          <td>${v.n}</td></tr>`;
+        if (open) {
+          row += v.boxes.slice().sort((a, b) => String(a.txn_date || '').localeCompare(String(b.txn_date || ''))).map(b => `
+            <tr style="background:${_paPick.has(b.id) ? '#dbeafe' : '#fafafa'}">
+              <td></td>
+              <td colspan="5" style="padding:.25rem .5rem">
+                <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.8rem">
+                  <input type="checkbox" ${_paPick.has(b.id) ? 'checked' : ''} onclick="paPickBox(${b.id})" style="cursor:pointer">
+                  <span style="color:var(--g500);white-space:nowrap">${esc(b.txn_date || '—')}</span>
+                  <b style="color:${b.direction === 'in' ? '#047857' : '#b91c1c'};white-space:nowrap">${b.direction === 'in' ? '+' : '-'}${money(b.amount)}</b>
+                  <span style="color:var(--g500)">${esc((b.category || '').trim() || '未分类')}</span>
+                  ${(b.photos_urls || []).length ? `<span title="有 ${b.photos_urls.length} 张证据照片" style="color:#1d4ed8">📷${b.photos_urls.length}</span>` : ''}
+                  ${b.note ? `<span style="color:var(--g400);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.note)}</span>` : ''}
+                </label>
+              </td>
+            </tr>`).join('');
+        }
+        return row;
+      }).join('') + '</tbody></table>'
+    : '没有符合筛选的标注。';
+}
+async function pbMeta(id, field, value) {
+  const s = _list.find(x => x.id === id); if (!s) return;
+  s[field] = value;
+  const r = await api('/pb/statements/' + id + '/meta', { method: 'PUT', body: JSON.stringify({ bank: s.bank, period_start: s.period_start, period_end: s.period_end }) });
+  if (r.error) toast('保存失败：' + r.error, true); else toast('已保存 ✓');
+}
+function pbDelete(id) {
+  if (!confirm('删除这份账单和它的所有标注？')) return;
+  api('/pb/statements/' + id, { method: 'DELETE' }).then(r => {
+    if (r.error) toast('删除失败：' + r.error, true);
+    else { toast('已删除'); pbLoad(); }
+  });
+}
+// ── 上传 ──
+let _upFiles = [];
+// 与服务端 /pb/statements 的重命名规则保持一致：BerylZhang_银行_起始_结束.pdf
+function pbUpdateNamePreview() {
+  const bank = (document.getElementById('upBank').value || '').replace(/\s+/g, '');
+  const ps = document.getElementById('upStart').value, pe = document.getElementById('upEnd').value;
+  const name = (['BerylZhang', bank, ps && pe ? ps + '_' + pe : (ps || pe)].filter(Boolean).join('_') || 'statement')
+    .replace(/[\/\\:*?"<>|]+/g, '-').slice(0, 180) + '.pdf';
+  const el = document.getElementById('upNamePreview');
+  if (el) el.textContent = (ps && pe) ? name + (_upFiles.length > 1 ? `（共 ${_upFiles.length} 份，同名时自动区分）` : '') : '请先选择账单起止日期';
+}
+function pbOpenUpload(files) {
+  const pdfs = Array.from(files || []).filter(f => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+  if (!pdfs.length) { toast('只支持 PDF 文件', true); return; }
+  _upFiles = pdfs;
+  document.getElementById('upFiles').innerHTML = '📄 ' + pdfs.map(f => esc(f.name)).join('<br>📄 ');
+  document.getElementById('upErr').textContent = '';
+  pbUpdateNamePreview();
+  const m = document.getElementById('upModal');
+  m.style.display = 'flex';
+  document.getElementById('upInput').value = '';
+}
+// ── 拖拽上传：拖 PDF 到虚线框（或页面任意位置）即弹出上传窗 ──
+(() => {
+  const zone = document.getElementById('dropZone');
+  if (!zone) return;
+  const on = () => { zone.style.background = '#ecfdf5'; zone.style.borderColor = '#16a34a'; zone.style.color = '#166534'; };
+  const off = () => { zone.style.background = ''; zone.style.borderColor = ''; zone.style.color = ''; };
+  ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); on(); }));
+  ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); off(); }));
+  zone.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) pbOpenUpload(e.dataTransfer.files); });
+  // 拖到页面其他地方也接住，不让浏览器直接打开 PDF
+  ['dragover', 'drop'].forEach(ev => document.addEventListener(ev, e => {
+    e.preventDefault();
+    if (ev === 'drop' && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) pbOpenUpload(e.dataTransfer.files);
+  }));
+})();
+function pbCloseUpload() { document.getElementById('upModal').style.display = 'none'; _upFiles = []; }
+async function pbDoUpload() {
+  const bank = document.getElementById('upBank').value;
+  const ps = document.getElementById('upStart').value, pe = document.getElementById('upEnd').value;
+  if (!ps || !pe) { document.getElementById('upErr').textContent = '请选择账单起止日期'; return; }
+  const btn = document.getElementById('upConfirmBtn');
+  btn.disabled = true;
+  let done = 0;
+  for (let i = 0; i < _upFiles.length; i++) {
+    btn.textContent = `上传中…(${i + 1}/${_upFiles.length})`;
+    const fd = new FormData();
+    fd.append('file', _upFiles[i]);
+    fd.append('bank', bank); fd.append('period_start', ps); fd.append('period_end', pe); fd.append('pw', PW);
+    try {
+      const r = await fetch('/pb/statements?pw=' + encodeURIComponent(PW), { method: 'POST', body: fd }).then(x => x.json());
+      if (!r.success) throw new Error(r.error || '上传失败');
+      done++;
+    } catch (e) { document.getElementById('upErr').textContent = `「${_upFiles[i].name}」上传失败：` + (e.message || e); }
+  }
+  btn.disabled = false; btn.textContent = '上传';
+  if (done) { toast('已上传 ' + done + ' 份 ✓'); pbCloseUpload(); pbLoad(); }
+}
+// ── pdf.js 编辑器（框选标注） ──
+let _libsP = null;
+function loadPdfjs() {
+  if (_libsP) return _libsP;
+  const loadScript = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('fail ' + src)); document.head.appendChild(s); });
+  _libsP = (async () => {
+    const BASES = ['https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/', 'https://unpkg.com/pdfjs-dist@3.11.174/build/', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/'];
+    let base = BASES[0];
+    if (!window.pdfjsLib) for (const b of BASES) { try { await loadScript(b + 'pdf.min.js'); if (window.pdfjsLib) { base = b; break; } } catch (_) {} }
+    if (!window.pdfjsLib) throw new Error('pdf.js 加载失败');
+    try { pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js'; } catch (_) {}
+  })().catch(e => { _libsP = null; throw e; });
+  return _libsP;
+}
+let _edId = null, _edBoxes = [];
+function ensureEditor() {
+  if (document.getElementById('edModal')) return;
+  const m = document.createElement('div');
+  m.id = 'edModal';
+  m.style.cssText = 'display:none;position:fixed;inset:0;z-index:1500;background:rgba(15,23,42,.55)';
+  m.innerHTML = `<div style="position:absolute;inset:2.5%;background:#eef2f7;border-radius:12px;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--g200)">
+      <strong id="edTitle" style="font-size:.92rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></strong>
+      <span id="edStatus" style="font-size:.78rem;color:var(--g400)"></span>
+      <button class="btn btn-sm" id="edDrawBtn" onclick="edToggleDraw()" style="border:1px solid var(--g200)">✏️ 框选标注：关</button>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('edModal').style.display='none';pbLoad()">✕ 关闭</button>
+    </div>
+    <div style="flex:1;display:flex;overflow:hidden">
+      <div id="edPages" style="flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;align-items:center;gap:1rem"></div>
+      <div style="width:330px;border-left:1px solid var(--g200);background:#fff;display:flex;flex-direction:column">
+        <div style="padding:.55rem .65rem;border-bottom:1px solid var(--g100)">
+          <div style="font-weight:700;font-size:.85rem">🧾 标注（收支 / 日期 / 金额 / 对方）</div>
+          <div style="font-size:.75rem;color:var(--g400);margin-top:.2rem">在左侧 PDF 上<strong>拖动画框</strong>圈出一笔交易，在这里填信息，自动保存。</div>
+        </div>
+        <div id="edPanel" style="flex:1;overflow:auto;padding:.5rem .55rem"></div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+async function pbOpenEditor(id) {
+  ensureEditor();
+  _edId = id;
+  const s = _list.find(x => x.id === id) || {};
+  document.getElementById('edTitle').textContent = '✏️ ' + (s.file_name || 'PDF');
+  document.getElementById('edModal').style.display = 'block';
+  const pages = document.getElementById('edPages');
+  pages.innerHTML = '<div style="color:var(--g400);padding:2rem">加载中…</div>';
+  try {
+    await loadPdfjs();
+    const res = await fetch('/pb/statements/' + id + '/file?pw=' + encodeURIComponent(PW));
+    if (!res.ok) throw new Error('下载 PDF 失败 (' + res.status + ')');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    await renderPages(bytes, pages);
+    wireDrawing();
+    _edDraw = false; edApplyDraw();   // 打开时默认关着，点「框选标注」再画
+    _edBoxes = await api('/pb/statements/' + id + '/boxes');
+    if (!Array.isArray(_edBoxes)) _edBoxes = [];
+    renderBoxes();
+  } catch (e) {
+    pages.innerHTML = '<div style="color:#dc2626;padding:2rem">打开失败：' + esc(e.message || e) + '</div>';
+  }
+}
+async function renderPages(bytes, cont) {
+  cont.innerHTML = '';
+  const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+  const targetW = Math.min(900, Math.max(340, cont.clientWidth - 40));
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const vp1 = page.getViewport({ scale: 1 });
+    const scale = targetW / vp1.width;
+    const vp = page.getViewport({ scale });
+    const wrap = document.createElement('div');
+    wrap.className = 'ed-page';
+    wrap.dataset.page = i;
+    wrap.style.cssText = 'position:relative;flex:0 0 auto;width:' + Math.round(vp.width) + 'px;height:' + Math.round(vp.height) + 'px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25);cursor:default';
+    const cv = document.createElement('canvas');
+    cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
+    cv.style.width = Math.round(vp.width) + 'px'; cv.style.height = Math.round(vp.height) + 'px';
+    wrap.appendChild(cv);
+    cont.appendChild(wrap);
+    await page.render({ canvasContext: cv.getContext('2d'), viewport: page.getViewport({ scale: scale * dpr }) }).promise;
+  }
+}
+// 框选标注开关：开着才能在 PDF 上画新框；关着时正常光标，框仍可拖动/点击。
+let _edDraw = false;
+function edApplyDraw() {
+  const btn = document.getElementById('edDrawBtn');
+  if (btn) {
+    btn.textContent = _edDraw ? '✏️ 框选标注：开' : '✏️ 框选标注：关';
+    btn.style.cssText = _edDraw
+      ? 'border:1px solid #16a34a;background:#dcfce7;color:#166534;font-weight:700'
+      : 'border:1px solid var(--g200)';
+  }
+  document.querySelectorAll('#edPages .ed-page').forEach(p => { p.style.cursor = _edDraw ? 'crosshair' : 'default'; });
+}
+function edToggleDraw() { _edDraw = !_edDraw; edApplyDraw(); }
+function wireDrawing() {
+  document.querySelectorAll('#edPages .ed-page').forEach(page => {
+    if (page._wired) return;
+    page._wired = true;
+    page.addEventListener('pointerdown', e => {
+      if (!_edDraw) return;
+      if (e.target.closest('.ed-box')) return;
+      // 上一笔的金额/分类/日期（必须在账期内）没填好之前，不让开始画下一笔
+      const bad = _edBoxes.find(x => _pbMissing(x).length);
+      if (bad) {
+        const n = _edBoxes.indexOf(bad) + 1;
+        toast(`#${n} 的${_pbMissing(bad).join('、')}还没填好，填完才能标下一笔`, true);
+        focusItem(bad.id);
+        return;
+      }
+      e.preventDefault();
+      const rect = page.getBoundingClientRect();
+      const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+      const rb = document.createElement('div');
+      rb.style.cssText = `position:absolute;border:2px dashed #2563eb;background:rgba(37,99,235,.12);z-index:8;left:${sx}px;top:${sy}px;width:0;height:0;pointer-events:none`;
+      page.appendChild(rb);
+      const move = ev => {
+        const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+        rb.style.left = Math.min(sx, x) + 'px'; rb.style.top = Math.min(sy, y) + 'px';
+        rb.style.width = Math.abs(x - sx) + 'px'; rb.style.height = Math.abs(y - sy) + 'px';
+      };
+      const up = async () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        const l = parseFloat(rb.style.left) || 0, t = parseFloat(rb.style.top) || 0;
+        const w = parseFloat(rb.style.width) || 0, h = parseFloat(rb.style.height) || 0;
+        rb.remove();
+        if (w < 12 || h < 12) return;
+        const box = { page: parseInt(page.dataset.page) || 1, box_x: l / page.clientWidth, box_y: t / page.clientHeight, box_w: w / page.clientWidth, box_h: h / page.clientHeight, txn_date: '', amount: 0, direction: 'out', payee: '', category: '', note: '' };
+        const r = await api('/pb/statements/' + _edId + '/boxes', { method: 'POST', body: JSON.stringify(box) });
+        if (!r.id) { toast('保存失败：' + (r.error || ''), true); return; }
+        box.id = r.id;
+        _edBoxes.push(box);
+        renderBoxes();
+        const el = document.querySelector(`.ed-item[data-id="${box.id}"] .ed-amt`);
+        if (el) { el.focus(); el.scrollIntoView({ block: 'nearest' }); }
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+  });
+}
+function setStatus(t) { const s = document.getElementById('edStatus'); if (s) { s.textContent = t; if (t) setTimeout(() => { if (s.textContent === t) s.textContent = ''; }, 1200); } }
+async function edUpdate(id, field, value, el) {
+  const b = _edBoxes.find(x => x.id === id); if (!b) return;
+  // 日期必须在账单起止日期内。还在输入中（年份只敲了两位就触发 change）时
+  // 只把输入框标红、不打断；离开输入框（blur）才报错并还原。
+  if (field === 'txn_date' && value) {
+    const stmt = _list.find(x => x.id === _edId) || {};
+    if ((stmt.period_start && value < stmt.period_start) || (stmt.period_end && value > stmt.period_end)) {
+      if (el && document.activeElement === el) {
+        el.style.borderColor = '#fca5a5';
+        el.style.background = '#fff7f7';
+        return;
+      }
+      toast(`日期必须在账单周期内（${stmt.period_start || '?'} ~ ${stmt.period_end || '?'}）`, true);
+      renderBoxes();
+      return;
+    }
+    if (el) { el.style.borderColor = ''; el.style.background = ''; }
+  }
+  if (field === 'txn_date' && b.txn_date === value && !value) return;  // 空值重复 blur 不打请求
+  if (field === 'txn_date' && b.txn_date === value) { renderBoxes(); return; }  // 值没变只刷新提醒
+  const prev = b[field];
+  b[field] = value;
+  const r = await api('/pb/statements/' + _edId + '/boxes/' + id, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+  if (r.error) { b[field] = prev; toast('保存失败：' + r.error, true); renderBoxes(); return; }
+  setStatus('已保存 ✓');
+  // 换方向要重画框颜色；换分类要刷新「对方」候选；金额/分类/日期要刷新未填完提醒
+  if (field === 'direction' || field === 'category' || field === 'amount' || field === 'txn_date') renderBoxes();
+}
+async function edDelete(id) {
+  if (!confirm('删除这个标注？')) return;
+  const r = await api('/pb/statements/' + _edId + '/boxes/' + id, { method: 'DELETE' });
+  if (r.error) { toast('删除失败：' + r.error, true); return; }
+  _edBoxes = _edBoxes.filter(b => b.id !== id);
+  renderBoxes();
+}
+function focusItem(id) {
+  const item = document.querySelector(`.ed-item[data-id="${id}"]`);
+  if (!item) return;
+  item.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  item.style.boxShadow = '0 0 0 3px rgba(37,99,235,.35)';
+  setTimeout(() => { item.style.boxShadow = ''; }, 900);
+}
+// 日期必须已填且落在账单账期内
+function _pbDateOk(b) {
+  const stmt = _list.find(x => x.id === _edId) || {};
+  const d = b.txn_date || '';
+  if (!d) return false;
+  if (stmt.period_start && d < stmt.period_start) return false;
+  if (stmt.period_end && d > stmt.period_end) return false;
+  return true;
+}
+// 一笔标注还缺什么（空数组 = 齐了）
+function _pbMissing(b) {
+  const out = [];
+  if (!(Number(b.amount) > 0)) out.push('金额');
+  if (!String(b.category || '').trim()) out.push('分类');
+  if (!_pbDateOk(b)) out.push(b.txn_date ? '日期（不在账期内）' : '日期');
+  return out;
+}
+function renderBoxes() {
+  document.querySelectorAll('#edPages .ed-box').forEach(e => e.remove());
+  _edBoxes.sort((a, b) => (a.page - b.page) || (a.box_y - b.box_y) || (a.id - b.id));
+  const pages = {};
+  document.querySelectorAll('#edPages .ed-page').forEach(p => { pages[parseInt(p.dataset.page)] = p; });
+  _edBoxes.forEach((b, i) => {
+    const pg = pages[b.page || 1]; if (!pg) return;
+    const isIn = b.direction === 'in';
+    const color = isIn ? '#059669' : '#dc2626';
+    const el = document.createElement('div');
+    el.className = 'ed-box';
+    el.style.cssText = `position:absolute;left:${b.box_x * pg.clientWidth}px;top:${b.box_y * pg.clientHeight}px;width:${b.box_w * pg.clientWidth}px;height:${b.box_h * pg.clientHeight}px;border:2px solid ${color};background:${isIn ? 'rgba(5,150,105,.08)' : 'rgba(220,38,38,.08)'};box-sizing:border-box;z-index:6;cursor:move;touch-action:none`;
+    el.innerHTML = `<span style="position:absolute;left:-5px;top:50%;transform:translate(-100%,-50%);background:${color};color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px;pointer-events:none">${i + 1}</span>
+      <span class="ed-rs" title="拖动调整大小" style="position:absolute;right:-6px;bottom:-6px;width:12px;height:12px;background:${color};border:2px solid #fff;border-radius:3px;cursor:nwse-resize;box-sizing:border-box;z-index:7"></span>`;
+    // 框整体可拖动改位置，右下角小方块拉伸改大小；几乎没动时当作点击（聚焦右侧表单）
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const isResize = e.target.classList && e.target.classList.contains('ed-rs');
+      const startX = e.clientX, startY = e.clientY;
+      const orig = { x: b.box_x, y: b.box_y, w: b.box_w, h: b.box_h };
+      let moved = false;
+      const move = ev => {
+        const dx = (ev.clientX - startX) / pg.clientWidth, dy = (ev.clientY - startY) / pg.clientHeight;
+        if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 3) moved = true;
+        if (isResize) {
+          b.box_w = Math.max(0.01, Math.min(1 - orig.x, orig.w + dx));
+          b.box_h = Math.max(0.006, Math.min(1 - orig.y, orig.h + dy));
+        } else {
+          b.box_x = Math.max(0, Math.min(1 - orig.w, orig.x + dx));
+          b.box_y = Math.max(0, Math.min(1 - orig.h, orig.y + dy));
+        }
+        el.style.left = (b.box_x * pg.clientWidth) + 'px';
+        el.style.top = (b.box_y * pg.clientHeight) + 'px';
+        el.style.width = (b.box_w * pg.clientWidth) + 'px';
+        el.style.height = (b.box_h * pg.clientHeight) + 'px';
+      };
+      const up = async () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        if (!moved) { focusItem(b.id); return; }
+        const r = await api('/pb/statements/' + _edId + '/boxes/' + b.id, { method: 'PUT', body: JSON.stringify({ box_x: b.box_x, box_y: b.box_y, box_w: b.box_w, box_h: b.box_h }) });
+        if (r.error) toast('保存失败：' + r.error, true); else setStatus('位置已保存 ✓');
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+    pg.appendChild(el);
+  });
+  const panel = document.getElementById('edPanel');
+  if (!_edBoxes.length) {
+    panel.innerHTML = '<div style="color:var(--g400);font-size:.82rem;padding:.6rem .2rem">还没有标注。在左侧 PDF 上拖动画框圈出一笔交易。</div>';
+    return;
+  }
+  const _stmt = _list.find(x => x.id === _edId) || {};
+  const _dateLim = `${_stmt.period_start ? ` min="${esc(_stmt.period_start)}"` : ''}${_stmt.period_end ? ` max="${esc(_stmt.period_end)}"` : ''}`;
+  panel.innerHTML = _edBoxes.map((b, i) => {
+    const isIn = b.direction === 'in';
+    const color = isIn ? '#059669' : '#dc2626';
+    const inp = 'width:100%;padding:.3rem .4rem;border:1px solid var(--g200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem';
+    const missing = _pbMissing(b);
+    const incomplete = missing.length > 0;
+    const dateBad = !_pbDateOk(b);
+    return `<div class="ed-item" data-id="${b.id}" style="border:1px solid ${incomplete ? '#fca5a5' : 'var(--g200)'};border-left:3px solid ${color};border-radius:8px;padding:.5rem .55rem;margin-bottom:.5rem${incomplete ? ';background:#fff7f7' : ''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
+        <span style="font-weight:700;font-size:.82rem;color:${color}">#${i + 1} · 第 ${b.page} 页</span>
+        <button onclick="edDelete(${b.id})" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:.78rem;padding:.1rem .45rem">🗑 删除</button>
+      </div>
+      ${incomplete ? `<div style="font-size:.74rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:.15rem .4rem;margin-bottom:.3rem">⚠ ${missing.join('、')}未填好——填完才能标下一笔</div>` : ''}
+      <div style="display:flex;gap:.3rem;margin-bottom:.3rem">
+        <select onchange="edUpdate(${b.id},'direction',this.value)" style="flex:0 0 auto;padding:.3rem;border:1px solid var(--g200);border-radius:6px;font-size:.8rem">
+          <option value="out"${!isIn ? ' selected' : ''}>支出</option>
+          <option value="in"${isIn ? ' selected' : ''}>收入</option>
+        </select>
+        <input type="date" value="${esc(b.txn_date || '')}"${_dateLim} onchange="edUpdate(${b.id},'txn_date',this.value,this)" onblur="edUpdate(${b.id},'txn_date',this.value)" title="日期必须在账单周期内${_stmt.period_start ? `（${_stmt.period_start} ~ ${_stmt.period_end || ''}）` : ''}" style="flex:1;padding:.3rem;border:1px solid ${dateBad ? '#fca5a5' : 'var(--g200)'};border-radius:6px;font-size:.78rem${dateBad ? ';background:#fff7f7' : ''}">
+      </div>
+      <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.3rem">
+        <span style="color:#94a3b8;font-size:.82rem">$</span>
+        <input type="number" step="0.01" class="ed-amt" placeholder="金额" value="${b.amount || ''}" onchange="edUpdate(${b.id},'amount',this.value)" style="flex:1;padding:.32rem .4rem;border:1px solid var(--g200);border-radius:6px;font-size:.82rem">
+      </div>
+      <input type="text" list="pbCats" placeholder="分类（工资 / 转账 / 付信用卡…）" value="${esc(b.category || '')}" onchange="edUpdate(${b.id},'category',this.value)" style="${inp}">
+      <input type="text" list="pbPayee-${b.id}" placeholder="对方（谁付的 / 付给谁）" value="${esc(b.payee || '')}" onchange="edUpdate(${b.id},'payee',this.value)" style="${inp}">
+      <datalist id="pbPayee-${b.id}">${(CAT_PAYEES[b.category] || ALL_PAYEES).map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>
+      <input type="text" placeholder="备注（可选）" value="${esc(b.note || '')}" onchange="edUpdate(${b.id},'note',this.value)" style="${inp}">
+      <div style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
+        ${(b.photos_urls || []).map(u => `<span style="position:relative;display:inline-block"><img src="${esc(u)}" onclick="window.open('${esc(u)}','_blank')" title="点击查看大图" style="height:36px;width:36px;object-fit:cover;border-radius:5px;border:1px solid var(--g200);cursor:pointer"><span onclick="pbPhotoDel(${b.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;border-radius:50%;width:15px;height:15px;font-size:11px;line-height:15px;text-align:center;cursor:pointer">×</span></span>`).join('')}
+        <label title="拖照片到这一项任意位置，或点这里选择" style="border:1px dashed var(--g300);border-radius:6px;padding:.18rem .45rem;font-size:.72rem;color:var(--g400);cursor:pointer;white-space:nowrap">📷 证据照片
+          <input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="pbPhotoAdd(${b.id}, this.files); this.value=''">
+        </label>
+      </div>
+    </div>`;
+  }).join('') + `<datalist id="pbCats">${CATEGORIES.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>`;
+  // 每一项整体都是照片拖放区：把截图/照片拖到某笔标注上就传到那一笔
+  panel.querySelectorAll('.ed-item').forEach(item => {
+    const id = parseInt(item.dataset.id);
+    const orig = item.style.background || '';
+    ['dragenter', 'dragover'].forEach(ev => item.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); item.style.background = '#eff6ff'; }));
+    ['dragleave', 'drop'].forEach(ev => item.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); item.style.background = orig; }));
+    item.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) pbPhotoAdd(id, e.dataTransfer.files); });
+  });
+}
+// ── 每笔标注的照片证据：拖放/点选上传，点缩略图看大图，× 删除 ──
+async function pbPhotoAdd(boxId, files) {
+  const ok = Array.from(files || []).filter(f => /^image\//i.test(f.type) || f.type === 'application/pdf' || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(f.name || ''));
+  if (!ok.length) { toast('只支持图片或 PDF', true); return; }
+  const fd = new FormData();
+  ok.forEach(f => fd.append('photos', f));
+  setStatus('照片上传中…');
+  const r = await fetch('/pb/statements/' + _edId + '/boxes/' + boxId + '/photos?pw=' + encodeURIComponent(PW), { method: 'POST', body: fd }).then(x => x.json()).catch(e => ({ error: String(e) }));
+  if (r.error) { toast('上传失败：' + r.error, true); return; }
+  const b = _edBoxes.find(x => x.id === boxId);
+  if (b) b.photos_urls = r.photos_urls || [];
+  renderBoxes();
+  setStatus('已保存 ✓');
+  toast('证据照片已上传 ✓');
+}
+async function pbPhotoDel(boxId, url) {
+  if (!confirm('删除这张证据照片？')) return;
+  const r = await api('/pb/statements/' + _edId + '/boxes/' + boxId + '/photos?photo=' + encodeURIComponent(url), { method: 'DELETE' });
+  if (r.error) { toast('删除失败：' + r.error, true); return; }
+  const b = _edBoxes.find(x => x.id === boxId);
+  if (b) b.photos_urls = r.photos_urls || (b.photos_urls || []).filter(u => u !== url);
+  renderBoxes();
+}
+// ── init ──
+(async () => {
+  if (PW) {
+    const r = await fetch('/pb/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pw: PW }) }).then(x => x.json()).catch(() => ({}));
+    if (r.ok) {
+      document.getElementById('gate').style.display = 'none';
+      document.getElementById('main').style.display = '';
+      pbLoad();
+      return;
+    }
+    sessionStorage.removeItem('pb_pw');
+  }
+  document.getElementById('gatePw').focus();
+})();
+</script>
+</body>
+</html>

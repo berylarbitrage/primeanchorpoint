@@ -69,16 +69,33 @@
   <div id="errBox" class="err" style="display:none"></div>
 
   <div id="formMain" style="display:none">
+    <div class="card" id="siteCard" style="display:none">
+      <label style="font-size:.9rem">📍 仓库地址 / Location / Ubicación</label>
+      <div id="siteBtns" style="display:flex;flex-direction:column;gap:.45rem;margin-top:.35rem"></div>
+    </div>
     <div class="card">
-      <label id="t-periodLabel" style="font-size:.9rem">🗓️ 周期</label>
-      <div class="row2" style="margin-top:.35rem">
-        <div>
-          <label id="t-periodFromLabel" style="font-size:.76rem;color:#64748b">开始</label>
-          <input type="date" id="periodFrom">
-        </div>
-        <div>
-          <label id="t-periodToLabel" style="font-size:.76rem;color:#64748b">结束</label>
-          <input type="date" id="periodTo">
+      <label id="t-modeLabel" style="font-size:.9rem">✍️ 填写方式</label>
+      <div style="display:flex;gap:.5rem;margin-top:.4rem">
+        <button type="button" id="modeWeekBtn" onclick="setEntryMode('week')" style="flex:1;padding:.6rem;border-radius:10px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:.95rem;font-weight:700;cursor:pointer">📅 填一周</button>
+        <button type="button" id="modeDayBtn" onclick="setEntryMode('day')" style="flex:1;padding:.6rem;border-radius:10px;border:2px solid #cbd5e1;background:#fff;color:#475569;font-size:.95rem;font-weight:700;cursor:pointer">📆 只填一天</button>
+      </div>
+      <div id="dayDateWrap" style="display:none;margin-top:.55rem">
+        <label id="t-dayDateLabel" style="font-size:.76rem;color:#64748b">日期（本次填的柜子都算这一天）</label>
+        <input type="date" id="dayDate" onchange="applyDayDate()">
+      </div>
+    </div>
+    <div class="card">
+      <div id="periodWrap">
+        <label id="t-periodLabel" style="font-size:.9rem">🗓️ 周期</label>
+        <div class="row2" style="margin-top:.35rem">
+          <div>
+            <label id="t-periodFromLabel" style="font-size:.76rem;color:#64748b">开始</label>
+            <input type="date" id="periodFrom">
+          </div>
+          <div>
+            <label id="t-periodToLabel" style="font-size:.76rem;color:#64748b">结束</label>
+            <input type="date" id="periodTo">
+          </div>
         </div>
       </div>
       <div style="margin-top:.6rem">
@@ -127,6 +144,8 @@
 const I18N = {
   es: {
     title: '📅 Container · Registro semanal',
+    modeLabel: '✍️ Tipo de registro', modeWeek: '📅 Semana completa', modeDay: '📆 Solo un día',
+    dayDateLabel: 'Fecha (todos los contenedores cuentan para este día)',
     periodLabel: '🗓️ Ciclo', periodFrom: 'Desde', periodTo: 'Hasta',
     submitterLabel: '🙋 Enviado por', submitterPh: 'Nombre (opcional)',
     photoLabel: '📷 Fotos de verificación (opcional, varias)', photoCta: 'Tocar para tomar / elegir fotos (varias)',
@@ -142,6 +161,8 @@ const I18N = {
   },
   en: {
     title: '📅 Container · Weekly Entry',
+    modeLabel: '✍️ Entry type', modeWeek: '📅 Whole week', modeDay: '📆 Single day',
+    dayDateLabel: 'Date (all containers count for this day)',
     periodLabel: '🗓️ Cycle', periodFrom: 'From', periodTo: 'To',
     submitterLabel: '🙋 Submitted by', submitterPh: 'Name (optional)',
     photoLabel: '📷 Verification photos (optional, multiple)', photoCta: 'Tap to take / choose photos (multiple)',
@@ -157,6 +178,8 @@ const I18N = {
   },
   zh: {
     title: '📅 Container · 周柜登记',
+    modeLabel: '✍️ 填写方式', modeWeek: '📅 填一周', modeDay: '📆 只填一天',
+    dayDateLabel: '日期（本次填的柜子都算这一天）',
     periodLabel: '🗓️ 周期', periodFrom: '开始', periodTo: '结束',
     submitterLabel: '🙋 提交人', submitterPh: '名字（选填）',
     photoLabel: '📷 核对照片（可选，可多张）', photoCta: '点击拍照 / 选择照片（可多张）',
@@ -198,12 +221,16 @@ function applyLang() {
   document.getElementById('t-thDate').textContent = L.thDate;
   document.getElementById('t-thCno').textContent = L.thCno;
   document.getElementById('t-addRowBtn').textContent = L.addRowBtn;
+  const _m = document.getElementById('t-modeLabel'); if (_m) _m.textContent = L.modeLabel;
+  const _mw = document.getElementById('modeWeekBtn'); if (_mw) _mw.textContent = L.modeWeek;
+  const _md = document.getElementById('modeDayBtn'); if (_md) _md.textContent = L.modeDay;
+  const _dd = document.getElementById('t-dayDateLabel'); if (_dd) _dd.textContent = L.dayDateLabel;
   document.getElementById('t-submitBtn').textContent = L.submitBtn;
   document.getElementById('t-okTitle').textContent = L.okTitle;
   document.getElementById('t-okFor').textContent = L.okFor;
   document.getElementById('t-okAgain').textContent = L.okAgain;
   document.querySelectorAll('#rowsBody input.cnoInput').forEach(i => { i.placeholder = 'TCNU1234567'; });
-  if (_partnerName) document.getElementById('partnerName').textContent = L.sendingTo + _partnerName;
+  if (_partnerName) { try { _updateHeader(); } catch (e) { document.getElementById('partnerName').textContent = L.sendingTo + _partnerName; } }
   document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b.dataset.lang === _lang));
 }
 function setLang(lang) {
@@ -220,6 +247,13 @@ const TOKEN = (_pathMatch && _pathMatch[1]) || params.get('t') || '';
 // Optional submitter name baked into a per-person QR (?who=NAME). When present the
 // 提交人 field is pre-filled and locked so this person's records are auto-tagged.
 const WHO = (params.get('who') || '').trim().slice(0, 100);
+// Work-site (warehouse address) saved with every row. For companies with more
+// than one location the sheet shows a required picker; a legacy ?site=ADDR QR
+// parameter pre-selects it. The QR link itself never changes per location.
+const SITE = (params.get('site') || '').trim().slice(0, 120);
+let _sites = [];      // [{state, address}] from /c-submit/info
+let _siteSel = SITE;  // chosen warehouse address for this sheet
+const _escH = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 let _partnerName = '';
 let _pw = '';
@@ -238,6 +272,34 @@ function showErr(msg) {
 }
 
 // ── dynamic rows ──
+// ── 填写方式：填一周（每行自己的日期）/ 只填一天（统一日期，行内日期列隐藏） ──
+let _entryMode = 'week';
+function setEntryMode(m) {
+  _entryMode = m === 'day' ? 'day' : 'week';
+  const on = 'flex:1;padding:.6rem;border-radius:10px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:.95rem;font-weight:700;cursor:pointer';
+  const off = 'flex:1;padding:.6rem;border-radius:10px;border:2px solid #cbd5e1;background:#fff;color:#475569;font-size:.95rem;font-weight:700;cursor:pointer';
+  document.getElementById('modeWeekBtn').style.cssText = _entryMode === 'week' ? on : off;
+  document.getElementById('modeDayBtn').style.cssText = _entryMode === 'day' ? on : off;
+  document.getElementById('dayDateWrap').style.display = _entryMode === 'day' ? '' : 'none';
+  document.getElementById('periodWrap').style.display = _entryMode === 'day' ? 'none' : '';
+  const th = document.getElementById('t-thDate'); if (th) th.style.display = _entryMode === 'day' ? 'none' : '';
+  document.querySelectorAll('#rowsBody .dateInput').forEach(i => { i.closest('td').style.display = _entryMode === 'day' ? 'none' : ''; });
+  if (_entryMode === 'day') {
+    const dd = document.getElementById('dayDate');
+    if (dd && !dd.value) dd.value = todayStr();
+    applyDayDate();
+  }
+}
+// 天模式：把统一日期写进每一行（隐藏的行日期照常随提交走），周期=同一天
+function applyDayDate() {
+  if (_entryMode !== 'day') return;
+  const d = (document.getElementById('dayDate') || {}).value || todayStr();
+  document.querySelectorAll('#rowsBody .dateInput').forEach(i => { i.value = d; });
+  const pf = document.getElementById('periodFrom'), pt = document.getElementById('periodTo');
+  if (pf) pf.value = d;
+  if (pt) pt.value = d;
+  try { _updateHeader(); } catch (e) {}
+}
 function rowHtml(dateVal) {
   return `<tr>
     <td class="idx"></td>
@@ -259,7 +321,12 @@ function addRow(dateVal) {
     const dates = body.querySelectorAll('.dateInput');
     d = dates.length ? (dates[dates.length - 1].value || todayStr()) : todayStr();
   }
+  if (_entryMode === 'day') d = (document.getElementById('dayDate') || {}).value || todayStr();
   body.insertAdjacentHTML('beforeend', rowHtml(d));
+  if (_entryMode === 'day') {
+    const dc = body.querySelector('tr:last-child .dateInput');
+    if (dc) dc.closest('td').style.display = 'none';
+  }
   const newInput = body.querySelector('tr:last-child .cnoInput');
   if (newInput) {
     newInput.addEventListener('input', e => {
@@ -328,6 +395,36 @@ function openForm() {
   }
 }
 
+function _updateHeader() {
+  const st = _siteSite(_siteSel);
+  document.getElementById('partnerName').textContent =
+    I18N[_lang].sendingTo + _partnerName + (_siteSel ? ' · 📍 ' + (st ? st + ' · ' : '') + _siteSel : '');
+}
+function _siteSite(addr) {
+  const s = _sites.find(x => (x.address || x.state) === addr);
+  return s ? (s.state || '') : '';
+}
+// Warehouse picker — only shown when the company has more than one location.
+function renderSites() {
+  const card = document.getElementById('siteCard'), box = document.getElementById('siteBtns');
+  if (!card || !box || _sites.length < 2) return;
+  card.style.display = '';
+  box.innerHTML = _sites.map((s, i) => {
+    const val = s.address || s.state || '';
+    const on = _siteSel === val;
+    return `<button type="button" onclick="pickSite(${i})" style="text-align:left;padding:.6rem .7rem;border-radius:10px;border:2px solid ${on ? '#7c3aed' : '#cbd5e1'};background:${on ? '#f5f3ff' : '#fff'};color:#0f172a;cursor:pointer;font-size:.92rem;line-height:1.4">` +
+      (s.state ? `<b style="color:#6d28d9">📍 ${_escH(s.state)}</b>${s.address ? ' · ' : ''}` : '📍 ') +
+      `${_escH(s.address || '')}${on ? ' <b style="color:#7c3aed">✓</b>' : ''}</button>`;
+  }).join('');
+}
+function pickSite(i) {
+  const s = _sites[i];
+  if (!s) return;
+  _siteSel = s.address || s.state || '';
+  renderSites();
+  _updateHeader();
+}
+
 // If a name came from the QR (?who=), pre-fill and lock the 提交人 field.
 function applyWho() {
   if (!WHO) return;
@@ -353,11 +450,25 @@ async function init() {
       const j = await r.json().catch(() => ({}));
       showErr(j.error || I18N[_lang].invalid);
       document.getElementById('partnerName').textContent = '—';
+      // 自动诊断：显示这台服务器实例的身份和钥匙状态，截图即可定位
+      // （实例 ID 与后台弹窗里显示的不同 = 手机和电脑打到了不同的部署/数据库）
+      try {
+        const d = await fetch('/c-submit/diag?t=' + encodeURIComponent(TOKEN)).then(x => x.json());
+        const box = document.getElementById('errBox');
+        const dl = document.createElement('div');
+        dl.style.cssText = 'margin-top:.5rem;font-size:.72rem;color:#94a3b8;font-family:monospace;word-break:break-all';
+        dl.textContent = `诊断: ${d.reason} · 实例 ${d.instance} · 启动 ${String(d.boot_at || '').slice(0, 16)} · 版本 ${d.commit} · 公司 ${d.partners} 家`;
+        box.appendChild(dl);
+      } catch (e) {}
       return;
     }
     const info = await r.json();
     _partnerName = info.partner_name || '';
-    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName;
+    _sites = Array.isArray(info.sites) ? info.sites : [];
+    // 单地址公司自动带上地址；多地址公司必须在页面里选一个
+    if (!_siteSel && _sites.length === 1) _siteSel = _sites[0].address || _sites[0].state || '';
+    _updateHeader();
+    renderSites();
     const saved = sessionStorage.getItem(_PW_KEY);
     if (saved) { _pw = saved; openForm(); } else { showGate(); }
   } catch (e) {
@@ -409,6 +520,11 @@ function removePhoto(idx) {
 async function submitForm() {
   const rows = collectRows();
   if (!rows.length) { showErr(I18N[_lang].errAtLeastOne); return; }
+  if (_sites.length > 1 && !_siteSel) {
+    showErr('请先选择仓库地址 / Please select the location / Seleccione la ubicación');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
   document.getElementById('errBox').style.display = 'none';
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
@@ -418,6 +534,7 @@ async function submitForm() {
     fd.append('password', _pw || '');
     fd.append('service_period', servicePeriodStr());
     fd.append('submitter_name', document.getElementById('submitterName').value.trim());
+    fd.append('site', _siteSel || '');
     fd.append('rows', JSON.stringify(rows));
     _photos.forEach(f => fd.append('photos', f));
     const resp = await fetch('/cw-submit?t=' + encodeURIComponent(TOKEN), { method: 'POST', body: fd });

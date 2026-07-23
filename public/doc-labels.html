@@ -1,0 +1,290 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prime Anchor Workforce · 文件夹标签打印</title>
+<style>
+  @page { size: letter; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+
+  /* ── 标签内容（打印与预览共用） ── */
+  .inner {
+    width: 100%; height: 100%;
+    padding: 0.06in 0.12in 0.06in 0.18in;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+    overflow: hidden; position: relative;
+  }
+  .bar { position: absolute; left: 0.04in; top: 0.09in; bottom: 0.09in; width: 0.055in; border-radius: 3px; }
+  .co { font-size: 12pt; font-weight: 800; color: #1e293b; letter-spacing: .2px; margin-bottom: 5px; }
+  .doc { font-weight: 800; font-size: 17pt; line-height: 1.15; color: #0f172a; word-break: break-word; max-width: 100%; }
+  .doc.small { font-size: 13pt; }
+  .sub { font-size: 12pt; font-weight: 600; color: #475569; margin-top: 5px; max-width: 100%; overflow: hidden; }
+  .sub.scen { font-size: 11pt; font-weight: 700; line-height: 1.22; margin-top: 4px; }
+  .g-tax .bar { background: #2563eb; }
+  .g-con .bar { background: #d97706; }
+  .g-pay .bar { background: #059669; }
+  .g-who .bar { background: #7c3aed; }
+  .g-pay .sub.scen { color: #047857; }
+  .g-who .sub.scen { color: #6d28d9; }
+
+  /* ── 纸张格子 ── */
+  .sheet {
+    width: 8.5in;
+    padding: 0.5in 0.1875in;
+    display: grid;
+    grid-template-columns: repeat(3, 2.625in);
+    grid-auto-rows: 1in;
+    column-gap: 0.125in;
+    row-gap: 0;
+  }
+  .cell { width: 2.625in; height: 1in; overflow: hidden; position: relative; }
+  .slotno { position: absolute; top: 2px; right: 5px; font-size: 8px; color: #cbd5e1; user-select: none; }
+  .del {
+    position: absolute; top: 1px; right: 14px; width: 16px; height: 16px; line-height: 14px; z-index: 5;
+    border: none; border-radius: 8px; background: #fee2e2; color: #b91c1c; font-size: 11px;
+    cursor: pointer; display: none; padding: 0; text-align: center;
+  }
+  .blankpage { display: none; }
+
+  @media screen {
+    body { background: #64748b; }
+    .top {
+      position: sticky; top: 0; z-index: 10; background: #334155; color: #fff;
+      padding: 8px 14px; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+    .top button { font-size: 13px; padding: 4px 12px; cursor: pointer; }
+    .top .tip { opacity: .8; font-size: 12px; }
+    .wrap { display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
+    /* 左侧标签库 */
+    .lib {
+      flex: 0 0 300px; position: sticky; top: 52px; max-height: calc(100vh - 70px); overflow-y: auto;
+      background: #f1f5f9; border-radius: 10px; padding: 10px;
+    }
+    .lib h3 { font-size: 12px; color: #475569; margin: 10px 4px 6px; }
+    .lib h3:first-child { margin-top: 2px; }
+    .libcard {
+      background: #fff; border: 2px solid #e2e8f0; border-radius: 8px; margin-bottom: 6px;
+      cursor: grab; position: relative; height: 0.72in; overflow: hidden;
+    }
+    .libcard .inner { transform: scale(.72); transform-origin: left center; width: 139%; height: 139%; }
+    .libcard:hover { border-color: #60a5fa; }
+    .libcard.armed { border-color: #f59e0b; background: #fffbeb; box-shadow: 0 0 0 2px #fde68a; }
+    /* 纸张 */
+    .paper { flex: 1 1 auto; min-width: 0; }
+    .pageno { color: #e2e8f0; font-size: 12px; text-align: center; margin: 0 0 6px; }
+    .sheet { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.25); margin: 0 auto 16px; }
+    .cell { outline: 1px dashed #e2e8f0; }
+    .cell.filled { cursor: grab; }
+    .cell.empty-slot { background: repeating-linear-gradient(45deg, #fcfdfe, #fcfdfe 7px, #f3f6fa 7px, #f3f6fa 14px); }
+    .cell:hover { outline: 2px solid #60a5fa; z-index: 1; }
+    .cell.picked { outline: 3px solid #f59e0b; z-index: 2; background: #fffbeb; }
+    .cell.droptarget { outline: 3px dashed #16a34a; z-index: 2; }
+    .cell.filled:hover .del { display: block; }
+    body.arming .cell.empty-slot { cursor: copy; }
+  }
+  @media print {
+    .top, .lib, .pageno, .slotno, .del { display: none !important; }
+    .wrap { display: block; padding: 0; }
+    .cell { outline: none; }
+    .cell.empty-slot { background: none; }
+    .cell.picked { outline: none; background: none; }
+    .blankpage { display: block; page-break-after: always; }
+    .sheet { page-break-after: always; }
+    .sheet:last-of-type { page-break-after: auto; }
+    .sheet.blank { display: none; }
+  }
+</style></head>
+<body>
+  <div class="top">
+    <strong>Prime Anchor Workforce · 文件夹标签</strong>
+    <span>Avery 5160（1 × 2-5/8″，每页 30 格）</span>
+    <button onclick="doPrint()">🖨 打印</button>
+    <label style="cursor:pointer" title="勾选后每页后垫一张空白页，双面设置下每页也各占一张纸"><input type="checkbox" id="simplexCb" checked onchange="render()"> 防双面</label>
+    <button onclick="addPage()">＋加一页</button>
+    <button onclick="removePage()">－减空页</button>
+    <button onclick="fillDefault()" title="按默认顺序把全部标签摆满">恢复默认排版</button>
+    <button onclick="clearAll()" style="color:#b91c1c">清空</button>
+    <span class="tip">💡 左边点一个标签（变橙 = 拿起），再点右边格子放置，可连续放多格；拖动也可以。已放的标签可拖动换位，右上角 × 删除。排版自动保存。</span>
+  </div>
+  <div class="wrap">
+    <div class="lib" id="lib"></div>
+    <div class="paper" id="pages"></div>
+  </div>
+<script>
+  var CO = 'Prime Anchor Workforce Inc';
+  var GROUPS = [
+    { name: '🔵 税表 Tax Forms', items: [
+      { g: 'g-tax', doc: '🧾 W-9', sub: '' },
+      { g: 'g-tax', doc: '🧾 W-9', sub: 'English' },
+      { g: 'g-tax', doc: '🧾 W-9', sub: 'Español' },
+      { g: 'g-tax', doc: '🪪 I-9', sub: '' },
+      { g: 'g-tax', doc: '🪪 I-9', sub: 'English' },
+      { g: 'g-tax', doc: '🪪 I-9', sub: 'Español' },
+      { g: 'g-tax', doc: '🧾 W-4', sub: '' },
+    ]},
+    { name: '🟠 合同 Contracts', items: [
+      { g: 'g-con', doc: '📝 Contractor Agreement', sub: 'English / Español', nw: true, eq: 'con' },
+      { g: 'g-con', doc: '📝 1099 Contractor Agreement', sub: 'English / Español', nw: true, eq: 'con' },
+      { g: 'g-con', doc: '📝 W-2 Contractor Agreement', sub: 'English / Español', nw: true, eq: 'con' },
+    ]},
+    { name: '🟢 付款方式 Payment', items: [] },
+  ];
+  var PAY_METHODS = ['🏦 ACH / Direct Deposit', '✉️ Check', '💸 Zelle', '💳 PayPal / Venmo / CashApp', '💵 Cash Receipt'];
+  PAY_METHODS.forEach(function(m){
+    GROUPS[2].items.push({ g: 'g-pay', doc: m, sub: '', nw: true, small: true });
+    GROUPS[2].items.push({ g: 'g-pay', doc: m, sub: 'Self Collection', nw: true, small: true, scen: true });
+    GROUPS[2].items.push({ g: 'g-who', doc: m, sub: 'Authorized Collector', sub2: 'Third-Party Signature', nw: true, small: true, scen: true });
+  });
+  var LIB = [];
+  GROUPS.forEach(function(grp){ grp.items.forEach(function(it){ LIB.push(it); }); });
+
+  var STORE_KEY = 'pawFolderLabelLayoutV1';
+  var slots = [];      // 每格：LIB 下标或 null
+  var armed = -1;      // 库里被拿起的标签
+  var picked = -1;     // 纸上被点选待移动的格子
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function labelHtml(l) {
+    return '<div class="inner ' + l.g + '"><div class="bar"></div>' +
+      '<div class="co">' + esc(CO) + '</div>' +
+      '<div class="doc' + (l.small ? ' small' : '') + '"' + (l.eq ? ' data-eq="' + l.eq + '"' : '') + (l.nw ? ' style="white-space:nowrap"' : '') + '>' + esc(l.doc) + '</div>' +
+      (l.sub ? '<div class="sub' + (l.scen ? ' scen' : '') + '"' + '>' + esc(l.sub) + (l.sub2 ? '<br>' + esc(l.sub2) : '') + '</div>' : '') +
+    '</div>';
+  }
+
+  function pad30() { while (slots.length % 30 !== 0 || !slots.length) slots.push(null); }
+  function fillDefault() {
+    slots = LIB.map(function(_, i){ return i; });
+    pad30(); save(); render();
+  }
+  function clearAll() {
+    slots = []; pad30(); save(); render();
+  }
+  function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(slots)); } catch(e) {} }
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        var arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length) {
+          slots = arr.map(function(v){ return (typeof v === 'number' && v >= 0 && v < LIB.length) ? v : null; });
+          pad30();
+          return;
+        }
+      }
+    } catch(e) {}
+    fillDefault();
+  }
+
+  function addPage() { for (var i = 0; i < 30; i++) slots.push(null); save(); render(); }
+  function removePage() {
+    if (slots.length <= 30) return;
+    if (slots.slice(-30).some(function(x){ return x != null; })) { alert('最后一页上还有标签，先移走再删'); return; }
+    slots.length -= 30;
+    if (picked >= slots.length) picked = -1;
+    save(); render();
+  }
+
+  function armLib(i) {
+    armed = (armed === i) ? -1 : i;
+    picked = -1;
+    render();
+  }
+  function onCellClick(i) {
+    if (armed !== -1) { slots[i] = armed; save(); render(); return; }
+    if (picked === -1) { if (slots[i] != null) { picked = i; render(); } return; }
+    if (picked === i) { picked = -1; render(); return; }
+    var t = slots[i]; slots[i] = slots[picked]; slots[picked] = t;
+    picked = -1; save(); render();
+  }
+  function delCell(ev, i) {
+    ev.stopPropagation();
+    slots[i] = null;
+    if (picked === i) picked = -1;
+    save(); render();
+  }
+  function onDragStartLib(ev, i) { try { ev.dataTransfer.setData('text/plain', 'lib:' + i); } catch(e) {} }
+  function onDragStartCell(ev, i) { try { ev.dataTransfer.setData('text/plain', 'cell:' + i); } catch(e) {} }
+  function onDragOver(ev) { ev.preventDefault(); if (ev.currentTarget) ev.currentTarget.classList.add('droptarget'); }
+  function onDragLeave(ev) { if (ev.currentTarget) ev.currentTarget.classList.remove('droptarget'); }
+  function onDrop(ev, i) {
+    ev.preventDefault();
+    if (ev.currentTarget) ev.currentTarget.classList.remove('droptarget');
+    var d = '';
+    try { d = ev.dataTransfer.getData('text/plain') || ''; } catch(e) {}
+    if (d.indexOf('lib:') === 0) {
+      var li = parseInt(d.slice(4), 10);
+      if (!isNaN(li)) { slots[i] = li; save(); render(); }
+    } else if (d.indexOf('cell:') === 0) {
+      var f = parseInt(d.slice(5), 10);
+      if (!isNaN(f) && f !== i) { var t = slots[i]; slots[i] = slots[f]; slots[f] = t; save(); render(); }
+    }
+  }
+  function doPrint() { picked = -1; render(); window.print(); }
+
+  function render() {
+    // 标签库
+    var libHtml = '';
+    var idx = 0;
+    GROUPS.forEach(function(grp){
+      libHtml += '<h3>' + esc(grp.name) + '</h3>';
+      grp.items.forEach(function(){
+        var i = idx++;
+        libHtml += '<div class="libcard' + (armed === i ? ' armed' : '') + '" draggable="true" ondragstart="onDragStartLib(event, ' + i + ')" onclick="armLib(' + i + ')" title="点一下拿起，再点右边格子放置；或直接拖过去">' + labelHtml(LIB[i]) + '</div>';
+      });
+    });
+    document.getElementById('lib').innerHTML = libHtml;
+
+    // 纸张
+    var cb = document.getElementById('simplexCb');
+    var guardOn = cb && cb.checked;
+    var pages = [];
+    for (var p = 0; p < slots.length; p += 30) pages.push(slots.slice(p, p + 30));
+    var printable = pages.map(function(pg){ return pg.some(function(x){ return x != null; }); });
+    var lastPrintable = printable.lastIndexOf(true);
+    document.getElementById('pages').innerHTML = pages.map(function(pg, pi){
+      var blank = !printable[pi];
+      var guard = (guardOn && !blank && pi < lastPrintable) ? '<div class="blankpage">&nbsp;</div>' : '';
+      return '<div class="pageno">第 ' + (pi + 1) + ' 页 / 共 ' + pages.length + ' 页' + (blank ? '（空白页，打印时跳过）' : '') + '</div>' +
+        '<div class="sheet' + (blank ? ' blank' : '') + '">' + pg.map(function(li, ci){
+          var i = pi * 30 + ci;
+          var no = '<div class="slotno">' + (i + 1) + '</div>';
+          var dnd = ' ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, ' + i + ')" onclick="onCellClick(' + i + ')"';
+          if (li == null) return '<div class="cell empty-slot" title="第 ' + (i + 1) + ' 格（空）"' + dnd + '>' + no + '</div>';
+          return '<div class="cell filled' + (picked === i ? ' picked' : '') + '" draggable="true" ondragstart="onDragStartCell(event, ' + i + ')" title="第 ' + (i + 1) + ' 格：拖动或点选换位"' + dnd + '>' + no +
+            '<button class="del" onclick="delCell(event, ' + i + ')" title="移除">×</button>' + labelHtml(LIB[li]) + '</div>';
+        }).join('') + '</div>';
+    }).join('');
+    document.body.classList.toggle('arming', armed !== -1);
+
+    // 自动缩字 + 同组字号对齐（只作用于纸上的标签，库里的缩略卡不用）
+    document.querySelectorAll('#pages .doc').forEach(function(el){
+      var size = parseFloat(getComputedStyle(el).fontSize) * 72 / 96;
+      while ((el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) && size > 8) {
+        size -= 0.5;
+        el.style.fontSize = size + 'pt';
+      }
+    });
+    document.querySelectorAll('#pages .sub').forEach(function(el){
+      var size = parseFloat(getComputedStyle(el).fontSize) * 72 / 96;
+      while (el.scrollWidth > el.clientWidth + 1 && size > 7) {
+        size -= 0.5;
+        el.style.fontSize = size + 'pt';
+      }
+    });
+    var eqMin = {};
+    document.querySelectorAll('#pages .doc[data-eq]').forEach(function(el){
+      var g = el.dataset.eq, s = parseFloat(getComputedStyle(el).fontSize);
+      if (!eqMin[g] || s < eqMin[g]) eqMin[g] = s;
+    });
+    document.querySelectorAll('#pages .doc[data-eq]').forEach(function(el){
+      el.style.fontSize = eqMin[el.dataset.eq] + 'px';
+    });
+  }
+
+  load();
+  render();
+</script>
+</body></html>
