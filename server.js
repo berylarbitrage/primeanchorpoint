@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12au · 柜号弹窗:只有待处理扫码记录时改为提示(非重复,不标红)',
+  tag: '2026-07-12au · Excel自动填充:支持.xls + Elogistek账单格式(Username/Regular HR/Salary…)',
   started: new Date().toISOString(),
 };
 
@@ -20026,15 +20026,15 @@ const invoiceXlsxUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const ok = /\.xlsx$/i.test(file.originalname || '')
-      || /spreadsheetml\.sheet/i.test(file.mimetype || '');
+    const ok = /\.xlsx?$/i.test(file.originalname || '')
+      || /spreadsheetml\.sheet|ms-excel/i.test(file.mimetype || '');
     cb(null, ok);
   },
 });
 app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.single('file'), (req, res) => {
-  if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 .xlsx 文件' });
+  if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 .xls / .xlsx 文件' });
   try {
-    const data = parseInvoiceWorkbook(req.file.buffer);
+    const data = parseInvoiceWorkbook(req.file.buffer, req.file.originalname);
     res.json(data);
   } catch (e) {
     res.status(400).json({ error: 'Excel 解析失败：' + (e && e.message ? e.message : String(e)) });

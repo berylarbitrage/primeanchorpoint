@@ -149,6 +149,41 @@ function readXlsx(buf) {
   return parseSheet(files.get(sheetPath).toString('utf8'), shared);
 }
 
+// Read either a modern .xlsx (dependency-free, above) or a legacy .xls (OLE2/BIFF)
+// into rows[][]. .xls needs SheetJS, which is only require()d on that fallback path so
+// the light .xlsx reader keeps working even if the optional package isn't installed.
+function readAnyWorkbook(buf) {
+  try {
+    return readXlsx(buf); // fast path for .xlsx
+  } catch (e) {
+    let XLSX;
+    try { XLSX = require('xlsx'); } catch (_) {
+      throw new Error('这看起来是旧版 .xls 文件；请在 Excel / WPS 里「另存为 .xlsx」后再上传（或让管理员安装 xlsx 组件）。');
+    }
+    const wb = XLSX.read(buf, { type: 'buffer' });
+    if (!wb.SheetNames || !wb.SheetNames.length) throw new Error('找不到工作表');
+    // Prefer the sheet that carries the payroll/attendance rows (has an
+    // Employee / Username / Person header); else the first sheet.
+    let pick = wb.SheetNames[0];
+    for (const nm of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: true, defval: null });
+      const hit = rows.slice(0, 10).some(r => (r || []).some(c => /employee|username|person\s*name/i.test(String(c == null ? '' : c))));
+      if (hit) { pick = nm; break; }
+    }
+    return XLSX.utils.sheet_to_json(wb.Sheets[pick], { header: 1, raw: true, defval: null });
+  }
+}
+
+// Weekly exports embed the service period in the file name as MMDDMMDDYYYY
+// (e.g. "…071307192026…" = 07/13/2026 – 07/19/2026). Best-effort only.
+function _periodFromFilename(name) {
+  const m = String(name || '').match(/(?:^|\D)(\d{2})(\d{2})(\d{2})(\d{2})(\d{4})(?:\D|$)/);
+  if (!m) return null;
+  const [, m1, d1, m2, d2, y] = m;
+  if (+m1 < 1 || +m1 > 12 || +m2 < 1 || +m2 > 12 || +d1 < 1 || +d1 > 31 || +d2 < 1 || +d2 > 31) return null;
+  return { start: toISO(m1, d1, y), end: toISO(m2, d2, y) };
+}
+
 // Normalize a header cell for fuzzy matching.
 function norm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[\s_]+/g, ' ').trim(); }
 
@@ -211,28 +246,39 @@ function buildInvoiceData(rows) {
 
   return isAttendance
     ? buildFromAttendance({ rows, headerIdx, find, cellStr, warnings })
-    : buildFromPayroll({ rows, headerIdx, find, cellNum, cellStr, warnings });
+    : buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, warnings });
 }
 
 // Finished payroll/billing worksheet → invoice line items (rates + markup baked in).
-function buildFromPayroll({ rows, headerIdx, find, cellNum, cellStr, warnings }) {
+function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, warnings }) {
+  // Column keywords cover both the original worksheet and Elogistek-style exports
+  // (Username / Regular HR / 1.5 OT + 2.0 OT / Hourly Rate / Salary / Invoiced Salary
+  //  / Department / Working Group). Matched by header text, so order doesn't matter.
+  const or = (...idxs) => { for (const i of idxs) if (i >= 0) return i; return -1; };
   const col = {
-    warehouse: find('warehouse'),
-    name: find('employee'),
-    type: find(h => h.includes('type')),
+    warehouse: or(find('warehouse'), find(h => h === 'department')),
+    // The person's NAME — prefer Username / Employee Name; never an "Employee ID" column.
+    name: or(find('username'), find(h => h.includes('employee') && !h.includes('id') && !h.includes('#')), find('person')),
+    type: or(find(h => h.includes('type')), find(h => h.includes('working group'))),
     period: find('pay period'),
-    regRate: find('regular', 'rate'),
+    regRate: or(find('regular', 'rate'), find('hourly', 'rate'), find(h => h.includes('pay') && h.includes('rate') && !h.includes('ot'))),
     otRate: find('ot', 'rate'),
-    regHours: find(h => h.includes('reg') && h.includes('hour')),
-    otHours: find(h => h.includes('ot') && h.includes('hour')),
+    regHours: find(h => h.includes('reg') && (h.includes('hour') || h.includes('hr'))),
     regPay: find('reg', 'pay', 'amount'),
     otPay: find('ot', 'pay', 'amount'),
-    totalPay: find('total pay'),
+    totalPay: or(find('total pay'), find(h => h === 'salary')),
     markup: find('mark', 'rate'),
     reimb: find('reimburs'),
-    afterMarkup: find('after mark'),
+    afterMarkup: or(find('after mark'), find(h => h.includes('invoiced'))),
   };
-  if (col.name < 0) throw new Error('找不到 "Employee" 列');
+  // OT hours may live in one column ("OT Hours") or several ("1.5 OT" + "2.0 OT").
+  // Collect every OT column that holds HOURS (exclude rate / pay / amount columns).
+  const otHourCols = [];
+  (headers || []).forEach((h, c) => {
+    if (h && h.includes('ot') && !h.includes('rate') && !h.includes('pay') && !h.includes('amount') && !h.includes('total') && !h.includes('note')) otHourCols.push(c);
+  });
+  if (col.name < 0) throw new Error('找不到员工姓名列（Employee / Username / Person Name）');
+  let sawDoubleOt = false;
 
   let warehouse = '', period = '', periodStart = '', periodEnd = '';
   const employees = [];
@@ -258,7 +304,13 @@ function buildFromPayroll({ rows, headerIdx, find, cellNum, cellStr, warnings })
     const regRate = cellNum(row, col.regRate) || 0;
     const otRate = cellNum(row, col.otRate);
     const regHours = cellNum(row, col.regHours) || 0;
-    const otHours = cellNum(row, col.otHours) || 0;
+    let otHours = 0;
+    for (const c of otHourCols) {
+      const v = cellNum(row, c) || 0;
+      otHours += v;
+      if (v > 0 && /2(\.0)?\s*(x|ot|×|倍)|double|双/.test(headers[c] || '')) sawDoubleOt = true;
+    }
+    otHours = Math.round(otHours * 1000) / 1000;
     const reimb = cellNum(row, col.reimb) || 0;
     let markupFrac = cellNum(row, col.markup);
     if (markupFrac == null) markupFrac = 0;
@@ -295,6 +347,7 @@ function buildFromPayroll({ rows, headerIdx, find, cellNum, cellStr, warnings })
   if (!periodStart) warnings.push('未能从「Pay Period」列解析出服务周期日期，请手动填写开始/结束日期。');
   if (employees.some(e => e.reimbursement && e.reimbursement !== 0))
     warnings.push('表格含「Reimbursement」报销金额，发票生成器暂不支持报销项，已忽略；如需请手动添加一行。');
+  if (otHourCols.length > 1) warnings.push('加班分「1.5×」「2.0×」多列，已合并为「加班工时」，默认按 1.5× 计' + (sawDoubleOt ? '；本表含 2.0× 加班，请把相关员工加班时薪手动改为双倍。' : '。'));
 
   return { ok: true, format: 'payroll', warehouse, period, periodStart, periodEnd, defaultMarkupRate: topMarkup, markupMultiplier, employees, warnings };
 }
@@ -358,7 +411,19 @@ function buildFromAttendance({ rows, headerIdx, find, cellStr, warnings }) {
   };
 }
 
-module.exports = function parseInvoiceWorkbook(buf) {
-  return buildInvoiceData(readXlsx(buf));
+module.exports = function parseInvoiceWorkbook(buf, filename) {
+  const data = buildInvoiceData(readAnyWorkbook(buf));
+  // If the sheet carried no service period, fall back to the one embedded in the
+  // file name (weekly exports do this) and drop the "no period" warning.
+  if (data && data.ok && !data.periodStart && filename) {
+    const p = _periodFromFilename(filename);
+    if (p) {
+      data.periodStart = p.start; data.periodEnd = p.end;
+      if (!data.period) data.period = p.start + ' ~ ' + p.end;
+      data.warnings = (data.warnings || []).filter(w => !/服务周期/.test(w));
+    }
+  }
+  return data;
 };
 module.exports.readXlsx = readXlsx;
+module.exports.readAnyWorkbook = readAnyWorkbook;
