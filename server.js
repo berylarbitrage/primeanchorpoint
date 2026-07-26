@@ -6175,11 +6175,6 @@ function _buildCheckInstructionForm(lang) {
   // ── Section 1: Payee Information ──
   const s1 = zh ? sh('1. PAYEE INFORMATION', '收款人信息') : es ? sh('1. PAYEE INFORMATION', 'INFORMACIÓN DEL BENEFICIARIO') : '1. PAYEE INFORMATION';
 
-  // ── Payee Type ──
-  const lPayeeType = bi('Payee Type', zh ? '收款人类型' : es ? 'Tipo de Beneficiario' : '');
-  const lIndividual = zh ? 'Individual 个人' : es ? 'Individual / Persona Física' : 'Individual';
-  const lBusiness   = zh ? 'Business 公司' : es ? 'Business / Empresa' : 'Business';
-
   const lPayeeName = bi('Payee Name (as printed on check)', zh ? '收款人姓名（与支票抬头一致）' : es ? 'Nombre del Beneficiario (tal como aparece en el cheque)' : '');
   // ── Payee Name hint ──
   const payeeHint = zh
@@ -6193,34 +6188,31 @@ function _buildCheckInstructionForm(lang) {
   // ── Section 2: Confirmation & Agreement ──
   const s5 = zh ? sh('2. CONFIRMATION & AGREEMENT', '确认与承诺') : es ? sh('2. CONFIRMATION & AGREEMENT', 'CONFIRMACIÓN Y ACUERDO') : '2. CONFIRMATION & AGREEMENT';
   const confirmLine1 = zh
-    ? 'I confirm that the payee name and information provided above are accurate. <span style="color:#555">本人确认以上收款人名称及相关信息真实准确。</span>'
+    ? 'I confirm that the payee name provided above is my correct full legal name and that the information provided is accurate. Checks will be issued exactly as the name is written above, and I am responsible for ensuring it is correct. <span style="color:#555">本人确认上方所填收款人姓名为本人正确的法定全名，所填信息真实准确。支票将严格按上方所写姓名开具，本人负责确保姓名正确无误。</span>'
     : es
-    ? 'I confirm that the payee name and information provided above are accurate. <span style="color:#555">Confirmo que el nombre del beneficiario y la información indicada son correctos.</span>'
-    : 'I confirm that the payee name and information provided above are accurate.';
+    ? 'I confirm that the payee name provided above is my correct full legal name and that the information provided is accurate. Checks will be issued exactly as the name is written above, and I am responsible for ensuring it is correct. <span style="color:#555">Confirmo que el nombre del beneficiario indicado arriba es mi nombre legal completo y correcto y que la información proporcionada es exacta. Los cheques se emitirán exactamente como está escrito el nombre arriba, y soy responsable de asegurar que sea correcto.</span>'
+    : 'I confirm that the payee name provided above is my correct full legal name and that the information provided is accurate. Checks will be issued exactly as the name is written above, and I am responsible for ensuring it is correct.';
   const confirmLine2 = zh
-    ? `I understand that this check must be received in person and that the recipient must sign upon receipt. <span style="color:#555">本人理解本支票须当面领取，领取人须在收到支票时当场签字。</span>`
+    ? `I understand that checks must be received in person and that, each time a check is received, the person receiving it must complete and sign a separate Check Receipt Confirmation. <span style="color:#555">本人理解支票须当面领取，且每次领取支票时，领取人都必须填写并签署单独的支票签收确认单。</span>`
     : es
-    ? `I understand that this check must be received in person and that the recipient must sign upon receipt. <span style="color:#555">Entiendo que este cheque debe ser recibido en persona y que el receptor debe firmar al recibirlo.</span>`
-    : `I understand that this check must be received in person and that the recipient must sign upon receipt.`;
+    ? `I understand that checks must be received in person and that, each time a check is received, the person receiving it must complete and sign a separate Check Receipt Confirmation. <span style="color:#555">Entiendo que los cheques deben recibirse en persona y que, cada vez que se reciba un cheque, quien lo reciba debe completar y firmar una Confirmación de Recibo del Cheque por separado.</span>`
+    : `I understand that checks must be received in person and that, each time a check is received, the person receiving it must complete and sign a separate Check Receipt Confirmation.`;
   const confirmLine3 = zh
     ? `I agree to notify ${companyName} in writing of any change to the payee name or authorized representative before the check is issued. <span style="color:#555">如收款人名称或授权代表发生变化，本人同意在支票开具前以书面形式通知 ${companyName}。</span>`
     : es
     ? `I agree to notify ${companyName} in writing of any change to the payee name or authorized representative before the check is issued. <span style="color:#555">Acepto notificar a ${companyName} por escrito cualquier cambio en el nombre del beneficiario o representante autorizado antes de que se emita el cheque.</span>`
     : `I agree to notify ${companyName} in writing of any change to the payee name or authorized representative before the check is issued.`;
   const confirmLine4 = zh
-    ? `Delivery of the check to the payee or authorized representative in person constitutes full satisfaction of ${companyName}'s payment obligation for the referenced invoice or service. <span style="color:#555">将支票当面交付给收款人或授权代表，即视为 ${companyName} 就相关发票或服务的付款义务已完全履行。</span>`
+    ? `Delivery of the check in person to the payee or authorized representative, as documented by a signed Check Receipt Confirmation, constitutes full satisfaction of ${companyName}'s payment obligation for the referenced invoice or service. <span style="color:#555">支票当面交付给收款人或授权代表，并经签署的支票签收确认单记录后，即视为 ${companyName} 就相关发票或服务的付款义务已完全履行。</span>`
     : es
-    ? `Delivery of the check to the payee or authorized representative in person constitutes full satisfaction of ${companyName}'s payment obligation for the referenced invoice or service. <span style="color:#555">La entrega del cheque en persona al beneficiario o representante autorizado constituye el cumplimiento total de la obligación de pago de ${companyName} para la factura o servicio indicado.</span>`
-    : `Delivery of the check to the payee or authorized representative in person constitutes full satisfaction of ${companyName}'s payment obligation for the referenced invoice or service.`;
+    ? `Delivery of the check in person to the payee or authorized representative, as documented by a signed Check Receipt Confirmation, constitutes full satisfaction of ${companyName}'s payment obligation for the referenced invoice or service. <span style="color:#555">La entrega del cheque en persona al beneficiario o representante autorizado, documentada mediante una Confirmación de Recibo del Cheque firmada, constituye el cumplimiento total de la obligación de pago de ${companyName} para la factura o servicio indicado.</span>`
+    : `Delivery of the check in person to the payee or authorized representative, as documented by a signed Check Receipt Confirmation, constitutes full satisfaction of ${companyName}'s payment obligation for the referenced invoice or service.`;
 
   // ── Signature section ──
   const sigHeader = zh ? sh('PAYEE SIGNATURE', '收款人签名') : es ? 'FIRMA DEL BENEFICIARIO' : 'PAYEE SIGNATURE';
   const sCompany  = zh ? 'FOR INTERNAL USE ONLY — COMPANY VERIFICATION 仅供公司内部使用 — 公司核验' : es ? 'FOR INTERNAL USE ONLY — COMPANY VERIFICATION / SOLO PARA USO INTERNO — VERIFICACIÓN DE LA EMPRESA' : 'FOR INTERNAL USE ONLY — COMPANY VERIFICATION';
   const lPrintedName = zh ? 'Printed Name <span style="font-weight:400;color:#555">正楷姓名</span>' : es ? 'Printed Name / Nombre en letra de molde' : 'Printed Name';
   const lVerifiedBy  = zh ? 'Verified By <span style="font-weight:400;color:#555">核验人</span>' : es ? 'Verified By / Verificado por' : 'Verified By';
-  // ── Title / Relationship ──
-  const lTitleRel = zh ? 'Title / Relationship <span style="font-weight:400;color:#555">职务 / 与收款人关系</span>' : es ? 'Title / Relationship / Cargo / Relación' : 'Title / Relationship';
-  const titlePlaceholder = 'e.g., Owner, Manager, Self';
   const lSig  = zh ? 'Signature <span style="font-weight:400;color:#555">签名</span>' : es ? 'Signature / Firma' : 'Signature';
   const lDate = zh ? 'Date <span style="font-weight:400;color:#555">日期</span>' : es ? 'Date / Fecha' : 'Date';
   const lConfirmSig = zh
@@ -6276,15 +6268,6 @@ function _buildCheckInstructionForm(lang) {
 <div style="font-weight:700;margin:10px 0 4px;font-size:9pt;border-bottom:1px solid #ddd;padding-bottom:2px">${s1}</div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:2px">
   <tr>
-    <td colspan="2" style="${c}">
-      ${lPayeeType}
-      <div style="margin-top:3px">
-        <label style="display:inline-flex;align-items:center;gap:4px;margin-right:20px"><checkbox-field name="payee_individual" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${lIndividual}</label>
-        <label style="display:inline-flex;align-items:center;gap:4px"><checkbox-field name="payee_business" role="Contractor" style="width:13px;height:13px"></checkbox-field> ${lBusiness}</label>
-      </div>
-    </td>
-  </tr>
-  <tr>
     <td style="${c}width:55%">${lPayeeName}<br><text-field name="check_payee" role="Contractor" required="true" style="${w}"></text-field>
       <div style="font-size:7pt;color:#888;margin-top:2px;line-height:1.35">${payeeHint}</div>
     </td>
@@ -6305,15 +6288,9 @@ function _buildCheckInstructionForm(lang) {
     <!-- Payee signature sub-box (blue) -->
     <div style="background:#fff;border:1px solid #93c5fd;border-radius:5px;padding:6px 9px;margin-top:5px">
       <div style="font-size:8pt;font-weight:800;color:#1d4ed8;margin-bottom:6px">${sigHeader}</div>
-      <div style="display:flex;gap:10px;margin-bottom:6px">
-        <div style="flex:1">
-          <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-          <text-field name="check_printed_name" role="Contractor" required="true" style="${w}"></text-field>
-        </div>
-        <div style="flex:1">
-          <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lTitleRel}:</div>
-          <text-field name="check_title_relationship" role="Contractor" style="${w}" placeholder="${titlePlaceholder}"></text-field>
-        </div>
+      <div style="margin-bottom:6px">
+        <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+        <text-field name="check_printed_name" role="Contractor" required="true" style="${w}"></text-field>
       </div>
       <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
       <signature-field name="check_sig" role="Contractor" style="width:100%;height:${Z.sig};display:block;border:1.5px solid #93c5fd;border-radius:4px;background:#fff;margin-bottom:4px"></signature-field>
