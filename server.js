@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12au · 扫码审核可「不通过」并写原因(如没完成)',
+  tag: '2026-07-12au · 扫码审核页:公司/批次分组可点击折叠 + 一键折叠全部',
   started: new Date().toISOString(),
 };
 

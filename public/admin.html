@@ -1945,6 +1945,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-blue" id="csubBulkBtn" onclick="toggleCsubBulkEdit()">✏️ 批量编辑价格</button>
       <button class="btn btn-green" onclick="openReviewLinkModal()">🔗 生成审核链接（顾客 / 工头）</button>
       <button class="btn btn-outline" onclick="openPendingQrModal()">📱 待确认记录二维码</button>
+      <button class="btn btn-outline" onclick="csubToggleAll()" title="一键折叠 / 展开所有分组">🔽 折叠 / 展开全部</button>
       <button class="btn btn-outline" onclick="loadCsubScans()">刷新</button>
     </div>
   </div>
@@ -40999,8 +41000,29 @@ function _csubBatchLabel(key, list) {
   if (when) bits.push('提交于 ' + when);
   return bits.map(esc).join(' · ');
 }
+// Collapsible groups: remember which company / batch headers are folded (by value in
+// a Set). Toggling passes a per-render index so arbitrary names never need escaping
+// into an onclick attribute.
+window._csubCollapsedCo = window._csubCollapsedCo || new Set();
+window._csubCollapsedBatch = window._csubCollapsedBatch || new Set();
+window._csubToggleKeys = [];
+function _csubTk(type, key) { window._csubToggleKeys.push({ type, key }); return window._csubToggleKeys.length - 1; }
+function _csubToggleByIndex(i) {
+  const t = window._csubToggleKeys[i]; if (!t) return;
+  const s = t.type === 'co' ? window._csubCollapsedCo : window._csubCollapsedBatch;
+  if (s.has(t.key)) s.delete(t.key); else s.add(t.key);
+  renderCsubScans();
+}
+// Toolbar button: fold everything if anything is open, else expand everything.
+function csubToggleAll() {
+  const anyOpen = ((window._csubCollapsedCo && window._csubCollapsedCo.size) || 0) + ((window._csubCollapsedBatch && window._csubCollapsedBatch.size) || 0) === 0;
+  if (anyOpen) { (_csubScanRows || []).forEach(r => window._csubCollapsedCo.add(r.partner_name || '—')); }
+  else { window._csubCollapsedCo.clear(); window._csubCollapsedBatch.clear(); }
+  renderCsubScans();
+}
 function renderCsubScans() {
   const tb = document.getElementById('csubScanBody');
+  window._csubToggleKeys = [];
   const q = (document.getElementById('csubScanQ').value || '').trim().toLowerCase();
   let rows = _csubScanRows;
   if (q) rows = rows.filter(r =>
@@ -41022,7 +41044,9 @@ function renderCsubScans() {
   const blocks = [];
   Array.from(groups.keys()).sort((a, b) => a.localeCompare(b)).forEach(co => {
     const list = groups.get(co);
-    blocks.push(`<tr style="background:#fff7ed"><td colspan="10" style="padding:.5rem .75rem;border-top:2px solid #fdba74;font-weight:700;color:#9a3412">🏢 ${esc(co)} <span style="font-weight:400;color:var(--gray-500);font-size:.82rem">· ${list.length} 条</span></td></tr>`);
+    const _coCol = window._csubCollapsedCo.has(co);
+    blocks.push(`<tr style="background:#fff7ed;cursor:pointer" onclick="_csubToggleByIndex(${_csubTk('co', co)})" title="点击折叠 / 展开"><td colspan="10" style="padding:.5rem .75rem;border-top:2px solid #fdba74;font-weight:700;color:#9a3412"><span style="display:inline-block;width:1em;color:#c2410c">${_coCol ? '▶' : '▼'}</span>🏢 ${esc(co)} <span style="font-weight:400;color:var(--gray-500);font-size:.82rem">· ${list.length} 条</span></td></tr>`);
+    if (_coCol) return; // folded → hide this company's batches + rows
     // Batches keep the list's order (newest first).
     const batches = new Map();
     list.forEach(r => {
@@ -41031,7 +41055,10 @@ function renderCsubScans() {
       batches.get(bk).push(r);
     });
     batches.forEach((bList, bKey) => {
-      blocks.push(`<tr style="background:#eff6ff"><td colspan="10" style="padding:.35rem .75rem .35rem 1.4rem;border-top:1px solid #bfdbfe;font-weight:600;color:#1d4ed8;font-size:.8rem">${_csubBatchLabel(bKey, bList)} <span style="font-weight:400;color:var(--gray-500)">· ${bList.length} 条</span></td></tr>`);
+      const _bColKey = co + '||' + bKey;
+      const _bCol = window._csubCollapsedBatch.has(_bColKey);
+      blocks.push(`<tr style="background:#eff6ff;cursor:pointer" onclick="_csubToggleByIndex(${_csubTk('batch', _bColKey)})" title="点击折叠 / 展开"><td colspan="10" style="padding:.35rem .75rem .35rem 1.4rem;border-top:1px solid #bfdbfe;font-weight:600;color:#1d4ed8;font-size:.8rem"><span style="display:inline-block;width:1em">${_bCol ? '▶' : '▼'}</span>${_csubBatchLabel(bKey, bList)} <span style="font-weight:400;color:var(--gray-500)">· ${bList.length} 条</span></td></tr>`);
+      if (_bCol) return; // folded → hide this batch's rows
       // Split the batch by refer人 (matched invoice line's referrer).
       const byRef = new Map();
       bList.forEach(r => {
