@@ -29864,6 +29864,7 @@ function _bsPayeeDisplaySrv(payee) {
   if (p.indexOf('取支票:') === 0) { const n = p.slice(4).split('|').filter(Boolean); return '取支票' + (n.length ? ' · ' + n.join('、') : ''); }
   if (p.indexOf('换汇:') === 0) { const n = p.slice(3); return '换汇' + (n ? ' · ' + n : ''); }
   if (p.indexOf('推荐费:') === 0) { const n = p.slice(4); return '推荐费' + (n ? ' · ' + n : ''); }
+  if (p.indexOf('发工资奖励:') === 0) { const n = p.slice('发工资奖励:'.length); return '发工资奖励' + (n ? ' · ' + n : ''); }
   return p;
 }
 // GET all transaction annotations (optionally ?statement_id= or ?since=YYYY-MM-DD).
