@@ -16511,6 +16511,70 @@ app.delete('/api/admin/labor-companies/:id/w9', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// ─── 分包商对账单存档 (subcontractor statement archive) ─────────────────────
+// 保存生成的分包商对账单（含可打印的 HTML 快照），供之后与银行支出对账/链接。
+// paid_amount = 实际支付金额，手动填写，允许与对账单的工资合计 wage_total 不同。
+db.exec(`CREATE TABLE IF NOT EXISTS sub_statements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER,
+  invoice_number TEXT DEFAULT '',
+  recipient TEXT DEFAULT '',
+  period_start TEXT DEFAULT '',
+  period_end TEXT DEFAULT '',
+  statement_date TEXT DEFAULT '',
+  wage_total REAL DEFAULT 0,
+  paid_amount REAL,
+  note TEXT DEFAULT '',
+  items_json TEXT DEFAULT '[]',
+  html TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+app.get('/api/admin/sub-statements', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT id, invoice_id, invoice_number, recipient, period_start, period_end, statement_date,
+      wage_total, paid_amount, note, created_at
+    FROM sub_statements ORDER BY created_at DESC, id DESC`).all();
+  res.json(rows);
+});
+
+app.get('/api/admin/sub-statements/:id', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM sub_statements WHERE id=?').get(parseInt(req.params.id));
+  if (!row) return res.status(404).json({ error: 'not found' });
+  try { row.items = JSON.parse(row.items_json || '[]'); } catch { row.items = []; }
+  delete row.items_json;
+  res.json(row);
+});
+
+app.post('/api/admin/sub-statements', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  const r = db.prepare(`INSERT INTO sub_statements
+      (invoice_id, invoice_number, recipient, period_start, period_end, statement_date, wage_total, paid_amount, note, items_json, html)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+    d.invoice_id || null, String(d.invoice_number || ''), String(d.recipient || ''),
+    String(d.period_start || ''), String(d.period_end || ''), String(d.statement_date || ''),
+    Number(d.wage_total) || 0,
+    (d.paid_amount == null || d.paid_amount === '') ? null : Number(d.paid_amount),
+    String(d.note || ''), JSON.stringify(d.items || []), String(d.html || ''));
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+
+// 只更新传入的字段（实付金额 / 备注），互不覆盖。
+app.put('/api/admin/sub-statements/:id', requireAdmin, (req, res) => {
+  const d = req.body || {};
+  const id = parseInt(req.params.id);
+  if (!db.prepare('SELECT id FROM sub_statements WHERE id=?').get(id)) return res.status(404).json({ error: 'not found' });
+  const sets = [], vals = [];
+  if ('paid_amount' in d) { sets.push('paid_amount=?'); vals.push((d.paid_amount == null || d.paid_amount === '') ? null : Number(d.paid_amount)); }
+  if ('note' in d) { sets.push('note=?'); vals.push(String(d.note || '')); }
+  if (sets.length) db.prepare(`UPDATE sub_statements SET ${sets.join(', ')} WHERE id=?`).run(...vals, id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/sub-statements/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM sub_statements WHERE id=?').run(parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
 // EIN verify / unverify
 app.put('/api/admin/labor-companies/:id/verify-ein', requireAdmin, (req, res) => {
   const id = parseInt(req.params.id);
