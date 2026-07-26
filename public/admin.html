@@ -37955,7 +37955,7 @@ async function generateInvpSubcontractorStatement() {
       const bb = hasMeta ? '' : 'border-bottom:1px solid #e2e8f0;';
       return `<tr style="background:${stripe}">
         <td style="padding:9px 8px ${pad} 8px;${bb}text-align:center;color:#64748b;vertical-align:top">${idx + 1}</td>
-        <td style="padding:9px 8px ${pad} 8px;${bb}text-align:left;font-weight:500;text-transform:capitalize;vertical-align:top">${esc(i.name)}</td>
+        <td style="padding:9px 8px ${pad} 8px;${bb}text-align:left;font-weight:500;text-transform:capitalize;vertical-align:top">${esc(_invpDisplayWorkerName(i.name))}</td>
         <td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;vertical-align:top">${(i.regHours||0).toFixed(2)}</td>
         ${showOt ? `<td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;vertical-align:top">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>` : ''}
         <td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;vertical-align:top">$${(i.rate||0).toFixed(2)}</td>
@@ -38607,6 +38607,9 @@ function _invpBilledAmt(regAmt, otAmt, markup) {
 }
 // 合同档位（Total Assigned Personnel）：1–30 → ×1.10，31–70 → ×1.05，71+ → ×1.00。
 function _invpOtFeeForHeadcount(n) { return n >= 71 ? 1.0 : (n >= 31 ? 1.05 : 1.1); }
+// 打印显示用：去掉 Elogistek 导出加在名字前的 "Chinese-" 语言标记
+// （新导入已在解析时去掉；这里兜底老发票里存的旧名字）。
+function _invpDisplayWorkerName(n) { return String(n || '').replace(/^chinese[-_\s]+/i, '').trim(); }
 
 function getInvpManualItems() {
   _invpSaveTableState();
@@ -38799,7 +38802,7 @@ async function generateInvpPreview() {
         ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
       return `<tr style="background:${rowBg}">
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(i.name)}${(i.note||'').trim() ? `<div style="font-weight:400;font-size:.72rem;color:#64748b;text-transform:none;white-space:normal;max-width:220px">${esc((i.note||'').trim())}</div>` : ''}</td>
+        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(_invpDisplayWorkerName(i.name))}${(i.note||'').trim() ? `<div style="font-weight:400;font-size:.72rem;color:#64748b;text-transform:none;white-space:normal;max-width:220px">${esc((i.note||'').trim())}</div>` : ''}</td>
         ${posCell}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${hideOt ? ((i.regHours||0)+(i.otHours||0)).toFixed(2) : (i.regHours||0).toFixed(2)}</td>
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? '' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
