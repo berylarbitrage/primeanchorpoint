@@ -2870,6 +2870,13 @@ tr:hover td.invp-frz{background:var(--sky-light)}
             <span style="font-size:.8rem;color:#92400e">× 总工资 = 最终账单<br><span style="color:var(--gray-400);font-weight:400">默认值；可在下方为每名员工单独覆盖</span></span>
           </div>
         </div>
+        <div class="field" id="invPageOtFeeRateWrap">
+          <label style="color:#b45309;font-weight:600">加班服务费 ×（OT 计费系数）</label>
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <input type="number" id="invPageOtFeeRate" placeholder="如 1.10" min="0" step="0.01" style="width:110px;border:1px solid #fbbf24;border-radius:6px;padding:5px 8px;font-size:.88rem;font-weight:600;color:#b45309" oninput="renderInvpManualTable(true)">
+            <span style="font-size:.8rem;color:#b45309">加班工资(1.5×) 不吃 Markup，改乘此系数<br><span style="color:var(--gray-400);font-weight:400">合同档位：1–30人 ×1.10 · 31–70人 ×1.05 · 71人以上 ×1.00。留空 = 加班也按 Markup 加价（旧算法）</span></span>
+          </div>
+        </div>
       </div>
 
       <!-- Billing mode selector -->
@@ -32263,7 +32270,7 @@ function openInvpBuilderModal() {
   window._invpCurrentSavedId = null;
   window._invpLoadedStatus = null;
   window._invpLoadedWageCost = null;
-  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageEditId'];
+  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageOtFeeRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   _invpSetupAddrPicker([]); // hide the multi-address picker for a fresh invoice
@@ -32322,6 +32329,10 @@ async function openInvpForEdit(id) {
   }
   document.getElementById('invPageUniformRate').value = '';
   document.getElementById('invPageMarkupRate').value = inv.markup_rate || '';
+  {
+    const otf = document.getElementById('invPageOtFeeRate');
+    if (otf) otf.value = (inv.profile && Number(inv.profile.ot_fee_rate) > 0) ? String(inv.profile.ot_fee_rate) : '';
+  }
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   _invpSetupAddrPicker([]); // editing a saved invoice keeps its stored address; no picker
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
@@ -35775,11 +35786,8 @@ async function saveInvpInvoice(status) {
     if (!items.length) { alert('请至少添加一名员工'); return; }
     baseTotal = items.reduce((s,i) => s+i.total, 0);
     containerItems = [];
-    // Per-row markup: each item's effective markup is its own if > 0, else the global default.
-    const billed = items.reduce((s, i) => {
-      const eff = (i.markup && i.markup > 0) ? i.markup : markupRate;
-      return s + i.total * eff;
-    }, 0);
+    // 每行的账单额已在 getInvpManualItems 里按「正常×Markup + 加班×OT服务费」算好。
+    const billed = items.reduce((s, i) => s + (i.billed || 0), 0);
     subtotal = Math.round(billed * 100) / 100;
   }
 
@@ -35844,6 +35852,8 @@ async function saveInvpInvoice(status) {
   }
 
   const profileWithMode = { ...getInvpProfile(), invoice_mode: mode, container_items: containerItems };
+  // 加班服务费系数随发票存档（0 = 未启用，编辑旧发票时保持旧算法）。
+  profileWithMode.ot_fee_rate = (mode !== 'container' && _invpOtFeeRate() != null) ? _invpOtFeeRate() : 0;
   // 两边分开记账：从「按月付款」转来的发票，行项目按公司价（从公司收）开给客户，真实「付给
   // 工人」工资单独存进 profile.wage_cost，后台列表才能正确显示工资/利润。由转入时留底的逐人
   // 工资时薪重算；重新编辑已存发票（行项目里没有工资时薪）时沿用原值，避免利润被清零。
@@ -36197,7 +36207,7 @@ function renderInvpManualTable(skipSave) {
     const subtotal = regHrs * rate + otHrs * otRateVal;
     const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
     const empMarkup = parseFloat(emp.markup) || globalMk;
-    const empBilled = subtotal * empMarkup;
+    const empBilled = _invpBilledAmt(regHrs * rate, otHrs * otRateVal, empMarkup);
     const linkBadge = emp.linked_employee_id
       ? `<span style="display:inline-flex;align-items:center;background:#dcfce7;border:1px solid #86efac;border-radius:10px;font-size:.7rem;line-height:1.5;white-space:nowrap;flex-shrink:0;overflow:hidden">` +
         `<span title="点击重新选择系统员工" style="display:inline-flex;align-items:center;gap:2px;padding:0 5px;cursor:pointer;color:#166534" onclick="invpOpenLinkModal(${emp.uid})">🔗${emp.linked_employee_code ? ' '+esc(emp.linked_employee_code) : ''}</span>` +
@@ -36306,7 +36316,7 @@ function renderInvpManualTable(skipSave) {
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:var(--accent)">加班工时 <span style="font-weight:400;font-size:.72rem">&gt;40h/周</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">合计工时</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap" title="工资合计（不含 Markup）">小计</th>
-        <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#1d4ed8" title="小计 × Markup（客户看到的金额）">账单</th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#1d4ed8" title="客户看到的金额。填了「加班服务费 ×」时 = 正常工资×Markup + 加班工资×OT系数；否则 = 小计×Markup">账单</th>
         <th style="padding:5px 6px"></th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
@@ -36572,7 +36582,7 @@ function invpUpdateRowTotal(row) {
   const markup = parseFloat(markupInp?.value) || globalMk2;
   const billedCell = row.querySelector('.invp-man-billed');
   if (billedCell) {
-    billedCell.textContent = '$' + (subtotal * markup).toFixed(2);
+    billedCell.textContent = '$' + _invpBilledAmt(regHrs * rate, otHrs * otRate, markup).toFixed(2);
     billedCell.style.color = markupInp?.value ? '#1d4ed8' : '#64748b';
   }
 }
@@ -36633,6 +36643,7 @@ async function invpProcessExcelFile(file) {
     let msg = `已从 Excel 导入 ${data.employees.length} 名员工`;
     if (data.periodStart) msg += `，周期 ${data.periodStart} ~ ${data.periodEnd}`;
     if (data.markupMultiplier) msg += `，Markup ×${data.markupMultiplier}`;
+    msg += `，加班服务费 ×${_invpOtFeeForHeadcount((data.employees || []).length).toFixed(2)}（按人数档位，加班不吃 Markup）`;
     showToast(msg + '。请核对后保存。', 'success', 5000);
     (data.warnings || []).forEach(w => showToast('⚠️ ' + w, 'warning', 7000));
   } catch (e) {
@@ -36654,6 +36665,10 @@ function invpApplyExcelData(data) {
   if (data.markupMultiplier && data.markupMultiplier > 0) {
     document.getElementById('invPageMarkupRate').value = data.markupMultiplier;
   }
+  // 合同算法：加班工资(1.5×)不吃 Markup，按人数档位收 OT 服务费
+  // （1–30人 ×1.10 / 31–70人 ×1.05 / 71人以上 ×1.00）。
+  const otFeeEl = document.getElementById('invPageOtFeeRate');
+  if (otFeeEl) otFeeEl.value = String(_invpOtFeeForHeadcount((data.employees || []).length));
 
   const dates = _invpGetDates();
   const dflt = Number(data.markupMultiplier) || 0;
@@ -36709,9 +36724,13 @@ function invpSwitchMode(mode) {
   // Container invoices don't use markup — hide that input and clear it
   const mkWrap = document.getElementById('invPageMarkupRateWrap');
   if (mkWrap) mkWrap.style.display = (mode === 'container') ? 'none' : '';
+  const otFeeWrap = document.getElementById('invPageOtFeeRateWrap');
+  if (otFeeWrap) otFeeWrap.style.display = (mode === 'container') ? 'none' : '';
   if (mode === 'container') {
     const mk = document.getElementById('invPageMarkupRate');
     if (mk) mk.value = '';
+    const otf = document.getElementById('invPageOtFeeRate');
+    if (otf) otf.value = '';
     renderInvpContainerTable();
   }
   // Refresh invoice number to reflect the mode letter (C / L),
@@ -38574,6 +38593,21 @@ function applyInvUniformRate(val) {
   });
 }
 
+// ── 加班计费系数（合同：加班费的 1.5× 工资部分不吃 Markup，只加 OT 服务费）──
+// 输入框留空 → null → 旧算法：加班和正常工资一起 × Markup。
+function _invpOtFeeRate() {
+  const el = document.getElementById('invPageOtFeeRate');
+  const v = parseFloat(el && el.value);
+  return (Number.isFinite(v) && v > 0) ? v : null;
+}
+// 一行的账单额：正常工资 × markup + 加班工资 × OT 服务费系数。
+function _invpBilledAmt(regAmt, otAmt, markup) {
+  const otFee = _invpOtFeeRate();
+  return otFee == null ? (regAmt + otAmt) * markup : regAmt * markup + otAmt * otFee;
+}
+// 合同档位（Total Assigned Personnel）：1–30 → ×1.10，31–70 → ×1.05，71+ → ×1.00。
+function _invpOtFeeForHeadcount(n) { return n >= 71 ? 1.0 : (n >= 31 ? 1.05 : 1.1); }
+
 function getInvpManualItems() {
   _invpSaveTableState();
   return window._invpManualEmps
@@ -38586,11 +38620,13 @@ function getInvpManualItems() {
       const totalHours = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
       const regHours = Math.min(totalHours, 40);
       const otHours  = Math.max(totalHours - 40, 0);
-      const total = regHours * rate + otHours * otRate;
+      const regAmt = regHours * rate;
+      const otAmt  = otHours * otRate;
+      const total = regAmt + otAmt;
       const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
       const markup = parseFloat(emp.markup) || globalMk;
-      const billed = Math.round(total * markup * 100) / 100;
-      return { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', note: emp.note || '', noteType: emp.noteType || '', noteDate: emp.noteDate || '', hours: totalHours, regHours, otHours, rate, otRate, total, markup, billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      const billed = Math.round(_invpBilledAmt(regAmt, otAmt, markup) * 100) / 100;
+      return { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', note: emp.note || '', noteType: emp.noteType || '', noteDate: emp.noteDate || '', hours: totalHours, regHours, otHours, rate, otRate, total, regAmt, otAmt, markup, otFee: _invpOtFeeRate(), billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
     })
     .filter(Boolean);
 }
@@ -38743,7 +38779,7 @@ async function generateInvpPreview() {
     totalOtHrs  = items.reduce((s,i) => s+(i.otHours||0), 0);
     // Per-row effective markup (own if > 0, else the page-level default).
     const effMks = items.map(i => (i.markup && i.markup > 0) ? i.markup : markupRate);
-    billedAmt = Math.round(items.reduce((s, i, idx) => s + (i.total||0) * effMks[idx], 0) * 100) / 100;
+    billedAmt = Math.round(items.reduce((s, i) => s + (i.billed || 0), 0) * 100) / 100;
     const uniqueMks = [...new Set(effMks.map(v => Math.round(v * 10000) / 10000))];
     const allSameMk = uniqueMks.length === 1;
     const anyMarkup = effMks.some(v => v > 1);
@@ -38772,10 +38808,12 @@ async function generateInvpPreview() {
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
       </tr>`;
     }).join('');
+    const _otFee = _invpOtFeeRate();
+    const otFeeNote = (_otFee != null && totalOtHrs > 0) ? `, OT ×${_otFee.toFixed(2)}` : '';
     const mkLabel = anyMarkup
       ? (allSameMk
-          ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${uniqueMks[0].toFixed(2)})</span>`
-          : ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup per worker)</span>`)
+          ? ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup ×${uniqueMks[0].toFixed(2)}${otFeeNote})</span>`
+          : ` <span style="font-weight:500;font-size:.72rem;text-transform:none;letter-spacing:0;color:#475569">(Markup per worker${otFeeNote})</span>`)
       : '';
     lineItemTableHtml = `
       <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
@@ -38879,6 +38917,13 @@ async function generateInvpPreview() {
               const effMks = items.map(i => (i.markup && i.markup > 0) ? i.markup : markupRate);
               const uniqueMks = [...new Set(effMks.map(v => Math.round(v * 10000) / 10000))];
               mkText = uniqueMks.length === 1 ? `Markup ${uniqueMks[0].toFixed(2)}` : 'Markup per worker';
+              // 加班服务费模式：正常工资 × Markup + 加班工资 × OT 系数，两段分开列明。
+              const otFee = _invpOtFeeRate();
+              const otBase = items.reduce((s, i) => s + (i.otAmt || 0), 0);
+              if (otFee != null && otBase > 0.005) {
+                const regBase = items.reduce((s, i) => s + (i.regAmt != null ? i.regAmt : (i.total || 0)), 0);
+                return `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">Reg $${regBase.toFixed(2)} × ${mkText} &nbsp;+&nbsp; OT $${otBase.toFixed(2)} × ${otFee.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong></td></tr>`;
+              }
             }
             return `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">${mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} $${baseAmt.toFixed(2)} &nbsp;×&nbsp; ${mkText} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong></td></tr>`;
           })()}
