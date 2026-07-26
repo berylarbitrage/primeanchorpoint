@@ -6833,17 +6833,17 @@ function _buildThirdPartyPayAuthForm(lang, method) {
     : `Third-Party ${mn.en} Payment Authorization — ${companyName}`;
 
   const intro = zh
-    ? `This form must be completed and signed by the third party who has been designated to receive ${mn.en} payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName} via ${mn.en}.\n\n本表格须由被指定代为接收${mn.zh}付款的第三方填写并签署。签署本表格即表示您确认已获得下方所列人员的授权，通过${mn.zh}接收来自 ${companyName} 的付款。`
+    ? `This form must be completed and signed by the THIRD PARTY (not the Payee) who has been designated to receive ${mn.en} payments on behalf of the Payee named in Section 1 below. By signing this form, you — the third-party recipient — confirm that you have been authorized by the Payee to receive payments from ${companyName} via ${mn.en}.\n\n本表格须由被指定代收${mn.zh}付款的第三方本人（而非收款人）填写并签署。第一部分所列为授权您代收的收款人。签署本表格即表示您（第三方代收人）确认已获得该收款人的授权，代其通过${mn.zh}接收来自 ${companyName} 的付款。`
     : es
-    ? `This form must be completed and signed by the third party who has been designated to receive ${mn.en} payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName} via ${mn.en}.\n\nEste formulario debe ser completado y firmado por el tercero designado para recibir pagos por ${mn.es} en nombre de la persona indicada a continuación. Al firmar este formulario, usted confirma que ha sido autorizado por dicha persona para recibir pagos de ${companyName} a través de ${mn.es}.`
-    : `This form must be completed and signed by the third party who has been designated to receive ${mn.en} payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName} via ${mn.en}.`;
+    ? `This form must be completed and signed by the THIRD PARTY (not the Payee) who has been designated to receive ${mn.en} payments on behalf of the Payee named in Section 1 below. By signing this form, you — the third-party recipient — confirm that you have been authorized by the Payee to receive payments from ${companyName} via ${mn.en}.\n\nEste formulario debe ser completado y firmado por el TERCERO (no el Beneficiario) designado para recibir pagos por ${mn.es} en nombre del Beneficiario indicado en la Sección 1. Al firmar este formulario, usted — el tercero receptor — confirma que ha sido autorizado por el Beneficiario para recibir pagos de ${companyName} a través de ${mn.es}.`
+    : `This form must be completed and signed by the THIRD PARTY (not the Payee) who has been designated to receive ${mn.en} payments on behalf of the Payee named in Section 1 below. By signing this form, you — the third-party recipient — confirm that you have been authorized by the Payee to receive payments from ${companyName} via ${mn.en}.`;
 
-  const s1 = L('1. AUTHORIZING INDIVIDUAL', '授权人信息', 'PERSONA QUE AUTORIZA');
-  const lAuthName = L('Full Legal Name of the Person Who Authorized You', '授权人法定全名', 'Nombre Legal Completo de la Persona que lo Autorizó');
+  const s1 = L('1. PAYEE (AUTHORIZING INDIVIDUAL — the person to whom payment is owed)', '收款人（授权人）— 应获付款的本人', 'BENEFICIARIO (PERSONA QUE AUTORIZA — a quien se le debe el pago)');
+  const lAuthName = L('Payee Full Legal Name — the person who authorized you to receive payment', '收款人（授权人）法定全名 — 授权您代收款项的本人', 'Nombre Legal Completo del Beneficiario — la persona que lo autorizó a recibir el pago');
 
-  const s2 = L('2. YOUR INFORMATION (THIRD PARTY)', '您的信息（第三方）', 'SU INFORMACIÓN (TERCERO)');
-  const lYourName = L('Your Full Legal Name', '您的法定全名', 'Su Nombre Legal Completo');
-  const lRelationship = L('Your Relationship to the Authorizing Individual', '您与授权人的关系', 'Su Relación con la Persona que Autoriza');
+  const s2 = L('2. THIRD-PARTY RECIPIENT — YOUR INFORMATION (the person completing and signing this form)', '第三方代收人信息 — 即填写并签署本表的您本人', 'TERCERO RECEPTOR — SU INFORMACIÓN (la persona que completa y firma este formulario)');
+  const lYourName = L('Your Full Legal Name (Third-Party Recipient)', '您的法定全名（第三方代收人）', 'Su Nombre Legal Completo (Tercero Receptor)');
+  const lRelationship = L('Your Relationship to the Payee (Authorizing Individual)', '您与收款人（授权人）的关系', 'Su Relación con el Beneficiario (Persona que Autoriza)');
 
   // Method-specific account fields
   let accountFieldsHtml = '';
@@ -6919,8 +6919,8 @@ function _buildThirdPartyPayAuthForm(lang, method) {
     ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para fines de confirmación del método de pago y no altera ninguna obligación de declaración de impuestos ni el estatus del contratista.`
     : `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status.`;
 
-  const sigHeader = L('THIRD-PARTY SIGNATURE', '第三方签名', 'FIRMA DEL TERCERO');
-  const lPrintedName = L('Printed Name', '正楷姓名', 'Nombre en Letra de Imprenta');
+  const sigHeader = L('THIRD-PARTY RECIPIENT SIGNATURE — signed by the third party, not the Payee', '第三方代收人签名 — 由第三方本人签署，非收款人', 'FIRMA DEL TERCERO RECEPTOR — firmada por el tercero, no por el Beneficiario');
+  const lPrintedName = L('Printed Name (Third-Party Recipient)', '正楷姓名（第三方代收人）', 'Nombre en Letra de Imprenta (Tercero Receptor)');
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
   const today = new Date().toISOString().slice(0, 10);
@@ -7007,12 +7007,12 @@ function _buildCheckTpAuthForm(lang) {
     ? `This form must be completed and signed by the third party who has been designated to receive Check payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName2} via Check. The check may be picked up by the authorizing individual or by the third party; whoever picks up the check must sign the Receipt Confirmation section.\n\nEste formulario debe ser completado y firmado por el tercero designado para recibir pagos con Cheque en nombre de la persona indicada. El cheque puede ser recogido por la persona que autoriza o por el tercero; quien lo recoja debe firmar la sección de Confirmación de Recibo.`
     : `This form must be completed and signed by the third party who has been designated to receive Check payments on behalf of the individual named below. By signing this form, you confirm that you have been authorized by the individual to receive payments from ${companyName2} via Check. The check may be picked up by the authorizing individual or by the third party; whoever picks up the check must sign the Receipt Confirmation section.`;
 
-  const s1 = L('1. AUTHORIZING INDIVIDUAL', '授权人信息', 'PERSONA QUE AUTORIZA');
-  const lAuthName = L('Full Legal Name of the Person Who Authorized You', '授权人法定全名', 'Nombre Legal Completo de la Persona que lo Autorizó');
+  const s1 = L('1. PAYEE (AUTHORIZING INDIVIDUAL — the person to whom payment is owed)', '收款人（授权人）— 应获付款的本人', 'BENEFICIARIO (PERSONA QUE AUTORIZA — a quien se le debe el pago)');
+  const lAuthName = L('Payee Full Legal Name — the person who authorized you to receive payment', '收款人（授权人）法定全名 — 授权您代收款项的本人', 'Nombre Legal Completo del Beneficiario — la persona que lo autorizó a recibir el pago');
 
-  const s2 = L('2. YOUR INFORMATION (THIRD PARTY)', '您的信息（第三方）', 'SU INFORMACIÓN (TERCERO)');
-  const lYourName = L('Your Full Legal Name', '您的法定全名', 'Su Nombre Legal Completo');
-  const lRelationship = L('Your Relationship to the Authorizing Individual', '您与授权人的关系', 'Su Relación con la Persona que Autoriza');
+  const s2 = L('2. THIRD-PARTY RECIPIENT — YOUR INFORMATION (the person completing and signing this form)', '第三方代收人信息 — 即填写并签署本表的您本人', 'TERCERO RECEPTOR — SU INFORMACIÓN (la persona que completa y firma este formulario)');
+  const lYourName = L('Your Full Legal Name (Third-Party Recipient)', '您的法定全名（第三方代收人）', 'Su Nombre Legal Completo (Tercero Receptor)');
+  const lRelationship = L('Your Relationship to the Payee (Authorizing Individual)', '您与收款人（授权人）的关系', 'Su Relación con el Beneficiario (Persona que Autoriza)');
 
   const s3 = zh ? '3. CHECK PICKUP DESIGNATION 支票领取方式' : es ? '3. CHECK PICKUP DESIGNATION / DESIGNACIÓN DE RECOGIDA' : '3. CHECK PICKUP DESIGNATION';
   const pickupNote = zh
