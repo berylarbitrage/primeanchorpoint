@@ -6549,9 +6549,9 @@ function _buildZelleAuthForm(lang, variant) {
   const sigHeader = L('PAYEE SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
   const sigNote = isB
     ? L(
-      'If the Payee is signing this form directly, please sign below. If authorizing a third-party representative instead, skip this section and complete the authorization section below.',
-      '如收款人本人直接签署，请在下方签名。如授权第三方代表，请跳过此处，填写下方的授权部分。',
-      'Si el Beneficiario firma este formulario directamente, firme a continuación. Si autoriza a un representante de terceros, omita esta sección y complete la sección de autorización a continuación.'
+      'The Payee must sign the applicable signature section below. A representative may assist with submitting payment instructions but may not sign in place of the Payee.',
+      '收款人须在下方相应签名部分签名。代表可协助提交付款指示，但不得代替收款人签名。',
+      'El Beneficiario debe firmar la sección de firma correspondiente a continuación. Un representante puede asistir con la presentación de instrucciones de pago, pero no puede firmar en lugar del Beneficiario.'
     )
     : L(
       'If the Payee is receiving payment directly through the Zelle account identified above, the Payee must sign below. If the Payee is authorizing a third party to receive payment, the Payee and the third party must instead complete the applicable third-party Zelle payment forms.',
@@ -6569,9 +6569,9 @@ function _buildZelleAuthForm(lang, variant) {
     'OPCIONAL — AUTORIZACIÓN DEL BENEFICIARIO A UN REPRESENTANTE DE TERCEROS'
   );
   const authDelegateText = L(
-    `Complete this section ONLY if the Payee is not signing the Payee Signature section above and is instead authorizing a third-party representative. By signing below, I hereby authorize the person identified above as my Authorized Representative to provide payment instructions and to sign payment authorization documents on my behalf. I confirm that payments sent to the Zelle account specified above are authorized by me.`,
-    `仅在收款人不直接签署上方"收款人签名"部分、而是授权第三方代表时填写此部分。本人特此授权上方所列的授权代表代表本人提供付款指示并签署付款授权文件。本人确认发送至上述 Zelle 账户的付款均经本人授权。`,
-    `Complete esta sección SOLO si el Beneficiario no firma la sección de Firma del Beneficiario anterior y en su lugar autoriza a un representante de terceros. Al firmar a continuación, por la presente autorizo a la persona identificada arriba como mi Representante Autorizado para proporcionar instrucciones de pago y firmar documentos de autorización de pago en mi nombre. Confirmo que los pagos enviados a la cuenta Zelle especificada arriba están autorizados por mí.`
+    `Complete this section only if the Payee authorizes the representative identified above to assist in submitting the Payee's payment instructions and related documentation. By signing below, I authorize the identified representative to assist in submitting those instructions and documents. Unless separate third-party recipient forms are completed and accepted by ${companyName}, all payments must be sent only to the Zelle account identified above and certified by me. The representative is not authorized to change the payment recipient or direct payment to an account not identified and certified by me.`,
+    `仅在收款人授权上方所列代表协助提交收款人的付款指示及相关文件时填写此部分。本人签署下方后，即授权该代表协助提交上述指示及文件。除非另行填写相应的第三方收款表格并经 ${companyName} 接受，所有款项仅可发送至上方所列并经本人确认的 Zelle 账户。该代表无权变更收款人，亦无权将款项转至未经本人列明并确认的账户。`,
+    `Complete esta sección solo si el Beneficiario autoriza al representante identificado arriba a asistir en la presentación de las instrucciones de pago del Beneficiario y la documentación relacionada. Al firmar a continuación, autorizo al representante identificado a asistir en la presentación de dichas instrucciones y documentos. A menos que se completen formularios separados de destinatario tercero y sean aceptados por ${companyName}, todos los pagos deben enviarse únicamente a la cuenta Zelle identificada arriba y certificada por mí. El representante no está autorizado a cambiar el destinatario del pago ni a dirigir el pago a una cuenta no identificada y certificada por mí.`
   );
   const lPayeePrintedName = L('Payee Printed Name', '收款人正楷姓名', 'Nombre del Beneficiario en Letra de Imprenta');
   const lPayeeSig = L('Payee Signature', '收款人签名', 'Firma del Beneficiario');
