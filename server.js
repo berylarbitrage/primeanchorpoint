@@ -6167,10 +6167,10 @@ function _buildCheckInstructionForm(lang) {
 
   // ── 2. Intro paragraph ──
   const introPara = zh
-    ? `I authorize ${companyName} to issue all future payments owed to me by check, to be received in person by the payee or authorized representative designated below. This is a standing authorization and applies to all check payments unless I notify ${companyName} in writing of a change. The recipient must sign in person upon receiving each check.<br><span style="color:#555">本人授权 ${companyName} 以支票方式发放今后所有应付款项，由以下指定收款人或授权代表当面签收。本授权为长期授权，适用于所有支票付款，除非本人以书面形式通知 ${companyName} 变更。收款人须在领取每张支票时当场签字确认。</span>`
+    ? `I authorize ${companyName} to issue all future payments owed to me by check, to be received in person by the payee or authorized representative designated below. This is a standing authorization and applies to all check payments unless I notify ${companyName} in writing of a change. The recipient must complete and sign the Check Receipt Confirmation section upon receiving each check.<br><span style="color:#555">本人授权 ${companyName} 以支票方式发放今后所有应付款项，由以下指定收款人或授权代表当面签收。本授权为长期授权，适用于所有支票付款，除非本人以书面形式通知 ${companyName} 变更。收款人须在领取每张支票时填写并签署下方"支票签收确认"部分。</span>`
     : es
-    ? `I authorize ${companyName} to issue all future payments owed to me by check, to be received in person by the payee or authorized representative designated below. This is a standing authorization and applies to all check payments unless I notify ${companyName} in writing of a change. The recipient must sign in person upon receiving each check.<br><span style="color:#555">Autorizo a ${companyName} a emitir todos los pagos futuros que se me adeuden mediante cheque, para ser recibidos en persona por el beneficiario o representante autorizado designado a continuación. Esta es una autorización permanente y aplica a todos los pagos por cheque salvo notificación escrita de cambio a ${companyName}. El receptor debe firmar en persona al recibir cada cheque.</span>`
-    : `I authorize ${companyName} to issue all future payments owed to me by check, to be received in person by the payee or authorized representative designated below. This is a standing authorization and applies to all check payments unless I notify ${companyName} in writing of a change. The recipient must sign in person upon receiving each check.`;
+    ? `I authorize ${companyName} to issue all future payments owed to me by check, to be received in person by the payee or authorized representative designated below. This is a standing authorization and applies to all check payments unless I notify ${companyName} in writing of a change. The recipient must complete and sign the Check Receipt Confirmation section upon receiving each check.<br><span style="color:#555">Autorizo a ${companyName} a emitir todos los pagos futuros que se me adeuden mediante cheque, para ser recibidos en persona por el beneficiario o representante autorizado designado a continuación. Esta es una autorización permanente y aplica a todos los pagos por cheque salvo notificación escrita de cambio a ${companyName}. El receptor debe completar y firmar la sección de Confirmación de Recibo del Cheque al recibir cada cheque.</span>`
+    : `I authorize ${companyName} to issue all future payments owed to me by check, to be received in person by the payee or authorized representative designated below. This is a standing authorization and applies to all check payments unless I notify ${companyName} in writing of a change. The recipient must complete and sign the Check Receipt Confirmation section upon receiving each check.`;
 
   // ── Section 1: Payee Information ──
   const s1 = zh ? sh('1. PAYEE INFORMATION', '收款人信息') : es ? sh('1. PAYEE INFORMATION', 'INFORMACIÓN DEL BENEFICIARIO') : '1. PAYEE INFORMATION';
@@ -6250,10 +6250,10 @@ function _buildCheckInstructionForm(lang) {
   const tpRelLabel = zh ? 'Relationship to Payee 与收款人关系（如：配偶、子女、雇主等）' : es ? 'Relationship to Payee / Relación con el Beneficiario' : 'Relationship to Payee (e.g. spouse, employer, agent)';
   const tpContactLabel = zh ? 'Third Party Phone / Email 第三方电话/电邮' : es ? 'Third Party Phone / Email / Teléfono / Correo del Tercero' : 'Third Party Phone / Email';
   const tpAuth = zh
-    ? `I authorize the above-named individual to receive the check from ${companyName} in person on my behalf and to sign the receipt on my behalf. I understand that delivery of the check to this person constitutes full payment to me, and I assume full responsibility for any arrangements made with the above individual. 本人授权上述人员代表本人亲自从 ${companyName} 领取支票并签收。本人理解将支票交付给该人员即视为已向本人完成付款，并自行承担与上述人员之间所作安排的全部责任。`
+    ? `I authorize the above-named individual to receive the check from ${companyName} in person on my behalf and to complete and sign the Check Receipt Confirmation section upon receiving each check. I understand that delivery of the check to this person, as documented by the signed Check Receipt Confirmation, constitutes full payment to me, and I assume full responsibility for any arrangements made with the above individual. 本人授权上述人员代表本人亲自从 ${companyName} 领取支票，并在领取每张支票时填写并签署"支票签收确认"部分。本人理解将支票交付给该人员并经其签署签收确认记录后，即视为已向本人完成付款；本人自行承担与上述人员之间所作安排的全部责任。`
     : es
-    ? `I authorize the above-named individual to receive the check from ${companyName} in person on my behalf and to sign the receipt on my behalf. I understand that delivery of the check to this person constitutes full payment to me, and I assume full responsibility for any arrangements made with the above individual. / Autorizo al individuo mencionado a recibir el cheque de ${companyName} en persona en mi nombre y a firmar el recibo en mi nombre. Entiendo que la entrega del cheque a esta persona constituye pago completo a mí, y asumo plena responsabilidad por los acuerdos con dicho individuo.`
-    : `I authorize the above-named individual to receive the check from ${companyName} in person on my behalf and to sign the receipt on my behalf. I understand that delivery of the check to this person constitutes full payment to me, and I assume full responsibility for any arrangements made with the above individual.`;
+    ? `I authorize the above-named individual to receive the check from ${companyName} in person on my behalf and to complete and sign the Check Receipt Confirmation section upon receiving each check. I understand that delivery of the check to this person, as documented by the signed Check Receipt Confirmation, constitutes full payment to me, and I assume full responsibility for any arrangements made with the above individual. / Autorizo al individuo mencionado a recibir el cheque de ${companyName} en persona en mi nombre y a completar y firmar la sección de Confirmación de Recibo del Cheque al recibir cada cheque. Entiendo que la entrega del cheque a esta persona, documentada mediante la Confirmación de Recibo firmada, constituye pago completo a mí, y asumo plena responsabilidad por los acuerdos con dicho individuo.`
+    : `I authorize the above-named individual to receive the check from ${companyName} in person on my behalf and to complete and sign the Check Receipt Confirmation section upon receiving each check. I understand that delivery of the check to this person, as documented by the signed Check Receipt Confirmation, constitutes full payment to me, and I assume full responsibility for any arrangements made with the above individual.`;
   const sAuthSig = zh ? 'AUTHORIZER SIGNATURE 授权人签名' : es ? 'AUTHORIZER SIGNATURE / FIRMA DEL AUTORIZANTE' : 'AUTHORIZER SIGNATURE';
   const lConfirmAuth = zh
     ? 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement. 本人确认已授权上述第三方当面代为领取支票，并对此安排承担全部责任。'
@@ -6261,11 +6261,27 @@ function _buildCheckInstructionForm(lang) {
     ? 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement. / Confirmo que autorizo al tercero mencionado a recibir el cheque en persona en mi nombre y asumo plena responsabilidad.'
     : 'I confirm I am authorizing the above-named third party to receive the check in person on my behalf, and I take full responsibility for this arrangement.';
 
+  // ── Section 3: Check Receipt Confirmation（律师意见新增：每张支票领取时填写签署） ──
+  const s6 = zh ? sh('3. CHECK RECEIPT CONFIRMATION', '支票签收确认') : es ? sh('3. CHECK RECEIPT CONFIRMATION', 'CONFIRMACIÓN DE RECIBO DEL CHEQUE') : '3. CHECK RECEIPT CONFIRMATION';
+  const rcptNote = zh ? 'To be completed and signed by the person receiving the check, each time a check is received. 每次领取支票时，由领取人填写并签署。'
+    : es ? 'To be completed and signed by the person receiving the check, each time a check is received. / A completar y firmar por la persona que recibe el cheque, cada vez que se reciba un cheque.'
+    : 'To be completed and signed by the person receiving the check, each time a check is received.';
+  const lChkNo     = zh ? 'Check Number 支票号码:' : es ? 'Check Number / Número de Cheque:' : 'Check Number:';
+  const lChkDate   = zh ? 'Check Date 支票日期:' : es ? 'Check Date / Fecha del Cheque:' : 'Check Date:';
+  const lChkAmt    = zh ? 'Check Amount 支票金额:' : es ? 'Check Amount / Monto del Cheque:' : 'Check Amount:';
+  const lChkPeriod = zh ? 'Invoice, Pay Period, or Service Period 发票、工资周期或服务期间:' : es ? 'Invoice, Pay Period, or Service Period / Factura, Período de Pago o de Servicio:' : 'Invoice, Pay Period, or Service Period:';
+  const lRcvByName = zh ? 'Received By — Printed Name 领取人正楷姓名:' : es ? 'Received By — Printed Name / Recibido Por — Nombre:' : 'Received By — Printed Name:';
+  const lRcptSig   = zh ? 'Recipient Signature 领取人签名:' : es ? 'Recipient Signature / Firma del Receptor:' : 'Recipient Signature:';
+  const lDateRcvd  = zh ? 'Date Received 领取日期:' : es ? 'Date Received / Fecha de Recepción:' : 'Date Received:';
+  const rcptAck    = zh ? 'I acknowledge that I received the check identified above. 本人确认已收到上方所列支票。'
+    : es ? 'I acknowledge that I received the check identified above. / Reconozco que recibí el cheque identificado arriba.'
+    : 'I acknowledge that I received the check identified above.';
+
   // 版式收紧保证一页：公司核验区已移除；双语版按语言分档缩小
   const Z = es ? { base: '7.3pt', lh: '1.06', pad: '3px 12px', body: '6.7pt', sig: '26px', date: '14px' }
         : zh ? { base: '7.6pt', lh: '1.12', pad: '5px 12px', body: '7pt', sig: '30px', date: '16px' }
         : { base: '8.2pt', lh: '1.28', pad: '8px 14px', body: '7.6pt', sig: '40px', date: '20px' };
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+  return `<!--B_ONLY_S--><style>.chk-root{zoom:${es ? '0.8' : zh ? '0.84' : '0.88'}}</style><!--B_ONLY_E--><div class="chk-root" style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:6px">
   <div style="font-size:11.5pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
   <div style="font-size:7.5pt;color:#555;margin-top:2px">${subtitle}</div>
@@ -6383,7 +6399,30 @@ function _buildCheckInstructionForm(lang) {
   <div style="margin-bottom:3px">③ ${confirmLine3}</div>
   <div>④ ${confirmLine4}</div>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
+
+<div style="border:1.5px solid #444;border-radius:6px;margin-top:6px;overflow:hidden">
+  <div style="background:#444;color:#fff;font-weight:800;font-size:8pt;letter-spacing:.4px;padding:4px 10px">${s6}</div>
+  <div style="padding:6px 10px;background:#fff">
+    <div style="font-size:6.8pt;color:#666;font-style:italic;margin-bottom:5px">${rcptNote}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:7pt;color:#333">
+      <tr>
+        <td style="width:33%;padding:0 8px 5px 0;vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${lChkNo}</div><text-field name="check_rcpt_number" role="First Party" style="${w}"></text-field></td>
+        <td style="width:33%;padding:0 8px 5px 0;vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${lChkDate}</div><text-field name="check_rcpt_date" role="First Party" style="${w}"></text-field></td>
+        <td style="width:34%;padding:0 0 5px 0;vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${lChkAmt}</div><div style="display:flex;align-items:center;gap:4px"><b style="font-size:9pt">$</b><text-field name="check_rcpt_amount" role="First Party" style="${w}"></text-field></div></td>
+      </tr>
+      <tr>
+        <td colspan="3" style="padding:0 0 5px 0;vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${lChkPeriod}</div><text-field name="check_rcpt_period" role="First Party" style="${w}"></text-field></td>
+      </tr>
+      <tr>
+        <td style="padding:0 8px 0 0;vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${lRcvByName}</div><text-field name="check_rcpt_by_name" role="First Party" style="${w}"></text-field></td>
+        <td style="padding:0 8px 0 0;vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${lRcptSig}</div><signature-field name="check_rcpt_sig" role="First Party" style="width:100%;height:26px;display:block;border:1px solid #444;border-radius:4px;background:#fff"></signature-field></td>
+        <td style="vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${lDateRcvd}</div><text-field name="check_rcpt_date_received" role="First Party" style="${w}"></text-field></td>
+      </tr>
+    </table>
+    <div style="font-size:6.8pt;color:#333;margin-top:5px;font-weight:600">${rcptAck}</div>
+  </div>
+</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: ${new Date().toISOString().slice(0, 10)}</div>
 </div>`;
 }
 function generateCheckInstructionHtmlTemplate() { return _zoneVariant(_buildCheckInstructionForm('zh-en'), 'a'); }
