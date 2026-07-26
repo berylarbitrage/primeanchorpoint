@@ -187,6 +187,12 @@ function _periodFromFilename(name) {
 // Normalize a header cell for fuzzy matching.
 function norm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[\s_]+/g, ' ').trim(); }
 
+// Elogistek 导出会在双语员工名前加 "Chinese-" 语言标记（如 Chinese-Xishan Zeng）。
+// 发票只要干净的名字（语言档位已体现在各行的 Mark-up Rate 里），导入时去掉。
+function cleanPersonName(name) {
+  return String(name == null ? '' : name).replace(/^chinese[-_\s]+/i, '').trim();
+}
+
 // MM/DD/YYYY → YYYY-MM-DD
 function toISO(m, d, y) {
   return `${y}-${String(+m).padStart(2, '0')}-${String(+d).padStart(2, '0')}`;
@@ -318,7 +324,7 @@ function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, wa
     markupCounts[key] = (markupCounts[key] || 0) + 1;
 
     employees.push({
-      name,
+      name: cleanPersonName(name),
       type: cellStr(row, col.type),
       regRate,
       otRate: otRate == null ? null : otRate,
@@ -373,7 +379,7 @@ function buildFromAttendance({ rows, headerIdx, find, cellStr, warnings }) {
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i] || [];
-    const name = cellStr(row, col.name);
+    const name = cleanPersonName(cellStr(row, col.name));
     if (!name || /^total$/i.test(name)) continue;
     const dRaw = cellStr(row, col.date);
     const dm = dRaw.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
