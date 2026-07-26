@@ -437,6 +437,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 .adm-dlg input[type=text]{width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:1.25rem;outline:none}
 .adm-dlg input[type=text]:focus{border-color:var(--sky)}
 .adm-dlg-btns{display:flex;gap:.5rem;justify-content:flex-end}
+/* Invoice 预览：点员工名字选中，复制逗号分隔的名单（打印/快照窗口没有这些样式，不影响成品） */
+.invp-name-cell{cursor:pointer}
+.invp-name-cell:hover{background:#eff6ff}
+.invp-name-cell.invp-name-sel{background:#dbeafe;box-shadow:inset 3px 0 0 #2563eb}
 </style>
 <script src="/address-validator.js" defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
@@ -35680,12 +35684,40 @@ function toggleInvpOtCols() {
   generateInvpPreviewSafe();
 }
 
+// ── 预览里点员工名字选中 → 复制逗号分隔的名单（不选任何人 = 复制全部）──
+function invpToggleNameSel(td) {
+  td.classList.toggle('invp-name-sel');
+  const n = document.querySelectorAll('#invpPreviewContent .invp-name-cell.invp-name-sel').length;
+  const btn = document.getElementById('invpCopyNamesBtn');
+  if (btn) btn.textContent = n ? `📋 复制名字（已选 ${n}）` : '📋 复制名字（全部）';
+}
+async function invpCopyNames() {
+  const all = [...document.querySelectorAll('#invpPreviewContent .invp-name-cell')];
+  if (!all.length) { showToast('预览里没有员工名字', 'error'); return; }
+  const sel = all.filter(td => td.classList.contains('invp-name-sel'));
+  const names = (sel.length ? sel : all).map(td => td.dataset.wname || '').filter(Boolean);
+  const text = names.join(', ');
+  try { await navigator.clipboard.writeText(text); }
+  catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (_) {}
+    ta.remove();
+  }
+  showToast(`已复制 ${names.length} 个名字${sel.length ? '' : '（全部）'}：${text.length > 60 ? text.slice(0, 60) + '…' : text}`, 'success', 3500);
+}
+
 function updateInvpPreviewBtns() {
   const wrap = document.getElementById('invpPreviewBtns');
   if (!wrap) return;
+  // 预览里有员工名字时提供「复制名字」按钮（点名字可先选中一部分）。
+  const copyBtn = document.querySelector('#invpPreviewContent .invp-name-cell')
+    ? `<button class="btn btn-outline" id="invpCopyNamesBtn" onclick="invpCopyNames()" style="color:#1d4ed8;border-color:#93c5fd" title="点击预览里的员工名字可选中一个或多个；不选则复制全部（逗号分隔）">📋 复制名字（全部）</button>`
+    : '';
   // Subcontractor statement: save to archive / print / close (it's not a saved invoice)
   if (window._invpPreviewKind === 'subcontractor') {
     wrap.innerHTML = `
+      ${copyBtn}
       <button class="btn btn-green" style="background:#047857;border-color:#047857" onclick="saveSubStatement()">💾 保存对账单</button>
       <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="openSubStmtArchive()">📚 对账单存档</button>
       <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
@@ -35696,6 +35728,7 @@ function updateInvpPreviewBtns() {
   // Archived statement viewer: print / close only.
   if (window._invpPreviewKind === 'substmt-view') {
     wrap.innerHTML = `
+      ${copyBtn}
       <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
       <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
     `;
@@ -35724,6 +35757,7 @@ function updateInvpPreviewBtns() {
     saveBtns = `<button class="btn btn-green" onclick="saveInvpInvoice('saved')">💾 更新保存</button>`;
   }
   wrap.innerHTML = `
+    ${copyBtn}
     ${otToggle}
     ${saveBtns}
     <button class="btn btn-outline" style="${hasRecord ? '' : 'opacity:.45;pointer-events:none;'}" onclick="printInvpInvoice()" ${hasRecord ? '' : 'disabled'}>🖨️ 打印 / 另存为 PDF</button>
@@ -37999,7 +38033,7 @@ async function generateInvpSubcontractorStatement() {
       const bb = hasMeta ? '' : 'border-bottom:1px solid #e2e8f0;';
       return `<tr style="background:${stripe}">
         <td style="padding:9px 8px ${pad} 8px;${bb}text-align:center;color:#64748b;vertical-align:top">${idx + 1}</td>
-        <td style="padding:9px 8px ${pad} 8px;${bb}text-align:left;font-weight:500;text-transform:capitalize;vertical-align:top">${esc(_invpDisplayWorkerName(i.name))}</td>
+        <td class="invp-name-cell" data-wname="${esc(_invpDisplayWorkerName(i.name))}" onclick="invpToggleNameSel(this)" title="点击选择，可复制选中的名字（逗号分隔）" style="padding:9px 8px ${pad} 8px;${bb}text-align:left;font-weight:500;text-transform:capitalize;vertical-align:top">${esc(_invpDisplayWorkerName(i.name))}</td>
         <td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;vertical-align:top">${(i.regHours||0).toFixed(2)}</td>
         ${showOt ? `<td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;vertical-align:top">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>` : ''}
         <td style="padding:9px 8px ${pad} 8px;${bb}text-align:right;vertical-align:top">$${(i.rate||0).toFixed(2)}</td>
@@ -38166,7 +38200,7 @@ async function saveSubStatement() {
   if (!ctx) { showToast('请先生成分包商对账单', 'error'); return; }
   const area = document.getElementById('invpPrintArea');
   try {
-    const r = await api('/admin/sub-statements', { method: 'POST', body: JSON.stringify({ ...ctx, html: area ? area.outerHTML : '' }) });
+    const r = await api('/admin/sub-statements', { method: 'POST', body: JSON.stringify({ ...ctx, html: area ? area.outerHTML.replace(/\binvp-name-sel\b/g, '') : '' }) });
     if (!r || !r.ok) throw new Error((r && r.error) || '保存失败');
     showToast(`✅ 对账单已存档 (#${r.id})：${ctx.recipient || ''} $${(ctx.wage_total || 0).toFixed(2)}。实付金额可在「对账单存档」里填写（允许与工资合计不同），支出 link 由你处理。`, 'success', 6000);
   } catch (e) { showToast('存档失败：' + (e.message || e), 'error'); }
@@ -38943,7 +38977,7 @@ async function generateInvpPreview() {
         ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
       return `<tr style="background:${rowBg}">
-        <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(_invpDisplayWorkerName(i.name))}${(i.note||'').trim() ? `<div style="font-weight:400;font-size:.72rem;color:#64748b;text-transform:none;white-space:normal;max-width:220px">${esc((i.note||'').trim())}</div>` : ''}</td>
+        <td class="invp-name-cell" data-wname="${esc(_invpDisplayWorkerName(i.name))}" onclick="invpToggleNameSel(this)" title="点击选择，可复制选中的名字（逗号分隔）" style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(_invpDisplayWorkerName(i.name))}${(i.note||'').trim() ? `<div style="font-weight:400;font-size:.72rem;color:#64748b;text-transform:none;white-space:normal;max-width:220px">${esc((i.note||'').trim())}</div>` : ''}</td>
         ${posCell}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${hideOt ? ((i.regHours||0)+(i.otHours||0)).toFixed(2) : (i.regHours||0).toFixed(2)}</td>
         ${hideOt ? '' : `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right;${(i.otHours||0) > 0 ? '' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>`}
@@ -39135,7 +39169,8 @@ function closeInvpPreview() {
 }
 
 function printInvpInvoice() {
-  const content = document.getElementById('invpPrintArea').outerHTML;
+  // 打印稿去掉「复制名字」的选中高亮标记（类名在打印窗口无样式，纯保险）。
+  const content = document.getElementById('invpPrintArea').outerHTML.replace(/\binvp-name-sel\b/g, '');
   const invNum = (document.getElementById('invPageNumber')||{}).value || 'Invoice';
   const w = window.open('', '_blank');
   w.document.write(`<!DOCTYPE html><html><head><title>${invNum}</title>
