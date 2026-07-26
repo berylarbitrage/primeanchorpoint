@@ -6455,7 +6455,8 @@ function generateCheckInstructionHtmlTemplate_ES_B() { return _zoneVariant(_buil
 
 // ── Zelle Authorization — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
-function _buildZelleAuthForm(lang) {
+function _buildZelleAuthForm(lang, variant) {
+  const isB = variant === 'b';
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
@@ -6546,11 +6547,17 @@ function _buildZelleAuthForm(lang) {
 
   // Signature section
   const sigHeader = L('PAYEE SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
-  const sigNote = L(
-    'If the Payee is signing this form directly, please sign below. If authorizing a third-party representative instead, skip this section and complete the authorization section below.',
-    '如收款人本人直接签署，请在下方签名。如授权第三方代表，请跳过此处，填写下方的授权部分。',
-    'Si el Beneficiario firma este formulario directamente, firme a continuación. Si autoriza a un representante de terceros, omita esta sección y complete la sección de autorización a continuación.'
-  );
+  const sigNote = isB
+    ? L(
+      'If the Payee is signing this form directly, please sign below. If authorizing a third-party representative instead, skip this section and complete the authorization section below.',
+      '如收款人本人直接签署，请在下方签名。如授权第三方代表，请跳过此处，填写下方的授权部分。',
+      'Si el Beneficiario firma este formulario directamente, firme a continuación. Si autoriza a un representante de terceros, omita esta sección y complete la sección de autorización a continuación.'
+    )
+    : L(
+      'If the Payee is receiving payment directly through the Zelle account identified above, the Payee must sign below. If the Payee is authorizing a third party to receive payment, the Payee and the third party must instead complete the applicable third-party Zelle payment forms.',
+      '如收款人本人直接通过上方所列 Zelle 账户收款，收款人须在下方签名。如收款人授权第三方代收款项，收款人及该第三方须另行填写适用的第三方 Zelle 收款表格。',
+      'Si el Beneficiario recibe el pago directamente a través de la cuenta Zelle indicada arriba, el Beneficiario debe firmar a continuación. Si el Beneficiario autoriza a un tercero a recibir el pago, el Beneficiario y el tercero deben completar en su lugar los formularios correspondientes de pago Zelle a terceros.'
+    );
   const lPrintedName = L('Printed Name (same as Full Legal Name above)', '正楷姓名（与上方法定全名一致）', 'Nombre en Letra de Imprenta (igual al nombre legal completo indicado arriba)');
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
@@ -6654,12 +6661,12 @@ function _buildZelleAuthForm(lang) {
 }
 
 // Convenience wrappers for each language variant
-function generateZelleAuthHtmlTemplate() { return _zoneVariant(_buildZelleAuthForm('zh-en'), 'a'); }
-function generateZelleAuthHtmlTemplate_B() { return _zoneVariant(_buildZelleAuthForm('zh-en'), 'b'); }
-function generateZelleAuthHtmlTemplate_EN() { return _zoneVariant(_buildZelleAuthForm('en'), 'a'); }
-function generateZelleAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildZelleAuthForm('en'), 'b'); }
-function generateZelleAuthHtmlTemplate_ES() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'a'); }
-function generateZelleAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'b'); }
+function generateZelleAuthHtmlTemplate() { return _zoneVariant(_buildZelleAuthForm('zh-en', 'a'), 'a'); }
+function generateZelleAuthHtmlTemplate_B() { return _zoneVariant(_buildZelleAuthForm('zh-en', 'b'), 'b'); }
+function generateZelleAuthHtmlTemplate_EN() { return _zoneVariant(_buildZelleAuthForm('en', 'a'), 'a'); }
+function generateZelleAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildZelleAuthForm('en', 'b'), 'b'); }
+function generateZelleAuthHtmlTemplate_ES() { return _zoneVariant(_buildZelleAuthForm('en-es', 'a'), 'a'); }
+function generateZelleAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildZelleAuthForm('en-es', 'b'), 'b'); }
 
 function _buildZelleThirdPartyForm_OLD(lang) {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
