@@ -7189,9 +7189,9 @@ function _buildCashReceiptForm(lang) {
                      : es ? 'CASH PAYMENT AUTHORIZATION FORM<br><span style="font-size:10pt;font-weight:700;color:#555">Formulario de Autorización de Pago en Efectivo</span>'
                      :      'CASH PAYMENT AUTHORIZATION FORM';
   const sSubtitle    = zh ? `现金收款授权表 — ${companyName}` : es ? `Formulario de Autorización de Pago en Efectivo — ${companyName}` : companyName;
-  const sIntro       = zh ? `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization applicable to all future cash payments. Select the applicable option and sign in the corresponding zone.<br><span style="color:#555">本人授权 <b>${companyName}</b> 以现金方式支付本人的所有应得款项。本授权为长期授权，适用于以后所有现金付款。请选择适用选项并在相应区域签名。</span>`
-                     : es ? `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization applicable to all future cash payments. Select the applicable option and sign in the corresponding zone.<br><span style="color:#555">Autorizo a <b>${companyName}</b> a pagar todos los montos que se me adeuden en efectivo. Esta es una autorización permanente aplicable a todos los pagos futuros en efectivo. Seleccione la opción aplicable y firme en la zona correspondiente.</span>`
-                     :      `I authorize <b>${companyName}</b> to pay all amounts owed to me by cash. This is a standing authorization applicable to all future cash payments. Select the applicable option and sign in the corresponding zone.`;
+  const sIntro       = zh ? `I authorize <b>${companyName}</b> to pay amounts owed to me in cash. This is a standing authorization applicable to future cash payments; however, I must complete and sign a separate receipt identifying each cash payment I receive.<br><span style="color:#555">本人授权 <b>${companyName}</b> 以现金方式支付本人的应得款项。本授权为长期授权，适用于以后的现金付款；但本人须就每笔领取的现金另行填写并签署载明该笔付款的签收单。</span>`
+                     : es ? `I authorize <b>${companyName}</b> to pay amounts owed to me in cash. This is a standing authorization applicable to future cash payments; however, I must complete and sign a separate receipt identifying each cash payment I receive.<br><span style="color:#555">Autorizo a <b>${companyName}</b> a pagar en efectivo los montos que se me adeuden. Esta es una autorización permanente aplicable a pagos futuros en efectivo; sin embargo, debo completar y firmar un recibo separado que identifique cada pago en efectivo que reciba.</span>`
+                     :      `I authorize <b>${companyName}</b> to pay amounts owed to me in cash. This is a standing authorization applicable to future cash payments; however, I must complete and sign a separate receipt identifying each cash payment I receive.`;
 
   const s1Title      = zh ? '1. Receipt Authorization &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">收款确认授权</span>'
                      : es ? '1. Receipt Authorization &nbsp;<span style="font-weight:400;font-size:8.5pt;color:#555;text-transform:none">Autorización de Recepción</span>'
@@ -7200,17 +7200,17 @@ function _buildCashReceiptForm(lang) {
   const zoneATitle   = zh ? 'OPTION A — 本人直接收款 / I Received the Cash Directly'
                      : es ? 'OPTION A — I Received the Cash Directly / Yo Recibí el Efectivo Directamente'
                      :      'OPTION A — I Received the Cash Directly';
-  const tpSelf       = zh ? 'I personally receive all cash payments from the company.'
-                           + '<br><span style="color:#bfdbfe">本人亲自从公司收取所有现金款项。</span>'
-                     : es ? 'I personally receive all cash payments from the company.'
-                           + '<br><span style="color:#bfdbfe">Yo personalmente recibo todos los pagos en efectivo de la empresa.</span>'
-                     :      'I personally receive all cash payments from the company.';
+  const tpSelf       = zh ? 'I personally received the cash payment identified below from the company.'
+                           + '<br><span style="color:#bfdbfe">本人亲自从公司收到了下方所列的该笔现金付款。</span>'
+                     : es ? 'I personally received the cash payment identified below from the company.'
+                           + '<br><span style="color:#bfdbfe">Yo personalmente recibí de la empresa el pago en efectivo identificado a continuación.</span>'
+                     :      'I personally received the cash payment identified below from the company.';
   const sRecipSig    = zh ? 'RECIPIENT SIGNATURE 收款人签名' : es ? 'RECIPIENT SIGNATURE / Firma del Destinatario' : 'RECIPIENT SIGNATURE';
-  const sConfirmA    = zh ? 'I confirm I personally received the cash payment from the company.'
-                           + '<br><span style="color:#1e40af">我确认本人已亲自从公司收取了现金款项。</span>'
-                     : es ? 'I confirm I personally received the cash payment from the company.'
-                           + '<br><span style="color:#1e40af">Confirmo que yo personalmente recibí el pago en efectivo de la empresa.</span>'
-                     :      'I confirm I personally received the cash payment from the company.';
+  const sConfirmA    = zh ? `I acknowledge that I personally received the amount of cash identified above from ${companyName}. I counted the cash before signing and confirm that the amount received is accurate.`
+                           + `<br><span style="color:#1e40af">本人确认已亲自从 ${companyName} 收到上方所列金额的现金。本人在签名前已清点现金，确认所收金额准确无误。</span>`
+                     : es ? `I acknowledge that I personally received the amount of cash identified above from ${companyName}. I counted the cash before signing and confirm that the amount received is accurate.`
+                           + `<br><span style="color:#1e40af">Reconozco que recibí personalmente de ${companyName} la cantidad de efectivo indicada arriba. Conté el efectivo antes de firmar y confirmo que la cantidad recibida es correcta.</span>`
+                     :      `I acknowledge that I personally received the amount of cash identified above from ${companyName}. I counted the cash before signing and confirm that the amount received is accurate.`;
 
   const zoneBTitle   = zh ? 'OPTION B — 委托第三方代收 / Third Party Received on My Behalf'
                      : es ? 'OPTION B — Third Party Received on My Behalf / Un Tercero Recibió en Mi Nombre'
@@ -7248,6 +7248,12 @@ function _buildCashReceiptForm(lang) {
                      : es ? '<b>NOTICE / AVISO:</b> The recipient or authorized third party must sign in the applicable zone above. This authorization is for record-keeping and tax documentation purposes only. El destinatario o tercero autorizado debe firmar en la zona aplicable. Esta autorización es solo para fines de registro y documentación fiscal.'
                      :      '<b>NOTICE:</b> The recipient or authorized third party must sign in the applicable zone above. This authorization is for record-keeping and tax documentation purposes only.';
 
+  // Option A 逐笔签收栏位（按律师意见新增）
+  const sCashAmt    = zh ? 'Cash Amount Received 实收现金金额:' : es ? 'Cash Amount Received / Monto de Efectivo Recibido:' : 'Cash Amount Received:';
+  const sCashWhen   = zh ? 'Date and Time Received 领取日期与时间:' : es ? 'Date and Time Received / Fecha y Hora de Recepción:' : 'Date and Time Received:';
+  const sCashPeriod = zh ? 'Invoice, Pay Period, or Service Period 发票、工资周期或服务期间:' : es ? 'Invoice, Pay Period, or Service Period / Factura, Período de Pago o Período de Servicio:' : 'Invoice, Pay Period, or Service Period:';
+  const sCashBy     = zh ? 'Payment Made By 付款经手人:' : es ? 'Payment Made By / Pago Realizado Por:' : 'Payment Made By:';
+
   const sPrintedLbl  = zh ? 'Printed Name 正楷姓名:' : es ? 'Printed Name / Nombre en Letra de Molde:' : 'Printed Name:';
   const sSigLbl      = zh ? 'Signature 签名:' : es ? 'Signature / Firma:' : 'Signature:';
   const sDateLbl     = zh ? 'Date 日期:' : es ? 'Date / Fecha:' : 'Date:';
@@ -7279,6 +7285,16 @@ function _buildCashReceiptForm(lang) {
     </div>
   </label>
   <div style="background:#eff6ff;padding:12px 14px;border:1.5px solid #93c5fd;border-top:none;border-radius:0 0 8px 8px">
+    <table style="width:100%;border-collapse:collapse;font-size:7.5pt;color:#1e40af;margin-bottom:8px">
+      <tr>
+        <td style="width:50%;padding:0 8px 6px 0;vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${sCashAmt}</div><div style="display:flex;align-items:center;gap:4px"><b style="font-size:9.5pt">$</b><text-field name="cash_amount1" role="First Party" style="${w}"></text-field></div></td>
+        <td style="width:50%;padding:0 0 6px 0;vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${sCashWhen}</div><text-field name="cash_datetime1" role="First Party" style="${w}"></text-field></td>
+      </tr>
+      <tr>
+        <td style="padding:0 8px 0 0;vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${sCashPeriod}</div><text-field name="cash_period1" role="First Party" style="${w}"></text-field></td>
+        <td style="vertical-align:top"><div style="margin-bottom:2px;font-weight:700">${sCashBy}</div><text-field name="cash_paidby1" role="First Party" style="${w}"></text-field></td>
+      </tr>
+    </table>
     <div style="background:#dbeafe;border-radius:6px;padding:10px 12px">
       <div style="font-size:7.5pt;font-weight:700;color:#1e3a8a;margin-bottom:6px;text-transform:uppercase;letter-spacing:.3px">${sRecipSig}</div>
       <div style="font-size:7pt;color:#1e40af;margin-bottom:2px">${sPrintedLbl}</div>
