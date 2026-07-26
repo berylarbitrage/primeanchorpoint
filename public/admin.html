@@ -42930,7 +42930,7 @@ function _bsBoxExtraInfo(b) {
   if (kind === 'bankfee') return b.purpose ? chip('费用 · ' + esc(b.purpose), '#f8fafc', '#475569', '#e2e8f0') : '';
   if (kind === 'office' || kind === 'compfee') return b.purpose ? chip('分类 · ' + esc(b.purpose), '#f8fafc', '#475569', '#e2e8f0') : '';
   if (kind === 'personal') return b.purpose ? chip('类别 · ' + esc(b.purpose), '#f8fafc', '#475569', '#e2e8f0') : '';
-  if (kind === 'employee' || (kind === 'company' && b.direction === 'in')) {
+  if (kind === 'employee' || kind === 'unload' || (kind === 'company' && b.direction === 'in')) {
     const bits = [];
     if (kind !== 'employee' && b.purpose) bits.push(chip(esc(b.purpose), '#eff6ff', '#1d4ed8', '#bfdbfe'));
     if (kind === 'employee' && b.pay_portion) bits.push(chip(b.pay_portion === 'full' ? '全额 Full' : '部分 Partial', '#f0fdf4', '#166534', '#bbf7d0'));
@@ -43010,7 +43010,10 @@ function _bsNoteSatisfied(box) {
   if (kind === 'check' && _bsCheckParse(box.payee).names.length) return true;
   // 卡车费: a chosen company already describes the transaction.
   if (kind === 'truck' && _bsTruckParse(box.payee)) return true;
-  if (kind === 'unload' && _bsUnloadParse(box.payee)) return true;
+  // 卸柜账单：公司 + invoice 号 + 付款覆盖的账期都填好才算说明完整。
+  if (kind === 'unload' && _bsUnloadParse(box.payee)
+    && String(box.invoice_number || '').trim()
+    && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
   // 房租: a chosen landlord already describes the transaction.
   if (kind === 'rent' && _bsRentParse(box.payee)) return true;
   // 换汇: a chosen counterparty already describes the transaction.
@@ -44043,7 +44046,8 @@ function _bsPayeeKind(box) {
 // The invoice/账期 block applies to employee wages and to company income.
 function _bsWantsInvoice(box) {
   const k = _bsPayeeKind(box);
-  return k === 'employee' || (k === 'company' && box.direction === 'in');
+  // 支付卸柜账单同样要填 invoice 号码和付款覆盖的账期范围。
+  return k === 'employee' || k === 'unload' || (k === 'company' && box.direction === 'in');
 }
 const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang'];
 async function bsEnsureCompanies() {
