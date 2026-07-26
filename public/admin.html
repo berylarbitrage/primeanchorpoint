@@ -44006,6 +44006,7 @@ const BS_PAYEE_PAP = 'Prime Anchor Point 转账'; // internal transfer — no ex
 const BS_PAYEE_BINTIQUE = 'Bintique 货款'; // Bintique goods payment — no extra sub-section
 const BS_PAYEE_CASH = '取现金'; // ATM/cash withdrawal — no extra sub-section
 const BS_PAYEE_CASH_DEP = '存现金'; // cash deposit — no extra sub-section
+const BS_PAYEE_LAWSUIT = '诉讼费'; // litigation/legal fee — no extra sub-section (note describes the case)
 const BS_PAYEE_RETURNED = '退回款 Returned Payment'; // returned/bounced payment — no extra sub-section
 const BS_PAYEE_NA = '无关'; // not relevant to bookkeeping — no extra sub-section
 const BS_PAYEE_PALLET = '__pallet__'; // sentinel: 木板钱, then pick a customer
@@ -44088,7 +44089,7 @@ function _bsPayeeKind(box) {
   if (_bsIsReferral(p)) return 'referral';
   if (_bsIsWageBonus(p)) return 'wagebonus';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
-  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_RETURNED) return 'company';
+  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_RETURNED) return 'company';
   return 'none'; // Claim / credit-card / cash / irrelevant / PAP transfer / Bintique goods / returned payment: no extra sub-section
 }
 // The invoice/账期 block applies to employee wages and to company income.
@@ -44127,6 +44128,7 @@ function _bsPayeeOptions(current, direction) {
     `<option value="${esc(BS_PAYEE_BINTIQUE)}"${current === BS_PAYEE_BINTIQUE ? ' selected' : ''}>📦 Bintique 货款</option>`,
     `<option value="${esc(BS_PAYEE_CASH)}"${current === BS_PAYEE_CASH ? ' selected' : ''}>💵 取现金</option>`,
     `<option value="${esc(BS_PAYEE_CASH_DEP)}"${current === BS_PAYEE_CASH_DEP ? ' selected' : ''}>💰 存现金</option>`,
+    `<option value="${esc(BS_PAYEE_LAWSUIT)}"${current === BS_PAYEE_LAWSUIT ? ' selected' : ''}>⚖️ 诉讼费</option>`,
     `<option value="${esc(BS_PAYEE_RETURNED)}"${current === BS_PAYEE_RETURNED ? ' selected' : ''}>↩️ 退回款 Returned Payment</option>`,
     `<option value="${BS_PAYEE_TRUCK}"${current === BS_PAYEE_TRUCK ? ' selected' : ''}>🚚 卡车费（选公司）</option>`,
     `<option value="${BS_PAYEE_UNLOAD}"${current === BS_PAYEE_UNLOAD ? ' selected' : ''}>📦 支付卸柜账单（选公司）</option>`,
@@ -44143,7 +44145,7 @@ function _bsPayeeOptions(current, direction) {
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_LAWSUIT, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
