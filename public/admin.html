@@ -2949,6 +2949,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="invpBulkReceipts('download')" title="一次下载所有 container 的现金回执 PDF（合并为一个文件）">⬇ 批量下载回执</button>
           <span style="color:var(--gray-300);font-size:.85rem">|</span>
           <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="generateInvpSubcontractorStatement()" title="按「分包价」生成给分包商/装卸公司的对账单（可打印/另存为 PDF）">📄 分包商对账单</button>
+          <button type="button" class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#6ee7b7" onclick="openSubStmtArchive()" title="查看已保存的分包商对账单（可填实付金额、重新打印）">📚 对账单存档</button>
         </div>
       </div>
 
@@ -35682,8 +35683,18 @@ function toggleInvpOtCols() {
 function updateInvpPreviewBtns() {
   const wrap = document.getElementById('invpPreviewBtns');
   if (!wrap) return;
-  // Subcontractor statement: only print / close (it's not a saved invoice)
+  // Subcontractor statement: save to archive / print / close (it's not a saved invoice)
   if (window._invpPreviewKind === 'subcontractor') {
+    wrap.innerHTML = `
+      <button class="btn btn-green" style="background:#047857;border-color:#047857" onclick="saveSubStatement()">💾 保存对账单</button>
+      <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="openSubStmtArchive()">📚 对账单存档</button>
+      <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
+      <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
+    `;
+    return;
+  }
+  // Archived statement viewer: print / close only.
+  if (window._invpPreviewKind === 'substmt-view') {
     wrap.innerHTML = `
       <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
       <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
@@ -36330,6 +36341,7 @@ function renderInvpManualTable(skipSave) {
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#6ee7b7" onclick="invpBulkSetSubcontractor()" title="一次给多名员工填写同一个分包商">👥 批量填写分包商</button>
       <span style="color:var(--gray-300);font-size:.85rem">|</span>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="generateInvpSubcontractorStatement()" title="按工资（去掉 markup）生成给分包商的对账单（可打印/另存为 PDF）">📄 分包商对账单</button>
+      <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#6ee7b7" onclick="openSubStmtArchive()" title="查看已保存的分包商对账单（可填实付金额、重新打印）">📚 对账单存档</button>
     </div>`;
 }
 
@@ -37821,6 +37833,7 @@ async function generateInvpSubcontractorStatement() {
   const C = { main:'#047857', dark:'#065f46', soft:'#ecfdf5', band:'#d1fae5', border:'#6ee7b7' };
 
   let recipientName, recipientEntity = null, grandTotal, lineItemTableHtml, bannerText;
+  let stmtItems = []; // light line-item snapshot stored with the archived statement
 
   if (mode === 'container') {
     const containerItems = getInvpContainerItems();
@@ -37851,6 +37864,7 @@ async function generateInvpSubcontractorStatement() {
     grandTotal = containerItems.reduce((s, i) => s + ((i.qty || 0) * (i.sub_price || 0)), 0);
     const totalQty = containerItems.reduce((s, i) => s + (i.qty || 0), 0);
     bannerText = `Container unloading services for the period ${servicePeriodLabel}`;
+    stmtItems = containerItems.map(i => ({ container_no: i.container_no || '', qty: i.qty || 0, sub_price: i.sub_price || 0 }));
 
     const containerRows = containerItems.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
@@ -37932,6 +37946,7 @@ async function generateInvpSubcontractorStatement() {
     // If the chosen subcontractor name matches a managed 分包商, use its details.
     recipientEntity = _invpFindLaborCompany(recipientName);
     grandTotal = items.reduce((s, i) => s + (i.total || 0), 0);
+    stmtItems = items.map(i => ({ name: _invpDisplayWorkerName(i.name), regHours: i.regHours || 0, otHours: i.otHours || 0, rate: i.rate || 0, total: i.total || 0 }));
     const totalRegHrs = items.reduce((s, i) => s + (i.regHours || 0), 0);
     const totalOtHrs  = items.reduce((s, i) => s + (i.otHours || 0), 0);
     const showOt = totalOtHrs > 0;
@@ -38105,8 +38120,105 @@ async function generateInvpSubcontractorStatement() {
 
   document.getElementById('invpPreviewContent').innerHTML = html;
   window._invpPreviewKind = 'subcontractor';
+  // 存档上下文：保存对账单时随快照一起入库（实付金额之后在存档里手动填）。
+  window._invpStmtCtx = {
+    invoice_id: parseInt(document.getElementById('invPageEditId').value) || null,
+    invoice_number: invNum, recipient: recipientName,
+    period_start: ps, period_end: pe, statement_date: invDate || '',
+    wage_total: Math.round(grandTotal * 100) / 100, items: stmtItems,
+  };
   document.getElementById('invpPreviewModal').style.display = 'flex';
   updateInvpPreviewBtns();
+}
+
+// ── 分包商对账单存档：保存快照、列表管理（实付金额可与工资合计不同）──
+async function saveSubStatement() {
+  const ctx = window._invpStmtCtx;
+  if (!ctx) { showToast('请先生成分包商对账单', 'error'); return; }
+  const area = document.getElementById('invpPrintArea');
+  try {
+    const r = await api('/admin/sub-statements', { method: 'POST', body: JSON.stringify({ ...ctx, html: area ? area.outerHTML : '' }) });
+    if (!r || !r.ok) throw new Error((r && r.error) || '保存失败');
+    showToast(`✅ 对账单已存档 (#${r.id})：${ctx.recipient || ''} $${(ctx.wage_total || 0).toFixed(2)}。实付金额可在「对账单存档」里填写（允许与工资合计不同），支出 link 由你处理。`, 'success', 6000);
+  } catch (e) { showToast('存档失败：' + (e.message || e), 'error'); }
+}
+
+async function openSubStmtArchive() {
+  let list = [];
+  try { list = await api('/admin/sub-statements') || []; } catch (e) { showToast('加载存档失败：' + (e.message || e), 'error'); return; }
+  if (!Array.isArray(list)) list = [];
+  let ov = document.getElementById('subStmtArchiveOverlay'); if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'subStmtArchiveOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2400;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const money = v => (v == null || v === '') ? '' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const td = 'padding:6px 8px;border-top:1px solid var(--gray-100);vertical-align:middle';
+  const rows = list.map(s => {
+    const diff = (s.paid_amount != null && Math.abs(Number(s.paid_amount) - Number(s.wage_total)) > 0.005);
+    return `<tr>
+      <td style="${td};white-space:nowrap"><b>#${s.id}</b><div style="font-size:.72rem;color:var(--gray-400)">${esc(String(s.created_at || '').slice(0, 10))}</div></td>
+      <td style="${td};font-family:monospace;font-size:.78rem">${esc(s.invoice_number || '—')}</td>
+      <td style="${td};font-weight:600">${esc(s.recipient || '—')}</td>
+      <td style="${td};white-space:nowrap;font-size:.78rem">${esc(s.period_start || '')} ~ ${esc(s.period_end || '')}</td>
+      <td style="${td};text-align:right;font-weight:600">${money(s.wage_total)}</td>
+      <td style="${td};text-align:right">
+        <input type="number" step="0.01" value="${s.paid_amount != null ? s.paid_amount : ''}" placeholder="未填"
+          title="实际支付金额，可与对账单工资合计不同"
+          onchange="subStmtUpdate(${s.id}, 'paid_amount', this.value)"
+          style="width:100px;text-align:right;padding:3px 6px;border:1px solid ${diff ? '#f59e0b' : 'var(--gray-200)'};border-radius:5px;font-size:.8rem;${diff ? 'background:#fffbeb;color:#92400e;font-weight:700' : ''}">
+        ${diff ? `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">差 ${money(Number(s.paid_amount) - Number(s.wage_total))}</div>` : ''}
+      </td>
+      <td style="${td}"><input type="text" value="${esc(s.note || '')}" placeholder="备注" onchange="subStmtUpdate(${s.id}, 'note', this.value)" style="width:130px;padding:3px 6px;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem"></td>
+      <td style="${td};white-space:nowrap">
+        <button class="btn btn-sm btn-outline" style="color:#047857;border-color:#047857" onclick="viewSubStmt(${s.id})">查看/打印</button>
+        <button class="btn btn-sm btn-outline" style="color:#b91c1c;border-color:#fca5a5" onclick="deleteSubStmt(${s.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('');
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:1020px;width:96vw;max-height:88vh;overflow-y:auto;padding:1.1rem 1.25rem" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+      <div style="font-weight:800;font-size:1.05rem;color:#047857">📚 分包商对账单存档</div>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('subStmtArchiveOverlay').remove()">✕ 关闭</button>
+    </div>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.6rem">「实付金额」手动填写，<b>允许与对账单的工资合计不同</b>（不同会标黄并显示差额）；和银行支出的 link 由你在对账系统里处理。</div>
+    ${list.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead><tr style="color:var(--gray-500);font-size:.74rem;text-align:left">
+        <th style="padding:4px 8px">#</th><th style="padding:4px 8px">Ref Invoice</th><th style="padding:4px 8px">分包商</th><th style="padding:4px 8px">服务周期</th>
+        <th style="padding:4px 8px;text-align:right">对账单金额</th><th style="padding:4px 8px;text-align:right">实付金额</th><th style="padding:4px 8px">备注</th><th style="padding:4px 8px">操作</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`
+    : '<div style="color:var(--gray-400);padding:1.2rem;text-align:center">还没有存档。生成分包商对账单后点「💾 保存对账单」。</div>'}
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+async function subStmtUpdate(id, field, value) {
+  try {
+    const r = await api('/admin/sub-statements/' + id, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+    if (!r || !r.ok) throw new Error((r && r.error) || '保存失败');
+    showToast('已保存 ✓', 'success', 1500);
+    if (field === 'paid_amount') openSubStmtArchive(); // refresh差额标黄
+  } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+}
+
+async function viewSubStmt(id) {
+  let s = null;
+  try { s = await api('/admin/sub-statements/' + id); } catch (_) {}
+  if (!s || !s.html) { showToast('该存档没有可显示的快照', 'error'); return; }
+  const ov = document.getElementById('subStmtArchiveOverlay'); if (ov) ov.remove();
+  document.getElementById('invpPreviewContent').innerHTML = s.html;
+  window._invpPreviewKind = 'substmt-view';
+  document.getElementById('invpPreviewModal').style.display = 'flex';
+  updateInvpPreviewBtns();
+}
+
+async function deleteSubStmt(id) {
+  if (!await showConfirm(`删除对账单存档 #${id}？`, { danger: true, confirmLabel: '删除' })) return;
+  try {
+    await api('/admin/sub-statements/' + id, { method: 'DELETE' });
+    showToast('已删除', 'success');
+    openSubStmtArchive();
+  } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
 }
 
 function _invpTriggerDownload(blob, filename) {
