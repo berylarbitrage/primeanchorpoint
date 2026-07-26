@@ -6455,8 +6455,7 @@ function generateCheckInstructionHtmlTemplate_ES_B() { return _zoneVariant(_buil
 
 // ── Zelle Authorization — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
-function _buildZelleAuthForm(lang, variant) {
-  const isB = variant === 'b';
+function _buildZelleAuthForm(lang) {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w = `${f}width:100%;min-height:22px;`;
   const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
@@ -6485,20 +6484,6 @@ function _buildZelleAuthForm(lang, variant) {
   const s1 = L('1. PAYEE INFORMATION', '收款人信息', 'INFORMACIÓN DEL BENEFICIARIO');
   const lName = L('Full Legal Name', '法定全名', 'Nombre Legal Completo');
   const lAccount = L('Zelle Registered Email Address or Mobile Number', 'Zelle 注册邮箱地址或手机号', 'Correo Electrónico o Número de Teléfono Móvil Registrado en Zelle');
-
-  const authRepHeader = L(
-    'OPTIONAL — If the Payee is authorizing a third-party representative, provide their contact information below:',
-    '可选 — 如收款人授权第三方代表处理，请在下方填写授权代表联系方式：',
-    'OPCIONAL — Si el Beneficiario autoriza a un representante de terceros, proporcione su información de contacto a continuación:'
-  );
-  const lRepName = L('Authorized Representative Full Name', '授权代表姓名', 'Nombre completo del representante autorizado');
-  const lRepPhone = L('Phone Number', '电话号码', 'Número de teléfono');
-  const lRepEmail = L('Email Address', '邮箱地址', 'Correo electrónico');
-  const authRepNote = L(
-    `If completed, ${companyName} may send a separate signature request to the authorized representative identified above.`,
-    `如已填写，${companyName} 将向上方所列的授权代表另行发送签字请求。`,
-    `Si se completa, ${companyName} podrá enviar una solicitud de firma por separado al representante autorizado identificado arriba.`
-  );
 
   // Section 2 certification text
   const s2 = L('2. ACCOUNT INFORMATION CONFIRMATION AND CERTIFICATION', '账户信息确认声明', 'CONFIRMACIÓN Y CERTIFICACIÓN DE INFORMACIÓN DE CUENTA');
@@ -6547,34 +6532,14 @@ function _buildZelleAuthForm(lang, variant) {
 
   // Signature section
   const sigHeader = L('PAYEE SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
-  const sigNote = isB
-    ? L(
-      'The Payee must sign the applicable signature section below. A representative may assist with submitting payment instructions but may not sign in place of the Payee.',
-      '收款人须在下方相应签名部分签名。代表可协助提交付款指示，但不得代替收款人签名。',
-      'El Beneficiario debe firmar la sección de firma correspondiente a continuación. Un representante puede asistir con la presentación de instrucciones de pago, pero no puede firmar en lugar del Beneficiario.'
-    )
-    : L(
-      'If the Payee is receiving payment directly through the Zelle account identified above, the Payee must sign below. If the Payee is authorizing a third party to receive payment, the Payee and the third party must instead complete the applicable third-party Zelle payment forms.',
-      '如收款人本人直接通过上方所列 Zelle 账户收款，收款人须在下方签名。如收款人授权第三方代收款项，收款人及该第三方须另行填写适用的第三方 Zelle 收款表格。',
-      'Si el Beneficiario recibe el pago directamente a través de la cuenta Zelle indicada arriba, el Beneficiario debe firmar a continuación. Si el Beneficiario autoriza a un tercero a recibir el pago, el Beneficiario y el tercero deben completar en su lugar los formularios correspondientes de pago Zelle a terceros.'
-    );
+  const sigNote = L(
+    'If the Payee is receiving payment directly through the Zelle account identified above, the Payee must sign below. If the Payee is authorizing a third party to receive payment, the Payee and the third party must instead complete the applicable third-party Zelle payment forms.',
+    '如收款人本人直接通过上方所列 Zelle 账户收款，收款人须在下方签名。如收款人授权第三方代收款项，收款人及该第三方须另行填写适用的第三方 Zelle 收款表格。',
+    'Si el Beneficiario recibe el pago directamente a través de la cuenta Zelle indicada arriba, el Beneficiario debe firmar a continuación. Si el Beneficiario autoriza a un tercero a recibir el pago, el Beneficiario y el tercero deben completar en su lugar los formularios correspondientes de pago Zelle a terceros.'
+  );
   const lPrintedName = L('Printed Name (same as Full Legal Name above)', '正楷姓名（与上方法定全名一致）', 'Nombre en Letra de Imprenta (igual al nombre legal completo indicado arriba)');
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
-
-  // Payee authorization of third-party section (optional)
-  const authDelegateHeader = L(
-    'OPTIONAL — PAYEE AUTHORIZATION OF THIRD-PARTY REPRESENTATIVE',
-    '可选 — 收款人授权第三方代表',
-    'OPCIONAL — AUTORIZACIÓN DEL BENEFICIARIO A UN REPRESENTANTE DE TERCEROS'
-  );
-  const authDelegateText = L(
-    `Complete this section only if the Payee authorizes the representative identified above to assist in submitting the Payee's payment instructions and related documentation. By signing below, I authorize the identified representative to assist in submitting those instructions and documents. Unless separate third-party recipient forms are completed and accepted by ${companyName}, all payments must be sent only to the Zelle account identified above and certified by me. The representative is not authorized to change the payment recipient or direct payment to an account not identified and certified by me.`,
-    `仅在收款人授权上方所列代表协助提交收款人的付款指示及相关文件时填写此部分。本人签署下方后，即授权该代表协助提交上述指示及文件。除非另行填写相应的第三方收款表格并经 ${companyName} 接受，所有款项仅可发送至上方所列并经本人确认的 Zelle 账户。该代表无权变更收款人，亦无权将款项转至未经本人列明并确认的账户。`,
-    `Complete esta sección solo si el Beneficiario autoriza al representante identificado arriba a asistir en la presentación de las instrucciones de pago del Beneficiario y la documentación relacionada. Al firmar a continuación, autorizo al representante identificado a asistir en la presentación de dichas instrucciones y documentos. A menos que se completen formularios separados de destinatario tercero y sean aceptados por ${companyName}, todos los pagos deben enviarse únicamente a la cuenta Zelle identificada arriba y certificada por mí. El representante no está autorizado a cambiar el destinatario del pago ni a dirigir el pago a una cuenta no identificada y certificada por mí.`
-  );
-  const lPayeePrintedName = L('Payee Printed Name', '收款人正楷姓名', 'Nombre del Beneficiario en Letra de Imprenta');
-  const lPayeeSig = L('Payee Signature', '收款人签名', 'Firma del Beneficiario');
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -6608,19 +6573,7 @@ function _buildZelleAuthForm(lang, variant) {
   </tr>
 </table>
 
-<!--B_ONLY_S--><div style="border:1px solid #ccc;border-radius:4px;padding:6px 8px;margin-bottom:6px;background:#fafafa;font-size:${Z.box}">
-  <div style="font-weight:700;color:#555;margin-bottom:3px;font-size:${Z.boxh}">${authRepHeader}</div>
-  <table style="width:100%;border-collapse:collapse;font-size:${Z.box}">
-    <tr>
-      <td style="padding:2px 4px;width:40%"><b>${lRepName}:</b><br><text-field name="auth_rep_name" role="First Party" style="${w}"></text-field></td>
-      <td style="padding:2px 4px;width:30%"><b>${lRepPhone}:</b><br><text-field name="auth_rep_phone" role="First Party" style="${w}"></text-field></td>
-      <td style="padding:2px 4px;width:30%"><b>${lRepEmail}:</b><br><text-field name="auth_rep_email" role="First Party" style="${w}"></text-field></td>
-    </tr>
-  </table>
-  <div style="font-size:${Z.note};color:#555;margin-top:2px;font-style:italic">${authRepNote}</div>
-</div>
-
-<!--B_ONLY_E--><div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s2}</div>
+<div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s2}</div>
 <p style="font-size:${Z.body};white-space:pre-line;margin:0 0 4px">${one(certText)}</p>
 
 <div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s3}</div>
@@ -6630,7 +6583,7 @@ function _buildZelleAuthForm(lang, variant) {
 
 <div style="background:#e8f5e9;border:1px solid #4caf50;padding:5px 8px;margin-top:7px;font-size:${Z.green};color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
 
-<!--A_ONLY_S--><div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:5px;font-size:${Z.base}">
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:5px;font-size:${Z.base}">
   <b>${sigHeader}</b>
   <table style="width:100%;margin-top:4px">
     <tr>
@@ -6642,31 +6595,19 @@ function _buildZelleAuthForm(lang, variant) {
     </tr>
   </table>
 </div>
-
-<!--A_ONLY_E--><!--B_ONLY_S--><div style="border:1px solid #999;padding:6px 8px;margin-top:7px;font-size:${Z.base};background:#f0f9ff">
-  <b>${authDelegateHeader}</b>
-  <p style="font-size:${Z.cap};margin:4px 0 5px;color:#333">${authDelegateText}</p>
-  <table style="width:100%;margin-top:2px">
-    <tr>
-      <td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPayeePrintedName}:</div><text-field name="payee_auth_printed_name" role="First Party" style="${w}"></text-field></td>
-    </tr>
-    <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPayeeSig}:</div><signature-field name="payee_auth_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
-    </tr>
-  </table>
-</div>
-<!--B_ONLY_E--><div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
 </div>`;
 }
 
-// Convenience wrappers for each language variant
-function generateZelleAuthHtmlTemplate() { return _zoneVariant(_buildZelleAuthForm('zh-en', 'a'), 'a'); }
-function generateZelleAuthHtmlTemplate_B() { return _zoneVariant(_buildZelleAuthForm('zh-en', 'b'), 'b'); }
-function generateZelleAuthHtmlTemplate_EN() { return _zoneVariant(_buildZelleAuthForm('en', 'a'), 'a'); }
-function generateZelleAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildZelleAuthForm('en', 'b'), 'b'); }
-function generateZelleAuthHtmlTemplate_ES() { return _zoneVariant(_buildZelleAuthForm('en-es', 'a'), 'a'); }
-function generateZelleAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildZelleAuthForm('en-es', 'b'), 'b'); }
+// Convenience wrappers for each language variant. The form is self-receive only —
+// third-party receiving and authorization use the dedicated third-party forms —
+// so the former Option B (_B) wrappers emit the same self-receive form.
+function generateZelleAuthHtmlTemplate() { return _buildZelleAuthForm('zh-en'); }
+function generateZelleAuthHtmlTemplate_B() { return _buildZelleAuthForm('zh-en'); }
+function generateZelleAuthHtmlTemplate_EN() { return _buildZelleAuthForm('en'); }
+function generateZelleAuthHtmlTemplate_EN_B() { return _buildZelleAuthForm('en'); }
+function generateZelleAuthHtmlTemplate_ES() { return _buildZelleAuthForm('en-es'); }
+function generateZelleAuthHtmlTemplate_ES_B() { return _buildZelleAuthForm('en-es'); }
 
 function _buildZelleThirdPartyForm_OLD(lang) {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
