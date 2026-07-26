@@ -6898,6 +6898,21 @@ function _buildThirdPartyPayAuthForm(lang, method) {
     ? `Payment sent to the account information I have provided will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation to the authorizing individual. I understand that this authorization may be revoked at any time by the authorizing individual by providing written notice to ${companyName}.\n\nEl pago enviado a la información de cuenta que he proporcionado se considerará un pago válido y cumplimiento total de la obligación de pago de ${companyName} hacia la persona que autorizó. Entiendo que esta autorización puede ser revocada en cualquier momento mediante notificación escrita a ${companyName}.`
     : `Payment sent to the account information I have provided will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation to the authorizing individual. I understand that this authorization may be revoked at any time by the authorizing individual by providing written notice to ${companyName}.`;
 
+  // 现金版（按律师意见）：不涉及账户信息 — 领取时出示证件、逐笔签署签收单，
+  // 且仅在签收单所载金额范围内视为已向授权人付款
+  const certTextCash = zh
+    ? `I, the undersigned, certify that:\n\n(a) I have been duly authorized by the individual named above to receive cash payments from ${companyName} on their behalf.\n(b) The information I provided above is accurate.\n(c) I will present reasonably acceptable identification when receiving cash.\n(d) I will promptly deliver all payments received to the authorizing individual unless otherwise agreed between us.\n(e) I will notify ${companyName} in writing of any change to or revocation of my authority before receiving any additional payment.\n(f) I will sign a separate receipt identifying each cash payment I receive.\n\n本人（下方签名人）声明并确认：\n\n(a) 本人已获得上方所列人员的正式授权，代其接收来自 ${companyName} 的现金付款。\n(b) 本人在上方提供的信息准确无误。\n(c) 领取现金时，本人将出示合理可接受的身份证件。\n(d) 除双方另有约定外，本人将及时把收到的所有款项交付授权人。\n(e) 如本人的授权发生任何变更或被撤销，本人将在领取任何后续款项前以书面形式通知 ${companyName}。\n(f) 本人将就每笔领取的现金付款签署单独的签收单。`
+    : es
+    ? `I, the undersigned, certify that:\n\n(a) I have been duly authorized by the individual named above to receive cash payments from ${companyName} on their behalf.\n(b) The information I provided above is accurate.\n(c) I will present reasonably acceptable identification when receiving cash.\n(d) I will promptly deliver all payments received to the authorizing individual unless otherwise agreed between us.\n(e) I will notify ${companyName} in writing of any change to or revocation of my authority before receiving any additional payment.\n(f) I will sign a separate receipt identifying each cash payment I receive.\n\nYo, el abajo firmante, certifico que:\n\n(a) He sido debidamente autorizado por la persona mencionada arriba para recibir pagos en efectivo de ${companyName} en su nombre.\n(b) La información que proporcioné arriba es correcta.\n(c) Presentaré una identificación razonablemente aceptable al recibir efectivo.\n(d) Entregaré oportunamente todos los pagos recibidos a la persona que me autorizó, salvo acuerdo contrario entre nosotros.\n(e) Notificaré a ${companyName} por escrito cualquier cambio o revocación de mi autoridad antes de recibir cualquier pago adicional.\n(f) Firmaré un recibo separado que identifique cada pago en efectivo que reciba.`
+    : `I, the undersigned, certify that:\n\n(a) I have been duly authorized by the individual named above to receive cash payments from ${companyName} on their behalf.\n(b) The information I provided above is accurate.\n(c) I will present reasonably acceptable identification when receiving cash.\n(d) I will promptly deliver all payments received to the authorizing individual unless otherwise agreed between us.\n(e) I will notify ${companyName} in writing of any change to or revocation of my authority before receiving any additional payment.\n(f) I will sign a separate receipt identifying each cash payment I receive.`;
+  const ackTextCash = zh
+    ? `Cash delivered to me in accordance with this authorization, as documented by a separate transaction-specific receipt signed by me, will be deemed valid payment to the authorizing individual to the extent of the amount identified in that receipt. I understand that this authorization may be revoked at any time by the authorizing individual by providing written notice to ${companyName}.\n\n按本授权向本人交付的现金，经本人签署该笔付款的单独签收单记录后，即在该签收单所载金额范围内视为已向授权人有效付款。本人理解授权人可随时以书面形式通知 ${companyName} 撤销本授权。`
+    : es
+    ? `Cash delivered to me in accordance with this authorization, as documented by a separate transaction-specific receipt signed by me, will be deemed valid payment to the authorizing individual to the extent of the amount identified in that receipt. I understand that this authorization may be revoked at any time by the authorizing individual by providing written notice to ${companyName}.\n\nEl efectivo que se me entregue conforme a esta autorización, documentado mediante un recibo separado específico de la transacción firmado por mí, se considerará pago válido a la persona que autoriza hasta el monto identificado en dicho recibo. Entiendo que esta autorización puede ser revocada en cualquier momento por la persona que autoriza mediante notificación escrita a ${companyName}.`
+    : `Cash delivered to me in accordance with this authorization, as documented by a separate transaction-specific receipt signed by me, will be deemed valid payment to the authorizing individual to the extent of the amount identified in that receipt. I understand that this authorization may be revoked at any time by the authorizing individual by providing written notice to ${companyName}.`;
+  const certOut = method === 'cash' ? certTextCash : certText;
+  const ackOut = method === 'cash' ? ackTextCash : ackText;
+
   const disclaimer = zh
     ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认收款方式，不改变任何税务申报义务或承包关系性质。`
     : es
@@ -6936,10 +6951,10 @@ function _buildThirdPartyPayAuthForm(lang, method) {
 </table>${verifyNote}
 
 <div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s3}</div>
-<div style="font-size:${Z.body};white-space:pre-line">${one(certText)}</div>
+<div style="font-size:${Z.body};white-space:pre-line">${one(certOut)}</div>
 
 <div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s4}</div>
-<div style="font-size:${Z.body};white-space:pre-line">${one(ackText)}</div>
+<div style="font-size:${Z.body};white-space:pre-line">${one(ackOut)}</div>
 
 <p style="font-size:7pt;color:#666;margin-top:6px;font-style:italic">${disclaimer}</p>
 
