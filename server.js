@@ -6425,20 +6425,6 @@ function _buildZelleAuthForm(lang) {
   const lName = L('Full Legal Name', '法定全名', 'Nombre Legal Completo');
   const lAccount = L('Zelle Registered Email Address or Mobile Number', 'Zelle 注册邮箱地址或手机号', 'Correo Electrónico o Número de Teléfono Móvil Registrado en Zelle');
 
-  const authRepHeader = L(
-    'OPTIONAL — If the Payee is authorizing a third-party representative, provide their contact information below:',
-    '可选 — 如收款人授权第三方代表处理，请在下方填写授权代表联系方式：',
-    'OPCIONAL — Si el Beneficiario autoriza a un representante de terceros, proporcione su información de contacto a continuación:'
-  );
-  const lRepName = L('Authorized Representative Full Name', '授权代表姓名', 'Nombre completo del representante autorizado');
-  const lRepPhone = L('Phone Number', '电话号码', 'Número de teléfono');
-  const lRepEmail = L('Email Address', '邮箱地址', 'Correo electrónico');
-  const authRepNote = L(
-    `If completed, ${companyName} may send a separate signature request to the authorized representative identified above.`,
-    `如已填写，${companyName} 将向上方所列的授权代表另行发送签字请求。`,
-    `Si se completa, ${companyName} podrá enviar una solicitud de firma por separado al representante autorizado identificado arriba.`
-  );
-
   // Section 2 certification text
   const s2 = L('2. ACCOUNT INFORMATION CONFIRMATION AND CERTIFICATION', '账户信息确认声明', 'CONFIRMACIÓN Y CERTIFICACIÓN DE INFORMACIÓN DE CUENTA');
   const certText = zh
@@ -6486,28 +6472,9 @@ function _buildZelleAuthForm(lang) {
 
   // Signature section
   const sigHeader = L('PAYEE SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
-  const sigNote = L(
-    'The Payee must sign the applicable signature section below. A representative may assist with submitting payment instructions but may not sign in place of the Payee.',
-    '收款人必须在下方相应的签名部分签名。代表可协助提交付款指示，但不得代替收款人签名。',
-    'El Beneficiario debe firmar la sección de firma correspondiente a continuación. Un representante puede ayudar a presentar las instrucciones de pago, pero no puede firmar en lugar del Beneficiario.'
-  );
   const lPrintedName = L('Printed Name (same as Full Legal Name above)', '正楷姓名（与上方法定全名一致）', 'Nombre en Letra de Imprenta (igual al nombre legal completo indicado arriba)');
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
-
-  // Payee authorization of third-party section (optional)
-  const authDelegateHeader = L(
-    'OPTIONAL — PAYEE AUTHORIZATION OF THIRD-PARTY REPRESENTATIVE',
-    '可选 — 收款人授权第三方代表',
-    'OPCIONAL — AUTORIZACIÓN DEL BENEFICIARIO A UN REPRESENTANTE DE TERCEROS'
-  );
-  const authDelegateText = L(
-    `Complete this section only if the Payee authorizes the representative identified above to assist in submitting the Payee's payment instructions and related documentation. By signing below, I authorize the identified representative to assist in submitting those instructions and documents. Unless separate third-party recipient forms are completed and accepted by Prime Anchor Point LLC, all payments must be sent only to the Zelle account identified above and certified by me. The representative is not authorized to change the payment recipient or direct payment to an account not identified and certified by me.`,
-    `仅在收款人授权上方所列代表协助提交收款人的付款指示及相关文件时填写此部分。本人签署下方，即授权该代表协助提交上述指示和文件。除非另行填写第三方收款人表格并经 Prime Anchor Point LLC 接受，所有付款必须仅发送至上方所列并经本人确认的 Zelle 账户。该代表无权更改付款收款人，也无权将付款转至本人未列明并确认的账户。`,
-    `Complete esta sección solo si el Beneficiario autoriza al representante identificado arriba a asistir en la presentación de las instrucciones de pago del Beneficiario y la documentación relacionada. Al firmar a continuación, autorizo al representante identificado a asistir en la presentación de dichas instrucciones y documentos. A menos que se completen formularios separados de destinatario tercero y sean aceptados por Prime Anchor Point LLC, todos los pagos deben enviarse únicamente a la cuenta Zelle identificada arriba y certificada por mí. El representante no está autorizado a cambiar el destinatario del pago ni a dirigir el pago a una cuenta no identificada y certificada por mí.`
-  );
-  const lPayeePrintedName = L('Payee Printed Name', '收款人正楷姓名', 'Nombre del Beneficiario en Letra de Imprenta');
-  const lPayeeSig = L('Payee Signature', '收款人签名', 'Firma del Beneficiario');
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -6541,19 +6508,7 @@ function _buildZelleAuthForm(lang) {
   </tr>
 </table>
 
-<!--B_ONLY_S--><div style="border:1px solid #ccc;border-radius:4px;padding:6px 8px;margin-bottom:6px;background:#fafafa;font-size:${Z.box}">
-  <div style="font-weight:700;color:#555;margin-bottom:3px;font-size:${Z.boxh}">${authRepHeader}</div>
-  <table style="width:100%;border-collapse:collapse;font-size:${Z.box}">
-    <tr>
-      <td style="padding:2px 4px;width:40%"><b>${lRepName}:</b><br><text-field name="auth_rep_name" role="First Party" style="${w}"></text-field></td>
-      <td style="padding:2px 4px;width:30%"><b>${lRepPhone}:</b><br><text-field name="auth_rep_phone" role="First Party" style="${w}"></text-field></td>
-      <td style="padding:2px 4px;width:30%"><b>${lRepEmail}:</b><br><text-field name="auth_rep_email" role="First Party" style="${w}"></text-field></td>
-    </tr>
-  </table>
-  <div style="font-size:${Z.note};color:#555;margin-top:2px;font-style:italic">${authRepNote}</div>
-</div>
-
-<!--B_ONLY_E--><div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s2}</div>
+<div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s2}</div>
 <p style="font-size:${Z.body};white-space:pre-line;margin:0 0 4px">${one(certText)}</p>
 
 <div style="font-weight:700;margin:${Z.hm2};font-size:${Z.head}">${s3}</div>
@@ -6561,9 +6516,7 @@ function _buildZelleAuthForm(lang) {
 
 <p style="font-size:${Z.disc};color:#666;margin:6px 0 0;font-style:italic">${disclaimer}</p>
 
-<div style="background:#e8f5e9;border:1px solid #4caf50;padding:5px 8px;margin-top:7px;font-size:${Z.green};color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
-
-<!--A_ONLY_S--><div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:5px;font-size:${Z.base}">
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:7px;font-size:${Z.base}">
   <b>${sigHeader}</b>
   <table style="width:100%;margin-top:4px">
     <tr>
@@ -6575,31 +6528,159 @@ function _buildZelleAuthForm(lang) {
     </tr>
   </table>
 </div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
+</div>`;
+}
 
-<!--A_ONLY_E--><!--B_ONLY_S--><div style="border:1px solid #999;padding:6px 8px;margin-top:7px;font-size:${Z.base};background:#f0f9ff">
-  <b>${authDelegateHeader}</b>
-  <p style="font-size:${Z.cap};margin:4px 0 5px;color:#333">${authDelegateText}</p>
-  <table style="width:100%;margin-top:2px">
+// ── Third-Party Payment Authorization (Option B) — signed by the Payee ──
+// 收款人授权第三方代收款项：只填第三方身份/关系/联系方式与授权签字；
+// 本表不收集任何收款账户信息（收款人本人或第三方的 Zelle 均不填），
+// 第三方的收款账户信息由第三方在其单独表格中自行填写并确认。
+function _buildZelleTPAuthForm(lang) {
+  const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const w = `${f}width:100%;min-height:22px;`;
+  const c = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
+  const companyName = getCompanySignerName();
+  const zh = lang === 'zh-en';
+  const es = lang === 'en-es';
+  const L = (en, zhTxt, esTxt) => {
+    if (zh && zhTxt) return `${en} ${zhTxt}`;
+    if (es && esTxt) return `${en} / ${esTxt}`;
+    return en;
+  };
+
+  const formTitle = 'THIRD-PARTY PAYMENT AUTHORIZATION';
+  const subtitle = zh
+    ? `第三方收款授权书 — ${companyName}`
+    : es ? `Autorización de Pago a un Tercero — ${companyName}`
+    : `Third-Party Payment Authorization — ${companyName}`;
+
+  const intro = zh
+    ? `This form must be completed and signed by the Payee to authorize ${companyName} to send payments owed to the Payee to the third-party recipient identified below. Do not provide any payment account information on this form; the third-party recipient's payment account information will be collected and certified separately.\n\n本表格由收款人本人填写并签署，用于授权 ${companyName} 将应付给收款人的款项支付给下方所列的第三方收款人。请勿在本表格中填写任何收款账户信息；第三方收款人的收款账户信息将另行单独收集并确认。`
+    : es
+    ? `This form must be completed and signed by the Payee to authorize ${companyName} to send payments owed to the Payee to the third-party recipient identified below. Do not provide any payment account information on this form; the third-party recipient's payment account information will be collected and certified separately.\n\nEste formulario debe ser completado y firmado por el Beneficiario para autorizar a ${companyName} a enviar los pagos adeudados al Beneficiario al tercero receptor identificado a continuación. No proporcione información de cuentas de pago en este formulario; la información de la cuenta del tercero receptor se recopilará y certificará por separado.`
+    : `This form must be completed and signed by the Payee to authorize ${companyName} to send payments owed to the Payee to the third-party recipient identified below. Do not provide any payment account information on this form; the third-party recipient's payment account information will be collected and certified separately.`;
+
+  // Section 1 — Payee (authorizing person)
+  const s1 = L('1. PAYEE (AUTHORIZING PERSON)', '收款人（授权人）信息', 'BENEFICIARIO (PERSONA QUE AUTORIZA)');
+  const lPayeeName = L('Payee Full Legal Name', '收款人法定全名', 'Nombre Legal Completo del Beneficiario');
+
+  // Section 2 — Third-party recipient
+  const s2 = L('2. THIRD-PARTY RECIPIENT INFORMATION', '第三方收款人信息', 'INFORMACIÓN DEL TERCERO RECEPTOR');
+  const lTpName = L("Third Party's Full Legal Name", '第三方法定全名', 'Nombre Legal Completo del Tercero');
+  const lRelationship = L('Relationship to the Payee', '与收款人的关系', 'Relación con el Beneficiario');
+  const lTpPhone = L('Phone Number', '电话号码', 'Número de Teléfono');
+  const lTpEmail = L('Email Address', '邮箱地址', 'Correo Electrónico');
+
+  // Section 3 — Authorization and acknowledgment
+  const s3 = L('3. AUTHORIZATION AND ACKNOWLEDGMENT', '授权与确认', 'AUTORIZACIÓN Y RECONOCIMIENTO');
+  const authText = zh
+    ? `I, the Payee named above, hereby authorize ${companyName} to send payments owed to me to the third-party recipient identified above. I acknowledge and agree that: 本人（上方所列收款人）特此授权 ${companyName} 将应付给本人的款项支付给上方所列的第三方收款人。本人确认并同意：
+
+(a) I have voluntarily designated the third-party recipient identified above to receive payments on my behalf. 本人自愿指定上方所列第三方代本人接收款项。
+
+(b) The third-party recipient's payment account information will be provided and certified separately by the third-party recipient on their own form; no payment account information is collected on this form. 第三方收款人的收款账户信息由其本人在单独表格中填写并确认；本表格不收集任何收款账户信息。
+
+(c) Payments sent to the third-party recipient in accordance with this authorization will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation to me. 按本授权向第三方收款人付款后，即视为 ${companyName} 已有效履行对本人的付款义务。
+
+(d) Any arrangement between me and the third-party recipient regarding the funds is solely between us; ${companyName} is not responsible for the third-party recipient's handling of funds after payment is sent. 本人与第三方之间关于款项的任何安排仅限于双方之间；付款发送后，${companyName} 不对第三方对款项的处理承担责任。
+
+(e) I may revoke this authorization at any time by providing written notice to ${companyName} before the next payment is sent. 本人可在下次付款发送前，随时以书面形式通知 ${companyName} 撤销本授权。`
+    : es
+    ? `I, the Payee named above, hereby authorize ${companyName} to send payments owed to me to the third-party recipient identified above. I acknowledge and agree that: Yo, el Beneficiario indicado arriba, por la presente autorizo a ${companyName} a enviar los pagos que se me adeudan al tercero receptor identificado arriba. Reconozco y acepto que:
+
+(a) I have voluntarily designated the third-party recipient identified above to receive payments on my behalf. He designado voluntariamente al tercero receptor identificado arriba para recibir pagos en mi nombre.
+
+(b) The third-party recipient's payment account information will be provided and certified separately by the third-party recipient on their own form; no payment account information is collected on this form. La información de la cuenta de pago del tercero receptor será proporcionada y certificada por separado por el propio tercero en su propio formulario; en este formulario no se recopila información de cuentas de pago.
+
+(c) Payments sent to the third-party recipient in accordance with this authorization will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation to me. Los pagos enviados al tercero receptor conforme a esta autorización se considerarán pago válido y cumplimiento total de la obligación de pago de ${companyName} hacia mí.
+
+(d) Any arrangement between me and the third-party recipient regarding the funds is solely between us; ${companyName} is not responsible for the third-party recipient's handling of funds after payment is sent. Cualquier acuerdo entre el tercero receptor y yo respecto a los fondos es únicamente entre nosotros; ${companyName} no es responsable del manejo de los fondos por parte del tercero después de enviado el pago.
+
+(e) I may revoke this authorization at any time by providing written notice to ${companyName} before the next payment is sent. Puedo revocar esta autorización en cualquier momento mediante notificación escrita a ${companyName} antes de que se envíe el próximo pago.`
+    : `I, the Payee named above, hereby authorize ${companyName} to send payments owed to me to the third-party recipient identified above. I acknowledge and agree that:
+
+(a) I have voluntarily designated the third-party recipient identified above to receive payments on my behalf.
+
+(b) The third-party recipient's payment account information will be provided and certified separately by the third-party recipient on their own form; no payment account information is collected on this form.
+
+(c) Payments sent to the third-party recipient in accordance with this authorization will be deemed valid payment and full satisfaction of ${companyName}'s payment obligation to me.
+
+(d) Any arrangement between me and the third-party recipient regarding the funds is solely between us; ${companyName} is not responsible for the third-party recipient's handling of funds after payment is sent.
+
+(e) I may revoke this authorization at any time by providing written notice to ${companyName} before the next payment is sent.`;
+
+  const disclaimer = zh
+    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. 本授权仅用于确认收款方式，不改变任何税务申报义务或承包关系性质。`
+    : es
+    ? `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status. Esta autorización es solo para fines de confirmación del método de pago y no altera ninguna obligación de declaración de impuestos ni el estatus del contratista.`
+    : `This authorization is for payment method confirmation purposes only and does not alter any tax reporting obligations or contractor status.`;
+
+  const sigHeader = L('PAYEE SIGNATURE (AUTHORIZATION)', '收款人签名（授权）', 'FIRMA DEL BENEFICIARIO (AUTORIZACIÓN)');
+  const lPrintedName = L('Printed Name (same as Payee Full Legal Name above)', '正楷姓名（与上方收款人法定全名一致）', 'Nombre en Letra de Imprenta (igual al nombre legal del Beneficiario arriba)');
+  const lSig = L('Signature', '签名', 'Firma');
+  const lDate = L('Date', '日期', 'Fecha');
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 版式收紧保证一页：双语段落间不再空行；西语版文本最长再小一档
+  const one = t => String(t).replace(/\n{2,}/g, '\n');
+  const Z = (es || zh) ? { base: '8pt', lh: '1.22', pad: '8px 12px', title: '11.5pt', sub: '8pt', intro: '7.4pt', head: '9pt', tbl: '7.6pt', body: '7.3pt', disc: '6.8pt', cap: '7pt', sig: '38px', date: '20px' }
+             : { base: '8.5pt', lh: '1.35', pad: '12px 14px', title: '12pt', sub: '8.5pt', intro: '8.2pt', head: '9.5pt', tbl: '8.2pt', body: '8pt', disc: '7.2pt', cap: '7.5pt', sig: '44px', date: '22px' };
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
+  <div style="font-size:${Z.title};font-weight:900;letter-spacing:1px">${formTitle}</div>
+  <div style="font-size:${Z.sub};color:#555;margin-top:2px">${subtitle}</div>
+</div>
+
+<p style="font-size:${Z.intro};white-space:pre-line;margin:0 0 6px">${one(intro)}</p>
+
+<div style="font-weight:700;margin:8px 0 4px;font-size:${Z.head}">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
+  <tr><td style="${c}width:100%"><b>${lPayeeName}</b><br><text-field name="payee_legal_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
+</table>
+
+<div style="font-weight:700;margin:8px 0 4px;font-size:${Z.head}">${s2}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
+  <tr>
+    <td style="${c}width:50%"><b>${lTpName}</b><br><text-field name="tp_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" required="true" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
+  </tr>
+  <tr>
+    <td style="${c}width:50%"><b>${lTpPhone}</b><br><text-field name="tp_phone" role="First Party" style="${w}"></text-field></td>
+    <td style="${c}width:50%"><b>${lTpEmail}</b><br><text-field name="tp_email" role="First Party" style="${w}"></text-field></td>
+  </tr>
+</table>
+
+<div style="font-weight:700;margin:8px 0 4px;font-size:${Z.head}">${s3}</div>
+<div style="font-size:${Z.body};white-space:pre-line">${one(authText)}</div>
+
+<p style="font-size:${Z.disc};color:#666;margin:6px 0 0;font-style:italic">${disclaimer}</p>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:8px;font-size:${Z.base}">
+  <b>${sigHeader}</b>
+  <table style="width:100%;margin-top:4px">
     <tr>
-      <td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPayeePrintedName}:</div><text-field name="payee_auth_printed_name" role="First Party" style="${w}"></text-field></td>
+      <td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPrintedName}:</div><text-field name="payee_printed_name" role="First Party" required="true" style="${w}"></text-field></td>
     </tr>
     <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lPayeeSig}:</div><signature-field name="payee_auth_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_auth_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lSig}:</div><signature-field name="payee_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="payee_signature_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
-<!--B_ONLY_E--><div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
 </div>`;
 }
 
 // Convenience wrappers for each language variant
-function generateZelleAuthHtmlTemplate() { return _zoneVariant(_buildZelleAuthForm('zh-en'), 'a'); }
-function generateZelleAuthHtmlTemplate_B() { return _zoneVariant(_buildZelleAuthForm('zh-en'), 'b'); }
-function generateZelleAuthHtmlTemplate_EN() { return _zoneVariant(_buildZelleAuthForm('en'), 'a'); }
-function generateZelleAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildZelleAuthForm('en'), 'b'); }
-function generateZelleAuthHtmlTemplate_ES() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'a'); }
-function generateZelleAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildZelleAuthForm('en-es'), 'b'); }
+// Option A（自己收款）不再含任何第三方内容；Option B 为独立的第三方收款授权书
+function generateZelleAuthHtmlTemplate() { return _buildZelleAuthForm('zh-en'); }
+function generateZelleAuthHtmlTemplate_B() { return _buildZelleTPAuthForm('zh-en'); }
+function generateZelleAuthHtmlTemplate_EN() { return _buildZelleAuthForm('en'); }
+function generateZelleAuthHtmlTemplate_EN_B() { return _buildZelleTPAuthForm('en'); }
+function generateZelleAuthHtmlTemplate_ES() { return _buildZelleAuthForm('en-es'); }
+function generateZelleAuthHtmlTemplate_ES_B() { return _buildZelleTPAuthForm('en-es'); }
 
 function _buildZelleThirdPartyForm_OLD(lang) {
   const f = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
