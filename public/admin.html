@@ -1970,6 +1970,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <option value="">全部状态</option>
           <option value="pending">待审核</option>
           <option value="approved">已通过审核</option>
+          <option value="rejected">审核不通过</option>
           <option value="imported">已导入</option>
           <option value="discarded">已丢弃</option>
         </select>
@@ -40742,6 +40743,7 @@ async function loadCsubScans() {
 function _csubStatusLabel(r) {
   if (r.status === 'imported') return '<span style="color:#15803d">已导入</span>';
   if (r.status === 'discarded') return '<span style="color:#b91c1c">已丢弃</span>';
+  if (r.status === 'rejected') return `<span style="color:#b91c1c;font-weight:600">❌ 审核不通过</span>${r.review_note ? `<br><span style="color:#b45309;font-size:.74rem">原因：${esc(r.review_note)}</span>` : ''}${r.reviewed_by ? `<br><span style="color:var(--gray-400);font-size:.74rem">${esc(r.reviewed_by)}</span>` : ''}`;
   if (r.status === 'approved') return `<span style="color:#15803d;font-weight:600">✅ 已通过</span>${r.reviewed_by ? `<br><span style="color:var(--gray-400);font-size:.74rem">${esc(r.reviewed_by)}</span>` : ''}`;
   return '<span style="color:#92400e">待审核</span>';
 }
@@ -40955,7 +40957,7 @@ function _csubScanRowHtml(r) {
   const reviewBtn = canReview
     ? `<button class="btn btn-sm btn-green" style="padding:.05rem .45rem;font-size:.72rem" onclick="openCsubReview(${r.id})">审核</button>`
     : '';
-  const discardBtn = (r.status === 'discarded') ? ''
+  const discardBtn = (r.status === 'discarded' || r.status === 'rejected') ? ''
     : `<button class="btn btn-sm" style="padding:.05rem .4rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="discardCsubScan(${r.id})">丢弃</button>`;
   // Double-clicking a pending row is a shortcut into inline review.
   const dbl = canReview ? ` ondblclick="openCsubReview(${r.id})" title="双击直接编辑审核"` : '';
@@ -41130,6 +41132,8 @@ function _csubEditRowHtml(r) {
     <td style="padding:6px 8px;text-align:right;white-space:nowrap;vertical-align:top">
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
         <button class="btn btn-sm btn-green" id="csubEditOkBtn" style="padding:.15rem .55rem;font-size:.74rem" onclick="submitCsubInlineReview()">✓ 通过审核</button>
+        <input type="text" id="csubEditRejectReason" placeholder="不通过原因（如 没有完成）" autocomplete="off" style="${inpStyle};width:150px;font-size:.72rem;text-align:left">
+        <button class="btn btn-sm" id="csubEditRejBtn" style="padding:.15rem .55rem;font-size:.74rem;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5" onclick="rejectCsubInlineReview()">❌ 审核不通过</button>
         <button class="btn btn-sm btn-outline" style="padding:.15rem .55rem;font-size:.74rem" onclick="cancelCsubEdit()">取消</button>
       </div>
     </td>
@@ -41166,6 +41170,26 @@ async function submitCsubInlineReview() {
   } catch (e) {
     showToast('操作失败：' + (e.message || e), 'error');
     if (btn) { btn.disabled = false; btn.textContent = '✓ 通过审核'; }
+  }
+}
+async function rejectCsubInlineReview() {
+  const id = _csubEditingId;
+  if (id == null) return;
+  const v = x => { const el = document.getElementById(x); return el ? el.value.trim() : ''; };
+  const reviewer = v('csubEditReviewer');
+  const reason = v('csubEditRejectReason');
+  if (!reason) { showToast('请填写不通过原因（如 没有完成）', 'error'); const el = document.getElementById('csubEditRejectReason'); if (el) el.focus(); return; }
+  if (!await showConfirm(`确定「审核不通过」这条扫码记录？\n\n原因：${reason}`, { danger: true, confirmLabel: '审核不通过' })) return;
+  const btn = document.getElementById('csubEditRejBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
+  try {
+    await api(`/admin/container-submissions/${id}/reject`, { method: 'POST', body: JSON.stringify({ reviewer_name: reviewer, reason }) });
+    showToast('已标记「审核不通过」✓');
+    _csubEditingId = null;
+    loadCsubScans();
+  } catch (e) {
+    showToast('操作失败：' + (e.message || e), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '❌ 审核不通过'; }
   }
 }
 async function discardCsubScan(id) {
