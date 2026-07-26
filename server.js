@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12au · Excel自动填充:支持.xls + Elogistek账单格式(Username/Regular HR/Salary…)',
+  tag: '2026-07-12au · 扫码审核可「不通过」并写原因(如没完成)',
   started: new Date().toISOString(),
 };
 
@@ -921,6 +921,8 @@ try { db.exec(`ALTER TABLE container_submissions ADD COLUMN payment_proofs TEXT 
 // Work-site address baked into a per-address QR (?site=ADDR) for companies with
 // multiple locations, so each sheet records which address it was filled for.
 try { db.exec(`ALTER TABLE container_submissions ADD COLUMN work_site TEXT DEFAULT ''`); } catch(e) {}
+// 审核不通过 (rejected) reason — e.g. "没有完成". Distinct from 丢弃 (discarded).
+try { db.exec(`ALTER TABLE container_submissions ADD COLUMN review_note TEXT DEFAULT ''`); } catch(e) {}
 // One-time cleanup: strip whitespace that phone keyboards / OCR sneak into scanned
 // container numbers ("TIIU 562 579 9" → "TIIU5625799") — spaced forms never match
 // the invoice's container_items. New submissions are normalized on save.
@@ -16165,6 +16167,22 @@ app.post('/api/admin/container-submissions/:id/discard', requireAdmin, blockMana
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/admin/container-submissions/:id/reject  body: { reviewer_name, reason }
+// 审核不通过: keep the record (with a documented reason like "没有完成") instead of
+// silently 丢弃-ing it. Removed from the pending queue like a discard.
+app.post('/api/admin/container-submissions/:id/reject', requireAdmin, blockManager, (req, res) => {
+  try {
+    const d = req.body || {};
+    const reason = String(d.reason || '').trim();
+    const reviewer = String(d.reviewer_name || '').trim();
+    if (!reason) return res.status(400).json({ error: '请填写不通过原因' });
+    const info = db.prepare("UPDATE container_submissions SET status='rejected', review_note=?, reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(reason.slice(0, 500), reviewer.slice(0, 100), parseInt(req.params.id));
+    if (!info.changes) return res.status(404).json({ error: 'not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Payment proof files attached while approving a scan record (transfer screenshot
 // etc.). Multipart-only — JSON approvals pass straight through untouched.
 const csubProofUpload = multer({
@@ -16234,7 +16252,7 @@ app.post('/api/admin/container-submissions/:id/import', requireAdmin, blockManag
 // ─── Container review links (date-range): customer + foreman ───
 function _crlRecords(partnerId, from, to) {
   const rows = db.prepare(`SELECT * FROM container_submissions
-    WHERE partner_id=? AND status!='discarded' AND date(created_at) >= date(?) AND date(created_at) <= date(?)
+    WHERE partner_id=? AND status NOT IN ('discarded','rejected') AND date(created_at) >= date(?) AND date(created_at) <= date(?)
     ORDER BY container_no, submit_type, created_at`).all(partnerId, from, to);
   for (const r of rows) {
     try { r.participants = JSON.parse(r.participants || '[]'); } catch { r.participants = []; }
@@ -16335,7 +16353,7 @@ app.get('/api/pending/info', (req, res) => {
   const rows = db.prepare(`SELECT id, partner_name, container_no, qty, unit_price, customer_price, worker_price,
       photo_path, participants, submitter_name, submit_type, status, created_at
       FROM container_submissions
-      WHERE status NOT IN ('imported','discarded')
+      WHERE status NOT IN ('imported','discarded','rejected')
       ORDER BY partner_name COLLATE NOCASE, created_at DESC`).all();
   const t = encodeURIComponent(tok);
   const records = rows.map(r => {
