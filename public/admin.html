@@ -2380,7 +2380,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <div class="modal-bg" id="applyInboxModal"><div class="modal" style="max-width:760px;max-height:90vh;display:flex;flex-direction:column">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.2rem">
     <h2 style="margin:0">📨 招工申请收件箱 <span id="applyInboxPartner" style="font-size:.85rem;color:var(--gray-500);font-weight:400"></span></h2>
-    <button class="btn btn-sm btn-outline" onclick="closeApplicantInbox()">× 关闭</button>
+    <div style="display:flex;gap:.4rem">
+      <button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#93c5fd" onclick="window.open('/phone-check.html','_blank')" title="输入电话号码，查这个人是否登记过 / 提交过申请表">📱 电话查重</button>
+      <button class="btn btn-sm btn-outline" onclick="closeApplicantInbox()">× 关闭</button>
+    </div>
   </div>
   <div style="display:flex;gap:.4rem;border-bottom:1px solid var(--gray-200);margin-bottom:.5rem">
     <button id="applyInboxTabActive" class="btn btn-sm" style="background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700" onclick="switchApplicantInboxTab('active')">📥 待处理 <span id="applyInboxCountActive" style="font-weight:600;color:var(--gray-500)"></span></button>
