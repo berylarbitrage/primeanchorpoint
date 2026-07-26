@@ -44101,7 +44101,7 @@ function _bsWantsInvoice(box) {
   // 支付卸柜账单、木板钱同样要填 invoice 号码和覆盖的账期范围。
   return k === 'employee' || k === 'unload' || k === 'pallet' || (k === 'company' && box.direction === 'in');
 }
-const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang'];
+const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang', 'Yizhao Cai'];
 async function bsEnsureCompanies() {
   if (_bsCompanies.length) return;
   let names = [];
