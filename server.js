@@ -6828,9 +6828,9 @@ function _buildThirdPartyPayAuthForm(lang, method) {
 
   const formTitle = `THIRD-PARTY ${mn.en.toUpperCase()} PAYMENT AUTHORIZATION`;
   const subtitle = zh
-    ? `第三方${mn.zh}收款授权书 — ${companyName}`
-    : es ? `Autorización de Pago ${mn.es} a Terceros — ${companyName}`
-    : `Third-Party ${mn.en} Payment Authorization — ${companyName}`;
+    ? `第三方${mn.zh}收款授权书`
+    : es ? `Autorización de Pago ${mn.es} a Terceros`
+    : `Third-Party ${mn.en} Payment Authorization`;
 
   const intro = zh
     ? `This form must be completed and signed by the THIRD PARTY (not the Payee) who has been designated to receive ${mn.en} payments on behalf of the Payee named in Section 1 below. By signing this form, you — the third-party recipient — confirm that you have been authorized by the Payee to receive payments from ${companyName} via ${mn.en}.\n\n本表格须由被指定代收${mn.zh}付款的第三方本人（而非收款人）填写并签署。第一部分所列为授权您代收的收款人。签署本表格即表示您（第三方代收人）确认已获得该收款人的授权，代其通过${mn.zh}接收来自 ${companyName} 的付款。`
@@ -6925,50 +6925,70 @@ function _buildThirdPartyPayAuthForm(lang, method) {
   const lDate = L('Date', '日期', 'Fecha');
   const today = new Date().toISOString().slice(0, 10);
 
-  // 版式收紧保证一页：双语段落间不再空行；西语版文本最长再小一档
+  // 版式：英文版留白充裕；双语版文本长，字号/间距收紧一档保证一页
   const one = t => String(t).replace(/\n{2,}/g, '\n');
-  const Z = (es || zh) ? { base: '8pt', lh: '1.18', pad: '6px 12px', intro: '7.3pt', tbl: '7.5pt', body: '7.1pt', sig: '34px', date: '18px' }
-             : { base: '8.5pt', lh: '1.3', pad: '10px 12px', intro: '8pt', tbl: '8pt', body: '7.6pt', sig: '40px', date: '20px' };
+  const Z = (es || zh) ? {
+    base: '8pt', lh: '1.2', pad: '8px 16px', title: '11.5pt', sub: '7.6pt', comp: '6.8pt',
+    intro: '7.2pt', head: '8.4pt', hm: '5px 0 3px', tbl: '7.5pt', lbl: '7.1pt',
+    body: '7.1pt', disc: '6.6pt', cap: '6.9pt', sig: '32px', date: '18px', cell: '3px 6px',
+    hpb: '4px', hmb: '6px', sigpad: '5px 10px'
+  } : {
+    base: '9pt', lh: '1.45', pad: '24px 32px', title: '13.5pt', sub: '9pt', comp: '7.5pt',
+    intro: '8.5pt', head: '9.5pt', hm: '12px 0 6px', tbl: '8.5pt', lbl: '7.8pt',
+    body: '8.3pt', disc: '7.4pt', cap: '7.8pt', sig: '46px', date: '24px', cell: '7px 9px',
+    hpb: '8px', hmb: '10px', sigpad: '8px 12px'
+  };
+  // 带账户栏位的方式（ACH/电汇/平台）内容更长，收紧一档保证一页；电汇（三行栏位）双语版再紧一档
+  const hasAcctRows = (method === 'ach' || method === 'wire' || method === 'paypal');
+  if (hasAcctRows) {
+    if (es || zh) {
+      if (method === 'wire') { Z.lh = '1.15'; Z.body = '7pt'; Z.intro = '7pt'; Z.cell = '2px 5px'; Z.hm = '4px 0 2px'; Z.sig = '30px'; Z.hpb = '3px'; Z.hmb = '5px'; }
+    } else { Z.lh = '1.32'; Z.pad = '14px 26px'; Z.hm = '7px 0 4px'; Z.sig = '38px'; Z.cell = '5px 8px'; Z.hpb = '5px'; Z.hmb = '7px'; }
+  }
+  const cell = `padding:${Z.cell};border:1px solid #ccc;vertical-align:top;`;
+  const secHead = `background:#f2f2f2;border-left:3px solid #111;padding:3px 8px;font-weight:700;font-size:${Z.head};margin:${Z.hm};letter-spacing:0.3px;`;
+  const lblCss = `font-size:${Z.lbl};font-weight:700;color:#333;`;
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:${Z.base};max-width:720px;margin:0 auto;padding:${Z.pad};color:#111;line-height:${Z.lh}">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
-  <div style="font-size:11.5pt;font-weight:900;letter-spacing:1px">${formTitle}</div>
-  <div style="font-size:8pt;color:#555;margin-top:2px">${subtitle}</div>
+<div style="text-align:center;border-bottom:3px double #000;padding-bottom:${Z.hpb};margin-bottom:${Z.hmb}">
+  <div style="font-size:${Z.comp};font-weight:700;letter-spacing:3px;color:#555">${companyName.toUpperCase()}</div>
+  <div style="font-size:${Z.title};font-weight:900;letter-spacing:1.5px;margin-top:3px">${formTitle}</div>
+  <div style="font-size:${Z.sub};color:#555;margin-top:2px">${subtitle}</div>
 </div>
 
-<p style="font-size:${Z.intro};white-space:pre-line;margin:0 0 6px">${one(intro)}</p>
+<p style="font-size:${Z.intro};white-space:pre-line;margin:0 0 6px;color:#222">${one(intro)}</p>
 
-<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
-  <tr><td style="${c}width:100%"><b>${lAuthName}</b><br><text-field name="authorizing_person_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
+<div style="${secHead}">${s1}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:4px">
+  <tr><td style="${cell}width:100%"><span style="${lblCss}">${lAuthName}</span><br><text-field name="authorizing_person_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
 </table>
 
-<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s2}</div>
-<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:6px">
+<div style="${secHead}">${s2}</div>
+<table style="width:100%;border-collapse:collapse;font-size:${Z.tbl};margin-bottom:4px">
   <tr>
-    <td style="${c}width:50%"><b>${lYourName}</b><br><text-field name="tp_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
-    <td style="${c}width:50%"><b>${lRelationship}</b><br><text-field name="tp_relationship" role="First Party" required="true" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
+    <td style="${cell}width:50%"><span style="${lblCss}">${lYourName}</span><br><text-field name="tp_legal_name" role="First Party" required="true" style="${w}"></text-field></td>
+    <td style="${cell}width:50%"><span style="${lblCss}">${lRelationship}</span><br><text-field name="tp_relationship" role="First Party" required="true" style="${w}" placeholder="${L('e.g. Spouse, Family Member','如：配偶、家庭成员','ej. Cónyuge, Familiar')}"></text-field></td>
   </tr>${accountFieldsHtml}
 </table>${verifyNote}
 
-<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s3}</div>
-<div style="font-size:${Z.body};white-space:pre-line">${one(certOut)}</div>
+<div style="${secHead}">${s3}</div>
+<div style="font-size:${Z.body};white-space:pre-line;padding:0 2px">${one(certOut)}</div>
 
-<div style="font-weight:700;margin:7px 0 3px;font-size:9pt">${s4}</div>
-<div style="font-size:${Z.body};white-space:pre-line">${one(ackOut)}</div>
+<div style="${secHead}">${s4}</div>
+<div style="font-size:${Z.body};white-space:pre-line;padding:0 2px">${one(ackOut)}</div>
 
-<p style="font-size:7pt;color:#666;margin-top:6px;font-style:italic">${disclaimer}</p>
+<p style="font-size:${Z.disc};color:#666;margin:8px 0 0;font-style:italic;border-top:1px solid #ddd;padding-top:5px">${disclaimer}</p>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:8px;font-size:${Z.base}">
-  <b>${sigHeader}</b>
-  <table style="width:100%;margin-top:4px">
-    <tr><td colspan="2" style="padding-bottom:4px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
+<div style="background:#fafafa;border:1px solid #999;border-top:2px solid #111;padding:${Z.sigpad};margin-top:8px;font-size:${Z.base}">
+  <div style="font-weight:700;font-size:${Z.head};letter-spacing:0.3px">${sigHeader}</div>
+  <table style="width:100%;margin-top:6px">
+    <tr><td colspan="2" style="padding-bottom:6px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700;color:#333">${lPrintedName}:</div><text-field name="tp_printed_name" role="First Party" required="true" style="${w}"></text-field></td></tr>
     <tr>
-      <td style="width:65%;padding-right:10px;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
-      <td style="width:35%;vertical-align:top"><div style="font-size:7.5pt;font-weight:700">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
+      <td style="width:65%;padding-right:12px;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700;color:#333">${lSig}:</div><signature-field name="tp_signature" role="First Party" style="width:100%;height:${Z.sig};display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field></td>
+      <td style="width:35%;vertical-align:top"><div style="font-size:${Z.cap};font-weight:700;color:#333">${lDate} (MM/DD/YYYY):</div><date-field name="tp_signature_date" role="First Party" style="width:100%;height:${Z.date};display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></td>
     </tr>
   </table>
 </div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:2px">Last updated: ${today}</div>
+<div style="display:flex;justify-content:space-between;font-size:6.5pt;color:#aaa;margin-top:4px"><span>${companyName} — ${subtitle}</span><span>Last updated: ${today}</span></div>
 </div>`;
 }
 
