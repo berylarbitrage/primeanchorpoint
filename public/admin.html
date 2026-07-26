@@ -36524,10 +36524,19 @@ function invpDoPasteImport() {
   if (!dates.length) { showToast('请先在上方填写服务周期（开始/结束日期），再导入', 'error'); return; }
   const replace = document.getElementById('invpPasteReplace').checked;
   _invpSaveTableState();
+  // 替换模式同样按姓名保留原有行的分包商/介绍人等手填信息。
+  const prevByName = new Map();
+  if (replace) (window._invpManualEmps || []).forEach(p => { const k = _invpNameKey(p.name); if (k && !prevByName.has(k)) prevByName.set(k, p); });
   if (replace) window._invpManualEmps = [];
   rows.forEach(r => {
-    const emp = { uid: _invpManualUidSeq++, name: r.name, category: '', subcontractor: '', referrer: '',
-      rate: r.rate != null ? String(r.rate) : '', days: {}, linked_employee_id: null, linked_employee_code: '', linked_employee_name: '' };
+    const prev = replace ? (prevByName.get(_invpNameKey(r.name)) || null) : null;
+    const emp = { uid: _invpManualUidSeq++, name: r.name,
+      category: prev ? (prev.category || '') : '', subcontractor: prev ? (prev.subcontractor || '') : '', referrer: prev ? (prev.referrer || '') : '',
+      note: prev ? (prev.note || '') : '', noteType: prev ? (prev.noteType || '') : '', noteDate: prev ? (prev.noteDate || '') : '',
+      rate: r.rate != null ? String(r.rate) : '', days: {},
+      linked_employee_id: prev ? (prev.linked_employee_id || null) : null,
+      linked_employee_code: prev ? (prev.linked_employee_code || '') : '',
+      linked_employee_name: prev ? (prev.linked_employee_name || '') : '' };
     _invpDistributeHours(emp, r.hours != null ? r.hours : 0, dates);
     window._invpManualEmps.push(emp);
   });
@@ -36639,7 +36648,7 @@ async function invpProcessExcelFile(file) {
   // Don't silently wipe an in-progress crew.
   const hasRows = (window._invpManualEmps || []).some(e => (e.name || '').trim() || Object.keys(e.days || {}).length);
   if (hasRows) {
-    const ok = await showConfirm('上传 Excel 将覆盖当前已填写的员工工时明细。确定继续吗？', { confirmLabel: '覆盖并导入', cancelLabel: '取消' });
+    const ok = await showConfirm('上传 Excel 将覆盖当前已填写的员工工时明细（同名员工的分包商/介绍人/工种等信息会自动保留）。确定继续吗？', { confirmLabel: '覆盖并导入', cancelLabel: '取消' });
     if (!ok) { setStatus('已取消', '#92400e'); return; }
   }
 
@@ -36684,12 +36693,26 @@ function invpApplyExcelData(data) {
 
   const dates = _invpGetDates();
   const dflt = Number(data.markupMultiplier) || 0;
+  // 重新导入 Excel 不清掉手填的行信息：Excel 只提供工时与费率，原有行的
+  // 分包商/介绍人/工种/入职离职/系统员工链接按姓名匹配自动带过来。
+  const prevByName = new Map();
+  (window._invpManualEmps || []).forEach(p => { const k = _invpNameKey(p.name); if (k && !prevByName.has(k)) prevByName.set(k, p); });
+  let carried = 0;
   window._invpManualEmps = (data.employees || []).map(e => {
+    const prev = prevByName.get(_invpNameKey(e.name)) || null;
+    if (prev && (prev.subcontractor || prev.referrer || prev.category || prev.noteType || prev.linked_employee_id)) carried++;
     const emp = {
-      uid: _invpManualUidSeq++, name: e.name || '', category: '', subcontractor: '', referrer: '',
+      uid: _invpManualUidSeq++, name: e.name || '',
+      category: prev ? (prev.category || '') : '',
+      subcontractor: prev ? (prev.subcontractor || '') : '',
+      referrer: prev ? (prev.referrer || '') : '',
+      note: prev ? (prev.note || '') : '', noteType: prev ? (prev.noteType || '') : '', noteDate: prev ? (prev.noteDate || '') : '',
       rate: (e.regRate || e.regRate === 0) ? String(e.regRate) : '', otRate: '', markup: '', days: {},
-      linked_employee_id: null, linked_employee_code: '', linked_employee_name: '',
+      linked_employee_id: prev ? (prev.linked_employee_id || null) : null,
+      linked_employee_code: prev ? (prev.linked_employee_code || '') : '',
+      linked_employee_name: prev ? (prev.linked_employee_name || '') : '',
     };
+    if (prev && Number(prev.wage_rate) > 0) emp.wage_rate = prev.wage_rate;
     // Keep an explicit OT rate only when it isn't the automatic 1.5× (so the form
     // can keep auto-tracking the rate when it matches).
     const reg = Number(e.regRate) || 0;
@@ -36722,6 +36745,12 @@ function invpApplyExcelData(data) {
 
   renderInvpManualTable(true);
   window._invpDirty = true;
+  if (carried) showToast(`已按姓名保留 ${carried} 行原有的分包商/介绍人等信息`, 'success', 4000);
+}
+
+// 按姓名匹配行的 key：忽略大小写/多余空格/旧数据里的 Chinese- 前缀。
+function _invpNameKey(n) {
+  return String(n || '').toLowerCase().replace(/^chinese[-_\s]+/, '').replace(/\s+/g, ' ').trim();
 }
 
 // ── Container mode ──
