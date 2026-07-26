@@ -32763,7 +32763,7 @@ async function loadInvpList() {
       </div>
       <div style="display:flex;flex-direction:column;gap:.2rem;flex:1 1 130px">
         <label style="${lbl}">💲 搜索金额</label>
-        <input type="text" id="invpFltAmount" oninput="renderInvpList()" placeholder="如 11180.40" title="匹配账单 / 工资 / 利润 / 实付金额 / 分包付款金额。不带小数时按整数部分匹配（如 11180 能找到 $11180.40）" style="${fld};font-family:monospace">
+        <input type="text" id="invpFltAmount" oninput="renderInvpList()" placeholder="如 11180.40" title="匹配账单 / 工资 / 利润 / 实付金额 / 分包付款金额，也匹配单个工人的工资明细金额。不带小数时按整数部分匹配（如 11180 能找到 $11180.40）" style="${fld};font-family:monospace">
       </div>
       <button class="btn btn-sm btn-outline" onclick="resetInvpFilter()" style="white-space:nowrap">清除筛选</button>
       <button class="btn btn-sm btn-outline" onclick="invpOpenRecover()" style="white-space:nowrap;color:#b45309;border-color:#fcd34d" title="从回收站或每小时自动备份里找回被删除的发票">🗄 恢复已删除</button>
@@ -32841,17 +32841,21 @@ function renderInvpList() {
   if (_invpFilter.container) list = list.filter(r => (r.container_nos || []).some(cn => cn.toLowerCase().includes(_invpFilter.container)));
   // 金额搜索：匹配账单/工资/利润/实付金额/分包付款金额任意一项。带小数点按
   // ±1 分精确匹配；只输整数则按整数部分匹配（11180 能找到 $11180.40）。
+  let _amtHit = null; // 行渲染时用它标出命中的工资明细行
   if (_invpFilter.amount) {
     const raw = _invpFilter.amount.replace(/[$,\s]/g, '');
     const amt = Math.abs(parseFloat(raw));
     if (Number.isFinite(amt)) {
       const hasCents = raw.includes('.');
-      const hit = v => {
+      _amtHit = v => {
         const n = Math.abs(Number(v));
         if (!Number.isFinite(n) || n === 0) return false;
         return hasCents ? Math.abs(n - amt) <= 0.011 : Math.floor(n) === Math.floor(amt);
       };
-      list = list.filter(r => hit(r.subtotal) || hit(r.wage_cost) || hit((r.subtotal || 0) - (r.wage_cost || 0)) || hit(r.payment_amount) || hit(r.sub_payment_amount));
+      const hit = _amtHit;
+      // 除整单金额外，也匹配单条工资明细：每个工人的工资小计 (l.w) 和账单额 (l.b)。
+      list = list.filter(r => hit(r.subtotal) || hit(r.wage_cost) || hit((r.subtotal || 0) - (r.wage_cost || 0)) || hit(r.payment_amount) || hit(r.sub_payment_amount)
+        || (r.worker_lines || []).some(l => hit(l.w) || hit(l.b)));
     }
   }
 
@@ -33139,6 +33143,14 @@ function renderInvpList() {
             return hitNames.length
               ? `<div style="font-size:.72rem;color:#1d4ed8;margin-top:2px">👤 ${hitNames.map(esc).join('、')}</div>`
               : '';
+          })()}${(() => {
+            // 金额搜索命中某条工资明细时：列出是哪个工人的哪笔金额。
+            if (!_amtHit) return '';
+            const hitLines = (r.worker_lines || []).filter(l => _amtHit(l.w) || _amtHit(l.b));
+            if (!hitLines.length) return '';
+            return `<div style="font-size:.72rem;color:#b45309;margin-top:2px;line-height:1.55;white-space:nowrap">${hitLines.map(l =>
+              `💲 ${esc(l.n)} · ${(Number(l.h) || 0).toFixed(1)}h · 工资 $${(Number(l.w) || 0).toFixed(2)} → 账单 $${(Number(l.b) || 0).toFixed(2)}`
+            ).join('<br>')}</div>`;
           })()}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${invpBankLabel(r)
             ? `${esc(invpBankLabel(r))}${_rowEntity(r) ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_rowEntity(r))}</div>` : ''}`
