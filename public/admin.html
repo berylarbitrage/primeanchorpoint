@@ -33119,7 +33119,9 @@ function renderInvpList() {
                  <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
                </div>`
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
-          const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)', r.id) : dash;
+          // 未付款但留有回执文件（如转移时选了"分包侧保留回执图片"）也显示缩略图
+          const subReceiptCell = (subPaid || _invpReceiptArr(r.sub_payment_receipt_paths, r.sub_payment_receipt_path).length)
+            ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)', r.id) : dash;
           // 双核对标记：收款（实付=账单）与分包付款（金额无差额）都已核对无误 →
           // 发票号前打一个绿色对勾，一眼识别"这张已完全结清且金额全对"。
           const allSettled = isPaid && payAmt != null && !amtMismatch && subPaid && subAmt != null && !subMismatch;
@@ -34546,9 +34548,11 @@ async function moveInvpSubPayToReceived() {
   if (invId == null) return;
   const row = (_invpAllRows || []).find(r => r.id === invId) || {};
   const amt = row.sub_payment_amount != null ? ' $' + Number(row.sub_payment_amount).toFixed(2) : '';
-  if (!await showConfirm(`确定把这条分包付款${amt} 整体移到<b>收款回执</b>吗？<br><br>金额、日期、回执文件都会转过去，分包付款侧会被清空。`, { confirmLabel: '移到收款回执', cancelLabel: '取消' })) return;
+  window._invpMoveKeepRcpt = false;
+  if (!await showConfirm(`确定把这条分包付款${amt} 整体移到<b>收款回执</b>吗？<br><br>金额、日期、回执文件都会转过去，分包付款侧会被清空。<br><br><label style="display:flex;align-items:flex-start;gap:.4rem;cursor:pointer;font-size:.85rem;color:#374151"><input type="checkbox" style="margin-top:2px" onchange="window._invpMoveKeepRcpt=this.checked"><span>分包侧<b>保留回执图片</b>（回执文件两边都留，只转移金额/日期等记录）</span></label>`, { confirmLabel: '移到收款回执', cancelLabel: '取消' })) return;
   try {
-    let r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST' });
+    const moveBody = JSON.stringify({ keep_receipts: !!window._invpMoveKeepRcpt });
+    let r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST', body: moveBody });
     // 收款侧已有记录 → 给出覆盖选项，确认后带 force 重试。
     if (r && r.error && r.needs_force) {
       const ex = r.existing || {};
@@ -34561,7 +34565,7 @@ async function moveInvpSubPayToReceived() {
         `收款侧已有记录${exBits ? '（' + esc(exBits) + '）' : ''}。<br><br>确定<b>覆盖</b>吗？收款记录的金额/日期/银行/经手人将替换为这条分包付款${amt} 的内容；<b>原有收款回执文件不会删除</b>，会一并保留在回执列表里。`,
         { confirmLabel: '覆盖并转移', cancelLabel: '取消', danger: true });
       if (!ok2) return;
-      r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST', body: JSON.stringify({ force: true }) });
+      r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST', body: JSON.stringify({ force: true, keep_receipts: !!window._invpMoveKeepRcpt }) });
     }
     if (r && r.error) { showToast(r.error, 'error'); return; }
     showToast('已移到收款回执 ✓');

@@ -20896,6 +20896,8 @@ app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res
     const existingRecv = _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path);
     const hasRecv = inv.payment_status === 'paid' || existingRecv.length > 0;
     const force = !!(req.body && req.body.force);
+    // keep_receipts: 转移记录但分包侧保留回执文件（文件路径两边共存，不删除）
+    const keepReceipts = !!(req.body && req.body.keep_receipts);
     if (hasRecv && !force) {
       return res.status(400).json({
         error: '收款侧已有记录/回执，请先处理原有收款记录再转移',
@@ -20923,10 +20925,13 @@ app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res
         payment_receipt_path=?, payment_receipt_paths=?,
         payment_amount=sub_payment_amount, payment_date=sub_payment_date,
         payment_entity=?, payment_bank=?, payment_handler=sub_payment_handler,
-        sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_payment_receipt_paths=NULL, sub_paid_at=NULL,
+        sub_payment_status='unpaid', sub_payment_receipt_path=?, sub_payment_receipt_paths=?, sub_paid_at=NULL,
         sub_payment_entity=NULL, sub_payment_bank=NULL, sub_payment_handler=NULL, sub_payment_amount=NULL, sub_payment_date=NULL
       WHERE id=?`)
-      .run(mergedRcpts[0] || null, mergedRcpts.length ? JSON.stringify(mergedRcpts) : null, recvEntity, recvBank, inv.id);
+      .run(mergedRcpts[0] || null, mergedRcpts.length ? JSON.stringify(mergedRcpts) : null, recvEntity, recvBank,
+           keepReceipts ? (subRcpts[0] || null) : null,
+           keepReceipts && subRcpts.length ? JSON.stringify(subRcpts) : null,
+           inv.id);
     // Re-tag the statement transaction this record had reserved: it now backs the 收款回执.
     try {
       db.prepare(`UPDATE bank_statement_txns SET used_kind='recv' WHERE used_invoice_id=? AND (used_kind IS NULL OR used_kind='' OR used_kind='sub')`).run(inv.id);
@@ -20936,7 +20941,8 @@ app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res
         [inv.sub_payment_amount != null ? `金额: $${Number(inv.sub_payment_amount).toFixed(2)}` : null,
          inv.sub_payment_date ? `日期: ${inv.sub_payment_date}` : null,
          subRcpts.length ? `回执: ${subRcpts.length} 个文件` : null,
-         (hasRecv && force) ? `覆盖了原收款记录${inv.payment_amount != null ? ` (原金额 $${Number(inv.payment_amount).toFixed(2)})` : ''}${existingRecv.length ? `，原 ${existingRecv.length} 个回执文件已并入` : ''}` : null].filter(Boolean).join(' · '));
+         (hasRecv && force) ? `覆盖了原收款记录${inv.payment_amount != null ? ` (原金额 $${Number(inv.payment_amount).toFixed(2)})` : ''}${existingRecv.length ? `，原 ${existingRecv.length} 个回执文件已并入` : ''}` : null,
+         keepReceipts && subRcpts.length ? '分包侧保留了回执文件副本' : null].filter(Boolean).join(' · '));
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
