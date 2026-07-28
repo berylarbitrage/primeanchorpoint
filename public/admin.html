@@ -2546,13 +2546,19 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 </div>
 
 <!-- ════════════════════ PAYMENT RECEIPT MODAL ════════════════════ -->
+<style>
+/* 收款/分包回执弹窗宽版双栏：左=表单, 右=对账单凭证选择器; 窄屏回退单栏 */
+.invp-two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.4rem;align-items:start}
+@media (max-width:980px){.invp-two-col{grid-template-columns:1fr}}
+</style>
 <div class="modal-bg" id="invpReceiptModal" style="display:none" onclick="if(event.target===this)closeInvpReceiptModal()">
-  <div class="modal" style="max-width:560px;width:95vw;max-height:94vh;overflow-y:auto">
+  <div class="modal" style="max-width:1120px;width:95vw;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
       <h2 style="margin:0;font-size:1.15rem;line-height:1.35;min-width:0;flex:1 1 auto" id="invpReceiptModalTitle">标记已付款</h2>
       <button class="btn btn-outline" style="flex:0 0 auto;white-space:nowrap;padding:.4rem .85rem" onclick="closeInvpReceiptModal()">✕ 关闭</button>
     </div>
     <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">记录这笔款项的收款信息并上传凭证（如银行到账截图、转账记录等），支持 PDF / 图片格式，最大 20MB。</p>
+    <div class="invp-two-col"><div style="min-width:0">
     <div id="invpReceiptCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
       当前回执：<a id="invpReceiptCurrentLink" href="#" target="_blank" style="color:var(--green)">查看文件</a>
       <label style="display:flex;align-items:flex-start;gap:.35rem;margin-top:.45rem;cursor:pointer;font-size:.8rem;color:var(--gray-600)"><input type="checkbox" id="invpReceiptKeepOld" style="margin-top:2px"><span><b>保留原有回执图片</b>——新上传 / 新选的凭证<b>追加</b>在原图后面（默认保留；取消勾选 = 替换并删除原图）</span></label>
@@ -2607,10 +2613,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
     </div>
 
+    </div><div style="min-width:0">
     <!-- The shared bank-statement voucher picker (#invpVoucherPicker) is moved
          into this slot while the 收款 modal is open, so an income transaction's
          exported snippet lands in 收款回执 (left column) — not 分包回执. -->
     <div id="invpReceiptPickerSlot"></div>
+    </div></div>
 
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeInvpReceiptModal()">取消</button>
@@ -2621,7 +2629,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 
 <!-- ════════════════════ SUBCONTRACTOR PAYMENT MODAL (付给分包商) ════════════════════ -->
 <div class="modal-bg" id="invpSubPayModal" style="display:none" onclick="if(event.target===this)closeInvpSubPayModal()">
-  <div class="modal" style="max-width:560px;width:95vw;max-height:94vh;overflow-y:auto">
+  <div class="modal" style="max-width:1120px;width:95vw;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
       <h2 style="margin:0;font-size:1.15rem;line-height:1.35;min-width:0;flex:1 1 auto" id="invpSubPayModalTitle">记录分包付款</h2>
       <button class="btn btn-outline" style="flex:0 0 auto;white-space:nowrap;padding:.4rem .85rem" onclick="closeInvpSubPayModal()">✕ 关闭</button>
@@ -2629,6 +2637,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">记录这笔<strong>付给分包商</strong>的款项并上传凭证（如转账截图、付款记录等），支持 PDF / 图片格式，最大 20MB。</p>
     <!-- Read-only snapshot of this invoice's line items, so the amount being paid
          can be compared against the billed numbers without leaving the dialog. -->
+    <div class="invp-two-col"><div style="min-width:0">
     <div id="invpSubPayInvInfo" style="display:none;margin-bottom:1rem;padding:.6rem .75rem;background:#f8fafc;border:1px solid var(--gray-200);border-radius:10px;font-size:.82rem"></div>
     <div id="invpSubPayCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
       当前回执：<a id="invpSubPayCurrentLink" href="#" target="_blank" style="color:var(--sky)">查看文件</a>
@@ -2684,6 +2693,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
     </div>
 
+    </div><div style="min-width:0">
     <!-- Shared voucher picker: lives here by default, but is re-parented into the
          收款凭证 modal (see #invpReceiptPickerSlot) when that modal opens. Only one
          modal is visible at a time, so the single DOM instance can be shared;
@@ -2722,12 +2732,13 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <label style="font-size:.74rem;color:var(--gray-500);display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" id="invpSubPayHideUsed" onchange="_invpRenderSubPayList()">仅显示未使用</label>
         <span style="font-size:.72rem;color:var(--gray-400)"><a onclick="_invpMatchByAmount()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem" title="按上方填写的金额自动查找：先找单笔正好相等的交易；找不到就找几笔合计正好相等的组合">🎯 按金额找</a><a onclick="_invpClearSubPayFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem">清除筛选</a><span id="invpSubPayListCount"></span></span>
       </div>
-      <div id="invpSubPayList" style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow-wrap:anywhere;word-break:break-word">
+      <div id="invpSubPayList" style="max-height:min(52vh,560px);overflow-y:auto;overflow-x:hidden;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow-wrap:anywhere;word-break:break-word">
         <div style="padding:1rem;text-align:center;color:var(--gray-400);font-size:.82rem">加载中…</div>
       </div>
       <div id="invpSubPaySelected" style="font-size:.78rem;color:var(--sky);font-weight:600;margin-top:.4rem;min-height:1.1em"></div>
       <div style="font-size:.72rem;color:var(--gray-400);margin-top:.2rem">交易<b>可多选</b>（再点一次取消），合计自动累加并与发票金额比对；每条选中的交易都会截取该行作为凭证。选「整份 PDF」用整份对账单。<span style="color:var(--gray-500)">灰色 = 已被用过</span>。可在「📄 对账备注」页上传/标注对账单。</div>
     </div>
+    </div></div>
     </div></div>
 
     <div style="display:flex;gap:.5rem;align-items:center">
