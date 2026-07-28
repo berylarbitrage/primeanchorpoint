@@ -34548,7 +34548,21 @@ async function moveInvpSubPayToReceived() {
   const amt = row.sub_payment_amount != null ? ' $' + Number(row.sub_payment_amount).toFixed(2) : '';
   if (!await showConfirm(`确定把这条分包付款${amt} 整体移到<b>收款回执</b>吗？<br><br>金额、日期、回执文件都会转过去，分包付款侧会被清空。`, { confirmLabel: '移到收款回执', cancelLabel: '取消' })) return;
   try {
-    const r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST' });
+    let r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST' });
+    // 收款侧已有记录 → 给出覆盖选项，确认后带 force 重试。
+    if (r && r.error && r.needs_force) {
+      const ex = r.existing || {};
+      const exBits = [
+        ex.amount != null ? '金额 $' + Number(ex.amount).toFixed(2) : null,
+        ex.date ? '日期 ' + ex.date : null,
+        ex.files ? ex.files + ' 个回执文件' : null,
+      ].filter(Boolean).join(' · ');
+      const ok2 = await showConfirm(
+        `收款侧已有记录${exBits ? '（' + esc(exBits) + '）' : ''}。<br><br>确定<b>覆盖</b>吗？收款记录的金额/日期/银行/经手人将替换为这条分包付款${amt} 的内容；<b>原有收款回执文件不会删除</b>，会一并保留在回执列表里。`,
+        { confirmLabel: '覆盖并转移', cancelLabel: '取消', danger: true });
+      if (!ok2) return;
+      r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST', body: JSON.stringify({ force: true }) });
+    }
     if (r && r.error) { showToast(r.error, 'error'); return; }
     showToast('已移到收款回执 ✓');
     window._invpBankStmtBoxes = null; // the txn's used_kind changed — refresh pickers

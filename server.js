@@ -20890,12 +20890,21 @@ app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res
     const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(parseInt(req.params.id));
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
     if (inv.sub_payment_status !== 'paid') return res.status(400).json({ error: '该发票没有分包付款记录' });
-    // Refuse to clobber an existing 收款 record — that needs a human decision.
+    // An existing 收款 record needs a human decision: without force we report it
+    // (needs_force lets the UI offer 覆盖); with force we overwrite the record's
+    // fields and keep the old receipt files appended so nothing is lost.
     const existingRecv = _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path);
-    if (inv.payment_status === 'paid' || existingRecv.length) {
-      return res.status(400).json({ error: '收款侧已有记录/回执，请先处理原有收款记录再转移' });
+    const hasRecv = inv.payment_status === 'paid' || existingRecv.length > 0;
+    const force = !!(req.body && req.body.force);
+    if (hasRecv && !force) {
+      return res.status(400).json({
+        error: '收款侧已有记录/回执，请先处理原有收款记录再转移',
+        needs_force: true,
+        existing: { amount: inv.payment_amount, date: inv.payment_date || '', files: existingRecv.length },
+      });
     }
     const subRcpts = _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path);
+    const mergedRcpts = [...subRcpts, ...existingRecv.filter(p => !subRcpts.includes(p))];
     // 收款银行/收款公司: keep what the (misplaced) record carried, else fall back to
     // the invoice profile's bank info — the same defaults the 收款凭证 modal offers.
     let profBank = '', profEntity = '';
@@ -20917,7 +20926,7 @@ app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res
         sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_payment_receipt_paths=NULL, sub_paid_at=NULL,
         sub_payment_entity=NULL, sub_payment_bank=NULL, sub_payment_handler=NULL, sub_payment_amount=NULL, sub_payment_date=NULL
       WHERE id=?`)
-      .run(subRcpts[0] || null, subRcpts.length ? JSON.stringify(subRcpts) : null, recvEntity, recvBank, inv.id);
+      .run(mergedRcpts[0] || null, mergedRcpts.length ? JSON.stringify(mergedRcpts) : null, recvEntity, recvBank, inv.id);
     // Re-tag the statement transaction this record had reserved: it now backs the 收款回执.
     try {
       db.prepare(`UPDATE bank_statement_txns SET used_kind='recv' WHERE used_invoice_id=? AND (used_kind IS NULL OR used_kind='' OR used_kind='sub')`).run(inv.id);
@@ -20926,7 +20935,8 @@ app.post('/api/admin/invoices/:id/move-sub-to-received', requireAdmin, (req, res
       .run(inv.id, '分包付款转为收款回执',
         [inv.sub_payment_amount != null ? `金额: $${Number(inv.sub_payment_amount).toFixed(2)}` : null,
          inv.sub_payment_date ? `日期: ${inv.sub_payment_date}` : null,
-         subRcpts.length ? `回执: ${subRcpts.length} 个文件` : null].filter(Boolean).join(' · '));
+         subRcpts.length ? `回执: ${subRcpts.length} 个文件` : null,
+         (hasRecv && force) ? `覆盖了原收款记录${inv.payment_amount != null ? ` (原金额 $${Number(inv.payment_amount).toFixed(2)})` : ''}${existingRecv.length ? `，原 ${existingRecv.length} 个回执文件已并入` : ''}` : null].filter(Boolean).join(' · '));
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
