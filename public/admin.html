@@ -2555,7 +2555,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">记录这笔款项的收款信息并上传凭证（如银行到账截图、转账记录等），支持 PDF / 图片格式，最大 20MB。</p>
     <div id="invpReceiptCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
       当前回执：<a id="invpReceiptCurrentLink" href="#" target="_blank" style="color:var(--green)">查看文件</a>
-      <label style="display:flex;align-items:flex-start;gap:.35rem;margin-top:.45rem;cursor:pointer;font-size:.8rem;color:var(--gray-600)"><input type="checkbox" id="invpReceiptKeepOld" style="margin-top:2px"><span><b>保留原有回执图片</b>——新上传 / 新选的凭证将<b>追加</b>在后面，不替换原图</span></label>
+      <label style="display:flex;align-items:flex-start;gap:.35rem;margin-top:.45rem;cursor:pointer;font-size:.8rem;color:var(--gray-600)"><input type="checkbox" id="invpReceiptKeepOld" style="margin-top:2px"><span><b>保留原有回执图片</b>——新上传 / 新选的凭证<b>追加</b>在原图后面（默认保留；取消勾选 = 替换并删除原图）</span></label>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
@@ -2632,7 +2632,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div id="invpSubPayInvInfo" style="display:none;margin-bottom:1rem;padding:.6rem .75rem;background:#f8fafc;border:1px solid var(--gray-200);border-radius:10px;font-size:.82rem"></div>
     <div id="invpSubPayCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
       当前回执：<a id="invpSubPayCurrentLink" href="#" target="_blank" style="color:var(--sky)">查看文件</a>
-      <label style="display:flex;align-items:flex-start;gap:.35rem;margin-top:.45rem;cursor:pointer;font-size:.8rem;color:var(--gray-600)"><input type="checkbox" id="invpSubPayKeepOld" style="margin-top:2px"><span><b>保留原有回执图片</b>——新上传 / 新选的凭证将<b>追加</b>在后面，不替换原图</span></label>
+      <label style="display:flex;align-items:flex-start;gap:.35rem;margin-top:.45rem;cursor:pointer;font-size:.8rem;color:var(--gray-600)"><input type="checkbox" id="invpSubPayKeepOld" style="margin-top:2px"><span><b>保留原有回执图片</b>——新上传 / 新选的凭证<b>追加</b>在原图后面（默认保留；取消勾选 = 替换并删除原图）</span></label>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
@@ -33579,7 +33579,7 @@ function openInvpReceiptModal(invoiceId, isUpdate) {
     currentWrap.style.display = 'none';
   }
   const keepOldCb = document.getElementById('invpReceiptKeepOld');
-  if (keepOldCb) keepOldCb.checked = false;
+  if (keepOldCb) keepOldCb.checked = !!(isUpdate && curRcpts.length); // 更新时默认保留原图
   // Bank-statement voucher picker (shared with the 分包付款 modal): an income
   // transaction picked here becomes the 收款回执 — the left receipt column.
   _invpMountVoucherPicker('recv');
@@ -34007,7 +34007,7 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
     currentWrap.style.display = 'none';
   }
   const subKeepOldCb = document.getElementById('invpSubPayKeepOld');
-  if (subKeepOldCb) subKeepOldCb.checked = false;
+  if (subKeepOldCb) subKeepOldCb.checked = !!(isUpdate && curSubRcpts.length); // 更新时默认保留原图
   // Voucher picker: reclaim the shared picker for the 分包 side, reset filters +
   // selection, then load statements/annotations and (on 更新) preselect whichever
   // transaction this invoice already reserved.
