@@ -2380,7 +2380,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <div class="modal-bg" id="applyInboxModal"><div class="modal" style="max-width:760px;max-height:90vh;display:flex;flex-direction:column">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.2rem">
     <h2 style="margin:0">📨 招工申请收件箱 <span id="applyInboxPartner" style="font-size:.85rem;color:var(--gray-500);font-weight:400"></span></h2>
-    <button class="btn btn-sm btn-outline" onclick="closeApplicantInbox()">× 关闭</button>
+    <div style="display:flex;gap:.4rem">
+      <button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#93c5fd" onclick="window.open('/phone-check.html','_blank')" title="输入电话号码，查这个人是否登记过 / 提交过申请表">📱 电话查重</button>
+      <button class="btn btn-sm btn-outline" onclick="closeApplicantInbox()">× 关闭</button>
+    </div>
   </div>
   <div style="display:flex;gap:.4rem;border-bottom:1px solid var(--gray-200);margin-bottom:.5rem">
     <button id="applyInboxTabActive" class="btn btn-sm" style="background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700" onclick="switchApplicantInboxTab('active')">📥 待处理 <span id="applyInboxCountActive" style="font-weight:600;color:var(--gray-500)"></span></button>
@@ -32475,7 +32478,7 @@ async function attemptCloseInvpBuilder(fromBackdrop) {
 // renderInvpList() re-applies the filters, recomputes the summary, and rebuilds
 // only the table — so typing in the search box never rebuilds the controls.
 let _invpAllRows = [];
-const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', sort: 'date_desc' };
+const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', amount: '', sort: 'date_desc' };
 
 // Container numbers on a row that match the active 柜号 search, rendered as small
 // highlighted chips under the invoice number so it's obvious which container put
@@ -32758,6 +32761,10 @@ async function loadInvpList() {
         <label style="${lbl}">📦 搜索 Container 号</label>
         <input type="text" id="invpFltContainer" oninput="renderInvpList()" placeholder="输入柜号，如 TCNU2960705…" style="${fld};font-family:monospace;text-transform:uppercase">
       </div>
+      <div style="display:flex;flex-direction:column;gap:.2rem;flex:1 1 130px">
+        <label style="${lbl}">💲 搜索金额</label>
+        <input type="text" id="invpFltAmount" oninput="renderInvpList()" placeholder="如 11180.40" title="匹配账单 / 工资 / 利润 / 实付金额 / 分包付款金额，也匹配单个工人的工资明细金额。不带小数时按整数部分匹配（如 11180 能找到 $11180.40）" style="${fld};font-family:monospace">
+      </div>
       <button class="btn btn-sm btn-outline" onclick="resetInvpFilter()" style="white-space:nowrap">清除筛选</button>
       <button class="btn btn-sm btn-outline" onclick="invpOpenRecover()" style="white-space:nowrap;color:#b45309;border-color:#fcd34d" title="从回收站或每小时自动备份里找回被删除的发票">🗄 恢复已删除</button>
     </div>
@@ -32773,14 +32780,15 @@ async function loadInvpList() {
   set('invpFltTo', _invpFilter.to);
   set('invpFltQ', _invpFilter.q);
   set('invpFltContainer', _invpFilter.container);
+  set('invpFltAmount', _invpFilter.amount);
   renderInvpList();
 }
 
 function resetInvpFilter() {
-  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', sort: 'date_desc' });
+  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', amount: '', sort: 'date_desc' });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltType', ''); set('invpFltState', ''); set('invpFltFrom', ''); set('invpFltTo', '');
-  set('invpFltQ', ''); set('invpFltContainer', '');
+  set('invpFltQ', ''); set('invpFltContainer', ''); set('invpFltAmount', '');
   renderInvpList();
 }
 
@@ -32797,6 +32805,7 @@ function renderInvpList() {
   _invpFilter.to = val('invpFltTo');
   _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
   _invpFilter.container = (val('invpFltContainer') || '').trim().toLowerCase();
+  _invpFilter.amount = (val('invpFltAmount') || '').trim();
 
   // 账号后四位 → 银行名（跨全部发票汇总）。有些发票只记了账号后四位没记银行名，
   // 用同一后四位在别处出现过的唯一银行名补上，让「银行/收款账户」显示成
@@ -32830,6 +32839,25 @@ function renderInvpList() {
   // Container search: keep invoices billing a 柜号 that contains the query (partial
   // match, case-insensitive). container_nos comes from the list endpoint.
   if (_invpFilter.container) list = list.filter(r => (r.container_nos || []).some(cn => cn.toLowerCase().includes(_invpFilter.container)));
+  // 金额搜索：匹配账单/工资/利润/实付金额/分包付款金额任意一项。带小数点按
+  // ±1 分精确匹配；只输整数则按整数部分匹配（11180 能找到 $11180.40）。
+  let _amtHit = null; // 行渲染时用它标出命中的工资明细行
+  if (_invpFilter.amount) {
+    const raw = _invpFilter.amount.replace(/[$,\s]/g, '');
+    const amt = Math.abs(parseFloat(raw));
+    if (Number.isFinite(amt)) {
+      const hasCents = raw.includes('.');
+      _amtHit = v => {
+        const n = Math.abs(Number(v));
+        if (!Number.isFinite(n) || n === 0) return false;
+        return hasCents ? Math.abs(n - amt) <= 0.011 : Math.floor(n) === Math.floor(amt);
+      };
+      const hit = _amtHit;
+      // 除整单金额外，也匹配单条工资明细：每个工人的工资小计 (l.w) 和账单额 (l.b)。
+      list = list.filter(r => hit(r.subtotal) || hit(r.wage_cost) || hit((r.subtotal || 0) - (r.wage_cost || 0)) || hit(r.payment_amount) || hit(r.sub_payment_amount)
+        || (r.worker_lines || []).some(l => hit(l.w) || hit(l.b)));
+    }
+  }
 
   list.sort(_invpComparator(_invpFilter.sort || 'date_desc'));
 
@@ -32838,7 +32866,7 @@ function renderInvpList() {
   const totBill = list.reduce((s, r) => s + (r.subtotal || 0), 0);
   const totWage = list.reduce((s, r) => s + (r.wage_cost || 0), 0);
   const totProfit = totBill - totWage;
-  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q || _invpFilter.container);
+  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q || _invpFilter.container || _invpFilter.amount);
   const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const card = (label, value, color) => `
     <div style="flex:1 1 140px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
@@ -33115,6 +33143,14 @@ function renderInvpList() {
             return hitNames.length
               ? `<div style="font-size:.72rem;color:#1d4ed8;margin-top:2px">👤 ${hitNames.map(esc).join('、')}</div>`
               : '';
+          })()}${(() => {
+            // 金额搜索命中某条工资明细时：列出是哪个工人的哪笔金额。
+            if (!_amtHit) return '';
+            const hitLines = (r.worker_lines || []).filter(l => _amtHit(l.w) || _amtHit(l.b));
+            if (!hitLines.length) return '';
+            return `<div style="font-size:.72rem;color:#b45309;margin-top:2px;line-height:1.55;white-space:nowrap">${hitLines.map(l =>
+              `💲 ${esc(l.n)} · ${(Number(l.h) || 0).toFixed(1)}h · 工资 $${(Number(l.w) || 0).toFixed(2)} → 账单 $${(Number(l.b) || 0).toFixed(2)}`
+            ).join('<br>')}</div>`;
           })()}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${invpBankLabel(r)
             ? `${esc(invpBankLabel(r))}${_rowEntity(r) ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_rowEntity(r))}</div>` : ''}`
@@ -44141,7 +44177,7 @@ function _bsWantsInvoice(box) {
   // 支付卸柜账单、木板钱同样要填 invoice 号码和覆盖的账期范围。
   return k === 'employee' || k === 'unload' || k === 'pallet' || (k === 'company' && box.direction === 'in');
 }
-const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang'];
+const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang', 'Yizhao Cai'];
 async function bsEnsureCompanies() {
   if (_bsCompanies.length) return;
   let names = [];

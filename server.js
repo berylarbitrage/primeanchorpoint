@@ -16715,6 +16715,27 @@ app.delete('/api/admin/sub-statements/:id', requireAdmin, requireRole('admin'), 
   res.json({ ok: true });
 });
 
+// ─── 电话查重（管理端）：输入手机号，查这个人是否在系统里登记 / 提交过申请 ───
+// 覆盖：招工申请 applicant_submissions、员工档案 employees、工头 foremen。
+// 供 /phone-check.html 使用（登录管理后台后的 pa_token cookie 即可访问）。
+app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
+  try {
+    const norm = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    const digits = norm(req.query.phone);
+    if (digits.length < 7) return res.status(400).json({ error: '请输入至少 7 位的电话号码' });
+    const match = v => norm(v) === digits;
+    const applications = db.prepare(`SELECT s.id, s.partner_name, s.name, s.phone, s.email, s.position, s.status,
+        s.address1, s.address2, s.city, s.state, s.zip, s.apply_state, s.created_at,
+        (SELECT GROUP_CONCAT(doc_type) FROM applicant_docs d WHERE d.submission_id = s.id) AS doc_types
+      FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => match(x.phone)).slice(0, 50);
+    const employees = db.prepare(`SELECT id, employee_id, first_name, last_name, phone, email, position, department, status, hire_date
+      FROM employees`).all().filter(x => match(x.phone)).slice(0, 50);
+    const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, active, created_at FROM foremen`).all()
+      .filter(x => match(x.phone)).slice(0, 50);
+    res.json({ ok: true, phone: digits, found: !!(applications.length || employees.length || foremen.length), applications, employees, foremen });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // EIN verify / unverify
 app.put('/api/admin/labor-companies/:id/verify-ein', requireAdmin, (req, res) => {
   const id = parseInt(req.params.id);
