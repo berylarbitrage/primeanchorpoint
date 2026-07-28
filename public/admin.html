@@ -2718,7 +2718,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.35rem">
         <label style="font-size:.74rem;color:var(--gray-500);display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" id="invpSubPayHideUsed" onchange="_invpRenderSubPayList()">仅显示未使用</label>
-        <span style="font-size:.72rem;color:var(--gray-400)"><a onclick="_invpClearSubPayFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem">清除筛选</a><span id="invpSubPayListCount"></span></span>
+        <span style="font-size:.72rem;color:var(--gray-400)"><a onclick="_invpMatchByAmount()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem" title="按上方填写的金额自动查找：先找单笔正好相等的交易；找不到就找几笔合计正好相等的组合">🎯 按金额找</a><a onclick="_invpClearSubPayFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem">清除筛选</a><span id="invpSubPayListCount"></span></span>
       </div>
       <div id="invpSubPayList" style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow-wrap:anywhere;word-break:break-word">
         <div style="padding:1rem;text-align:center;color:var(--gray-400);font-size:.82rem">加载中…</div>
@@ -33521,6 +33521,7 @@ function _invpUsedKind(b) { return b && b.used_kind === 'recv' ? 'recv' : 'sub';
 // Move the shared picker into the modal that's opening and mark the context.
 function _invpMountVoucherPicker(ctx) {
   _invpVoucherCtx = ctx;
+  window._invpAmtMatchSet = null; // 清掉上次「按金额找」的高亮
   const picker = document.getElementById('invpVoucherPicker');
   const slot = document.getElementById(ctx === 'recv' ? 'invpReceiptPickerSlot' : 'invpSubPayPickerSlot');
   if (picker && slot && picker.parentElement !== slot) slot.appendChild(picker);
@@ -34310,7 +34311,8 @@ function _invpRenderSubPayList() {
         const badge = (invNumById[usedBy] ? ('已用作' + kindTag + ' · ' + invNumById[usedBy]) : ('已用作' + kindTag));
         html += `<div title="已被其他发票用作凭证" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);font-size:.82rem;color:var(--gray-400);background:#fafafa;cursor:not-allowed;display:flex;justify-content:space-between;align-items:center;gap:.5rem"><span style="text-decoration:line-through;min-width:0">${esc(bits)}</span><span style="flex:0 0 auto;font-size:.68rem;color:#b45309;background:#fef3c7;border-radius:4px;padding:.05rem .4rem">${esc(badge)}</span></div>`;
       } else {
-        html += `<div onclick="_invpPickSubPay('${val}', ${_invpJsStr('• ' + bits)})" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;${isSel ? 'background:#eff6ff' : ''}"><span style="min-width:0">• ${esc(bits)}</span>${isSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
+        const isHi = window._invpAmtMatchSet && window._invpAmtMatchSet.has(val);
+        html += `<div data-val="${val}" onclick="_invpPickSubPay('${val}', ${_invpJsStr('• ' + bits)})" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;${isHi ? 'background:#fef9c3;' : ''}${isSel ? 'background:#eff6ff' : ''}"><span style="min-width:0">${isHi ? '🎯 ' : '• '}${esc(bits)}</span>${isSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
       }
     });
   });
@@ -34321,6 +34323,121 @@ function _invpRenderSubPayList() {
 }
 // Safely embed a string as a JS single-quoted literal inside an inline onclick.
 function _invpJsStr(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\r?\n/g, ' ') + "'"; }
+
+// ── 🎯 按金额找：用上方填写的金额自动匹配交易 ──
+// 候选 = 当前筛选下所有可选交易（被其他发票占用的灰色行除外）。
+function _invpAmtMatchCandidates() {
+  const stmts = Array.isArray(window._invpBankStmts) ? window._invpBankStmts : [];
+  const boxesMap = window._invpBankStmtBoxes || {};
+  const curInvId = _invpVoucherInvoiceId();
+  const fStmt = (document.getElementById('invpSubPayFilterStmt') || {}).value || '';
+  const fDir = (document.getElementById('invpSubPayFilterDir') || {}).value || '';
+  const fPayee = (document.getElementById('invpSubPayFilterPayee') || {}).value || '';
+  const fPurpose = (document.getElementById('invpSubPayFilterPurpose') || {}).value || '';
+  const _num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : n; };
+  const fAmtMin = _num(document.getElementById('invpSubPayFilterAmtMin')?.value);
+  const fAmtMax = _num(document.getElementById('invpSubPayFilterAmtMax')?.value);
+  const fDateFrom = (document.getElementById('invpSubPayFilterDateFrom') || {}).value || '';
+  const fDateTo = (document.getElementById('invpSubPayFilterDateTo') || {}).value || '';
+  const dateKey = s => {
+    const t = String(s == null ? '' : s).trim();
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+    if (m) { let [, mo, d, y] = m; if (y.length === 2) y = '20' + y; return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`; }
+    return '';
+  };
+  const out = [];
+  stmts.forEach(s => {
+    if (fStmt && String(s.id) !== String(fStmt)) return;
+    (Array.isArray(boxesMap[s.id]) ? boxesMap[s.id] : []).forEach(b => {
+      if (fDir && (b.direction === 'in' ? 'in' : 'out') !== fDir) return;
+      if (fPayee && !_invpSubPayPayeeMatch(b, fPayee)) return;
+      if (fPurpose && (b.purpose || '').trim() !== fPurpose) return;
+      const amt = Math.abs(Number(b.amount) || 0);
+      if (!amt) return;
+      if (fAmtMin != null && amt < fAmtMin) return;
+      if (fAmtMax != null && amt > fAmtMax) return;
+      if (fDateFrom || fDateTo) {
+        const dk = dateKey(b.txn_date);
+        if (!dk) return;
+        if (fDateFrom && dk < fDateFrom) return;
+        if (fDateTo && dk > fDateTo) return;
+      }
+      const usedBy = b.used_invoice_id;
+      const usedByThis = usedBy != null && String(usedBy) === String(curInvId) && _invpUsedKind(b) === _invpVoucherCtx;
+      if (usedBy != null && !usedByThis) return;
+      const bits = [b.direction === 'in' ? '收入' : '支出', '$' + amt.toFixed(2), _bsPayeeDisplay(b.payee), b.purpose, b.txn_date].filter(Boolean).join(' · ');
+      out.push({ val: `box:${s.id}:${b.id}`, cents: Math.round(amt * 100), label: '• ' + bits });
+    });
+  });
+  return out;
+}
+// 子集搜索：在候选里找若干笔（≤maxN）合计正好等于 target（分）的组合。
+// 金额降序 + 剩余和剪枝 + 迭代次数上限，避免卡界面。
+function _invpAmtSubsetSearch(cands, target, maxN) {
+  const arr = cands.filter(c => c.cents > 0 && c.cents <= target).sort((a, b) => b.cents - a.cents).slice(0, 400);
+  const suffix = []; let s = 0;
+  for (let i = arr.length - 1; i >= 0; i--) { s += arr[i].cents; suffix[i] = s; }
+  let budget = 300000, best = null;
+  (function dfs(i, remain, picked) {
+    if (best || budget-- <= 0) return;
+    if (remain === 0) { best = picked.slice(); return; }
+    if (i >= arr.length || picked.length >= maxN) return;
+    if ((suffix[i] || 0) < remain) return;
+    if (arr[i].cents <= remain) { picked.push(arr[i]); dfs(i + 1, remain - arr[i].cents, picked); picked.pop(); }
+    if (!best) dfs(i + 1, remain, picked);
+  })(0, target, []);
+  return best;
+}
+function _invpScrollToAmtMatch() {
+  const set = window._invpAmtMatchSet;
+  const listEl = document.getElementById('invpSubPayList');
+  if (!set || !set.size || !listEl) return;
+  for (const r of listEl.querySelectorAll('[data-val]')) {
+    if (set.has(r.dataset.val)) { try { r.scrollIntoView({ block: 'nearest' }); } catch (_) {} break; }
+  }
+}
+function _invpMatchByAmount() {
+  const amtEl = document.getElementById(_invpVoucherCtx === 'recv' ? 'invpReceiptAmount' : 'invpSubPayAmount');
+  const target = Math.round((parseFloat(amtEl && amtEl.value) || 0) * 100);
+  if (!target || target <= 0) { showToast('请先在上方填写金额，再点「按金额找」', 'error'); return; }
+  const dollars = '$' + (target / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cands = _invpAmtMatchCandidates();
+  window._invpAmtMatchSet = null;
+  // ① 单笔正好相等
+  const exact = cands.filter(c => c.cents === target);
+  if (exact.length) {
+    window._invpAmtMatchSet = new Set(exact.map(c => c.val));
+    _invpPickSubPay(exact[0].val, exact[0].label); // 自动选中第一笔（会触发重渲，带高亮）
+    showToast(exact.length === 1
+      ? `🎯 找到 1 笔金额正好 ${dollars} 的交易，已自动选中`
+      : `🎯 找到 ${exact.length} 笔金额正好 ${dollars} 的交易（已标黄），已先选中第一笔，可点击换选`, 'success', 4500);
+    _invpScrollToAmtMatch();
+    return;
+  }
+  // ② 组合合计正好相等
+  const combo = _invpAmtSubsetSearch(cands, target, 6);
+  if (combo) {
+    window._invpAmtMatchSet = new Set(combo.map(c => c.val));
+    if (_invpVoucherCtx === 'sub') {
+      const hid = document.getElementById('invpSubPayStmt');
+      if (hid) hid.value = combo.map(c => c.val).join('|');
+      const fi = document.getElementById('invpSubPayFile'); if (fi) fi.value = '';
+      const fn = document.getElementById('invpSubPayFileName'); if (fn) fn.textContent = '未选择文件';
+      _invpUpdateSubPaySelSummary('');
+      _invpRenderSubPayList();
+      try { _invpSubPayAmtCheck(); } catch (_) {}
+      showToast(`🎯 已自动选中 ${combo.length} 笔交易，合计正好 ${dollars}`, 'success', 4500);
+    } else {
+      _invpRenderSubPayList();
+      showToast(`没有单笔正好 ${dollars} 的交易，但找到 ${combo.length} 笔合计正好相等的组合（已标黄 🎯）。收款回执一次只能选一条交易或整份 PDF。`, 'info', 6500);
+    }
+    _invpScrollToAmtMatch();
+    return;
+  }
+  _invpRenderSubPayList();
+  showToast(`按当前筛选范围，没有找到金额等于 ${dollars} 的单笔交易或组合`, 'error', 4500);
+}
 // Person name inside a payee filter option ("👷 SLM GROUP · 张三" → "张三").
 function _invpPayeeOptName(s) {
   const t = String(s || '').replace(/^👷\s*/, '').trim();
