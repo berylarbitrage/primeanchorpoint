@@ -44091,8 +44091,8 @@ const BS_PAYEE_RETURNED = '退回款 Returned Payment'; // returned/bounced paym
 const BS_PAYEE_NA = '无关'; // not relevant to bookkeeping — no extra sub-section
 const BS_PAYEE_PALLET = '__pallet__'; // sentinel: 木板钱, then pick a customer
 const BS_PALLET_PREFIX = '木板钱:'; // stored payee for 木板钱 = prefix + customer name
-// Customer list for 木板钱 (pallet money). Excludes the "TestCustomer" test record.
-const BS_PALLET_CUSTOMERS = ['48', 'All Materials Matter', 'Cargowill', 'DeerValley', 'Efulfillus', 'Jason', 'KC pallet', 'MAYNMARCH INC', 'RYKM LLC', 'SLM GROUP', 'Speed C CHB', 'Wecharmer', '派速捷', '现金自提神秘人'];
+// 木板钱的供应商列表（与发票客户公司无关）。来自 Suppliers 页，不含 TESTSupplier 测试记录。
+const BS_PALLET_CUSTOMERS = ['631', 'All MATERIALS MATTER', 'GOFO', 'GOFO-SELF'];
 // Check deposit / withdrawal: after choosing, pick one or more counterparties.
 const BS_PAYEE_CHECK_DEP = '__checkdep__'; // sentinel: 存支票
 const BS_PAYEE_CHECK_WD = '__checkwd__';   // sentinel: 取支票
