@@ -20694,9 +20694,12 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array(
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
   };
+  // append_receipts='1' (更新时勾选"保留原有回执图片"): 旧文件不删除, 新凭证追加在后
+  const appendRcpts = String(b.append_receipts || '') === '1';
   if (req.files && req.files.length) {
-    dropOldFiles();
-    paths = req.files.map(f => `/uploads/${f.filename}`);
+    const newPaths = req.files.map(f => `/uploads/${f.filename}`);
+    if (appendRcpts) { paths = [...paths, ...newPaths]; }
+    else { dropOldFiles(); paths = newPaths; }
   } else if (b.bank_statement_id) {
     // Reuse an already-uploaded 对账单 PDF as the 收款回执 instead of a fresh upload.
     // Store a reference to the statement's own admin-guarded file route (served
@@ -20704,8 +20707,9 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array(
     // removed by the receipt cleanup above/below.
     const st = db.prepare('SELECT id FROM bank_statements WHERE id=?').get(parseInt(b.bank_statement_id));
     if (st) {
-      dropOldFiles();
-      paths = [`/api/admin/bank-statements/${st.id}/file`];
+      const ref = `/api/admin/bank-statements/${st.id}/file`;
+      if (appendRcpts) { if (!paths.includes(ref)) paths = [...paths, ref]; }
+      else { dropOldFiles(); paths = [ref]; }
     }
   }
   const receiptPath = paths[0] || null;                  // first file → legacy single column
@@ -20752,7 +20756,7 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array(
   if (bank) parts.push(`银行: ${bank}`);
   if (handler) parts.push(`经办人: ${handler}`);
   if (b.bank_statement_id && !(req.files && req.files.length)) parts.push('回执: 复用已上传对账单 PDF');
-  else if (paths.length) parts.push(`回执${req.files && req.files.length ? '(已更新)' : ''}: ${paths.length} 个文件`);
+  else if (paths.length) parts.push(`回执${req.files && req.files.length ? (appendRcpts ? '(已追加, 保留原图)' : '(已更新)') : ''}: ${paths.length} 个文件`);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, wasPaid ? '更新收款信息' : '标记已付款', parts.join(' · '));
   res.json({ success: true, receipt_path: receiptPath, receipt_paths: paths });
@@ -20793,9 +20797,12 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
   };
+  // append_receipts='1' (更新时勾选"保留原有回执图片"): 旧文件不删除, 新凭证追加在后
+  const appendRcpts = String(b.append_receipts || '') === '1';
   if (req.files && req.files.length) {
-    dropOldFiles();
-    paths = req.files.map(f => `/uploads/${f.filename}`);
+    const newPaths = req.files.map(f => `/uploads/${f.filename}`);
+    if (appendRcpts) { paths = [...paths, ...newPaths]; }
+    else { dropOldFiles(); paths = newPaths; }
   } else if (b.bank_statement_id) {
     // Reuse an already-uploaded 对账单 PDF as the proof instead of a fresh upload.
     // Store a reference to the statement's own admin-guarded file route (served
@@ -20803,8 +20810,9 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
     // removed by the proof cleanup above/below.
     const st = db.prepare('SELECT id FROM bank_statements WHERE id=?').get(parseInt(b.bank_statement_id));
     if (st) {
-      dropOldFiles();
-      paths = [`/api/admin/bank-statements/${st.id}/file`];
+      const ref = `/api/admin/bank-statements/${st.id}/file`;
+      if (appendRcpts) { if (!paths.includes(ref)) paths = [...paths, ref]; }
+      else { dropOldFiles(); paths = [ref]; }
     }
   }
   const receiptPath = paths[0] || null;
@@ -20840,7 +20848,7 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   if (method) parts.push(`付款方式: ${method}`);
   if (handler) parts.push(`经办人: ${handler}`);
   if (b.bank_statement_id && !(req.files && req.files.length)) parts.push('回执: 复用已上传对账单 PDF');
-  else if (paths.length) parts.push(`回执${req.files && req.files.length ? '(已更新)' : ''}: ${paths.length} 个文件`);
+  else if (paths.length) parts.push(`回执${req.files && req.files.length ? (appendRcpts ? '(已追加, 保留原图)' : '(已更新)') : ''}: ${paths.length} 个文件`);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(req.params.id, wasSubPaid ? '更新分包付款' : '标记分包已付款', parts.join(' · '));
   res.json({ success: true, receipt_path: receiptPath, receipt_paths: paths });
