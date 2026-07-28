@@ -35848,21 +35848,39 @@ async function saveInvpInvoice(status) {
     });
     const allNos = Object.keys(counts).filter(n => !ignoredMap[n]);
     const localDups = allNos.filter(n => counts[n] > 1);
-    let histDups = [];
+    // 与单行失焦检查同一口径：命中已保存发票才算真重复；仅命中扫码收件箱
+    // 待处理记录不算重复开票（同一柜子扫码+手动两条路录入），不标红不拦截。
+    let invoiceDups = [], scanOnly = [];
+    const srcMap = {};
     try {
       const results = await Promise.all(allNos.map(async no => ({ no, r: await _invpQueryDupHistory(no) })));
-      histDups = results.filter(x => x.r.historical).map(x => x.no);
+      for (const { no, r } of results) {
+        if (!r.historical) continue;
+        srcMap[no] = r.sourceSummary || '';
+        if (r.hasInvoice) invoiceDups.push(no);
+        else scanOnly.push(no);
+      }
     } catch (_) { /* network failure → don't block saving */ }
-    const conflicts = [...new Set([...localDups, ...histDups])];
+    const conflicts = [...new Set([...localDups, ...invoiceDups])];
     if (conflicts.length) {
-      histDups.forEach(no => { window._invpDupHistorical[no] = true; });
+      invoiceDups.forEach(no => { window._invpDupHistorical[no] = true; });
       _invpRefreshDupHighlights();
-      const listHtml = conflicts.map(n => `<span style="font-family:monospace;font-weight:700;color:#b91c1c">${esc(n)}</span>`).join('、');
+      const line = n => {
+        const srcs = [];
+        if (counts[n] > 1) srcs.push(`本单中出现 ${counts[n]} 次`);
+        if (srcMap[n]) srcs.push(srcMap[n]);
+        return `<div style="margin:.2rem 0"><span style="font-family:monospace;font-weight:700;color:#b91c1c">${esc(n)}</span> <span style="color:#6b7280;font-size:.82rem">— ${srcs.join('；') || '历史记录中已存在'}</span></div>`;
+      };
+      const scanNote = scanOnly.length
+        ? `<div style="margin-top:.6rem;padding:.45rem .6rem;background:#eff6ff;border-radius:6px;font-size:.8rem;color:#0369a1">ℹ️ 另有 ${scanOnly.length} 个柜号在扫码收件箱有待处理记录（${scanOnly.map(esc).join('、')}）——不是重复开票，不影响保存。</div>`
+        : '';
       const ok = await showConfirm(
-        `⚠️ 保存前核对：发现 <strong>${conflicts.length}</strong> 个 container 号在历史记录中已存在或在本单中重复：<br><br>${listHtml}<br><br>重复的输入框已标红，可逐个点开核对。确定仍要保存吗？`,
+        `⚠️ 保存前核对：发现 <strong>${conflicts.length}</strong> 个 container 号重复：<br><br>${conflicts.map(line).join('')}${scanNote}<br>重复的输入框已标红，可逐个点开核对。确定仍要保存吗？`,
         { confirmLabel: '仍要保存', cancelLabel: '返回核对', danger: true }
       );
       if (!ok) return;
+    } else if (scanOnly.length) {
+      showToast(`ℹ️ ${scanOnly.length} 个柜号在扫码收件箱有待处理记录（非重复开票），已照常保存`, 'info', 5000);
     }
   }
 
@@ -37369,21 +37387,33 @@ function invpBulkAddContainers() {
 async function _invpBulkHistoricalCheck(numbers) {
   const companyName = (document.getElementById('invPageBillName').value || '').trim();
   if (!companyName || !numbers || !numbers.length) return;
-  const hist = [];
+  // 与单行失焦检查同一口径：命中已保存发票才标红；仅命中扫码收件箱的单独蓝色提示
+  const invHist = [], scanOnly = [];
   for (const no of numbers) {
     if ((window._invpDupIgnored || {})[no]) continue;
     try {
       const r = await _invpQueryDupHistory(no);
-      if (r && r.historical) { window._invpDupHistorical[no] = true; hist.push(no); }
+      if (r && r.historical) {
+        if (r.hasInvoice) { window._invpDupHistorical[no] = true; invHist.push(no); }
+        else scanOnly.push(no);
+      }
     } catch (_) {}
   }
-  if (!hist.length) return;
+  if (!invHist.length && !scanOnly.length) return;
   _invpRefreshDupHighlights();
   // Append a note to the result box if it is still visible.
   const holder = document.getElementById('invpBulkHist');
   if (holder) {
-    const chip = hist.map(c => `<span style="display:inline-block;font-family:monospace;font-size:.8rem;color:#b91c1c;background:#fef2f2;border:1px solid #b91c1c22;border-radius:5px;padding:.1rem .4rem;margin:.15rem .25rem .15rem 0">${c}</span>`).join('');
-    holder.innerHTML = `<div style="margin-top:.5rem;color:#b45309"><b>历史记录中已存在（其他发票 / 扫码）· ${hist.length} 个</b><div style="margin-top:.2rem">${chip}</div></div>`;
+    let html = '';
+    if (invHist.length) {
+      const chip = invHist.map(c => `<span style="display:inline-block;font-family:monospace;font-size:.8rem;color:#b91c1c;background:#fef2f2;border:1px solid #b91c1c22;border-radius:5px;padding:.1rem .4rem;margin:.15rem .25rem .15rem 0">${c}</span>`).join('');
+      html += `<div style="margin-top:.5rem;color:#b45309"><b>已保存发票中已存在 · ${invHist.length} 个</b><div style="margin-top:.2rem">${chip}</div></div>`;
+    }
+    if (scanOnly.length) {
+      const chip = scanOnly.map(c => `<span style="display:inline-block;font-family:monospace;font-size:.8rem;color:#0369a1;background:#eff6ff;border:1px solid #0369a122;border-radius:5px;padding:.1rem .4rem;margin:.15rem .25rem .15rem 0">${c}</span>`).join('');
+      html += `<div style="margin-top:.5rem;color:#0369a1"><b>ℹ️ 扫码收件箱有待处理记录（非重复开票）· ${scanOnly.length} 个</b><div style="margin-top:.2rem">${chip}</div></div>`;
+    }
+    holder.innerHTML = html;
   }
 }
 
@@ -37458,7 +37488,20 @@ async function _invpQueryDupHistory(val) {
       detailHtml += `<div style="margin-top:${invoiceMatches.length ? '.5rem' : '0'}">📦 待处理的扫码提交记录：<strong>${submissionMatches.length}</strong> 条</div>`;
     }
   }
-  return { historical, detailHtml, hasInvoice };
+  // 每个号的紧凑来源摘要，供批量弹窗按号列出（发票号+状态 / 扫码收件箱条数）
+  let sourceSummary = '';
+  if (res && res.duplicate) {
+    const parts = (res.matches || []).filter(m => m.invoice_number).map(m => {
+      let t = `发票 ${esc(m.invoice_number)}`;
+      if (m.status === 'draft') t += '（草稿）';
+      if (m.invoice_mode === 'hourly') t += '（工时模式·遗留数据）';
+      return t;
+    });
+    const subN = (res.matches || []).filter(m => m.source === 'submission').length;
+    if (subN) parts.push(`扫码收件箱待处理 ×${subN}`);
+    sourceSummary = parts.join('；');
+  }
+  return { historical, detailHtml, hasInvoice, sourceSummary };
 }
 
 async function invpCheckDuplicateContainerNo(input) {
