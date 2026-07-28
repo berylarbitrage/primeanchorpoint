@@ -2730,7 +2730,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.35rem">
         <label style="font-size:.74rem;color:var(--gray-500);display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" id="invpSubPayHideUsed" onchange="_invpRenderSubPayList()">仅显示未使用</label>
-        <span style="font-size:.72rem;color:var(--gray-400)"><a onclick="_invpMatchByAmount()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem" title="按上方填写的金额自动查找：先找单笔正好相等的交易；找不到就找几笔合计正好相等的组合">🎯 按金额找</a><a onclick="_invpClearSubPayFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem">清除筛选</a><span id="invpSubPayListCount"></span></span>
+        <span style="font-size:.72rem;color:var(--gray-400);display:inline-flex;align-items:center;gap:.35rem"><input id="invpSubPayMatchAmt" type="number" step="0.01" inputmode="decimal" placeholder="输入金额" title="输入任意金额后回车或点「按金额找」；留空则用上方填写的付款/收款金额" style="width:92px;padding:.18rem .35rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.74rem" onkeydown="if(event.key==='Enter'){event.preventDefault();_invpMatchByAmount();}"><a onclick="_invpMatchByAmount()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem" title="先找单笔正好等于该金额的交易；找不到就找几笔合计正好相等的组合。左边输入框留空时用上方填写的付款/收款金额">🎯 按金额找</a><a onclick="_invpClearSubPayFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem">清除筛选</a><span id="invpSubPayListCount"></span></span>
       </div>
       <div id="invpSubPayList" style="max-height:min(52vh,560px);overflow-y:auto;overflow-x:hidden;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow-wrap:anywhere;word-break:break-word">
         <div style="padding:1rem;text-align:center;color:var(--gray-400);font-size:.82rem">加载中…</div>
@@ -34036,7 +34036,7 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
 // option; the hide-used checkbox unchecks).
 const _INVP_SUBPAY_FILTER_IDS = ['invpSubPayFilterStmt', 'invpSubPayFilterDir', 'invpSubPayFilterPayee',
   'invpSubPayFilterPurpose', 'invpSubPayFilterAmtMin', 'invpSubPayFilterAmtMax',
-  'invpSubPayFilterDateFrom', 'invpSubPayFilterDateTo'];
+  'invpSubPayFilterDateFrom', 'invpSubPayFilterDateTo', 'invpSubPayMatchAmt'];
 
 // Reset just the filter controls (keeps the current voucher selection). Backs 清除筛选.
 function _invpClearSubPayFilters() {
@@ -34418,9 +34418,11 @@ function _invpScrollToAmtMatch() {
   }
 }
 function _invpMatchByAmount() {
+  // 优先用「输入金额」小框里的值；留空则回落到弹窗上方的付款/收款金额。
+  const manual = parseFloat((document.getElementById('invpSubPayMatchAmt') || {}).value);
   const amtEl = document.getElementById(_invpVoucherCtx === 'recv' ? 'invpReceiptAmount' : 'invpSubPayAmount');
-  const target = Math.round((parseFloat(amtEl && amtEl.value) || 0) * 100);
-  if (!target || target <= 0) { showToast('请先在上方填写金额，再点「按金额找」', 'error'); return; }
+  const target = Math.round(((manual > 0 ? manual : parseFloat(amtEl && amtEl.value)) || 0) * 100);
+  if (!target || target <= 0) { showToast('请在「输入金额」框填一个金额（或在上方填写付款/收款金额），再点「按金额找」', 'error'); return; }
   const dollars = '$' + (target / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const cands = _invpAmtMatchCandidates();
   window._invpAmtMatchSet = null;
