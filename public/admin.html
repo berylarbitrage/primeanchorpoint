@@ -43800,6 +43800,9 @@ function bsEnsureEditor() {
       '<div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--gray-200)">' +
         '<strong id="bsEdTitle" style="font-size:.92rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">编辑对账单</strong>' +
         '<span id="bsEdStatus" style="font-size:.78rem;color:var(--gray-400);white-space:nowrap"></span>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsEdZoom(-0.25)" title="缩小（也可 Ctrl+滚轮）">−</button>' +
+        '<span id="bsEdZoomPct" style="font-size:.78rem;color:var(--gray-500);min-width:2.6rem;text-align:center;cursor:pointer" title="点击恢复 100%" onclick="bsEdZoom(0, true)">100%</span>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsEdZoom(0.25)" title="放大（也可 Ctrl+滚轮）">＋</button>' +
         '<button id="bsBoxModeBtn" class="btn btn-sm btn-outline" onclick="bsToggleBoxMode()" title="开启后在 PDF 上拖动画框，右侧填写付款公司/金额/收支">🔲 框选</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsDownloadOriginal()">⬇️ 下载 PDF</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsCloseEditor()">✕ 关闭</button>' +
@@ -43838,6 +43841,8 @@ async function bsOpenEditor(id) {
     _bsEdBytes = new Uint8Array(await res.arrayBuffer());
     setStatus('渲染页面…');
     await bsRenderPages(_bsEdBytes);
+    _bsZoomReset('bsEdPages', 'bsEdZoomPct');
+    _bsWireZoomWheel('bsEdPages', bsEdZoom);
     bsWireBoxDrawing();
     await bsEnsureCompanies();
     await bsEnsureWarehouses();
@@ -43871,6 +43876,9 @@ function bsEnsureViewer() {
       '<div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--gray-200)">' +
         '<strong id="bsViewerTitle" style="font-size:.92rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">查看对账单</strong>' +
         '<span id="bsViewerStatus" style="font-size:.78rem;color:var(--gray-400);white-space:nowrap"></span>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsViewZoom(-0.25)" title="缩小（也可 Ctrl+滚轮）">−</button>' +
+        '<span id="bsViewZoomPct" style="font-size:.78rem;color:var(--gray-500);min-width:2.6rem;text-align:center;cursor:pointer" title="点击恢复 100%" onclick="bsViewZoom(0, true)">100%</span>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsViewZoom(0.25)" title="放大（也可 Ctrl+滚轮）">＋</button>' +
         '<button class="btn btn-sm btn-green" id="bsViewerDlBtn" onclick="bsViewerDownload()">⬇️ 下载带标注 PDF</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsCloseViewer()">✕ 关闭</button>' +
       '</div>' +
@@ -43917,6 +43925,8 @@ async function bsOpenViewer(id) {
     _bsViewBytes = new Uint8Array(await res.arrayBuffer());
     setStatus('渲染页面…');
     await bsRenderPages(_bsViewBytes, pagesEl);
+    _bsZoomReset('bsViewerPages', 'bsViewZoomPct');
+    _bsWireZoomWheel('bsViewerPages', bsViewZoom);
     try { _bsViewBoxes = await api(`/admin/bank-statements/${id}/boxes`) || []; } catch (_) { _bsViewBoxes = []; }
     if (!Array.isArray(_bsViewBoxes)) _bsViewBoxes = [];
     _bsViewBoxes.sort((a, b) => (a.page - b.page) || (a.box_y - b.box_y) || (a.id - b.id));
@@ -45094,6 +45104,78 @@ function bsFocusBoxItem(id) {
   const prev = item.style.boxShadow;
   item.style.boxShadow = '0 0 0 3px rgba(37,99,235,.35)';
   setTimeout(() => { item.style.boxShadow = prev; }, 1000);
+}
+
+// ── PDF 缩放（标注编辑器与只读查看器共用） ──
+// 页面 wrapper 的 width/height、canvas 的 CSS 尺寸和所有直接子元素（标注框/便签，
+// 均为页内绝对定位的 px 坐标）按同一比例缩放，dataset.scale 同步更新（导出映射用）；
+// 位图先由 CSS 拉伸立即显示，再防抖按当前倍率重渲 canvas 保证清晰。
+const _bsZoomState = {};
+function _bsPdfZoom(contId, lblId, bytes, delta, reset) {
+  const cont = document.getElementById(contId);
+  if (!cont || !bytes || !cont.querySelector('.bs-ed-page')) return;
+  const st = _bsZoomState[contId] = _bsZoomState[contId] || { z: 1, timer: null };
+  const z = reset ? 1 : Math.max(0.5, Math.min(3, Math.round((st.z + delta) * 100) / 100));
+  if (Math.abs(z - st.z) < 0.01) return;
+  const r = z / st.z;
+  st.z = z;
+  const keepRatio = cont.scrollTop / Math.max(1, cont.scrollHeight - cont.clientHeight);
+  cont.querySelectorAll('.bs-ed-page').forEach(p => {
+    p.style.width = (parseFloat(p.style.width) * r) + 'px';
+    p.style.height = (parseFloat(p.style.height) * r) + 'px';
+    p.dataset.scale = parseFloat(p.dataset.scale) * r;
+    Array.from(p.children).forEach(el => {
+      if (el.tagName === 'CANVAS') {
+        el.style.width = (parseFloat(el.style.width) * r) + 'px';
+        el.style.height = (parseFloat(el.style.height) * r) + 'px';
+        return;
+      }
+      ['left', 'top', 'width', 'height'].forEach(k => {
+        const v = parseFloat(el.style[k]);
+        if (!isNaN(v)) el.style[k] = (v * r) + 'px';
+      });
+    });
+  });
+  cont.scrollTop = keepRatio * Math.max(0, cont.scrollHeight - cont.clientHeight);
+  const lbl = document.getElementById(lblId);
+  if (lbl) lbl.textContent = Math.round(z * 100) + '%';
+  clearTimeout(st.timer);
+  st.timer = setTimeout(() => _bsZoomRerenderCrisp(contId, bytes), 280);
+}
+async function _bsZoomRerenderCrisp(contId, bytes) {
+  try {
+    const cont = document.getElementById(contId);
+    if (!cont) return;
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (const wrap of cont.querySelectorAll('.bs-ed-page')) {
+      const cv = wrap.querySelector('canvas');
+      if (!cv) continue;
+      const page = await pdf.getPage(parseInt(wrap.dataset.page));
+      const vp1 = page.getViewport({ scale: 1 });
+      const cssW = parseFloat(wrap.style.width);
+      cv.width = Math.floor(cssW * dpr);
+      cv.height = Math.floor(parseFloat(wrap.style.height) * dpr);
+      await page.render({ canvasContext: cv.getContext('2d'), viewport: page.getViewport({ scale: (cssW / vp1.width) * dpr }) }).promise;
+    }
+  } catch (_) { /* 重渲失败保留 CSS 拉伸的位图 */ }
+}
+function bsEdZoom(delta, reset) { _bsPdfZoom('bsEdPages', 'bsEdZoomPct', _bsEdBytes, delta, reset); }
+function bsViewZoom(delta, reset) { _bsPdfZoom('bsViewerPages', 'bsViewZoomPct', _bsViewBytes, delta, reset); }
+function _bsWireZoomWheel(contId, fn) {
+  const cont = document.getElementById(contId);
+  if (!cont || cont._zoomWheelWired) return;
+  cont._zoomWheelWired = true;
+  cont.addEventListener('wheel', e => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    fn(e.deltaY < 0 ? 0.25 : -0.25);
+  }, { passive: false });
+}
+function _bsZoomReset(contId, lblId) {
+  _bsZoomState[contId] = { z: 1, timer: null };
+  const lbl = document.getElementById(lblId);
+  if (lbl) lbl.textContent = '100%';
 }
 
 async function bsRenderPages(bytes, cont) {
