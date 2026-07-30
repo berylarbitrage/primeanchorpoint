@@ -315,17 +315,35 @@ function _cleanSigPhoto(img) {
   }
   let acc = 0, median = 220;
   for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= w * h / 2) { median = v; break; } }
-  // 阈值放宽到纸色的 80%（背面透字约 90% 仍滤掉）, 抓住笔画的浅色边缘避免断笔
-  const thr = median * 0.80, soft = Math.max(12, median * 0.16);
+  // 双阈值滞后连通: 深色笔画(<72%纸色)当种子, 与之相连的浅色部分(<92%纸色)也算墨迹
+  // —— 轻笔画(如 X 的起笔)不断线; 背面透字/阴影没有深色种子, 照样被滤掉
+  const strong = median * 0.72, weak = median * 0.92;
+  const keep = new Uint8Array(w * h);
+  const stack = new Int32Array(w * h);
+  let sp = 0;
+  for (let i = 0; i < w * h; i++) if (lum[i] < strong) { keep[i] = 1; stack[sp++] = i; }
+  while (sp > 0) {
+    const i = stack[--sp], x0 = i % w, y0 = (i / w) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = x0 + dx, ny = y0 + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const j = ny * w + nx;
+      if (!keep[j] && lum[j] < weak) { keep[j] = 1; stack[sp++] = j; }
+    }
+  }
+  const inkRef = median * 0.35;
   let minX = w, minY = h, maxX = -1, maxY = -1;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
-    let a = Math.max(0, Math.min(1, (thr - lum[i]) / soft));
-    a = a <= 0.10 ? 0 : Math.pow(a, 0.5);            // 去噪点 + 加浓中间调, 笔画更实
-    const a255 = Math.round(255 * a);
+    let a255 = 0;
+    if (keep[i]) {
+      const d = Math.max(0, Math.min(1, (weak - lum[i]) / Math.max(1, weak - inkRef)));
+      a255 = Math.round(255 * (0.55 + 0.45 * d));    // 保底浓度 55%, 浅笔画也印得出来
+      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
     px[i*4] = 18; px[i*4+1] = 18; px[i*4+2] = 46;   // 统一深蓝黑墨色
     px[i*4+3] = a255;
-    if (a255 > 40) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
   }
   if (maxX < 0) return null;                         // 没检测到墨迹 → 走原图压缩
   cx.putImageData(id, 0, 0);
