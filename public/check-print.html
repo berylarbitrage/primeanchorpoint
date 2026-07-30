@@ -89,8 +89,11 @@
         <div><label>对位微调 横向 (mm, 右为正)</label><input id="sOffX" type="number" step="0.5" value="0"></div>
         <div><label>对位微调 纵向 (mm, 下为正)</label><input id="sOffY" type="number" step="0.5" value="0"></div>
       </div>
-      <label>签名图片（可选，PNG 透明底最佳；不上传则打印后手签）</label>
-      <input id="sSigFile" type="file" accept="image/*">
+      <label>签名图片（可选；拍照/截图都行，会自动抠图去底；不上传则打印后手签）</label>
+      <div id="sSigDrop" style="border:2px dashed #cbd5e1;border-radius:9px;padding:.7rem .8rem;text-align:center;cursor:pointer;background:#fafafa;transition:border-color .15s,background .15s">
+        <input id="sSigFile" type="file" accept="image/*" style="display:none">
+        <div style="font-size:.82rem;color:#6b7280">📎 把签名图片<b>拖到这里</b>，或<span style="color:#2563eb;text-decoration:underline">点击选择文件</span>，也可以直接 <b>Ctrl+V 粘贴</b>截图</div>
+      </div>
       <div id="sSigPreview" style="margin-top:.3rem"></div>
       <div style="margin-top:.8rem;display:flex;gap:.5rem">
         <button class="btn btn-green" onclick="saveSettings()">保存设置</button>
@@ -332,8 +335,8 @@ function _cleanSigPhoto(img) {
   out.getContext('2d').drawImage(cv, minX, minY, cw, ch, 0, 0, ow, oh);
   return out.toDataURL('image/png');
 }
-document.getElementById('sSigFile').addEventListener('change', e => {
-  const f = e.target.files[0]; if (!f) return;
+function _handleSigFile(f) {
+  if (!f || !/^image\//.test(f.type || '')) { toast('请选择图片文件'); return; }
   const rd = new FileReader();
   rd.onload = () => {
     const img = new Image();
@@ -354,7 +357,29 @@ document.getElementById('sSigFile').addEventListener('change', e => {
     img.src = rd.result;
   };
   rd.readAsDataURL(f);
-});
+}
+document.getElementById('sSigFile').addEventListener('change', e => { _handleSigFile(e.target.files[0]); e.target.value = ''; });
+// 拖拽 / 点击 / 粘贴 上传签名
+(() => {
+  const dz = document.getElementById('sSigDrop');
+  const hl = on => { dz.style.borderColor = on ? '#2563eb' : '#cbd5e1'; dz.style.background = on ? '#eff6ff' : '#fafafa'; };
+  dz.addEventListener('click', () => document.getElementById('sSigFile').click());
+  ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); hl(true); }));
+  ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); hl(false); }));
+  dz.addEventListener('drop', e => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    _handleSigFile(f);
+  });
+  // 页面直接 Ctrl+V 粘贴截图 (焦点在输入框里打字时不劫持)
+  document.addEventListener('paste', e => {
+    const t = document.activeElement;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t.type !== 'file') return;
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (const it of items) {
+      if (it.kind === 'file' && /^image\//.test(it.type)) { e.preventDefault(); _handleSigFile(it.getAsFile()); return; }
+    }
+  });
+})();
 ['cNo', 'cDate'].forEach(id => document.getElementById(id).addEventListener('input', render));
 
 function doPrint(calib) {
