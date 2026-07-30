@@ -216,7 +216,7 @@ function render() {
         <tr><td class="k">Memo / 备注</td><td colspan="3">${esc([memo, note].filter(Boolean).join(' · ')) || '—'}</td></tr>
       </table>
     </div>`;
-  const sig = S.sig_data ? `<img src="${S.sig_data}" style="position:absolute;right:.55in;top:2.52in;height:.5in;max-width:2.6in;object-fit:contain">` : '';
+  const sig = S.sig_data ? `<img src="${S.sig_data}" style="position:absolute;right:.55in;top:2.36in;width:2.6in;height:.48in;object-fit:contain;object-position:center bottom">` : '';
   document.getElementById('sheet').innerHTML = `
     <div style="position:absolute;inset:0;transform:translate(${offX}mm,${offY}mm)">
       <!-- ── 支票区 (0–3.5in) ── -->
@@ -315,14 +315,17 @@ function _cleanSigPhoto(img) {
   }
   let acc = 0, median = 220;
   for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= w * h / 2) { median = v; break; } }
-  const thr = median * 0.72, soft = Math.max(10, median * 0.12);
+  // 阈值放宽到纸色的 80%（背面透字约 90% 仍滤掉）, 抓住笔画的浅色边缘避免断笔
+  const thr = median * 0.80, soft = Math.max(12, median * 0.16);
   let minX = w, minY = h, maxX = -1, maxY = -1;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
-    const a = Math.round(255 * Math.max(0, Math.min(1, (thr - lum[i]) / soft)));
+    let a = Math.max(0, Math.min(1, (thr - lum[i]) / soft));
+    a = a <= 0.10 ? 0 : Math.pow(a, 0.5);            // 去噪点 + 加浓中间调, 笔画更实
+    const a255 = Math.round(255 * a);
     px[i*4] = 18; px[i*4+1] = 18; px[i*4+2] = 46;   // 统一深蓝黑墨色
-    px[i*4+3] = a;
-    if (a > 40) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    px[i*4+3] = a255;
+    if (a255 > 40) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
   }
   if (maxX < 0) return null;                         // 没检测到墨迹 → 走原图压缩
   cx.putImageData(id, 0, 0);
@@ -330,7 +333,7 @@ function _cleanSigPhoto(img) {
   minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
   maxX = Math.min(w - 1, maxX + pad); maxY = Math.min(h - 1, maxY + pad);
   const cw = maxX - minX + 1, ch = maxY - minY + 1;
-  const oh = 120, ow = Math.max(1, Math.round(cw * oh / ch));
+  const oh = 300, ow = Math.max(1, Math.round(cw * oh / ch));  // 300px 高≈打印 600dpi, 笔画清晰
   const out = document.createElement('canvas'); out.width = ow; out.height = oh;
   out.getContext('2d').drawImage(cv, minX, minY, cw, ch, 0, 0, ow, oh);
   return out.toDataURL('image/png');
