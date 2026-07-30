@@ -233,7 +233,7 @@ function render() {
         <tr><td class="k">Memo / 备注</td><td colspan="3">${esc([memo, note].filter(Boolean).join(' · ')) || '—'}</td></tr>
       </table>
     </div>`;
-  const sig = S.sig_data ? `<img src="${S.sig_data}" style="position:absolute;right:.55in;top:2.36in;width:2.6in;height:.48in;object-fit:contain;object-position:center bottom">` : '';
+  const sig = S.sig_data ? `<img src="${S.sig_data}" style="position:absolute;right:.55in;top:2.22in;width:2.6in;height:.48in;object-fit:contain;object-position:center bottom">` : '';
   document.getElementById('sheet').innerHTML = `
     <div style="position:absolute;inset:0;transform:translate(${offX}mm,${offY}mm)">
       <!-- ── 支票区 (0–3.5in) ── -->
@@ -249,8 +249,8 @@ function render() {
       <div class="abs" style="left:.55in;right:1.6in;top:1.95in;border-bottom:1px solid #333;font-size:9.5pt;padding-bottom:1px">${amt ? esc(amountWords(amt)) + ' ' : ''}<span style="float:right">DOLLARS</span></div>
       <div class="abs" style="left:.55in;top:2.62in;font-size:9pt">MEMO <span style="display:inline-block;min-width:2.4in;border-bottom:1px solid #333;padding-bottom:1px">${esc(memo)}</span></div>
       ${sig}
-      <div class="abs" style="right:.55in;top:2.86in;width:2.6in;border-bottom:1px solid #333"></div>
-      <div class="abs" style="right:.55in;top:2.9in;width:2.6in;text-align:center;font-size:7.5pt;color:#555">AUTHORIZED SIGNATURE</div>
+      <div class="abs" style="right:.55in;top:2.72in;width:2.6in;border-bottom:1px solid #333"></div>
+      <div class="abs" style="right:.55in;top:2.76in;width:2.6in;text-align:center;font-size:7.5pt;color:#555">AUTHORIZED SIGNATURE</div>
       <div class="abs" style="left:.7in;top:3.13in">${micr}</div>
       <div class="perf" style="top:3.5in"></div>
       <!-- ── 存根 1 (自留) ── -->
