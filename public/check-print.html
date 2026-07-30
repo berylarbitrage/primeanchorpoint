@@ -83,7 +83,7 @@
       <div class="row3">
         <div><label>Routing Number（9 位）</label><input id="sRouting" maxlength="9" placeholder="071000013"></div>
         <div><label>Account Number</label><input id="sAccount" placeholder="2910580165"></div>
-        <div><label>下一张支票号</label><input id="sNextNo" type="number" min="1" placeholder="1001"></div>
+        <div><label>下一张支票号（日期+6位流水）</label><input id="sNextNo" type="number" min="1" placeholder="20260730000001"></div>
       </div>
       <div class="row2">
         <div><label>对位微调 横向 (mm, 右为正)</label><input id="sOffX" type="number" step="0.5" value="0"></div>
@@ -273,11 +273,11 @@ function fillForm() {
   document.getElementById('sBankAddr').value = S.bank_addr || '';
   document.getElementById('sRouting').value = S.routing || '';
   document.getElementById('sAccount').value = S.account || '';
-  document.getElementById('sNextNo').value = S.next_no || '';
+  document.getElementById('sNextNo').value = S.next_no || _suggestNo();
   document.getElementById('sOffX').value = S.off_x || 0;
   document.getElementById('sOffY').value = S.off_y || 0;
   document.getElementById('sSigPreview').innerHTML = S.sig_data ? `<img src="${S.sig_data}" style="height:44px;border:1px solid #e5e7eb;border-radius:6px;padding:2px"> <a style="font-size:.75rem;color:#dc2626;cursor:pointer" onclick="S.sig_data='';fillForm();render()">移除</a>` : '<span style="font-size:.75rem;color:#9ca3af">未上传</span>';
-  document.getElementById('cNo').value = document.getElementById('cNo').value || S.next_no || '';
+  document.getElementById('cNo').value = document.getElementById('cNo').value || _suggestNo();
   refreshMissing();
   render();
 }
@@ -367,6 +367,23 @@ function importBankPick() {
 }
 
 // ── 已用支票号 + 最近列表 ──
+// ── 日期式支票号: YYYYMMDD + 6位流水 ──
+// 开票日期的当天起始号, 如 2026-07-30 → 20260730000001
+function _dateBaseNo() {
+  const s = String(document.getElementById('cDate').value || '').replace(/\D/g, '').slice(0, 8);
+  let ymd;
+  if (s.length === 8) { ymd = parseInt(s); }
+  else {
+    const t = new Date();
+    ymd = t.getFullYear() * 10000 + (t.getMonth() + 1) * 100 + t.getDate();
+  }
+  return ymd * 1000000 + 1;
+}
+// 建议号 = max(设置里的 next_no, 已用最大号+1, 当天起始号)
+function _suggestNo() {
+  const used = _usedNos.size ? Math.max(..._usedNos) + 1 : 0;
+  return Math.max(Number(S.next_no) || 0, used, _dateBaseNo());
+}
 let _usedNos = new Set();
 async function loadRecent() {
   try {
@@ -388,10 +405,16 @@ function warnDupNo() {
   const w = document.getElementById('cNoWarn');
   if (no && _usedNos.has(no)) {
     w.style.display = 'block';
-    w.innerHTML = '⚠️ 支票号 <b>#' + no + '</b> 已经打印过，保存时会被拒绝。下一个可用号：<b>' + (Math.max(...[..._usedNos, no]) + 1) + '</b>';
+    w.innerHTML = '⚠️ 支票号 <b>#' + no + '</b> 已经打印过，保存时会被拒绝。下一个可用号：<b>' + Math.max(Math.max(...[..._usedNos, no]) + 1, _dateBaseNo()) + '</b>';
   } else w.style.display = 'none';
 }
 document.getElementById('cNo').addEventListener('input', warnDupNo);
+// 改开票日期时: 若当前号低于该日期的起始号, 自动跳到新日期的号段
+document.getElementById('cDate').addEventListener('input', () => {
+  const cur = parseInt(document.getElementById('cNo').value) || 0;
+  const base = _dateBaseNo();
+  if (cur && cur < base) { document.getElementById('cNo').value = Math.max(base, _suggestNo()); warnDupNo(); render(); }
+});
 
 // ── 登记 + 打印: 服务器唯一登记, 成功后号码自动递增 ──
 async function printCheck(voided) {

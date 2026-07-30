@@ -20689,13 +20689,13 @@ app.post('/api/admin/check-print/register', requireAdmin, (req, res) => {
     if (!no || no <= 0) return res.status(400).json({ error: '支票号无效' });
     const dup = db.prepare('SELECT check_no, payee, amount, check_date, voided, created_at FROM printed_checks WHERE check_no=?').get(no);
     if (dup) {
-      return res.status(400).json({ error: `支票号 ${no} 已经用过`, duplicate: dup, next_no: _checkPrintNextNo(no) });
+      return res.status(400).json({ error: `支票号 ${no} 已经用过`, duplicate: dup, next_no: _checkPrintNextNo(no, b.check_date) });
     }
     db.prepare('INSERT INTO printed_checks (check_no, payee, amount, check_date, memo, voided) VALUES (?,?,?,?,?,?)')
       .run(no, String(b.payee || '').slice(0, 200), (b.amount === '' || b.amount == null) ? null : Number(b.amount),
            String(b.check_date || '').slice(0, 20), String(b.memo || '').slice(0, 300), b.voided ? 1 : 0);
-    // settings.next_no 推进到已登记最大号 +1
-    const nextNo = _checkPrintNextNo(no);
+    // settings.next_no 推进到已登记最大号 +1（不低于开票日期起始号）
+    const nextNo = _checkPrintNextNo(no, b.check_date);
     try {
       const row = db.prepare("SELECT value FROM app_settings WHERE key='check_print_settings'").get();
       const cfg = row && row.value ? JSON.parse(row.value) : {};
@@ -20706,10 +20706,19 @@ app.post('/api/admin/check-print/register', requireAdmin, (req, res) => {
     res.json({ success: true, next_no: nextNo });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// 下一个可用支票号: max(已登记最大号, 候选) + 1
-function _checkPrintNextNo(candidate) {
+// 下一个可用支票号: 日期式 YYYYMMDD + 6位流水（如 20260730000001）
+// 取 max(已登记最大号+1, 候选+1, 开票日期起始号 YYYYMMDD000001) —— 号码永远递增不回退
+function _checkPrintNextNo(candidate, dateStr) {
   const m = db.prepare('SELECT MAX(check_no) AS m FROM printed_checks').get();
-  return Math.max(Number(m && m.m) || 0, Number(candidate) || 0) + 1;
+  const prev = Math.max(Number(m && m.m) || 0, Number(candidate) || 0);
+  const s = String(dateStr || '').replace(/\D/g, '').slice(0, 8);
+  let ymd;
+  if (s.length === 8) { ymd = parseInt(s); }
+  else {
+    const t = new Date();
+    ymd = t.getFullYear() * 10000 + (t.getMonth() + 1) * 100 + t.getDate();
+  }
+  return Math.max(prev + 1, ymd * 1000000 + 1);
 }
 
 const receiptUpload = multer({
