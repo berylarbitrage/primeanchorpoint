@@ -65,6 +65,13 @@
       <div class="sub">DocuGard 是<b>空白</b>安全支票纸，银行信息全部要由系统打印上去。以下信息缺一不可：</div>
       <div id="missingBox" class="missing">检查中…</div>
 
+      <div style="display:flex;gap:.5rem;align-items:flex-end;margin-bottom:.2rem">
+        <div style="flex:1"><label>从系统银行账户导入</label>
+          <select id="sBankPick"><option value="">— 选择已保存的收款银行预设 —</option></select>
+        </div>
+        <button class="btn btn-outline" style="white-space:nowrap" onclick="importBankPick()">⬇️ 带入</button>
+      </div>
+      <div class="sub" style="margin:.2rem 0 .4rem">从发票的「收款银行」预设带入银行名/Routing（支票用 ACH/Paper routing）/账号/户名，带入后仍可修改。</div>
       <label>付款公司名称（印在支票左上）</label>
       <input id="sPayerName" placeholder="Prime Anchor Point LLC">
       <label>付款公司地址（两行，回车分行）</label>
@@ -111,9 +118,14 @@
         <div><input id="cPeriod" placeholder="账期 / Pay Period（可选）" oninput="render()"></div>
       </div>
       <input id="cNote" placeholder="备注（可选）" style="margin-top:.6rem" oninput="render()">
-      <div style="margin-top:.9rem;display:flex;gap:.5rem;flex-wrap:wrap">
-        <button class="btn btn-blue" onclick="doPrint(false)">🖨️ 打印支票</button>
-        <button class="btn btn-outline" onclick="bumpNo()">打完了，支票号 +1 并保存</button>
+      <div id="cNoWarn" style="display:none;margin-top:.5rem;padding:.4rem .6rem;background:#fee2e2;border:1px solid #ef4444;border-radius:7px;font-size:.78rem;color:#b91c1c"></div>
+      <div style="margin-top:.9rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-blue" onclick="printCheck()">🖨️ 登记并打印支票</button>
+        <span class="hint" style="font-size:.74rem;color:#6b7280">打印前号码先在服务器登记——同号会被拒绝；成功后支票号自动 +1。</span>
+      </div>
+      <div style="margin-top:.8rem">
+        <div style="font-size:.76rem;font-weight:700;color:#4b5563;margin-bottom:.25rem">最近打印的支票</div>
+        <div id="recentChecks" style="border:1px solid #e5e7eb;border-radius:8px;max-height:150px;overflow:auto;font-size:.76rem"></div>
       </div>
     </div>
 
@@ -307,12 +319,91 @@ function doPrint(calib) {
   window.print();
   document.body.classList.remove('calib');
 }
-async function bumpNo() {
-  const cur = parseInt(document.getElementById('cNo').value) || 0;
-  S.next_no = cur + 1;
-  await api('/admin/check-print/settings', { method: 'POST', body: JSON.stringify(S) });
-  document.getElementById('cNo').value = S.next_no;
-  toast('支票号已递增到 ' + S.next_no + ' ✓'); fillForm();
+// ── 银行预设导入 ──
+let _bankProfiles = [];
+async function loadBankProfiles() {
+  try {
+    const all = await api('/admin/invoice-profiles');
+    if (!Array.isArray(all)) return;
+    _bankProfiles = all.filter(p => p.section === 'bank');
+    const sel = document.getElementById('sBankPick');
+    sel.innerHTML = '<option value="">— 选择已保存的收款银行预设 —</option>' +
+      _bankProfiles.map(p => {
+        let d = {}; try { d = JSON.parse(p.data || '{}'); } catch (_) {}
+        const acct = String(d.bank_account_no || '').replace(/\D/g, '');
+        return `<option value="${p.id}">${esc(p.name)} — ${esc(d.bank_name || '')}${acct ? ' ••' + acct.slice(-4) : ''}</option>`;
+      }).join('');
+  } catch (_) {}
+}
+function importBankPick() {
+  const id = document.getElementById('sBankPick').value;
+  const p = _bankProfiles.find(x => String(x.id) === String(id));
+  if (!p) { toast('请先选择一个银行预设'); return; }
+  let d = {}; try { d = JSON.parse(p.data || '{}'); } catch (_) {}
+  // 支票走纸质/ACH routing（Chase: 071000013）, 没有才退到 wire routing
+  document.getElementById('sBankName').value = d.bank_name || '';
+  document.getElementById('sRouting').value = d.bank_paper_routing || d.bank_wire_routing || '';
+  document.getElementById('sAccount').value = d.bank_account_no || '';
+  if (d.bank_account_name) document.getElementById('sPayerName').value = d.bank_account_name;
+  toast('已带入「' + p.name + '」，检查无误后点保存设置');
+}
+
+// ── 已用支票号 + 最近列表 ──
+let _usedNos = new Set();
+async function loadRecent() {
+  try {
+    const rows = await api('/admin/check-print/recent');
+    if (!Array.isArray(rows)) return;
+    _usedNos = new Set(rows.map(r => r.check_no));
+    document.getElementById('recentChecks').innerHTML = rows.length
+      ? rows.slice(0, 12).map(r =>
+          `<div style="display:flex;justify-content:space-between;gap:.5rem;padding:.28rem .55rem;border-bottom:1px solid #f3f4f6">
+             <span><b>#${r.check_no}</b> ${esc(r.payee || '')}${r.voided ? ' <span style="color:#dc2626;font-weight:700">VOID</span>' : ''}</span>
+             <span style="color:#6b7280">${fmtUSD(r.amount || 0)} · ${esc(r.check_date || '')}</span>
+           </div>`).join('')
+      : '<div style="padding:.5rem .6rem;color:#9ca3af">还没有打印记录</div>';
+    warnDupNo();
+  } catch (_) {}
+}
+function warnDupNo() {
+  const no = parseInt(document.getElementById('cNo').value) || 0;
+  const w = document.getElementById('cNoWarn');
+  if (no && _usedNos.has(no)) {
+    w.style.display = 'block';
+    w.innerHTML = '⚠️ 支票号 <b>#' + no + '</b> 已经打印过，保存时会被拒绝。下一个可用号：<b>' + (Math.max(...[..._usedNos, no]) + 1) + '</b>';
+  } else w.style.display = 'none';
+}
+document.getElementById('cNo').addEventListener('input', warnDupNo);
+
+// ── 登记 + 打印: 服务器唯一登记, 成功后号码自动递增 ──
+async function printCheck(voided) {
+  const no = parseInt(document.getElementById('cNo').value) || 0;
+  if (!no) { toast('请先填支票号（在①里设置起始号并保存）'); return; }
+  const payload = {
+    check_no: no,
+    payee: document.getElementById('cPayee').value,
+    amount: document.getElementById('cAmt').value,
+    check_date: document.getElementById('cDate').value,
+    memo: [document.getElementById('cMemo').value, document.getElementById('cInv').value].filter(Boolean).join(' · '),
+    voided: !!voided,
+  };
+  const r = await api('/admin/check-print/register', { method: 'POST', body: JSON.stringify(payload) });
+  if (r && r.error) {
+    if (r.duplicate) {
+      const d = r.duplicate;
+      const useNext = confirm(`支票号 #${no} 已经用过（${d.payee || '—'} ${d.amount != null ? '$' + Number(d.amount).toFixed(2) : ''} ${d.check_date || ''}${d.voided ? ' VOID' : ''}）。\n\n点「确定」改用下一个可用号 #${r.next_no} 继续打印，点「取消」放弃。`);
+      if (useNext) { document.getElementById('cNo').value = r.next_no; return printCheck(voided); }
+      return;
+    }
+    toast('登记失败：' + r.error); return;
+  }
+  doPrint(false);
+  // 打印对话框关闭后: 号码推进到服务器返回的下一个可用号
+  S.next_no = r.next_no;
+  document.getElementById('cNo').value = r.next_no;
+  document.getElementById('sNextNo').value = r.next_no;
+  toast('支票 #' + no + ' 已登记 ✓ 下一张自动用 #' + r.next_no);
+  loadRecent(); render();
 }
 // 对位测试: 普通纸, 各栏位占位 + 标线可见
 function printCalibration() {
@@ -336,15 +427,18 @@ function printVoidTest() {
   document.getElementById('cPayee').value = (S.payer_name || '') + ' (VOID TEST)';
   document.getElementById('cAmt').value = '0';
   document.getElementById('cMemo').value = 'VOID — printer test only';
-  doPrint(false);
-  voidMode = false;
-  document.getElementById('cPayee').value = keep.payee;
-  document.getElementById('cAmt').value = keep.amt;
-  document.getElementById('cMemo').value = keep.memo;
-  render();
+  printCheck(true).then(() => {
+    voidMode = false;
+    document.getElementById('cPayee').value = keep.payee;
+    document.getElementById('cAmt').value = keep.amt;
+    document.getElementById('cMemo').value = keep.memo;
+    render();
+  });
 }
 
 loadSettings();
+loadBankProfiles();
+loadRecent();
 </script>
 </body>
 </html>

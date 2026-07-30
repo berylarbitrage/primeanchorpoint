@@ -20666,6 +20666,52 @@ app.post('/api/admin/check-print/settings', requireAdmin, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 支票登记：号码唯一防重复, 打印时登记, 登记成功后 next_no 自动递增 ──
+db.exec(`CREATE TABLE IF NOT EXISTS printed_checks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  check_no INTEGER NOT NULL UNIQUE,
+  payee TEXT DEFAULT '',
+  amount REAL DEFAULT NULL,
+  check_date TEXT DEFAULT '',
+  memo TEXT DEFAULT '',
+  voided INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
+app.get('/api/admin/check-print/recent', requireAdmin, (req, res) => {
+  try {
+    res.json(db.prepare('SELECT check_no, payee, amount, check_date, memo, voided, created_at FROM printed_checks ORDER BY check_no DESC LIMIT 200').all());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/admin/check-print/register', requireAdmin, (req, res) => {
+  try {
+    const b = req.body || {};
+    const no = parseInt(b.check_no);
+    if (!no || no <= 0) return res.status(400).json({ error: '支票号无效' });
+    const dup = db.prepare('SELECT check_no, payee, amount, check_date, voided, created_at FROM printed_checks WHERE check_no=?').get(no);
+    if (dup) {
+      return res.status(400).json({ error: `支票号 ${no} 已经用过`, duplicate: dup, next_no: _checkPrintNextNo(no) });
+    }
+    db.prepare('INSERT INTO printed_checks (check_no, payee, amount, check_date, memo, voided) VALUES (?,?,?,?,?,?)')
+      .run(no, String(b.payee || '').slice(0, 200), (b.amount === '' || b.amount == null) ? null : Number(b.amount),
+           String(b.check_date || '').slice(0, 20), String(b.memo || '').slice(0, 300), b.voided ? 1 : 0);
+    // settings.next_no 推进到已登记最大号 +1
+    const nextNo = _checkPrintNextNo(no);
+    try {
+      const row = db.prepare("SELECT value FROM app_settings WHERE key='check_print_settings'").get();
+      const cfg = row && row.value ? JSON.parse(row.value) : {};
+      cfg.next_no = nextNo;
+      db.prepare(`INSERT INTO app_settings (key, value) VALUES ('check_print_settings', ?)
+                  ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(JSON.stringify(cfg));
+    } catch (_) {}
+    res.json({ success: true, next_no: nextNo });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 下一个可用支票号: max(已登记最大号, 候选) + 1
+function _checkPrintNextNo(candidate) {
+  const m = db.prepare('SELECT MAX(check_no) AS m FROM printed_checks').get();
+  return Math.max(Number(m && m.m) || 0, Number(candidate) || 0) + 1;
+}
+
 const receiptUpload = multer({
   storage: r2Storage({
     subdir: 'uploads',
