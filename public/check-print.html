@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>支票打印 · DocuGard 上支票格式</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'DM Sans', 'Segoe UI', Arial, sans-serif; background: #eef2f7; color: #1f2937; }
+  .bar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: .7rem 1.2rem; display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+  .bar h1 { margin: 0; font-size: 1.05rem; }
+  .bar .hint { font-size: .78rem; color: #6b7280; }
+  .wrap { display: grid; grid-template-columns: 460px minmax(0,1fr); gap: 1.2rem; padding: 1.2rem; align-items: start; }
+  @media (max-width: 1100px) { .wrap { grid-template-columns: 1fr; } }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem 1.1rem; margin-bottom: 1.1rem; }
+  .card h2 { margin: 0 0 .35rem; font-size: .95rem; }
+  .card .sub { font-size: .76rem; color: #6b7280; margin-bottom: .7rem; line-height: 1.55; }
+  label { display: block; font-size: .74rem; font-weight: 700; color: #4b5563; margin: .55rem 0 .2rem; }
+  input, textarea, select { width: 100%; padding: .45rem .55rem; border: 1px solid #d1d5db; border-radius: 7px; font-size: .85rem; font-family: inherit; }
+  textarea { resize: vertical; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .6rem; }
+  .btn { display: inline-block; border: none; border-radius: 8px; padding: .55rem 1.1rem; font-size: .85rem; font-weight: 700; cursor: pointer; }
+  .btn-green { background: #059669; color: #fff; }
+  .btn-blue { background: #2563eb; color: #fff; }
+  .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
+  .btn-amber { background: #b45309; color: #fff; }
+  .missing { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: .55rem .7rem; font-size: .78rem; color: #92400e; line-height: 1.6; margin-bottom: .7rem; }
+  .ok { background: #d1fae5; border-color: #10b981; color: #065f46; }
+  .toast { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); background: #111827; color: #fff; padding: .55rem 1.1rem; border-radius: 999px; font-size: .82rem; display: none; z-index: 50; }
+
+  /* ── 预览/打印页 (8.5 x 11 in, DocuGard 上支票: 支票 0–3.5in, 存根1 3.5–7.25in, 存根2 7.25–11in) ── */
+  .sheet-holder { overflow: auto; }
+  .sheet { position: relative; width: 8.5in; height: 11in; background: #fff; box-shadow: 0 2px 14px rgba(0,0,0,.15); margin: 0 auto; font-family: Arial, Helvetica, sans-serif; color: #111; }
+  .sheet .abs { position: absolute; }
+  .perf { position: absolute; left: 0; right: 0; border-top: 1.5px dashed #cbd5e1; }
+  .void-mark { position: absolute; left: .4in; top: .9in; font-size: 64px; font-weight: 900; color: rgba(220,38,38,.35); letter-spacing: 18px; transform: rotate(-8deg); pointer-events: none; }
+  .micr { font-family: 'MICR Encoding', 'MICRE13B', 'MICR', monospace; font-size: 13pt; letter-spacing: 1px; white-space: nowrap; }
+  .stub table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .stub td { padding: 2.5px 6px; border-bottom: 1px solid #eee; vertical-align: top; }
+  .stub .k { color: #555; width: 110px; font-weight: 700; }
+  .cal-tick { position: absolute; font-size: 7pt; color: #999; }
+  @media print {
+    body { background: #fff; }
+    .no-print { display: none !important; }
+    .sheet { box-shadow: none; margin: 0; }
+    .sheet-holder { overflow: visible; }
+    .perf { border-top-color: transparent; }   /* 支票纸自带撕线, 打印时不画 */
+    @page { size: letter; margin: 0; }
+  }
+  body.calib .perf { border-top-color: #cbd5e1 !important; } /* 对位测试页保留标线 */
+</style>
+</head>
+<body>
+<div class="bar no-print">
+  <h1>🖨️ 支票打印 <span style="font-weight:400;color:#6b7280;font-size:.8rem">DocuGard 上支票格式（上支票 + 两联存根）</span></h1>
+  <span class="hint">把 DocuGard 支票纸放入打印机 → 填写右侧支票内容 → 打印。打印对话框中请选「实际大小 / 100%」、去掉页眉页脚。</span>
+</div>
+
+<div class="wrap">
+  <!-- ═══ 左栏: 设置（缺失信息） ═══ -->
+  <div class="no-print">
+    <div class="card">
+      <h2>① 打印所需信息（先补齐这里）</h2>
+      <div class="sub">DocuGard 是<b>空白</b>安全支票纸，银行信息全部要由系统打印上去。以下信息缺一不可：</div>
+      <div id="missingBox" class="missing">检查中…</div>
+
+      <label>付款公司名称（印在支票左上）</label>
+      <input id="sPayerName" placeholder="Prime Anchor Point LLC">
+      <label>付款公司地址（两行，回车分行）</label>
+      <textarea id="sPayerAddr" rows="2" placeholder="18 Congress Circle West&#10;Roselle, IL 60172"></textarea>
+      <div class="row2">
+        <div><label>银行名称</label><input id="sBankName" placeholder="Chase Bank"></div>
+        <div><label>银行城市/州（可选）</label><input id="sBankAddr" placeholder="Chicago, IL"></div>
+      </div>
+      <div class="row3">
+        <div><label>Routing Number（9 位）</label><input id="sRouting" maxlength="9" placeholder="071000013"></div>
+        <div><label>Account Number</label><input id="sAccount" placeholder="2910580165"></div>
+        <div><label>下一张支票号</label><input id="sNextNo" type="number" min="1" placeholder="1001"></div>
+      </div>
+      <div class="row2">
+        <div><label>对位微调 横向 (mm, 右为正)</label><input id="sOffX" type="number" step="0.5" value="0"></div>
+        <div><label>对位微调 纵向 (mm, 下为正)</label><input id="sOffY" type="number" step="0.5" value="0"></div>
+      </div>
+      <label>签名图片（可选，PNG 透明底最佳；不上传则打印后手签）</label>
+      <input id="sSigFile" type="file" accept="image/*">
+      <div id="sSigPreview" style="margin-top:.3rem"></div>
+      <div style="margin-top:.8rem;display:flex;gap:.5rem">
+        <button class="btn btn-green" onclick="saveSettings()">保存设置</button>
+        <button class="btn btn-outline" onclick="loadSettings()">重新载入</button>
+      </div>
+      <div class="sub" style="margin-top:.7rem">
+        ⚠️ <b>MICR 磁码须知</b>：支票底部那行 Routing/Account 数字（MICR 行）银行机读时要求 <b>E-13B 磁性字体 + 磁性墨粉(MICR toner)</b>。普通激光打印大多数银行按图像清算（Check 21）也能收，但个别银行可能退票。稳妥做法：给打印机换 MICR 墨粉，或在本机安装「MICR Encoding」字体（本页会自动使用）。
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>② 支票内容</h2>
+      <div class="row3">
+        <div><label>支票号</label><input id="cNo" type="number"></div>
+        <div><label>日期</label><input id="cDate" type="date"></div>
+        <div><label>金额 (USD)</label><input id="cAmt" type="number" step="0.01" min="0" placeholder="0.00" oninput="render()"></div>
+      </div>
+      <label>收款人 Pay to the Order of</label>
+      <input id="cPayee" placeholder="收款人全名 / 公司名" oninput="render()">
+      <label>Memo（可选）</label>
+      <input id="cMemo" placeholder="如 INV-L-IL-SG-042226-0001" oninput="render()">
+      <label>存根信息（印在下方两联，自己留档 + 给收款人）</label>
+      <div class="row2">
+        <div><input id="cInv" placeholder="Invoice 号（可选）" oninput="render()"></div>
+        <div><input id="cPeriod" placeholder="账期 / Pay Period（可选）" oninput="render()"></div>
+      </div>
+      <input id="cNote" placeholder="备注（可选）" style="margin-top:.6rem" oninput="render()">
+      <div style="margin-top:.9rem;display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-blue" onclick="doPrint(false)">🖨️ 打印支票</button>
+        <button class="btn btn-outline" onclick="bumpNo()">打完了，支票号 +1 并保存</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>③ 测试</h2>
+      <div class="sub">先用<b>普通白纸</b>打印对位测试页，和支票纸叠起来对着光看各栏位是否落在正确位置；有偏差就回①调「对位微调」。确认没问题后，可以给自己打一张 VOID 测试支票（收款人=付款公司自己，金额 $0.00，带 VOID 水印，作废留档）。</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-amber" onclick="printCalibration()">📐 打印对位测试页（普通纸）</button>
+        <button class="btn btn-outline" onclick="printVoidTest()">🧪 给自己打一张 VOID 测试支票</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 右栏: 实时预览 / 打印面 ═══ -->
+  <div class="sheet-holder">
+    <div class="sheet" id="sheet"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const TOKEN = localStorage.getItem('adminToken') || sessionStorage.getItem('adminToken') || '';
+let S = {};           // settings
+let voidMode = false; // 测试支票带 VOID 水印
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._tm); t._tm = setTimeout(() => t.style.display = 'none', 2600);
+}
+async function api(path, opts = {}) {
+  const res = await fetch('/api' + path, { ...opts, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN, ...(opts.headers || {}) } });
+  return res.json();
+}
+
+// ── 金额转英文大写 (支票 amount line) ──
+function amountWords(n) {
+  n = Math.round((Number(n) || 0) * 100) / 100;
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  function sub999(x) {
+    let s = '';
+    if (x >= 100) { s += ones[Math.floor(x / 100)] + ' Hundred'; x %= 100; if (x) s += ' '; }
+    if (x >= 20) { s += tens[Math.floor(x / 10)]; if (x % 10) s += '-' + ones[x % 10]; }
+    else if (x > 0) s += ones[x];
+    return s;
+  }
+  const units = [[1e9, 'Billion'], [1e6, 'Million'], [1e3, 'Thousand'], [1, '']];
+  let d = Math.floor(n), out = [];
+  if (d === 0) out.push('Zero');
+  for (const [u, name] of units) {
+    if (d >= u) { const q = Math.floor(d / u); d %= u; out.push(sub999(q) + (name ? ' ' + name : '')); }
+  }
+  const cents = Math.round((n - Math.floor(n)) * 100);
+  return out.join(' ') + ' and ' + String(cents).padStart(2, '0') + '/100';
+}
+const fmtUSD = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// ── 渲染 8.5x11 打印面: 支票(0–3.5in) + 存根1(3.5–7.25) + 存根2(7.25–11) ──
+function render() {
+  const no = document.getElementById('cNo').value || (S.next_no || '');
+  const dateV = document.getElementById('cDate').value;
+  const dateFmt = dateV ? (() => { const [y, m, d] = dateV.split('-'); return `${m}/${d}/${y}`; })() : '';
+  const amt = parseFloat(document.getElementById('cAmt').value) || 0;
+  const payee = document.getElementById('cPayee').value || '';
+  const memo = document.getElementById('cMemo').value || '';
+  const inv = document.getElementById('cInv').value || '';
+  const period = document.getElementById('cPeriod').value || '';
+  const note = document.getElementById('cNote').value || '';
+  const addr = String(S.payer_addr || '').split(/\n/).map(esc).join('<br>');
+  const offX = (parseFloat(S.off_x) || 0), offY = (parseFloat(S.off_y) || 0);
+  // MICR: ⑆ = transit, ⑈ = on-us — E-13B 字体里对应 A/C 符号，普通字体退化为符号占位
+  const micr = (S.routing || S.account) ? `⑆${esc(S.routing || '')}⑆ ${esc(S.account || '')}⑈ ${esc(String(no || ''))}` : '';
+  const stub = label => `
+    <div class="abs stub" style="left:.55in;right:.55in;top:.28in">
+      <div style="display:flex;justify-content:space-between;font-size:9pt;color:#374151;margin-bottom:4px">
+        <b>${esc(S.payer_name || '')} — 付款存根 ${label}</b>
+        <span>Check #${esc(String(no || ''))} · ${esc(dateFmt)}</span>
+      </div>
+      <table>
+        <tr><td class="k">收款人 Pay To</td><td>${esc(payee)}</td><td class="k">金额 Amount</td><td><b>${fmtUSD(amt)}</b></td></tr>
+        <tr><td class="k">Invoice</td><td>${esc(inv) || '—'}</td><td class="k">账期 Period</td><td>${esc(period) || '—'}</td></tr>
+        <tr><td class="k">Memo / 备注</td><td colspan="3">${esc([memo, note].filter(Boolean).join(' · ')) || '—'}</td></tr>
+      </table>
+    </div>`;
+  const sig = S.sig_data ? `<img src="${S.sig_data}" style="position:absolute;right:.55in;top:2.52in;height:.5in;max-width:2.6in;object-fit:contain">` : '';
+  document.getElementById('sheet').innerHTML = `
+    <div style="position:absolute;inset:0;transform:translate(${offX}mm,${offY}mm)">
+      <!-- ── 支票区 (0–3.5in) ── -->
+      ${voidMode ? '<div class="void-mark">VOID VOID</div>' : ''}
+      <div class="abs" style="left:.55in;top:.32in;font-size:10.5pt;font-weight:700">${esc(S.payer_name || '')}</div>
+      <div class="abs" style="left:.55in;top:.5in;font-size:8pt;line-height:1.35;color:#333">${addr}</div>
+      <div class="abs" style="left:3.6in;top:.32in;font-size:8.5pt;color:#333"><b>${esc(S.bank_name || '')}</b>${S.bank_addr ? '<br><span style="font-size:7.5pt">' + esc(S.bank_addr) + '</span>' : ''}</div>
+      <div class="abs" style="right:.55in;top:.32in;font-size:11pt;font-weight:700;text-align:right">No. ${esc(String(no || ''))}</div>
+      <div class="abs" style="right:.55in;top:.78in;font-size:9pt;text-align:right">Date: <span style="display:inline-block;min-width:1.2in;border-bottom:1px solid #333;text-align:center">${esc(dateFmt)}</span></div>
+      <div class="abs" style="left:.55in;top:1.32in;font-size:9pt">PAY TO THE<br>ORDER OF</div>
+      <div class="abs" style="left:1.5in;right:2.1in;top:1.47in;border-bottom:1px solid #333;font-size:11pt;padding-bottom:1px">${esc(payee)}</div>
+      <div class="abs" style="right:.55in;top:1.36in;border:1.5px solid #333;border-radius:3px;padding:4px 8px;font-size:12pt;font-weight:700;min-width:1.25in;text-align:right">${amt ? fmtUSD(amt) : '$'}</div>
+      <div class="abs" style="left:.55in;right:1.6in;top:1.95in;border-bottom:1px solid #333;font-size:9.5pt;padding-bottom:1px">${amt ? esc(amountWords(amt)) + ' ' : ''}<span style="float:right">DOLLARS</span></div>
+      <div class="abs" style="left:.55in;top:2.62in;font-size:9pt">MEMO <span style="display:inline-block;min-width:2.4in;border-bottom:1px solid #333;padding-bottom:1px">${esc(memo)}</span></div>
+      ${sig}
+      <div class="abs" style="right:.55in;top:2.86in;width:2.6in;border-bottom:1px solid #333"></div>
+      <div class="abs" style="right:.55in;top:2.9in;width:2.6in;text-align:center;font-size:7.5pt;color:#555">AUTHORIZED SIGNATURE</div>
+      <div class="abs micr" style="left:.7in;top:3.12in">${micr}</div>
+      <div class="perf" style="top:3.5in"></div>
+      <!-- ── 存根 1 (自留) ── -->
+      <div class="abs" style="left:0;right:0;top:3.5in;height:3.75in">${stub('(留档)')}</div>
+      <div class="perf" style="top:7.25in"></div>
+      <!-- ── 存根 2 (给收款人) ── -->
+      <div class="abs" style="left:0;right:0;top:7.25in;height:3.75in">${stub('(收款人)')}</div>
+    </div>`;
+}
+
+function collectSettingsFromForm() {
+  return {
+    payer_name: document.getElementById('sPayerName').value.trim(),
+    payer_addr: document.getElementById('sPayerAddr').value,
+    bank_name: document.getElementById('sBankName').value.trim(),
+    bank_addr: document.getElementById('sBankAddr').value.trim(),
+    routing: document.getElementById('sRouting').value.trim(),
+    account: document.getElementById('sAccount').value.trim(),
+    next_no: parseInt(document.getElementById('sNextNo').value) || null,
+    off_x: parseFloat(document.getElementById('sOffX').value) || 0,
+    off_y: parseFloat(document.getElementById('sOffY').value) || 0,
+    sig_data: S.sig_data || '',
+  };
+}
+function refreshMissing() {
+  const need = [];
+  if (!S.payer_name) need.push('付款公司名称');
+  if (!S.bank_name) need.push('银行名称');
+  if (!/^\d{9}$/.test(S.routing || '')) need.push('Routing Number（9 位数字）');
+  if (!S.account) need.push('Account Number');
+  if (!S.next_no) need.push('下一张支票号');
+  const box = document.getElementById('missingBox');
+  if (need.length) { box.className = 'missing'; box.innerHTML = '❗ 还缺：<b>' + need.join('、') + '</b>——补齐并保存后才能正式开票。'; }
+  else { box.className = 'missing ok'; box.innerHTML = '✅ 打印所需信息已齐。建议先在 ③ 打印对位测试页确认位置。'; }
+}
+function fillForm() {
+  document.getElementById('sPayerName').value = S.payer_name || '';
+  document.getElementById('sPayerAddr').value = S.payer_addr || '';
+  document.getElementById('sBankName').value = S.bank_name || '';
+  document.getElementById('sBankAddr').value = S.bank_addr || '';
+  document.getElementById('sRouting').value = S.routing || '';
+  document.getElementById('sAccount').value = S.account || '';
+  document.getElementById('sNextNo').value = S.next_no || '';
+  document.getElementById('sOffX').value = S.off_x || 0;
+  document.getElementById('sOffY').value = S.off_y || 0;
+  document.getElementById('sSigPreview').innerHTML = S.sig_data ? `<img src="${S.sig_data}" style="height:44px;border:1px solid #e5e7eb;border-radius:6px;padding:2px"> <a style="font-size:.75rem;color:#dc2626;cursor:pointer" onclick="S.sig_data='';fillForm();render()">移除</a>` : '<span style="font-size:.75rem;color:#9ca3af">未上传</span>';
+  document.getElementById('cNo').value = document.getElementById('cNo').value || S.next_no || '';
+  refreshMissing();
+  render();
+}
+async function loadSettings() {
+  try { S = await api('/admin/check-print/settings') || {}; }
+  catch (e) { toast('载入失败（请从后台登录后再打开本页）'); S = {}; }
+  if (S && S.error) { toast('请先在后台登录（token 失效）'); S = {}; }
+  if (!document.getElementById('cDate').value) document.getElementById('cDate').value = new Date().toISOString().slice(0, 10);
+  fillForm();
+}
+async function saveSettings() {
+  S = { ...S, ...collectSettingsFromForm() };
+  const r = await api('/admin/check-print/settings', { method: 'POST', body: JSON.stringify(S) });
+  if (r && r.error) { toast('保存失败：' + r.error); return; }
+  toast('设置已保存 ✓'); fillForm();
+}
+document.getElementById('sSigFile').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    // 压缩到高度 120px 的 PNG，避免设置体积过大
+    const img = new Image();
+    img.onload = () => {
+      const h = 120, w = Math.round(img.width * h / img.height);
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      S.sig_data = cv.toDataURL('image/png');
+      fillForm(); render();
+    };
+    img.src = rd.result;
+  };
+  rd.readAsDataURL(f);
+});
+['cNo', 'cDate'].forEach(id => document.getElementById(id).addEventListener('input', render));
+
+function doPrint(calib) {
+  document.body.classList.toggle('calib', !!calib);
+  render();
+  window.print();
+  document.body.classList.remove('calib');
+}
+async function bumpNo() {
+  const cur = parseInt(document.getElementById('cNo').value) || 0;
+  S.next_no = cur + 1;
+  await api('/admin/check-print/settings', { method: 'POST', body: JSON.stringify(S) });
+  document.getElementById('cNo').value = S.next_no;
+  toast('支票号已递增到 ' + S.next_no + ' ✓'); fillForm();
+}
+// 对位测试: 普通纸, 各栏位占位 + 标线可见
+function printCalibration() {
+  voidMode = false;
+  const keep = {};
+  ['cPayee', 'cAmt', 'cMemo', 'cInv', 'cPeriod', 'cNote'].forEach(id => { keep[id] = document.getElementById(id).value; });
+  document.getElementById('cPayee').value = '── PAYEE 收款人栏位 ──';
+  document.getElementById('cAmt').value = '1234.56';
+  document.getElementById('cMemo').value = 'MEMO 栏位';
+  document.getElementById('cInv').value = 'INV-TEST-0000';
+  document.getElementById('cPeriod').value = '2026-01-01 ~ 2026-01-07';
+  document.getElementById('cNote').value = '对位测试页 — 与支票纸叠起来对光检查';
+  doPrint(true);
+  Object.entries(keep).forEach(([id, v]) => { document.getElementById(id).value = v; });
+  render();
+}
+// VOID 测试支票: 收款人 = 付款公司自己, $0.00, 大水印
+function printVoidTest() {
+  voidMode = true;
+  const keep = { payee: document.getElementById('cPayee').value, amt: document.getElementById('cAmt').value, memo: document.getElementById('cMemo').value };
+  document.getElementById('cPayee').value = (S.payer_name || '') + ' (VOID TEST)';
+  document.getElementById('cAmt').value = '0';
+  document.getElementById('cMemo').value = 'VOID — printer test only';
+  doPrint(false);
+  voidMode = false;
+  document.getElementById('cPayee').value = keep.payee;
+  document.getElementById('cAmt').value = keep.amt;
+  document.getElementById('cMemo').value = keep.memo;
+  render();
+}
+
+loadSettings();
+</script>
+</body>
+</html>

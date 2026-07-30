@@ -20647,6 +20647,25 @@ function _invoiceReceiptList(pathsJson, single) {
   return arr.filter(Boolean);
 }
 
+// ── 支票打印（DocuGard 上支票格式）: 设置的读写 ──
+// 存 app_settings 单键 JSON: 付款公司抬头/银行/Routing/Account/下一张支票号/
+// 签名图/对位偏移等。页面: /check-print.html
+app.get('/api/admin/check-print/settings', requireAdmin, (req, res) => {
+  try {
+    const r = db.prepare("SELECT value FROM app_settings WHERE key='check_print_settings'").get();
+    res.json(r && r.value ? JSON.parse(r.value) : {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/admin/check-print/settings', requireAdmin, (req, res) => {
+  try {
+    const v = JSON.stringify(req.body || {});
+    if (v.length > 500000) return res.status(400).json({ error: '设置内容过大（签名图请压缩）' });
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('check_print_settings', ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(v);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 const receiptUpload = multer({
   storage: r2Storage({
     subdir: 'uploads',
