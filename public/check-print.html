@@ -41,10 +41,12 @@
   .stub .k { color: #555; width: 110px; font-weight: 700; }
   .cal-tick { position: absolute; font-size: 7pt; color: #999; }
   @media print {
-    body { background: #fff; }
+    html, body { margin: 0 !important; padding: 0 !important; background: #fff; }
     .no-print { display: none !important; }
-    .sheet { box-shadow: none; margin: 0; }
-    .sheet-holder { overflow: visible; }
+    /* 去掉容器的 padding/网格列, 否则纸面被推移导致溢出第二页 */
+    .wrap { display: block !important; padding: 0 !important; margin: 0 !important; }
+    .sheet-holder { overflow: visible; position: absolute; left: 0; top: 0; }
+    .sheet { box-shadow: none; margin: 0; overflow: hidden; page-break-after: avoid; page-break-inside: avoid; }
     .perf { border-top-color: transparent; }   /* 支票纸自带撕线, 打印时不画 */
     @page { size: letter; margin: 0; }
   }
