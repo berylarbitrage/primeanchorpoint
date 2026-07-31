@@ -29090,9 +29090,12 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
   try {
     const q = String(req.query.q || '').trim();
     const like = `%${q}%`;
+    const digits = q.replace(/\D/g, '');
+    const digitsLike = digits ? `%${digits}%` : '%%%NOMATCH%%%';
     const emps = db.prepare(`SELECT id, first_name, last_name, phone, position, status FROM employees
-      WHERE phone != '' AND (? = '' OR first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ? OR phone LIKE ? OR position LIKE ?)
-      ORDER BY (status='active') DESC, first_name, last_name LIMIT 30`).all(q, like, like, like, like, like);
+      WHERE phone != '' AND (? = '' OR first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ? OR phone LIKE ? OR position LIKE ?
+        OR replace(replace(replace(replace(replace(phone,'(',''),')',''),'-',''),' ',''),'+','') LIKE ?)
+      ORDER BY (status='active') DESC, first_name, last_name LIMIT 30`).all(q, like, like, like, like, like, digitsLike);
     const apps = db.prepare(`SELECT id, name, phone, position, partner_name FROM applicant_submissions
       WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)
       ORDER BY id DESC LIMIT 30`).all(q, like, like, like, like);

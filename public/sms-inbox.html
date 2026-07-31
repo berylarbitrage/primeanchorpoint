@@ -391,6 +391,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   <div class="modal">
     <h3>联系人资料 / Contact</h3>
     <label>Name</label><input id="editName" placeholder="Contact name">
+    <label>关联员工档案（按姓名 / 电话搜；打开时已自动按本号码找过）</label>
+    <div id="editEmpLinked" style="display:none;align-items:center;gap:8px;margin-bottom:6px;background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:5px 10px;font-size:.8rem;color:#065f46"></div>
+    <input id="editEmpSearch" placeholder="搜员工姓名 / 电话…" oninput="empLinkDebounce()" style="margin-bottom:4px">
+    <div id="editEmpResults" style="max-height:170px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;display:none"></div>
     <label>公司 Company（从现有公司选）</label>
     <select id="editCompany" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;background:var(--white)">
       <option value="">— 不选 —</option>
@@ -1186,12 +1190,62 @@ function showEditContactModal() {
   document.getElementById('editName').value = currentContact.name || '';
   _fillCompanySelect(currentContact.company || '');
   document.getElementById('editEmail').value = currentContact.email || '';
+  _editEmp = undefined;
+  document.getElementById('editEmpSearch').value = '';
+  document.getElementById('editEmpResults').style.display = 'none';
+  renderEmpLinked();
+  // 还没关联员工的, 自动用本号码搜一把
+  if (!currentContact.employee_id) {
+    const digits = String(currentContact.phone_e164 || '').replace(/\D/g, '').slice(-10);
+    if (digits) { document.getElementById('editEmpSearch').value = digits; empLinkSearch(); }
+  }
   document.getElementById('editNotes').value = currentContact.notes || '';
   try { _editTags = JSON.parse(currentContact.tags || '[]'); } catch (_) { _editTags = []; }
   if (!Array.isArray(_editTags)) _editTags = [];
   document.getElementById('editTagInput').value = '';
   renderEditTags();
   document.getElementById('editContactModal').classList.add('show');
+}
+// 关联员工档案: undefined=未改动, null=解除, {id,name}=新选
+let _editEmp = undefined, _empLinkDebounce = null;
+function empLinkDebounce() { clearTimeout(_empLinkDebounce); _empLinkDebounce = setTimeout(empLinkSearch, 280); }
+async function empLinkSearch() {
+  const term = document.getElementById('editEmpSearch').value.trim();
+  const box = document.getElementById('editEmpResults');
+  if (!term) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  box.innerHTML = '<div style="padding:8px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  try {
+    const r = await api('/sms/people-search?q=' + encodeURIComponent(term));
+    const emps = (r.people || []).filter(p => p.type === 'employee');
+    window._empLinkList = emps;
+    box.innerHTML = emps.length ? emps.map((p, i) =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--gray-200);cursor:pointer;font-size:.82rem" onclick="empLinkPick(' + i + ')">'
+      + '<b style="flex-shrink:0">' + esc(p.name || '(无名)') + '</b>'
+      + (p.extra ? '<span style="font-size:.72rem;color:var(--gray-400)">' + esc(p.extra) + '</span>' : '')
+      + '<span style="margin-left:auto;font-size:.76rem;color:var(--gray-500)">' + esc(p.phone) + '</span></div>'
+    ).join('') : '<div style="padding:8px;color:var(--gray-400);font-size:.8rem">员工档案里没找到</div>';
+  } catch (e) { box.innerHTML = '<div style="padding:8px;color:var(--red);font-size:.8rem">搜索失败</div>'; }
+}
+function empLinkPick(i) {
+  const p = (window._empLinkList || [])[i];
+  if (!p) return;
+  _editEmp = { id: p.ref_id, name: p.name };
+  if (!document.getElementById('editName').value.trim()) document.getElementById('editName').value = p.name || '';
+  document.getElementById('editEmpResults').style.display = 'none';
+  document.getElementById('editEmpSearch').value = '';
+  renderEmpLinked();
+}
+function empLinkClear() { _editEmp = null; renderEmpLinked(); }
+function renderEmpLinked() {
+  const el = document.getElementById('editEmpLinked');
+  if (!el) return;
+  const linked = _editEmp === undefined ? !!(currentContact && currentContact.employee_id) : !!_editEmp;
+  if (!linked) { el.style.display = 'none'; return; }
+  const label = _editEmp && _editEmp.name ? esc(_editEmp.name) : ('员工档案 #' + esc(String(currentContact && currentContact.employee_id || '')));
+  el.style.display = 'flex';
+  el.innerHTML = '<span>&#10003; 已关联: <b>' + label + '</b></span>'
+    + '<a style="margin-left:auto;cursor:pointer;color:#b91c1c;font-size:.76rem;text-decoration:underline" onclick="empLinkClear()">解除</a>';
 }
 function renderEditTags() {
   document.getElementById('editTagChips').innerHTML = _editTags.map(t =>
@@ -1229,6 +1283,11 @@ async function saveContact() {
         notes: document.getElementById('editNotes').value.trim()
       })
     });
+    if (_editEmp !== undefined) {
+      await api('/sms/contacts/' + currentContact.id + '/link-employee', {
+        method: 'PUT', body: JSON.stringify({ employee_id: _editEmp ? _editEmp.id : null })
+      });
+    }
     closeEditContactModal();
     toast('Contact updated');
     loadThreadDetail(currentThread.id);
