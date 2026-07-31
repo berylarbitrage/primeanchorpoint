@@ -41059,6 +41059,8 @@ function openApplicantDocViewer(url, label) {
           <button type="button" id="adVwCropBtn" onclick="armApplicantDocCrop()" title="裁剪：点击后在图上拖一个框，只留框内区域并放大" style="background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">✂️ 裁剪</button>
           <button type="button" id="adVwAdjBtn" onclick="toggleApplicantDocAdjust()" title="亮度 / 对比度 / 黑白 调节" style="background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">🎛 调节</button>
           <button type="button" id="adVwRestoreBtn" onclick="restoreApplicantDocCrop()" title="恢复原始图片" style="display:none;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">↩ 还原</button>
+          <button type="button" id="adVwSaveCropBtn" onclick="saveApplicantDocCrop()" title="把当前裁剪保存为系统显示版：各处缩略图将显示裁剪后的图；原件永远保留，点「原图」可看" style="display:none;background:#059669;border:1px solid #059669;border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">💾 存裁剪</button>
+          <button type="button" id="adVwClearCropBtn" onclick="clearApplicantDocCrop()" title="删除已保存的裁剪版，缩略图恢复显示原图（原件一直都在）" style="display:none;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">🗑 取消裁剪版</button>
           <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap">原图 ↗</a>
           <button type="button" onclick="closeApplicantDocViewer()" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 .35rem">✕</button>
         </span>
@@ -41096,14 +41098,29 @@ function openApplicantDocViewer(url, label) {
   v.querySelector('#adVwTitle').textContent = label || '证件';
   _adVwRotation = 0; // reset orientation for each newly opened document
   _adVwZoom = 1;     // reset zoom too
-  _adVwOrigUrl = url; _adVwCropOnce = false;
+  _adVwCropOnce = false;
   _adVwAdjReset(true);
+  // 申请证件类图片: 记住 subId/docId, 原图永远可从 ?v=orig 取到
+  const dm = String(url).match(/\/api\/admin\/applicant-submissions\/(\d+)\/docs\/(\d+)\/download/);
+  _adVwDocRef = dm ? { subId: dm[1], docId: dm[2] } : null;
+  _adVwOrigUrl = _adVwDocRef ? url.split('?')[0] + '?v=orig' : url;
   const rsBtn = v.querySelector('#adVwRestoreBtn'); if (rsBtn) rsBtn.style.display = 'none';
   const cpBtn = v.querySelector('#adVwCropBtn'); if (cpBtn) { cpBtn.style.background = 'transparent'; cpBtn.style.borderColor = 'rgba(255,255,255,.55)'; }
+  const svBtn = v.querySelector('#adVwSaveCropBtn'); if (svBtn) svBtn.style.display = 'none';
+  const clBtn = v.querySelector('#adVwClearCropBtn'); if (clBtn) clBtn.style.display = 'none';
+  if (_adVwDocRef) {
+    api(`/admin/applicant-submissions/${_adVwDocRef.subId}/docs`).then(list => {
+      const d = (Array.isArray(list) ? list : []).find(x => String(x.id) === _adVwDocRef.docId);
+      if (d && d.has_cropped) {
+        if (clBtn) clBtn.style.display = '';
+        if (rsBtn) { rsBtn.style.display = ''; rsBtn.title = '查看原始图片（系统当前显示的是保存过的裁剪版）'; }
+      }
+    }).catch(() => {});
+  }
   const img = v.querySelector('#adVwImg');
   img.src = url;
   _applyApplicantDocView();
-  v.querySelector('#adVwOpen').href = url;
+  v.querySelector('#adVwOpen').href = _adVwOrigUrl;
 }
 let _adVwRotation = 0;
 let _adVwZoom = 1;
@@ -41155,7 +41172,7 @@ function _applyApplicantDocView() {
 }
 
 // ── 证件查看器: 框选 OCR 文字识别 (Tesseract 本地引擎, /vendor/tesseract) ──
-let _adVwOcrMode = false, _ocrWorkerP = null, _adVwSelBox = null, _adVwSelStart = null, _adVwCropOnce = false, _adVwOrigUrl = '';
+let _adVwOcrMode = false, _ocrWorkerP = null, _adVwSelBox = null, _adVwSelStart = null, _adVwCropOnce = false, _adVwOrigUrl = '', _adVwDocRef = null;
 async function _getOcrWorker() {
   if (_ocrWorkerP) return _ocrWorkerP;
   _ocrWorkerP = (async () => {
@@ -41302,6 +41319,8 @@ function _adVwDoCrop(cl, ct, cw, ch) {
   _applyApplicantDocView();
   const rs = document.getElementById('adVwRestoreBtn');
   if (rs) rs.style.display = '';
+  const sv = document.getElementById('adVwSaveCropBtn');
+  if (sv && _adVwDocRef) sv.style.display = '';
 }
 function restoreApplicantDocCrop() {
   const img = document.getElementById('adVwImg');
@@ -41352,6 +41371,42 @@ function toggleApplicantDocAdjust() {
   p.style.display = on ? 'block' : 'none';
   const btn = document.getElementById('adVwAdjBtn');
   if (btn) { btn.style.background = on ? '#7c3aed' : 'transparent'; btn.style.borderColor = on ? '#7c3aed' : 'rgba(255,255,255,.55)'; }
+}
+// ── 裁剪版保存到系统: 独立新文件, 原件永不改动, ?v=orig 永远可取原件 ──
+async function saveApplicantDocCrop() {
+  const img = document.getElementById('adVwImg');
+  if (!_adVwDocRef) { showToast('这张图不是申请证件，无法保存', 'error'); return; }
+  if (!img || !/^data:image\//.test(img.src)) { showToast('请先用 ✂️裁剪 框出区域再保存', 'error'); return; }
+  try {
+    const r = await api(`/admin/applicant-submissions/${_adVwDocRef.subId}/docs/${_adVwDocRef.docId}/cropped`, { method: 'POST', body: JSON.stringify({ data: img.src }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast('✅ 裁剪版已保存，系统缩略图将显示裁剪后的图；原件保留，点「原图 ↗」随时可看');
+    const sv = document.getElementById('adVwSaveCropBtn'); if (sv) sv.style.display = 'none';
+    const cl = document.getElementById('adVwClearCropBtn'); if (cl) cl.style.display = '';
+    _adVwBustThumbs();
+  } catch (e) { showToast('保存失败: ' + (e.message || e), 'error'); }
+}
+async function clearApplicantDocCrop() {
+  if (!_adVwDocRef) return;
+  try {
+    const r = await api(`/admin/applicant-submissions/${_adVwDocRef.subId}/docs/${_adVwDocRef.docId}/cropped`, { method: 'POST', body: JSON.stringify({ data: '' }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast('已取消裁剪版，恢复显示原图');
+    const cl = document.getElementById('adVwClearCropBtn'); if (cl) cl.style.display = 'none';
+    restoreApplicantDocCrop();
+    _adVwBustThumbs();
+  } catch (e) { showToast('操作失败: ' + (e.message || e), 'error'); }
+}
+// 保存/取消裁剪版后, 刷新页面上所有该文件的缩略图 (加时间戳绕过缓存)
+function _adVwBustThumbs() {
+  if (!_adVwDocRef) return;
+  const frag = `/applicant-submissions/${_adVwDocRef.subId}/docs/${_adVwDocRef.docId}/download`;
+  document.querySelectorAll('img').forEach(im => {
+    const s = im.getAttribute('src') || '';
+    if (s.includes(frag) && !s.includes('v=orig') && im.id !== 'adVwImg') {
+      im.src = s.split('?')[0] + '?t=' + Date.now();
+    }
+  });
 }
 // Back-compat name (older callers) — same behavior.
 function _applyApplicantDocRotation() { _applyApplicantDocView(); }

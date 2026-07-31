@@ -996,6 +996,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
   file_name TEXT DEFAULT '',
   uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// 管理端保存的"显示用裁剪版"文件 key。原件 file_path 永不修改; 裁剪版是独立新文件。
+try { db.exec(`ALTER TABLE applicant_docs ADD COLUMN cropped_path TEXT DEFAULT ''`); } catch (e) {}
 // Standalone OTP store for the public applicant form (not tied to a worker account).
 db.exec(`CREATE TABLE IF NOT EXISTS applicant_otp (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -15326,7 +15328,9 @@ app.get('/api/admin/applicant-submissions', requireAdmin, blockManager, (req, re
 
 // ADMIN: list a submission's documents.
 app.get('/api/admin/applicant-submissions/:id/docs', requireAdmin, blockManager, (req, res) => {
-  res.json(db.prepare('SELECT id, doc_type, file_name, uploaded_at FROM applicant_docs WHERE submission_id=?').all(req.params.id));
+  res.json(db.prepare(`SELECT id, doc_type, file_name, uploaded_at,
+    CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
+    FROM applicant_docs WHERE submission_id=?`).all(req.params.id));
 });
 
 // ADMIN: download/stream one document (works for both local and R2 backends).
@@ -15334,7 +15338,10 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
   try {
     const doc = db.prepare('SELECT * FROM applicant_docs WHERE id=? AND submission_id=?').get(req.params.docId, req.params.id);
     if (!doc) return res.status(404).json({ error: 'Not found' });
-    const key = storage.normalizeKey(doc.file_path);
+    // 默认展示裁剪版(如管理员存过); ?v=orig 永远返回原件 —— 原件在任何情况下都不被覆盖
+    const wantOrig = String(req.query.v || '') === 'orig';
+    const effPath = (!wantOrig && doc.cropped_path) ? doc.cropped_path : doc.file_path;
+    const key = storage.normalizeKey(effPath);
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
     if (storage.isR2()) {
       try { return res.redirect(302, await storage.getDownloadUrl(key)); }
@@ -15348,6 +15355,29 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
       s.on('error', () => { try { res.status(500).end(); } catch {} });
       s.pipe(res);
     } catch (e) { res.status(404).json({ error: 'Not found' }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: 保存/清除某证件的"显示用裁剪版"。裁剪版是独立新文件, 原件永不改动;
+// 保存后系统各处缩略图默认显示裁剪版, ?v=orig 仍能取原件; data 传空 = 清除裁剪版。
+app.post('/api/admin/applicant-submissions/:id/docs/:docId/cropped', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const doc = db.prepare('SELECT * FROM applicant_docs WHERE id=? AND submission_id=?').get(req.params.docId, req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    const data = String((req.body || {}).data || '');
+    if (!data) {
+      db.prepare("UPDATE applicant_docs SET cropped_path='' WHERE id=?").run(doc.id);
+      return res.json({ success: true, cleared: true });
+    }
+    const m = data.match(/^data:image\/(png|jpeg);base64,(.+)$/);
+    if (!m) return res.status(400).json({ error: '仅支持 PNG/JPEG 图片' });
+    const buf = Buffer.from(m[2], 'base64');
+    if (!buf.length) return res.status(400).json({ error: '图片数据为空' });
+    if (buf.length > 10 * 1024 * 1024) return res.status(400).json({ error: '裁剪图过大 (>10MB)' });
+    const key = `applicant_cropped/doc-${doc.id}-${Date.now()}.${m[1] === 'png' ? 'png' : 'jpg'}`;
+    await storage.putObject(key, buf, { contentType: m[1] === 'png' ? 'image/png' : 'image/jpeg' });
+    db.prepare('UPDATE applicant_docs SET cropped_path=? WHERE id=?').run(key, doc.id);
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
