@@ -3439,6 +3439,51 @@ function decryptSSN(encrypted, iv) {
   } catch { return null; }
 }
 
+// ─── 敏感文件静态加密 (证件照片等): AES-256-GCM ───
+// 文件格式: 'PAENC1'(6B) + IV(12B) + TAG(16B) + 密文。没有魔数前缀 = 旧明文文件, 原样返回。
+// 密钥: FILE_ENC_SECRET(推荐) > SSN_SECRET > 默认值(仅兜底, 生产必须配置)。
+// 解密按 [当前密钥, 默认密钥] 依次尝试 — 从默认密钥切到正式密钥时旧文件仍可读。
+const FILE_ENC_MAGIC = Buffer.from('PAENC1');
+const _fileKeyOf = sec => crypto.scryptSync(sec, 'pa-file-salt-v1', 32);
+const FILE_ENC_SECRET_USED = process.env.FILE_ENC_SECRET || process.env.SSN_SECRET || 'prime-anchorpoint-file-default!';
+const FILE_ENC_KEY = _fileKeyOf(FILE_ENC_SECRET_USED);
+const FILE_ENC_FALLBACK_KEYS = [FILE_ENC_KEY];
+if (FILE_ENC_SECRET_USED !== 'prime-anchorpoint-file-default!') FILE_ENC_FALLBACK_KEYS.push(_fileKeyOf('prime-anchorpoint-file-default!'));
+if (!process.env.FILE_ENC_SECRET && !process.env.SSN_SECRET) {
+  console.warn('⚠️ [FileEnc] 未配置 FILE_ENC_SECRET / SSN_SECRET 环境变量, 文件加密正在使用源码默认密钥 — 生产环境务必配置一个长随机串!');
+}
+function isEncryptedFileBuf(buf) {
+  return Buffer.isBuffer(buf) && buf.length >= 34 && buf.slice(0, 6).equals(FILE_ENC_MAGIC);
+}
+function encryptFileBuf(buf) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', FILE_ENC_KEY, iv);
+  const ct = Buffer.concat([cipher.update(buf), cipher.final()]);
+  return Buffer.concat([FILE_ENC_MAGIC, iv, cipher.getAuthTag(), ct]);
+}
+function decryptFileBuf(buf) {
+  if (!isEncryptedFileBuf(buf)) return buf;   // 旧明文文件
+  const iv = buf.slice(6, 18), tag = buf.slice(18, 34), ct = buf.slice(34);
+  let lastErr = null;
+  for (const key of FILE_ENC_FALLBACK_KEYS) {
+    try {
+      const d = crypto.createDecipheriv('aes-256-gcm', key, iv);
+      d.setAuthTag(tag);
+      return Buffer.concat([d.update(ct), d.final()]);
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error('文件解密失败 (加密密钥是否被更换?): ' + (lastErr && lastErr.message));
+}
+// 把存储上的某个文件就地加密 (已加密的跳过); 返回是否新加密
+async function encryptStoredFile(keyLike) {
+  const key = storage.normalizeKey(keyLike);
+  if (!(await storage.exists(key))) return false;
+  const buf = await storage.getBuffer(key);
+  if (isEncryptedFileBuf(buf)) return false;
+  await storage.putObject(key, encryptFileBuf(buf), { contentType: 'application/octet-stream' });
+  return true;
+}
+
 // ─── Employee PIN hashing ───
 function hashPin(pin, salt) {
   return crypto.scryptSync(String(pin), salt, 32).toString('hex');
@@ -11431,15 +11476,13 @@ app.get('/api/admin/work-permit-docs/:docId/download', requireAdmin, async (req,
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
   const key = storage.normalizeKey(doc.file_path);
   if (!(await storage.exists(key))) return res.status(404).json({ error: 'File missing' });
-  if (storage.isR2()) {
-    try { return res.redirect(302, await storage.getDownloadUrl(key)); }
-    catch (e) { return res.status(404).json({ error: 'Not found' }); }
-  }
   const ext = path.extname(key).toLowerCase();
   const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
   if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
-  try { const s = await storage.getStream(key); s.on('error', () => { try { res.status(500).end(); } catch {} }); s.pipe(res); }
-  catch (e) { res.status(404).json({ error: 'Not found' }); }
+  try {
+    const buf = decryptFileBuf(await storage.getBuffer(key));   // 加密文件解密返回; 旧明文原样返回
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: '文件读取失败: ' + e.message }); }
 });
 
 app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
@@ -15192,6 +15235,13 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
       }
     }
     res.json({ success: true, id: subId });
+    // 后台把刚上传的证件文件就地加密 (不阻塞响应)
+    setImmediate(async () => {
+      try {
+        const rows = db.prepare('SELECT file_path FROM applicant_docs WHERE submission_id=?').all(subId);
+        for (const r of rows) { try { await encryptStoredFile(r.file_path); } catch (e) { console.error('[FileEnc] new doc:', e.message); } }
+      } catch (e) { console.error('[FileEnc]', e.message); }
+    });
     // 电话重复检测：同一号码在别的申请或员工档案里出现过 → 通知邮件升级为
     // ⚠️ 提醒（标题标红、正文列出重复的人和电话）。
     let dup = null;
@@ -15356,32 +15406,28 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
     const effPath = (!wantOrig && doc.cropped_path) ? doc.cropped_path : doc.file_path;
     let key = storage.normalizeKey(effPath);
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
-    // iPhone 的 HEIC/HEIF 浏览器不能显示 → 服务器转成 JPEG (转一次缓存为 <key>.conv.jpg)
+    // iPhone 的 HEIC/HEIF 浏览器不能显示 → 服务器转成 JPEG (转一次缓存为 <key>.conv.jpg, 加密存)
     const extH = path.extname(key).toLowerCase();
     if (extH === '.heic' || extH === '.heif') {
       try {
         const convKey = key + '.conv.jpg';
         if (!(await storage.exists(convKey))) {
           const heicConvert = require('heic-convert');
-          const buf = await storage.getBuffer(key);
+          const buf = decryptFileBuf(await storage.getBuffer(key));
           const out = await heicConvert({ buffer: buf, format: 'JPEG', quality: 0.9 });
-          await storage.putObject(convKey, Buffer.from(out), { contentType: 'image/jpeg' });
+          await storage.putObject(convKey, encryptFileBuf(Buffer.from(out)), { contentType: 'application/octet-stream' });
         }
         key = convKey;   // 后续按 JPEG 提供
       } catch (e) { console.error('[HEIC convert]', e.message); }
     }
-    if (storage.isR2()) {
-      try { return res.redirect(302, await storage.getDownloadUrl(key)); }
-      catch (e) { return res.status(404).json({ error: 'Not found' }); }
-    }
-    const ext = path.extname(key).toLowerCase();
+    // 证件文件静态加密: 一律读到服务器解密后返回 (不能用 R2 直链, 那是密文)
+    const ext = /\.conv\.jpg$/.test(key) ? '.jpg' : path.extname(key).toLowerCase();
     const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
-    if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
+    res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
     try {
-      const s = await storage.getStream(key);
-      s.on('error', () => { try { res.status(500).end(); } catch {} });
-      s.pipe(res);
-    } catch (e) { res.status(404).json({ error: 'Not found' }); }
+      const buf = decryptFileBuf(await storage.getBuffer(key));
+      res.send(buf);
+    } catch (e) { res.status(500).json({ error: '文件读取失败: ' + e.message }); }
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -15464,7 +15510,7 @@ app.post('/api/admin/applicant-submissions/:id/docs/:docId/cropped', requireAdmi
     if (!buf.length) return res.status(400).json({ error: '图片数据为空' });
     if (buf.length > 10 * 1024 * 1024) return res.status(400).json({ error: '裁剪图过大 (>10MB)' });
     const key = `applicant_cropped/doc-${doc.id}-${Date.now()}.${m[1] === 'png' ? 'png' : 'jpg'}`;
-    await storage.putObject(key, buf, { contentType: m[1] === 'png' ? 'image/png' : 'image/jpeg' });
+    await storage.putObject(key, encryptFileBuf(buf), { contentType: 'application/octet-stream' });
     db.prepare('UPDATE applicant_docs SET cropped_path=? WHERE id=?').run(key, doc.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -15698,6 +15744,13 @@ app.post('/api/worker-docs/submit', workerDocUpload.fields([
       }
     }
     res.json({ success: true, id: subId });
+    // 后台把刚上传的证件文件就地加密 (不阻塞响应)
+    setImmediate(async () => {
+      try {
+        const rows = db.prepare('SELECT file_path FROM applicant_docs WHERE submission_id=?').all(subId);
+        for (const r of rows) { try { await encryptStoredFile(r.file_path); } catch (e) { console.error('[FileEnc] new doc:', e.message); } }
+      } catch (e) { console.error('[FileEnc]', e.message); }
+    });
     notifyNewWorkerDocs({ subId, name, phone, docMeta })
       .catch(e => console.error('[worker-docs-notify] failed:', e.message));
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -16852,6 +16905,25 @@ app.delete('/api/admin/sub-statements/:id', requireAdmin, requireRole('admin'), 
   db.prepare('DELETE FROM sub_statements WHERE id=?').run(parseInt(req.params.id));
   res.json({ ok: true });
 });
+
+// ─── 存量证件文件加密迁移: 启动 15 秒后后台把未加密的申请证件就地加密 (幂等) ───
+setTimeout(async () => {
+  try {
+    const rows = db.prepare('SELECT id, file_path, cropped_path FROM applicant_docs').all();
+    let n = 0;
+    for (const r of rows) {
+      for (const p of [r.file_path, r.cropped_path]) {
+        if (!p) continue;
+        try { if (await encryptStoredFile(p)) n++; } catch (e) { console.error('[FileEnc] migrate', p, e.message); }
+        try {
+          const convKey = storage.normalizeKey(p) + '.conv.jpg';
+          if (await storage.exists(convKey) && await encryptStoredFile(convKey)) n++;
+        } catch (_) {}
+      }
+    }
+    if (n) console.log(`[FileEnc] 存量证件文件加密完成: ${n} 个`);
+  } catch (e) { console.error('[FileEnc] migrate:', e.message); }
+}, 15000);
 
 // ─── 电话查重（管理端）：输入手机号，查这个人是否在系统里登记 / 提交过申请 ───
 // 覆盖：招工申请 applicant_submissions、员工档案 employees、工头 foremen。
