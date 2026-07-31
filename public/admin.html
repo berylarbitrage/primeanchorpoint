@@ -48333,75 +48333,79 @@ fetch('/api/build', { cache: 'no-store' }).then(r => r.json()).then(b => {
 </script>
 
 <script>
-// ─── 界面三语切换 (中/EN/ES): 运行时机器翻译整页文字, 服务器+本地双缓存 ───
+// ─── 界面三语切换 (中/EN/ES): 不刷新页面就地切换; 原文记在节点上, 切回中文即刻还原 ───
 (() => {
   const LANG_KEY = 'adminUiLang';
-  const lang = localStorage.getItem(LANG_KEY) || 'zh';
-  function mountBar() {
-    if (document.getElementById('uiLangBar')) return;
-    const bar = document.createElement('div');
-    bar.id = 'uiLangBar';
-    bar.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99999;display:flex;gap:3px;background:#fff;border:1px solid #d1d5db;border-radius:999px;padding:3px 5px;box-shadow:0 2px 10px rgba(0,0,0,.15);font-size:.72rem';
-    const mk = (code, label) => '<button data-lang="' + code + '" style="border:none;border-radius:999px;padding:2px 9px;cursor:pointer;font-weight:700;background:' + (lang === code ? '#1A3F7A' : 'transparent') + ';color:' + (lang === code ? '#fff' : '#374151') + '">' + label + '</button>';
-    bar.innerHTML = mk('zh', '中') + mk('en', 'EN') + mk('es', 'ES');
-    bar.addEventListener('click', e => {
-      const b = e.target.closest('button[data-lang]');
-      if (!b || b.dataset.lang === lang) return;
-      localStorage.setItem(LANG_KEY, b.dataset.lang);
-      location.reload();
-    });
-    document.body.appendChild(bar);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountBar);
-  else mountBar();
-  if (lang === 'zh') return;
-
+  let currentLang = localStorage.getItem(LANG_KEY) || 'zh';
   const CJK = /[\u4e00-\u9fff]/;
-  const cacheKey = 'uiTr_' + lang;
-  let cache = {};
-  try { cache = JSON.parse(localStorage.getItem(cacheKey) || '{}'); } catch (_) {}
+  const caches = {};
+  function cacheOf(l) {
+    if (!caches[l]) {
+      try { caches[l] = JSON.parse(localStorage.getItem('uiTr_' + l) || '{}'); } catch (_) { caches[l] = {}; }
+    }
+    return caches[l];
+  }
   let cacheDirty = false;
   setInterval(() => {
     if (!cacheDirty) return;
     cacheDirty = false;
-    try { localStorage.setItem(cacheKey, JSON.stringify(cache)); } catch (_) {}
+    for (const l of Object.keys(caches)) {
+      try { localStorage.setItem('uiTr_' + l, JSON.stringify(caches[l])) } catch (_) {}
+    }
   }, 3000);
+  function _tk() { try { return TOKEN || ''; } catch (_) { return ''; } }
 
-  const pending = new Map();   // 原文 -> 待应用目标列表
-  let flushTimer = null, inflight = false;
+  // ── 应用/还原 ──
   const apply = (tgt, dst) => {
     try {
       if (tgt.nodeType === 3) tgt.nodeValue = dst;
       else tgt.el.setAttribute(tgt.attr, dst);
     } catch (_) {}
   };
+  function origOfText(node) {
+    // 首次翻译前把原文记在节点上
+    if (node.__origText === undefined && CJK.test(node.nodeValue || '')) node.__origText = node.nodeValue;
+    return node.__origText;
+  }
+  function origOfAttr(el, attr) {
+    el.__origAttrs = el.__origAttrs || {};
+    const v = el.getAttribute(attr);
+    if (el.__origAttrs[attr] === undefined && v && CJK.test(v)) el.__origAttrs[attr] = v;
+    return el.__origAttrs[attr];
+  }
+
+  // ── 翻译队列 ──
+  const pending = new Map();
+  let flushTimer = null, inflight = false;
   function queue(tgt, srcText) {
-    if (cache[srcText]) { apply(tgt, cache[srcText]); return; }
+    if (currentLang === 'zh' || !srcText) return;
+    const hit = cacheOf(currentLang)[srcText];
+    if (hit) { apply(tgt, hit); return; }
     if (!pending.has(srcText)) pending.set(srcText, []);
-    pending.get(srcText).push(tgt);
+    pending.get(srcText).push({ tgt, lang: currentLang });
     clearTimeout(flushTimer);
     flushTimer = setTimeout(flush, 250);
   }
-  function _tk() { try { return TOKEN || ''; } catch (_) { return ''; } }
   async function flush() {
     if (inflight || !pending.size) return;
     if (!_tk()) { flushTimer = setTimeout(flush, 2000); return; }   // 未登录: 等登录后再翻
     inflight = true;
+    const reqLang = currentLang;
     const keys = [...pending.keys()].slice(0, 400);
     try {
       const resp = await fetch('/api/admin/ui-translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _tk() },
-        body: JSON.stringify({ lang, texts: keys })
+        body: JSON.stringify({ lang: reqLang, texts: keys })
       });
-      const r = resp.ok ? await resp.json() : null;   // 401/错误一律静默, 不弹窗不登出
+      const r = resp.ok ? await resp.json() : null;   // 失败静默, 绝不弹登录框
       const map = (r && r.map) || {};
       for (const k of keys) {
         const tgts = pending.get(k) || [];
         pending.delete(k);
         if (map[k]) {
-          cache[k] = map[k]; cacheDirty = true;
-          tgts.forEach(t => apply(t, map[k]));
+          cacheOf(reqLang)[k] = map[k]; cacheDirty = true;
+          tgts.forEach(x => { if (x.lang === currentLang && currentLang === reqLang) apply(x.tgt, map[k]); });
         }
       }
     } catch (_) { keys.forEach(k => pending.delete(k)); }
@@ -48409,38 +48413,84 @@ fetch('/api/build', { cache: 'no-store' }).then(r => r.json()).then(b => {
     if (pending.size) flushTimer = setTimeout(flush, 250);
   }
 
+  // ── 扫描 ──
   const SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEXTAREA: 1, CODE: 1, PRE: 1 };
-  function walk(root) {
+  function walk(root, mode) {   // mode: 'translate' | 'restore'
     if (root.nodeType === 3) {
-      if (CJK.test(root.nodeValue)) queue(root, root.nodeValue);
+      if (mode === 'restore') {
+        if (root.__origText !== undefined) root.nodeValue = root.__origText;
+      } else {
+        const o = origOfText(root);
+        if (o !== undefined) queue(root, o);
+      }
       return;
     }
     if (root.nodeType !== 1 || SKIP[root.tagName] || root.id === 'uiLangBar') return;
     for (const attr of ['placeholder', 'title']) {
-      const v = root.getAttribute && root.getAttribute(attr);
-      if (v && CJK.test(v)) queue({ el: root, attr }, v);
+      if (mode === 'restore') {
+        if (root.__origAttrs && root.__origAttrs[attr] !== undefined) root.setAttribute(attr, root.__origAttrs[attr]);
+      } else if (root.getAttribute) {
+        const o = origOfAttr(root, attr);
+        if (o !== undefined) queue({ el: root, attr }, o);
+      }
     }
     let c = root.firstChild;
-    while (c) { const nx = c.nextSibling; walk(c); c = nx; }
+    while (c) { const nx = c.nextSibling; walk(c, mode); c = nx; }
   }
-  function start() {
-    walk(document.body);
+
+  // ── 切换 (不刷新页面) ──
+  function switchLang(next) {
+    if (next === currentLang) return;
+    pending.clear();
+    currentLang = next;
+    localStorage.setItem(LANG_KEY, next);
+    renderBar();
+    walk(document.body, 'restore');            // 先全部还原成中文
+    if (next !== 'zh') walk(document.body, 'translate');   // 再按新语言翻
+  }
+
+  // ── 切换器 ──
+  function renderBar() {
+    let bar = document.getElementById('uiLangBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'uiLangBar';
+      bar.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99999;display:flex;gap:3px;background:#fff;border:1px solid #d1d5db;border-radius:999px;padding:3px 5px;box-shadow:0 2px 10px rgba(0,0,0,.15);font-size:.72rem';
+      bar.addEventListener('click', e => {
+        const b = e.target.closest('button[data-lang]');
+        if (b) switchLang(b.dataset.lang);
+      });
+      document.body.appendChild(bar);
+    }
+    const mk = (code, label) => '<button data-lang="' + code + '" style="border:none;border-radius:999px;padding:2px 9px;cursor:pointer;font-weight:700;background:' + (currentLang === code ? '#1A3F7A' : 'transparent') + ';color:' + (currentLang === code ? '#fff' : '#374151') + '">' + label + '</button>';
+    bar.innerHTML = mk('zh', '中') + mk('en', 'EN') + mk('es', 'ES');
+  }
+
+  // ── 监听动态内容 ──
+  function startObserver() {
     new MutationObserver(muts => {
+      if (currentLang === 'zh') return;
       for (const m of muts) {
         if (m.type === 'characterData') {
-          if (CJK.test(m.target.nodeValue || '')) queue(m.target, m.target.nodeValue);
+          if (CJK.test(m.target.nodeValue || '')) { m.target.__origText = m.target.nodeValue; queue(m.target, m.target.nodeValue); }
         } else if (m.type === 'childList') {
-          m.addedNodes.forEach(n => walk(n));
+          m.addedNodes.forEach(n => walk(n, 'translate'));
         } else if (m.type === 'attributes') {
           const v = m.target.getAttribute(m.attributeName);
-          if (v && CJK.test(v)) queue({ el: m.target, attr: m.attributeName }, v);
+          if (v && CJK.test(v)) {
+            m.target.__origAttrs = m.target.__origAttrs || {};
+            m.target.__origAttrs[m.attributeName] = v;
+            queue({ el: m.target, attr: m.attributeName }, v);
+          }
         }
       }
     }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['placeholder', 'title'] });
   }
+
   function boot() {
-    if (!_tk()) { setTimeout(boot, 1500); return; }   // 登录页不翻; 登录成功后自动开始
-    start();
+    renderBar();
+    startObserver();
+    if (currentLang !== 'zh') walk(document.body, 'translate');
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
