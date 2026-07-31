@@ -278,6 +278,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <h1>SMS Inbox</h1>
       <span id="headerUnread" class="badge-unread" style="display:none"></span>
       <div class="spacer"></div>
+      <button class="btn-icon" onclick="showNewChatModal()" title="从员工 / 招工申请找人发起对话" style="font-size:1.05rem">&#128172;</button>
       <button class="btn-icon" onclick="showBroadcastModal()" title="Compose / Broadcast" style="font-size:1.1rem">&#9993;</button>
       <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
       <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
@@ -319,6 +320,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div style="flex:1;min-width:0">
         <div id="detailName" style="font-size:.92rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
         <div id="detailPhone" style="font-size:.75rem;color:var(--gray-400)"></div>
+        <div id="contactTagRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px"></div>
       </div>
       <span id="detailPriority" class="priority-badge" onclick="cyclePriority()"></span>
       <span id="detailStatus" class="ti-status" style="font-size:.72rem"></span>
@@ -385,12 +387,30 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 <!-- Edit Contact Modal -->
 <div class="modal-bg" id="editContactModal">
   <div class="modal">
-    <h3>Edit Contact</h3>
+    <h3>联系人资料 / Contact</h3>
     <label>Name</label><input id="editName" placeholder="Contact name">
     <label>Company</label><input id="editCompany" placeholder="Company">
     <label>Email</label><input id="editEmail" placeholder="Email">
+    <label>标签（做过的工种 / 在哪里上过班）</label>
+    <div id="editTagChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
+    <div id="editTagPresets" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+    <input id="editTagInput" placeholder="自定义标签，回车添加（如: GOFO上过班 / 只做白班）" style="margin-bottom:8px" onkeydown="if(event.key==='Enter'){event.preventDefault();addEditTagFromInput();}">
+    <label>备注（要求 / 上班情况等，保存进系统）</label>
+    <textarea id="editNotes" rows="4" placeholder="如: 只做白班，有车；5/20 在 GOFO 卸柜上过一天班，靠谱" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
     <button class="btn" onclick="saveContact()">Save</button>
     <button class="close-modal" onclick="closeEditContactModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- 发起对话: 从员工 / 招工申请找人 -->
+<div class="modal-bg" id="newChatModal">
+  <div class="modal" style="max-width:540px">
+    <h3>&#128172; 发起对话 · 从员工 / 招工申请找人</h3>
+    <input id="ncSearch" placeholder="搜姓名 / 电话 / 职位 / 公司…" oninput="ncDebounce()" style="margin-bottom:8px">
+    <div id="ncResults" style="max-height:320px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius)">
+      <div style="padding:12px;color:var(--gray-400);text-align:center">输入关键词搜索，或直接浏览</div>
+    </div>
+    <button class="close-modal" onclick="closeNewChatModal()" style="margin-top:8px">Cancel</button>
   </div>
 </div>
 
@@ -662,6 +682,7 @@ function renderThreadList() {
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
       + '</div>'
       + renderTagsInline(t.tags)
+      + renderContactTagsInline(t.contact && t.contact.tags)
       + '</div></div>';
   }).join('');
 }
@@ -735,6 +756,7 @@ function renderDetail() {
   const name = currentContact.name || fmtPhone(currentContact.phone_e164);
   document.getElementById('detailName').textContent = name;
   document.getElementById('detailPhone').textContent = fmtPhone(currentContact.phone_e164);
+  renderContactTagRow();
 
   const statusEl = document.getElementById('detailStatus');
   statusEl.textContent = currentThread.status;
@@ -1127,23 +1149,54 @@ async function doAssign(agentId) {
 }
 
 // ─── Edit Contact ───
+const CONTACT_TAG_PRESETS = ['普工', 'Order Picker', '叉车工', '卸柜工', '高位叉车', '打包'];
+let _editTags = [];
 function showEditContactModal() {
   if (!currentContact) return;
   document.getElementById('editName').value = currentContact.name || '';
   document.getElementById('editCompany').value = currentContact.company || '';
   document.getElementById('editEmail').value = currentContact.email || '';
+  document.getElementById('editNotes').value = currentContact.notes || '';
+  try { _editTags = JSON.parse(currentContact.tags || '[]'); } catch (_) { _editTags = []; }
+  if (!Array.isArray(_editTags)) _editTags = [];
+  document.getElementById('editTagInput').value = '';
+  renderEditTags();
   document.getElementById('editContactModal').classList.add('show');
+}
+function renderEditTags() {
+  document.getElementById('editTagChips').innerHTML = _editTags.map(t =>
+    '<span style="display:inline-flex;align-items:center;gap:4px;background:#dbeafe;color:#1e40af;border-radius:999px;padding:2px 10px;font-size:.76rem;font-weight:600">' + esc(t)
+    + '<a style="cursor:pointer;color:#1e40af;font-weight:700" onclick="removeEditTag(\'' + esc(t).replace(/'/g, "\\'") + '\')">&times;</a></span>'
+  ).join('') || '<span style="font-size:.75rem;color:var(--gray-400)">暂无标签</span>';
+  document.getElementById('editTagPresets').innerHTML = CONTACT_TAG_PRESETS.filter(p => !_editTags.includes(p)).map(p =>
+    '<button type="button" style="border:1px dashed var(--gray-300);background:var(--white);color:var(--gray-600);border-radius:999px;padding:2px 10px;font-size:.76rem;cursor:pointer" onclick="addEditTag(\'' + p + '\')">+ ' + p + '</button>'
+  ).join('');
+}
+function addEditTag(t) {
+  t = String(t || '').trim();
+  if (t && !_editTags.includes(t)) { _editTags.push(t); renderEditTags(); }
+}
+function addEditTagFromInput() {
+  const el = document.getElementById('editTagInput');
+  addEditTag(el.value); el.value = '';
+}
+function removeEditTag(t) {
+  _editTags = _editTags.filter(x => x !== t);
+  renderEditTags();
 }
 function closeEditContactModal() { document.getElementById('editContactModal').classList.remove('show'); }
 
 async function saveContact() {
   if (!currentContact) return;
   try {
+    addEditTag(document.getElementById('editTagInput').value);   // 没按回车的也带上
     await api('/sms/contacts/' + currentContact.id, {
       method: 'PUT', body: JSON.stringify({
         name: document.getElementById('editName').value.trim(),
         company: document.getElementById('editCompany').value.trim(),
-        email: document.getElementById('editEmail').value.trim()
+        email: document.getElementById('editEmail').value.trim(),
+        tags: JSON.stringify(_editTags),
+        notes: document.getElementById('editNotes').value.trim()
       })
     });
     closeEditContactModal();
@@ -1242,6 +1295,68 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ─── Phase 2: Tags ───
+function renderContactTagRow() {
+  const row = document.getElementById('contactTagRow');
+  if (!row) return;
+  let tags = [];
+  try { tags = JSON.parse((currentContact && currentContact.tags) || '[]'); } catch (_) {}
+  const hasNotes = !!(currentContact && (currentContact.notes || '').trim());
+  row.innerHTML = (Array.isArray(tags) ? tags : []).map(t =>
+    '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">' + esc(t) + '</span>'
+  ).join('')
+  + (hasNotes ? '<span title="有备注" style="font-size:.68rem;color:#b45309;background:#fef3c7;border-radius:999px;padding:1px 8px;font-weight:600">&#128221; 备注</span>' : '')
+  + '<a style="font-size:.68rem;color:var(--blue,#2563eb);cursor:pointer;text-decoration:underline" onclick="showEditContactModal()">&#127991; 标签/备注</a>';
+}
+function renderContactTagsInline(tagsJson) {
+  let tags = [];
+  try { tags = JSON.parse(tagsJson || '[]'); } catch (_) {}
+  if (!Array.isArray(tags) || !tags.length) return '';
+  return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">' + tags.slice(0, 4).map(t =>
+    '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:0 7px;font-size:.64rem;font-weight:600">' + esc(t) + '</span>'
+  ).join('') + (tags.length > 4 ? '<span style="font-size:.64rem;color:var(--gray-400)">+' + (tags.length - 4) + '</span>' : '') + '</div>';
+}
+// ─── 发起对话: 员工/申请人搜索 ───
+let _ncDebounce = null;
+function showNewChatModal() {
+  document.getElementById('ncSearch').value = '';
+  document.getElementById('newChatModal').classList.add('show');
+  ncSearch();
+  setTimeout(() => document.getElementById('ncSearch').focus(), 50);
+}
+function closeNewChatModal() { document.getElementById('newChatModal').classList.remove('show'); }
+function ncDebounce() {
+  clearTimeout(_ncDebounce);
+  _ncDebounce = setTimeout(ncSearch, 280);
+}
+async function ncSearch() {
+  const box = document.getElementById('ncResults');
+  box.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">Loading…</div>';
+  try {
+    const r = await api('/sms/people-search?q=' + encodeURIComponent(document.getElementById('ncSearch').value.trim()));
+    const people = r.people || [];
+    if (!people.length) { box.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">没找到，换个关键词试试</div>'; return; }
+    box.innerHTML = people.map((p, i) =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="ncStart(' + i + ')">'
+      + '<span style="flex-shrink:0;font-size:.66rem;font-weight:700;border-radius:5px;padding:2px 6px;' + (p.type === 'employee' ? 'background:#d1fae5;color:#065f46' : 'background:#fef3c7;color:#92400e') + '">' + (p.type === 'employee' ? '员工' : '申请') + '</span>'
+      + '<span style="flex:1;min-width:0"><b style="font-size:.85rem">' + esc(p.name || '(无名)') + '</b>'
+      + (p.extra ? '<span style="font-size:.72rem;color:var(--gray-400);margin-left:6px">' + esc(p.extra) + '</span>' : '') + '</span>'
+      + '<span style="font-size:.76rem;color:var(--gray-500)">' + esc(p.phone) + '</span></div>'
+    ).join('');
+    window._ncPeople = people;
+  } catch (e) { box.innerHTML = '<div style="padding:12px;color:var(--red)">搜索失败: ' + esc(e.message || '') + '</div>'; }
+}
+async function ncStart(i) {
+  const p = (window._ncPeople || [])[i];
+  if (!p) return;
+  try {
+    const r = await api('/sms/start-thread', { method: 'POST', body: JSON.stringify({ phone: p.phone, name: p.name, employee_id: p.type === 'employee' ? p.ref_id : null, type: p.type }) });
+    if (r && r.error) { toast(r.error); return; }
+    closeNewChatModal();
+    toast('对话已就绪，直接输入消息发送');
+    await loadThreads();
+    openThread(r.thread_id);
+  } catch (e) { toast('发起失败: ' + (e.message || e)); }
+}
 function renderTagsInline(tagsJson) {
   let tags = [];
   try { tags = typeof tagsJson === 'string' ? JSON.parse(tagsJson) : (tagsJson || []); } catch(e) {}

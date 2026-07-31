@@ -28386,7 +28386,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
 
-    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company,
+    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -28399,7 +28399,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     res.json({
       threads: threads.map(t => ({
         id: t.id,
-        contact: { id: t.contact_id, phone_e164: t.phone_e164, name: t.contact_name, company: t.contact_company },
+        contact: { id: t.contact_id, phone_e164: t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags },
         status: t.status,
         priority: t.priority,
         assigned_agent: t.assigned_agent_id ? { id: t.assigned_agent_id, username: t.agent_username } : null,
@@ -29049,6 +29049,43 @@ app.get('/api/sms/all-employees', requireAdmin, requireSmsAccess, (req, res) => 
     const employees = db.prepare(`SELECT id, first_name, last_name, phone, email, position, status FROM employees WHERE status='active' AND phone != '' ORDER BY first_name, last_name`).all();
     res.json({ employees });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/people-search — 从员工档案 + 招工申请里找人, 用于直接发起对话
+app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const like = `%${q}%`;
+    const emps = db.prepare(`SELECT id, first_name, last_name, phone, position, status FROM employees
+      WHERE phone != '' AND (? = '' OR first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ? OR phone LIKE ? OR position LIKE ?)
+      ORDER BY (status='active') DESC, first_name, last_name LIMIT 30`).all(q, like, like, like, like, like);
+    const apps = db.prepare(`SELECT id, name, phone, position, partner_name FROM applicant_submissions
+      WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)
+      ORDER BY id DESC LIMIT 30`).all(q, like, like, like, like);
+    const people = [
+      ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: e.phone,
+        extra: [e.position, e.status === 'active' ? '在职' : e.status].filter(Boolean).join(' · ') })),
+      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: a.phone,
+        extra: [a.position, a.partner_name].filter(Boolean).join(' · ') })),
+    ];
+    res.json({ people });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/start-thread — 不等对方来短信, 从员工/申请人名单直接发起(或打开已有)对话
+app.post('/api/sms/start-thread', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const b = req.body || {};
+    const phoneE164 = formatPhoneE164(String(b.phone || ''));
+    if (!phoneE164 || !/^\+\d{8,15}$/.test(phoneE164)) return res.status(400).json({ error: '电话号码无效: ' + (b.phone || '') });
+    const contact = smsGetOrCreateContact(phoneE164);
+    if (b.name && !contact.name) db.prepare(`UPDATE sms_contacts SET name=?, updated_at=datetime('now') WHERE id=?`).run(String(b.name).slice(0, 120), contact.id);
+    if (b.employee_id && !contact.employee_id) db.prepare(`UPDATE sms_contacts SET employee_id=?, updated_at=datetime('now') WHERE id=?`).run(parseInt(b.employee_id) || null, contact.id);
+    const twilioNumber = TWILIO_FROM || process.env.TWILIO_PHONE_NUMBER || '';
+    const thread = smsFindOrCreateThread(contact.id, twilioNumber);
+    smsAudit('thread', thread.id, 'started_from_directory', 'agent', req.userId, { phone: phoneE164, type: b.type || '' });
+    res.json({ success: true, thread_id: thread.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/sms/broadcast — send SMS to multiple recipients
