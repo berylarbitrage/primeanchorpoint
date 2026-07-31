@@ -28293,6 +28293,65 @@ async function translateText(text, fromLang, toLang) {
   }
 }
 
+// ─── 管理界面三语: 批量机器翻译 + DB 缓存 (中文→EN/ES, 第一次翻过就永久缓存) ───
+db.exec(`CREATE TABLE IF NOT EXISTS ui_translations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lang TEXT NOT NULL,
+  src TEXT NOT NULL,
+  dst TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(lang, src)
+)`);
+app.post('/api/admin/ui-translate', requireAdmin, async (req, res) => {
+  try {
+    const lang = String((req.body || {}).lang || '');
+    if (!['en', 'es'].includes(lang)) return res.status(400).json({ error: 'lang must be en/es' });
+    let texts = (req.body || {}).texts;
+    if (!Array.isArray(texts)) return res.status(400).json({ error: 'texts array required' });
+    texts = [...new Set(texts.map(t => String(t)).filter(t => t.trim() && t.length <= 500))].slice(0, 500);
+    const map = {};
+    const getC = db.prepare('SELECT dst FROM ui_translations WHERE lang=? AND src=?');
+    const insC = db.prepare('INSERT OR REPLACE INTO ui_translations (lang, src, dst) VALUES (?,?,?)');
+    const missing = [];
+    for (const t of texts) {
+      const row = getC.get(lang, t);
+      if (row) map[t] = row.dst; else missing.push(t);
+    }
+    // 按行合并成块翻译 (行数对不上时逐条兜底), 免费 gtx 接口 URL 有长度限制
+    const chunks = [];
+    let cur = [], curLen = 0;
+    for (const src2 of missing) {
+      const line = src2.replace(/\s*\n\s*/g, ' ');
+      if (cur.length >= 35 || curLen + line.length > 900) { if (cur.length) chunks.push(cur); cur = []; curLen = 0; }
+      cur.push({ src: src2, line }); curLen += line.length + 1;
+    }
+    if (cur.length) chunks.push(cur);
+    for (const chunk of chunks) {
+      let ok = false;
+      try {
+        const out = await translateText(chunk.map(c => c.line).join('\n'), 'zh', lang);
+        const lines = out.split('\n');
+        if (lines.length === chunk.length) {
+          chunk.forEach((c, i) => {
+            const d = lines[i].trim();
+            if (d) { map[c.src] = d; try { insC.run(lang, c.src, d); } catch (_) {} }
+          });
+          ok = true;
+        }
+      } catch (_) {}
+      if (!ok) {
+        for (const c of chunk) {
+          try {
+            const d = (await translateText(c.line, 'zh', lang)).trim();
+            if (d) { map[c.src] = d; try { insC.run(lang, c.src, d); } catch (_) {} }
+          } catch (_) {}
+        }
+      }
+    }
+    res.json({ map });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ═══ Twilio Inbound Webhook ═══
 app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), validateTwilioWebhook, async (req, res) => {
   try {

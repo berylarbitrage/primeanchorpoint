@@ -48190,5 +48190,108 @@ fetch('/api/build', { cache: 'no-store' }).then(r => r.json()).then(b => {
 }).catch(() => { var el = document.getElementById('buildBadge'); if (el) el.style.display = 'none'; });
 </script>
 
+<script>
+// ─── 界面三语切换 (中/EN/ES): 运行时机器翻译整页文字, 服务器+本地双缓存 ───
+(() => {
+  const LANG_KEY = 'adminUiLang';
+  const lang = localStorage.getItem(LANG_KEY) || 'zh';
+  function mountBar() {
+    if (document.getElementById('uiLangBar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'uiLangBar';
+    bar.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99999;display:flex;gap:3px;background:#fff;border:1px solid #d1d5db;border-radius:999px;padding:3px 5px;box-shadow:0 2px 10px rgba(0,0,0,.15);font-size:.72rem';
+    const mk = (code, label) => '<button data-lang="' + code + '" style="border:none;border-radius:999px;padding:2px 9px;cursor:pointer;font-weight:700;background:' + (lang === code ? '#1A3F7A' : 'transparent') + ';color:' + (lang === code ? '#fff' : '#374151') + '">' + label + '</button>';
+    bar.innerHTML = mk('zh', '中') + mk('en', 'EN') + mk('es', 'ES');
+    bar.addEventListener('click', e => {
+      const b = e.target.closest('button[data-lang]');
+      if (!b || b.dataset.lang === lang) return;
+      localStorage.setItem(LANG_KEY, b.dataset.lang);
+      location.reload();
+    });
+    document.body.appendChild(bar);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountBar);
+  else mountBar();
+  if (lang === 'zh') return;
+
+  const CJK = /[\u4e00-\u9fff]/;
+  const cacheKey = 'uiTr_' + lang;
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem(cacheKey) || '{}'); } catch (_) {}
+  let cacheDirty = false;
+  setInterval(() => {
+    if (!cacheDirty) return;
+    cacheDirty = false;
+    try { localStorage.setItem(cacheKey, JSON.stringify(cache)); } catch (_) {}
+  }, 3000);
+
+  const pending = new Map();   // 原文 -> 待应用目标列表
+  let flushTimer = null, inflight = false;
+  const apply = (tgt, dst) => {
+    try {
+      if (tgt.nodeType === 3) tgt.nodeValue = dst;
+      else tgt.el.setAttribute(tgt.attr, dst);
+    } catch (_) {}
+  };
+  function queue(tgt, srcText) {
+    if (cache[srcText]) { apply(tgt, cache[srcText]); return; }
+    if (!pending.has(srcText)) pending.set(srcText, []);
+    pending.get(srcText).push(tgt);
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flush, 250);
+  }
+  async function flush() {
+    if (inflight || !pending.size) return;
+    inflight = true;
+    const keys = [...pending.keys()].slice(0, 400);
+    try {
+      const r = await api('/admin/ui-translate', { method: 'POST', body: JSON.stringify({ lang, texts: keys }) });
+      const map = (r && r.map) || {};
+      for (const k of keys) {
+        const tgts = pending.get(k) || [];
+        pending.delete(k);
+        if (map[k]) {
+          cache[k] = map[k]; cacheDirty = true;
+          tgts.forEach(t => apply(t, map[k]));
+        }
+      }
+    } catch (_) { keys.forEach(k => pending.delete(k)); }
+    inflight = false;
+    if (pending.size) flushTimer = setTimeout(flush, 250);
+  }
+
+  const SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEXTAREA: 1, CODE: 1, PRE: 1 };
+  function walk(root) {
+    if (root.nodeType === 3) {
+      if (CJK.test(root.nodeValue)) queue(root, root.nodeValue);
+      return;
+    }
+    if (root.nodeType !== 1 || SKIP[root.tagName] || root.id === 'uiLangBar') return;
+    for (const attr of ['placeholder', 'title']) {
+      const v = root.getAttribute && root.getAttribute(attr);
+      if (v && CJK.test(v)) queue({ el: root, attr }, v);
+    }
+    let c = root.firstChild;
+    while (c) { const nx = c.nextSibling; walk(c); c = nx; }
+  }
+  function start() {
+    walk(document.body);
+    new MutationObserver(muts => {
+      for (const m of muts) {
+        if (m.type === 'characterData') {
+          if (CJK.test(m.target.nodeValue || '')) queue(m.target, m.target.nodeValue);
+        } else if (m.type === 'childList') {
+          m.addedNodes.forEach(n => walk(n));
+        } else if (m.type === 'attributes') {
+          const v = m.target.getAttribute(m.attributeName);
+          if (v && CJK.test(v)) queue({ el: m.target, attr: m.attributeName }, v);
+        }
+      }
+    }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['placeholder', 'title'] });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+</script>
 </body>
 </html>
