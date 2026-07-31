@@ -41057,10 +41057,20 @@ function openApplicantDocViewer(url, label) {
           <button type="button" id="adVwRotate" onclick="rotateApplicantDocViewer()" title="旋转 90°" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .25rem">⟳</button>
           <button type="button" id="adVwOcrBtn" onclick="toggleApplicantDocOcr()" title="框选文字识别：点击后在图上拖一个框，识别框内文字" style="background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">🔍 识别</button>
           <button type="button" id="adVwCropBtn" onclick="armApplicantDocCrop()" title="裁剪：点击后在图上拖一个框，只留框内区域并放大" style="background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">✂️ 裁剪</button>
+          <button type="button" id="adVwAdjBtn" onclick="toggleApplicantDocAdjust()" title="亮度 / 对比度 / 黑白 调节" style="background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">🎛 调节</button>
           <button type="button" id="adVwRestoreBtn" onclick="restoreApplicantDocCrop()" title="恢复原始图片" style="display:none;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">↩ 还原</button>
           <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap">原图 ↗</a>
           <button type="button" onclick="closeApplicantDocViewer()" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 .35rem">✕</button>
         </span>
+      </div>
+      <div id="adVwAdjPanel" style="display:none;padding:.45rem .65rem;background:#0f172a;color:#e2e8f0;font-size:.72rem">
+        <div style="display:flex;align-items:center;gap:.45rem;margin-bottom:.3rem"><span style="white-space:nowrap">☀️ 亮度</span><input id="adVwBright" type="range" min="40" max="220" value="100" style="flex:1;margin:0" oninput="_adVwAdjChange()"><span id="adVwBrightV" style="min-width:3em;text-align:right">100%</span></div>
+        <div style="display:flex;align-items:center;gap:.45rem;margin-bottom:.3rem"><span style="white-space:nowrap">◐ 对比</span><input id="adVwContrast" type="range" min="40" max="260" value="100" style="flex:1;margin:0" oninput="_adVwAdjChange()"><span id="adVwContrastV" style="min-width:3em;text-align:right">100%</span></div>
+        <div style="display:flex;align-items:center;gap:.7rem">
+          <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;color:#e2e8f0;font-size:.72rem;font-weight:400;margin:0"><input type="checkbox" id="adVwGray" style="width:auto;margin:0" onchange="_adVwAdjChange()">黑白</label>
+          <button type="button" onclick="_adVwAdjReset()" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;font-size:.7rem;padding:2px 10px;cursor:pointer">重置</button>
+          <span style="color:#94a3b8">调节同时作用于识别，对比拉高认字更准</span>
+        </div>
       </div>
       <div id="adVwImgWrap" style="background:#000;display:flex;align-items:center;justify-content:center;max-height:72vh;overflow:auto">
         <img id="adVwImg" style="max-width:100%;display:block;transition:transform .15s ease" alt="" draggable="false">
@@ -41087,6 +41097,7 @@ function openApplicantDocViewer(url, label) {
   _adVwRotation = 0; // reset orientation for each newly opened document
   _adVwZoom = 1;     // reset zoom too
   _adVwOrigUrl = url; _adVwCropOnce = false;
+  _adVwAdjReset(true);
   const rsBtn = v.querySelector('#adVwRestoreBtn'); if (rsBtn) rsBtn.style.display = 'none';
   const cpBtn = v.querySelector('#adVwCropBtn'); if (cpBtn) { cpBtn.style.background = 'transparent'; cpBtn.style.borderColor = 'rgba(255,255,255,.55)'; }
   const img = v.querySelector('#adVwImg');
@@ -41225,6 +41236,8 @@ async function _runApplicantDocOcr(cl, ct, cw, ch) {
     const rw = (rot === 90 || rot === 270) ? nh : nw, rh = (rot === 90 || rot === 270) ? nw : nh;
     const full = document.createElement('canvas'); full.width = rw; full.height = rh;
     const fc = full.getContext('2d');
+    const flt = _adVwFilterStr();
+    if (flt) fc.filter = flt;   // 亮度/对比度调节同样作用于识别
     fc.translate(rw / 2, rh / 2); fc.rotate(rot * Math.PI / 180); fc.drawImage(img, -nw / 2, -nh / 2);
     const sx = rw / rect.width, sy = rh / rect.height;
     let px = Math.round((l - rect.left) * sx), py = Math.round((t - rect.top) * sy);
@@ -41298,6 +41311,47 @@ function restoreApplicantDocCrop() {
   _applyApplicantDocView();
   const rs = document.getElementById('adVwRestoreBtn');
   if (rs) rs.style.display = 'none';
+}
+// ── 查看器: 亮度/对比度/黑白 调节 (CSS filter 实时显示; 识别时同样叠加) ──
+function _adVwFilterStr() {
+  const b = parseInt((document.getElementById('adVwBright') || {}).value) || 100;
+  const c = parseInt((document.getElementById('adVwContrast') || {}).value) || 100;
+  const g = (document.getElementById('adVwGray') || {}).checked;
+  let f = '';
+  if (b !== 100) f += `brightness(${b}%) `;
+  if (c !== 100) f += `contrast(${c}%) `;
+  if (g) f += 'grayscale(1) ';
+  return f.trim();
+}
+function _adVwAdjChange() {
+  const img = document.getElementById('adVwImg');
+  const b = parseInt((document.getElementById('adVwBright') || {}).value) || 100;
+  const c = parseInt((document.getElementById('adVwContrast') || {}).value) || 100;
+  const bv = document.getElementById('adVwBrightV'), cv = document.getElementById('adVwContrastV');
+  if (bv) bv.textContent = b + '%';
+  if (cv) cv.textContent = c + '%';
+  if (img) img.style.filter = _adVwFilterStr();
+}
+function _adVwAdjReset(hidePanel) {
+  const bEl = document.getElementById('adVwBright'), cEl = document.getElementById('adVwContrast'), gEl = document.getElementById('adVwGray');
+  if (bEl) bEl.value = 100;
+  if (cEl) cEl.value = 100;
+  if (gEl) gEl.checked = false;
+  _adVwAdjChange();
+  if (hidePanel) {
+    const p = document.getElementById('adVwAdjPanel');
+    if (p) p.style.display = 'none';
+    const btn = document.getElementById('adVwAdjBtn');
+    if (btn) { btn.style.background = 'transparent'; btn.style.borderColor = 'rgba(255,255,255,.55)'; }
+  }
+}
+function toggleApplicantDocAdjust() {
+  const p = document.getElementById('adVwAdjPanel');
+  if (!p) return;
+  const on = p.style.display === 'none';
+  p.style.display = on ? 'block' : 'none';
+  const btn = document.getElementById('adVwAdjBtn');
+  if (btn) { btn.style.background = on ? '#7c3aed' : 'transparent'; btn.style.borderColor = on ? '#7c3aed' : 'rgba(255,255,255,.55)'; }
 }
 // Back-compat name (older callers) — same behavior.
 function _applyApplicantDocRotation() { _applyApplicantDocView(); }
