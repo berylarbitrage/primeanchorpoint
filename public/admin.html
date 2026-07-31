@@ -41445,11 +41445,19 @@ function _adBatchRenderBar() {
   }
   bar.style.cssText = 'display:flex;align-items:center;gap:.55rem;padding:.35rem .6rem;background:#fffbeb;border-bottom:1px solid #fde68a;font-size:.74rem;color:#92400e';
   bar.innerHTML = '<b>✂️ 连续裁剪 ' + (_adBatch.idx + 1) + '/' + _adBatch.items.length + ' · ' + esc(_adBatch.items[_adBatch.idx].label) + '</b>'
-    + (_adBatch.awaitVerdict ? '<span style="color:#b45309;font-weight:700">⬆ 在上方给这组一个结论 → 自动继续</span>' : '<span>拖框圈出证件 → 自动保存 → 标结论 → 下一张</span>')
-    + '<a style="margin-left:auto;cursor:pointer;text-decoration:underline;white-space:nowrap" onclick="_adBatchSkip()">跳过</a>'
+    + (_adBatch.awaitVerdict ? '<span style="color:#b45309;font-weight:700">⬆ 在上方给这组一个结论 → 自动继续</span>' : '<span>歪的先点 ⟳ 转正 → 拖框圈出证件（或点「整张保存」）→ 标结论 → 下一张</span>')
+    + '<a style="margin-left:auto;cursor:pointer;text-decoration:underline;white-space:nowrap" title="不裁剪, 把当前整张(含旋转后的方向)保存为显示版" onclick="_adBatchSaveWhole()">整张保存</a>'
+    + '<a style="cursor:pointer;text-decoration:underline;white-space:nowrap" onclick="_adBatchSkip()">跳过</a>'
     + '<a style="cursor:pointer;text-decoration:underline;white-space:nowrap" onclick="_adBatchEnd()">结束</a>';
 }
 function _adBatchSkip() { _adBatchAdvance(); }
+// 整张保存: 不用拖框, 把当前整图(含 ⟳ 旋转后的方向)作为"裁剪"保存 → 走同样的标结论流程
+function _adBatchSaveWhole() {
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.naturalWidth) return;
+  const rect = img.getBoundingClientRect();
+  _adVwDoCrop(rect.left, rect.top, rect.width, rect.height);
+}
 function _adBatchEnd(silent) {
   _adBatch = null;
   const bar = document.getElementById('adVwBatchBar');
