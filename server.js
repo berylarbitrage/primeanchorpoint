@@ -15352,8 +15352,22 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
     // 默认展示裁剪版(如管理员存过); ?v=orig 永远返回原件 —— 原件在任何情况下都不被覆盖
     const wantOrig = String(req.query.v || '') === 'orig';
     const effPath = (!wantOrig && doc.cropped_path) ? doc.cropped_path : doc.file_path;
-    const key = storage.normalizeKey(effPath);
+    let key = storage.normalizeKey(effPath);
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
+    // iPhone 的 HEIC/HEIF 浏览器不能显示 → 服务器转成 JPEG (转一次缓存为 <key>.conv.jpg)
+    const extH = path.extname(key).toLowerCase();
+    if (extH === '.heic' || extH === '.heif') {
+      try {
+        const convKey = key + '.conv.jpg';
+        if (!(await storage.exists(convKey))) {
+          const heicConvert = require('heic-convert');
+          const buf = await storage.getBuffer(key);
+          const out = await heicConvert({ buffer: buf, format: 'JPEG', quality: 0.9 });
+          await storage.putObject(convKey, Buffer.from(out), { contentType: 'image/jpeg' });
+        }
+        key = convKey;   // 后续按 JPEG 提供
+      } catch (e) { console.error('[HEIC convert]', e.message); }
+    }
     if (storage.isR2()) {
       try { return res.redirect(302, await storage.getDownloadUrl(key)); }
       catch (e) { return res.status(404).json({ error: 'Not found' }); }
