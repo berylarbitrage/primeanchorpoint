@@ -41057,7 +41057,7 @@ function openApplicantDocViewer(url, label) {
   if (!v) {
     v = document.createElement('div');
     v.id = 'applicantDocViewer';
-    v.style.cssText = 'position:fixed;z-index:12000;top:84px;right:24px;width:440px;max-width:94vw;background:#fff;border-radius:12px;box-shadow:0 14px 44px rgba(0,0,0,.4);border:1px solid #cbd5e1;overflow:hidden';
+    v.style.cssText = 'position:fixed;z-index:12000;top:84px;right:24px;width:440px;max-width:94vw;background:#fff;border-radius:12px;box-shadow:0 14px 44px rgba(0,0,0,.4);border:1px solid #cbd5e1;overflow:hidden;user-select:none;-webkit-user-select:none';
     v.innerHTML =
       `<div id="adVwHead" style="display:flex;align-items:center;justify-content:space-between;gap:.35rem;padding:.4rem .3rem .4rem .55rem;background:#1A3F7A;color:#fff;cursor:move;user-select:none">
         <span id="adVwTitle" style="font-size:.8rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:2em">证件</span>
@@ -41222,7 +41222,7 @@ function toggleApplicantDocOcr(forceOff) {
 function _setOcrStatus(t) { const el = document.getElementById('adVwOcrStatus'); if (el) el.textContent = t; }
 function _clearOcrSelBox() { if (_adVwSelBox) { _adVwSelBox.remove(); _adVwSelBox = null; } _adVwSelStart = null; }
 function _adVwOcrMouseDown(e) {
-  if (!_adVwOcrMode && !_adVwCropOnce) return;
+  if (!_adVwOcrMode && !_adVwCropOnce) { if (e.target && e.target.id === 'adVwImg') e.preventDefault(); return; }
   const img = document.getElementById('adVwImg');
   if (!img || !img.src) return;
   e.preventDefault(); e.stopPropagation();
