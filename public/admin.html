@@ -41055,19 +41055,29 @@ function openApplicantDocViewer(url, label) {
           <span id="adVwZoomPct" style="font-size:.68rem;opacity:.85;min-width:2.8em;text-align:center">100%</span>
           <button type="button" onclick="zoomApplicantDocViewer(1)" title="放大（也可滚轮 / 双击图片）" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">＋</button>
           <button type="button" id="adVwRotate" onclick="rotateApplicantDocViewer()" title="旋转 90°" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .25rem">⟳</button>
+          <button type="button" id="adVwOcrBtn" onclick="toggleApplicantDocOcr()" title="框选文字识别：点击后在图上拖一个框，识别框内文字" style="background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">🔍 识别</button>
           <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap">原图 ↗</a>
           <button type="button" onclick="closeApplicantDocViewer()" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 .35rem">✕</button>
         </span>
       </div>
       <div id="adVwImgWrap" style="background:#000;display:flex;align-items:center;justify-content:center;max-height:72vh;overflow:auto">
-        <img id="adVwImg" style="max-width:100%;display:block;transition:transform .15s ease" alt="">
+        <img id="adVwImg" style="max-width:100%;display:block;transition:transform .15s ease" alt="" draggable="false">
+      </div>
+      <div id="adVwOcrPanel" style="display:none;border-top:1px solid #e5e7eb;background:#f8fafc;padding:.5rem .6rem">
+        <div id="adVwOcrStatus" style="font-size:.72rem;color:#6b7280;margin-bottom:.3rem">在图上拖一个框，识别框内文字（英文证件）</div>
+        <textarea id="adVwOcrText" readonly rows="3" style="width:100%;font-size:.8rem;font-family:ui-monospace,Consolas,monospace;border:1px solid #d1d5db;border-radius:6px;padding:.35rem .45rem;resize:vertical;display:none"></textarea>
+        <div style="display:flex;gap:.4rem;margin-top:.3rem">
+          <button type="button" id="adVwOcrCopy" onclick="copyApplicantDocOcr()" style="display:none;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:.72rem;padding:3px 10px;cursor:pointer">📋 复制</button>
+          <button type="button" onclick="toggleApplicantDocOcr(true)" style="background:#fff;color:#6b7280;border:1px solid #d1d5db;border-radius:6px;font-size:.72rem;padding:3px 10px;cursor:pointer">关闭识别</button>
+        </div>
       </div>`;
     document.body.appendChild(v);
     v.addEventListener('mousedown', e => e.stopPropagation());
     _makeDraggable(v, v.querySelector('#adVwHead'));
     // Zoom shortcuts: wheel over the image zooms; double-click toggles 100%↔200%.
     const wrap = v.querySelector('#adVwImgWrap');
-    wrap.addEventListener('wheel', e => { e.preventDefault(); zoomApplicantDocViewer(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+    wrap.addEventListener('wheel', e => { if (_adVwOcrMode) return; e.preventDefault(); zoomApplicantDocViewer(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+    wrap.addEventListener('mousedown', _adVwOcrMouseDown);
     wrap.addEventListener('dblclick', () => { _adVwZoom = _adVwZoom > 1.001 ? 1 : 2; _applyApplicantDocView(); });
   }
   v.style.display = 'block';
@@ -41126,6 +41136,117 @@ function _applyApplicantDocView() {
     if (wrap) { wrap.style.alignItems = 'center'; wrap.style.justifyContent = 'center'; }
     if (panel) panel.style.width = '360px';
   }
+}
+
+// ── 证件查看器: 框选 OCR 文字识别 (Tesseract 本地引擎, /vendor/tesseract) ──
+let _adVwOcrMode = false, _ocrWorkerP = null, _adVwSelBox = null, _adVwSelStart = null;
+async function _getOcrWorker() {
+  if (_ocrWorkerP) return _ocrWorkerP;
+  _ocrWorkerP = (async () => {
+    if (!window.Tesseract) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = '/vendor/tesseract/tesseract.min.js';
+        s.onload = res; s.onerror = () => rej(new Error('OCR 组件加载失败, 请刷新重试'));
+        document.head.appendChild(s);
+      });
+    }
+    const w = await Tesseract.createWorker('eng', 1, {
+      workerPath: '/vendor/tesseract/worker.min.js',
+      corePath: '/vendor/tesseract',
+      langPath: '/vendor/tesseract/lang',
+    });
+    await w.setParameters({ tessedit_pageseg_mode: '6' }); // 均匀文本块, 适合框选区域
+    return w;
+  })();
+  _ocrWorkerP.catch(() => { _ocrWorkerP = null; });
+  return _ocrWorkerP;
+}
+function toggleApplicantDocOcr(forceOff) {
+  const panel = document.getElementById('adVwOcrPanel');
+  const wrap = document.getElementById('adVwImgWrap');
+  const btn = document.getElementById('adVwOcrBtn');
+  _adVwOcrMode = forceOff ? false : !_adVwOcrMode;
+  if (panel) panel.style.display = _adVwOcrMode ? 'block' : 'none';
+  if (wrap) wrap.style.cursor = _adVwOcrMode ? 'crosshair' : '';
+  if (btn) { btn.style.background = _adVwOcrMode ? '#059669' : 'transparent'; btn.style.borderColor = _adVwOcrMode ? '#059669' : 'rgba(255,255,255,.55)'; }
+  if (_adVwOcrMode) _getOcrWorker().catch(e => _setOcrStatus('⚠️ ' + e.message));
+  if (!_adVwOcrMode) _clearOcrSelBox();
+}
+function _setOcrStatus(t) { const el = document.getElementById('adVwOcrStatus'); if (el) el.textContent = t; }
+function _clearOcrSelBox() { if (_adVwSelBox) { _adVwSelBox.remove(); _adVwSelBox = null; } _adVwSelStart = null; }
+function _adVwOcrMouseDown(e) {
+  if (!_adVwOcrMode) return;
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.src) return;
+  e.preventDefault(); e.stopPropagation();
+  _clearOcrSelBox();
+  _adVwSelStart = { x: e.clientX, y: e.clientY };
+  _adVwSelBox = document.createElement('div');
+  _adVwSelBox.style.cssText = 'position:fixed;z-index:13000;border:2px dashed #22d3ee;background:rgba(34,211,238,.14);pointer-events:none;left:' + e.clientX + 'px;top:' + e.clientY + 'px;width:0;height:0';
+  document.body.appendChild(_adVwSelBox);
+  const move = ev => {
+    if (!_adVwSelStart || !_adVwSelBox) return;
+    const l = Math.min(_adVwSelStart.x, ev.clientX), t = Math.min(_adVwSelStart.y, ev.clientY);
+    _adVwSelBox.style.left = l + 'px'; _adVwSelBox.style.top = t + 'px';
+    _adVwSelBox.style.width = Math.abs(ev.clientX - _adVwSelStart.x) + 'px';
+    _adVwSelBox.style.height = Math.abs(ev.clientY - _adVwSelStart.y) + 'px';
+  };
+  const up = ev => {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    const st = _adVwSelStart; _adVwSelStart = null;
+    if (!st) return;
+    const l = Math.min(st.x, ev.clientX), t = Math.min(st.y, ev.clientY);
+    const w = Math.abs(ev.clientX - st.x), h = Math.abs(ev.clientY - st.y);
+    setTimeout(_clearOcrSelBox, 900);
+    if (w < 8 || h < 8) return;   // 误点
+    _runApplicantDocOcr(l, t, w, h);
+  };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+async function _runApplicantDocOcr(cl, ct, cw, ch) {
+  const img = document.getElementById('adVwImg');
+  const rect = img.getBoundingClientRect();
+  // 选区与图片显示区域求交集
+  const l = Math.max(cl, rect.left), t = Math.max(ct, rect.top);
+  const r2 = Math.min(cl + cw, rect.right), b2 = Math.min(ct + ch, rect.bottom);
+  if (r2 - l < 8 || b2 - t < 8) { _setOcrStatus('框要画在图片上'); return; }
+  try {
+    _setOcrStatus('⏳ 识别中…（第一次使用需加载引擎, 稍等几秒）');
+    const rot = _adVwRotation, nw = img.naturalWidth, nh = img.naturalHeight;
+    const rw = (rot === 90 || rot === 270) ? nh : nw, rh = (rot === 90 || rot === 270) ? nw : nh;
+    const full = document.createElement('canvas'); full.width = rw; full.height = rh;
+    const fc = full.getContext('2d');
+    fc.translate(rw / 2, rh / 2); fc.rotate(rot * Math.PI / 180); fc.drawImage(img, -nw / 2, -nh / 2);
+    const sx = rw / rect.width, sy = rh / rect.height;
+    let px = Math.round((l - rect.left) * sx), py = Math.round((t - rect.top) * sy);
+    let pw = Math.round((r2 - l) * sx), ph = Math.round((b2 - t) * sy);
+    px = Math.max(0, Math.min(rw - 1, px)); py = Math.max(0, Math.min(rh - 1, py));
+    pw = Math.max(8, Math.min(rw - px, pw)); ph = Math.max(8, Math.min(rh - py, ph));
+    const k = Math.min(3, Math.max(1, Math.ceil(700 / pw)));  // 小选区放大, 提高识别率
+    const out = document.createElement('canvas'); out.width = pw * k; out.height = ph * k;
+    const oc = out.getContext('2d');
+    oc.imageSmoothingEnabled = true; oc.imageSmoothingQuality = 'high';
+    oc.drawImage(full, px, py, pw, ph, 0, 0, pw * k, ph * k);
+    const worker = await _getOcrWorker();
+    const { data } = await worker.recognize(out);
+    const text = String((data && data.text) || '').replace(/\n{3,}/g, '\n\n').trim();
+    const ta = document.getElementById('adVwOcrText'), cp = document.getElementById('adVwOcrCopy');
+    if (ta) { ta.style.display = 'block'; ta.value = text || '(没识别出文字, 试试放大后框小一点的区域)'; }
+    if (cp) cp.style.display = text ? 'inline-block' : 'none';
+    _setOcrStatus(text ? '✅ 识别完成, 可继续框选其他区域' : '😕 没识别出文字 — 放大图片后重新框选试试');
+  } catch (e) {
+    _setOcrStatus('⚠️ 识别失败: ' + (e && e.message || e));
+  }
+}
+function copyApplicantDocOcr() {
+  const ta = document.getElementById('adVwOcrText');
+  if (!ta || !ta.value) return;
+  const done = () => _setOcrStatus('📋 已复制到剪贴板');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); document.execCommand('copy'); done(); });
+  else { ta.select(); document.execCommand('copy'); done(); }
 }
 // Back-compat name (older callers) — same behavior.
 function _applyApplicantDocRotation() { _applyApplicantDocView(); }
