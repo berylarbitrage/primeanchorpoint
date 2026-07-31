@@ -15394,7 +15394,7 @@ app.post('/api/admin/ai-read-image', requireAdmin, async (req, res) => {
       try { parsed = JSON.parse((text.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch (_) {}
       return res.json({ success: true, engine: 'claude', model, parsed, raw: text });
     }
-    const gKey = process.env.GOOGLE_MAPS_API_KEY;
+    const gKey = process.env.GOOGLE_VISION_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
     if (gKey) {
       const vr = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${gKey}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -15409,7 +15409,7 @@ app.post('/api/admin/ai-read-image', requireAdmin, async (req, res) => {
       const fullText = (vd.responses && vd.responses[0] && vd.responses[0].fullTextAnnotation && vd.responses[0].fullTextAnnotation.text) || '';
       return res.json({ success: true, engine: 'google-vision', parsed: null, raw: fullText });
     }
-    return res.status(400).json({ error: '未配置 AI 识别服务。推荐: 在服务器环境变量配 ANTHROPIC_API_KEY (console.anthropic.com 申请); 或确保 GOOGLE_MAPS_API_KEY 已启用 Cloud Vision API。' });
+    return res.status(400).json({ error: '未配置 AI 识别服务。推荐: 在服务器环境变量配 ANTHROPIC_API_KEY (console.anthropic.com 申请); 或配 GOOGLE_VISION_API_KEY (启用了 Cloud Vision API 的 Google key)。' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -25179,7 +25179,7 @@ app.post('/api/admin/compliance-docs/:id/replace-file', requireAdmin, docUpload.
 
 // ─── OCR: Extract text from compliance doc image via Google Cloud Vision ───
 app.post('/api/admin/compliance-docs/:id/ocr', requireAdmin, async (req, res) => {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY; // reuse same key (enable Cloud Vision on the key)
+  const apiKey = process.env.GOOGLE_VISION_API_KEY || process.env.GOOGLE_MAPS_API_KEY; // 优先专用 Vision key
   if (!apiKey) return res.status(400).json({ error: 'Google API key not configured' });
   const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'No file to process' });
