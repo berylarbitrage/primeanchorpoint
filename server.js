@@ -15349,6 +15349,8 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
   try {
     const doc = db.prepare('SELECT * FROM applicant_docs WHERE id=? AND submission_id=?').get(req.params.docId, req.params.id);
     if (!doc) return res.status(404).json({ error: 'Not found' });
+    // 禁止浏览器缓存: 保存裁剪版后缩略图必须立刻显示新版, 否则会看到"裁了没保存"的假象
+    res.setHeader('Cache-Control', 'no-store');
     // 默认展示裁剪版(如管理员存过); ?v=orig 永远返回原件 —— 原件在任何情况下都不被覆盖
     const wantOrig = String(req.query.v || '') === 'orig';
     const effPath = (!wantOrig && doc.cropped_path) ? doc.cropped_path : doc.file_path;
