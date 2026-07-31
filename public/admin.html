@@ -41378,9 +41378,16 @@ function _adVwDoCrop(cl, ct, cw, ch) {
   let pw = Math.round((r2 - l) * sx), ph = Math.round((b2 - t) * sy);
   px = Math.max(0, Math.min(rw - 1, px)); py = Math.max(0, Math.min(rh - 1, py));
   pw = Math.max(8, Math.min(rw - px, pw)); ph = Math.max(8, Math.min(rh - py, ph));
-  const out = document.createElement('canvas'); out.width = pw; out.height = ph;
-  out.getContext('2d').drawImage(full, px, py, pw, ph, 0, 0, pw, ph);
-  img.src = out.toDataURL('image/png');   // 裁剪已包含旋转, 角度归零
+  // 限制输出尺寸并用 JPEG — 整张大图(手机原图)按原尺寸 PNG 会超过上传上限导致保存失败
+  const maxDim = 2400;
+  const oScale = Math.min(1, maxDim / Math.max(pw, ph));
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(pw * oScale));
+  out.height = Math.max(1, Math.round(ph * oScale));
+  const octx = out.getContext('2d');
+  octx.imageSmoothingQuality = 'high';
+  octx.drawImage(full, px, py, pw, ph, 0, 0, out.width, out.height);
+  img.src = out.toDataURL('image/jpeg', 0.92);   // 裁剪已包含旋转, 角度归零
   _adVwRotation = 0; _adVwZoom = 1;
   _applyApplicantDocView();
   const rs = document.getElementById('adVwRestoreBtn');
