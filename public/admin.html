@@ -559,14 +559,14 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <div class="app" id="app">
 <div class="mobile-topbar">
   <button class="hamburger" onclick="openAdminSidebar()" aria-label="菜单"><span></span><span></span><span></span></button>
-  <span class="mobile-topbar-title">⚓ 管理后台</span>
+  <span class="mobile-topbar-title" style="display:inline-flex;align-items:center;gap:.4rem"><img src="/logo.svg" alt="Logo" style="height:20px;width:auto;vertical-align:middle">管理后台</span>
   <div class="mobile-topbar-right">
     <button class="btn-logout-m" onclick="logout()">退出</button>
   </div>
 </div>
 <div class="sidebar-overlay" id="adminSidebarOverlay" onclick="closeAdminSidebar()"></div>
 <div class="sidebar" id="sidebar">
-  <h2>⚓ 管理后台</h2>
+  <h2 style="display:flex;align-items:center;gap:.45rem"><img src="/logo.svg" alt="Logo" style="height:26px;width:auto;flex-shrink:0">管理后台</h2>
   <a class="active" onclick="showTab('dashboard')" data-tab="dashboard">🏠 仪表盘</a>
 
   <!-- 客户管理 -->
