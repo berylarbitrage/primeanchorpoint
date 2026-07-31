@@ -41122,6 +41122,7 @@ function openApplicantDocViewer(url, label) {
         <div style="display:flex;align-items:center;gap:.7rem">
           <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;color:#e2e8f0;font-size:.72rem;font-weight:400;margin:0"><input type="checkbox" id="adVwGray" style="width:auto;margin:0" onchange="_adVwAdjChange()">黑白</label>
           <button type="button" onclick="_adVwAdjReset()" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;font-size:.7rem;padding:2px 10px;cursor:pointer">重置</button>
+          <button type="button" onclick="docEnhanceApplicantDoc()" title="模糊文件专用: 去灰底/均衡光照/拉出笔画 (黑白文档模式), 可还原可保存" style="background:#7c3aed;color:#fff;border:1px solid #7c3aed;border-radius:6px;font-size:.7rem;padding:2px 10px;cursor:pointer">📄 文档增强</button>
           <span style="color:#94a3b8">调节同时作用于识别，对比拉高认字更准</span>
         </div>
       </div>
@@ -41669,6 +41670,56 @@ async function autoFixApplicantDoc() {
     showToast('🪄 已增强颜色/对比 — 不满意 ↩还原, 满意点 💾 保存');
   } catch (e) { showToast('自动修复失败: ' + (e.message || e), 'error'); }
 }
+// ── 📄 文档增强: 灰度 → 大半径背景估计(除光照不均) → 笔画增益 → 轻锐化 ──
+// 对模糊/灰暗的文件照片显著提升可读性; 失焦细节无法凭空恢复
+async function docEnhanceApplicantDoc() {
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.naturalWidth) return;
+  showToast('📄 文档增强中…');
+  try {
+    const s = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * s)), h = Math.max(1, Math.round(img.naturalHeight * s));
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const cx = cv.getContext('2d'); cx.imageSmoothingQuality = 'high';
+    cx.drawImage(img, 0, 0, w, h);
+    const id = cx.getImageData(0, 0, w, h), d = id.data;
+    for (let i = 0; i < w * h; i++) {
+      const g = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
+      d[i*4] = d[i*4+1] = d[i*4+2] = g;
+    }
+    cx.putImageData(id, 0, 0);
+    // 背景估计: 大半径模糊 ≈ 纸面亮度分布; 减掉它 = 均衡光照 + 提出笔画
+    const bgc = document.createElement('canvas'); bgc.width = w; bgc.height = h;
+    const bx = bgc.getContext('2d');
+    bx.filter = 'blur(' + Math.max(6, Math.round(w / 60)) + 'px)';
+    bx.drawImage(cv, 0, 0);
+    const bd = bx.getImageData(0, 0, w, h).data;
+    const gain = 2.4;
+    for (let i = 0; i < w * h; i++) {
+      const v = Math.max(0, Math.min(255, 255 + (d[i*4] - bd[i*4]) * gain - 12));
+      d[i*4] = d[i*4+1] = d[i*4+2] = v;
+    }
+    cx.putImageData(id, 0, 0);
+    // 轻锐化
+    const blc = document.createElement('canvas'); blc.width = w; blc.height = h;
+    const blx = blc.getContext('2d'); blx.filter = 'blur(1px)'; blx.drawImage(cv, 0, 0);
+    const sd = blx.getImageData(0, 0, w, h).data;
+    const id2 = cx.getImageData(0, 0, w, h), d2 = id2.data;
+    for (let i = 0; i < w * h * 4; i += 4) {
+      const v = Math.max(0, Math.min(255, d2[i] * 1.5 - sd[i] * 0.5));
+      d2[i] = d2[i+1] = d2[i+2] = v;
+    }
+    cx.putImageData(id2, 0, 0);
+    const keepRot = _adVwRotation;
+    img.src = cv.toDataURL('image/jpeg', 0.92);
+    _adVwRotation = keepRot; _adVwZoom = 1;
+    _applyApplicantDocView();
+    const rs = document.getElementById('adVwRestoreBtn'); if (rs) rs.style.display = '';
+    const sv = document.getElementById('adVwSaveCropBtn'); if (sv && _adVwDocRef) sv.style.display = '';
+    showToast('📄 已增强 (黑白文档模式) — 不满意 ↩还原; 失焦太狠的建议让对方重拍');
+  } catch (e) { showToast('增强失败: ' + (e.message || e), 'error'); }
+}
+
 // ── 🤖 AI 识读: 把当前显示的图发给服务器, 由 Claude(或 Google Vision)整张读取 ──
 async function aiReadApplicantDoc() {
   const img = document.getElementById('adVwImg');
