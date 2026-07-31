@@ -3427,16 +3427,25 @@ function encryptSSN(ssn) {
   const tag = cipher.getAuthTag().toString('hex');
   return { encrypted: enc + tag, iv: iv.toString('hex') };
 }
+// 解密按 [当前密钥, 默认密钥] 依次尝试 — 从默认密钥切到正式 SSN_SECRET 后旧数据仍可读
+const SSN_FALLBACK_KEYS = [SSN_KEY];
+{
+  const _ssnDefaultKey = crypto.scryptSync('prime-anchorpoint-ssn-key-default!', 'pa-ssn-salt-v1', 32);
+  if (!SSN_KEY.equals(_ssnDefaultKey)) SSN_FALLBACK_KEYS.push(_ssnDefaultKey);
+}
 function decryptSSN(encrypted, iv) {
-  try {
-    const tag = Buffer.from(encrypted.slice(-32), 'hex');
-    const data = encrypted.slice(0, -32);
-    const decipher = crypto.createDecipheriv('aes-256-gcm', SSN_KEY, Buffer.from(iv, 'hex'));
-    decipher.setAuthTag(tag);
-    let dec = decipher.update(data, 'hex', 'utf8');
-    dec += decipher.final('utf8');
-    return dec;
-  } catch { return null; }
+  for (const key of SSN_FALLBACK_KEYS) {
+    try {
+      const tag = Buffer.from(encrypted.slice(-32), 'hex');
+      const data = encrypted.slice(0, -32);
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'hex'));
+      decipher.setAuthTag(tag);
+      let dec = decipher.update(data, 'hex', 'utf8');
+      dec += decipher.final('utf8');
+      return dec;
+    } catch { /* 尝试下一把密钥 */ }
+  }
+  return null;
 }
 
 // ─── 敏感文件静态加密 (证件照片等): AES-256-GCM ───
