@@ -26,6 +26,10 @@ const BUILD_INFO = {
   started: new Date().toISOString(),
 };
 
+// 公开版本探针: 浏览器直接开 /api/version 就能确认线上实例跑的是哪个构建
+// (本次黑图事故正是卡在"线上到底是哪个版本"这一问上)
+app.get('/api/version', (req, res) => res.json({ commit: BUILD_INFO.commit, tag: BUILD_INFO.tag, started: BUILD_INFO.started }));
+
 // ─── In-memory rate limiter for login endpoints ───
 const loginAttempts = new Map(); // key: ip -> { count, resetAt }
 const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
@@ -3349,24 +3353,16 @@ app.get('/uploads/:filename', async (req, res) => {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
 
-  // R2: redirect to short-lived presigned URL so file bytes don't traverse Render.
-  // Local: stream from disk via the storage abstraction.
-  if (storage.isR2()) {
-    try {
-      const url = await storage.getDownloadUrl(key);
-      return res.redirect(302, url);
-    } catch (e) {
-      console.error('[uploads] presign failed:', e.message);
-      return res.status(404).json({ error: 'File not found' });
-    }
-  }
+  // 统一经服务器 读取→解密→返回: uploads/ 下的证件文件可能已被静态加密, R2 直链/原样流会漏出密文
   try {
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
-    const stream = await storage.getStream(key);
-    stream.on('error', () => { try { res.status(500).end(); } catch {} });
-    stream.pipe(res);
+    const buf = decryptFileBuf(await storage.getBuffer(key));
+    const extU = path.extname(safeName).toLowerCase();
+    const mimeU = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.heic': 'image/heic', '.heif': 'image/heif', '.pdf': 'application/pdf', '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm' }[extU];
+    if (mimeU) res.setHeader('Content-Type', mimeU);
+    res.send(buf);
   } catch (e) {
-    res.status(404).json({ error: 'File not found' });
+    res.status(500).json({ error: '文件读取失败: ' + e.message });
   }
 });
 
@@ -3456,8 +3452,13 @@ const FILE_ENC_MAGIC = Buffer.from('PAENC1');
 const _fileKeyOf = sec => crypto.scryptSync(sec, 'pa-file-salt-v1', 32);
 const FILE_ENC_SECRET_USED = process.env.FILE_ENC_SECRET || process.env.SSN_SECRET || 'prime-anchorpoint-file-default!';
 const FILE_ENC_KEY = _fileKeyOf(FILE_ENC_SECRET_USED);
+// 回退链包含所有历史可能用过的密钥: 当前键 → SSN_SECRET 键 → 默认键 (去重)
 const FILE_ENC_FALLBACK_KEYS = [FILE_ENC_KEY];
-if (FILE_ENC_SECRET_USED !== 'prime-anchorpoint-file-default!') FILE_ENC_FALLBACK_KEYS.push(_fileKeyOf('prime-anchorpoint-file-default!'));
+for (const _sec of [process.env.SSN_SECRET, 'prime-anchorpoint-file-default!']) {
+  if (!_sec) continue;
+  const _k = _fileKeyOf(_sec);
+  if (!FILE_ENC_FALLBACK_KEYS.some(x => x.equals(_k))) FILE_ENC_FALLBACK_KEYS.push(_k);
+}
 if (!process.env.FILE_ENC_SECRET && !process.env.SSN_SECRET) {
   console.warn('⚠️ [FileEnc] 未配置 FILE_ENC_SECRET / SSN_SECRET 环境变量, 文件加密正在使用源码默认密钥 — 生产环境务必配置一个长随机串!');
 }
@@ -11621,10 +11622,6 @@ app.get('/api/admin/worker-accounts/:id/ssn-cards/:docId/file', requireAdmin, as
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'Not found' });
   const key = storage.normalizeKey(doc.file_path);
   if (!(await storage.exists(key))) return res.status(404).json({ error: 'File missing' });
-  if (storage.isR2() && req.query.inline !== '1') {
-    try { return res.redirect(302, await storage.getDownloadUrl(key)); }
-    catch (e) { return res.status(404).json({ error: 'Not found' }); }
-  }
   const ext = path.extname(key).toLowerCase();
   const mime = ext === '.pdf' ? 'application/pdf'
     : ext === '.png' ? 'image/png'
@@ -11634,8 +11631,9 @@ app.get('/api/admin/worker-accounts/:id/ssn-cards/:docId/file', requireAdmin, as
   res.setHeader('Content-Type', mime);
   const disp = req.query.inline === '1' ? 'inline' : 'attachment';
   res.setHeader('Content-Disposition', `${disp}; filename="${(doc.file_name || 'ssn-card').replace(/"/g, '')}"`);
-  try { const s = await storage.getStream(key); s.on('error', () => { try { res.status(500).end(); } catch {} }); s.pipe(res); }
-  catch (e) { res.status(404).json({ error: 'Not found' }); }
+  // 从申请证件"选用"来的文件可能已被静态加密 → 读取解密后返回 (明文原样透传)
+  try { res.send(decryptFileBuf(await storage.getBuffer(key))); }
+  catch (e) { res.status(500).json({ error: '文件读取失败: ' + e.message }); }
 });
 
 // ─── Paper W-9 Upload (cash workers — physical W-9 photo/scan) ───
@@ -15756,7 +15754,7 @@ app.post('/api/worker-docs/submit', workerDocUpload.fields([
     // 后台把刚上传的证件文件就地加密 (不阻塞响应)
     setImmediate(async () => {
       try {
-        const rows = db.prepare('SELECT file_path FROM applicant_docs WHERE submission_id=?').all(subId);
+        const rows = db.prepare('SELECT file_path FROM worker_doc_files WHERE submission_id=?').all(subId);
         for (const r of rows) { try { await encryptStoredFile(r.file_path); } catch (e) { console.error('[FileEnc] new doc:', e.message); } }
       } catch (e) { console.error('[FileEnc]', e.message); }
     });
@@ -15825,18 +15823,12 @@ app.get('/api/admin/worker-doc-submissions/:id/docs/:docId/download', requireAdm
     if (!doc) return res.status(404).json({ error: 'Not found' });
     const key = storage.normalizeKey(doc.file_path);
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
-    if (storage.isR2()) {
-      try { return res.redirect(302, await storage.getDownloadUrl(key)); }
-      catch (e) { return res.status(404).json({ error: 'Not found' }); }
-    }
     const ext = path.extname(key).toLowerCase();
     const mimeMap = { '.heic': 'image/heic', '.heif': 'image/heif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
     if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
     try {
-      const s = await storage.getStream(key);
-      s.on('error', () => { try { res.status(500).end(); } catch {} });
-      s.pipe(res);
-    } catch (e) { res.status(404).json({ error: 'Not found' }); }
+      res.send(decryptFileBuf(await storage.getBuffer(key)));   // 文件可能已被静态加密
+    } catch (e) { res.status(500).json({ error: '文件读取失败: ' + e.message }); }
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -16915,7 +16907,8 @@ app.delete('/api/admin/sub-statements/:id', requireAdmin, requireRole('admin'), 
   res.json({ ok: true });
 });
 
-// ─── 存量证件文件加密迁移: 启动 15 秒后后台把未加密的申请证件就地加密 (幂等) ───
+// ─── 存量证件文件加密迁移: 启动 90 秒后后台把未加密的申请证件就地加密 (幂等) ───
+// 延迟取 90s: 滚动部署新旧实例并存时, 先让旧实例退场再加密, 避免旧代码对着密文服务
 setTimeout(async () => {
   try {
     const rows = db.prepare('SELECT id, file_path, cropped_path FROM applicant_docs').all();
@@ -16932,7 +16925,7 @@ setTimeout(async () => {
     }
     if (n) console.log(`[FileEnc] 存量证件文件加密完成: ${n} 个`);
   } catch (e) { console.error('[FileEnc] migrate:', e.message); }
-}, 15000);
+}, 90000);
 
 // ─── 电话查重（管理端）：输入手机号，查这个人是否在系统里登记 / 提交过申请 ───
 // 覆盖：招工申请 applicant_submissions、员工档案 employees、工头 foremen。
@@ -18460,7 +18453,7 @@ app.get('/api/admin/employees/export-docs', (req, res, next) => {
       for (const d of pickDocs(e)) {
         if (exclude.has(id + '|' + d.doc_type)) continue;    // admin marked unusable → 未提供
         try {
-          const buf = await storage.getBuffer(storage.normalizeKey(d.file_path));
+          const buf = decryptFileBuf(await storage.getBuffer(storage.normalizeKey(d.file_path)));   // 文件可能已被静态加密
           if (!buf || !buf.length) continue;
           slots[d.doc_type] = { buf, kind: _empDocImgKind(buf), file_name: d.file_name || '', ext: (path.extname(d.file_name || d.file_path || '') || '').toLowerCase() };
         } catch (_) { /* unreadable */ }
@@ -18797,7 +18790,7 @@ app.get('/api/admin/employees/id-doc-image/:docId', _empDocAuth, async (req, res
       ? 'employee_docs/' + doc.file_path
       : storage.keyForPath(doc.file_path);
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
-    const buf = await storage.getBuffer(key);
+    const buf = decryptFileBuf(await storage.getBuffer(key));   // 文件可能已被静态加密
     const ext = path.extname(key).toLowerCase();
     const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.heic': 'image/heic', '.heif': 'image/heif', '.pdf': 'application/pdf' };
     // Sniff the real type from magic bytes — many uploads have NO extension, so the
@@ -18849,7 +18842,7 @@ app.post('/api/admin/employees/save-id-doc', _empDocAuth, async (req, res) => {
       : storage.keyForPath(doc.file_path);   // absolute local paths → key
     const dir = oldKey.includes('/') ? oldKey.slice(0, oldKey.lastIndexOf('/')) : 'uploads';
     const newKey = `${dir}/id-edited-${src === 'app' ? '' : src}${docId}-${Date.now()}.${isPng ? 'png' : 'jpg'}`;
-    await storage.putObject(newKey, buf, { contentType: isPng ? 'image/png' : 'image/jpeg' });
+    await storage.putObject(newKey, encryptFileBuf(buf), { contentType: 'application/octet-stream' });   // 静态加密落盘
     const editedName = `id-edited-${src === 'app' ? doc.doc_type : src}.${isPng ? 'png' : 'jpg'}`;
     if (src === 'wc') {
       db.prepare('UPDATE worker_compliance_docs SET file_path=?, file_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(newKey, editedName, docId);
@@ -19065,7 +19058,7 @@ app.get('/api/admin/employees/id-doc-version-image/:docId', _empDocAuth, async (
     if (!info) return res.status(404).json({ error: 'Not found' });
     if (!info.list.some(v => v.key === key)) return res.status(403).json({ error: 'key not allowed' });   // guard: only this doc's versions
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
-    const buf = await storage.getBuffer(key);
+    const buf = decryptFileBuf(await storage.getBuffer(key));   // 文件可能已被静态加密
     res.setHeader('Content-Type', _sniffImageMime(buf) || 'application/octet-stream');
     res.setHeader('Cache-Control', 'no-store');
     res.send(buf);
@@ -19320,7 +19313,7 @@ app.get('/api/admin/storage-file', _empDocAuth, async (req, res) => {
     const key = storage.normalizeKey(req.query.key || '');
     if (!/^(employee_docs|uploads)\//.test(key)) return res.status(403).json({ error: 'not allowed' });
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
-    const buf = await storage.getBuffer(key);
+    const buf = decryptFileBuf(await storage.getBuffer(key));   // 文件可能已被静态加密
     res.setHeader('Content-Type', _sniffImageMime(buf) || 'application/octet-stream');
     res.setHeader('Cache-Control', 'no-store');
     res.send(buf);
@@ -19663,7 +19656,11 @@ app.get('/api/admin/documents/:id/file', (req, res, next) => {
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
   const fp = path.join(docsDir, doc.file_path);
   if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File not found' });
-  res.download(fp, doc.file_name || doc.file_path);
+  try {
+    const buf = decryptFileBuf(fs.readFileSync(fp));   // 归还/找回流程可能指向加密文件
+    res.setHeader('Content-Disposition', `attachment; filename="${String(doc.file_name || doc.file_path).replace(/"/g, '')}"`);
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: '文件读取失败: ' + e.message }); }
 });
 
 // ─── TIME ENTRY ROUTES ───
@@ -25285,11 +25282,17 @@ app.put('/api/admin/compliance-docs/:id/review', requireAdmin, blockManager, (re
   res.json({ success: true });
 });
 
-app.get('/api/admin/compliance-docs/:id/download', requireAdmin, (req, res) => {
+app.get('/api/admin/compliance-docs/:id/download', requireAdmin, async (req, res) => {
   const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
-  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
-  if (req.query.inline === '1') {
+  try {
+    // 走存储抽象 + 解密: 从申请证件"选用"来的行指向的文件可能已被静态加密; 兼容绝对路径/存储 key 两种形式
+    let buf = null;
+    const key = storage.keyForPath(doc.file_path);
+    if (await storage.exists(key)) buf = await storage.getBuffer(key);
+    else if (fs.existsSync(doc.file_path)) buf = fs.readFileSync(doc.file_path);
+    if (!buf) return res.status(404).json({ error: 'File missing' });
+    buf = decryptFileBuf(buf);
     const ext = path.extname(doc.file_path).toLowerCase();
     const mime = ext === '.pdf' ? 'application/pdf'
       : ext === '.png' ? 'image/png'
@@ -25298,10 +25301,10 @@ app.get('/api/admin/compliance-docs/:id/download', requireAdmin, (req, res) => {
       : ext === '.webp' ? 'image/webp'
       : 'application/octet-stream';
     res.setHeader('Content-Type', mime);
-    res.setHeader('Content-Disposition', `inline; filename="${(doc.file_name || 'document').replace(/"/g, '')}"`);
-    return res.sendFile(path.resolve(doc.file_path));
-  }
-  res.download(doc.file_path, doc.file_name || 'document');
+    const dispC = req.query.inline === '1' ? 'inline' : 'attachment';
+    res.setHeader('Content-Disposition', `${dispC}; filename="${(doc.file_name || 'document').replace(/"/g, '')}"`);
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: '文件读取失败: ' + e.message }); }
 });
 
 app.delete('/api/admin/compliance-docs/:id', requireAdmin, (req, res) => {
@@ -25331,7 +25334,11 @@ app.post('/api/admin/compliance-docs/:id/ocr', requireAdmin, async (req, res) =>
   if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing on disk' });
 
   try {
-    const imageBuffer = fs.readFileSync(doc.file_path);
+    let imageBuffer = null;
+    const ocrKey = storage.keyForPath(doc.file_path);
+    if (await storage.exists(ocrKey)) imageBuffer = await storage.getBuffer(ocrKey);
+    else imageBuffer = fs.readFileSync(doc.file_path);
+    imageBuffer = decryptFileBuf(imageBuffer);   // 文件可能已被静态加密
     const base64 = imageBuffer.toString('base64');
     const visionRes = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
       method: 'POST',
