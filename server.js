@@ -998,6 +998,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
 )`);
 // 管理端保存的"显示用裁剪版"文件 key。原件 file_path 永不修改; 裁剪版是独立新文件。
 try { db.exec(`ALTER TABLE applicant_docs ADD COLUMN cropped_path TEXT DEFAULT ''`); } catch (e) {}
+// 证件真伪核验标记: real=真 / fake=假 / ''=未标
+try { db.exec(`ALTER TABLE applicant_docs ADD COLUMN verify_status TEXT DEFAULT ''`); } catch (e) {}
+try { db.exec(`ALTER TABLE applicant_docs ADD COLUMN verify_by TEXT DEFAULT ''`); } catch (e) {}
+try { db.exec(`ALTER TABLE applicant_docs ADD COLUMN verify_at TEXT DEFAULT NULL`); } catch (e) {}
 // Standalone OTP store for the public applicant form (not tied to a worker account).
 db.exec(`CREATE TABLE IF NOT EXISTS applicant_otp (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -15333,7 +15337,7 @@ app.get('/api/admin/applicant-submissions', requireAdmin, blockManager, (req, re
 
 // ADMIN: list a submission's documents.
 app.get('/api/admin/applicant-submissions/:id/docs', requireAdmin, blockManager, (req, res) => {
-  res.json(db.prepare(`SELECT id, doc_type, file_name, uploaded_at,
+  res.json(db.prepare(`SELECT id, doc_type, file_name, uploaded_at, verify_status, verify_by, verify_at,
     CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
     FROM applicant_docs WHERE submission_id=?`).all(req.params.id));
 });
@@ -15433,6 +15437,20 @@ app.post('/api/admin/applicant-submissions/:id/docs/:docId/cropped', requireAdmi
     await storage.putObject(key, buf, { contentType: m[1] === 'png' ? 'image/png' : 'image/jpeg' });
     db.prepare('UPDATE applicant_docs SET cropped_path=? WHERE id=?').run(key, doc.id);
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: 标记证件真伪 (real/fake/''), 记录谁标的什么时候标的
+app.post('/api/admin/applicant-submissions/:id/docs/:docId/verify', requireAdmin, blockManager, (req, res) => {
+  try {
+    const doc = db.prepare('SELECT id FROM applicant_docs WHERE id=? AND submission_id=?').get(req.params.docId, req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    const st = String((req.body || {}).status || '');
+    if (!['', 'real', 'fake'].includes(st)) return res.status(400).json({ error: 'status must be real / fake / empty' });
+    const by = (req.session && req.session.username) || 'admin';
+    db.prepare(`UPDATE applicant_docs SET verify_status=?, verify_by=?, verify_at=CASE WHEN ?='' THEN NULL ELSE datetime('now') END WHERE id=?`)
+      .run(st, st ? by : '', st, doc.id);
+    res.json({ success: true, status: st });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
