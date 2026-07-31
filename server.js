@@ -15440,17 +15440,22 @@ app.post('/api/admin/applicant-submissions/:id/docs/:docId/cropped', requireAdmi
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ADMIN: 标记证件真伪 (real/fake/''), 记录谁标的什么时候标的
+// ADMIN: 标记证件真伪 — 按"证件组"生效: 同前缀的正反面(ssn_front/ssn_back 等)一起标
+// real=真 / fake=假 / pending=待确定 / ''=取消
 app.post('/api/admin/applicant-submissions/:id/docs/:docId/verify', requireAdmin, blockManager, (req, res) => {
   try {
-    const doc = db.prepare('SELECT id FROM applicant_docs WHERE id=? AND submission_id=?').get(req.params.docId, req.params.id);
+    const doc = db.prepare('SELECT id, doc_type FROM applicant_docs WHERE id=? AND submission_id=?').get(req.params.docId, req.params.id);
     if (!doc) return res.status(404).json({ error: 'Not found' });
     const st = String((req.body || {}).status || '');
-    if (!['', 'real', 'fake'].includes(st)) return res.status(400).json({ error: 'status must be real / fake / empty' });
+    if (!['', 'real', 'fake', 'pending'].includes(st)) return res.status(400).json({ error: 'status must be real / fake / pending / empty' });
     const by = (req.session && req.session.username) || 'admin';
-    db.prepare(`UPDATE applicant_docs SET verify_status=?, verify_by=?, verify_at=CASE WHEN ?='' THEN NULL ELSE datetime('now') END WHERE id=?`)
-      .run(st, st ? by : '', st, doc.id);
-    res.json({ success: true, status: st });
+    const prefix = String(doc.doc_type || '').split('_')[0];
+    const all = db.prepare('SELECT id, doc_type FROM applicant_docs WHERE submission_id=?').all(req.params.id);
+    const group = all.filter(d => (String(d.doc_type || '').split('_')[0] || String(d.id)) === (prefix || String(doc.id)));
+    const upd = db.prepare(`UPDATE applicant_docs SET verify_status=?, verify_by=?, verify_at=CASE WHEN ?='' THEN NULL ELSE datetime('now') END WHERE id=?`);
+    const ids = [];
+    for (const g of (group.length ? group : [doc])) { upd.run(st, st ? by : '', st, g.id); ids.push(g.id); }
+    res.json({ success: true, status: st, updated_ids: ids });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
