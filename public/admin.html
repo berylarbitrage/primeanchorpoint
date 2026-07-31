@@ -48367,12 +48367,19 @@ fetch('/api/build', { cache: 'no-store' }).then(r => r.json()).then(b => {
     clearTimeout(flushTimer);
     flushTimer = setTimeout(flush, 250);
   }
+  function _tk() { try { return TOKEN || ''; } catch (_) { return ''; } }
   async function flush() {
     if (inflight || !pending.size) return;
+    if (!_tk()) { flushTimer = setTimeout(flush, 2000); return; }   // 未登录: 等登录后再翻
     inflight = true;
     const keys = [...pending.keys()].slice(0, 400);
     try {
-      const r = await api('/admin/ui-translate', { method: 'POST', body: JSON.stringify({ lang, texts: keys }) });
+      const resp = await fetch('/api/admin/ui-translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _tk() },
+        body: JSON.stringify({ lang, texts: keys })
+      });
+      const r = resp.ok ? await resp.json() : null;   // 401/错误一律静默, 不弹窗不登出
       const map = (r && r.map) || {};
       for (const k of keys) {
         const tgts = pending.get(k) || [];
@@ -48416,8 +48423,12 @@ fetch('/api/build', { cache: 'no-store' }).then(r => r.json()).then(b => {
       }
     }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['placeholder', 'title'] });
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
-  else start();
+  function boot() {
+    if (!_tk()) { setTimeout(boot, 1500); return; }   // 登录页不翻; 登录成功后自动开始
+    start();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();
 </script>
 </body>
