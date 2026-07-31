@@ -278,6 +278,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <h1>SMS Inbox</h1>
       <span id="headerUnread" class="badge-unread" style="display:none"></span>
       <div class="spacer"></div>
+      <button class="btn-icon" onclick="showStarredModal(0)" title="所有对话的星标消息" style="color:#f59e0b">&#9733;</button>
       <button class="btn-icon" onclick="showNewChatModal()" title="从员工 / 招工申请找人发起对话" style="font-size:1.05rem">&#128172;</button>
       <button class="btn-icon" onclick="showBroadcastModal()" title="Compose / Broadcast" style="font-size:1.1rem">&#9993;</button>
       <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
@@ -324,6 +325,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       </div>
       <span id="detailPriority" class="priority-badge" onclick="cyclePriority()"></span>
       <span id="detailStatus" class="ti-status" style="font-size:.72rem"></span>
+      <button class="btn-icon" onclick="showStarredModal(currentThread && currentThread.id)" title="本对话的星标消息">&#9733;</button>
       <button class="btn-icon" onclick="showEditContactModal()" title="Edit contact">&#9998;</button>
       <button class="btn-icon" onclick="toggleHistory()" title="History">&#128337;</button>
     </div>
@@ -414,6 +416,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div style="padding:12px;color:var(--gray-400);text-align:center">输入关键词搜索，或直接浏览</div>
     </div>
     <button class="close-modal" onclick="closeNewChatModal()" style="margin-top:8px">Cancel</button>
+  </div>
+</div>
+
+<!-- ⭐ 星标消息汇总 -->
+<div class="modal-bg" id="starredModal">
+  <div class="modal" style="max-width:560px">
+    <h3 id="starredTitle">&#9733; 星标消息</h3>
+    <div id="starredList" style="max-height:380px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius)"></div>
+    <button class="close-modal" onclick="closeStarredModal()" style="margin-top:8px">Close</button>
   </div>
 </div>
 
@@ -851,11 +862,13 @@ function renderMessages() {
       } else if (dir === 'outbound' && item.translated_body && item.translated_body !== item.body) {
         translationHtml = '<div class="msg-translation" style="text-align:right;color:rgba(255,255,255,.65)">→ ' + esc(item.translated_body) + '</div>';
       }
+      const starBtn = '<span title="' + (item.starred ? '取消特殊标记' : '特殊标记，可在 ⭐ 里汇总回看') + '" onclick="toggleStar(' + item.id + ')" style="cursor:pointer;margin-left:4px;color:' + (item.starred ? '#f59e0b' : 'var(--gray-300)') + '">' + (item.starred ? '&#9733;' : '&#9734;') + '</span>';
       html += '<div class="msg-row ' + dir + '">'
-        + '<div class="msg-bubble">' + esc(item.body) + translationHtml + '</div>'
+        + '<div class="msg-bubble"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : '') + '>' + esc(item.body) + translationHtml + '</div>'
         + '<div class="msg-meta">' + fmtTime(item._time)
         + (dir === 'outbound' ? ' &middot; ' + statusIcon : '')
         + (dir === 'outbound' && item.author_name ? ' &middot; ' + esc(item.author_name) : '')
+        + starBtn
         + '</div></div>';
     }
   });
@@ -1373,6 +1386,39 @@ async function ncStart(i) {
     await loadThreads();
     openThread(r.thread_id);
   } catch (e) { toast('发起失败: ' + (e.message || e)); }
+}
+// ─── ⭐ 消息特殊标记 ───
+async function toggleStar(msgId) {
+  try {
+    const r = await api('/sms/messages/' + msgId + '/star', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.error) { toast(r.error); return; }
+    const m = currentMessages.find(x => x.id === msgId);
+    if (m) { m.starred = r.starred; m.starred_at = r.starred ? new Date().toISOString() : null; }
+    renderMessages();
+    toast(r.starred ? '⭐ 已标记，可在星标里回看' : '已取消标记');
+  } catch (e) { toast('操作失败: ' + (e.message || e)); }
+}
+function closeStarredModal() { document.getElementById('starredModal').classList.remove('show'); }
+async function showStarredModal(threadId) {
+  document.getElementById('starredTitle').innerHTML = '&#9733; 星标消息' + (threadId ? ' · 本对话' : ' · 全部对话');
+  const box = document.getElementById('starredList');
+  box.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">Loading…</div>';
+  document.getElementById('starredModal').classList.add('show');
+  try {
+    const r = await api('/sms/starred' + (threadId ? '?thread_id=' + threadId : ''));
+    const msgs = r.messages || [];
+    if (!msgs.length) { box.innerHTML = '<div style="padding:14px;color:var(--gray-400);text-align:center">还没有星标消息。在聊天里点消息旁的 ☆ 即可标记。</div>'; return; }
+    box.innerHTML = msgs.map(m =>
+      '<div style="padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="closeStarredModal();openThread(' + m.thread_id + ')">'
+      + '<div style="display:flex;gap:6px;align-items:center;font-size:.76rem;color:var(--gray-500);margin-bottom:2px">'
+      + '<b style="color:var(--gray-700)">' + esc(m.contact_name || fmtPhone(m.phone_e164)) + '</b>'
+      + '<span>' + (m.direction === 'inbound' ? '⬅ 对方' : '➡ 我们') + '</span>'
+      + '<span style="margin-left:auto">' + fmtDate(m.created_at) + ' ' + fmtTime(m.created_at) + '</span></div>'
+      + '<div style="font-size:.85rem;color:var(--gray-800)">' + esc(m.body || '') + '</div>'
+      + (m.translated_body && m.translated_body !== m.body ? '<div style="font-size:.76rem;color:var(--gray-400)">▸ ' + esc(m.translated_body) + '</div>' : '')
+      + '</div>'
+    ).join('');
+  } catch (e) { box.innerHTML = '<div style="padding:12px;color:var(--red)">加载失败: ' + esc(e.message || '') + '</div>'; }
 }
 function renderTagsInline(tagsJson) {
   let tags = [];

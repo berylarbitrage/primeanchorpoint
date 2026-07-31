@@ -2887,6 +2887,11 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_thread ON sms_message
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_sid ON sms_messages(twilio_message_sid)`); } catch(e) {}
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messages(thread_id, created_at)`); } catch(e) {}
 
+// 消息特殊标记 (⭐): 标记后可在"星标消息"里汇总回看
+try { db.exec(`ALTER TABLE sms_messages ADD COLUMN starred INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_messages ADD COLUMN starred_by INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_messages ADD COLUMN starred_at TEXT DEFAULT NULL`); } catch(e) {}
+
 // SMS translation columns (added later — safe to add via ALTER TABLE)
 try { db.exec(`ALTER TABLE sms_threads ADD COLUMN contact_lang TEXT DEFAULT 'es'`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_threads ADD COLUMN agent_lang TEXT DEFAULT 'zh'`); } catch(e) {}
@@ -29049,6 +29054,35 @@ app.get('/api/sms/all-employees', requireAdmin, requireSmsAccess, (req, res) => 
     const employees = db.prepare(`SELECT id, first_name, last_name, phone, email, position, status FROM employees WHERE status='active' AND phone != '' ORDER BY first_name, last_name`).all();
     res.json({ employees });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/messages/:id/star — ⭐ 特殊标记/取消标记一条消息, 未来可汇总查看
+app.post('/api/sms/messages/:id/star', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const msg = db.prepare('SELECT id, thread_id, starred FROM sms_messages WHERE id=?').get(req.params.id);
+    if (!msg) return res.status(404).json({ error: 'Message not found' });
+    const on = (req.body || {}).starred !== undefined ? ((req.body.starred ? 1 : 0)) : (msg.starred ? 0 : 1);
+    db.prepare(`UPDATE sms_messages SET starred=?, starred_by=?, starred_at=CASE WHEN ? THEN datetime('now') ELSE NULL END, updated_at=datetime('now') WHERE id=?`)
+      .run(on, on ? req.userId : null, on, msg.id);
+    smsAudit('message', msg.id, on ? 'starred' : 'unstarred', 'agent', req.userId, { thread_id: msg.thread_id });
+    res.json({ success: true, starred: on });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/starred?thread_id= — 星标消息汇总 (不传 thread_id 则看全部对话的)
+app.get('/api/sms/starred', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const tid = parseInt(req.query.thread_id) || 0;
+    const rows = db.prepare(`SELECT m.id, m.thread_id, m.direction, m.body, m.translated_body, m.created_at, m.starred_at,
+        c.name AS contact_name, c.phone_e164, u.username AS starred_by_name
+      FROM sms_messages m
+      JOIN sms_threads t ON t.id = m.thread_id
+      JOIN sms_contacts c ON c.id = t.contact_id
+      LEFT JOIN admin_users u ON u.id = m.starred_by
+      WHERE m.starred=1 ${tid ? 'AND m.thread_id=?' : ''}
+      ORDER BY m.starred_at DESC LIMIT 300`).all(...(tid ? [tid] : []));
+    res.json({ messages: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/sms/people-search — 从员工档案 + 招工申请里找人, 用于直接发起对话
