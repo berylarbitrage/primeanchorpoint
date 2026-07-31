@@ -7872,7 +7872,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <option value="">-- 州 --</option>
         </select>
       </div>
-      <div class="field"><label>邮编 ZIP</label><input id="eZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');clearEmpAddrStatus()" onblur="autoVerifyEmpAddr()"></div>
+      <div class="field"><label>邮编 ZIP</label><input id="eZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');clearEmpAddrStatus();_autoStateFromZip()" onblur="autoVerifyEmpAddr()"></div>
     </div>
     <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem">
       <button type="button" class="btn btn-sm btn-outline" onclick="verifyEmpAddr()">🔍 验证地址 Verify</button>
@@ -9785,6 +9785,35 @@ function fillStateSelect(selectEl, selectedVal) {
   selectedVal = normalizeStateCode(selectedVal);
   selectEl.innerHTML = '<option value="">-- 州 --</option>' +
     _US_STATES_EARLY.map(s => `<option value="${s}"${s===selectedVal?' selected':''}>${s}</option>`).join('');
+}
+
+// ZIP → state, by the USPS 3-digit prefix allocations. Exceptions (single
+// prefixes carved out of a neighbor's block) are listed before broad ranges —
+// first match wins.
+const _ZIP3_STATE_RANGES = [
+  [201,201,'VA'],[733,733,'TX'],[885,885,'TX'],[5,5,'NY'],[6,9,'PR'],
+  [10,27,'MA'],[28,29,'RI'],[30,38,'NH'],[39,49,'ME'],[50,59,'VT'],[60,69,'CT'],[70,89,'NJ'],
+  [100,149,'NY'],[150,196,'PA'],[197,199,'DE'],[200,205,'DC'],[206,219,'MD'],[220,246,'VA'],[247,268,'WV'],
+  [270,289,'NC'],[290,299,'SC'],[300,319,'GA'],[320,349,'FL'],[350,369,'AL'],[370,385,'TN'],[386,397,'MS'],[398,399,'GA'],
+  [400,427,'KY'],[430,459,'OH'],[460,479,'IN'],[480,499,'MI'],[500,528,'IA'],[530,549,'WI'],[550,567,'MN'],[570,577,'SD'],[580,588,'ND'],[590,599,'MT'],
+  [600,629,'IL'],[630,658,'MO'],[660,679,'KS'],[680,693,'NE'],[700,714,'LA'],[716,729,'AR'],[730,749,'OK'],[750,799,'TX'],
+  [800,816,'CO'],[820,831,'WY'],[832,838,'ID'],[840,847,'UT'],[850,865,'AZ'],[870,884,'NM'],[889,898,'NV'],
+  [900,961,'CA'],[967,968,'HI'],[970,979,'OR'],[980,994,'WA'],[995,999,'AK']
+];
+function stateFromZip(zip) {
+  const m = String(zip || '').match(/^(\d{3})\d{2}/);
+  if (!m) return '';
+  const p = parseInt(m[1], 10);
+  for (const [a, b, st] of _ZIP3_STATE_RANGES) { if (p >= a && p <= b) return st; }
+  return '';
+}
+// Fill the employee modal's state select from its ZIP when no state is chosen
+// yet (never overrides a manual choice).
+function _autoStateFromZip() {
+  const zipEl = document.getElementById('eZip'), stEl = document.getElementById('eState');
+  if (!zipEl || !stEl || stEl.value) return;
+  const st = stateFromZip(zipEl.value);
+  if (st && _US_STATES_EARLY.includes(st)) stEl.value = st;
 }
 
 // Parse "Street, [Street2,] City, ST [ZIP]" or "City, ST" into parts
@@ -16271,6 +16300,7 @@ function openEmpModal(id) {
     document.getElementById('eCity').value     = e.city||'';
     fillStateSelect(document.getElementById('eState'), e.state||'');
     document.getElementById('eZip').value      = e.zip||'';
+    _autoStateFromZip();
     document.getElementById('eHire').value     = e.hire_date||'';
     document.getElementById('eStatus').value   = e.status||'active';
     document.getElementById('addJobRecordBtn').style.display = '';
@@ -16823,6 +16853,7 @@ function _execDupMerge() {
       const el = document.getElementById(elId);
       if (el && !el.value) el.value = val;
     }
+    _autoStateFromZip();
   }, 100);
 }
 
