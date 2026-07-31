@@ -15332,7 +15332,7 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
   const files = [];
   for (const d of docMeta) {
     try {
-      const buf = await storage.getBuffer(storage.normalizeKey(d.key));
+      const buf = decryptFileBuf(await storage.getBuffer(storage.normalizeKey(d.key)));   // 文件可能已被静态加密
       const ext = (path.extname(d.originalname || d.key) || '.jpg').toLowerCase();
       const mime = d.mime || ({ '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.heic': 'image/heic', '.heif': 'image/heif', '.webp': 'image/webp', '.pdf': 'application/pdf' }[ext] || 'application/octet-stream');
       files.push({ filename: `${d.docType}${ext}`, content: buf, mime });
@@ -15771,7 +15771,7 @@ async function notifyNewWorkerDocs({ subId, name, phone, docMeta }) {
   const files = [];
   for (const d of docMeta) {
     try {
-      const buf = await storage.getBuffer(storage.normalizeKey(d.key));
+      const buf = decryptFileBuf(await storage.getBuffer(storage.normalizeKey(d.key)));   // 文件可能已被静态加密
       const ext = (path.extname(d.originalname || d.key) || '.jpg').toLowerCase();
       const mime = d.mime || ({ '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.heic': 'image/heic', '.heif': 'image/heif', '.webp': 'image/webp', '.pdf': 'application/pdf' }[ext] || 'application/octet-stream');
       files.push({ filename: `${d.docType}${ext}`, content: buf, mime });
