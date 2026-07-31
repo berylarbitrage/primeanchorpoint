@@ -41395,9 +41395,16 @@ function _adVwDoCrop(cl, ct, cw, ch) {
   const sv = document.getElementById('adVwSaveCropBtn');
   if (sv && _adVwDocRef) sv.style.display = '';
   if (_adBatch && _adVwDocRef) {
-    // 连续裁剪: 裁完自动保存; 该证件组还没有结论 → 停下等标注, 有结论 → 直接跳下一张
-    saveApplicantDocCrop().then(() => {
+    // 连续裁剪: 裁完自动保存; 保存失败停在本张重试; 成功后 → 该组没结论则等标注, 有结论直接下一张
+    saveApplicantDocCrop().then(ok => {
       if (!_adBatch) return;
+      if (!ok) {
+        restoreApplicantDocCrop();   // 回到原图, 重新拖框
+        _adVwCropOnce = true; _adVwSetCropArmed(true);
+        _adBatchRenderBar();
+        showToast('⚠️ 这张没保存成功 — 请重新拖框重试（不会跳过）', 'error', 6000);
+        return;
+      }
       if (_adBatchGroupVerdict(_adBatch.idx)) { _adBatchAdvance(); }
       else {
         _adBatch.awaitVerdict = true;
@@ -41573,8 +41580,8 @@ function toggleApplicantDocAdjust() {
 // ── 裁剪版保存到系统: 独立新文件, 原件永不改动, ?v=orig 永远可取原件 ──
 async function saveApplicantDocCrop() {
   const img = document.getElementById('adVwImg');
-  if (!_adVwDocRef) { showToast('这张图不是申请证件，无法保存', 'error'); return; }
-  if (!img || !/^data:image\//.test(img.src)) { showToast('请先用 ✂️裁剪 框出区域再保存', 'error'); return; }
+  if (!_adVwDocRef) { showToast('这张图不是申请证件，无法保存', 'error'); return false; }
+  if (!img || !/^data:image\//.test(img.src)) { showToast('请先用 ✂️裁剪 框出区域再保存', 'error'); return false; }
   try {
     const r = await api(`/admin/applicant-submissions/${_adVwDocRef.subId}/docs/${_adVwDocRef.docId}/cropped`, { method: 'POST', body: JSON.stringify({ data: img.src }) });
     if (r && r.error) throw new Error(r.error);
@@ -41582,7 +41589,8 @@ async function saveApplicantDocCrop() {
     const sv = document.getElementById('adVwSaveCropBtn'); if (sv) sv.style.display = 'none';
     const cl = document.getElementById('adVwClearCropBtn'); if (cl) cl.style.display = '';
     _adVwBustThumbs();
-  } catch (e) { showToast('保存失败: ' + (e.message || e), 'error'); }
+    return true;
+  } catch (e) { showToast('保存失败: ' + (e.message || e), 'error', 6000); return false; }
 }
 async function clearApplicantDocCrop() {
   if (!_adVwDocRef) return;
