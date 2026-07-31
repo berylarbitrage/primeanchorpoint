@@ -389,7 +389,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   <div class="modal">
     <h3>联系人资料 / Contact</h3>
     <label>Name</label><input id="editName" placeholder="Contact name">
-    <label>Company</label><input id="editCompany" placeholder="Company">
+    <label>公司 Company（从现有公司选）</label>
+    <select id="editCompany" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;background:var(--white)">
+      <option value="">— 不选 —</option>
+    </select>
     <label>Email</label><input id="editEmail" placeholder="Email">
     <label>标签（做过的工种 / 在哪里上过班）</label>
     <div id="editTagChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
@@ -1151,10 +1154,24 @@ async function doAssign(agentId) {
 // ─── Edit Contact ───
 const CONTACT_TAG_PRESETS = ['普工', 'Order Picker', '叉车工', '卸柜工', '高位叉车', '打包'];
 let _editTags = [];
+let _partnerNamesCache = null;
+async function _fillCompanySelect(current) {
+  const sel = document.getElementById('editCompany');
+  if (_partnerNamesCache === null) {
+    try {
+      const r = await api('/sms/partners');
+      _partnerNamesCache = (r.partners || []).map(p => p.name).filter(Boolean);
+    } catch (_) { _partnerNamesCache = []; }
+  }
+  const names = [..._partnerNamesCache];
+  if (current && !names.includes(current)) names.unshift(current);   // 老数据里手填的公司也保留可选
+  sel.innerHTML = '<option value="">— 不选 —</option>' + names.map(n =>
+    '<option value="' + esc(n) + '"' + (n === current ? ' selected' : '') + '>' + esc(n) + '</option>').join('');
+}
 function showEditContactModal() {
   if (!currentContact) return;
   document.getElementById('editName').value = currentContact.name || '';
-  document.getElementById('editCompany').value = currentContact.company || '';
+  _fillCompanySelect(currentContact.company || '');
   document.getElementById('editEmail').value = currentContact.email || '';
   document.getElementById('editNotes').value = currentContact.notes || '';
   try { _editTags = JSON.parse(currentContact.tags || '[]'); } catch (_) { _editTags = []; }
