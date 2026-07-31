@@ -16866,8 +16866,19 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
         s.address1, s.address2, s.city, s.state, s.zip, s.apply_state, s.created_at,
         (SELECT GROUP_CONCAT(doc_type) FROM applicant_docs d WHERE d.submission_id = s.id) AS doc_types
       FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => match(x.phone)).slice(0, 50);
+    // 带证件明细, 页面可直接看图
+    const docsFor = db.prepare('SELECT id, doc_type, file_name, verify_status FROM applicant_docs WHERE submission_id=?');
+    applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
     const employees = db.prepare(`SELECT id, employee_id, first_name, last_name, phone, email, position, department, status, hire_date
       FROM employees`).all().filter(x => match(x.phone)).slice(0, 50);
+    // 员工如果是从招工申请创建的, 也带上当时的证件
+    const subByEmp = db.prepare('SELECT id FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC LIMIT 1');
+    employees.forEach(e => {
+      try {
+        const s = subByEmp.get(e.id);
+        if (s) { e.submission_id = s.id; e.docs = docsFor.all(s.id); }
+      } catch (_) {}
+    });
     const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, active, created_at FROM foremen`).all()
       .filter(x => match(x.phone)).slice(0, 50);
     res.json({ ok: true, phone: digits, found: !!(applications.length || employees.length || foremen.length), applications, employees, foremen });

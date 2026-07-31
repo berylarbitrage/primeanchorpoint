@@ -72,6 +72,24 @@ document.getElementById('phoneInput').addEventListener('keydown',e=>{if(e.key===
 function kv(lbl,val){ return val ? `<span><span class="lbl">${esc(lbl)}</span> <b>${esc(val)}</b></span>` : ''; }
 
 async function doSearch(){
+  const docThumbs=(subId,docs)=>{
+    if(!subId||!Array.isArray(docs)||!docs.length) return '';
+    return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+docs.map(d=>{
+      const u='/api/admin/applicant-submissions/'+subId+'/docs/'+d.id+'/download';
+      const label=DOC_LABELS[d.doc_type]||d.doc_type;
+      if(/\.pdf$/i.test(d.file_name||'')) return '<a href="'+u+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 10px;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none">📄 '+esc(label)+'</a>';
+      const vs=d.verify_status||'';
+      const badge=vs==='real'?'<span style="position:absolute;top:2px;right:2px;background:#059669;color:#fff;font-size:10px;font-weight:700;border-radius:4px;padding:0 4px">真✓</span>'
+        :vs==='fake'?'<span style="position:absolute;top:2px;right:2px;background:#dc2626;color:#fff;font-size:10px;font-weight:700;border-radius:4px;padding:0 4px">假✗</span>'
+        :vs==='pending'?'<span style="position:absolute;top:2px;right:2px;background:#d97706;color:#fff;font-size:10px;font-weight:700;border-radius:4px;padding:0 4px">待定?</span>':'';
+      const border=vs==='fake'?'#fca5a5':vs==='real'?'#6ee7b7':vs==='pending'?'#fcd34d':'#dbe3ee';
+      return '<a href="'+u+'" target="_blank" title="'+esc(label)+' (点击看大图)" style="text-decoration:none"><span style="display:block;position:relative">'
+        +'<img src="'+u+'" loading="lazy" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:2px solid '+border+';background:#000;display:block">'
+        +badge
+        +'<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:10px;font-weight:600;text-align:center;border-radius:0 0 6px 6px;padding:1px 0">'+esc(label)+'</span>'
+        +'</span></a>';
+    }).join('')+'</div>';
+  };
   const inp=document.getElementById('phoneInput');
   const btn=document.getElementById('searchBtn');
   const banner=document.getElementById('banner');
@@ -108,7 +126,7 @@ async function doSearch(){
             ${kv('状态',a.status)} ${kv('提交时间',String(a.created_at||'').slice(0,16))}
           </div>
           ${addr?`<div class="meta">${kv('地址',addr)}</div>`:''}
-          ${docs.length?`<div class="chips">${docs.map(d=>`<span class="chip">${esc(DOC_LABELS[d]||d)} ✓</span>`).join('')}</div>`:''}
+          ${docThumbs(a.id, a.docs)}
         </div>`;
       }).join('');
     }
@@ -120,6 +138,7 @@ async function doSearch(){
           ${kv('员工编号',e.employee_id)} ${kv('电话',e.phone)} ${kv('邮箱',e.email)}
           ${kv('职位',e.position)} ${kv('部门',e.department)} ${kv('状态',e.status)} ${kv('入职日期',e.hire_date)}
         </div>
+        ${docThumbs(e.submission_id, e.docs)}
       </div>`).join('');
     }
     if((data.foremen||[]).length){
