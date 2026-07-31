@@ -998,6 +998,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
 )`);
 // 管理端保存的"显示用裁剪版"文件 key。原件 file_path 永不修改; 裁剪版是独立新文件。
 try { db.exec(`ALTER TABLE applicant_docs ADD COLUMN cropped_path TEXT DEFAULT ''`); } catch (e) {}
+// AI 识读结果缓存 (JSON: {engine, model, parsed, raw}), 每张图识读一次就够
+try { db.exec(`ALTER TABLE applicant_docs ADD COLUMN ai_text TEXT DEFAULT ''`); } catch (e) {}
 // 证件真伪核验标记: real=真 / fake=假 / ''=未标
 try { db.exec(`ALTER TABLE applicant_docs ADD COLUMN verify_status TEXT DEFAULT ''`); } catch (e) {}
 try { db.exec(`ALTER TABLE applicant_docs ADD COLUMN verify_by TEXT DEFAULT ''`); } catch (e) {}
@@ -15337,7 +15339,7 @@ app.get('/api/admin/applicant-submissions', requireAdmin, blockManager, (req, re
 
 // ADMIN: list a submission's documents.
 app.get('/api/admin/applicant-submissions/:id/docs', requireAdmin, blockManager, (req, res) => {
-  res.json(db.prepare(`SELECT id, doc_type, file_name, uploaded_at, verify_status, verify_by, verify_at,
+  res.json(db.prepare(`SELECT id, doc_type, file_name, uploaded_at, verify_status, verify_by, verify_at, ai_text,
     CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
     FROM applicant_docs WHERE submission_id=?`).all(req.params.id));
 });
@@ -15366,6 +15368,16 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
     } catch (e) { res.status(404).json({ error: 'Not found' }); }
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// AI 识读结果落库: 请求带 sub_id/doc_id (申请证件) 时保存, 之后打开图直接显示不用重识
+function _aiReadPersist(body, result) {
+  try {
+    const subId = parseInt((body || {}).sub_id), docId = parseInt((body || {}).doc_id);
+    if (!subId || !docId || !result.raw) return;
+    db.prepare('UPDATE applicant_docs SET ai_text=? WHERE id=? AND submission_id=?')
+      .run(JSON.stringify(result).slice(0, 100000), docId, subId);
+  } catch (_) {}
+}
 
 // ─── AI 识读: 让 Claude(优先) / Google Vision 直接读证件图片, 提取结构化字段 ───
 app.post('/api/admin/ai-read-image', requireAdmin, async (req, res) => {
@@ -15396,6 +15408,7 @@ app.post('/api/admin/ai-read-image', requireAdmin, async (req, res) => {
       const text = ((body.content || []).find(c => c.type === 'text') || {}).text || '';
       let parsed = null;
       try { parsed = JSON.parse((text.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch (_) {}
+      _aiReadPersist(req.body, { engine: 'claude', model, parsed, raw: text });
       return res.json({ success: true, engine: 'claude', model, parsed, raw: text });
     }
     const gKey = process.env.GOOGLE_VISION_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
@@ -15411,6 +15424,7 @@ app.post('/api/admin/ai-read-image', requireAdmin, async (req, res) => {
       }
       const vd = await vr.json().catch(() => ({}));
       const fullText = (vd.responses && vd.responses[0] && vd.responses[0].fullTextAnnotation && vd.responses[0].fullTextAnnotation.text) || '';
+      _aiReadPersist(req.body, { engine: 'google-vision', parsed: null, raw: fullText });
       return res.json({ success: true, engine: 'google-vision', parsed: null, raw: fullText });
     }
     return res.status(400).json({ error: '未配置 AI 识别服务。推荐: 在服务器环境变量配 ANTHROPIC_API_KEY (console.anthropic.com 申请); 或配 GOOGLE_VISION_API_KEY (启用了 Cloud Vision API 的 Google key)。' });

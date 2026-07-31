@@ -40896,9 +40896,15 @@ function renderApplicantInbox() {
       if (isPdf) {
         return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.35rem .6rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${label}</a>`;
       }
+      const vs = d.verify_status || '';
+      const vBadge = vs === 'real' ? '<span style="position:absolute;top:1px;right:1px;background:#059669;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">真✓</span>'
+        : vs === 'fake' ? '<span style="position:absolute;top:1px;right:1px;background:#dc2626;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">假✗</span>'
+        : vs === 'pending' ? '<span style="position:absolute;top:1px;right:1px;background:#d97706;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">待定?</span>' : '';
+      const vBorder = vs === 'fake' ? '#fca5a5' : vs === 'real' ? '#6ee7b7' : vs === 'pending' ? '#fcd34d' : 'var(--gray-200)';
       return `<a href="${url}" target="_blank" title="${label}（点击查看大图）" style="text-decoration:none">
           <span style="display:block;position:relative">
-            <img src="${url}" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;display:block">
+            <img src="${url}" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid ${vBorder};background:#000;display:block">
+            ${vBadge}
             <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.64rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${label}</span>
           </span>
         </a>`;
@@ -41155,6 +41161,15 @@ function openApplicantDocViewer(url, label) {
   const clBtn = v.querySelector('#adVwClearCropBtn'); if (clBtn) clBtn.style.display = 'none';
   _adVwVerify = ''; _adVwVerifyBy = '';
   _adVwRenderVerify();
+  // 换图: 清空识别面板旧文字; 该图有已存的 AI 识读结果则稍后自动显示
+  {
+    const ocrPanel = document.getElementById('adVwOcrPanel');
+    const ta = document.getElementById('adVwOcrText'), cp = document.getElementById('adVwOcrCopy');
+    if (ta) { ta.value = ''; ta.style.display = 'none'; }
+    if (cp) cp.style.display = 'none';
+    if (ocrPanel && !_adVwOcrMode) ocrPanel.style.display = 'none';
+    _setOcrStatus('在图上拖一个框，识别框内文字（英文证件）');
+  }
   if (_adVwDocRef) {
     api(`/admin/applicant-submissions/${_adVwDocRef.subId}/docs`).then(list => {
       const d = (Array.isArray(list) ? list : []).find(x => String(x.id) === _adVwDocRef.docId);
@@ -41163,6 +41178,9 @@ function openApplicantDocViewer(url, label) {
         if (rsBtn) { rsBtn.style.display = ''; rsBtn.title = '查看原始图片（系统当前显示的是保存过的裁剪版）'; }
       }
       if (d) { _adVwVerify = d.verify_status || ''; _adVwVerifyBy = d.verify_by || ''; _adVwRenderVerify(); }
+      if (d && d.ai_text) {
+        try { _showAiResult(JSON.parse(d.ai_text), true); } catch (_) {}
+      }
     }).catch(() => {});
   }
   const img = v.querySelector('#adVwImg');
@@ -41647,23 +41665,35 @@ async function aiReadApplicantDoc() {
       cx.drawImage(img, 0, 0, cv.width, cv.height);
       data = cv.toDataURL('image/jpeg', 0.92);
     }
-    const r = await api('/admin/ai-read-image', { method: 'POST', body: JSON.stringify({ data }) });
+    const body = { data };
+    if (_adVwDocRef) { body.sub_id = _adVwDocRef.subId; body.doc_id = _adVwDocRef.docId; }   // 存进系统, 下次打开直接显示
+    const r = await api('/admin/ai-read-image', { method: 'POST', body: JSON.stringify(body) });
     if (r && r.error) throw new Error(r.error);
-    let out = '';
-    if (r.parsed && (r.parsed.fields || r.parsed.doc_type)) {
-      const F = r.parsed.fields || {};
-      const L = { name: '姓名', dob: '生日', id_number: '证件号', address: '地址', issue_date: '签发日', expiry_date: '到期日', category: '类别', other: '其他' };
-      if (r.parsed.doc_type) out += '类型: ' + r.parsed.doc_type + '\n';
-      for (const k of Object.keys(L)) if (F[k]) out += L[k] + ': ' + F[k] + '\n';
-      if (r.parsed.raw_text) out += '―― 全部文字 ――\n' + r.parsed.raw_text;
-    } else {
-      out = r.raw || '(没有读到内容)';
-    }
-    const ta = document.getElementById('adVwOcrText'), cp = document.getElementById('adVwOcrCopy');
-    if (ta) { ta.style.display = 'block'; ta.value = out.trim(); ta.rows = 9; }
-    if (cp) cp.style.display = out.trim() ? 'inline-block' : 'none';
-    _setOcrStatus('🤖 识读完成 · ' + (r.engine === 'claude' ? 'Claude (' + (r.model || '') + ')' : 'Google Vision') + ' — 号码等关键字段请核对');
+    _showAiResult(r, false);
   } catch (e) { _setOcrStatus('⚠️ ' + (e.message || e)); }
+}
+function _fmtAiRead(r) {
+  let out = '';
+  if (r.parsed && (r.parsed.fields || r.parsed.doc_type)) {
+    const F = r.parsed.fields || {};
+    const L = { name: '姓名', dob: '生日', id_number: '证件号', address: '地址', issue_date: '签发日', expiry_date: '到期日', category: '类别', other: '其他' };
+    if (r.parsed.doc_type) out += '类型: ' + r.parsed.doc_type + '\n';
+    for (const k of Object.keys(L)) if (F[k]) out += L[k] + ': ' + F[k] + '\n';
+    if (r.parsed.raw_text) out += '―― 全部文字 ――\n' + r.parsed.raw_text;
+  } else {
+    out = r.raw || '(没有读到内容)';
+  }
+  return out.trim();
+}
+function _showAiResult(r, fromCache) {
+  const panel = document.getElementById('adVwOcrPanel');
+  if (panel) panel.style.display = 'block';
+  const out = _fmtAiRead(r);
+  const ta = document.getElementById('adVwOcrText'), cp = document.getElementById('adVwOcrCopy');
+  if (ta) { ta.style.display = 'block'; ta.value = out; ta.rows = 9; }
+  if (cp) cp.style.display = out ? 'inline-block' : 'none';
+  const eng = r.engine === 'claude' ? 'Claude (' + (r.model || '') + ')' : 'Google Vision';
+  _setOcrStatus(fromCache ? ('🤖 已识读过 · ' + eng + ' — 结果已保留, 再点 🤖 可重新识别') : ('🤖 识读完成 · ' + eng + ' — 号码等关键字段请核对'));
 }
 // Back-compat name (older callers) — same behavior.
 function _applyApplicantDocRotation() { _applyApplicantDocView(); }
