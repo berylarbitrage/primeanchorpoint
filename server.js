@@ -28343,8 +28343,41 @@ app.get('/sms-inbox', (req, res) => {
 // ═══ SMS Inbox API ═══
 
 // GET /api/sms/threads — list threads with filtering
+// 联系人名字回填: 号码能对上员工档案/招工申请的, 自动带上系统里的名字 (只填空名字, 不覆盖手填的)
+let _smsNameBackfillAt = 0;
+function smsBackfillContactNames() {
+  const contacts = db.prepare(`SELECT id, phone_e164 FROM sms_contacts WHERE COALESCE(name,'')='' LIMIT 300`).all();
+  if (!contacts.length) return;
+  const norm = p => String(p || '').replace(/\D/g, '').slice(-10);
+  const em = new Map();
+  db.prepare(`SELECT id, first_name, last_name, phone FROM employees WHERE phone != ''`).all()
+    .forEach(e => { const k = norm(e.phone); if (k.length === 10 && !em.has(k)) em.set(k, e); });
+  let apps = null;
+  for (const c of contacts) {
+    const k = norm(c.phone_e164);
+    if (k.length !== 10) continue;
+    const e = em.get(k);
+    if (e) {
+      db.prepare(`UPDATE sms_contacts SET name=?, employee_id=COALESCE(employee_id, ?), updated_at=datetime('now') WHERE id=?`)
+        .run(((e.first_name || '') + ' ' + (e.last_name || '')).trim(), e.id, c.id);
+      continue;
+    }
+    if (apps === null) {
+      apps = new Map();
+      db.prepare(`SELECT id, name, phone FROM applicant_submissions WHERE phone != '' ORDER BY id DESC`).all()
+        .forEach(a => { const ak = norm(a.phone); if (ak.length === 10 && !apps.has(ak)) apps.set(ak, a); });
+    }
+    const a = apps.get(k);
+    if (a && a.name) db.prepare(`UPDATE sms_contacts SET name=?, updated_at=datetime('now') WHERE id=?`).run(a.name, c.id);
+  }
+}
+
 app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
   try {
+    if (Date.now() - _smsNameBackfillAt > 60000) {
+      _smsNameBackfillAt = Date.now();
+      try { smsBackfillContactNames(); } catch (_) {}
+    }
     const { status, agent_id, search, unread, tag, page, limit: lim } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(lim) || 20));
@@ -29024,7 +29057,7 @@ app.get('/api/sms/contacts', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/partners — list companies for broadcast group selection
 app.get('/api/sms/partners', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const partners = db.prepare(`SELECT id, name, phone, contact_person FROM partners WHERE active=1 ORDER BY name`).all();
+    const partners = db.prepare(`SELECT id, name, phone, contact_person FROM partners ORDER BY name`).all();
     res.json({ partners });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
