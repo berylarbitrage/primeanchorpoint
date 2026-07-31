@@ -15400,7 +15400,11 @@ app.post('/api/admin/ai-read-image', requireAdmin, async (req, res) => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requests: [{ image: { content: m[2] }, features: [{ type: 'TEXT_DETECTION' }] }] })
       });
-      if (!vr.ok) return res.status(502).json({ error: 'Google Vision API 错误 (确认该 key 已启用 Cloud Vision API)' });
+      if (!vr.ok) {
+        const eb = await vr.json().catch(() => ({}));
+        const reason = (eb.error && (eb.error.message || eb.error.status)) || ('HTTP ' + vr.status);
+        return res.status(502).json({ error: 'Google Vision API 错误: ' + reason + ' — 需在 Google Cloud 控制台为该项目启用 Cloud Vision API 并确认已开通计费' });
+      }
       const vd = await vr.json().catch(() => ({}));
       const fullText = (vd.responses && vd.responses[0] && vd.responses[0].fullTextAnnotation && vd.responses[0].fullTextAnnotation.text) || '';
       return res.json({ success: true, engine: 'google-vision', parsed: null, raw: fullText });
