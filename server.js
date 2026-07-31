@@ -3540,14 +3540,20 @@ function nextEmployeeId(state, hireDate) {
     dateStr = localDateStr(state, hireDate ? new Date(hireDate) : null);
   }
   const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
+  // 同一天所有州共用流水号序列。必须按"数字后缀"求最大值 —— 若按 employee_id 字符串排序,
+  // 州字母(如 TX>IL)会盖过流水号, 挑到错误的"最大值"从而重复生成已存在的号。
   const pattern = `WRK-%-${dateStr}-%`;
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE ? ORDER BY employee_id DESC LIMIT 1").get(pattern);
-  let num = 1;
-  if (last) {
-    const parts = last.employee_id.split('-');
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastNum)) num = lastNum + 1;
+  const rows = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE ?").all(pattern);
+  let maxNum = 0;
+  for (const r of rows) {
+    const parts = String(r.employee_id).split('-');
+    const n = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(n) && n > maxNum) maxNum = n;
   }
+  // 跳过该州已占用的号 (兜底: 即使历史数据被算错留下空洞也不会撞车)
+  let num = maxNum + 1;
+  const takenStmt = db.prepare('SELECT 1 FROM employees WHERE employee_id=?');
+  while (takenStmt.get(`WRK-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`)) num++;
   return `WRK-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
@@ -19443,7 +19449,30 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
     }
     res.json({ success: true, id: newId, employee_id: empId });
   } catch(e) {
-    if (e.message.includes('UNIQUE')) return res.status(400).json({ error: '员工编号已存在' });
+    if (e.message.includes('UNIQUE') && !(d.employee_id || '').trim()) {
+      // 自动编号意外撞车 → 重新取一个可用号重试 (并发/历史空洞都能自愈)
+      try {
+        const retryId = nextEmployeeId(d.state, d.hire_date);
+        const r2 = db.prepare(`INSERT INTO employees
+          (employee_id,first_name,middle_name,last_name,email,phone,extra_phones,extra_emails,address,street2,city,state,zip,dob,
+           emergency_name,emergency_phone,emergency_relation,hire_date,position,department,
+           pay_rate,pay_type,status,pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,notes,social_media)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          retryId,d.first_name,d.middle_name||'',d.last_name,d.email||'',d.phone||'',
+          JSON.stringify(d.extra_phones||[]),JSON.stringify(d.extra_emails||[]),
+          d.address||'',d.street2||'',d.city||'',d.state||'',d.zip||'',d.dob||'',
+          d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
+          d.hire_date||'',d.position||'',d.department||'',
+          parseFloat(d.pay_rate)||0,d.pay_type||'hourly',d.status||'active',
+          pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
+          JSON.stringify(d.social_media||{}));
+        return res.json({ success: true, id: r2.lastInsertRowid, employee_id: retryId });
+      } catch (e2) {
+        if (e2.message.includes('UNIQUE')) return res.status(400).json({ error: '员工编号冲突, 请重试' });
+        return res.status(500).json({ error: e2.message });
+      }
+    }
+    if (e.message.includes('UNIQUE')) return res.status(400).json({ error: '员工编号已存在（此编号是手动填写的，请改一个或留空自动生成）' });
     res.status(500).json({ error: e.message });
   }
 });
