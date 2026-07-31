@@ -16248,7 +16248,7 @@ function getDobValue() {
 function openEmpModal(id) {
   document.getElementById('empModalTitle').textContent = id ? '编辑员工' : '新增员工';
   document.getElementById('empId').value = id || '';
-  { const _ad = document.getElementById('empApplicantDocs'); if (_ad) { _ad.style.display = 'none'; _ad.innerHTML = ''; } if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); }
+  { const _ad = document.getElementById('empApplicantDocs'); if (_ad) { _ad.style.display = 'none'; _ad.innerHTML = ''; } window._empApplDocsSubId = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); }
   if (id) {
     const e = allEmployees.find(x=>x.id===id) || {};
     document.getElementById('eFirst').value    = e.first_name||'';
@@ -16845,7 +16845,25 @@ function addEmpEmail() {
   document.getElementById('extraEmailsContainer').appendChild(_makeExtraContactRow('email','email@example.com',''));
 }
 
+// 保存员工前: 申请证件组(SSN/EAD等)还没有真伪结论的, 提醒先标注
+async function _checkApplDocVerdicts() {
+  if (!window._empApplDocsSubId) return true;   // 不是从申请创建的, 不检查
+  let docs = [];
+  try { docs = await api(`/admin/applicant-submissions/${window._empApplDocsSubId}/docs`); } catch (_) { return true; }
+  if (!Array.isArray(docs) || !docs.length) return true;
+  const groups = {};
+  docs.filter(d => !/\.pdf$/i.test(d.file_name || '')).forEach(d => {
+    const g = (String(d.doc_type || '').split('_')[0] || String(d.id)).toUpperCase();
+    if (!(g in groups)) groups[g] = '';
+    if (d.verify_status) groups[g] = d.verify_status;
+  });
+  const missing = Object.keys(groups).filter(g => !groups[g]);
+  if (!missing.length) return true;
+  return confirm('⚠️ 这些证件组还没有真伪结论: ' + missing.join('、')
+    + '\n\n点「取消」回去标注（点开证件图 → 顶部选 ✅真 / ❌假 / ❓待确定）\n点「确定」跳过标注直接保存');
+}
 async function saveEmployee() {
+  if (!(await _checkApplDocVerdicts())) return;
   const id = document.getElementById('empId').value;
   const extraPhones = _collectExtraContacts('extraPhonesContainer');
   const extraEmails = _collectExtraContacts('extraEmailsContainer');
