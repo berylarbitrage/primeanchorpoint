@@ -15363,6 +15363,52 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── AI 识读: 让 Claude(优先) / Google Vision 直接读证件图片, 提取结构化字段 ───
+app.post('/api/admin/ai-read-image', requireAdmin, async (req, res) => {
+  try {
+    const data = String((req.body || {}).data || '');
+    const m = data.match(/^data:image\/(png|jpeg|webp);base64,(.+)$/);
+    if (!m) return res.status(400).json({ error: '仅支持 PNG/JPEG/WebP 图片' });
+    if (m[2].length > 11 * 1024 * 1024) return res.status(400).json({ error: '图片过大' });
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (anthropicKey) {
+      const model = process.env.ANTHROPIC_VISION_MODEL || 'claude-sonnet-5';
+      const prompt = `这是一张身份/工作证件或单据的照片(如 SSN 卡、EAD 工卡、驾照、护照等)。请仔细读取, 只输出 JSON, 不要输出其他内容:
+{"doc_type":"证件类型","fields":{"name":"姓名","dob":"出生日期 YYYY-MM-DD","id_number":"证件号","address":"地址","issue_date":"签发日 YYYY-MM-DD","expiry_date":"到期日 YYYY-MM-DD","category":"类别(如 EAD 的 C08)","other":"其他重要信息"},"raw_text":"图里的全部文字"}
+读不到的字段填空字符串。号码类字段务必逐字符核对, 不确定的字符用?标注。`;
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model, max_tokens: 1500,
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/' + m[1], data: m[2] } },
+            { type: 'text', text: prompt }
+          ] }]
+        })
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) return res.status(502).json({ error: 'Claude API 错误: ' + ((body.error && body.error.message) || r.status) });
+      const text = ((body.content || []).find(c => c.type === 'text') || {}).text || '';
+      let parsed = null;
+      try { parsed = JSON.parse((text.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch (_) {}
+      return res.json({ success: true, engine: 'claude', model, parsed, raw: text });
+    }
+    const gKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (gKey) {
+      const vr = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${gKey}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [{ image: { content: m[2] }, features: [{ type: 'TEXT_DETECTION' }] }] })
+      });
+      if (!vr.ok) return res.status(502).json({ error: 'Google Vision API 错误 (确认该 key 已启用 Cloud Vision API)' });
+      const vd = await vr.json().catch(() => ({}));
+      const fullText = (vd.responses && vd.responses[0] && vd.responses[0].fullTextAnnotation && vd.responses[0].fullTextAnnotation.text) || '';
+      return res.json({ success: true, engine: 'google-vision', parsed: null, raw: fullText });
+    }
+    return res.status(400).json({ error: '未配置 AI 识别服务。推荐: 在服务器环境变量配 ANTHROPIC_API_KEY (console.anthropic.com 申请); 或确保 GOOGLE_MAPS_API_KEY 已启用 Cloud Vision API。' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ADMIN: 保存/清除某证件的"显示用裁剪版"。裁剪版是独立新文件, 原件永不改动;
 // 保存后系统各处缩略图默认显示裁剪版, ?v=orig 仍能取原件; data 传空 = 清除裁剪版。
 app.post('/api/admin/applicant-submissions/:id/docs/:docId/cropped', requireAdmin, blockManager, async (req, res) => {

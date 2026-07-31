@@ -41056,6 +41056,7 @@ function openApplicantDocViewer(url, label) {
           <button type="button" onclick="zoomApplicantDocViewer(1)" title="放大（也可滚轮 / 双击图片）" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">＋</button>
           <button type="button" id="adVwRotate" onclick="rotateApplicantDocViewer()" title="旋转 90°" style="white-space:nowrap;flex-shrink:0;background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .25rem">⟳</button>
           <button type="button" id="adVwOcrBtn" onclick="toggleApplicantDocOcr()" title="识别：框选区域提取文字" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🔍</button>
+          <button type="button" id="adVwAiBtn" onclick="aiReadApplicantDoc()" title="AI 识读：让 Claude 直接读整张证件, 提取姓名/号码/日期等" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🤖</button>
           <button type="button" id="adVwCropBtn" onclick="armApplicantDocCrop()" title="裁剪：拖框只留框内区域" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">✂️</button>
           <button type="button" id="adVwAdjBtn" onclick="toggleApplicantDocAdjust()" title="调节：亮度 / 对比度 / 黑白" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🎛</button>
           <button type="button" id="adVwAfxBtn" onclick="autoFixApplicantDoc()" title="自动修复：自动增强颜色 / 对比度（不旋转不裁剪）" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🪄</button>
@@ -41463,6 +41464,43 @@ async function autoFixApplicantDoc() {
     const sv = document.getElementById('adVwSaveCropBtn'); if (sv && _adVwDocRef) sv.style.display = '';
     showToast('🪄 已增强颜色/对比 — 不满意 ↩还原, 满意点 💾 保存');
   } catch (e) { showToast('自动修复失败: ' + (e.message || e), 'error'); }
+}
+// ── 🤖 AI 识读: 把当前显示的图发给服务器, 由 Claude(或 Google Vision)整张读取 ──
+async function aiReadApplicantDoc() {
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.naturalWidth) return;
+  const panel = document.getElementById('adVwOcrPanel');
+  if (panel) panel.style.display = 'block';
+  _setOcrStatus('🤖 AI 识读中…（约几秒）');
+  try {
+    let data;
+    if (/^data:image\//.test(img.src)) {
+      data = img.src;
+    } else {
+      const s = Math.min(1, 1600 / img.naturalWidth);
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.naturalWidth * s); cv.height = Math.round(img.naturalHeight * s);
+      const cx = cv.getContext('2d'); cx.imageSmoothingQuality = 'high';
+      cx.drawImage(img, 0, 0, cv.width, cv.height);
+      data = cv.toDataURL('image/jpeg', 0.92);
+    }
+    const r = await api('/admin/ai-read-image', { method: 'POST', body: JSON.stringify({ data }) });
+    if (r && r.error) throw new Error(r.error);
+    let out = '';
+    if (r.parsed && (r.parsed.fields || r.parsed.doc_type)) {
+      const F = r.parsed.fields || {};
+      const L = { name: '姓名', dob: '生日', id_number: '证件号', address: '地址', issue_date: '签发日', expiry_date: '到期日', category: '类别', other: '其他' };
+      if (r.parsed.doc_type) out += '类型: ' + r.parsed.doc_type + '\n';
+      for (const k of Object.keys(L)) if (F[k]) out += L[k] + ': ' + F[k] + '\n';
+      if (r.parsed.raw_text) out += '―― 全部文字 ――\n' + r.parsed.raw_text;
+    } else {
+      out = r.raw || '(没有读到内容)';
+    }
+    const ta = document.getElementById('adVwOcrText'), cp = document.getElementById('adVwOcrCopy');
+    if (ta) { ta.style.display = 'block'; ta.value = out.trim(); ta.rows = 9; }
+    if (cp) cp.style.display = out.trim() ? 'inline-block' : 'none';
+    _setOcrStatus('🤖 识读完成 · ' + (r.engine === 'claude' ? 'Claude (' + (r.model || '') + ')' : 'Google Vision') + ' — 号码等关键字段请核对');
+  } catch (e) { _setOcrStatus('⚠️ ' + (e.message || e)); }
 }
 // Back-compat name (older callers) — same behavior.
 function _applyApplicantDocRotation() { _applyApplicantDocView(); }
