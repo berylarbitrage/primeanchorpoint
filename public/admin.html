@@ -41046,13 +41046,13 @@ function openApplicantDocViewer(url, label) {
   if (!v) {
     v = document.createElement('div');
     v.id = 'applicantDocViewer';
-    v.style.cssText = 'position:fixed;z-index:12000;top:84px;right:24px;width:360px;max-width:92vw;background:#fff;border-radius:12px;box-shadow:0 14px 44px rgba(0,0,0,.4);border:1px solid #cbd5e1;overflow:hidden';
+    v.style.cssText = 'position:fixed;z-index:12000;top:84px;right:24px;width:440px;max-width:94vw;background:#fff;border-radius:12px;box-shadow:0 14px 44px rgba(0,0,0,.4);border:1px solid #cbd5e1;overflow:hidden';
     v.innerHTML =
-      `<div id="adVwHead" style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.45rem .35rem .45rem .65rem;background:#1A3F7A;color:#fff;cursor:move;user-select:none">
-        <span id="adVwTitle" style="font-size:.8rem;font-weight:700">证件</span>
-        <span style="display:flex;gap:.35rem;align-items:center;flex-wrap:nowrap">
+      `<div id="adVwHead" style="display:flex;align-items:center;justify-content:space-between;gap:.35rem;padding:.4rem .3rem .4rem .55rem;background:#1A3F7A;color:#fff;cursor:move;user-select:none">
+        <span id="adVwTitle" style="font-size:.8rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:2em">证件</span>
+        <span style="display:flex;gap:.22rem;align-items:center;flex-wrap:nowrap;flex-shrink:0">
           <button type="button" onclick="zoomApplicantDocViewer(-1)" title="缩小" style="white-space:nowrap;flex-shrink:0;background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">－</button>
-          <span id="adVwZoomPct" style="font-size:.68rem;opacity:.85;min-width:2.8em;text-align:center">100%</span>
+          <span id="adVwZoomPct" style="font-size:.66rem;opacity:.85;min-width:2.2em;text-align:center;white-space:nowrap;flex-shrink:0">100%</span>
           <button type="button" onclick="zoomApplicantDocViewer(1)" title="放大（也可滚轮 / 双击图片）" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">＋</button>
           <button type="button" id="adVwRotate" onclick="rotateApplicantDocViewer()" title="旋转 90°" style="white-space:nowrap;flex-shrink:0;background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .25rem">⟳</button>
           <button type="button" id="adVwOcrBtn" onclick="toggleApplicantDocOcr()" title="识别：框选区域提取文字" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🔍</button>
@@ -41063,7 +41063,7 @@ function openApplicantDocViewer(url, label) {
           <button type="button" id="adVwSaveCropBtn" onclick="saveApplicantDocCrop()" title="保存裁剪版：缩略图显示裁剪后的图，原件永远保留" style="display:none;white-space:nowrap;flex-shrink:0;background:#059669;border:1px solid #059669;border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">💾</button>
           <button type="button" id="adVwClearCropBtn" onclick="clearApplicantDocCrop()" title="取消裁剪版：删除保存的裁剪副本，恢复显示原图" style="display:none;white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🗑</button>
           <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap;flex-shrink:0">原图↗</a>
-          <button type="button" onclick="closeApplicantDocViewer()" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 .35rem">✕</button>
+          <button type="button" onclick="closeApplicantDocViewer()" style="white-space:nowrap;flex-shrink:0;background:transparent;border:none;color:#fff;font-size:1.1rem;cursor:pointer;line-height:1;padding:0 .3rem">✕</button>
         </span>
       </div>
       <div id="adVwAdjPanel" style="display:none;padding:.45rem .65rem;background:#0f172a;color:#e2e8f0;font-size:.72rem">
@@ -41168,7 +41168,7 @@ function _applyApplicantDocView() {
       img.style.maxHeight = '72vh';
     }
     if (wrap) { wrap.style.alignItems = 'center'; wrap.style.justifyContent = 'center'; }
-    if (panel) panel.style.width = '360px';
+    if (panel) panel.style.width = '440px';
   }
 }
 
