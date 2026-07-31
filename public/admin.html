@@ -41056,6 +41056,8 @@ function openApplicantDocViewer(url, label) {
           <button type="button" onclick="zoomApplicantDocViewer(1)" title="放大（也可滚轮 / 双击图片）" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">＋</button>
           <button type="button" id="adVwRotate" onclick="rotateApplicantDocViewer()" title="旋转 90°" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .25rem">⟳</button>
           <button type="button" id="adVwOcrBtn" onclick="toggleApplicantDocOcr()" title="框选文字识别：点击后在图上拖一个框，识别框内文字" style="background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">🔍 识别</button>
+          <button type="button" id="adVwCropBtn" onclick="armApplicantDocCrop()" title="裁剪：点击后在图上拖一个框，只留框内区域并放大" style="background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">✂️ 裁剪</button>
+          <button type="button" id="adVwRestoreBtn" onclick="restoreApplicantDocCrop()" title="恢复原始图片" style="display:none;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.7rem;cursor:pointer;line-height:1;padding:2px 6px">↩ 还原</button>
           <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap">原图 ↗</a>
           <button type="button" onclick="closeApplicantDocViewer()" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 .35rem">✕</button>
         </span>
@@ -41084,6 +41086,9 @@ function openApplicantDocViewer(url, label) {
   v.querySelector('#adVwTitle').textContent = label || '证件';
   _adVwRotation = 0; // reset orientation for each newly opened document
   _adVwZoom = 1;     // reset zoom too
+  _adVwOrigUrl = url; _adVwCropOnce = false;
+  const rsBtn = v.querySelector('#adVwRestoreBtn'); if (rsBtn) rsBtn.style.display = 'none';
+  const cpBtn = v.querySelector('#adVwCropBtn'); if (cpBtn) { cpBtn.style.background = 'transparent'; cpBtn.style.borderColor = 'rgba(255,255,255,.55)'; }
   const img = v.querySelector('#adVwImg');
   img.src = url;
   _applyApplicantDocView();
@@ -41139,7 +41144,7 @@ function _applyApplicantDocView() {
 }
 
 // ── 证件查看器: 框选 OCR 文字识别 (Tesseract 本地引擎, /vendor/tesseract) ──
-let _adVwOcrMode = false, _ocrWorkerP = null, _adVwSelBox = null, _adVwSelStart = null;
+let _adVwOcrMode = false, _ocrWorkerP = null, _adVwSelBox = null, _adVwSelStart = null, _adVwCropOnce = false, _adVwOrigUrl = '';
 async function _getOcrWorker() {
   if (_ocrWorkerP) return _ocrWorkerP;
   _ocrWorkerP = (async () => {
@@ -41168,7 +41173,7 @@ function toggleApplicantDocOcr(forceOff) {
   const btn = document.getElementById('adVwOcrBtn');
   _adVwOcrMode = forceOff ? false : !_adVwOcrMode;
   if (panel) panel.style.display = _adVwOcrMode ? 'block' : 'none';
-  if (wrap) wrap.style.cursor = _adVwOcrMode ? 'crosshair' : '';
+  if (wrap) wrap.style.cursor = (_adVwOcrMode || _adVwCropOnce) ? 'crosshair' : '';
   if (btn) { btn.style.background = _adVwOcrMode ? '#059669' : 'transparent'; btn.style.borderColor = _adVwOcrMode ? '#059669' : 'rgba(255,255,255,.55)'; }
   if (_adVwOcrMode) _getOcrWorker().catch(e => _setOcrStatus('⚠️ ' + e.message));
   if (!_adVwOcrMode) _clearOcrSelBox();
@@ -41176,7 +41181,7 @@ function toggleApplicantDocOcr(forceOff) {
 function _setOcrStatus(t) { const el = document.getElementById('adVwOcrStatus'); if (el) el.textContent = t; }
 function _clearOcrSelBox() { if (_adVwSelBox) { _adVwSelBox.remove(); _adVwSelBox = null; } _adVwSelStart = null; }
 function _adVwOcrMouseDown(e) {
-  if (!_adVwOcrMode) return;
+  if (!_adVwOcrMode && !_adVwCropOnce) return;
   const img = document.getElementById('adVwImg');
   if (!img || !img.src) return;
   e.preventDefault(); e.stopPropagation();
@@ -41201,7 +41206,8 @@ function _adVwOcrMouseDown(e) {
     const w = Math.abs(ev.clientX - st.x), h = Math.abs(ev.clientY - st.y);
     setTimeout(_clearOcrSelBox, 900);
     if (w < 8 || h < 8) return;   // 误点
-    _runApplicantDocOcr(l, t, w, h);
+    if (_adVwCropOnce) { _adVwCropOnce = false; _adVwSetCropArmed(false); _adVwDoCrop(l, t, w, h); }
+    else _runApplicantDocOcr(l, t, w, h);
   };
   document.addEventListener('mousemove', move);
   document.addEventListener('mouseup', up);
@@ -41247,6 +41253,51 @@ function copyApplicantDocOcr() {
   const done = () => _setOcrStatus('📋 已复制到剪贴板');
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); document.execCommand('copy'); done(); });
   else { ta.select(); document.execCommand('copy'); done(); }
+}
+// ── 查看器内裁剪: 拖框只留框内区域 (可连续裁, 还原回原图) ──
+function _adVwSetCropArmed(on) {
+  const b = document.getElementById('adVwCropBtn');
+  if (b) { b.style.background = on ? '#d97706' : 'transparent'; b.style.borderColor = on ? '#d97706' : 'rgba(255,255,255,.55)'; }
+  const wrap = document.getElementById('adVwImgWrap');
+  if (wrap) wrap.style.cursor = (on || _adVwOcrMode) ? 'crosshair' : '';
+}
+function armApplicantDocCrop() {
+  _adVwCropOnce = !_adVwCropOnce;
+  _adVwSetCropArmed(_adVwCropOnce);
+}
+function _adVwDoCrop(cl, ct, cw, ch) {
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.naturalWidth) return;
+  const rect = img.getBoundingClientRect();
+  const l = Math.max(cl, rect.left), t = Math.max(ct, rect.top);
+  const r2 = Math.min(cl + cw, rect.right), b2 = Math.min(ct + ch, rect.bottom);
+  if (r2 - l < 8 || b2 - t < 8) return;
+  const rot = _adVwRotation, nw = img.naturalWidth, nh = img.naturalHeight;
+  const rw = (rot === 90 || rot === 270) ? nh : nw, rh = (rot === 90 || rot === 270) ? nw : nh;
+  const full = document.createElement('canvas'); full.width = rw; full.height = rh;
+  const fc = full.getContext('2d');
+  fc.translate(rw / 2, rh / 2); fc.rotate(rot * Math.PI / 180); fc.drawImage(img, -nw / 2, -nh / 2);
+  const sx = rw / rect.width, sy = rh / rect.height;
+  let px = Math.round((l - rect.left) * sx), py = Math.round((t - rect.top) * sy);
+  let pw = Math.round((r2 - l) * sx), ph = Math.round((b2 - t) * sy);
+  px = Math.max(0, Math.min(rw - 1, px)); py = Math.max(0, Math.min(rh - 1, py));
+  pw = Math.max(8, Math.min(rw - px, pw)); ph = Math.max(8, Math.min(rh - py, ph));
+  const out = document.createElement('canvas'); out.width = pw; out.height = ph;
+  out.getContext('2d').drawImage(full, px, py, pw, ph, 0, 0, pw, ph);
+  img.src = out.toDataURL('image/png');   // 裁剪已包含旋转, 角度归零
+  _adVwRotation = 0; _adVwZoom = 1;
+  _applyApplicantDocView();
+  const rs = document.getElementById('adVwRestoreBtn');
+  if (rs) rs.style.display = '';
+}
+function restoreApplicantDocCrop() {
+  const img = document.getElementById('adVwImg');
+  if (img && _adVwOrigUrl) img.src = _adVwOrigUrl;
+  _adVwRotation = 0; _adVwZoom = 1; _adVwCropOnce = false;
+  _adVwSetCropArmed(false);
+  _applyApplicantDocView();
+  const rs = document.getElementById('adVwRestoreBtn');
+  if (rs) rs.style.display = 'none';
 }
 // Back-compat name (older callers) — same behavior.
 function _applyApplicantDocRotation() { _applyApplicantDocView(); }
