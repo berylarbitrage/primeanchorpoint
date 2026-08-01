@@ -34453,33 +34453,26 @@ function _invpMatchByAmount() {
   const dollars = '$' + (target / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const cands = _invpAmtMatchCandidates();
   window._invpAmtMatchSet = null;
-  // ① 单笔正好相等
+  // ① 单笔正好相等 —— 只标黄, 不自动选中; 由你核对后点击选入
   const exact = cands.filter(c => c.cents === target);
   if (exact.length) {
     window._invpAmtMatchSet = new Set(exact.map(c => c.val));
-    _invpPickSubPay(exact[0].val, exact[0].label); // 自动选中第一笔（会触发重渲，带高亮）
+    _invpRenderSubPayList();
     showToast(exact.length === 1
-      ? `🎯 找到 1 笔金额正好 ${dollars} 的交易，已自动选中`
-      : `🎯 找到 ${exact.length} 笔金额正好 ${dollars} 的交易（已标黄），已先选中第一笔，可点击换选`, 'success', 4500);
+      ? `🎯 找到 1 笔金额正好 ${dollars} 的交易（已标黄）—— 核对无误后点它选入`
+      : `🎯 找到 ${exact.length} 笔金额正好 ${dollars} 的交易（已标黄）—— 核对后点选你要的那笔`, 'success', 5000);
     _invpScrollToAmtMatch();
     return;
   }
-  // ② 组合合计正好相等
+  // ② 组合合计正好相等 —— 只标黄, 不自动写入; 由你核对后逐笔点选
   const combo = _invpAmtSubsetSearch(cands, target, 6);
   if (combo) {
     window._invpAmtMatchSet = new Set(combo.map(c => c.val));
+    _invpRenderSubPayList();
     if (_invpVoucherCtx === 'sub') {
-      const hid = document.getElementById('invpSubPayStmt');
-      if (hid) hid.value = combo.map(c => c.val).join('|');
-      const fi = document.getElementById('invpSubPayFile'); if (fi) fi.value = '';
-      const fn = document.getElementById('invpSubPayFileName'); if (fn) fn.textContent = '未选择文件';
-      _invpUpdateSubPaySelSummary('');
-      _invpRenderSubPayList();
-      try { _invpSubPayAmtCheck(); } catch (_) {}
-      showToast(`🎯 已自动选中 ${combo.length} 笔交易，合计正好 ${dollars}`, 'success', 4500);
+      showToast(`🎯 没有单笔正好 ${dollars} 的交易，但找到 ${combo.length} 笔合计正好相等的组合（已标黄）—— 核对后逐笔点选，或只选其中需要的`, 'info', 7000);
     } else {
-      _invpRenderSubPayList();
-      showToast(`没有单笔正好 ${dollars} 的交易，但找到 ${combo.length} 笔合计正好相等的组合（已标黄 🎯）。收款回执一次只能选一条交易或整份 PDF。`, 'info', 6500);
+      showToast(`🎯 没有单笔正好 ${dollars} 的交易，但找到 ${combo.length} 笔合计正好相等的组合（已标黄）。收款回执一次只能选一条交易或整份 PDF。`, 'info', 7000);
     }
     _invpScrollToAmtMatch();
     return;
