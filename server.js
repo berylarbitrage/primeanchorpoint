@@ -15137,6 +15137,21 @@ const applicantDocUpload = multer({
   }
 });
 
+// Base URL used inside recruiting QR codes. When app_settings.apply_qr_base_url
+// is set (e.g. a neutral domain that doesn't reveal the company, pointed at this
+// server), it is used for every generated apply QR; otherwise fall back to the
+// host the admin is browsing from.
+function _applyQrBase(req) {
+  try {
+    const r = db.prepare("SELECT value FROM app_settings WHERE key='apply_qr_base_url'").get();
+    const v = r && r.value ? r.value.trim().replace(/\/+$/, '') : '';
+    if (v && /^https?:\/\//i.test(v)) return v;
+  } catch (_) {}
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
+  return `${proto}://${host}`;
+}
+
 // Look up a partner by their public applicant-form token. null if not found.
 // The 40-char random token is itself the authorization (admin-issued via the QR
 // modal), so we do NOT gate on the partner's `active` flag — doing so made a
@@ -15172,9 +15187,7 @@ app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, asyn
       token = crypto.randomBytes(20).toString('hex');
       db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
     }
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
-    const base = `${proto}://${host}/apply/${token}`;
+    const base = `${_applyQrBase(req)}/apply/${token}`;
     // Distinct 2-letter states the company has an address in, in first-seen order.
     // A company operating in more than one state gets one QR per state so each
     // location's applicants can be told apart (the state rides the URL as ?st=XX).
@@ -15231,9 +15244,7 @@ app.get('/api/admin/applicant-qr/generic', requireAdmin, blockManager, async (re
       token = crypto.randomBytes(20).toString('hex');
       db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
     }
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
-    const url = `${proto}://${host}/apply/${token}`;
+    const url = `${_applyQrBase(req)}/apply/${token}`;
     const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
     res.json({ token, url, base_url: url, states: [], qrs: [{ state: '', url }], qr_data_url: qrDataUrl, partner_name: '', generic: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -25461,18 +25472,25 @@ app.get('/api/admin/company-settings', requireAdmin, (req, res) => {
   const legal  = db.prepare("SELECT value FROM app_settings WHERE key='company_legal_name'").get();
   const signer = db.prepare("SELECT value FROM app_settings WHERE key='company_signer_name'").get();
   const signerEmail = db.prepare("SELECT value FROM app_settings WHERE key='company_signer_email'").get();
+  const qrBase = db.prepare("SELECT value FROM app_settings WHERE key='apply_qr_base_url'").get();
   res.json({
     company_legal_name:  legal?.value  || 'Prime Anchor Workforce LLC',
     company_signer_name: signer?.value || 'Prime Anchor Workforce LLC',
     company_signer_email: signerEmail?.value || process.env.COMPANY_SIGNER_EMAIL || '',
+    apply_qr_base_url: qrBase?.value || '',
   });
 });
 
 app.put('/api/admin/company-settings', requireAdmin, blockManager, async (req, res) => {
-  const { company_legal_name, company_signer_name } = req.body;
+  const { company_legal_name, company_signer_name, apply_qr_base_url } = req.body;
   const stmt = db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
   if (company_legal_name  !== undefined) stmt.run('company_legal_name',  company_legal_name.trim());
   if (company_signer_name !== undefined) stmt.run('company_signer_name', company_signer_name.trim());
+  if (apply_qr_base_url !== undefined) {
+    const v = String(apply_qr_base_url).trim().replace(/\/+$/, '');
+    if (v && !/^https?:\/\/[^\s]+$/i.test(v)) return res.status(400).json({ error: '二维码域名格式不对，需要 https://xxx 形式（留空 = 用当前域名）' });
+    stmt.run('apply_qr_base_url', v);
+  }
 
   // Clear the regen key so all DocuSeal templates are regenerated on next startup
   try {

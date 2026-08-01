@@ -4016,6 +4016,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <input id="companySignerNameInput" type="text" placeholder="Prime Anchor Workforce LLC" style="width:100%;border:1.5px solid #cbd5e1;border-radius:7px;padding:.55rem .75rem;font-size:.9rem">
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.25rem">用于劳务合同签署方名称（通常与法定名称相同）</div>
       </div>
+      <div>
+        <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem">招工二维码域名 (QR Domain)</label>
+        <input id="applyQrBaseInput" type="text" placeholder="https://example-jobs.com（留空 = 用当前域名）" style="width:100%;border:1.5px solid #cbd5e1;border-radius:7px;padding:.55rem .75rem;font-size:.9rem">
+        <div style="font-size:.78rem;color:#94a3b8;margin-top:.25rem">招工申请二维码里用的网址。想让二维码不出现公司域名，就注册一个中性域名、DNS 指到本服务器后填在这里，重新打开二维码弹窗即可生效（不用重新生成 token，旧二维码仍有效）</div>
+      </div>
     </div>
     <button onclick="saveCompanySettings()" style="background:#6366f1;color:#fff;border:none;border-radius:7px;padding:.55rem 1.4rem;font-size:.9rem;font-weight:600;cursor:pointer">保存公司名称</button>
     <span id="companySettingsSaved" style="display:none;margin-left:.8rem;color:#22c55e;font-size:.85rem;font-weight:600">✓ 已保存</span>
@@ -28718,17 +28723,20 @@ async function loadCompanySettings() {
     if (!s) return;
     const legalEl  = document.getElementById('companyLegalNameInput');
     const signerEl = document.getElementById('companySignerNameInput');
+    const qrBaseEl = document.getElementById('applyQrBaseInput');
     if (legalEl)  legalEl.value  = s.company_legal_name  || '';
     if (signerEl) signerEl.value = s.company_signer_name || '';
+    if (qrBaseEl) qrBaseEl.value = s.apply_qr_base_url || '';
   } catch(e) {}
 }
 
 async function saveCompanySettings() {
   const legal  = (document.getElementById('companyLegalNameInput')?.value  || '').trim();
   const signer = (document.getElementById('companySignerNameInput')?.value || '').trim();
+  const qrBase = (document.getElementById('applyQrBaseInput')?.value || '').trim();
   if (!legal) { showToast('请填写公司法定名称', 'error'); return; }
   try {
-    await api('/admin/company-settings', { method: 'PUT', body: JSON.stringify({ company_legal_name: legal, company_signer_name: signer || legal }) });
+    await api('/admin/company-settings', { method: 'PUT', body: JSON.stringify({ company_legal_name: legal, company_signer_name: signer || legal, apply_qr_base_url: qrBase }) });
     const saved = document.getElementById('companySettingsSaved');
     if (saved) { saved.style.display = 'inline'; setTimeout(() => { saved.style.display = 'none'; }, 3000); }
     showToast('✅ 公司名称已保存。请前往 DocuSeal 模板页面点击「强制重新生成」更新所有模板。', 'success', 6000);
