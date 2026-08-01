@@ -29157,8 +29157,10 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
     const { name, company, email, tags, notes, work_state, is_foreman } = req.body;
     const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    // 名字仅 admin 可改; 客服通过"关联员工账号"自动带出名字
+    const newName = req.userRole === 'admin' ? (name ?? contact.name) : contact.name;
     db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, updated_at=datetime('now') WHERE id=?`)
-      .run(name ?? contact.name, company ?? contact.company, email ?? contact.email, tags ?? contact.tags, notes ?? contact.notes,
+      .run(newName, company ?? contact.company, email ?? contact.email, tags ?? contact.tags, notes ?? contact.notes,
            work_state !== undefined ? String(work_state || '').toUpperCase().slice(0, 20) : contact.work_state,
            is_foreman !== undefined ? (is_foreman ? 1 : 0) : contact.is_foreman, contact.id);
     smsAudit('contact', contact.id, 'updated', 'agent', req.userId, {});
@@ -29386,10 +29388,10 @@ app.put('/api/sms/contacts/:id/link-employee', requireAdmin, requireSmsAccess, (
       const emp = db.prepare('SELECT id, first_name, last_name FROM employees WHERE id=?').get(employee_id);
       if (!emp) return res.status(404).json({ error: 'Employee not found' });
       db.prepare('UPDATE sms_contacts SET employee_id=?, updated_at=datetime(\'now\') WHERE id=?').run(employee_id, contact.id);
-      // Auto-fill name if empty
-      if (!contact.name && (emp.first_name || emp.last_name)) {
-        db.prepare('UPDATE sms_contacts SET name=?, updated_at=datetime(\'now\') WHERE id=?')
-          .run(((emp.first_name || '') + ' ' + (emp.last_name || '')).trim(), contact.id);
+      // 名字跟员工档案走: 名字为空时自动带出; 客服(非 admin)关联时也直接同步(客服不能手改名字)
+      const empName = ((emp.first_name || '') + ' ' + (emp.last_name || '')).trim();
+      if (empName && (!contact.name || req.userRole !== 'admin')) {
+        db.prepare('UPDATE sms_contacts SET name=?, updated_at=datetime(\'now\') WHERE id=?').run(empName, contact.id);
       }
     } else {
       db.prepare('UPDATE sms_contacts SET employee_id=NULL, updated_at=datetime(\'now\') WHERE id=?').run(contact.id);

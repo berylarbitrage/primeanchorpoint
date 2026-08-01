@@ -430,7 +430,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 <div class="modal-bg" id="editContactModal">
   <div class="modal">
     <h3>联系人资料 / Contact</h3>
-    <label>Name</label><input id="editName" placeholder="Contact name">
+    <label>Name <span id="nameLockHint" style="display:none;color:#b45309;font-weight:400">&#128274; 名字仅管理员可改, 关联员工账号后自动带出</span></label><input id="editName" placeholder="Contact name">
     <label>关联员工档案（按姓名 / 电话搜；打开时已自动按本号码找过）</label>
     <div id="editEmpLinked" style="display:none;align-items:center;gap:8px;margin-bottom:6px;background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:5px 10px;font-size:.8rem;color:#065f46"></div>
     <input id="editEmpSearch" placeholder="搜员工姓名 / 电话…" oninput="empLinkDebounce()" style="margin-bottom:4px">
@@ -1506,7 +1506,14 @@ async function _fillCompanySelect(current) {
 }
 function showEditContactModal() {
   if (!currentContact) return;
-  document.getElementById('editName').value = currentContact.name || '';
+  // 名字仅 admin 可改 (客服通过关联员工账号自动带出)
+  const _isAdminEc = USER && USER.role === 'admin';
+  const nameEl = document.getElementById('editName');
+  nameEl.value = currentContact.name || '';
+  nameEl.readOnly = !_isAdminEc;
+  nameEl.style.background = _isAdminEc ? '' : 'var(--gray-100)';
+  nameEl.style.color = _isAdminEc ? '' : 'var(--gray-600)';
+  document.getElementById('nameLockHint').style.display = _isAdminEc ? 'none' : '';
   _fillCompanySelect(currentContact.company || '');
   document.getElementById('editEmail').value = currentContact.email || '';
   _editEmp = undefined;
@@ -1563,9 +1570,15 @@ function renderEmpLinked() {
   const el = document.getElementById('editEmpLinked');
   if (!el) return;
   const linked = _editEmp === undefined ? !!(currentContact && currentContact.employee_id) : !!_editEmp;
-  if (!linked) { el.style.display = 'none'; return; }
-  const label = _editEmp && _editEmp.name ? esc(_editEmp.name) : ('员工档案 #' + esc(String(currentContact && currentContact.employee_id || '')));
   el.style.display = 'flex';
+  if (!linked) {
+    // 未关联也要显示出来, 提醒去关联
+    el.style.background = '#fef3c7'; el.style.borderColor = '#fcd34d'; el.style.color = '#92400e';
+    el.innerHTML = '<span>&#9888; 尚未关联员工账号 — 在下面搜索并关联</span>';
+    return;
+  }
+  el.style.background = '#d1fae5'; el.style.borderColor = '#6ee7b7'; el.style.color = '#065f46';
+  const label = _editEmp && _editEmp.name ? esc(_editEmp.name) : ('员工档案 #' + esc(String(currentContact && currentContact.employee_id || '')));
   el.innerHTML = '<span>&#10003; 已关联: <b>' + label + '</b></span>'
     + '<a style="margin-left:auto;cursor:pointer;color:#b91c1c;font-size:.76rem;text-decoration:underline" onclick="empLinkClear()">解除</a>';
 }
@@ -1596,17 +1609,17 @@ async function saveContact() {
   if (!currentContact) return;
   try {
     addEditTag(document.getElementById('editTagInput').value);   // 没按回车的也带上
-    await api('/sms/contacts/' + currentContact.id, {
-      method: 'PUT', body: JSON.stringify({
-        name: document.getElementById('editName').value.trim(),
-        company: document.getElementById('editCompany').value.trim(),
-        email: document.getElementById('editEmail').value.trim(),
-        tags: JSON.stringify(_editTags),
-        notes: document.getElementById('editNotes').value.trim(),
-        work_state: document.getElementById('editWorkState').value.trim().toUpperCase(),
-        is_foreman: document.getElementById('editIsForeman').checked ? 1 : 0
-      })
-    });
+    const payload = {
+      company: document.getElementById('editCompany').value.trim(),
+      email: document.getElementById('editEmail').value.trim(),
+      tags: JSON.stringify(_editTags),
+      notes: document.getElementById('editNotes').value.trim(),
+      work_state: document.getElementById('editWorkState').value.trim().toUpperCase(),
+      is_foreman: document.getElementById('editIsForeman').checked ? 1 : 0
+    };
+    // 名字仅 admin 可改 (服务器端也会拦)
+    if (USER && USER.role === 'admin') payload.name = document.getElementById('editName').value.trim();
+    await api('/sms/contacts/' + currentContact.id, { method: 'PUT', body: JSON.stringify(payload) });
     if (_editEmp !== undefined) {
       await api('/sms/contacts/' + currentContact.id + '/link-employee', {
         method: 'PUT', body: JSON.stringify({ employee_id: _editEmp ? _editEmp.id : null })
@@ -1721,7 +1734,12 @@ function renderContactTagRow() {
   let tags = [];
   try { tags = JSON.parse((currentContact && currentContact.tags) || '[]'); } catch (_) {}
   const hasNotes = !!(currentContact && (currentContact.notes || '').trim());
-  row.innerHTML = _contactStateForemanBadges(currentContact && currentContact.work_state, currentContact && currentContact.is_foreman)
+  // 是否关联了员工账号: 没关联的显著提示出来
+  const empBadge = (currentContact && currentContact.employee_id)
+    ? '<span style="background:#d1fae5;color:#065f46;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">&#10003; 员工</span>'
+    : '<span style="background:#fef3c7;color:#92400e;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:700;cursor:pointer" onclick="showEditContactModal()" title="点击去关联员工账号">&#9888; 未关联员工</span>';
+  row.innerHTML = empBadge
+  + _contactStateForemanBadges(currentContact && currentContact.work_state, currentContact && currentContact.is_foreman)
   + (Array.isArray(tags) ? tags : []).map(t =>
     '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">' + esc(t) + '</span>'
   ).join('')
