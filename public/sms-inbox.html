@@ -534,9 +534,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <label>类别（点选或自己填）</label>
     <div id="markTagChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
     <input id="markTagInput" placeholder="自定义类别（可留空，只标星）" maxlength="40" style="margin-bottom:4px" oninput="_renderMarkChips()">
+    <div id="markFields"></div>
     <label>备注（可选）</label>
-    <textarea id="markNote" rows="3" placeholder="如: 已安排周一去卸柜 / 面试定在周三 2pm / 工资 8/5 已发" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
+    <textarea id="markNote" rows="2" placeholder="其他补充说明" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
     <button class="btn" onclick="saveMark(false)">保存标记</button>
+    <button id="markSendBtn" onclick="saveMarkAndCompose()" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid var(--sky);color:var(--sky);border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.88rem;margin-top:6px">💬 保存并生成消息发给对方</button>
     <button id="markRemoveBtn" onclick="saveMark(true)" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid var(--red);color:var(--red);border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:.88rem;margin-top:6px">取消标记</button>
     <button class="close-modal" onclick="document.getElementById('msgMarkModal').classList.remove('show')">关闭</button>
   </div>
@@ -1259,9 +1261,11 @@ function renderMessages() {
           + (dir === 'outbound' ? '🧑‍💼 ' : '') + esc(senderName) + '</div>';
         lastSender = senderKey;
       }
-      const markHtml = (item.starred && (item.mark_tag || item.mark_note))
+      const _mds = item.starred ? markDataSummary(item) : '';
+      const markHtml = (item.starred && (item.mark_tag || item.mark_note || _mds))
         ? '<div class="msg-mark">📌 ' + (item.mark_tag ? '<b>' + esc(item.mark_tag) + '</b>' : '')
-          + (item.mark_tag && item.mark_note ? ' · ' : '') + esc(item.mark_note || '') + '</div>'
+          + (_mds ? ' · ' + esc(_mds) : '')
+          + (item.mark_note ? ' · ' + esc(item.mark_note) : '') + '</div>'
         : '';
       html += '<div class="msg-row ' + dir + '">'
         + senderHtml
@@ -2033,8 +2037,43 @@ function ncSetChannel(ch) {
   document.getElementById('ncWaHint').style.display = ch === 'whatsapp' ? '' : 'none';
 }
 
-// ─── 📌 消息标记: 分类(卸柜/面试/发工资…) + 备注 ───
+// ─── 📌 消息标记: 分类(卸柜/面试/发工资…) + 每类专属字段 + 备注 ───
 const MARK_TAG_PRESETS = ['卸柜', '面试', '发工资', '排班', '请假', '投诉'];
+// 每个类别自己的表单字段: [key, 标签, 输入类型, 占位提示]
+const MARK_FIELDS = {
+  '卸柜': [['container', '柜号', 'text', '如 MSKU1234567'], ['date', '日期', 'date', ''], ['detail', '具体细节', 'text', '如 早7点 / GOFO仓库 / 约2000件']],
+  '面试': [['company', '公司', 'text', '如 GOFO'], ['time', '时间', 'datetime-local', ''], ['detail', '地址 / 找谁', 'text', '']],
+  '发工资': [['date', '发薪日期', 'date', ''], ['amount', '金额', 'text', '如 $560'], ['detail', '方式/说明', 'text', '如 支票 / Zelle']],
+  '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']]
+};
+// 一键生成发给对方的消息(中文, 走现有自动翻译流程翻成对方语言)
+const MARK_MSG_TPL = {
+  '卸柜': d => '卸柜安排: ' + [d.container && ('柜号 ' + d.container), d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', '),
+  '面试': d => '面试安排: ' + [d.company && ('公司 ' + d.company), d.time && ('时间 ' + String(d.time).replace('T', ' ')), d.detail].filter(Boolean).join(', '),
+  '发工资': d => '工资通知: ' + [d.date && ('发薪日期 ' + d.date), d.amount && ('金额 ' + d.amount), d.detail].filter(Boolean).join(', '),
+  '排班': d => '排班通知: ' + [d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', ')
+};
+function _collectMarkData() {
+  const data = {};
+  document.querySelectorAll('#markFields [data-mkf]').forEach(el => {
+    const v = el.value.trim();
+    if (v) data[el.getAttribute('data-mkf')] = v;
+  });
+  return data;
+}
+function renderMarkFields(prefill) {
+  const tag = document.getElementById('markTagInput').value.trim();
+  const defs = MARK_FIELDS[tag];
+  const box = document.getElementById('markFields');
+  const sendBtn = document.getElementById('markSendBtn');
+  if (!defs) { box.innerHTML = ''; if (sendBtn) sendBtn.style.display = 'none'; return; }
+  const d = prefill || {};
+  box.innerHTML = defs.map(([k, label, type, ph]) =>
+    '<label style="margin-top:2px">' + label + '</label>'
+    + '<input data-mkf="' + k + '" type="' + type + '" placeholder="' + esc(ph) + '" value="' + esc(d[k] || '') + '" style="margin-bottom:4px">'
+  ).join('');
+  if (sendBtn) sendBtn.style.display = MARK_MSG_TPL[tag] ? '' : 'none';
+}
 let _markMsgId = null;
 // 点消息气泡直接标注 (正在选中文字复制时不触发)
 function bubbleMark(msgId) {
@@ -2051,6 +2090,8 @@ function toggleStar(msgId) {
   document.getElementById('markNote').value = m.mark_note || '';
   document.getElementById('markRemoveBtn').style.display = m.starred ? '' : 'none';
   _renderMarkChips();
+  let pre = {}; try { pre = JSON.parse(m.mark_data || '{}'); } catch (_) {}
+  renderMarkFields(pre);
   document.getElementById('msgMarkModal').classList.add('show');
 }
 function _renderMarkChips() {
@@ -2058,6 +2099,7 @@ function _renderMarkChips() {
   document.getElementById('markTagChips').innerHTML = MARK_TAG_PRESETS.map(t =>
     '<button type="button" onclick="_pickMarkTag(\'' + t + '\')" style="border:1px solid ' + (t === cur ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)') + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">' + t + '</button>'
   ).join('');
+  renderMarkFields();
 }
 function _pickMarkTag(t) {
   const inp = document.getElementById('markTagInput');
@@ -2065,26 +2107,56 @@ function _pickMarkTag(t) {
   _renderMarkChips();
 }
 async function saveMark(remove) {
-  if (!_markMsgId) return;
+  if (!_markMsgId) return false;
   try {
     const payload = remove ? { starred: 0 } : {
       starred: 1,
       tag: document.getElementById('markTagInput').value.trim(),
-      note: document.getElementById('markNote').value.trim()
+      note: document.getElementById('markNote').value.trim(),
+      data: _collectMarkData()
     };
     const r = await api('/sms/messages/' + _markMsgId + '/star', { method: 'POST', body: JSON.stringify(payload) });
-    if (r && r.error) { toast(r.error); return; }
+    if (r && r.error) { toast(r.error); return false; }
     const m = currentMessages.find(x => x.id === _markMsgId);
     if (m) {
       m.starred = r.starred;
       m.starred_at = r.starred ? new Date().toISOString() : null;
       m.mark_tag = r.tag || '';
       m.mark_note = r.note || '';
+      m.mark_data = r.data || '{}';
     }
     renderMessages();
     document.getElementById('msgMarkModal').classList.remove('show');
     toast(r.starred ? ('📌 已标记' + (r.tag ? ': ' + r.tag : '')) : '已取消标记');
-  } catch (e) { toast('操作失败: ' + (e.message || e)); }
+    return true;
+  } catch (e) { toast('操作失败: ' + (e.message || e)); return false; }
+}
+// 保存标记 + 按类别模板生成消息填入发送框 (走现有自动翻译, 你确认后发送)
+async function saveMarkAndCompose() {
+  const tag = document.getElementById('markTagInput').value.trim();
+  const gen = MARK_MSG_TPL[tag];
+  const data = _collectMarkData();
+  const ok = await saveMark(false);
+  if (!ok || !gen) return;
+  const note = document.getElementById('markNote').value.trim();
+  let text = gen(data);
+  if (note) text += ' (' + note + ')';
+  if (noteMode) toggleNoteMode();
+  const inp = document.getElementById('replyInput');
+  inp.value = text;
+  autoGrow(inp);
+  onComposeInput();
+  inp.focus();
+  toast('消息已生成 — 检查(会自动翻译)后点发送');
+}
+// 结构化字段摘要: 柜号 MSKU123 · 08-04 · 早7点
+function markDataSummary(item) {
+  let d = {}; try { d = JSON.parse(item.mark_data || '{}'); } catch (_) { return ''; }
+  const defs = MARK_FIELDS[item.mark_tag || ''];
+  const parts = defs
+    ? defs.map(([k, label]) => d[k] ? (label + ' ' + String(d[k]).replace('T', ' ')) : '').filter(Boolean)
+    : Object.values(d).filter(Boolean);
+  return parts.join(' · ');
 }
 function closeStarredModal() { document.getElementById('starredModal').classList.remove('show'); }
 let _starredMsgs = [], _starredTagSel = '';
@@ -2122,7 +2194,7 @@ function _renderStarred() {
     + '<span style="margin-left:auto">' + fmtDate(m.created_at) + ' ' + fmtTime(m.created_at) + '</span></div>'
     + '<div style="font-size:.85rem;color:var(--gray-800)">' + esc(m.body || '') + '</div>'
     + (m.translated_body && m.translated_body !== m.body ? '<div style="font-size:.76rem;color:var(--gray-400)">▸ ' + esc(m.translated_body) + '</div>' : '')
-    + (m.mark_note ? '<div style="font-size:.78rem;color:#92400e;background:#fffbeb;border-radius:6px;padding:2px 8px;margin-top:3px">📝 ' + esc(m.mark_note) + '</div>' : '')
+    + ((m.mark_note || markDataSummary(m)) ? '<div style="font-size:.78rem;color:#92400e;background:#fffbeb;border-radius:6px;padding:2px 8px;margin-top:3px">📝 ' + esc([markDataSummary(m), m.mark_note].filter(Boolean).join(' · ')) + '</div>' : '')
     + '</div>'
   ).join('');
 }
