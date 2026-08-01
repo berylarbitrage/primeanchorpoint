@@ -28938,11 +28938,11 @@ app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, r
     const thread = db.prepare('SELECT id FROM sms_threads WHERE id=?').get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
 
-    const messages = db.prepare(`SELECT m.*, a.username as author_name FROM sms_messages m
+    const messages = db.prepare(`SELECT m.*, COALESCE(NULLIF(a.display_name,''), a.username) as author_name FROM sms_messages m
       LEFT JOIN admin_users a ON a.id=m.author_agent_id
       WHERE m.thread_id=? ORDER BY m.created_at ASC`).all(req.params.id);
 
-    const notes = db.prepare(`SELECT n.*, a.username as author_name FROM sms_notes n
+    const notes = db.prepare(`SELECT n.*, COALESCE(NULLIF(a.display_name,''), a.username) as author_name FROM sms_notes n
       LEFT JOIN admin_users a ON a.id=n.author_agent_id
       WHERE n.thread_id=? ORDER BY n.created_at ASC`).all(req.params.id);
 
@@ -29033,7 +29033,8 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
     db.prepare(`UPDATE sms_messages SET twilio_message_sid=?, delivery_status=?, updated_at=datetime('now') WHERE id=?`).run(twilioSid, deliveryStatus, messageId);
     smsAudit('message', messageId, 'sent', 'agent', req.userId, { thread_id: thread.id, to: thread.phone_e164 });
 
-    const message = db.prepare('SELECT * FROM sms_messages WHERE id=?').get(messageId);
+    const message = db.prepare(`SELECT m.*, COALESCE(NULLIF(a.display_name,''), a.username) as author_name
+      FROM sms_messages m LEFT JOIN admin_users a ON a.id=m.author_agent_id WHERE m.id=?`).get(messageId);
     res.json({ success: true, message });
   } catch(e) {
     console.error('[SMS Send] Error:', e.message);
