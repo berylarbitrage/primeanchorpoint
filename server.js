@@ -3385,7 +3385,8 @@ app.use((req, res, next) => {
 app.use(express.static('public', {
   extensions: ['html'],
   setHeaders(res, filePath) {
-    if (filePath.endsWith('.html')) {
+    // sw.js 也必须禁缓存, 否则手机上的 PWA 会长期跑旧版本
+    if (filePath.endsWith('.html') || filePath.endsWith('sw.js')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');

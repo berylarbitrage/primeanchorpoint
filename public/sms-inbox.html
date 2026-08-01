@@ -2663,9 +2663,10 @@ let deferredInstallPrompt = null;
 
 // Register service worker
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then(reg => {
+  // updateViaCache:'none' — sw.js 永远走网络, 保证手机能及时拿到新版本
+  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(reg => {
     console.log('[PWA] SW registered, scope:', reg.scope);
-    // Check for updates every 30 min
+    reg.update();   // 每次打开立即查一次更新
     setInterval(() => reg.update(), 30 * 60 * 1000);
   }).catch(err => console.warn('[PWA] SW registration failed:', err));
 }
