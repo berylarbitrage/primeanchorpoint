@@ -494,6 +494,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 <div class="modal-bg" id="newChatModal">
   <div class="modal" style="max-width:540px">
     <h3>&#128172; 发起对话 · 从员工 / 招工申请找人</h3>
+    <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center">
+      <span style="font-size:.78rem;color:var(--gray-500)">渠道:</span>
+      <button type="button" class="filter-btn active" id="ncChanSms" onclick="ncSetChannel('sms')">📱 短信 SMS</button>
+      <button type="button" class="filter-btn" id="ncChanWa" onclick="ncSetChannel('whatsapp')">🟢 WhatsApp</button>
+    </div>
+    <div id="ncWaHint" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 10px;font-size:.74rem;color:#166534;margin-bottom:8px">WhatsApp: 需要在 Twilio 开通 WhatsApp Sender。注意: 对方 24 小时内没给我们发过消息时, 主动发的自由文本会被 WhatsApp 拒收(需要用审核过的模板), 最好等对方先来消息或让他先加我们。</div>
     <input id="ncSearch" placeholder="搜姓名 / 电话 / 职位 / 公司…" oninput="ncDebounce()" style="margin-bottom:8px">
     <div id="ncResults" style="max-height:320px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius)">
       <div style="padding:12px;color:var(--gray-400);text-align:center">输入关键词搜索，或直接浏览</div>
@@ -988,7 +994,7 @@ function renderThreadList() {
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
       + '<span class="ti-time">' + time + '</span></div>'
       + '<div class="ti-preview">' + preview + '</div>'
-      + '<div class="ti-meta">' + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
+      + '<div class="ti-meta">' + (t.channel === 'whatsapp' ? '<span style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🟢 WhatsApp</span>' : '') + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
       + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
       + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
@@ -1209,7 +1215,7 @@ function renderMessages() {
         : '';
       html += '<div class="msg-row ' + dir + '">'
         + senderHtml
-        + '<div class="msg-bubble"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : '') + '>' + esc(item.body) + translationHtml + '</div>'
+        + '<div class="msg-bubble" onclick="bubbleMark(' + item.id + ')" title="点击标注这条消息（类别+备注）"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : '') + '>' + esc(item.body) + translationHtml + '</div>'
         + markHtml
         + '<div class="msg-meta">' + fmtTime(item._time)
         + (dir === 'outbound' ? ' &middot; ' + statusIcon : '')
@@ -1905,7 +1911,9 @@ function renderContactTagRow() {
   const whChips = parseWorkHistory(currentContact && currentContact.work_history).slice(0, 4).map(h =>
     '<span style="background:#eef2ff;color:#3730a3;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">🏢 ' + esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join('·')) + '</span>'
   ).join('');
-  row.innerHTML = empBadge
+  const chanChip = (currentThread && currentThread.channel === 'whatsapp')
+    ? '<span style="background:#dcfce7;color:#15803d;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:700">🟢 WhatsApp</span>' : '';
+  row.innerHTML = chanChip + empBadge
   + _contactStateForemanBadges(currentContact && currentContact.work_state, currentContact && currentContact.is_foreman)
   + whChips
   + (Array.isArray(tags) ? tags : []).map(t =>
@@ -1958,7 +1966,7 @@ async function ncStart(i) {
   const p = (window._ncPeople || [])[i];
   if (!p) return;
   try {
-    const r = await api('/sms/start-thread', { method: 'POST', body: JSON.stringify({ phone: p.phone, name: p.name, employee_id: p.type === 'employee' ? p.ref_id : null, type: p.type, ref_id: p.ref_id }) });
+    const r = await api('/sms/start-thread', { method: 'POST', body: JSON.stringify({ phone: p.phone, name: p.name, employee_id: p.type === 'employee' ? p.ref_id : null, type: p.type, ref_id: p.ref_id, channel: _ncChannel }) });
     if (r && r.error) { toast(r.error); return; }
     closeNewChatModal();
     toast('对话已就绪，直接输入消息发送');
@@ -1966,12 +1974,27 @@ async function ncStart(i) {
     openThread(r.thread_id);
   } catch (e) { toast('发起失败: ' + (e.message || e)); }
 }
+// ─── 发起对话渠道 (sms | whatsapp) ───
+let _ncChannel = 'sms';
+function ncSetChannel(ch) {
+  _ncChannel = ch;
+  document.getElementById('ncChanSms').className = 'filter-btn' + (ch === 'sms' ? ' active' : '');
+  document.getElementById('ncChanWa').className = 'filter-btn' + (ch === 'whatsapp' ? ' active' : '');
+  document.getElementById('ncWaHint').style.display = ch === 'whatsapp' ? '' : 'none';
+}
+
 // ─── 📌 消息标记: 分类(卸柜/面试/发工资…) + 备注 ───
 const MARK_TAG_PRESETS = ['卸柜', '面试', '发工资', '排班', '请假', '投诉'];
 let _markMsgId = null;
+// 点消息气泡直接标注 (正在选中文字复制时不触发)
+function bubbleMark(msgId) {
+  try { if (String((window.getSelection && window.getSelection()) || '')) return; } catch (_) {}
+  toggleStar(msgId);
+}
 function toggleStar(msgId) {
   const m = currentMessages.find(x => x.id === msgId);
   if (!m) return;
+  if (m.delivery_status === 'sending') { toast('正在发送中, 稍等一下再标注'); return; }
   _markMsgId = msgId;
   document.getElementById('markMsgPreview').textContent = (m.body || '').slice(0, 200);
   document.getElementById('markTagInput').value = m.mark_tag || '';

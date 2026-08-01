@@ -2902,6 +2902,8 @@ try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_state TEXT DEFAULT ''`);
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_foreman INTEGER DEFAULT 0`); } catch(e) {}
 // 工作经历: 一个人可能干过多个公司, [{company, role, date}] 带大概日期
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_history TEXT DEFAULT '[]'`); } catch(e) {}
+// WhatsApp 支持: 同一收件箱, 线程按渠道区分 (sms | whatsapp)
+try { db.exec(`ALTER TABLE sms_threads ADD COLUMN channel TEXT DEFAULT 'sms'`); } catch(e) {}
 // Twilio 合规: 对方回 STOP 等退订词后必须停发 (opted_out), 回 START 恢复
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out_at TEXT DEFAULT NULL`); } catch(e) {}
@@ -28555,14 +28557,14 @@ function smsGetOrCreateContact(phoneE164) {
   return contact;
 }
 
-// ─── Find active thread or create new one ───
-function smsFindOrCreateThread(contactId, twilioNumber) {
-  // Find an active (open or claimed) thread for this contact
-  let thread = db.prepare(`SELECT * FROM sms_threads WHERE contact_id=? AND status IN ('open','claimed') ORDER BY created_at DESC LIMIT 1`).get(contactId);
+// ─── Find active thread or create new one (channel: 'sms' | 'whatsapp') ───
+function smsFindOrCreateThread(contactId, twilioNumber, channel = 'sms') {
+  // Find an active (open or claimed) thread for this contact on this channel
+  let thread = db.prepare(`SELECT * FROM sms_threads WHERE contact_id=? AND COALESCE(channel,'sms')=? AND status IN ('open','claimed') ORDER BY created_at DESC LIMIT 1`).get(contactId, channel);
   if (thread) return thread;
 
   // Check if there's a recently closed thread to reopen
-  const closed = db.prepare(`SELECT * FROM sms_threads WHERE contact_id=? AND status='closed' ORDER BY closed_at DESC LIMIT 1`).get(contactId);
+  const closed = db.prepare(`SELECT * FROM sms_threads WHERE contact_id=? AND COALESCE(channel,'sms')=? AND status='closed' ORDER BY closed_at DESC LIMIT 1`).get(contactId, channel);
   if (closed) {
     const closedDate = new Date(closed.closed_at);
     const daysSinceClosed = (Date.now() - closedDate.getTime()) / (1000 * 60 * 60 * 24);
@@ -28575,9 +28577,9 @@ function smsFindOrCreateThread(contactId, twilioNumber) {
   }
 
   // Create new thread
-  const info = db.prepare(`INSERT INTO sms_threads (contact_id, twilio_number) VALUES (?,?)`).run(contactId, twilioNumber);
+  const info = db.prepare(`INSERT INTO sms_threads (contact_id, twilio_number, channel) VALUES (?,?,?)`).run(contactId, twilioNumber, channel);
   const newThread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(info.lastInsertRowid);
-  smsAudit('thread', newThread.id, 'created', 'system', null, { contact_id: contactId });
+  smsAudit('thread', newThread.id, 'created', 'system', null, { contact_id: contactId, channel });
   return newThread;
 }
 
@@ -28675,8 +28677,10 @@ app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), va
     const { From, To, Body, MessageSid, NumMedia } = req.body;
     if (!From || !To) return res.type('text/xml').send('<Response></Response>');
 
-    const customerPhone = formatPhoneE164(From);
-    const twilioNumber = formatPhoneE164(To);
+    // WhatsApp 消息的 From/To 带 "whatsapp:" 前缀 — 同一个 webhook 一起接
+    const isWhatsApp = /^whatsapp:/i.test(String(From)) || /^whatsapp:/i.test(String(To));
+    const customerPhone = formatPhoneE164(String(From).replace(/^whatsapp:/i, ''));
+    const twilioNumber = formatPhoneE164(String(To).replace(/^whatsapp:/i, ''));
 
     // Collect media URLs if MMS
     const mediaUrls = [];
@@ -28699,8 +28703,8 @@ app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), va
       smsAudit('contact', contact.id, 'opted_in', 'system', null, { keyword: kw });
     }
 
-    // 2. Find or create thread
-    const thread = smsFindOrCreateThread(contact.id, twilioNumber);
+    // 2. Find or create thread (按渠道分线程: 同一个人 SMS 和 WhatsApp 各一个对话)
+    const thread = smsFindOrCreateThread(contact.id, twilioNumber, isWhatsApp ? 'whatsapp' : 'sms');
 
     // 3. Auto-translate inbound message (contact_lang → agent_lang)
     const freshThread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
@@ -28887,6 +28891,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
       threads: threads.map(t => ({
         id: t.id,
         contact: { id: t.contact_id, phone_e164: smsPhoneForRole(req, t.phone_e164, t.contact_employee_id), name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out, employee_id: t.contact_employee_id, work_history: t.contact_work_history },
+        channel: t.channel || 'sms',
         status: t.status,
         priority: t.priority,
         assigned_agent: t.assigned_agent_id ? { id: t.assigned_agent_id, username: t.agent_username } : null,
@@ -28923,6 +28928,7 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
     res.json({
       thread: {
         id: thread.id,
+        channel: thread.channel || 'sms',
         status: thread.status,
         priority: thread.priority,
         assigned_agent: thread.assigned_agent_id ? { id: thread.assigned_agent_id, username: thread.agent_username } : null,
@@ -29034,7 +29040,12 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
     let deliveryStatus = 'queued';
     try {
       if (twilioClient && TWILIO_FROM) {
-        const createParams = { body: bodyToSend, from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
+        // WhatsApp 线程: 号码加 whatsapp: 前缀走 WhatsApp 通道
+        const isWA = (thread.channel || 'sms') === 'whatsapp';
+        const waFrom = process.env.TWILIO_WHATSAPP_FROM || thread.twilio_number || TWILIO_FROM;
+        const createParams = isWA
+          ? { body: bodyToSend, from: 'whatsapp:' + waFrom, to: 'whatsapp:' + thread.phone_e164 }
+          : { body: bodyToSend, from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
         if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
         const msg = await twilioClient.messages.create(createParams);
         twilioSid = msg.sid;
@@ -29316,11 +29327,14 @@ app.post('/api/sms/threads/:id/retry/:messageId', requireAdmin, requireSmsAccess
       return res.status(400).json({ error: 'Message is not in failed state' });
     }
     // Twilio 合规: 对方已退订则重发也要拦
-    const rc = db.prepare('SELECT c.opted_out FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?').get(req.params.id);
+    const rc = db.prepare('SELECT c.opted_out, t.channel FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?').get(req.params.id);
     if (rc && rc.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止重发。对方回复 START 后才能恢复。' });
     const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
     try {
-      const createParams = { body: msg.body, from: msg.from_number, to: msg.to_number };
+      const _isWA = rc && (rc.channel || 'sms') === 'whatsapp';
+      const createParams = _isWA
+        ? { body: msg.body, from: 'whatsapp:' + (process.env.TWILIO_WHATSAPP_FROM || msg.from_number), to: 'whatsapp:' + msg.to_number }
+        : { body: msg.body, from: msg.from_number, to: msg.to_number };
       if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
       const result = await twilioClient.messages.create(createParams);
       db.prepare(`UPDATE sms_messages SET twilio_message_sid=?, delivery_status='sent', error_code=NULL, error_message=NULL, updated_at=datetime('now') WHERE id=?`)
@@ -29907,9 +29921,10 @@ app.post('/api/sms/start-thread', requireAdmin, requireSmsAccess, (req, res) => 
     const contact = smsGetOrCreateContact(phoneE164);
     if (b.name && !contact.name) db.prepare(`UPDATE sms_contacts SET name=?, updated_at=datetime('now') WHERE id=?`).run(String(b.name).slice(0, 120), contact.id);
     if (b.employee_id && !contact.employee_id) db.prepare(`UPDATE sms_contacts SET employee_id=?, updated_at=datetime('now') WHERE id=?`).run(parseInt(b.employee_id) || null, contact.id);
-    const twilioNumber = TWILIO_FROM || process.env.TWILIO_PHONE_NUMBER || '';
-    const thread = smsFindOrCreateThread(contact.id, twilioNumber);
-    smsAudit('thread', thread.id, 'started_from_directory', 'agent', req.userId, { phone: phoneE164, type: b.type || '' });
+    const channel = b.channel === 'whatsapp' ? 'whatsapp' : 'sms';
+    const twilioNumber = (channel === 'whatsapp' ? (process.env.TWILIO_WHATSAPP_FROM || TWILIO_FROM) : TWILIO_FROM) || process.env.TWILIO_PHONE_NUMBER || '';
+    const thread = smsFindOrCreateThread(contact.id, twilioNumber, channel);
+    smsAudit('thread', thread.id, 'started_from_directory', 'agent', req.userId, { phone: phoneE164, type: b.type || '', channel });
     res.json({ success: true, thread_id: thread.id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
