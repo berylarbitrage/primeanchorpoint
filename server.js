@@ -14778,6 +14778,12 @@ const applicantDocUpload = multer({
 // whenever the company was temporarily inactive (e.g. mid contract re-sign).
 function _partnerByApplyToken(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null;
+  // Generic (company-less) recruiting QR: its token lives in app_settings rather
+  // than on a partner row. Matching submissions get the pseudo partner id 0.
+  try {
+    const g = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+    if (g && g.value && g.value === token) return { id: 0, name: '' };
+  } catch (_) {}
   return db.prepare("SELECT id, name FROM partners WHERE applicant_form_token=? AND applicant_form_token!=''").get(token);
 }
 // Normalize a US phone to E.164 (last 10 digits → +1XXXXXXXXXX). Best-effort.
@@ -14845,6 +14851,33 @@ app.post('/api/admin/partners/:id/applicant-qr/regenerate', requireAdmin, blockM
     const partnerId = parseInt(req.params.id);
     const token = crypto.randomBytes(20).toString('hex');
     db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
+    res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: get or lazily create the GENERIC applicant-form QR — not tied to any
+// company. Submissions arrive with partner_id 0 and show up in the generic inbox.
+app.get('/api/admin/applicant-qr/generic', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+    let token = (row && row.value) || '';
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
+    }
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
+    const url = `${proto}://${host}/apply/${token}`;
+    const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
+    res.json({ token, url, base_url: url, states: [], qrs: [{ state: '', url }], qr_data_url: qrDataUrl, partner_name: '', generic: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: rotate the generic token (invalidates the old generic QR).
+app.post('/api/admin/applicant-qr/generic/regenerate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const token = crypto.randomBytes(20).toString('hex');
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
     res.json({ success: true, token });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -15138,8 +15171,9 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     [address.address1, address.address2].filter(Boolean).join(', '),
     [address.city, address.state].filter(Boolean).join(', ') + ' ' + (address.zip || ''),
   ].filter(s => s && s.trim()).join('  ') : '';
+  const partnerLabel = partner.name || (partner.id === 0 ? '通用申请 / General (no company)' : '');
   const rows = [
-    ['应聘公司 / Company', partner.name || ''],
+    ['应聘公司 / Company', partnerLabel],
     ...(applyState ? [['申请地点 / Location', applyState]] : []),
     ['姓名 / Name', name],
     ['职位 / Position', position],
@@ -15167,7 +15201,7 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     </table>
     <p style="color:#64748b;font-size:13px;margin-top:1rem">证件照片见附件。也可在管理后台「申请箱」查看。<br>Document photos are attached. You can also view them in the admin “Applicant Inbox”.</p>
   </div>`;
-  const subject = `${hasDup ? '⚠️ 电话重复 · ' : ''}新入职申请 / New Application — ${name}（${partner.name || ''}）`;
+  const subject = `${hasDup ? '⚠️ 电话重复 · ' : ''}新入职申请 / New Application — ${name}（${partnerLabel || '—'}）`;
   const recipients = [...new Set([APPLICATION_NOTIFY_EMAIL, ...APPLICATION_NOTIFY_CC])];
   for (const to of recipients) {
     const sent = files.length

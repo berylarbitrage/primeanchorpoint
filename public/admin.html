@@ -1134,6 +1134,8 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-outline" id="partnerBatchQrBtn" onclick="printSelectedPartnerQrSheets()" title="批量打印所选公司的信息采集二维码（每公司每州一页，三行：招工申请/员工文件/周柜登记）">🖨 批量打印二维码 (0)</button>
       <button class="btn btn-outline" id="partnerQrLabelBtn" onclick="openPartnerQrLabelModal()" title="把所选公司的二维码打到 2 × 4″ 标签纸上（每页 10 个）：先选码，再点格子指定贴纸位置，用过的空位可跳过">🏷 二维码标签 (0)</button>
       <button class="btn btn-outline" onclick="openDocChecklistLabelModal()" title="打印带勾选框的员工文件清单标签（Avery 5160，1 × 2-5/8″，每页 30 个）">📋 文件清单标签</button>
+      <button class="btn btn-outline" style="color:#3730A3;border-color:#C7D2FE" onclick="openApplicantQrModal(0,'')" title="通用招工二维码：不挂在任何公司下，申请进入通用申请收件箱">🪪 通用招工申请</button>
+      <button class="btn btn-outline" style="color:#6D28D9;border-color:#DDD6FE" onclick="openApplicantInbox(0,'通用（不限公司）')" title="查看通用招工二维码收到的申请">📨 通用申请收件箱</button>
       <button class="btn" onclick="openPartnerModal()">+ 新增公司</button>
     </div>
   </div>
@@ -40387,6 +40389,7 @@ const APPLY_QR_I18N = {
     loading: '生成中…', copy: '📋 复制链接', download: '⬇ 下载二维码', regen: '↻ 重新生成',
     regenTitle: '作废旧二维码并生成新的', loadFail: '加载失败：',
     copied: '已复制链接', regenConfirm: '重新生成后，旧二维码将立即失效。确定继续？', regenFail: '失败：',
+    genericName: '通用（不限公司）',
     multiNote: '📍 该公司在多个州设有地址，请在下方选择州查看对应二维码，并按地点分发。应聘者扫描哪个州的码，其申请就归入该地点。',
     note: '📲 应聘者扫码后填写<strong>姓名 / 电话 / 邮箱 / 职位</strong>，需通过<strong>短信 + 邮箱验证码</strong>验证，并上传 <strong>SSN 正反面</strong> 与 <strong>EAD 正反面</strong>。支持中文 / English / Español。所有申请进入「📨 申请收件箱」。',
   },
@@ -40395,6 +40398,7 @@ const APPLY_QR_I18N = {
     loading: 'Generating…', copy: '📋 Copy link', download: '⬇ Download QR', regen: '↻ Regenerate',
     regenTitle: 'Void the old QR code and generate a new one', loadFail: 'Load failed: ',
     copied: 'Link copied', regenConfirm: 'Regenerating will immediately invalidate the old QR code. Continue?', regenFail: 'Failed: ',
+    genericName: 'General (any company)',
     multiNote: '📍 This company has addresses in multiple states. Pick a state below to see its QR, and distribute by location; whichever state code an applicant scans, their application is filed under that location.',
     note: '📲 After scanning, the applicant fills in <strong>name / phone / email / position</strong>, verifies via <strong>SMS + email code</strong>, and uploads <strong>SSN (front & back)</strong> and <strong>EAD (front & back)</strong>. Available in 中文 / English / Español. All submissions go to the “📨 Applicant Inbox”.',
   },
@@ -40403,6 +40407,7 @@ const APPLY_QR_I18N = {
     loading: 'Generando…', copy: '📋 Copiar enlace', download: '⬇ Descargar QR', regen: '↻ Regenerar',
     regenTitle: 'Anular el QR anterior y generar uno nuevo', loadFail: 'Error al cargar: ',
     copied: 'Enlace copiado', regenConfirm: 'Al regenerar, el QR anterior quedará invalidado de inmediato. ¿Continuar?', regenFail: 'Error: ',
+    genericName: 'General (cualquier empresa)',
     multiNote: '📍 Esta empresa tiene direcciones en varios estados. Elija un estado abajo para ver su QR y distribúyalos por ubicación; el estado del código que escanee el solicitante determina la ubicación de su solicitud.',
     note: '📲 Tras escanear, el solicitante completa <strong>nombre / teléfono / correo / puesto</strong>, verifica con <strong>código por SMS + correo</strong> y sube <strong>SSN (frente y reverso)</strong> y <strong>EAD (frente y reverso)</strong>. Disponible en 中文 / English / Español. Todas las solicitudes llegan a «📨 Bandeja de solicitudes».',
   },
@@ -40414,7 +40419,9 @@ function setApplyQrLang(lang) {
   document.getElementById('aqrClose').textContent = t.close;
   const rg = document.getElementById('aqrRegen'); rg.textContent = t.regen; rg.title = t.regenTitle;
   document.getElementById('aqrNote').innerHTML = t.note;
-  document.getElementById('applyQrPartner').innerHTML = `${t.company}<strong>${esc(_applyQrState.partnerName || '—')}</strong>`;
+  document.getElementById('applyQrPartner').innerHTML = _applyQrState.generic
+    ? `<strong>${esc(t.genericName)}</strong>`
+    : `${t.company}<strong>${esc(_applyQrState.partnerName || '—')}</strong>`;
   const mn = document.getElementById('applyQrMultiNote');
   if (mn) {
     const multi = (_applyQrState.qrs || []).length > 1;
@@ -40433,7 +40440,9 @@ function setApplyQrLang(lang) {
   if ((_applyQrState.qrs || []).length && typeof QRCode !== 'undefined') renderApplyQrList();
 }
 async function openApplicantQrModal(partnerId, partnerName) {
-  _applyQrState = { partnerId, partnerName, qrs: [], selected: 0 };
+  // partnerId 0 (or null) → the generic company-less QR.
+  const generic = !partnerId;
+  _applyQrState = { partnerId: partnerId || 0, partnerName, generic, qrs: [], selected: 0 };
   document.getElementById('applyQrList').innerHTML = '';
   const ld = document.getElementById('applyQrLoading');
   ld.dataset.failed = '0';
@@ -40441,7 +40450,7 @@ async function openApplicantQrModal(partnerId, partnerName) {
   setApplyQrLang(_applyQrLang); // render all text (incl. partner + loading) in current language
   document.getElementById('applyQrModal').classList.add('show');
   try {
-    const r = await api(`/admin/partners/${partnerId}/applicant-qr`);
+    const r = await api(generic ? '/admin/applicant-qr/generic' : `/admin/partners/${partnerId}/applicant-qr`);
     // Prefer the per-state list; fall back to the legacy single-URL shape.
     let qrs = Array.isArray(r && r.qrs) ? r.qrs.filter(q => q && q.url) : [];
     if (!qrs.length && r && r.url) qrs = [{ state: '', url: r.url }];
@@ -40514,14 +40523,14 @@ function downloadApplyQrFor(i) {
   const stateSuffix = q.state ? '-' + q.state : '';
   const a = document.createElement('a');
   a.href = src;
-  a.download = `招工二维码-${(_applyQrState.partnerName || 'company').replace(/[^\w一-龥-]/g, '_')}${stateSuffix}.png`;
+  a.download = `招工二维码-${(_applyQrState.generic ? '通用' : _applyQrState.partnerName || 'company').replace(/[^\w一-龥-]/g, '_')}${stateSuffix}.png`;
   a.click();
 }
 async function regenerateApplyQr() {
-  if (!_applyQrState.partnerId) return;
+  if (!_applyQrState.partnerId && !_applyQrState.generic) return;
   if (!confirm(APPLY_QR_I18N[_applyQrLang].regenConfirm)) return;
   try {
-    await api(`/admin/partners/${_applyQrState.partnerId}/applicant-qr/regenerate`, { method: 'POST' });
+    await api(_applyQrState.generic ? '/admin/applicant-qr/generic/regenerate' : `/admin/partners/${_applyQrState.partnerId}/applicant-qr/regenerate`, { method: 'POST' });
     openApplicantQrModal(_applyQrState.partnerId, _applyQrState.partnerName);
   } catch (e) { alert(APPLY_QR_I18N[_applyQrLang].regenFail + (e.message || e)); }
 }

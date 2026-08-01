@@ -390,7 +390,9 @@ async function init() {
     if (!r.ok) { const j = await r.json().catch(() => ({})); showErr(j.error || I18N[_lang].invalid); document.getElementById('partnerName').textContent = '—'; return; }
     const info = await r.json();
     _partnerName = info.partner_name || '';
-    document.getElementById('partnerName').textContent = I18N[_lang].sendingTo + _partnerName + (APPLY_STATE ? ' · 📍 ' + APPLY_STATE : '');
+    document.getElementById('partnerName').textContent = _partnerName
+      ? I18N[_lang].sendingTo + _partnerName + (APPLY_STATE ? ' · 📍 ' + APPLY_STATE : '')
+      : (APPLY_STATE ? '📍 ' + APPLY_STATE : '');
     document.getElementById('formMain').style.display = '';
   } catch (e) { showErr('Error: ' + (e.message || e)); }
 }
