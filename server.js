@@ -28874,6 +28874,9 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
       params.push(`%${tag}%`);
     }
 
+    // 回了 STOP 退订的对话对客服(非 admin)隐藏, admin 仍可见
+    if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0`;
+
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
 
@@ -28897,6 +28900,8 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
         assigned_agent: t.assigned_agent_id ? { id: t.assigned_agent_id, username: t.agent_username } : null,
         last_message_preview: t.last_message_preview,
         last_message_at: t.last_message_at,
+        last_inbound_at: t.last_inbound_at,
+        last_outbound_at: t.last_outbound_at,
         unread_count: t.unread_count,
         tags: t.tags,
         subject: t.subject,
@@ -28922,6 +28927,8 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
       LEFT JOIN admin_users a ON a.id=t.assigned_agent_id
       WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    // 退订对话对客服(非 admin)不可见
+    if (req.userRole !== 'admin' && thread.contact_opted_out) return res.status(403).json({ error: '对方已退订, 该对话仅管理员可见' });
 
     smsAudit('thread', thread.id, 'viewed', 'agent', req.userId, {});
 
@@ -28960,8 +28967,9 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/threads/:id/messages — messages for a thread
 app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare('SELECT t.id, c.employee_id AS c_emp FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?').get(req.params.id);
+    const thread = db.prepare('SELECT t.id, c.employee_id AS c_emp, c.opted_out AS c_opt FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?').get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    if (req.userRole !== 'admin' && thread.c_opt) return res.status(403).json({ error: '对方已退订, 该对话仅管理员可见' });
 
     const messages = db.prepare(`SELECT m.*, COALESCE(NULLIF(a.display_name,''), a.username) as author_name FROM sms_messages m
       LEFT JOIN admin_users a ON a.id=m.author_agent_id
@@ -29094,8 +29102,8 @@ app.post('/api/sms/threads/:id/claim', requireAdmin, requireSmsAccess, (req, res
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/sms/threads/:id/assign
-app.post('/api/sms/threads/:id/assign', requireAdmin, requireRole('admin', 'staff'), requireSmsAccess, (req, res) => {
+// POST /api/sms/threads/:id/assign — 分配对话给指定客服 (仅 admin)
+app.post('/api/sms/threads/:id/assign', requireAdmin, requireRole('admin'), requireSmsAccess, (req, res) => {
   try {
     const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
@@ -29112,8 +29120,8 @@ app.post('/api/sms/threads/:id/assign', requireAdmin, requireRole('admin', 'staf
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/sms/threads/:id/unassign — remove assigned agent so all agents can see it
-app.post('/api/sms/threads/:id/unassign', requireAdmin, requireSmsAccess, (req, res) => {
+// POST /api/sms/threads/:id/unassign — remove assigned agent (仅 admin)
+app.post('/api/sms/threads/:id/unassign', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
@@ -29159,9 +29167,11 @@ app.post('/api/sms/threads/:id/read', requireAdmin, requireSmsAccess, (req, res)
 app.get('/api/sms/unread-count', requireAdmin, requireSmsAccess, (req, res) => {
   try {
     // For admin: all unread; for staff: all unread (they can see all)
-    const result = db.prepare(`SELECT COALESCE(SUM(unread_count),0) as total FROM sms_threads WHERE status IN ('open','claimed')`).get();
+    // 非 admin 不统计已退订联系人的对话 (列表里也看不到)
+    const optFilter = req.userRole !== 'admin' ? ` AND COALESCE((SELECT c.opted_out FROM sms_contacts c WHERE c.id=t.contact_id),0)=0` : '';
+    const result = db.prepare(`SELECT COALESCE(SUM(unread_count),0) as total FROM sms_threads t WHERE status IN ('open','claimed')${optFilter}`).get();
     // Also get count assigned to me
-    const mine = db.prepare(`SELECT COALESCE(SUM(unread_count),0) as total FROM sms_threads WHERE assigned_agent_id=? AND status IN ('open','claimed')`).get(req.userId);
+    const mine = db.prepare(`SELECT COALESCE(SUM(unread_count),0) as total FROM sms_threads t WHERE assigned_agent_id=? AND status IN ('open','claimed')${optFilter}`).get(req.userId);
     res.json({ total: result.total, mine: mine.total });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
