@@ -563,7 +563,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <textarea id="markNote" rows="2" placeholder="其他补充说明" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
     <button class="btn" onclick="saveMark(false)">保存标记</button>
     <button id="markSendBtn" onclick="saveMarkAndCompose()" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid var(--sky);color:var(--sky);border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.88rem;margin-top:6px">💬 保存并生成消息发给对方</button>
-    <button id="markAssistBtn" onclick="requestAssist('消息标记: ' + (document.getElementById('markMsgPreview').textContent || '').slice(0, 60), document.getElementById('markNote').value.trim())" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid #dc2626;color:#dc2626;border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.88rem;margin-top:6px">🆘 请求管理员协助</button>
+    <button id="markAssistBtn" onclick="markAssist()" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid #dc2626;color:#dc2626;border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.88rem;margin-top:6px">🆘 请求管理员协助</button>
     <button id="markRemoveBtn" onclick="saveMark(true)" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid var(--red);color:var(--red);border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:.88rem;margin-top:6px">取消标记</button>
     <button class="close-modal" onclick="document.getElementById('msgMarkModal').classList.remove('show')">关闭</button>
   </div>
@@ -2894,6 +2894,15 @@ function renderPriorityBadge() {
 
 // ─── Phase 2: Dashboard ───
 // Dashboard 统计已移到独立页面 /sms-stats
+
+// 🆘 从标记弹窗请求协助: 把选中的类别和已填字段一起带给管理员, 一眼知道是哪类事
+function markAssist() {
+  const preview = (document.getElementById('markMsgPreview').textContent || '').slice(0, 60);
+  const data = _collectMarkData();
+  const fields = Object.entries(data).map(([k, v]) => v).filter(Boolean).join(' / ');
+  const ctx = ('消息标记' + (_markTag ? '【' + _markTag + '】' : '') + (fields ? ' ' + fields : '') + ': ' + preview).slice(0, 200);
+  requestAssist(ctx, document.getElementById('markNote').value.trim());
+}
 
 // ─── Phase 2: Unread filter ───
 function toggleUnreadFilter() {
