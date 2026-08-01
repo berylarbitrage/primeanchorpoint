@@ -1,5 +1,5 @@
 // Prime Anchor Workforce SMS — Service Worker
-const CACHE_NAME = 'pa-sms-v1';
+const CACHE_NAME = 'pa-sms-v2';
 const APP_SHELL = [
   '/sms-inbox',
   '/manifest.json',
