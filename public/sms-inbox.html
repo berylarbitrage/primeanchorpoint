@@ -287,12 +287,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   .msg-bubble{max-width:88%}
 }
 
+#deskEmpty{display:none}
 @media(min-width:769px){
   body{overflow:auto}
   #app.show{flex-direction:row;height:100vh}
-  #list-view{width:380px;border-right:1.5px solid #fde68a;flex-shrink:0;height:100vh}
+  #list-view{width:400px;border-right:1.5px solid #fde68a;flex-shrink:0;height:100vh}
   #list-view.hide{display:flex}
   #detail-view{flex:1;height:100vh}
+  /* 未选对话时右侧显示空态, 选中后隐藏 */
+  #deskEmpty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:var(--off-white)}
+  #detail-view.show ~ #deskEmpty{display:none}
   .dash-stats{grid-template-columns:repeat(6,1fr)}
 }
 </style>
@@ -338,18 +342,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         <button class="btn-icon" id="ivListBtn" style="display:none" onclick="showIvListModal()" title="面试总览 (仅管理员)">&#128198;</button>
         <button class="btn-icon" id="aiBlocksBtn" style="display:none" onclick="showAiBlocksModal()" title="AI 拦截记录 (仅管理员)">&#128737;</button>
         <button class="btn-icon" id="contactEditsBtn" style="display:none" onclick="showContactEditsModal()" title="资料修改记录 (仅管理员)">&#128203;</button>
-        <button class="btn-icon" id="msgStatsBtn" style="display:none" onclick="showMsgStatsModal()" title="消息统计 (仅管理员)">&#128202;</button>
+        <button class="btn-icon" onclick="location.href='/sms-stats'" title="消息统计页">&#128202;</button>
         <button class="btn-icon" id="csAccBtn" style="display:none" onclick="showCsAccModal()" title="客服账号管理 (仅管理员)">&#128101;</button>
-        <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard 概览">&#9776;</button>
         <button class="btn-icon" onclick="loadThreads()" title="刷新 Refresh">&#x21bb;</button>
         <button class="btn-icon" onclick="doLogout()" title="退出登录 Logout">&#x2715;</button>
       </div>
       <button class="btn-icon" id="moreMenuBtn" onclick="toggleMoreMenu(event)" title="菜单" style="display:none;font-size:1.25rem;font-weight:700">&#8942;</button>
       <div id="moreMenu" class="more-menu"></div>
-    </div>
-    <!-- Dashboard Panel -->
-    <div class="dash-panel" id="dashPanel">
-      <div class="dash-stats" id="dashStats"></div>
     </div>
     <div class="filters">
       <input type="text" id="searchInput" placeholder="搜姓名 / 电话 / 消息…" oninput="debounceSearch()">
@@ -445,6 +444,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <textarea id="replyInput" rows="1" placeholder="输入消息…" oninput="autoGrow(this);onComposeInput()"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendReply()" title="Send">&#9654;</button>
     </div>
+  </div>
+  <!-- 桌面端未选对话时的空态 -->
+  <div id="deskEmpty">
+    <img src="logo.svg" alt="" style="width:72px;opacity:.5">
+    <div style="font-size:1rem;font-weight:600;color:var(--gray-500)">从左侧选择一个对话开始</div>
+    <div style="font-size:.8rem;color:var(--gray-400)">💬 发起对话 · 📊 统计页 · ⚠️ 防封号须知 都在左上工具栏</div>
   </div>
 </div>
 
@@ -802,7 +807,7 @@ async function checkAuth() {
 }
 function _applyAdminUi() {
   const isAdmin = USER && USER.role === 'admin';
-  ['csAccBtn', 'msgStatsBtn', 'ivListBtn', 'aiBlocksBtn', 'contactEditsBtn', 'bcBtn', 'testNotifyBtn'].forEach(id => {
+  ['csAccBtn', 'ivListBtn', 'aiBlocksBtn', 'contactEditsBtn', 'bcBtn', 'testNotifyBtn'].forEach(id => {
     const b = document.getElementById(id); if (b) b.style.display = isAdmin ? '' : 'none';
   });
 }
@@ -2652,25 +2657,7 @@ function renderPriorityBadge() {
 }
 
 // ─── Phase 2: Dashboard ───
-function toggleDashboard() {
-  dashboardVisible = !dashboardVisible;
-  const panel = document.getElementById('dashPanel');
-  if (dashboardVisible) { panel.classList.add('show'); loadDashStats(); }
-  else { panel.classList.remove('show'); }
-}
-
-async function loadDashStats() {
-  try {
-    const r = await api('/sms/stats');
-    document.getElementById('dashStats').innerHTML =
-      '<div class="dash-stat"><div class="num">' + (r.open || 0) + '</div><div class="lbl">Open</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.claimed || 0) + '</div><div class="lbl">Claimed</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.new_today || 0) + '</div><div class="lbl">New Today</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.closed_today || 0) + '</div><div class="lbl">Closed Today</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.avg_response_minutes != null ? r.avg_response_minutes + 'm' : '--') + '</div><div class="lbl">Avg Response</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.total_messages || 0) + '</div><div class="lbl">Total Msgs</div></div>';
-  } catch(e) { console.error('Dashboard error:', e); }
-}
+// Dashboard 统计已移到独立页面 /sms-stats
 
 // ─── Phase 2: Unread filter ───
 function toggleUnreadFilter() {
