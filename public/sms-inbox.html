@@ -48,21 +48,24 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 
 /* Filters */
 .filters{background:var(--white);padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--gray-200);flex-shrink:0}
-.filters input[type=text]{flex:1;min-width:120px;padding:8px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem;outline:none}
-.filters input[type=text]:focus{border-color:var(--sky)}
-.filters select{padding:7px 8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.8rem;background:var(--white);outline:none;cursor:pointer}
+.filters input[type=text]{flex:1 1 100%;min-width:120px;padding:9px 14px;border:1px solid var(--gray-200);border-radius:20px;font-size:.85rem;outline:none;background:var(--off-white)}
+.filters input[type=text]:focus{border-color:var(--sky);background:var(--white)}
+.filters-row{display:flex;gap:6px;align-items:center;flex:1 1 100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.filters-row::-webkit-scrollbar{display:none}
+.filters select{padding:7px 8px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;background:var(--white);outline:none;cursor:pointer;color:var(--gray-600);font-weight:600;flex-shrink:0;max-width:150px}
+.filters select:focus{border-color:var(--sky)}
 .filter-btn{padding:6px 12px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;font-weight:600;cursor:pointer;background:var(--white);color:var(--gray-600);transition:all .15s}
 .filter-btn:hover{border-color:var(--sky);color:var(--sky)}
 .filter-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
 
-/* Thread list */
-.thread-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.thread-item{display:flex;align-items:flex-start;padding:12px 16px;border-bottom:1px solid var(--gray-200);cursor:pointer;transition:background .15s;gap:10px}
-.thread-item:hover{background:var(--sky-light)}
-.thread-item.unread{background:#fffdf5}
+/* Thread list — 卡片式 */
+.thread-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 10px}
+.thread-item{display:flex;align-items:flex-start;padding:11px 13px;margin-bottom:8px;background:var(--white);border:1px solid #f3e8cd;border-radius:14px;box-shadow:0 1px 3px rgba(146,64,14,.06);cursor:pointer;transition:box-shadow .15s,border-color .15s;gap:10px}
+.thread-item:hover{border-color:#f5d78e;box-shadow:0 3px 12px rgba(146,64,14,.12)}
+.thread-item.unread{background:#fffcf2;border-color:#fde68a;border-left:4px solid var(--accent)}
 .thread-item.unread .ti-name{font-weight:700}
 .thread-item.unread .ti-preview{color:var(--gray-800);font-weight:500}
-.ti-avatar{width:38px;height:38px;border-radius:50%;background:var(--sky-light);color:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0}
+.ti-avatar{width:40px;height:40px;border-radius:50%;background:var(--sky-light);color:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
 .ti-body{flex:1;min-width:0}
 .ti-top{display:flex;align-items:center;gap:6px;margin-bottom:2px}
 .ti-name{font-size:.88rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
@@ -352,21 +355,29 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div class="dash-stats" id="dashStats"></div>
     </div>
     <div class="filters">
-      <input type="text" id="searchInput" placeholder="Search name, phone, message..." oninput="debounceSearch()">
-      <select id="statusFilter" onchange="loadThreads()">
-        <option value="all">All</option>
-        <option value="">Open + Claimed</option>
-        <option value="open">Open</option>
-        <option value="claimed">Claimed</option>
-        <option value="unassigned">Unassigned</option>
-        <option value="closed">Closed</option>
-      </select>
-      <select id="agentFilter" onchange="loadThreads()">
-        <option value="">All Agents</option>
-        <option value="me">My Threads</option>
-        <option value="unassigned">Unassigned</option>
-      </select>
-      <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">Unread</button>
+      <input type="text" id="searchInput" placeholder="搜姓名 / 电话 / 消息…" oninput="debounceSearch()">
+      <div class="filters-row">
+        <select id="statusFilter" onchange="loadThreads()">
+          <option value="all">状态: 全部</option>
+          <option value="">进行中</option>
+          <option value="open">Open</option>
+          <option value="claimed">Claimed</option>
+          <option value="unassigned">无人负责</option>
+          <option value="closed">已关闭</option>
+        </select>
+        <select id="agentFilter" onchange="loadThreads()">
+          <option value="">客服: 全部</option>
+          <option value="me">我负责的</option>
+          <option value="unassigned">无人负责</option>
+        </select>
+        <select id="companyFilter" onchange="loadThreads()">
+          <option value="">公司: 全部</option>
+        </select>
+        <select id="jobtagFilter" onchange="loadThreads()">
+          <option value="">工种: 全部</option>
+        </select>
+        <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">未读</button>
+      </div>
     </div>
     <div class="pull-indicator" id="pullIndicator">Pull to refresh...</div>
     <div class="thread-list" id="threadList"></div>
@@ -828,6 +839,7 @@ function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').classList.add('show');
   loadAgentFilter();
+  loadContactFilters();
   loadThreads();
   refreshInterval = setInterval(loadThreadsSilent, 15000);
   handleHash();
@@ -935,10 +947,14 @@ async function fetchThreads(silent) {
     const status = document.getElementById('statusFilter').value;
     const search = document.getElementById('searchInput').value.trim();
     const agentF = document.getElementById('agentFilter').value;
+    const companyF = document.getElementById('companyFilter').value;
+    const jobtagF = document.getElementById('jobtagFilter').value;
     let url = '/sms/threads?page=' + listPage + '&limit=30';
     if (status) url += '&status=' + status;
     if (search) url += '&search=' + encodeURIComponent(search);
     if (agentF) url += '&agent_id=' + agentF;
+    if (companyF) url += '&company=' + encodeURIComponent(companyF);
+    if (jobtagF) url += '&jobtag=' + encodeURIComponent(jobtagF);
     if (unreadFilter) url += '&unread=1';
     const r = await api(url);
     listTotal = r.total || 0;
@@ -954,6 +970,28 @@ async function fetchThreads(silent) {
 }
 
 function loadMoreThreads() { listPage++; fetchThreads(false); }
+
+// 公司 / 工种 筛选下拉: 公司来自现有合作公司, 工种用预设
+async function loadContactFilters() {
+  const jf = document.getElementById('jobtagFilter');
+  if (jf && jf.options.length <= 1) {
+    jf.innerHTML = '<option value="">工种: 全部</option>' + CONTACT_TAG_PRESETS.map(t => '<option value="' + t + '">' + t + '</option>').join('');
+  }
+  try {
+    const r = await api('/sms/partners');
+    const names = (r.partners || []).map(p => p.name).filter(Boolean);
+    const cf = document.getElementById('companyFilter');
+    if (cf) cf.innerHTML = '<option value="">公司: 全部</option>' + names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+  } catch (_) {}
+}
+
+// 每个联系人固定一组头像配色
+const _AV_COLORS = [['#fee2e2', '#b91c1c'], ['#dbeafe', '#1d4ed8'], ['#d1fae5', '#065f46'], ['#fef3c7', '#92400e'], ['#ede9fe', '#5b21b6'], ['#ccfbf1', '#0f766e'], ['#ffe4e6', '#be123c'], ['#e0e7ff', '#3730a3']];
+function avatarColor(key) {
+  let h = 0;
+  for (const ch of String(key || '?')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return _AV_COLORS[h % _AV_COLORS.length];
+}
 
 // 跟进状态: 对方最后来消息比我们最后回复晚 → 显示等了多久; 否则显示上次跟进时间
 function followUpBadge(t) {
@@ -1007,8 +1045,9 @@ function renderThreadList() {
         + wh.slice(0, 3).map(h => esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' '))).join(' · ')
         + (wh.length > 3 ? '  +' + (wh.length - 3) : '') + '</div>'
       : '';
+    const av = avatarColor(t.contact.name || t.contact.phone_e164 || String(t.id));
     return '<div class="thread-item' + (isUnread ? ' unread' : '') + '" onclick="openThread(' + t.id + ')">'
-      + '<div class="ti-avatar">' + esc(initials) + '</div>'
+      + '<div class="ti-avatar" style="background:' + av[0] + ';color:' + av[1] + '">' + esc(initials) + '</div>'
       + '<div class="ti-body">'
       + '<div class="ti-top"><span class="ti-name">' + esc(name) + '</span>'
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
