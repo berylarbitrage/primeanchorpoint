@@ -5960,7 +5960,8 @@ function generateACHAuthHtmlTemplate_ES() { return _zoneVariant(_buildACHAuthFor
 function generateACHAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildACHAuthForm('en-es'), 'b'); }
 
 // ── Wire Transfer Authorization ──
-function _buildWireAuthForm(lang) {
+function _buildWireAuthForm(lang, variant) {
+  const isB = variant === 'b';
   const f  = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const w  = `${f}width:100%;min-height:22px;`;
   const c  = 'padding:4px 6px;border:1px solid #ccc;vertical-align:top;';
@@ -6044,8 +6045,14 @@ function _buildWireAuthForm(lang) {
     ? 'p. ej., N.º de referencia, instrucciones adicionales de enrutamiento'
     : 'e.g., Reference #, Further Credit To, additional routing notes';
 
-  const s4 = L('4. CERTIFICATION & AGREEMENT', '声明与承诺', 'CERTIFICACIÓN Y ACUERDO');
-  const cert1 = zh
+  const s4 = L(isB ? '3. CERTIFICATION & AGREEMENT' : '4. CERTIFICATION & AGREEMENT', '声明与承诺', 'CERTIFICACIÓN Y ACUERDO');
+  const cert1 = isB
+    ? (zh
+      ? 'I certify that the third-party recipient information I provided on this form is true, complete, and accurate. I understand that the third party is separately responsible for providing and certifying the beneficiary and banking information used to receive payment. 本人确认本表所提供的第三方收款人信息真实、完整、准确。本人理解，该第三方须另行负责提供并确认用于收款的收款人及银行账户信息。'
+      : es
+      ? 'I certify that the third-party recipient information I provided on this form is true, complete, and accurate. I understand that the third party is separately responsible for providing and certifying the beneficiary and banking information used to receive payment. Certifico que la información del tercero receptor que proporcioné en este formulario es verdadera, completa y precisa. Entiendo que el tercero es responsable por separado de proporcionar y certificar la información del beneficiario y bancaria utilizada para recibir el pago.'
+      : 'I certify that the third-party recipient information I provided on this form is true, complete, and accurate. I understand that the third party is separately responsible for providing and certifying the beneficiary and banking information used to receive payment.')
+    : zh
     ? 'I certify that the beneficiary and bank account information provided in this form is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account. 本人确认本表所提供的收款人及银行账户信息真实、完整、准确，且本人系该账户持有人或有权通过该账户收取款项。'
     : es
     ? 'I certify that the beneficiary and bank account information provided in this form is true, complete, and accurate, and that I am the owner of, or authorized to receive payments through, the identified account. Certifico que la información del beneficiario y de la cuenta bancaria proporcionada en este formulario es verdadera, completa y precisa, y que soy el titular de dicha cuenta o estoy autorizado a recibir pagos a través de ella.'
@@ -6055,7 +6062,13 @@ function _buildWireAuthForm(lang) {
     : es
     ? `A wire transfer sent in accordance with the account information I provided will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated. Una transferencia bancaria enviada de acuerdo con la información proporcionada se considerará pago válido y total cumplimiento de la obligación de pago, salvo que yo haya proporcionado instrucciones corregidas por escrito antes de iniciar la transferencia.`
     : `A wire transfer sent in accordance with the account information I provided will be deemed valid payment and full satisfaction of the payer's payment obligation, unless I provided corrected instructions in writing before the transfer was initiated.`;
-  const cert3 = zh
+  const cert3 = isB
+    ? (zh
+      ? `I agree to notify ${companyName} in writing before any change to or revocation of this third-party authorization. 如需变更或撤销本第三方授权，本人同意在生效前以书面形式通知 ${companyName}。`
+      : es
+      ? `I agree to notify ${companyName} in writing before any change to or revocation of this third-party authorization. Acepto notificar a ${companyName} por escrito antes de cualquier cambio o revocación de esta autorización a tercero.`
+      : `I agree to notify ${companyName} in writing before any change to or revocation of this third-party authorization.`)
+    : zh
     ? `I agree to notify ${companyName} in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions. 如本人收款人名称、银行账户、路由号、SWIFT、IBAN 或其他付款信息发生变化，本人同意在电汇发起前以书面形式通知 ${companyName}。`
     : es
     ? `I agree to notify ${companyName} in writing before any change to my beneficiary name, bank account, routing number, SWIFT, IBAN, or other payment instructions. Me comprometo a notificar a ${companyName} por escrito antes de cualquier cambio en mi nombre de beneficiario, cuenta bancaria, número de ruta, SWIFT, IBAN u otras instrucciones de pago.`
@@ -6065,7 +6078,13 @@ function _buildWireAuthForm(lang) {
     : es
     ? 'I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing. Entiendo que pueden aplicarse cargos de bancos intermediarios, bancos receptores y otros relacionados con la transferencia, lo que puede reducir el monto recibido, salvo acuerdo escrito en contrario.'
     : 'I understand that intermediary bank fees, receiving bank fees, and other wire-related charges may apply and may reduce the amount received, unless otherwise agreed in writing.';
-  const cert5 = zh
+  const cert5 = isB
+    ? (zh
+      ? `${companyName} is not responsible for delays, rejection, misdirection, or additional fees resulting from inaccurate, incomplete, or outdated information provided by me or the authorized third party. 因本人或受权第三方提供的信息不准确、不完整或已过时而导致的延迟、退汇、误汇或额外费用，${companyName} 不承担相应责任。`
+      : es
+      ? `${companyName} is not responsible for delays, rejection, misdirection, or additional fees resulting from inaccurate, incomplete, or outdated information provided by me or the authorized third party. ${companyName} no se hace responsable de retrasos, rechazos, desvíos o cargos adicionales que resulten de información inexacta, incompleta o desactualizada proporcionada por mí o por el tercero autorizado.`
+      : `${companyName} is not responsible for delays, rejection, misdirection, or additional fees resulting from inaccurate, incomplete, or outdated information provided by me or the authorized third party.`)
+    : zh
     ? `${companyName} is not responsible for delays, rejection, misdirection, or additional fees resulting from inaccurate, incomplete, or outdated banking information provided by the beneficiary. 因收款人提供的银行信息不准确、不完整或已过时而导致的延迟、退汇、误汇或额外费用，${companyName} 不承担相应责任。`
     : es
     ? `${companyName} is not responsible for delays, rejection, misdirection, or additional fees resulting from inaccurate, incomplete, or outdated banking information provided by the beneficiary. ${companyName} no se hace responsable de retrasos, rechazos, desvíos o cargos adicionales que resulten de información bancaria inexacta, incompleta o desactualizada proporcionada por el beneficiario.`
@@ -6090,7 +6109,7 @@ function _buildWireAuthForm(lang) {
 
   // Zone A/B labels
   const zoneATitle = zh ? 'OPTION A — DIRECT WIRE TO MY OWN ACCOUNT / 直接收款至本人账户' : es ? 'OPTION A — DIRECT WIRE TO MY OWN ACCOUNT / 直接收款至本人账户' : 'OPTION A — DIRECT WIRE TO MY OWN ACCOUNT / 直接收款至本人账户';
-  const zoneBTitle = zh ? 'OPTION B — 委托第三方代收 / Third-Party Authorization' : es ? 'OPTION B — THIRD-PARTY AUTHORIZATION / 委托第三方代收' : 'OPTION B — THIRD-PARTY AUTHORIZATION / 委托第三方代收';
+  const zoneBTitle = zh ? '2. 委托第三方代收 / Third-Party Authorization' : es ? '2. THIRD-PARTY AUTHORIZATION / 委托第三方代收' : '2. THIRD-PARTY AUTHORIZATION / 委托第三方代收';
   const tpSelf = zh ? 'I am receiving directly into my own account. 本人直接收款至本人账户。'
     : es ? 'I am receiving directly into my own account. / Recibiré los fondos directamente en mi propia cuenta.'
     : 'I am receiving directly into my own account.';
@@ -6104,10 +6123,10 @@ function _buildWireAuthForm(lang) {
   const tpRelLabel = zh ? 'Relationship to Payee 与收款人关系' : es ? 'Relationship to Payee / Relación con el Beneficiario' : 'Relationship to Payee';
   const tpContactLabel = zh ? 'Third Party Phone / Email 第三方电话/电邮' : es ? 'Third Party Phone / Email / Teléfono / Correo del Tercero' : 'Third Party Phone / Email';
   const tpAuth = zh
-    ? `I authorize the above-named third party to receive wire payment(s) on my behalf from ${companyName}. The third party will submit their own banking information directly; I do NOT need to fill in Section A above. I assume full responsibility for any arrangements with the above third party. 本人授权上述第三方代表本人从 ${companyName} 接收电汇付款。该第三方将自行提供其银行信息；本人无需填写上方 A 节。本人自行承担与上述第三方之间所作安排的全部责任。`
+    ? `I authorize the above-named third party to receive wire payment(s) on my behalf from ${companyName}. The third party will separately complete and submit the applicable third-party wire payment form containing the third party's beneficiary and banking information. I assume full responsibility for any arrangements made with the third party. 本人授权上述第三方代表本人从 ${companyName} 接收电汇付款。该第三方将另行填写并提交适用的第三方电汇收款表，其中载明该第三方的收款人及银行账户信息。本人对与该第三方之间作出的各项安排承担全部责任。`
     : es
-    ? `I authorize the above-named third party to receive wire payment(s) on my behalf from ${companyName}. The third party will submit their own banking information directly; I do NOT need to fill in Section A above. I assume full responsibility for any arrangements with the above third party. / Autorizo al tercero indicado a recibir transferencias bancarias en mi nombre de ${companyName}. El tercero proporcionará su propia información bancaria directamente; no necesito completar la Sección A anterior. Asumo plena responsabilidad por los acuerdos con dicho tercero.`
-    : `I authorize the above-named third party to receive wire payment(s) on my behalf from ${companyName}. The third party will submit their own banking information directly; I do NOT need to fill in Section A above. I assume full responsibility for any arrangements with the above third party.`;
+    ? `I authorize the above-named third party to receive wire payment(s) on my behalf from ${companyName}. The third party will separately complete and submit the applicable third-party wire payment form containing the third party's beneficiary and banking information. I assume full responsibility for any arrangements made with the third party. / Autorizo al tercero indicado a recibir transferencia(s) bancaria(s) en mi nombre de ${companyName}. El tercero completará y presentará por separado el formulario de pago por transferencia a tercero correspondiente, con la información del beneficiario y bancaria del tercero. Asumo plena responsabilidad por los acuerdos realizados con el tercero.`
+    : `I authorize the above-named third party to receive wire payment(s) on my behalf from ${companyName}. The third party will separately complete and submit the applicable third-party wire payment form containing the third party's beneficiary and banking information. I assume full responsibility for any arrangements made with the third party.`;
   const sAuthSig = zh ? 'AUTHORIZER SIGNATURE 授权人签名' : es ? 'AUTHORIZER SIGNATURE / FIRMA DEL AUTORIZANTE' : 'AUTHORIZER SIGNATURE';
   const lConfirmAuth = zh
     ? 'I confirm I am authorizing the above-named third party to receive all current and future payments on my behalf on an ongoing basis, and I take full responsibility for this arrangement. 本人确认已授权上述第三方长期代为收取所有当前及未来款项，并对此安排承担全部责任。'
@@ -6119,15 +6138,54 @@ function _buildWireAuthForm(lang) {
   // Checkbox style
   const chk = 'display:inline-block;width:13px;height:13px;border:1.5px solid #555;border-radius:2px;margin-right:4px;vertical-align:middle;';
 
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:18px;color:#111;line-height:1.5">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px">
+  // Company verification block — compact single-row layout for the one-page third-party (B) variant
+  const coVerifyBlock = isB
+    ? `<div style="padding:7px 11px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:6px">
+  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:4px">${s5co}</div>
+  <table style="width:100%;border-collapse:collapse">
+    <tr>
+      <td style="padding:0 8px 0 0;width:32%;vertical-align:top">
+        <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
+        <text-field name="wire_co_printed_name" role="Second Party" style="${w};min-height:30px"></text-field>
+      </td>
+      <td style="padding:0 8px 0 0;width:43%;vertical-align:top">
+        <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+        <signature-field name="wire_co_sig" role="Second Party" style="width:100%;height:30px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff"></signature-field>
+      </td>
+      <td style="width:25%;vertical-align:top">
+        <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+        <date-field name="wire_co_date" role="Second Party" style="width:100%;height:30px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff"></date-field>
+      </td>
+    </tr>
+  </table>
+  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:4px 7px;margin-top:5px">
+    <checkbox-field name="wire_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
+  </label>
+</div>`
+    : `<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
+  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${s5co}</div>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
+  <text-field name="wire_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+  <signature-field name="wire_co_sig" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
+  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+  <date-field name="wire_co_date" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
+  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
+    <checkbox-field name="wire_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
+    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
+  </label>
+</div>`;
+
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;max-width:720px;margin:0 auto;padding:${isB ? '8px 16px' : '18px'};color:#111;line-height:${isB ? '1.4' : '1.5'}">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:${isB ? '5px' : '8px'};margin-bottom:${isB ? '8px' : '12px'}">
   <div style="font-size:11.5pt;font-weight:900;letter-spacing:.5px">${formTitle}</div>
   <div style="font-size:8pt;color:#555;margin-top:3px">${subtitle}</div>
 </div>
 
-<p style="font-size:8pt;margin-bottom:10px">${introPara}</p>
+<p style="font-size:8pt;margin-bottom:${isB ? '6px' : '10px'}">${introPara}</p>
 
-<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:8px">
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:${isB ? '6px' : '8px'}">
   <tr>
     <td style="${c}width:100%">
       <b>${wireTypeLabel}</b><br>
@@ -6139,8 +6197,14 @@ function _buildWireAuthForm(lang) {
   </tr>
 </table>
 
-<div style="font-weight:700;margin:10px 0 4px;font-size:9pt">${s1}</div>
-<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
+<div style="font-weight:700;margin:${isB ? '6px 0 3px' : '10px 0 4px'};font-size:9pt">${s1}</div>
+${isB ? `<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
+  <tr>
+    <td style="${c}width:36%"><b>${lBeneName}</b><br><text-field name="wire_name" role="Contractor" required="true" style="${w}"></text-field></td>
+    <td style="${c}width:30%"><b>${lContact}</b><br><text-field name="wire_contact" role="Contractor" style="${w}"></text-field></td>
+    <td style="${c}width:34%"><b>${lBeneAddr}</b><br><text-field name="wire_bene_address" role="Contractor" style="${w}"></text-field></td>
+  </tr>
+</table>` : `<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
     <td style="${c}width:55%"><b>${lBeneName}</b><br><text-field name="wire_name" role="Contractor" required="true" style="${w}"></text-field></td>
     <td style="${c}width:45%"><b>${lContact}</b><br><text-field name="wire_contact" role="Contractor" style="${w}"></text-field></td>
@@ -6148,7 +6212,7 @@ function _buildWireAuthForm(lang) {
   <tr>
     <td colspan="2" style="${c}"><b>${lBeneAddr}</b><br><text-field name="wire_bene_address" role="Contractor" style="${w}"></text-field></td>
   </tr>
-</table>
+</table>`}
 
 <!--A_ONLY_S--><!-- Zone A — Direct Wire to Own Account -->
 <div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
@@ -6227,47 +6291,55 @@ function _buildWireAuthForm(lang) {
 </div>
 
 <!--A_ONLY_E--><!--B_ONLY_S--><!-- Zone B — Third-Party Authorization -->
-<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
-  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:10px 14px;cursor:pointer;margin:0">
+<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+  <label style="display:flex;align-items:center;gap:10px;background:#065f46;padding:7px 14px;cursor:pointer;margin:0">
     <checkbox-field name="wire_recipient_third_party" role="First Party" style="width:15px;height:15px;flex-shrink:0"></checkbox-field>
     <div>
       <div style="font-weight:800;font-size:9pt;color:#fff;letter-spacing:.3px">${zoneBTitle}</div>
       <div style="font-size:7pt;color:#a7f3d0;margin-top:2px">${tpThird}</div>
     </div>
   </label>
-  <div style="background:#f0fdf4;padding:9px 12px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 11px;margin-bottom:10px">
-      <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
+  <div style="background:#f0fdf4;padding:8px 12px;border:1.5px solid #6ee7b7;border-top:none;border-radius:0 0 8px 8px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:7px 10px;margin-bottom:6px">
+      <div style="font-size:7.5pt;font-weight:700;color:#065f46;margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em">${tpHeader}</div>
       <table style="width:100%;border-collapse:collapse">
         <tr>
-          <td style="padding:0 6px 6px 0;width:50%;vertical-align:top">
+          <td style="padding:0 6px 0 0;width:38%;vertical-align:top">
             <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpNameLabel}</div>
             <text-field name="wire_tp_name" role="First Party" style="${w}"></text-field>
           </td>
-          <td style="padding:0 0 6px 0;vertical-align:top">
+          <td style="padding:0 6px 0 0;width:27%;vertical-align:top">
             <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpRelLabel}</div>
             <text-field name="wire_tp_relationship" role="First Party" style="${w}"></text-field>
           </td>
-        </tr>
-        <tr>
-          <td colspan="2" style="vertical-align:top">
+          <td style="width:35%;vertical-align:top">
             <div style="font-size:7.5pt;font-weight:600;color:#374151;margin-bottom:2px">${tpContactLabel}</div>
             <text-field name="wire_tp_contact" role="First Party" style="${w}"></text-field>
           </td>
         </tr>
       </table>
-      <div style="margin-top:8px;font-size:7pt;color:#374151;line-height:1.55;border-top:1px solid #a7f3d0;padding-top:6px;font-style:italic">${tpAuth}</div>
+      <div style="margin-top:6px;font-size:7pt;color:#374151;line-height:1.5;border-top:1px solid #a7f3d0;padding-top:5px;font-style:italic">${tpAuth}</div>
     </div>
     <!-- Authorizer signature sub-box (green) -->
-    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:9px 12px">
-      <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:6px">${sAuthSig}</div>
-      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
-      <text-field name="wire_auth_printed_name" role="First Party" required="true" style="${w};margin-bottom:6px"></text-field>
-      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-      <signature-field name="wire_auth_sig" role="First Party" style="width:100%;height:50px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-      <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-      <date-field name="wire_auth_date" role="First Party" style="width:100%;height:24px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:5px 7px">
+    <div style="background:#fff;border:1px solid #a7f3d0;border-radius:5px;padding:7px 11px">
+      <div style="font-size:8pt;font-weight:800;color:#065f46;margin-bottom:4px">${sAuthSig}</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr>
+          <td style="padding:0 8px 0 0;width:32%;vertical-align:top">
+            <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lPrintedName}:</div>
+            <text-field name="wire_auth_printed_name" role="First Party" required="true" style="${w};min-height:30px"></text-field>
+          </td>
+          <td style="padding:0 8px 0 0;width:43%;vertical-align:top">
+            <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
+            <signature-field name="wire_auth_sig" role="First Party" style="width:100%;height:30px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff"></signature-field>
+          </td>
+          <td style="width:25%;vertical-align:top">
+            <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
+            <date-field name="wire_auth_date" role="First Party" style="width:100%;height:30px;display:block;border:1.5px solid #6ee7b7;border-radius:4px;background:#fff"></date-field>
+          </td>
+        </tr>
+      </table>
+      <label style="display:flex;align-items:flex-start;gap:6px;background:#d1fae5;border-radius:4px;padding:4px 7px;margin-top:5px">
         <checkbox-field name="wire_auth_confirm" role="First Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
         <span style="font-size:6.5pt;color:#065f46;line-height:1.4">${lConfirmAuth}</span>
       </label>
@@ -6275,36 +6347,24 @@ function _buildWireAuthForm(lang) {
   </div>
 </div>
 
-<!--B_ONLY_E--><div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:8px 10px;margin-top:10px;font-size:7.5pt;line-height:1.6">
-  <div style="font-weight:700;margin-bottom:4px;font-size:8.5pt">${s4}</div>
-  <div style="margin-bottom:3px">① ${cert1}</div>
-  <div style="margin-bottom:3px">② ${cert2}</div>
-  <div style="margin-bottom:3px">③ ${cert3}</div>
-  <div style="margin-bottom:3px">④ ${cert4}</div>
+<!--B_ONLY_E--><div style="background:#fff8e6;border:1px solid #e5c96a;border-radius:4px;padding:${isB ? '6px 10px' : '8px 10px'};margin-top:${isB ? '6px' : '10px'};font-size:7.5pt;line-height:${isB ? '1.4' : '1.6'}">
+  <div style="font-weight:700;margin-bottom:${isB ? '3px' : '4px'};font-size:8.5pt">${s4}</div>
+  <div style="margin-bottom:${isB ? '2px' : '3px'}">① ${cert1}</div>
+  <div style="margin-bottom:${isB ? '2px' : '3px'}">② ${cert2}</div>
+  <div style="margin-bottom:${isB ? '2px' : '3px'}">③ ${cert3}</div>
+  <div style="margin-bottom:${isB ? '2px' : '3px'}">④ ${cert4}</div>
   <div>⑤ ${cert5}</div>
 </div>
-<div style="padding:10px 12px;background:#fffbeb;border:2px solid #fcd34d;border-radius:7px;margin-top:8px">
-  <div style="font-size:8pt;font-weight:800;color:#92400e;margin-bottom:6px">${s5co}</div>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lVerifiedBy}:</div>
-  <text-field name="wire_co_printed_name" role="Second Party" style="${w};margin-bottom:6px"></text-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lSig}:</div>
-  <signature-field name="wire_co_sig" role="Second Party" style="width:100%;height:50px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:6px"></signature-field>
-  <div style="font-size:7pt;font-weight:600;color:#374151;margin-bottom:2px">${lDate}:</div>
-  <date-field name="wire_co_date" role="Second Party" style="width:100%;height:24px;display:block;border:1.5px solid #fcd34d;border-radius:4px;background:#fff;margin-bottom:8px"></date-field>
-  <label style="display:flex;align-items:flex-start;gap:6px;background:#fef3c7;border-radius:4px;padding:5px 7px">
-    <checkbox-field name="wire_co_confirm" role="Second Party" style="width:13px;height:13px;margin-top:1px;flex-shrink:0"></checkbox-field>
-    <span style="font-size:6.5pt;color:#92400e;line-height:1.4">${lConfirmVerify}</span>
-  </label>
-</div>
-<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: 2026-04-18 CDT</div>
+${coVerifyBlock}
+<div style="text-align:right;font-size:6pt;color:#bbb;margin-top:4px">Last updated: ${isB ? '2026-07-26' : '2026-04-18'} CDT</div>
 </div>`;
 }
-function generateWireAuthHtmlTemplate() { return _zoneVariant(_buildWireAuthForm('zh-en'), 'a'); }
-function generateWireAuthHtmlTemplate_B() { return _zoneVariant(_buildWireAuthForm('zh-en'), 'b'); }
-function generateWireAuthHtmlTemplate_EN() { return _zoneVariant(_buildWireAuthForm('en'), 'a'); }
-function generateWireAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildWireAuthForm('en'), 'b'); }
-function generateWireAuthHtmlTemplate_ES() { return _zoneVariant(_buildWireAuthForm('en-es'), 'a'); }
-function generateWireAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildWireAuthForm('en-es'), 'b'); }
+function generateWireAuthHtmlTemplate() { return _zoneVariant(_buildWireAuthForm('zh-en', 'a'), 'a'); }
+function generateWireAuthHtmlTemplate_B() { return _zoneVariant(_buildWireAuthForm('zh-en', 'b'), 'b'); }
+function generateWireAuthHtmlTemplate_EN() { return _zoneVariant(_buildWireAuthForm('en', 'a'), 'a'); }
+function generateWireAuthHtmlTemplate_EN_B() { return _zoneVariant(_buildWireAuthForm('en', 'b'), 'b'); }
+function generateWireAuthHtmlTemplate_ES() { return _zoneVariant(_buildWireAuthForm('en-es', 'a'), 'a'); }
+function generateWireAuthHtmlTemplate_ES_B() { return _zoneVariant(_buildWireAuthForm('en-es', 'b'), 'b'); }
 
 // ── Check / 支票 Instruction Form ──
 function _buildCheckInstructionForm(lang) {
@@ -6618,6 +6678,11 @@ function _buildZelleAuthForm(lang) {
 
   // Signature section
   const sigHeader = L('PAYEE SIGNATURE', '收款人签名', 'FIRMA DEL BENEFICIARIO');
+  const sigNote = L(
+    'If the Payee is receiving payment directly through the Zelle account identified above, the Payee must sign below. If the Payee is authorizing a third party to receive payment, the Payee and the third party must instead complete the applicable third-party Zelle payment forms.',
+    '如收款人本人直接通过上方所列 Zelle 账户收款，收款人须在下方签名。如收款人授权第三方代收款项，收款人及该第三方须另行填写适用的第三方 Zelle 收款表格。',
+    'Si el Beneficiario recibe el pago directamente a través de la cuenta Zelle indicada arriba, el Beneficiario debe firmar a continuación. Si el Beneficiario autoriza a un tercero a recibir el pago, el Beneficiario y el tercero deben completar en su lugar los formularios correspondientes de pago Zelle a terceros.'
+  );
   const lPrintedName = L('Printed Name (same as Full Legal Name above)', '正楷姓名（与上方法定全名一致）', 'Nombre en Letra de Imprenta (igual al nombre legal completo indicado arriba)');
   const lSig = L('Signature', '签名', 'Firma');
   const lDate = L('Date', '日期', 'Fecha');
@@ -6662,7 +6727,9 @@ function _buildZelleAuthForm(lang) {
 
 <p style="font-size:${Z.disc};color:#666;margin:6px 0 0;font-style:italic">${disclaimer}</p>
 
-<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:7px;font-size:${Z.base}">
+<div style="background:#e8f5e9;border:1px solid #4caf50;padding:5px 8px;margin-top:7px;font-size:${Z.green};color:#2e7d32;border-radius:4px;font-weight:600">${sigNote}</div>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin-top:5px;font-size:${Z.base}">
   <b>${sigHeader}</b>
   <table style="width:100%;margin-top:4px">
     <tr>
@@ -15072,6 +15139,21 @@ const applicantDocUpload = multer({
   }
 });
 
+// Base URL used inside recruiting QR codes. When app_settings.apply_qr_base_url
+// is set (e.g. a neutral domain that doesn't reveal the company, pointed at this
+// server), it is used for every generated apply QR; otherwise fall back to the
+// host the admin is browsing from.
+function _applyQrBase(req) {
+  try {
+    const r = db.prepare("SELECT value FROM app_settings WHERE key='apply_qr_base_url'").get();
+    const v = r && r.value ? r.value.trim().replace(/\/+$/, '') : '';
+    if (v && /^https?:\/\//i.test(v)) return v;
+  } catch (_) {}
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
+  return `${proto}://${host}`;
+}
+
 // Look up a partner by their public applicant-form token. null if not found.
 // The 40-char random token is itself the authorization (admin-issued via the QR
 // modal), so we do NOT gate on the partner's `active` flag — doing so made a
@@ -15079,6 +15161,12 @@ const applicantDocUpload = multer({
 // whenever the company was temporarily inactive (e.g. mid contract re-sign).
 function _partnerByApplyToken(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null;
+  // Generic (company-less) recruiting QR: its token lives in app_settings rather
+  // than on a partner row. Matching submissions get the pseudo partner id 0.
+  try {
+    const g = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+    if (g && g.value && g.value === token) return { id: 0, name: '' };
+  } catch (_) {}
   return db.prepare("SELECT id, name FROM partners WHERE applicant_form_token=? AND applicant_form_token!=''").get(token);
 }
 // Normalize a US phone to E.164 (last 10 digits → +1XXXXXXXXXX). Best-effort.
@@ -15101,9 +15189,7 @@ app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, asyn
       token = crypto.randomBytes(20).toString('hex');
       db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
     }
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
-    const base = `${proto}://${host}/apply/${token}`;
+    const base = `${_applyQrBase(req)}/apply/${token}`;
     // Distinct 2-letter states the company has an address in, in first-seen order.
     // A company operating in more than one state gets one QR per state so each
     // location's applicants can be told apart (the state rides the URL as ?st=XX).
@@ -15146,6 +15232,31 @@ app.post('/api/admin/partners/:id/applicant-qr/regenerate', requireAdmin, blockM
     const partnerId = parseInt(req.params.id);
     const token = crypto.randomBytes(20).toString('hex');
     db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
+    res.json({ success: true, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: get or lazily create the GENERIC applicant-form QR — not tied to any
+// company. Submissions arrive with partner_id 0 and show up in the generic inbox.
+app.get('/api/admin/applicant-qr/generic', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+    let token = (row && row.value) || '';
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
+    }
+    const url = `${_applyQrBase(req)}/apply/${token}`;
+    const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
+    res.json({ token, url, base_url: url, states: [], qrs: [{ state: '', url }], qr_data_url: qrDataUrl, partner_name: '', generic: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: rotate the generic token (invalidates the old generic QR).
+app.post('/api/admin/applicant-qr/generic/regenerate', requireAdmin, blockManager, (req, res) => {
+  try {
+    const token = crypto.randomBytes(20).toString('hex');
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
     res.json({ success: true, token });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -15446,8 +15557,9 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     [address.address1, address.address2].filter(Boolean).join(', '),
     [address.city, address.state].filter(Boolean).join(', ') + ' ' + (address.zip || ''),
   ].filter(s => s && s.trim()).join('  ') : '';
+  const partnerLabel = partner.name || (partner.id === 0 ? '通用申请 / General (no company)' : '');
   const rows = [
-    ['应聘公司 / Company', partner.name || ''],
+    ['应聘公司 / Company', partnerLabel],
     ...(applyState ? [['申请地点 / Location', applyState]] : []),
     ['姓名 / Name', name],
     ['职位 / Position', position],
@@ -15475,7 +15587,7 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     </table>
     <p style="color:#64748b;font-size:13px;margin-top:1rem">证件照片见附件。也可在管理后台「申请箱」查看。<br>Document photos are attached. You can also view them in the admin “Applicant Inbox”.</p>
   </div>`;
-  const subject = `${hasDup ? '⚠️ 电话重复 · ' : ''}新入职申请 / New Application — ${name}（${partner.name || ''}）`;
+  const subject = `${hasDup ? '⚠️ 电话重复 · ' : ''}新入职申请 / New Application — ${name}（${partnerLabel || '—'}）`;
   const recipients = [...new Set([APPLICATION_NOTIFY_EMAIL, ...APPLICATION_NOTIFY_CC])];
   for (const to of recipients) {
     const sent = files.length
@@ -25362,18 +25474,25 @@ app.get('/api/admin/company-settings', requireAdmin, (req, res) => {
   const legal  = db.prepare("SELECT value FROM app_settings WHERE key='company_legal_name'").get();
   const signer = db.prepare("SELECT value FROM app_settings WHERE key='company_signer_name'").get();
   const signerEmail = db.prepare("SELECT value FROM app_settings WHERE key='company_signer_email'").get();
+  const qrBase = db.prepare("SELECT value FROM app_settings WHERE key='apply_qr_base_url'").get();
   res.json({
     company_legal_name:  legal?.value  || 'Prime Anchor Workforce LLC',
     company_signer_name: signer?.value || 'Prime Anchor Workforce LLC',
     company_signer_email: signerEmail?.value || process.env.COMPANY_SIGNER_EMAIL || '',
+    apply_qr_base_url: qrBase?.value || '',
   });
 });
 
 app.put('/api/admin/company-settings', requireAdmin, blockManager, async (req, res) => {
-  const { company_legal_name, company_signer_name } = req.body;
+  const { company_legal_name, company_signer_name, apply_qr_base_url } = req.body;
   const stmt = db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
   if (company_legal_name  !== undefined) stmt.run('company_legal_name',  company_legal_name.trim());
   if (company_signer_name !== undefined) stmt.run('company_signer_name', company_signer_name.trim());
+  if (apply_qr_base_url !== undefined) {
+    const v = String(apply_qr_base_url).trim().replace(/\/+$/, '');
+    if (v && !/^https?:\/\/[^\s]+$/i.test(v)) return res.status(400).json({ error: '二维码域名格式不对，需要 https://xxx 形式（留空 = 用当前域名）' });
+    stmt.run('apply_qr_base_url', v);
+  }
 
   // Clear the regen key so all DocuSeal templates are regenerated on next startup
   try {
@@ -28942,6 +29061,10 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     if (jobtag) {
       where += ` AND (COALESCE(c.tags,'[]') LIKE ? OR COALESCE(c.work_history,'[]') LIKE ?)`;
       params.push(`%${jobtag}%`, `%${jobtag}%`);
+    }
+    // 只看被标了 🦺 工头 的联系人
+    if (String(req.query.foreman || '') === '1') {
+      where += ` AND COALESCE(c.is_foreman,0)=1`;
     }
 
     // 回了 STOP 退订的对话 + admin 设为隐藏的联系人, 对客服(非 admin)都不可见

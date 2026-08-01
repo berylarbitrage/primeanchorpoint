@@ -49,6 +49,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .filters input[type=text]:focus{border-color:var(--sky);background:var(--white)}
 .filters-row{display:flex;gap:6px;align-items:center;flex:1 1 100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
 .filters-row::-webkit-scrollbar{display:none}
+/* 电脑端筛选控件多了一行放不下: 换行全部显示 (手机端保持横向滑动省高度) */
+@media(min-width:769px){.filters-row{flex-wrap:wrap;overflow-x:visible}}
 .filters select{padding:7px 8px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;background:var(--white);outline:none;cursor:pointer;color:var(--gray-600);font-weight:600;flex-shrink:0;max-width:150px}
 .filters select:focus{border-color:var(--sky)}
 .filter-btn{padding:6px 12px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;font-weight:600;cursor:pointer;background:var(--white);color:var(--gray-600);transition:all .15s}
@@ -139,6 +141,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 /* Assign modal */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center}
 .modal-bg.show{display:flex}
+
+/* ⚙ 管理面板 */
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dash-card{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--gray-200);border-radius:var(--radius);cursor:pointer;transition:all .15s;background:var(--white)}
+.dash-card:hover{border-color:var(--sky);background:var(--sky-light)}
+.dash-card .dash-ico{font-size:1.3rem;flex-shrink:0;width:30px;text-align:center}
+.dash-card b{display:block;font-size:.85rem;color:var(--gray-800)}
+.dash-card small{display:block;font-size:.7rem;color:var(--gray-500);margin-top:2px;line-height:1.35}
+@media(max-width:480px){.dash-grid{grid-template-columns:1fr}}
 .modal{background:var(--white);border-radius:12px;padding:24px;width:90%;max-width:360px;max-height:80vh;overflow-y:auto}
 .modal h3{font-size:1rem;color:var(--blue);margin-bottom:16px}
 .modal .agent-item{padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:6px;cursor:pointer;font-size:.88rem;transition:all .15s}
@@ -349,15 +360,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div class="header-tools" id="headerTools">
         <button class="btn-icon" onclick="showStarredModal(0)" title="星标消息" style="color:#f59e0b">&#9733;</button>
         <button class="btn-icon" onclick="showNewChatModal()" title="发起对话" style="font-size:1.05rem">&#128172;</button>
-        <button class="btn-icon" id="bcBtn" style="display:none;font-size:1.1rem" onclick="showBroadcastModal()" title="群发 Broadcast (仅管理员)">&#9993;</button>
-        <button class="btn-icon" id="testNotifyBtn" style="display:none;font-size:.7rem;color:var(--red)" onclick="testNotify()" title="测试通知 TEST (仅管理员)">TEST</button>
-        <button class="btn-icon" onclick="document.getElementById('twilioTipsModal').classList.add('show')" title="Twilio 防封号须知" style="color:#b45309">&#9888;</button>
-        <button class="btn-icon" id="ivListBtn" style="display:none" onclick="showIvListModal()" title="面试总览 (仅管理员)">&#128198;</button>
-        <button class="btn-icon" id="aiBlocksBtn" style="display:none" onclick="showAiBlocksModal()" title="AI 拦截记录 (仅管理员)">&#128737;</button>
-        <button class="btn-icon" id="contactEditsBtn" style="display:none" onclick="showContactEditsModal()" title="资料修改记录 (仅管理员)">&#128203;</button>
-        <button class="btn-icon" id="assistListBtn" style="display:none;color:#dc2626" onclick="showAssistModal()" title="协助请求 (仅管理员)">&#127384;</button>
-        <button class="btn-icon" onclick="location.href='/sms-stats'" title="消息统计页">&#128202;</button>
-        <button class="btn-icon" id="csAccBtn" style="display:none" onclick="showCsAccModal()" title="客服账号管理 (仅管理员)">&#128101;</button>
+        <button class="btn-icon" id="adminDashBtn" style="display:none;color:#4338ca" onclick="showAdminDash()" title="管理面板 (仅管理员)">&#9881;</button>
         <button class="btn-icon" onclick="loadThreads()" title="刷新 Refresh">&#x21bb;</button>
         <button class="btn-icon" onclick="doLogout()" title="退出登录 Logout">&#x2715;</button>
       </div>
@@ -387,6 +390,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
           <option value="">工种: 全部</option>
         </select>
         <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">未读</button>
+        <button class="filter-btn" id="foremanFilterBtn" onclick="toggleForemanFilter()" title="只看标了 🦺 工头 的联系人">🦺 工头</button>
       </div>
     </div>
     <div class="pull-indicator" id="pullIndicator">Pull to refresh...</div>
@@ -464,7 +468,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   <div id="deskEmpty">
     <img src="logo.svg" alt="" style="width:72px;opacity:.5">
     <div style="font-size:1rem;font-weight:600;color:var(--gray-500)">从左侧选择一个对话开始</div>
-    <div style="font-size:.8rem;color:var(--gray-400)">💬 发起对话 · 📊 统计页 · ⚠️ 防封号须知 都在左上工具栏</div>
+    <div style="font-size:.8rem;color:var(--gray-400)">💬 发起对话在左上工具栏 · 管理功能都在 ⚙ 管理面板</div>
   </div>
 </div>
 
@@ -552,9 +556,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   <div class="modal" style="max-width:420px">
     <h3>&#128204; 标记这条消息</h3>
     <div id="markMsgPreview" style="background:var(--gray-100);border-radius:8px;padding:8px 12px;font-size:.82rem;color:var(--gray-600);margin-bottom:10px;max-height:80px;overflow-y:auto;word-break:break-word"></div>
-    <label>类别（点选或自己填）</label>
+    <label>类别（点选，可留空只标星）</label>
     <div id="markTagChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
-    <input id="markTagInput" placeholder="自定义类别（可留空，只标星）" maxlength="40" style="margin-bottom:4px" oninput="_renderMarkChips()">
     <div id="markFields"></div>
     <label>备注（可选）</label>
     <textarea id="markNote" rows="2" placeholder="其他补充说明" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
@@ -694,6 +697,52 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   </div>
 </div>
 
+<!-- ⚙ 管理面板 (仅 admin) — 面试/统计/账号/记录等管理功能的统一入口 -->
+<div class="modal-bg" id="adminDashModal">
+  <div class="modal" style="max-width:520px">
+    <h3>&#9881; 管理面板 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员</span></h3>
+    <div class="dash-grid">
+      <div class="dash-card" onclick="dashOpen(showIvListModal)">
+        <span class="dash-ico">&#128198;</span>
+        <div><b>面试总览</b><small>已预约的面试与最近结果</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(showAssistModal)">
+        <span class="dash-ico" style="color:#dc2626">&#127384;</span>
+        <div><b>协助请求</b><small>客服发来的待处理协助请求</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(showBroadcastModal)">
+        <span class="dash-ico">&#9993;</span>
+        <div><b>群发 Broadcast</b><small>批量发送短信</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(() => location.href = '/sms-stats')">
+        <span class="dash-ico">&#128202;</span>
+        <div><b>消息统计</b><small>独立统计页（响应时长 / 消息量）</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(showCsAccModal)">
+        <span class="dash-ico">&#128101;</span>
+        <div><b>客服账号</b><small>客服账号管理</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(showContactEditsModal)">
+        <span class="dash-ico">&#128203;</span>
+        <div><b>资料修改记录</b><small>核对客服对联系人资料的修改</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(showAiBlocksModal)">
+        <span class="dash-ico">&#128737;</span>
+        <div><b>AI 拦截记录</b><small>被自动拦下的可疑消息</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(() => document.getElementById('twilioTipsModal').classList.add('show'))">
+        <span class="dash-ico" style="color:#b45309">&#9888;</span>
+        <div><b>Twilio 防封号须知</b><small>群发前必读的红线与保命做法</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(testNotify)">
+        <span class="dash-ico" style="font-size:.68rem;font-weight:800;color:var(--red)">TEST</span>
+        <div><b>测试通知</b><small>测试短信通知链路是否正常</small></div>
+      </div>
+    </div>
+    <button class="close-modal" onclick="document.getElementById('adminDashModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
 <!-- 📆 面试总览 (仅 admin) -->
 <div class="modal-bg" id="ivListModal">
   <div class="modal" style="max-width:640px">
@@ -809,6 +858,7 @@ let listTotal = 0;
 let refreshInterval = null;
 let msgRefreshInterval = null;
 let unreadFilter = false;
+let foremanFilter = false;
 let dashboardVisible = false;
 let templates = [];
 let currentContactLang = 'es';
@@ -842,9 +892,15 @@ async function checkAuth() {
 }
 function _applyAdminUi() {
   const isAdmin = USER && USER.role === 'admin';
-  ['csAccBtn', 'ivListBtn', 'aiBlocksBtn', 'contactEditsBtn', 'bcBtn', 'testNotifyBtn', 'assistListBtn'].forEach(id => {
+  ['adminDashBtn'].forEach(id => {
     const b = document.getElementById(id); if (b) b.style.display = isAdmin ? '' : 'none';
   });
+}
+// ⚙ 管理面板: 面试总览/消息统计/客服账号/资料修改/AI 拦截/测试通知的统一入口
+function showAdminDash() { document.getElementById('adminDashModal').classList.add('show'); }
+function dashOpen(fn) {
+  document.getElementById('adminDashModal').classList.remove('show');
+  fn();
 }
 // 手机端 ⋮ 菜单: 把顶栏工具按钮收进带文字的下拉列表
 function toggleMoreMenu(ev) {
@@ -1032,6 +1088,7 @@ async function fetchThreads(silent) {
     if (companyF) url += '&company=' + encodeURIComponent(companyF);
     if (jobtagF) url += '&jobtag=' + encodeURIComponent(jobtagF);
     if (unreadFilter) url += '&unread=1';
+    if (foremanFilter) url += '&foreman=1';
     const r = await api(url);
     listTotal = r.total || 0;
     if (listPage === 1) {
@@ -2120,14 +2177,23 @@ function ncSetChannel(ch) {
 
 // ─── 📌 消息标记: 分类(卸柜/面试/发工资…) + 每类专属字段 + 备注 ───
 const MARK_TAG_PRESETS = ['卸柜', '面试', '发工资', '排班', '请假', '投诉'];
-// 每个类别自己的表单字段: [key, 标签, 输入类型, 占位提示]
+// 每个类别自己的表单字段: [key, 标签, 输入类型, 占位提示]; 类型 'company' 渲染成合作公司下拉
 const MARK_FIELDS = {
   '卸柜': [['container', '柜号', 'text', '如 MSKU1234567'], ['date', '日期', 'date', ''], ['detail', '具体细节', 'text', '如 早7点 / GOFO仓库 / 约2000件']],
-  '面试': [['company', '公司', 'text', '如 GOFO'], ['time', '时间', 'datetime-local', ''], ['detail', '地址 / 找谁', 'text', '']],
+  '面试': [['company', '公司', 'company', ''], ['time', '时间', 'datetime-local', ''], ['detail', '地址 / 找谁', 'text', '']],
   '发工资': [['date', '发薪日期', 'date', ''], ['amount', '金额', 'text', '如 $560'], ['detail', '方式/说明', 'text', '如 支票 / Zelle']],
   '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']],
   '请假': [['date', '开始日期', 'date', ''], ['end', '结束日期(可选)', 'date', ''], ['reason', '原因', 'text', '如 生病 / 家里有事']]
 };
+// 公司下拉选项 (来自 /sms/partners, 与列表页公司筛选同一来源)
+let _markPartnerNames = [];
+async function _loadMarkPartners() {
+  if (_markPartnerNames.length) return;
+  try {
+    const r = await api('/sms/partners');
+    _markPartnerNames = (r.partners || []).map(p => p.name).filter(Boolean);
+  } catch (_) {}
+}
 // 一键生成发给对方的消息(中文, 走现有自动翻译流程翻成对方语言)
 const MARK_MSG_TPL = {
   '卸柜': d => '卸柜安排: ' + [d.container && ('柜号 ' + d.container), d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', '),
@@ -2146,7 +2212,7 @@ function _collectMarkData() {
 // 发工资/排班是公司固定信息: 客服只读, 只有 admin 能填改
 const MARK_ADMIN_ONLY_TAGS = ['发工资', '排班'];
 function renderMarkFields(prefill) {
-  const tag = document.getElementById('markTagInput').value.trim();
+  const tag = _markTag;
   const defs = MARK_FIELDS[tag];
   const box = document.getElementById('markFields');
   const sendBtn = document.getElementById('markSendBtn');
@@ -2154,13 +2220,24 @@ function renderMarkFields(prefill) {
   const d = prefill || ((window._markPre && window._markPre.tag === tag) ? window._markPre.data : {});
   const locked = MARK_ADMIN_ONLY_TAGS.includes(tag) && !(USER && USER.role === 'admin');
   box.innerHTML = (locked ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;font-size:.74rem;color:#92400e;margin-bottom:6px">🔒 ' + esc(tag) + ' 信息由管理员维护，你只能看和写备注 — 有问题点下面「请求管理员协助」</div>' : '')
-    + defs.map(([k, label, type, ph]) =>
-    '<label style="margin-top:2px">' + label + '</label>'
-    + '<input data-mkf="' + k + '" type="' + type + '" placeholder="' + esc(locked ? '' : ph) + '" value="' + esc(d[k] || '') + '"' + (locked ? ' disabled style="margin-bottom:4px;background:var(--gray-100);color:var(--gray-600)"' : ' style="margin-bottom:4px"') + '>'
-  ).join('');
+    + defs.map(([k, label, type, ph]) => {
+    if (type === 'company') {
+      // 下拉选公司; 老数据里的公司名不在列表时也补成一个选项, 保证能回显
+      const names = _markPartnerNames.slice();
+      if (d[k] && !names.includes(d[k])) names.unshift(d[k]);
+      return '<label style="margin-top:2px">' + label + '</label>'
+        + '<select data-mkf="' + k + '"' + (locked ? ' disabled' : '') + ' style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:4px;outline:none;background:' + (locked ? 'var(--gray-100)' : 'var(--white)') + '">'
+        + '<option value="">— 选择公司 —</option>'
+        + names.map(n => '<option value="' + esc(n) + '"' + (n === d[k] ? ' selected' : '') + '>' + esc(n) + '</option>').join('')
+        + '</select>';
+    }
+    return '<label style="margin-top:2px">' + label + '</label>'
+      + '<input data-mkf="' + k + '" type="' + type + '" placeholder="' + esc(locked ? '' : ph) + '" value="' + esc(d[k] || '') + '"' + (locked ? ' disabled style="margin-bottom:4px;background:var(--gray-100);color:var(--gray-600)"' : ' style="margin-bottom:4px"') + '>';
+  }).join('');
   if (sendBtn) sendBtn.style.display = MARK_MSG_TPL[tag] ? '' : 'none';
 }
 let _markMsgId = null;
+let _markTag = '';   // 当前选中的类别 (只能点选, 不再手填)
 // 点消息气泡直接标注 (正在选中文字复制时不触发)
 function bubbleMark(msgId) {
   try { if (String((window.getSelection && window.getSelection()) || '')) return; } catch (_) {}
@@ -2172,26 +2249,27 @@ function toggleStar(msgId) {
   if (m.delivery_status === 'sending') { toast('正在发送中, 稍等一下再标注'); return; }
   _markMsgId = msgId;
   document.getElementById('markMsgPreview').textContent = (m.body || '').slice(0, 200);
-  document.getElementById('markTagInput').value = m.mark_tag || '';
+  _markTag = m.mark_tag || '';
   document.getElementById('markNote').value = m.mark_note || '';
   document.getElementById('markRemoveBtn').style.display = m.starred ? '' : 'none';
-  _renderMarkChips();
   let pre = {}; try { pre = JSON.parse(m.mark_data || '{}'); } catch (_) {}
   window._markPre = { tag: m.mark_tag || '', data: pre };
-  renderMarkFields(pre);
+  _loadMarkPartners().then(() => { _renderMarkChips(pre); });
+  _renderMarkChips(pre);
   document.getElementById('markAssistBtn').style.display = (USER && USER.role === 'admin') ? 'none' : '';
   document.getElementById('msgMarkModal').classList.add('show');
 }
-function _renderMarkChips() {
-  const cur = document.getElementById('markTagInput').value.trim();
-  document.getElementById('markTagChips').innerHTML = MARK_TAG_PRESETS.map(t =>
-    '<button type="button" onclick="_pickMarkTag(\'' + t + '\')" style="border:1px solid ' + (t === cur ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)') + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">' + t + '</button>'
+function _renderMarkChips(prefill) {
+  // 老数据里可能有手填的自定义类别, 不在预设里也显示成一个可点的胶囊
+  const tags = MARK_TAG_PRESETS.slice();
+  if (_markTag && !tags.includes(_markTag)) tags.push(_markTag);
+  document.getElementById('markTagChips').innerHTML = tags.map(t =>
+    '<button type="button" onclick="_pickMarkTag(\'' + t + '\')" style="border:1px solid ' + (t === _markTag ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)') + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">' + t + '</button>'
   ).join('');
-  renderMarkFields();
+  renderMarkFields(prefill);
 }
 function _pickMarkTag(t) {
-  const inp = document.getElementById('markTagInput');
-  inp.value = (inp.value.trim() === t) ? '' : t;   // 再点一次取消选择
+  _markTag = (_markTag === t) ? '' : t;   // 再点一次取消选择
   _renderMarkChips();
 }
 async function saveMark(remove) {
@@ -2199,7 +2277,7 @@ async function saveMark(remove) {
   try {
     const payload = remove ? { starred: 0 } : {
       starred: 1,
-      tag: document.getElementById('markTagInput').value.trim(),
+      tag: _markTag,
       note: document.getElementById('markNote').value.trim(),
       data: _collectMarkData()
     };
@@ -2221,7 +2299,7 @@ async function saveMark(remove) {
 }
 // 保存标记 + 按类别模板生成消息填入发送框 (走现有自动翻译, 你确认后发送)
 async function saveMarkAndCompose() {
-  const tag = document.getElementById('markTagInput').value.trim();
+  const tag = _markTag;
   const gen = MARK_MSG_TPL[tag];
   const data = _collectMarkData();
   const ok = await saveMark(false);
@@ -2821,6 +2899,12 @@ function renderPriorityBadge() {
 function toggleUnreadFilter() {
   unreadFilter = !unreadFilter;
   document.getElementById('unreadFilterBtn').classList.toggle('active', unreadFilter);
+  loadThreads();
+}
+// 🦺 只看工头
+function toggleForemanFilter() {
+  foremanFilter = !foremanFilter;
+  document.getElementById('foremanFilterBtn').classList.toggle('active', foremanFilter);
   loadThreads();
 }
 
