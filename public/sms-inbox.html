@@ -282,6 +282,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <button class="btn-icon" onclick="showNewChatModal()" title="从员工 / 招工申请找人发起对话" style="font-size:1.05rem">&#128172;</button>
       <button class="btn-icon" onclick="showBroadcastModal()" title="Compose / Broadcast" style="font-size:1.1rem">&#9993;</button>
       <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
+      <button class="btn-icon" id="msgStatsBtn" style="display:none" onclick="showMsgStatsModal()" title="消息统计: 每天多少条、什么时间发的 (仅管理员)">&#128202;</button>
       <button class="btn-icon" id="csAccBtn" style="display:none" onclick="showCsAccModal()" title="客服账号管理 (仅管理员)">&#128101;</button>
       <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
       <button class="btn-icon" onclick="loadThreads()" title="Refresh">&#x21bb;</button>
@@ -506,6 +507,24 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   </div>
 </div>
 
+<!-- 📊 消息统计 (仅 admin) -->
+<div class="modal-bg" id="msgStatsModal">
+  <div class="modal" style="max-width:640px">
+    <h3>&#128202; 消息统计 <span style="font-size:.75rem;font-weight:400;color:var(--gray-400)">(本地时间)</span></h3>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="filter-btn" data-days="7" onclick="loadMsgStats(7)">近 7 天</button>
+      <button class="filter-btn active" data-days="14" onclick="loadMsgStats(14)">近 14 天</button>
+      <button class="filter-btn" data-days="30" onclick="loadMsgStats(30)">近 30 天</button>
+    </div>
+    <div id="msgStatsDaily" style="max-height:230px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:10px"></div>
+    <div id="msgStatsHourTitle" style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px"></div>
+    <div id="msgStatsHours" style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 8px 2px;margin-bottom:10px"></div>
+    <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px">客服发送量（该时段）</div>
+    <div id="msgStatsAgents" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:140px;overflow-y:auto"></div>
+    <button class="close-modal" onclick="document.getElementById('msgStatsModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
 <!-- 客服账号管理 (仅 admin) -->
 <div class="modal-bg" id="csAccModal">
   <div class="modal" style="max-width:520px">
@@ -575,6 +594,7 @@ async function checkAuth() {
 function _applyAdminUi() {
   const isAdmin = USER && USER.role === 'admin';
   const b1 = document.getElementById('csAccBtn'); if (b1) b1.style.display = isAdmin ? '' : 'none';
+  const b2 = document.getElementById('msgStatsBtn'); if (b2) b2.style.display = isAdmin ? '' : 'none';
 }
 
 function showLogin() {
@@ -1572,6 +1592,72 @@ async function runEvaluation() {
     document.getElementById('evalBody').innerHTML = _renderEval(r.parsed, r.raw, '刚刚 · ' + (r.model || ''));
   } catch (e) { toast('评估失败: ' + (e.message || e)); }
   btn.disabled = false; btn.textContent = '开始评估';
+}
+// ─── 📊 消息统计 (仅 admin) ───
+let _msgStatsDays = 14, _msgStatsDate = '';
+function showMsgStatsModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('msgStatsModal').classList.add('show');
+  _msgStatsDate = new Date().toLocaleDateString('sv-SE');   // 今天 (本地, YYYY-MM-DD)
+  loadMsgStats(_msgStatsDays);
+}
+async function loadMsgStats(days, date) {
+  _msgStatsDays = days || _msgStatsDays;
+  if (date) _msgStatsDate = date;
+  document.querySelectorAll('#msgStatsModal .filter-btn').forEach(b => b.className = 'filter-btn' + (parseInt(b.dataset.days) === _msgStatsDays ? ' active' : ''));
+  const dEl = document.getElementById('msgStatsDaily'), hEl = document.getElementById('msgStatsHours'), aEl = document.getElementById('msgStatsAgents');
+  dEl.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.85rem">Loading…</div>';
+  try {
+    const tzoff = new Date().getTimezoneOffset();
+    const r = await api('/sms/message-stats?days=' + _msgStatsDays + '&tzoff=' + tzoff + '&date=' + encodeURIComponent(_msgStatsDate));
+    if (r && r.error) throw new Error(r.error);
+    // 按天: 合并 收/发
+    const byDay = {};
+    (r.daily || []).forEach(x => {
+      byDay[x.d] = byDay[x.d] || { in: 0, out: 0 };
+      byDay[x.d][x.direction === 'inbound' ? 'in' : 'out'] += x.n;
+    });
+    const dayKeys = Object.keys(byDay).sort().reverse();
+    const maxTotal = Math.max(1, ...dayKeys.map(k => byDay[k].in + byDay[k].out));
+    dEl.innerHTML = dayKeys.length ? dayKeys.map(k => {
+      const v = byDay[k], total = v.in + v.out;
+      const wIn = Math.round(v.in / maxTotal * 100), wOut = Math.round(v.out / maxTotal * 100);
+      const sel = k === _msgStatsDate;
+      return '<div onclick="loadMsgStats(' + _msgStatsDays + ',\'' + k + '\')" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--gray-100);cursor:pointer;font-size:.8rem;' + (sel ? 'background:#eff6ff' : '') + '" title="点击查看这一天的小时分布">'
+        + '<span style="width:84px;flex-shrink:0;font-weight:' + (sel ? '800' : '600') + '">' + k.slice(5) + '</span>'
+        + '<span style="flex:1;display:flex;height:12px;border-radius:3px;overflow:hidden;background:var(--gray-100)">'
+        + '<span style="width:' + wIn + '%;background:#38bdf8"></span><span style="width:' + wOut + '%;background:#34d399"></span></span>'
+        + '<span style="width:140px;flex-shrink:0;text-align:right;color:var(--gray-500)">收 ' + v.in + ' · 发 ' + v.out + ' · 共 <b>' + total + '</b></span></div>';
+    }).join('') : '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">该时段没有消息</div>';
+    // 小时分布
+    document.getElementById('msgStatsHourTitle').textContent = '⏰ ' + _msgStatsDate + ' 的小时分布（点上面的日期切换）';
+    const hr = {};
+    (r.hours || []).forEach(x => {
+      const h = parseInt(x.h);
+      hr[h] = hr[h] || { in: 0, out: 0 };
+      hr[h][x.direction === 'inbound' ? 'in' : 'out'] += x.n;
+    });
+    const maxH = Math.max(1, ...Object.values(hr).map(v => v.in + v.out));
+    let bars = '<div style="display:flex;align-items:flex-end;gap:2px;height:90px">';
+    for (let h = 0; h < 24; h++) {
+      const v = hr[h] || { in: 0, out: 0 };
+      const total = v.in + v.out;
+      const ph = Math.round(total / maxH * 80);
+      const phIn = total ? Math.round(ph * v.in / total) : 0;
+      bars += '<div title="' + h + ':00 — 收 ' + v.in + ' · 发 ' + v.out + '" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%">'
+        + (total ? '<div style="font-size:.58rem;text-align:center;color:var(--gray-500)">' + total + '</div>' : '')
+        + '<div style="height:' + (ph - phIn) + 'px;background:#34d399;border-radius:2px 2px 0 0"></div>'
+        + '<div style="height:' + phIn + 'px;background:#38bdf8;border-radius:' + ((ph - phIn) ? '0' : '2px 2px 0 0') + '"></div></div>';
+    }
+    bars += '</div><div style="display:flex;gap:2px;margin-top:2px">';
+    for (let h = 0; h < 24; h++) bars += '<div style="flex:1;text-align:center;font-size:.55rem;color:var(--gray-400)">' + (h % 3 === 0 ? h : '') + '</div>';
+    bars += '</div><div style="font-size:.68rem;color:var(--gray-400);margin:6px 0 4px"><span style="color:#38bdf8">■</span> 收到 <span style="color:#34d399;margin-left:8px">■</span> 发出</div>';
+    hEl.innerHTML = bars;
+    // 客服发送量
+    aEl.innerHTML = (r.agents || []).length ? r.agents.map(a =>
+      '<div style="display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem"><span>' + esc(a.agent) + '</span><b>' + a.n + '</b></div>'
+    ).join('') : '<div style="padding:10px;color:var(--gray-400);font-size:.8rem;text-align:center">无</div>';
+  } catch (e) { dEl.innerHTML = '<div style="padding:10px;color:var(--red)">加载失败: ' + esc(e.message || '') + '</div>'; }
 }
 // ─── 客服账号管理 (仅 admin) ───
 function showCsAccModal() {
