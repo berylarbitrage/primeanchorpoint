@@ -283,6 +283,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <button class="btn-icon" onclick="showBroadcastModal()" title="Compose / Broadcast" style="font-size:1.1rem">&#9993;</button>
       <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
       <button class="btn-icon" onclick="document.getElementById('twilioTipsModal').classList.add('show')" title="Twilio 防封号注意事项" style="color:#b45309">&#9888;</button>
+      <button class="btn-icon" id="ivListBtn" style="display:none" onclick="showIvListModal()" title="面试总览: 所有已预约的面试 (仅管理员)">&#128198;</button>
+      <button class="btn-icon" id="aiBlocksBtn" style="display:none" onclick="showAiBlocksModal()" title="AI 拦截记录: 被合规审核拦下的客服消息 (仅管理员)">&#128737;</button>
       <button class="btn-icon" id="msgStatsBtn" style="display:none" onclick="showMsgStatsModal()" title="消息统计: 每天多少条、什么时间发的 (仅管理员)">&#128202;</button>
       <button class="btn-icon" id="csAccBtn" style="display:none" onclick="showCsAccModal()" title="客服账号管理 (仅管理员)">&#128101;</button>
       <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
@@ -569,6 +571,33 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   </div>
 </div>
 
+<!-- 📆 面试总览 (仅 admin) -->
+<div class="modal-bg" id="ivListModal">
+  <div class="modal" style="max-width:640px">
+    <h3>&#128198; 面试总览 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员</span></h3>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="filter-btn" data-ivdays="14" onclick="loadIvList(14)">14 天</button>
+      <button class="filter-btn" data-ivdays="30" onclick="loadIvList(30)">30 天</button>
+      <button class="filter-btn" data-ivdays="60" onclick="loadIvList(60)">60 天</button>
+    </div>
+    <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px">📌 已预约（按时间排序）</div>
+    <div id="ivListUpcoming" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:280px;overflow-y:auto"></div>
+    <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin:12px 0 4px">🗂 最近结果（完成 / 未到 / 取消）</div>
+    <div id="ivListRecent" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:160px;overflow-y:auto"></div>
+    <button class="close-modal" onclick="document.getElementById('ivListModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<!-- 🛡️ AI 拦截记录 (仅 admin) -->
+<div class="modal-bg" id="aiBlocksModal">
+  <div class="modal" style="max-width:640px">
+    <h3>&#128737; AI 拦截记录 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员</span></h3>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:8px">客服发出的消息先经 AI 合规审核，命中 red flag 会被拦截（不会发出去）并短信通知管理员。以下是最近 100 条拦截记录。</div>
+    <div id="aiBlocksList" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:420px;overflow-y:auto"></div>
+    <button class="close-modal" onclick="document.getElementById('aiBlocksModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
 <!-- 📊 消息统计 (仅 admin) -->
 <div class="modal-bg" id="msgStatsModal">
   <div class="modal" style="max-width:640px">
@@ -659,6 +688,8 @@ function _applyAdminUi() {
   const isAdmin = USER && USER.role === 'admin';
   const b1 = document.getElementById('csAccBtn'); if (b1) b1.style.display = isAdmin ? '' : 'none';
   const b2 = document.getElementById('msgStatsBtn'); if (b2) b2.style.display = isAdmin ? '' : 'none';
+  const b3 = document.getElementById('ivListBtn'); if (b3) b3.style.display = isAdmin ? '' : 'none';
+  const b4 = document.getElementById('aiBlocksBtn'); if (b4) b4.style.display = isAdmin ? '' : 'none';
 }
 
 function showLogin() {
@@ -1740,7 +1771,10 @@ async function showInterviewModal() {
       document.getElementById('ivNote').value = '';
     }
   } catch (_) {}
-  loadUpcomingInterviews();
+  // 即将到来的面试总览: 仅 admin 可见 (客服只看/管当前对话的面试)
+  const isAdminIv = USER && USER.role === 'admin';
+  document.getElementById('ivUpcomingWrap').style.display = isAdminIv ? '' : 'none';
+  if (isAdminIv) loadUpcomingInterviews();
   if (!_ivTpls) {
     try {
       _ivTpls = await api('/sms/interview-templates');
@@ -1761,12 +1795,12 @@ async function saveInterview() {
     showInterviewModal();
   } catch (e) { toast(e.message || '保存失败'); }
 }
-async function setInterviewStatus(id, st) {
+async function setInterviewStatus(id, st, from) {
   try {
     const r = await api('/sms/interviews/' + id, { method: 'PATCH', body: JSON.stringify({ status: st }) });
     if (r && r.error) throw new Error(r.error);
     toast('已更新');
-    showInterviewModal();
+    if (from === 'list') loadIvList(); else showInterviewModal();
   } catch (e) { toast(e.message || '操作失败'); }
 }
 async function loadUpcomingInterviews() {
@@ -1812,6 +1846,73 @@ async function saveInterviewTpls() {
     _ivTpls = { confirm: document.getElementById('ivTplConfirm').value, requirements: document.getElementById('ivTplReq').value };
     toast('模板已保存');
   } catch (e) { toast(e.message || '保存失败'); }
+}
+// ─── 📆 面试总览 (仅 admin) ───
+let _ivListDays = 14;
+function showIvListModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('ivListModal').classList.add('show');
+  loadIvList(_ivListDays);
+}
+const _IV_ST_LABEL = { done: '✅ 完成', no_show: '🙅 未到', cancelled: '❌ 取消' };
+function _ivRowHtml(iv, withActions) {
+  const when = esc(String(iv.interview_at).replace('T', ' ').slice(0, 16));
+  const who = esc(iv.contact_name || fmtPhone(iv.phone_e164));
+  const open = iv.thread_id ? ' <a style="cursor:pointer;text-decoration:underline" onclick="document.getElementById(\'ivListModal\').classList.remove(\'show\');openThread(' + iv.thread_id + ')">打开对话</a>' : '';
+  const acts = withActions
+    ? ' <a style="cursor:pointer;text-decoration:underline;margin-left:6px" onclick="setInterviewStatus(' + iv.id + ',\'done\',\'list\')">✅完成</a>'
+      + ' <a style="cursor:pointer;text-decoration:underline" onclick="setInterviewStatus(' + iv.id + ',\'no_show\',\'list\')">🙅未到</a>'
+      + ' <a style="cursor:pointer;text-decoration:underline;color:#dc2626" onclick="setInterviewStatus(' + iv.id + ',\'cancelled\',\'list\')">取消</a>'
+    : ' <span style="color:var(--gray-400)">' + (_IV_ST_LABEL[iv.status] || esc(iv.status)) + '</span>';
+  return '<div style="padding:7px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;line-height:1.5">'
+    + '<b>' + when + '</b> · <b>' + who + '</b>'
+    + (iv.address ? ' · 📍' + esc(iv.address) : '')
+    + (iv.note ? ' · ' + esc(iv.note) : '')
+    + open + acts + '</div>';
+}
+async function loadIvList(days) {
+  _ivListDays = days || _ivListDays;
+  document.querySelectorAll('#ivListModal .filter-btn').forEach(b => b.className = 'filter-btn' + (parseInt(b.dataset.ivdays) === _ivListDays ? ' active' : ''));
+  const up = document.getElementById('ivListUpcoming'), rc = document.getElementById('ivListRecent');
+  up.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  try {
+    const r = await api('/sms/interviews/upcoming?days=' + _ivListDays);
+    if (r && r.error) throw new Error(r.error);
+    const list = (r && r.interviews) || [];
+    up.innerHTML = list.length ? list.map(iv => _ivRowHtml(iv, true)).join('')
+      : '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">近 ' + _ivListDays + ' 天没有已预约的面试</div>';
+    const recent = (r && r.recent) || [];
+    rc.innerHTML = recent.length ? recent.map(iv => _ivRowHtml(iv, false)).join('')
+      : '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">暂无记录</div>';
+  } catch (e) {
+    up.innerHTML = '<div style="padding:12px;color:var(--red);font-size:.8rem">' + esc(e.message || '加载失败') + '</div>';
+    rc.innerHTML = '';
+  }
+}
+// ─── 🛡️ AI 拦截记录 (仅 admin) ───
+function showAiBlocksModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('aiBlocksModal').classList.add('show');
+  loadAiBlocks();
+}
+async function loadAiBlocks() {
+  const el = document.getElementById('aiBlocksList');
+  el.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  try {
+    const r = await api('/sms/ai-blocks');
+    if (r && r.error) throw new Error(r.error);
+    const list = (r && r.blocks) || [];
+    el.innerHTML = list.length ? list.map(b => {
+      let cats = []; try { cats = JSON.parse(b.categories || '[]'); } catch (_) {}
+      const target = b.kind === 'broadcast' ? '📢 群发' : esc((b.contact_name || '') + ' ' + (b.phone_e164 || '')).trim();
+      return '<div style="padding:8px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;line-height:1.55">'
+        + '<div><b style="color:#b91c1c">🚫 ' + esc(b.reason || '违规') + '</b>'
+        + (cats.length ? ' <span style="color:var(--gray-400)">[' + esc(cats.join(', ')) + ']</span>' : '') + '</div>'
+        + '<div style="color:var(--gray-600);background:var(--gray-50);border-radius:6px;padding:4px 8px;margin:3px 0;white-space:pre-wrap;word-break:break-word">' + esc(b.body || '') + '</div>'
+        + '<div style="color:var(--gray-400)">' + esc(String(b.created_at || '').slice(0, 16)) + ' · 客服: <b>' + esc(b.agent_username || '?') + '</b> · 发给: ' + target
+        + (b.admin_notified ? ' · 已短信通知' : '') + '</div></div>';
+    }).join('') : '<div style="padding:14px;color:var(--gray-400);font-size:.8rem;text-align:center">还没有拦截记录 👍</div>';
+  } catch (e) { el.innerHTML = '<div style="padding:12px;color:var(--red);font-size:.8rem">' + esc(e.message || '加载失败') + '</div>'; }
 }
 // ─── 📊 消息统计 (仅 admin) ───
 let _msgStatsDays = 14, _msgStatsDate = '';
@@ -2291,6 +2392,13 @@ async function sendBroadcast() {
       method: 'POST',
       body: JSON.stringify({ phones, message })
     });
+    if (r && r.error) {
+      status.innerHTML = '<span style="color:var(--red)">' + esc(r.error) + '</span>';
+      toast(r.error);
+      btn.disabled = false;
+      btn.textContent = 'Send to All';
+      return;
+    }
     const sent = r.results ? r.results.filter(x => x.ok).length : 0;
     const failed = r.results ? r.results.filter(x => !x.ok).length : 0;
     const skipped = r.opted_out_skipped || 0;

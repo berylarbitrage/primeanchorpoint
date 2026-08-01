@@ -2917,6 +2917,19 @@ db.exec(`CREATE TABLE IF NOT EXISTS sms_interviews (
   updated_at TEXT DEFAULT (datetime('now'))
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_interviews_contact ON sms_interviews(contact_id)`); } catch(e) {}
+// 🛡️ AI 出站审核拦截记录 (客服消息被 red-flag 拦下时存档, 仅 admin 可看)
+db.exec(`CREATE TABLE IF NOT EXISTS sms_ai_blocks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER DEFAULT NULL,
+  agent_id INTEGER DEFAULT NULL,
+  agent_username TEXT DEFAULT '',
+  kind TEXT DEFAULT 'message',
+  body TEXT NOT NULL,
+  reason TEXT DEFAULT '',
+  categories TEXT DEFAULT '[]',
+  admin_notified INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
 // AI 聊天表现评估记录 (admin 触发)
 db.exec(`CREATE TABLE IF NOT EXISTS sms_evaluations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28446,6 +28459,75 @@ async function sendSmsNotification(threadId, messageId, agentId, agentPhone, con
   return sent;
 }
 
+// ─── 🛡️ AI 出站消息审核: 客服(非 admin)发送前检查 red flag, 命中即拦截 ───
+const SMS_AI_REVIEW_MODEL = process.env.SMS_AI_REVIEW_MODEL || 'claude-haiku-4-5-20251001';
+// 返回: {ok:true} 放行 / {ok:false, reason, categories} 拦截 / null 审核服务不可用(放行但记日志)
+async function aiReviewOutboundSms(text) {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (!anthropicKey) return null;
+  try {
+    const prompt = `你是一家美国劳务派遣公司(Prime Anchor Workforce)的短信合规审核员。客服即将把下面这条短信发给工人/求职者。请判断是否存在必须拦截的 red flag。
+
+只有出现下列情况才拦截 (flagged=true):
+- 辱骂、威胁、骚扰、歧视性言论、色情内容
+- 向工人索要费用/押金/好处费, 或私下收钱、绕开公司交易
+- 教唆造假(假证件、假SSN、虚报工时)、逃税、现金黑工等违法内容
+- 泄露他人隐私(别人的 SSN、住址、工资、电话号码等)
+- 虚假承诺(保证拿到身份/绿卡、保证录用、承诺明显不实的工资待遇)
+- 明显的诈骗话术、可疑链接
+- 贷款/赌博/大麻/加密货币等运营商禁类营销内容
+
+正常的招工信息、面试安排、排班沟通、工资答疑、催问材料、礼貌拒绝等一律放行 (flagged=false)。拿不准时放行。
+
+短信内容(可能是中文/西语/英语):
+"""${String(text).slice(0, 2000)}"""
+
+只输出 JSON: {"flagged": true/false, "reason": "拦截原因(中文一句话, 放行则空字符串)", "categories": ["命中的类别"]}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: SMS_AI_REVIEW_MODEL, max_tokens: 300, messages: [{ role: 'user', content: prompt }] }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { console.error('[SMS AI Review] API error:', (data.error && data.error.message) || r.status); return null; }
+    const out = ((data.content || []).find(c => c.type === 'text') || {}).text || '';
+    const parsed = JSON.parse((out.match(/\{[\s\S]*\}/) || ['{}'])[0]);
+    if (parsed && parsed.flagged) return { ok: false, reason: String(parsed.reason || '内容涉嫌违规'), categories: Array.isArray(parsed.categories) ? parsed.categories : [] };
+    return { ok: true };
+  } catch (e) {
+    console.error('[SMS AI Review] Error:', e.message);
+    return null;
+  }
+}
+
+// 拦截后: 存档 + 审计 + 短信通知所有开了通知的 admin (异步, 不阻塞响应)
+function recordAiBlockAndNotify({ threadId, agentId, agentUsername, kind, body, reason, categories, contactLabel }) {
+  let blockId = 0;
+  try {
+    const info = db.prepare(`INSERT INTO sms_ai_blocks (thread_id, agent_id, agent_username, kind, body, reason, categories) VALUES (?,?,?,?,?,?,?)`)
+      .run(threadId || null, agentId || null, agentUsername || '', kind || 'message', String(body).slice(0, 2000), reason || '', JSON.stringify(categories || []));
+    blockId = info.lastInsertRowid;
+    smsAudit('message', blockId, 'ai_blocked', 'agent', agentId, { kind, reason });
+  } catch (e) { console.error('[SMS AI Block] record error:', e.message); }
+  (async () => {
+    try {
+      let phones = db.prepare(`SELECT sms_notify_phone FROM admin_users WHERE role='admin' AND active=1 AND sms_notify_enabled=1 AND sms_notify_phone != ''`).all().map(a => a.sms_notify_phone);
+      if (!phones.length && process.env.ADMIN_NOTIFY_PHONE) phones = [process.env.ADMIN_NOTIFY_PHONE];
+      let sentAny = false;
+      for (const p of phones) {
+        const ok = await sendSMS(p, `🚫 AI拦截了客服短信\n客服: ${agentUsername || agentId || '?'}\n对象: ${contactLabel || '-'}\n原因: ${reason}\n内容: ${String(body).slice(0, 100)}`);
+        sentAny = sentAny || ok;
+      }
+      if (sentAny && blockId) db.prepare('UPDATE sms_ai_blocks SET admin_notified=1 WHERE id=?').run(blockId);
+    } catch (e) { console.error('[SMS AI Block] notify error:', e.message); }
+  })();
+  return blockId;
+}
+
 // ─── Find or create contact ───
 function smsGetOrCreateContact(phoneE164) {
   let contact = db.prepare('SELECT * FROM sms_contacts WHERE phone_e164=?').get(phoneE164);
@@ -28859,7 +28941,7 @@ app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, r
 // POST /api/sms/threads/:id/messages — send a reply
 app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out, c.name AS contact_name FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
     // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
     if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
@@ -28877,6 +28959,19 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
     // Check permission: only assigned agent or admin can reply
     if (thread.assigned_agent_id && thread.assigned_agent_id !== req.userId && req.userRole !== 'admin') {
       return res.status(403).json({ error: 'Only the assigned agent or admin can reply' });
+    }
+
+    // 🛡️ AI 合规审核: 客服(非 admin)发出的每条消息先过 red-flag 检查, 命中即拦截并短信通知 admin
+    if (req.userRole !== 'admin') {
+      const review = await aiReviewOutboundSms(body.trim());
+      if (review && review.ok === false) {
+        recordAiBlockAndNotify({
+          threadId: thread.id, agentId: req.userId, agentUsername: req.userName, kind: 'message',
+          body: body.trim(), reason: review.reason, categories: review.categories,
+          contactLabel: (thread.contact_name || '') + ' ' + thread.phone_e164
+        });
+        return res.status(400).json({ error: '🚫 AI 合规审核未通过, 该消息已被拦截, 管理员已收到通知。原因: ' + review.reason });
+      }
     }
 
     // Translate agent message (agent_lang → contact_lang) before sending
@@ -29545,7 +29640,8 @@ app.patch('/api/sms/interviews/:id', requireAdmin, requireSmsAccess, (req, res) 
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.get('/api/sms/interviews/upcoming', requireAdmin, requireSmsAccess, (req, res) => {
+// 面试总览: 仅 admin 可看 (客服只能在单个对话里安排/标记面试)
+app.get('/api/sms/interviews/upcoming', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const days = Math.min(60, Math.max(1, parseInt(req.query.days) || 14));
     const rows = db.prepare(`SELECT i.*, c.name AS contact_name, c.phone_e164
@@ -29553,7 +29649,22 @@ app.get('/api/sms/interviews/upcoming', requireAdmin, requireSmsAccess, (req, re
       WHERE i.status='scheduled' AND replace(i.interview_at,'T',' ') >= datetime('now', '-1 day')
         AND replace(i.interview_at,'T',' ') <= datetime('now', '+' || ? || ' days')
       ORDER BY i.interview_at ASC LIMIT 100`).all(days);
-    res.json({ interviews: rows });
+    const recent = db.prepare(`SELECT i.*, c.name AS contact_name, c.phone_e164
+      FROM sms_interviews i JOIN sms_contacts c ON c.id=i.contact_id
+      WHERE i.status != 'scheduled'
+      ORDER BY i.updated_at DESC LIMIT 20`).all();
+    res.json({ interviews: rows, recent });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 🛡️ AI 拦截记录: 仅 admin 可看
+app.get('/api/sms/ai-blocks', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT b.*, c.name AS contact_name, c.phone_e164
+      FROM sms_ai_blocks b
+      LEFT JOIN sms_threads t ON t.id = b.thread_id
+      LEFT JOIN sms_contacts c ON c.id = t.contact_id
+      ORDER BY b.id DESC LIMIT 100`).all();
+    res.json({ blocks: rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 面试确认/工作要求 模板 (占位符 {name} {date} {time} {address}); admin 可改, 客服只读
@@ -29693,6 +29804,19 @@ app.post('/api/sms/broadcast', requireAdmin, requireSmsAccess, async (req, res) 
     if (!phones || !Array.isArray(phones) || phones.length === 0) return res.status(400).json({ error: 'phones array required' });
     if (!message || !message.trim()) return res.status(400).json({ error: 'message required' });
     if (phones.length > 100) return res.status(400).json({ error: 'Max 100 recipients per broadcast' });
+
+    // 🛡️ AI 合规审核: 客服(非 admin)群发前先过 red-flag 检查, 命中即整批拦截并短信通知 admin
+    if (req.userRole !== 'admin') {
+      const review = await aiReviewOutboundSms(message.trim());
+      if (review && review.ok === false) {
+        recordAiBlockAndNotify({
+          threadId: null, agentId: req.userId, agentUsername: req.userName, kind: 'broadcast',
+          body: message.trim(), reason: review.reason, categories: review.categories,
+          contactLabel: phones.length + ' 个号码(群发)'
+        });
+        return res.status(400).json({ error: '🚫 AI 合规审核未通过, 群发已被拦截, 管理员已收到通知。原因: ' + review.reason });
+      }
+    }
 
     const results = [];
     let optedOutSkipped = 0;
