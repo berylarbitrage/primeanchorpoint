@@ -231,9 +231,42 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .offline-bar{background:#fee2e2;color:#991b1b;text-align:center;padding:6px;font-size:.78rem;font-weight:600;display:none;flex-shrink:0}
 .offline-bar.show{display:block}
 
+/* Sender label above bubbles */
+.msg-sender{font-size:.7rem;font-weight:700;margin:6px 6px 1px;letter-spacing:.2px}
+.msg-row.inbound .msg-sender{text-align:left;color:var(--gray-600)}
+.msg-row.outbound .msg-sender{text-align:right}
+
+/* 防止窄屏时中文按钮/徽章逐字竖排 */
+.tag,.ti-status,.priority-badge,.action-btn,.filter-btn{white-space:nowrap}
+#detailPhone{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#contactTagRow>span,#contactTagRow>a{white-space:nowrap;flex-shrink:0}
+
 /* Better mobile keyboard handling */
 @supports(height: 100dvh){
   body,#app,#list-view,#detail-view{height:100dvh}
+}
+
+/* 手机窄屏: 压缩会话顶部, 给消息区留最大空间 */
+@media(max-width:768px){
+  .header{padding:6px 8px;gap:2px;min-height:44px}
+  .header .btn-icon{font-size:.95rem;padding:5px 4px}
+  .back-btn{padding:5px 6px}
+  #detail-view .header{flex-wrap:nowrap}
+  #detailName{font-size:.86rem}
+  #contactTagRow{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none}
+  #contactTagRow::-webkit-scrollbar{display:none}
+  .action-bar{flex-wrap:nowrap;overflow-x:auto;padding:5px 8px;gap:5px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .action-bar::-webkit-scrollbar{display:none}
+  .action-btn{flex-shrink:0;padding:5px 11px;font-size:.76rem}
+  .action-bar span{white-space:nowrap;flex-shrink:0}
+  .lang-bar{flex-wrap:nowrap;overflow-x:auto;padding:4px 8px;gap:5px;scrollbar-width:none}
+  .lang-bar::-webkit-scrollbar{display:none}
+  .lang-bar .lb-hint{display:none}
+  .filters{padding:6px 8px}
+  .reply-bar{padding:6px 8px;gap:6px}
+  .reply-bar .note-toggle,.reply-bar .send-btn{width:38px;height:38px;min-height:38px}
+  .reply-bar textarea{min-height:38px;padding:8px 14px}
+  .msg-bubble{max-width:88%}
 }
 
 @media(min-width:769px){
@@ -352,7 +385,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         <option value="en">英语</option>
         <option value="es">西班牙语</option>
       </select>
-      <span style="margin-left:auto;font-size:.68rem;color:#4ade80">✓ 收到的消息自动翻译</span>
+      <span class="lb-hint" style="margin-left:auto;font-size:.68rem;color:#4ade80">✓ 收到的消息自动翻译</span>
     </div>
     <div class="messages-area" id="messagesArea"></div>
     <div class="history-panel" id="historyPanel"></div>
@@ -378,7 +411,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <div class="reply-bar" id="replyBar">
       <button class="note-toggle" id="noteToggle" onclick="toggleNoteMode()" title="Internal note">&#128221;</button>
       <button class="note-toggle" id="templateToggle" onclick="toggleTemplates()" title="Quick replies">&#9889;</button>
-      <textarea id="replyInput" rows="1" placeholder="输入消息（自动翻译后发送）..." oninput="autoGrow(this);onComposeInput()"></textarea>
+      <textarea id="replyInput" rows="1" placeholder="输入消息…" oninput="autoGrow(this);onComposeInput()"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendReply()" title="Send">&#9654;</button>
     </div>
   </div>
@@ -967,7 +1000,7 @@ function renderDetail() {
   document.getElementById('replyBar').classList.remove('note-mode');
   document.getElementById('noteToggle').classList.remove('active');
   document.getElementById('translatePreview').style.display = 'none';
-  document.getElementById('replyInput').placeholder = '输入消息（自动翻译后发送）...';
+  document.getElementById('replyInput').placeholder = '输入消息…';
   document.getElementById('replyInput').value = '';
 }
 
@@ -1002,6 +1035,14 @@ function renderActionBar() {
   bar.innerHTML = html;
 }
 
+// 每个客服固定一个颜色, 一眼看出是谁发的
+const _AGENT_COLORS = ['#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#0891b2', '#be185d', '#4d7c0f'];
+function agentColor(name) {
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return _AGENT_COLORS[h % _AGENT_COLORS.length];
+}
+
 function renderMessages() {
   const area = document.getElementById('messagesArea');
   // Merge messages and notes, sort by time
@@ -1016,12 +1057,14 @@ function renderMessages() {
   }
 
   let lastDate = '';
+  let lastSender = '';   // 换人/换方向/隔了日期或备注时, 在气泡上方显示发送人
   let html = '';
   items.forEach(item => {
     const d = fmtDate(item._time);
     if (d !== lastDate) {
       html += '<div class="msg-date-divider">' + d + '</div>';
       lastDate = d;
+      lastSender = '';
     }
     if (item._type === 'note') {
       html += '<div class="msg-note">'
@@ -1029,6 +1072,7 @@ function renderMessages() {
         + '<div>' + esc(item.body) + '</div>'
         + '<div class="note-author">' + esc(item.author_name || 'Unknown') + ' &middot; ' + fmtTime(item._time) + '</div>'
         + '</div>';
+      lastSender = '';
     } else {
       const dir = item.direction;
       const statusIcon = getStatusIcon(item.delivery_status, item.id);
@@ -1040,7 +1084,19 @@ function renderMessages() {
         translationHtml = '<div class="msg-translation" style="text-align:right;color:rgba(255,255,255,.65)">→ ' + esc(item.translated_body) + '</div>';
       }
       const starBtn = '<span title="' + (item.starred ? '取消特殊标记' : '特殊标记，可在 ⭐ 里汇总回看') + '" onclick="toggleStar(' + item.id + ')" style="cursor:pointer;margin-left:4px;color:' + (item.starred ? '#f59e0b' : 'var(--gray-300)') + '">' + (item.starred ? '&#9733;' : '&#9734;') + '</span>';
+      // 发送人: 出站显示客服名(不同客服不同颜色), 入站显示联系人名; 同一人连续发只标一次
+      const senderName = dir === 'outbound'
+        ? (item.author_name || (item.source === 'agent' ? '客服' : '系统'))
+        : ((currentContact && currentContact.name) || fmtPhone(currentContact && currentContact.phone_e164) || '对方');
+      const senderKey = dir + '|' + senderName;
+      let senderHtml = '';
+      if (senderKey !== lastSender) {
+        senderHtml = '<div class="msg-sender"' + (dir === 'outbound' ? ' style="color:' + agentColor(senderName) + '"' : '') + '>'
+          + (dir === 'outbound' ? '🧑‍💼 ' : '') + esc(senderName) + '</div>';
+        lastSender = senderKey;
+      }
       html += '<div class="msg-row ' + dir + '">'
+        + senderHtml
         + '<div class="msg-bubble"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : '') + '>' + esc(item.body) + translationHtml + '</div>'
         + '<div class="msg-meta">' + fmtTime(item._time)
         + (dir === 'outbound' ? ' &middot; ' + statusIcon : '')
@@ -1547,7 +1603,7 @@ function toggleNoteMode() {
   } else {
     bar.classList.remove('note-mode');
     btn.classList.remove('active');
-    input.placeholder = '输入消息（自动翻译后发送）...';
+    input.placeholder = '输入消息…';
   }
   input.focus();
 }
