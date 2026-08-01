@@ -231,6 +231,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .offline-bar{background:#fee2e2;color:#991b1b;text-align:center;padding:6px;font-size:.78rem;font-weight:600;display:none;flex-shrink:0}
 .offline-bar.show{display:block}
 
+/* 顶栏工具 + 手机端 ⋮ 菜单 */
+.header{position:relative}
+.header-tools{display:flex;align-items:center;gap:0}
+.more-menu{display:none;position:absolute;top:calc(100% - 4px);right:8px;background:var(--white);border:1px solid var(--gray-200);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:95;min-width:210px;max-height:70vh;overflow-y:auto;padding:4px 0}
+.more-menu.show{display:block}
+.mm-item{display:flex;align-items:center;gap:12px;padding:11px 16px;font-size:.86rem;color:var(--gray-800);cursor:pointer;border-bottom:1px solid var(--gray-100)}
+.mm-item:last-child{border-bottom:none}
+.mm-item:active,.mm-item:hover{background:var(--sky-light)}
+.mm-item .mm-ico{width:22px;text-align:center;flex-shrink:0}
+
 /* Sender label above bubbles */
 .msg-sender{font-size:.7rem;font-weight:700;margin:6px 6px 1px;letter-spacing:.2px}
 .msg-row.inbound .msg-sender{text-align:left;color:var(--gray-600)}
@@ -250,6 +260,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 @media(max-width:768px){
   .header{padding:6px 8px;gap:2px;min-height:44px}
   .header .btn-icon{font-size:.95rem;padding:5px 4px}
+  /* 图标太多一行放不下 → 收进 ⋮ 菜单 */
+  #list-view .header-tools{display:none}
+  #moreMenuBtn{display:block!important}
   .back-btn{padding:5px 6px}
   #detail-view .header{flex-wrap:nowrap}
   #detailName{font-size:.86rem}
@@ -311,18 +324,23 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <h1>SMS Inbox</h1>
       <span id="headerUnread" class="badge-unread" style="display:none"></span>
       <div class="spacer"></div>
-      <button class="btn-icon" onclick="showStarredModal(0)" title="所有对话的星标消息" style="color:#f59e0b">&#9733;</button>
-      <button class="btn-icon" onclick="showNewChatModal()" title="从员工 / 招工申请找人发起对话" style="font-size:1.05rem">&#128172;</button>
-      <button class="btn-icon" onclick="showBroadcastModal()" title="Compose / Broadcast" style="font-size:1.1rem">&#9993;</button>
-      <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
-      <button class="btn-icon" onclick="document.getElementById('twilioTipsModal').classList.add('show')" title="Twilio 防封号注意事项" style="color:#b45309">&#9888;</button>
-      <button class="btn-icon" id="ivListBtn" style="display:none" onclick="showIvListModal()" title="面试总览: 所有已预约的面试 (仅管理员)">&#128198;</button>
-      <button class="btn-icon" id="aiBlocksBtn" style="display:none" onclick="showAiBlocksModal()" title="AI 拦截记录: 被合规审核拦下的客服消息 (仅管理员)">&#128737;</button>
-      <button class="btn-icon" id="msgStatsBtn" style="display:none" onclick="showMsgStatsModal()" title="消息统计: 每天多少条、什么时间发的 (仅管理员)">&#128202;</button>
-      <button class="btn-icon" id="csAccBtn" style="display:none" onclick="showCsAccModal()" title="客服账号管理 (仅管理员)">&#128101;</button>
-      <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
-      <button class="btn-icon" onclick="loadThreads()" title="Refresh">&#x21bb;</button>
-      <button class="btn-icon" onclick="doLogout()" title="Logout">&#x2715;</button>
+      <div class="header-tools" id="headerTools">
+        <button class="btn-icon" onclick="showStarredModal(0)" title="星标消息" style="color:#f59e0b">&#9733;</button>
+        <button class="btn-icon" onclick="showNewChatModal()" title="发起对话" style="font-size:1.05rem">&#128172;</button>
+        <button class="btn-icon" onclick="showBroadcastModal()" title="群发 Broadcast" style="font-size:1.1rem">&#9993;</button>
+        <button class="btn-icon" onclick="testNotify()" title="测试通知 TEST" style="font-size:.7rem;color:var(--red)">TEST</button>
+        <button class="btn-icon" onclick="document.getElementById('twilioTipsModal').classList.add('show')" title="Twilio 防封号须知" style="color:#b45309">&#9888;</button>
+        <button class="btn-icon" id="ivListBtn" style="display:none" onclick="showIvListModal()" title="面试总览 (仅管理员)">&#128198;</button>
+        <button class="btn-icon" id="aiBlocksBtn" style="display:none" onclick="showAiBlocksModal()" title="AI 拦截记录 (仅管理员)">&#128737;</button>
+        <button class="btn-icon" id="contactEditsBtn" style="display:none" onclick="showContactEditsModal()" title="资料修改记录 (仅管理员)">&#128203;</button>
+        <button class="btn-icon" id="msgStatsBtn" style="display:none" onclick="showMsgStatsModal()" title="消息统计 (仅管理员)">&#128202;</button>
+        <button class="btn-icon" id="csAccBtn" style="display:none" onclick="showCsAccModal()" title="客服账号管理 (仅管理员)">&#128101;</button>
+        <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard 概览">&#9776;</button>
+        <button class="btn-icon" onclick="loadThreads()" title="刷新 Refresh">&#x21bb;</button>
+        <button class="btn-icon" onclick="doLogout()" title="退出登录 Logout">&#x2715;</button>
+      </div>
+      <button class="btn-icon" id="moreMenuBtn" onclick="toggleMoreMenu(event)" title="菜单" style="display:none;font-size:1.25rem;font-weight:700">&#8942;</button>
+      <div id="moreMenu" class="more-menu"></div>
     </div>
     <!-- Dashboard Panel -->
     <div class="dash-panel" id="dashPanel">
@@ -431,10 +449,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   <div class="modal">
     <h3>联系人资料 / Contact</h3>
     <label>Name <span id="nameLockHint" style="display:none;color:#b45309;font-weight:400">&#128274; 名字仅管理员可改, 关联员工账号后自动带出</span></label><input id="editName" placeholder="Contact name">
-    <label>关联员工档案（按姓名 / 电话搜；打开时已自动按本号码找过）</label>
     <div id="editEmpLinked" style="display:none;align-items:center;gap:8px;margin-bottom:6px;background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:5px 10px;font-size:.8rem;color:#065f46"></div>
-    <input id="editEmpSearch" placeholder="搜员工姓名 / 电话…" oninput="empLinkDebounce()" style="margin-bottom:4px">
-    <div id="editEmpResults" style="max-height:170px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;display:none"></div>
+    <div id="empLinkAdminWrap">
+      <label>关联员工档案（按姓名 / 电话搜；打开时已自动按本号码找过）</label>
+      <input id="editEmpSearch" placeholder="搜员工姓名 / 电话…" oninput="empLinkDebounce()" style="margin-bottom:4px">
+      <div id="editEmpResults" style="max-height:170px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;display:none"></div>
+    </div>
     <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:2px">
       <div style="flex:1"><label>工作的州 Work State</label><select id="editWorkState" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none;background:var(--white);margin-bottom:8px"></select></div>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px"><input type="checkbox" id="editIsForeman" style="width:auto;margin:0">🦺 是工头</label>
@@ -621,6 +641,21 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   </div>
 </div>
 
+<!-- 📋 资料修改记录 (仅 admin) -->
+<div class="modal-bg" id="contactEditsModal">
+  <div class="modal" style="max-width:640px">
+    <h3>&#128203; 资料修改记录 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员 · 每天核对客服的修改有没有错</span></h3>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+      <button class="filter-btn" onclick="ceShiftDay(-1)">&larr; 前一天</button>
+      <input type="date" id="ceDate" onchange="loadContactEdits()" style="width:auto;margin:0;padding:6px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem">
+      <button class="filter-btn" onclick="ceShiftDay(1)">后一天 &rarr;</button>
+      <button class="filter-btn" onclick="document.getElementById('ceDate').value='';loadContactEdits()" title="显示最近 300 条, 不按日期过滤">全部</button>
+    </div>
+    <div id="ceList" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:440px;overflow-y:auto"></div>
+    <button class="close-modal" onclick="document.getElementById('contactEditsModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
 <!-- 🛡️ AI 拦截记录 (仅 admin) -->
 <div class="modal-bg" id="aiBlocksModal">
   <div class="modal" style="max-width:640px">
@@ -719,11 +754,32 @@ async function checkAuth() {
 }
 function _applyAdminUi() {
   const isAdmin = USER && USER.role === 'admin';
-  const b1 = document.getElementById('csAccBtn'); if (b1) b1.style.display = isAdmin ? '' : 'none';
-  const b2 = document.getElementById('msgStatsBtn'); if (b2) b2.style.display = isAdmin ? '' : 'none';
-  const b3 = document.getElementById('ivListBtn'); if (b3) b3.style.display = isAdmin ? '' : 'none';
-  const b4 = document.getElementById('aiBlocksBtn'); if (b4) b4.style.display = isAdmin ? '' : 'none';
+  ['csAccBtn', 'msgStatsBtn', 'ivListBtn', 'aiBlocksBtn', 'contactEditsBtn'].forEach(id => {
+    const b = document.getElementById(id); if (b) b.style.display = isAdmin ? '' : 'none';
+  });
 }
+// 手机端 ⋮ 菜单: 把顶栏工具按钮收进带文字的下拉列表
+function toggleMoreMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const m = document.getElementById('moreMenu');
+  if (m.classList.contains('show')) { m.classList.remove('show'); return; }
+  const btns = [...document.querySelectorAll('#headerTools .btn-icon')].filter(b => b.style.display !== 'none');
+  window._mmBtns = btns;
+  m.innerHTML = btns.map((b, i) =>
+    '<div class="mm-item" onclick="_mmClick(' + i + ')"><span class="mm-ico" style="' + (b.getAttribute('style') || '').replace(/display:[^;]+;?/, '') + '">' + b.innerHTML + '</span>'
+    + '<span>' + esc((b.title || '').replace(/\s*[(（]仅管理员[)）]/, '')) + (/(仅管理员)/.test(b.title || '') ? ' <span style="font-size:.68rem;color:var(--gray-400)">admin</span>' : '') + '</span></div>'
+  ).join('');
+  m.classList.add('show');
+}
+function _mmClick(i) {
+  document.getElementById('moreMenu').classList.remove('show');
+  const b = (window._mmBtns || [])[i];
+  if (b) b.click();
+}
+document.addEventListener('click', e => {
+  const m = document.getElementById('moreMenu');
+  if (m && m.classList.contains('show') && !m.contains(e.target)) m.classList.remove('show');
+});
 
 function showLogin() {
   document.getElementById('loginWrap').style.display = 'flex';
@@ -1514,14 +1570,22 @@ function showEditContactModal() {
   nameEl.style.background = _isAdminEc ? '' : 'var(--gray-100)';
   nameEl.style.color = _isAdminEc ? '' : 'var(--gray-600)';
   document.getElementById('nameLockHint').style.display = _isAdminEc ? 'none' : '';
+  // 员工关联仅 admin 可操作; 公司/邮箱也仅 admin 可改 (客服只能改 州/工头/工种/备注)
+  document.getElementById('empLinkAdminWrap').style.display = _isAdminEc ? '' : 'none';
+  const compEl = document.getElementById('editCompany');
+  compEl.disabled = !_isAdminEc;
+  compEl.style.background = _isAdminEc ? 'var(--white)' : 'var(--gray-100)';
+  const emailEl = document.getElementById('editEmail');
+  emailEl.readOnly = !_isAdminEc;
+  emailEl.style.background = _isAdminEc ? '' : 'var(--gray-100)';
   _fillCompanySelect(currentContact.company || '');
   document.getElementById('editEmail').value = currentContact.email || '';
   _editEmp = undefined;
   document.getElementById('editEmpSearch').value = '';
   document.getElementById('editEmpResults').style.display = 'none';
   renderEmpLinked();
-  // 还没关联员工的, 自动用本号码搜一把
-  if (!currentContact.employee_id) {
+  // 还没关联员工的, 自动用本号码搜一把 (仅 admin)
+  if (_isAdminEc && !currentContact.employee_id) {
     const digits = String(currentContact.phone_e164 || '').replace(/\D/g, '').slice(-10);
     if (digits) { document.getElementById('editEmpSearch').value = digits; empLinkSearch(); }
   }
@@ -1569,18 +1633,19 @@ function empLinkClear() { _editEmp = null; renderEmpLinked(); }
 function renderEmpLinked() {
   const el = document.getElementById('editEmpLinked');
   if (!el) return;
+  const isAdmin = USER && USER.role === 'admin';
   const linked = _editEmp === undefined ? !!(currentContact && currentContact.employee_id) : !!_editEmp;
   el.style.display = 'flex';
   if (!linked) {
-    // 未关联也要显示出来, 提醒去关联
+    // 未关联也要显示出来
     el.style.background = '#fef3c7'; el.style.borderColor = '#fcd34d'; el.style.color = '#92400e';
-    el.innerHTML = '<span>&#9888; 尚未关联员工账号 — 在下面搜索并关联</span>';
+    el.innerHTML = '<span>&#9888; 尚未关联员工账号' + (isAdmin ? ' — 在下面搜索并关联' : ' — 请联系管理员关联') + '</span>';
     return;
   }
   el.style.background = '#d1fae5'; el.style.borderColor = '#6ee7b7'; el.style.color = '#065f46';
   const label = _editEmp && _editEmp.name ? esc(_editEmp.name) : ('员工档案 #' + esc(String(currentContact && currentContact.employee_id || '')));
-  el.innerHTML = '<span>&#10003; 已关联: <b>' + label + '</b></span>'
-    + '<a style="margin-left:auto;cursor:pointer;color:#b91c1c;font-size:.76rem;text-decoration:underline" onclick="empLinkClear()">解除</a>';
+  el.innerHTML = '<span>&#10003; 已关联员工: <b>' + label + '</b></span>'
+    + (isAdmin ? '<a style="margin-left:auto;cursor:pointer;color:#b91c1c;font-size:.76rem;text-decoration:underline" onclick="empLinkClear()">解除</a>' : '');
 }
 function renderEditTags() {
   document.getElementById('editTagChips').innerHTML = _editTags.map(t =>
@@ -1609,18 +1674,21 @@ async function saveContact() {
   if (!currentContact) return;
   try {
     addEditTag(document.getElementById('editTagInput').value);   // 没按回车的也带上
+    // 客服只能改: 州 / 工头 / 工种标签 / 备注; 名字/公司/邮箱/员工关联仅 admin (服务器端同样拦)
+    const isAdmin = USER && USER.role === 'admin';
     const payload = {
-      company: document.getElementById('editCompany').value.trim(),
-      email: document.getElementById('editEmail').value.trim(),
       tags: JSON.stringify(_editTags),
       notes: document.getElementById('editNotes').value.trim(),
       work_state: document.getElementById('editWorkState').value.trim().toUpperCase(),
       is_foreman: document.getElementById('editIsForeman').checked ? 1 : 0
     };
-    // 名字仅 admin 可改 (服务器端也会拦)
-    if (USER && USER.role === 'admin') payload.name = document.getElementById('editName').value.trim();
+    if (isAdmin) {
+      payload.name = document.getElementById('editName').value.trim();
+      payload.company = document.getElementById('editCompany').value.trim();
+      payload.email = document.getElementById('editEmail').value.trim();
+    }
     await api('/sms/contacts/' + currentContact.id, { method: 'PUT', body: JSON.stringify(payload) });
-    if (_editEmp !== undefined) {
+    if (isAdmin && _editEmp !== undefined) {
       await api('/sms/contacts/' + currentContact.id + '/link-employee', {
         method: 'PUT', body: JSON.stringify({ employee_id: _editEmp ? _editEmp.id : null })
       });
@@ -2016,6 +2084,60 @@ async function loadIvList(days) {
     rc.innerHTML = '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">加载失败</div>';
   }
 }
+// ─── 📋 资料修改记录 (仅 admin) ───
+const _CE_FIELD_ZH = { name: '名字', company: '公司', email: '邮箱', tags: '工种标签', notes: '备注', work_state: '州', is_foreman: '工头' };
+function _ceFmtVal(k, v) {
+  if (k === 'is_foreman') return v ? '是' : '否';
+  if (k === 'tags') { try { return (JSON.parse(v || '[]') || []).join(', ') || '(空)'; } catch (_) { return String(v || '(空)'); } }
+  const s = String(v ?? '').trim();
+  return s === '' ? '(空)' : (s.length > 60 ? s.slice(0, 60) + '…' : s);
+}
+function showContactEditsModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('contactEditsModal').classList.add('show');
+  document.getElementById('ceDate').value = new Date().toLocaleDateString('sv-SE');
+  loadContactEdits();
+}
+function ceShiftDay(delta) {
+  const el = document.getElementById('ceDate');
+  const base = el.value ? new Date(el.value + 'T12:00:00') : new Date();
+  base.setDate(base.getDate() + delta);
+  el.value = base.toLocaleDateString('sv-SE');
+  loadContactEdits();
+}
+async function loadContactEdits() {
+  const el = document.getElementById('ceList');
+  el.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  try {
+    const d = document.getElementById('ceDate').value;
+    const q = (d ? 'date=' + d + '&' : '') + 'tzoff=' + new Date().getTimezoneOffset();
+    const r = await api('/sms/contact-edits?' + q);
+    if (r && r.error) throw new Error(r.error);
+    const list = (r && r.edits) || [];
+    el.innerHTML = list.length ? list.map(e2 => {
+      const who = esc(e2.agent_name || '系统');
+      const target = esc(((e2.contact_name || '') + ' ' + fmtPhone(e2.phone_e164 || '')).trim() || ('联系人#' + e2.id));
+      let body = '';
+      if (e2.action === 'updated' && e2.changes) {
+        body = Object.keys(e2.changes).map(k =>
+          '<div style="padding-left:10px">· ' + (_CE_FIELD_ZH[k] || esc(k)) + ': <span style="color:var(--gray-400);text-decoration:line-through">' + esc(_ceFmtVal(k, e2.changes[k].from)) + '</span> → <b>' + esc(_ceFmtVal(k, e2.changes[k].to)) + '</b></div>'
+        ).join('');
+      } else if (e2.action === 'employee_linked') {
+        body = '<div style="padding-left:10px">· 员工关联: ' + (e2.meta && e2.meta.employee_id ? '关联到员工档案 #' + esc(String(e2.meta.employee_id)) : '解除关联') + '</div>';
+      } else if (e2.action === 'opted_out') {
+        body = '<div style="padding-left:10px">· 对方回 STOP 退订</div>';
+      } else if (e2.action === 'opted_in') {
+        body = '<div style="padding-left:10px">· 对方回 START 恢复接收</div>';
+      }
+      const t = e2.created_at ? new Date(String(e2.created_at).replace(' ', 'T') + 'Z') : null;
+      const ts = (t && !isNaN(t)) ? t.toLocaleString('sv-SE').slice(5, 16) : '';
+      return '<div style="padding:8px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;line-height:1.55">'
+        + '<div><b>' + who + '</b> 修改了 <b>' + target + '</b> <span style="color:var(--gray-400);float:right">' + esc(ts) + '</span></div>'
+        + body + '</div>';
+    }).join('') : '<div style="padding:14px;color:var(--gray-400);font-size:.8rem;text-align:center">这一天没有资料修改</div>';
+  } catch (e) { el.innerHTML = '<div style="padding:12px;color:var(--red);font-size:.8rem">' + esc(e.message || '加载失败') + '</div>'; }
+}
+
 // ─── 🛡️ AI 拦截记录 (仅 admin) ───
 function showAiBlocksModal() {
   if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
