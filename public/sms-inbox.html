@@ -49,6 +49,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .filters input[type=text]:focus{border-color:var(--sky);background:var(--white)}
 .filters-row{display:flex;gap:6px;align-items:center;flex:1 1 100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
 .filters-row::-webkit-scrollbar{display:none}
+/* 电脑端筛选控件多了一行放不下: 换行全部显示 (手机端保持横向滑动省高度) */
+@media(min-width:769px){.filters-row{flex-wrap:wrap;overflow-x:visible}}
 .filters select{padding:7px 8px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;background:var(--white);outline:none;cursor:pointer;color:var(--gray-600);font-weight:600;flex-shrink:0;max-width:150px}
 .filters select:focus{border-color:var(--sky)}
 .filter-btn{padding:6px 12px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;font-weight:600;cursor:pointer;background:var(--white);color:var(--gray-600);transition:all .15s}
@@ -388,6 +390,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
           <option value="">工种: 全部</option>
         </select>
         <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">未读</button>
+        <button class="filter-btn" id="foremanFilterBtn" onclick="toggleForemanFilter()" title="只看标了 🦺 工头 的联系人">🦺 工头</button>
       </div>
     </div>
     <div class="pull-indicator" id="pullIndicator">Pull to refresh...</div>
@@ -854,6 +857,7 @@ let listTotal = 0;
 let refreshInterval = null;
 let msgRefreshInterval = null;
 let unreadFilter = false;
+let foremanFilter = false;
 let dashboardVisible = false;
 let templates = [];
 let currentContactLang = 'es';
@@ -1083,6 +1087,7 @@ async function fetchThreads(silent) {
     if (companyF) url += '&company=' + encodeURIComponent(companyF);
     if (jobtagF) url += '&jobtag=' + encodeURIComponent(jobtagF);
     if (unreadFilter) url += '&unread=1';
+    if (foremanFilter) url += '&foreman=1';
     const r = await api(url);
     listTotal = r.total || 0;
     if (listPage === 1) {
@@ -2889,6 +2894,12 @@ function renderPriorityBadge() {
 function toggleUnreadFilter() {
   unreadFilter = !unreadFilter;
   document.getElementById('unreadFilterBtn').classList.toggle('active', unreadFilter);
+  loadThreads();
+}
+// 🦺 只看工头
+function toggleForemanFilter() {
+  foremanFilter = !foremanFilter;
+  document.getElementById('foremanFilterBtn').classList.toggle('active', foremanFilter);
   loadThreads();
 }
 

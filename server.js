@@ -29060,6 +29060,10 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
       where += ` AND (COALESCE(c.tags,'[]') LIKE ? OR COALESCE(c.work_history,'[]') LIKE ?)`;
       params.push(`%${jobtag}%`, `%${jobtag}%`);
     }
+    // 只看被标了 🦺 工头 的联系人
+    if (String(req.query.foreman || '') === '1') {
+      where += ` AND COALESCE(c.is_foreman,0)=1`;
+    }
 
     // 回了 STOP 退订的对话对客服(非 admin)隐藏, admin 仍可见
     if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0`;
