@@ -34230,6 +34230,38 @@ function _invpPickSubPay(val, label) {
   _invpUpdateSubPaySelSummary(label);
   _invpRenderSubPayList();
 }
+// 全选/全不选某份对账单(PDF)下当前可选的交易 (分包多选模式)。
+// 与当前筛选一致: 已被其它发票占用的灰色行跳过; 若本单可选交易已全部选中则改为全部取消。
+function _invpToggleAllInStmt(stmtId) {
+  if (_invpVoucherCtx !== 'sub') return;
+  const hid = document.getElementById('invpSubPayStmt');
+  if (!hid) return;
+  const cands = _invpAmtMatchCandidates().filter(c => {
+    const p = String(c.val).split(':');   // box:sid:bid
+    return p[0] === 'box' && String(p[1]) === String(stmtId);
+  });
+  if (!cands.length) { showToast('这份对账单当前没有可选交易', 'info'); return; }
+  let cur = hid.value.indexOf('box:') === 0 ? hid.value.split('|').filter(Boolean) : [];
+  const curSet = new Set(cur);
+  const allIn = cands.every(c => curSet.has(c.val));
+  if (allIn) {
+    // 已全选 → 取消本单这些交易
+    const stmtVals = new Set(cands.map(c => c.val));
+    cur = cur.filter(v => !stmtVals.has(v));
+    showToast(`已取消本单 ${cands.length} 笔交易`, 'info');
+  } else {
+    for (const c of cands) if (!curSet.has(c.val)) cur.push(c.val);
+    showToast(`已选入本单 ${cands.length} 笔交易`, 'success');
+  }
+  hid.value = cur.join('|');
+  if (hid.value) {
+    const fi = document.getElementById('invpSubPayFile'); if (fi) fi.value = '';
+    const fn = document.getElementById('invpSubPayFileName'); if (fn) fn.textContent = '未选择文件';
+  }
+  _invpUpdateSubPaySelSummary('');
+  _invpRenderSubPayList();
+  try { _invpSubPayAmtCheck(); } catch (_) {}
+}
 // Currently-selected transaction refs ("box:sid:bid", multi on the 分包 side).
 function _invpSelBoxRefs() {
   const v = (document.getElementById('invpSubPayStmt') || {}).value || '';
@@ -34366,7 +34398,11 @@ function _invpRenderSubPayList() {
 
     const wholeVal = String(s.id);
     const wholeSel = selVal === wholeVal;
-    html += `<div style="padding:.4rem .6rem;background:#f8fafc;border-top:1px solid var(--gray-100);font-size:.72rem;color:var(--gray-500);font-weight:700;position:sticky;top:0">${esc(_invpStmtLabel(s))}</div>`;
+    // 分包多选模式: 提供"全选本单交易"一键把这份 PDF 当前可选交易全部选入/取消
+    const selAllLink = _invpVoucherCtx === 'sub'
+      ? `<a onclick="event.stopPropagation();_invpToggleAllInStmt('${s.id}')" style="float:right;color:var(--sky);text-decoration:underline;cursor:pointer;font-weight:600" title="把这份 PDF 里当前可选的交易一次全选/全不选">☑ 全选本单交易</a>`
+      : '';
+    html += `<div style="padding:.4rem .6rem;background:#f8fafc;border-top:1px solid var(--gray-100);font-size:.72rem;color:var(--gray-500);font-weight:700;position:sticky;top:0">${esc(_invpStmtLabel(s))}${selAllLink}</div>`;
     // Whole-PDF option for this statement.
     html += `<div onclick="_invpPickSubPay('${wholeVal}', ${_invpJsStr('📄 整份 PDF · ' + _invpStmtLabel(s))})" style="padding:.5rem .6rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;${wholeSel ? 'background:#eff6ff' : ''}"><span style="min-width:0">📄 整份 PDF <span style="color:var(--gray-400)">（${boxes.length} 条标注）</span></span>${wholeSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
 
