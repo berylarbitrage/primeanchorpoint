@@ -963,6 +963,7 @@ function renderDetail() {
   noteMode = false;
   _composeNoTranslate = false;
   _composeNoTranslateText = '';
+  _clearSendError();
   document.getElementById('replyBar').classList.remove('note-mode');
   document.getElementById('noteToggle').classList.remove('active');
   document.getElementById('translatePreview').style.display = 'none';
@@ -1158,6 +1159,25 @@ async function confirmTranslatedSend() {
   _pendingTranslatedText = null;
 }
 
+// 发送失败的持久提示条 (toast 3 秒就没了, AI 拦截这类长原因要能一直看到)
+function _showSendError(msg) {
+  let el = document.getElementById('sendErrBanner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sendErrBanner';
+    el.style.cssText = 'display:none;background:#fef2f2;border-bottom:1px solid #fecaca;color:#b91c1c;font-size:.8rem;font-weight:600;padding:6px 34px 6px 12px;position:relative;white-space:pre-wrap;word-break:break-word';
+    el.innerHTML = '<span id="sendErrText"></span><span onclick="_clearSendError()" style="position:absolute;right:10px;top:4px;cursor:pointer;font-weight:800">&times;</span>';
+    const bar = document.getElementById('actionBar');
+    if (bar && bar.parentNode) bar.parentNode.insertBefore(el, bar.nextSibling);
+  }
+  document.getElementById('sendErrText').textContent = msg;
+  el.style.display = '';
+}
+function _clearSendError() {
+  const el = document.getElementById('sendErrBanner');
+  if (el) el.style.display = 'none';
+}
+
 async function doSendMessage(body, noTranslate) {
   const input = document.getElementById('replyInput');
   const btn = document.getElementById('sendBtn');
@@ -1186,13 +1206,15 @@ async function doSendMessage(body, noTranslate) {
       renderMessages();
       _composeNoTranslate = false;
       _composeNoTranslateText = '';
+      _clearSendError();
     } else {
-      // 服务器拒绝 (如对方已退订 / Twilio 报错) — 撤掉临时气泡, 把文字放回输入框
+      // 服务器拒绝 (如对方已退订 / AI 拦截 / Twilio 报错) — 撤掉临时气泡, 把文字放回输入框
       currentMessages = currentMessages.filter(m => m.id !== tempId);
       renderMessages();
       input.value = body;
       autoGrow(input);
       toast((r && r.error) || '发送失败');
+      _showSendError((r && r.error) || '发送失败');
       if (r && r.error && /STOP/.test(r.error) && currentContact) {
         currentContact.opted_out = 1;
         const ob = document.getElementById('optOutBanner');
@@ -1875,6 +1897,7 @@ async function loadIvList(days) {
   document.querySelectorAll('#ivListModal .filter-btn').forEach(b => b.className = 'filter-btn' + (parseInt(b.dataset.ivdays) === _ivListDays ? ' active' : ''));
   const up = document.getElementById('ivListUpcoming'), rc = document.getElementById('ivListRecent');
   up.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  rc.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
   try {
     const r = await api('/sms/interviews/upcoming?days=' + _ivListDays);
     if (r && r.error) throw new Error(r.error);
@@ -1886,7 +1909,7 @@ async function loadIvList(days) {
       : '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">暂无记录</div>';
   } catch (e) {
     up.innerHTML = '<div style="padding:12px;color:var(--red);font-size:.8rem">' + esc(e.message || '加载失败') + '</div>';
-    rc.innerHTML = '';
+    rc.innerHTML = '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">加载失败</div>';
   }
 }
 // ─── 🛡️ AI 拦截记录 (仅 admin) ───
