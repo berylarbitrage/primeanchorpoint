@@ -41,8 +41,10 @@ button.main:disabled{opacity:.5}
     <label>邮箱（用于接收验证码 / 找回密码）</label>
     <input id="em" type="email" placeholder="you@example.com" autocomplete="email">
     <label>密码</label>
-    <input id="pw" type="password" placeholder="至少 8 位, 含字母和数字" autocomplete="new-password">
-    <div class="pwhint">至少 8 位，必须同时包含字母和数字</div>
+    <input id="pw" type="password" placeholder="至少 8 位, 含大小写字母和数字" autocomplete="new-password" oninput="pwCheck()">
+    <div class="pwhint" id="pwRules">
+      <span id="r1">○ 至少 8 位</span> · <span id="r2">○ 大写字母</span> · <span id="r3">○ 小写字母</span> · <span id="r4">○ 数字</span> · <span id="r5">○ 不含用户名/连号</span>
+    </div>
     <label>确认密码</label>
     <input id="pw2" type="password" placeholder="再输一遍" autocomplete="new-password">
     <button class="main" id="go" onclick="signup()">创建账号</button>
@@ -59,11 +61,26 @@ button.main:disabled{opacity:.5}
 const token = new URLSearchParams(location.search).get('t') || '';
 const msg = (t, ok) => { const m = document.getElementById('msg'); m.textContent = t; m.className = 'msg ' + (ok ? 'ok' : 'err'); };
 if (!token) msg('链接无效 — 请扫管理员给的二维码打开本页', false);
+// 密码规则实时打勾
+function pwOk(pw, un) {
+  const low = String(pw).toLowerCase();
+  return {
+    len: pw.length >= 8, up: /[A-Z]/.test(pw), lo: /[a-z]/.test(pw), num: /\d/.test(pw),
+    safe: !(un && low.includes(un.toLowerCase())) && !/(0123|1234|2345|3456|4567|5678|6789|abcd|qwer|asdf)/.test(low)
+      && !['password', '12345678', 'qwerty', 'abc123', '111111', 'admin'].some(c => low.includes(c))
+  };
+}
+function pwCheck() {
+  const r = pwOk(document.getElementById('pw').value, document.getElementById('un').value.trim());
+  const set = (id, ok, label) => { const el = document.getElementById(id); el.textContent = (ok ? '✓ ' : '○ ') + label; el.style.color = ok ? '#2D9D78' : ''; el.style.fontWeight = ok ? '700' : ''; };
+  set('r1', r.len, '至少 8 位'); set('r2', r.up, '大写字母'); set('r3', r.lo, '小写字母'); set('r4', r.num, '数字'); set('r5', r.safe, '不含用户名/连号');
+}
 async function signup() {
   const un = document.getElementById('un').value.trim();
   const pw = document.getElementById('pw').value;
   if (pw !== document.getElementById('pw2').value) { msg('两次密码不一致', false); return; }
-  if (pw.length < 8 || !/[A-Za-z]/.test(pw) || !/\d/.test(pw)) { msg('密码至少 8 位, 且同时包含字母和数字', false); return; }
+  const r = pwOk(pw, un);
+  if (!r.len || !r.up || !r.lo || !r.num || !r.safe) { msg('密码不满足规则: 至少8位 + 大写 + 小写 + 数字, 不含用户名/连号/常见密码', false); return; }
   const btn = document.getElementById('go');
   btn.disabled = true;
   try {
