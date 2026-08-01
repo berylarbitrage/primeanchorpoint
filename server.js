@@ -2900,6 +2900,23 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messag
 // 联系人标注: 工作的州 + 是否工头
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_state TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_foreman INTEGER DEFAULT 0`); } catch(e) {}
+// Twilio 合规: 对方回 STOP 等退订词后必须停发 (opted_out), 回 START 恢复
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out_at TEXT DEFAULT NULL`); } catch(e) {}
+// 面试安排: 标记面试时间/地址, 可发确认短信和工作要求模板
+db.exec(`CREATE TABLE IF NOT EXISTS sms_interviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact_id INTEGER NOT NULL,
+  thread_id INTEGER DEFAULT NULL,
+  interview_at TEXT NOT NULL,
+  address TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  status TEXT DEFAULT 'scheduled',
+  created_by TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_interviews_contact ON sms_interviews(contact_id)`); } catch(e) {}
 // AI 聊天表现评估记录 (admin 触发)
 db.exec(`CREATE TABLE IF NOT EXISTS sms_evaluations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28572,6 +28589,17 @@ app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), va
     // 1. Find or create contact
     const contact = smsGetOrCreateContact(customerPhone);
 
+    // Twilio 合规: 识别退订/恢复关键词 (运营商级 STOP Twilio 也会拦, 这里同步系统状态防止我们再发)
+    // 整条消息去掉首尾标点后精确匹配; 另外 "STOP..." 开头 (如 "STOP!" / "STOP PLEASE") 也算退订
+    const kw = String(Body || '').trim().toUpperCase().replace(/^[\s.!?,;:'"()。！？，]+|[\s.!?,;:'"()。！？，]+$/g, '');
+    if (['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'ALTO', 'BAJA', 'PARAR'].includes(kw) || /^STOP\b/.test(kw)) {
+      db.prepare(`UPDATE sms_contacts SET opted_out=1, opted_out_at=datetime('now'), updated_at=datetime('now') WHERE id=?`).run(contact.id);
+      smsAudit('contact', contact.id, 'opted_out', 'system', null, { keyword: kw });
+    } else if (['START', 'UNSTOP', 'YES', 'INICIAR', 'EMPEZAR'].includes(kw) || /^START\b/.test(kw)) {
+      db.prepare(`UPDATE sms_contacts SET opted_out=0, opted_out_at=NULL, updated_at=datetime('now') WHERE id=?`).run(contact.id);
+      smsAudit('contact', contact.id, 'opted_in', 'system', null, { keyword: kw });
+    }
+
     // 2. Find or create thread
     const thread = smsFindOrCreateThread(contact.id, twilioNumber);
 
@@ -28734,7 +28762,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
 
-    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman,
+    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -28747,7 +28775,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     res.json({
       threads: threads.map(t => ({
         id: t.id,
-        contact: { id: t.contact_id, phone_e164: t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman },
+        contact: { id: t.contact_id, phone_e164: t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out },
         status: t.status,
         priority: t.priority,
         assigned_agent: t.assigned_agent_id ? { id: t.assigned_agent_id, username: t.agent_username } : null,
@@ -28771,7 +28799,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/threads/:id — thread detail
 app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman,
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -28803,7 +28831,8 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
         tags: thread.contact_tags,
         notes: thread.contact_notes,
         work_state: thread.contact_work_state,
-        is_foreman: thread.contact_is_foreman
+        is_foreman: thread.contact_is_foreman,
+        opted_out: thread.contact_opted_out
       }
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -28830,10 +28859,12 @@ app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, r
 // POST /api/sms/threads/:id/messages — send a reply
 app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164 FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
+    if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
 
-    const { body } = req.body;
+    const { body, no_translate } = req.body;
     if (!body || !body.trim()) return res.status(400).json({ error: 'Message body required' });
 
     // Auto-claim if not yet claimed
@@ -28849,9 +28880,13 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
     }
 
     // Translate agent message (agent_lang → contact_lang) before sending
-    const freshThread2 = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
-    const translated = await translateText(body.trim(), freshThread2.agent_lang || 'zh', freshThread2.contact_lang || 'es');
-    const bodyToSend = translated || body.trim();
+    // no_translate: 面试确认/工作要求等双语模板原样发送, 不再机器翻译
+    let bodyToSend = body.trim();
+    if (!no_translate) {
+      const freshThread2 = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
+      const translated = await translateText(body.trim(), freshThread2.agent_lang || 'zh', freshThread2.contact_lang || 'es');
+      bodyToSend = translated || body.trim();
+    }
 
     // Insert message first
     const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
@@ -29096,6 +29131,9 @@ app.post('/api/sms/threads/:id/retry/:messageId', requireAdmin, requireSmsAccess
     if (msg.delivery_status !== 'failed' && msg.delivery_status !== 'undelivered') {
       return res.status(400).json({ error: 'Message is not in failed state' });
     }
+    // Twilio 合规: 对方已退订则重发也要拦
+    const rc = db.prepare('SELECT c.opted_out FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?').get(req.params.id);
+    if (rc && rc.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止重发。对方回复 START 后才能恢复。' });
     const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
     try {
       const createParams = { body: msg.body, from: msg.from_number, to: msg.to_number };
@@ -29466,6 +29504,79 @@ app.patch('/api/sms/cs-accounts/:id', requireAdmin, requireRole('admin'), (req, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── 📅 面试安排: 标记面试时间/地址, 模板发确认短信和工作要求 ───
+app.get('/api/sms/threads/:id/interview', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT contact_id FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    const iv = db.prepare(`SELECT * FROM sms_interviews WHERE contact_id=? AND status='scheduled' ORDER BY interview_at DESC LIMIT 1`).get(thread.contact_id);
+    const history = db.prepare(`SELECT * FROM sms_interviews WHERE contact_id=? ORDER BY interview_at DESC LIMIT 10`).all(thread.contact_id);
+    res.json({ interview: iv || null, history });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/sms/threads/:id/interview', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const thread = db.prepare('SELECT id, contact_id FROM sms_threads WHERE id=?').get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    const b = req.body || {};
+    const at = String(b.interview_at || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(at)) return res.status(400).json({ error: '面试时间格式无效' });
+    const by = (req.session && req.session.username) || req.userName || 'agent';
+    // 同一联系人已有未完成的面试 → 更新它; 否则新建
+    const cur = db.prepare(`SELECT id FROM sms_interviews WHERE contact_id=? AND status='scheduled' ORDER BY id DESC LIMIT 1`).get(thread.contact_id);
+    if (cur) {
+      db.prepare(`UPDATE sms_interviews SET interview_at=?, address=?, note=?, thread_id=?, updated_at=datetime('now') WHERE id=?`)
+        .run(at, String(b.address || '').slice(0, 300), String(b.note || '').slice(0, 500), thread.id, cur.id);
+    } else {
+      db.prepare(`INSERT INTO sms_interviews (contact_id, thread_id, interview_at, address, note, created_by) VALUES (?,?,?,?,?,?)`)
+        .run(thread.contact_id, thread.id, at, String(b.address || '').slice(0, 300), String(b.note || '').slice(0, 500), by);
+    }
+    smsAudit('thread', thread.id, 'interview_scheduled', 'agent', req.userId, { at });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.patch('/api/sms/interviews/:id', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const iv = db.prepare('SELECT * FROM sms_interviews WHERE id=?').get(req.params.id);
+    if (!iv) return res.status(404).json({ error: 'Not found' });
+    const st = String((req.body || {}).status || '');
+    if (!['scheduled', 'done', 'no_show', 'cancelled'].includes(st)) return res.status(400).json({ error: 'bad status' });
+    db.prepare(`UPDATE sms_interviews SET status=?, updated_at=datetime('now') WHERE id=?`).run(st, iv.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/sms/interviews/upcoming', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const days = Math.min(60, Math.max(1, parseInt(req.query.days) || 14));
+    const rows = db.prepare(`SELECT i.*, c.name AS contact_name, c.phone_e164
+      FROM sms_interviews i JOIN sms_contacts c ON c.id=i.contact_id
+      WHERE i.status='scheduled' AND replace(i.interview_at,'T',' ') >= datetime('now', '-1 day')
+        AND replace(i.interview_at,'T',' ') <= datetime('now', '+' || ? || ' days')
+      ORDER BY i.interview_at ASC LIMIT 100`).all(days);
+    res.json({ interviews: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 面试确认/工作要求 模板 (占位符 {name} {date} {time} {address}); admin 可改, 客服只读
+const SMS_IV_TPL_DEFAULT = {
+  confirm: 'Hola {name}! Su entrevista esta confirmada / Your interview is confirmed:\n📅 {date} {time}\n📍 {address}\nPor favor llegue 10 minutos antes con su ID. / Please arrive 10 minutes early and bring your ID.',
+  requirements: 'Requisitos basicos del trabajo / Basic job requirements:\n• Documentos de trabajo validos / Valid work authorization (SSN + EAD/ID)\n• Botas con punta de acero / Steel-toe boots\n• Llegar puntual todos los dias / Be on time every day\n• Poder levantar 50 lbs / Able to lift 50 lbs\nSi tiene preguntas responda a este mensaje. / Reply here with any questions.'
+};
+app.get('/api/sms/interview-templates', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='sms_interview_templates'").get();
+    const t = row ? JSON.parse(row.value) : {};
+    res.json({ confirm: t.confirm || SMS_IV_TPL_DEFAULT.confirm, requirements: t.requirements || SMS_IV_TPL_DEFAULT.requirements });
+  } catch (e) { res.json(SMS_IV_TPL_DEFAULT); }
+});
+app.put('/api/sms/interview-templates', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const b = req.body || {};
+    const t = { confirm: String(b.confirm || '').slice(0, 2000), requirements: String(b.requirements || '').slice(0, 2000) };
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('sms_interview_templates', ?, datetime('now'))").run(JSON.stringify(t));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── 📊 消息统计 (仅 admin): 每天收/发条数 + 某天的小时分布 + 客服发送量 ───
 // tzoff = 浏览器 getTimezoneOffset() (芝加哥夏令时=300), 用它把 UTC 存储时间换成本地时间统计
 app.get('/api/sms/message-stats', requireAdmin, requireRole('admin'), (req, res) => {
@@ -29584,11 +29695,15 @@ app.post('/api/sms/broadcast', requireAdmin, requireSmsAccess, async (req, res) 
     if (phones.length > 100) return res.status(400).json({ error: 'Max 100 recipients per broadcast' });
 
     const results = [];
+    let optedOutSkipped = 0;
     for (const phone of phones) {
       const phoneE164 = formatPhoneE164(phone);
       try {
         // Find or create contact and thread
         const contact = smsGetOrCreateContact(phoneE164);
+        // Twilio 合规: 退订号码直接跳过; 逐条间隔 300ms 避免瞬时大批量触发运营商垃圾过滤
+        if (contact.opted_out) { optedOutSkipped++; results.push({ phone: phoneE164, ok: false, error: '已退订(STOP), 跳过' }); continue; }
+        await new Promise(r2 => setTimeout(r2, 300));
         const twilioNumber = TWILIO_FROM || process.env.TWILIO_PHONE_NUMBER || '';
         const thread = smsFindOrCreateThread(contact.id, twilioNumber);
 
@@ -29616,7 +29731,7 @@ app.post('/api/sms/broadcast', requireAdmin, requireSmsAccess, async (req, res) 
         results.push({ phone: phoneE164, ok: false, error: e.message });
       }
     }
-    res.json({ success: true, results, total: phones.length, sent: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length });
+    res.json({ success: true, results, total: phones.length, sent: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, opted_out_skipped: optedOutSkipped });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
