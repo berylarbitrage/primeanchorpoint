@@ -965,7 +965,7 @@ function renderThreadList() {
     return;
   }
   el.innerHTML = currentThreads.map(t => {
-    const name = t.contact.name || fmtPhone(t.contact.phone_e164) || 'Unknown';
+    const name = t.contact.name || fmtPhone(t.contact.phone_e164) || (t.contact.employee_id ? 'Unknown' : '(未入职·未命名)');
     const initials = (t.contact.name || t.contact.phone_e164 || '?').substring(0,2).toUpperCase();
     const preview = esc(t.last_message_preview || 'No messages');
     const time = timeAgo(t.last_message_at);
@@ -1066,7 +1066,7 @@ function renderDetail() {
   dv.classList.add('slide-in-right');
   setTimeout(() => dv.classList.remove('slide-in-right'), 300);
 
-  const name = currentContact.name || fmtPhone(currentContact.phone_e164);
+  const name = currentContact.name || fmtPhone(currentContact.phone_e164) || '(未入职·未命名)';
   document.getElementById('detailName').textContent = name;
   document.getElementById('detailPhone').textContent = fmtPhone(currentContact.phone_e164);
   renderContactTagRow();
@@ -2043,7 +2043,7 @@ function _renderStarred() {
   box.innerHTML = msgs.map(m =>
     '<div style="padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="closeStarredModal();openThread(' + m.thread_id + ')">'
     + '<div style="display:flex;gap:6px;align-items:center;font-size:.76rem;color:var(--gray-500);margin-bottom:2px">'
-    + '<b style="color:var(--gray-700)">' + esc(m.contact_name || fmtPhone(m.phone_e164)) + '</b>'
+    + '<b style="color:var(--gray-700)">' + esc(m.contact_name || fmtPhone(m.phone_e164) || '对方') + '</b>'
     + '<span>' + (m.direction === 'inbound' ? '⬅ 对方' : '➡ 我们') + '</span>'
     + (m.mark_tag ? '<span style="background:#fef3c7;color:#92400e;border-radius:999px;padding:0 8px;font-weight:700">📌 ' + esc(m.mark_tag) + '</span>' : '')
     + '<span style="margin-left:auto">' + fmtDate(m.created_at) + ' ' + fmtTime(m.created_at) + '</span></div>'

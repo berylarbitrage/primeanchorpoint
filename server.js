@@ -28758,6 +28758,12 @@ function smsMaskPhone(p) {
   const d = String(p || '').replace(/\D/g, '');
   return d.length >= 4 ? '••• ' + d.slice(-4) : (d ? '•••' : '');
 }
+// 更严: 未入职(没关联员工账号)的联系人, 非 admin 连尾号都看不到
+function smsPhoneForRole(req, phone, employeeId) {
+  if (req.userRole === 'admin') return phone;
+  if (!employeeId) return '';
+  return smsMaskPhone(phone);
+}
 
 // ═══ Agent Secure Link ═══
 app.get('/sms/t/:token', (req, res) => {
@@ -28877,11 +28883,10 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
       LIMIT ? OFFSET ?`;
     const threads = db.prepare(dataSql).all(...params, pageSize, offset);
 
-    const _mask = req.userRole !== 'admin';
     res.json({
       threads: threads.map(t => ({
         id: t.id,
-        contact: { id: t.contact_id, phone_e164: _mask ? smsMaskPhone(t.phone_e164) : t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out, employee_id: t.contact_employee_id, work_history: t.contact_work_history },
+        contact: { id: t.contact_id, phone_e164: smsPhoneForRole(req, t.phone_e164, t.contact_employee_id), name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out, employee_id: t.contact_employee_id, work_history: t.contact_work_history },
         status: t.status,
         priority: t.priority,
         assigned_agent: t.assigned_agent_id ? { id: t.assigned_agent_id, username: t.agent_username } : null,
@@ -28929,8 +28934,8 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
       },
       contact: {
         id: thread.contact_id,
-        // 客服(非 admin)看不到完整电话/邮箱
-        phone_e164: req.userRole === 'admin' ? thread.phone_e164 : smsMaskPhone(thread.phone_e164),
+        // 客服(非 admin)看不到完整电话/邮箱; 未入职的连尾号都不显示
+        phone_e164: smsPhoneForRole(req, thread.phone_e164, thread.employee_id),
         name: thread.contact_name,
         company: thread.contact_company,
         email: req.userRole === 'admin' ? thread.contact_email : '',
@@ -28949,7 +28954,7 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/threads/:id/messages — messages for a thread
 app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare('SELECT id FROM sms_threads WHERE id=?').get(req.params.id);
+    const thread = db.prepare('SELECT t.id, c.employee_id AS c_emp FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?').get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
 
     const messages = db.prepare(`SELECT m.*, COALESCE(NULLIF(a.display_name,''), a.username) as author_name FROM sms_messages m
@@ -28961,7 +28966,7 @@ app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, r
       WHERE n.thread_id=? ORDER BY n.created_at ASC`).all(req.params.id);
 
     if (req.userRole !== 'admin') {
-      for (const m of messages) { m.from_number = smsMaskPhone(m.from_number); m.to_number = smsMaskPhone(m.to_number); }
+      for (const m of messages) { m.from_number = smsPhoneForRole(req, m.from_number, thread.c_emp); m.to_number = smsPhoneForRole(req, m.to_number, thread.c_emp); }
     }
     res.json({ messages, notes });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -28970,7 +28975,7 @@ app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, r
 // POST /api/sms/threads/:id/messages — send a reply
 app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out, c.name AS contact_name FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out, c.name AS contact_name, c.employee_id AS contact_employee_id FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
     // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
     if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
@@ -29052,7 +29057,7 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
 
     const message = db.prepare(`SELECT m.*, COALESCE(NULLIF(a.display_name,''), a.username) as author_name
       FROM sms_messages m LEFT JOIN admin_users a ON a.id=m.author_agent_id WHERE m.id=?`).get(messageId);
-    if (req.userRole !== 'admin' && message) { message.from_number = smsMaskPhone(message.from_number); message.to_number = smsMaskPhone(message.to_number); }
+    if (req.userRole !== 'admin' && message) { message.from_number = smsPhoneForRole(req, message.from_number, thread.contact_employee_id); message.to_number = smsPhoneForRole(req, message.to_number, thread.contact_employee_id); }
     res.json({ success: true, message });
   } catch(e) {
     console.error('[SMS Send] Error:', e.message);
@@ -29502,13 +29507,13 @@ app.get('/api/sms/threads/:id/history', requireAdmin, requireSmsAccess, (req, re
       WHERE entity_type='thread' AND entity_id=?
       ORDER BY created_at ASC`).all(req.params.id);
 
-    // 客服看不到审计里的完整电话
+    // 客服看不到审计里的电话 (直接删掉, 不留尾号)
     if (req.userRole !== 'admin') {
       for (const a of audits) {
         try {
           const m = JSON.parse(a.metadata || '{}');
           let dirty = false;
-          for (const k of ['phone', 'to', 'from']) { if (m[k]) { m[k] = smsMaskPhone(m[k]); dirty = true; } }
+          for (const k of ['phone', 'to', 'from']) { if (m[k]) { delete m[k]; dirty = true; } }
           if (dirty) a.metadata = JSON.stringify(m);
         } catch (_) {}
       }
@@ -29654,14 +29659,14 @@ app.get('/api/sms/starred', requireAdmin, requireSmsAccess, (req, res) => {
   try {
     const tid = parseInt(req.query.thread_id) || 0;
     const rows = db.prepare(`SELECT m.id, m.thread_id, m.direction, m.body, m.translated_body, m.created_at, m.starred_at, m.mark_tag, m.mark_note,
-        c.name AS contact_name, c.phone_e164, u.username AS starred_by_name
+        c.name AS contact_name, c.phone_e164, c.employee_id AS c_emp, u.username AS starred_by_name
       FROM sms_messages m
       JOIN sms_threads t ON t.id = m.thread_id
       JOIN sms_contacts c ON c.id = t.contact_id
       LEFT JOIN admin_users u ON u.id = m.starred_by
       WHERE m.starred=1 ${tid ? 'AND m.thread_id=?' : ''}
       ORDER BY m.starred_at DESC LIMIT 300`).all(...(tid ? [tid] : []));
-    if (req.userRole !== 'admin') for (const r2 of rows) r2.phone_e164 = smsMaskPhone(r2.phone_e164);
+    if (req.userRole !== 'admin') for (const r2 of rows) r2.phone_e164 = smsPhoneForRole(req, r2.phone_e164, r2.c_emp);
     res.json({ messages: rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -29874,9 +29879,10 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
       ORDER BY id DESC LIMIT 30`).all(q, like, like, like, like);
     const _mask = req.userRole !== 'admin';
     const people = [
+      // 员工=已入职 → 客服可见尾号; 申请人=未入职 → 客服完全看不到电话
       ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: _mask ? smsMaskPhone(e.phone) : e.phone,
         extra: [e.position, e.status === 'active' ? '在职' : e.status].filter(Boolean).join(' · ') })),
-      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: _mask ? smsMaskPhone(a.phone) : a.phone,
+      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: _mask ? '' : a.phone,
         extra: [a.position, a.partner_name].filter(Boolean).join(' · ') })),
     ];
     res.json({ people });
