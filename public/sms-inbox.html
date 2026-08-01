@@ -436,7 +436,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <input id="editEmpSearch" placeholder="搜员工姓名 / 电话…" oninput="empLinkDebounce()" style="margin-bottom:4px">
     <div id="editEmpResults" style="max-height:170px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;display:none"></div>
     <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:2px">
-      <div style="flex:1"><label>工作的州 Work State</label><input id="editWorkState" placeholder="如 IL / TX" maxlength="20" style="text-transform:uppercase"></div>
+      <div style="flex:1"><label>工作的州 Work State</label><select id="editWorkState" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none;background:var(--white);margin-bottom:8px"></select></div>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px"><input type="checkbox" id="editIsForeman" style="width:auto;margin:0">🦺 是工头</label>
     </div>
     <label>公司 Company（从现有公司选）</label>
@@ -1459,7 +1459,36 @@ async function doAssign(agentId) {
 }
 
 // ─── Edit Contact ───
-const CONTACT_TAG_PRESETS = ['普工', 'Order Picker', '叉车工', '卸柜工', '高位叉车', '打包'];
+// 工种标签统一全中文 (常见英文写法输入时自动转成中文, 避免中英混着)
+const CONTACT_TAG_PRESETS = ['普工', '拣货', '叉车工', '高位叉车', '卸柜工', '打包', '分拣', '装卸'];
+const _TAG_ZH_MAP = {
+  'order picker': '拣货', 'orderpicker': '拣货', 'picker': '拣货', 'picking': '拣货',
+  'forklift': '叉车工', 'forklift driver': '叉车工', 'reach truck': '高位叉车', 'reach': '高位叉车',
+  'unloader': '卸柜工', 'unloading': '卸柜工', 'lumper': '卸柜工', '卸柜工人': '卸柜工',
+  'packer': '打包', 'packing': '打包', 'sorter': '分拣', 'sorting': '分拣',
+  'loader': '装卸', 'general labor': '普工', 'general labour': '普工', 'general laborer': '普工'
+};
+function normalizeTag(t) {
+  t = String(t || '').trim();
+  return _TAG_ZH_MAP[t.toLowerCase()] || t;
+}
+// 全美州下拉 (存两位代码)
+const _US_STATES = [['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['DC','Washington DC'],['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming']];
+const _US_STATES_COMMON = ['IL', 'TX', 'CA', 'GA', 'NJ', 'NY'];
+function _fillWorkStateSelect(current) {
+  const sel = document.getElementById('editWorkState');
+  const cur = String(current || '').trim().toUpperCase();
+  const opt = c => {
+    const s = _US_STATES.find(x => x[0] === c);
+    return '<option value="' + c + '"' + (c === cur ? ' selected' : '') + '>' + c + ' — ' + (s ? s[1] : c) + '</option>';
+  };
+  let html = '<option value=""' + (cur ? '' : ' selected') + '>— 不选 —</option>';
+  html += '<optgroup label="常用">' + _US_STATES_COMMON.map(opt).join('') + '</optgroup>';
+  html += '<optgroup label="全部州">' + _US_STATES.filter(s => !_US_STATES_COMMON.includes(s[0])).map(s => opt(s[0])).join('') + '</optgroup>';
+  // 老数据里手填的怪值也保留可选, 不丢
+  if (cur && !_US_STATES.some(s => s[0] === cur)) html += '<option value="' + esc(cur) + '" selected>' + esc(cur) + '</option>';
+  sel.innerHTML = html;
+}
 let _editTags = [];
 let _partnerNamesCache = null;
 async function _fillCompanySelect(current) {
@@ -1490,10 +1519,11 @@ function showEditContactModal() {
     if (digits) { document.getElementById('editEmpSearch').value = digits; empLinkSearch(); }
   }
   document.getElementById('editNotes').value = currentContact.notes || '';
-  document.getElementById('editWorkState').value = currentContact.work_state || '';
+  _fillWorkStateSelect(currentContact.work_state || '');
   document.getElementById('editIsForeman').checked = !!currentContact.is_foreman;
   try { _editTags = JSON.parse(currentContact.tags || '[]'); } catch (_) { _editTags = []; }
   if (!Array.isArray(_editTags)) _editTags = [];
+  _editTags = [...new Set(_editTags.map(normalizeTag))];   // 旧的英文工种(如 Order Picker)打开时就转成中文
   document.getElementById('editTagInput').value = '';
   renderEditTags();
   document.getElementById('editContactModal').classList.add('show');
@@ -1549,7 +1579,7 @@ function renderEditTags() {
   ).join('');
 }
 function addEditTag(t) {
-  t = String(t || '').trim();
+  t = normalizeTag(t);
   if (t && !_editTags.includes(t)) { _editTags.push(t); renderEditTags(); }
 }
 function addEditTagFromInput() {
