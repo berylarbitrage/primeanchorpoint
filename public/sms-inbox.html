@@ -955,6 +955,26 @@ async function fetchThreads(silent) {
 
 function loadMoreThreads() { listPage++; fetchThreads(false); }
 
+// 跟进状态: 对方最后来消息比我们最后回复晚 → 显示等了多久; 否则显示上次跟进时间
+function followUpBadge(t) {
+  if (t.status === 'closed') return '';
+  const p = s => { if (!s) return null; const d = new Date(String(s).replace(' ', 'T') + 'Z'); return isNaN(d) ? null : d.getTime(); };
+  const ti = p(t.last_inbound_at), to = p(t.last_outbound_at);
+  const fmtDur = ms => {
+    const m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return m + '分钟';
+    if (m < 1440) return Math.round(m / 60) + '小时';
+    return Math.round(m / 1440) + '天';
+  };
+  if (ti && (!to || ti > to)) {
+    const dur = Date.now() - ti;
+    const urgent = dur >= 3600000;   // 超过 1 小时没回 → 红色
+    return '<span style="background:' + (urgent ? '#fee2e2;color:#b91c1c' : '#fef3c7;color:#92400e') + ';font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">⏳ ' + fmtDur(dur) + '未跟进</span>';
+  }
+  if (to) return '<span style="background:var(--gray-100);color:var(--gray-500);font-size:.66rem;font-weight:600;padding:1px 7px;border-radius:10px;white-space:nowrap">✓ 已跟进 ' + fmtDur(Date.now() - to) + '前</span>';
+  return '';
+}
+
 // 工作经历工具: 解析 + 日期显示 (2026-05 → 26/05)
 function parseWorkHistory(s) {
   try { const a = typeof s === 'string' ? JSON.parse(s || '[]') : (s || []); return Array.isArray(a) ? a : []; } catch (_) { return []; }
@@ -994,7 +1014,7 @@ function renderThreadList() {
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
       + '<span class="ti-time">' + time + '</span></div>'
       + '<div class="ti-preview">' + preview + '</div>'
-      + '<div class="ti-meta">' + (t.channel === 'whatsapp' ? '<span style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🟢 WhatsApp</span>' : '') + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
+      + '<div class="ti-meta">' + followUpBadge(t) + (t.channel === 'whatsapp' ? '<span style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🟢 WhatsApp</span>' : '') + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
       + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
       + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
@@ -1123,28 +1143,22 @@ function renderActionBar() {
   const s = currentThread.status;
   const isAssigned = !!currentThread.assigned_agent;
   const isMe = currentThread.assigned_agent && currentThread.assigned_agent.id === (USER && USER.id);
+  const isAdmin = USER && USER.role === 'admin';
   let html = '';
 
-  if (s === 'open') {
-    if (isAssigned) {
-      if (!isMe) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
-      html += '<button class="action-btn" onclick="showAssignModal()">Reassign</button>';
-      html += '<button class="action-btn" onclick="unassignThread()">Unassign</button>';
-      html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
-      html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">Assigned: ' + esc(currentThread.assigned_agent.username) + '</span>';
-    } else {
-      html += '<button class="action-btn primary" onclick="claimThread()">Claim</button>';
-      html += '<button class="action-btn" onclick="showAssignModal()">Assign</button>';
-      html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
+  if (s === 'closed') {
+    html = '<button class="action-btn primary" onclick="reopenThread()">Reopen</button>';
+  } else {
+    // 无人负责: 谁都可以认领; 已有人负责: 只有 admin 能接管
+    if (!isAssigned) html += '<button class="action-btn primary" onclick="claimThread()">认领 Claim</button>';
+    else if (!isMe && isAdmin) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
+    // 分配/转派/取消分配: 仅 admin 决定对话给谁
+    if (isAdmin) {
+      html += '<button class="action-btn" onclick="showAssignModal()">' + (isAssigned ? 'Reassign' : 'Assign') + '</button>';
+      if (isAssigned) html += '<button class="action-btn" onclick="unassignThread()">Unassign</button>';
     }
-  } else if (s === 'claimed') {
-    if (!isMe) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
-    html += '<button class="action-btn" onclick="showAssignModal()">Reassign</button>';
-    html += '<button class="action-btn" onclick="unassignThread()">Unassign</button>';
     html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
-    if (isAssigned) html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">Assigned: ' + esc(currentThread.assigned_agent.username) + '</span>';
-  } else if (s === 'closed') {
-    html += '<button class="action-btn primary" onclick="reopenThread()">Reopen</button>';
+    if (isAssigned) html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">负责人: ' + esc(currentThread.assigned_agent.username) + '</span>';
   }
   bar.innerHTML = html;
 }
