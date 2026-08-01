@@ -154,20 +154,28 @@ async function putObject(key, body, { contentType, contentDisposition } = {}) {
     }));
     return k;
   }
-  // Local
+  // Local — atomic write (tmp + rename): a kill mid-write must never leave a
+  // half-written file in place (in-place encryption overwrites the only copy).
   const fp = localPathForKey(k);
   fs.mkdirSync(path.dirname(fp), { recursive: true });
-  if (Buffer.isBuffer(body) || typeof body === 'string') {
-    fs.writeFileSync(fp, body);
-  } else if (body && typeof body.pipe === 'function') {
-    await new Promise((resolve, reject) => {
-      const ws = fs.createWriteStream(fp);
-      body.pipe(ws);
-      ws.on('finish', resolve);
-      ws.on('error', reject);
-    });
-  } else {
-    throw new Error('putObject body must be Buffer, string, or Readable');
+  const tmp = fp + '.tmp-' + process.pid + '-' + Date.now();
+  try {
+    if (Buffer.isBuffer(body) || typeof body === 'string') {
+      fs.writeFileSync(tmp, body);
+    } else if (body && typeof body.pipe === 'function') {
+      await new Promise((resolve, reject) => {
+        const ws = fs.createWriteStream(tmp);
+        body.pipe(ws);
+        ws.on('finish', resolve);
+        ws.on('error', reject);
+      });
+    } else {
+      throw new Error('putObject body must be Buffer, string, or Readable');
+    }
+    fs.renameSync(tmp, fp);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    throw e;
   }
   return k;
 }

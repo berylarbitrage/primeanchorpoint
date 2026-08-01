@@ -2,10 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<!-- Meta Pixel Code -->
-<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js'); fbq('init', '978932388059197'); fbq('track', 'PageView');</script>
-<noscript><img height="1" width="1" src="https://www.facebook.com/tr?id=978932388059197&ev=PageView&noscript=1"/></noscript>
-<!-- End Meta Pixel Code -->
+<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>SMS Inbox — Prime Anchor Workforce</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
@@ -48,21 +45,24 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 
 /* Filters */
 .filters{background:var(--white);padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--gray-200);flex-shrink:0}
-.filters input[type=text]{flex:1;min-width:120px;padding:8px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem;outline:none}
-.filters input[type=text]:focus{border-color:var(--sky)}
-.filters select{padding:7px 8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.8rem;background:var(--white);outline:none;cursor:pointer}
+.filters input[type=text]{flex:1 1 100%;min-width:120px;padding:9px 14px;border:1px solid var(--gray-200);border-radius:20px;font-size:.85rem;outline:none;background:var(--off-white)}
+.filters input[type=text]:focus{border-color:var(--sky);background:var(--white)}
+.filters-row{display:flex;gap:6px;align-items:center;flex:1 1 100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.filters-row::-webkit-scrollbar{display:none}
+.filters select{padding:7px 8px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;background:var(--white);outline:none;cursor:pointer;color:var(--gray-600);font-weight:600;flex-shrink:0;max-width:150px}
+.filters select:focus{border-color:var(--sky)}
 .filter-btn{padding:6px 12px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;font-weight:600;cursor:pointer;background:var(--white);color:var(--gray-600);transition:all .15s}
 .filter-btn:hover{border-color:var(--sky);color:var(--sky)}
 .filter-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
 
-/* Thread list */
-.thread-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.thread-item{display:flex;align-items:flex-start;padding:12px 16px;border-bottom:1px solid var(--gray-200);cursor:pointer;transition:background .15s;gap:10px}
-.thread-item:hover{background:var(--sky-light)}
-.thread-item.unread{background:#fffdf5}
+/* Thread list — 卡片式 */
+.thread-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 10px}
+.thread-item{display:flex;align-items:flex-start;padding:11px 13px;margin-bottom:8px;background:var(--white);border:1px solid #f3e8cd;border-radius:14px;box-shadow:0 1px 3px rgba(146,64,14,.06);cursor:pointer;transition:box-shadow .15s,border-color .15s;gap:10px}
+.thread-item:hover{border-color:#f5d78e;box-shadow:0 3px 12px rgba(146,64,14,.12)}
+.thread-item.unread{background:#fffcf2;border-color:#fde68a;border-left:4px solid var(--accent)}
 .thread-item.unread .ti-name{font-weight:700}
 .thread-item.unread .ti-preview{color:var(--gray-800);font-weight:500}
-.ti-avatar{width:38px;height:38px;border-radius:50%;background:var(--sky-light);color:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0}
+.ti-avatar{width:40px;height:40px;border-radius:50%;background:var(--sky-light);color:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
 .ti-body{flex:1;min-width:0}
 .ti-top{display:flex;align-items:center;gap:6px;margin-bottom:2px}
 .ti-name{font-size:.88rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
@@ -231,17 +231,72 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .offline-bar{background:#fee2e2;color:#991b1b;text-align:center;padding:6px;font-size:.78rem;font-weight:600;display:none;flex-shrink:0}
 .offline-bar.show{display:block}
 
+/* 顶栏工具 + 手机端 ⋮ 菜单 */
+.header{position:relative}
+.header-tools{display:flex;align-items:center;gap:0}
+.more-menu{display:none;position:absolute;top:calc(100% - 4px);right:8px;background:var(--white);border:1px solid var(--gray-200);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);z-index:95;min-width:210px;max-height:70vh;overflow-y:auto;padding:4px 0}
+.more-menu.show{display:block}
+.mm-item{display:flex;align-items:center;gap:12px;padding:11px 16px;font-size:.86rem;color:var(--gray-800);cursor:pointer;border-bottom:1px solid var(--gray-100)}
+.mm-item:last-child{border-bottom:none}
+.mm-item:active,.mm-item:hover{background:var(--sky-light)}
+.mm-item .mm-ico{width:22px;text-align:center;flex-shrink:0}
+
+/* Sender label above bubbles */
+.msg-sender{font-size:.7rem;font-weight:700;margin:6px 6px 1px;letter-spacing:.2px}
+.msg-row.inbound .msg-sender{text-align:left;color:var(--gray-600)}
+.msg-row.outbound .msg-sender{text-align:right}
+
+/* 📌 消息标记 (分类+备注) 显示在气泡下方 */
+.msg-mark{font-size:.74rem;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:3px 10px;margin-top:3px;max-width:82%;word-break:break-word}
+.msg-row.outbound .msg-mark{align-self:flex-end}
+.msg-row.inbound .msg-mark{align-self:flex-start}
+
+/* 防止窄屏时中文按钮/徽章逐字竖排 */
+.tag,.ti-status,.priority-badge,.action-btn,.filter-btn{white-space:nowrap}
+#detailPhone{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#contactTagRow>span,#contactTagRow>a{white-space:nowrap;flex-shrink:0}
+
 /* Better mobile keyboard handling */
 @supports(height: 100dvh){
   body,#app,#list-view,#detail-view{height:100dvh}
 }
 
+/* 手机窄屏: 压缩会话顶部, 给消息区留最大空间 */
+@media(max-width:768px){
+  .header{padding:6px 8px;gap:2px;min-height:44px}
+  .header .btn-icon{font-size:.95rem;padding:5px 4px}
+  /* 图标太多一行放不下 → 收进 ⋮ 菜单 */
+  #list-view .header-tools{display:none}
+  #moreMenuBtn{display:block!important}
+  .back-btn{padding:5px 6px}
+  #detail-view .header{flex-wrap:nowrap}
+  #detailName{font-size:.86rem}
+  #contactTagRow{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none}
+  #contactTagRow::-webkit-scrollbar{display:none}
+  .action-bar{flex-wrap:nowrap;overflow-x:auto;padding:5px 8px;gap:5px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .action-bar::-webkit-scrollbar{display:none}
+  .action-btn{flex-shrink:0;padding:5px 11px;font-size:.76rem}
+  .action-bar span{white-space:nowrap;flex-shrink:0}
+  .lang-bar{flex-wrap:nowrap;overflow-x:auto;padding:4px 8px;gap:5px;scrollbar-width:none}
+  .lang-bar::-webkit-scrollbar{display:none}
+  .lang-bar .lb-hint{display:none}
+  .filters{padding:6px 8px}
+  .reply-bar{padding:6px 8px;gap:6px}
+  .reply-bar .note-toggle,.reply-bar .send-btn{width:38px;height:38px;min-height:38px}
+  .reply-bar textarea{min-height:38px;padding:8px 14px}
+  .msg-bubble{max-width:88%}
+}
+
+#deskEmpty{display:none}
 @media(min-width:769px){
   body{overflow:auto}
   #app.show{flex-direction:row;height:100vh}
-  #list-view{width:380px;border-right:1.5px solid #fde68a;flex-shrink:0;height:100vh}
+  #list-view{width:400px;border-right:1.5px solid #fde68a;flex-shrink:0;height:100vh}
   #list-view.hide{display:flex}
   #detail-view{flex:1;height:100vh}
+  /* 未选对话时右侧显示空态, 选中后隐藏 */
+  #deskEmpty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:var(--off-white)}
+  #detail-view.show ~ #deskEmpty{display:none}
   .dash-stats{grid-template-columns:repeat(6,1fr)}
 }
 </style>
@@ -278,32 +333,47 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <h1>SMS Inbox</h1>
       <span id="headerUnread" class="badge-unread" style="display:none"></span>
       <div class="spacer"></div>
-      <button class="btn-icon" onclick="showBroadcastModal()" title="Compose / Broadcast" style="font-size:1.1rem">&#9993;</button>
-      <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
-      <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
-      <button class="btn-icon" onclick="loadThreads()" title="Refresh">&#x21bb;</button>
-      <button class="btn-icon" onclick="doLogout()" title="Logout">&#x2715;</button>
-    </div>
-    <!-- Dashboard Panel -->
-    <div class="dash-panel" id="dashPanel">
-      <div class="dash-stats" id="dashStats"></div>
+      <div class="header-tools" id="headerTools">
+        <button class="btn-icon" onclick="showStarredModal(0)" title="星标消息" style="color:#f59e0b">&#9733;</button>
+        <button class="btn-icon" onclick="showNewChatModal()" title="发起对话" style="font-size:1.05rem">&#128172;</button>
+        <button class="btn-icon" id="bcBtn" style="display:none;font-size:1.1rem" onclick="showBroadcastModal()" title="群发 Broadcast (仅管理员)">&#9993;</button>
+        <button class="btn-icon" id="testNotifyBtn" style="display:none;font-size:.7rem;color:var(--red)" onclick="testNotify()" title="测试通知 TEST (仅管理员)">TEST</button>
+        <button class="btn-icon" onclick="document.getElementById('twilioTipsModal').classList.add('show')" title="Twilio 防封号须知" style="color:#b45309">&#9888;</button>
+        <button class="btn-icon" id="ivListBtn" style="display:none" onclick="showIvListModal()" title="面试总览 (仅管理员)">&#128198;</button>
+        <button class="btn-icon" id="aiBlocksBtn" style="display:none" onclick="showAiBlocksModal()" title="AI 拦截记录 (仅管理员)">&#128737;</button>
+        <button class="btn-icon" id="contactEditsBtn" style="display:none" onclick="showContactEditsModal()" title="资料修改记录 (仅管理员)">&#128203;</button>
+        <button class="btn-icon" onclick="location.href='/sms-stats'" title="消息统计页">&#128202;</button>
+        <button class="btn-icon" id="csAccBtn" style="display:none" onclick="showCsAccModal()" title="客服账号管理 (仅管理员)">&#128101;</button>
+        <button class="btn-icon" onclick="loadThreads()" title="刷新 Refresh">&#x21bb;</button>
+        <button class="btn-icon" onclick="doLogout()" title="退出登录 Logout">&#x2715;</button>
+      </div>
+      <button class="btn-icon" id="moreMenuBtn" onclick="toggleMoreMenu(event)" title="菜单" style="display:none;font-size:1.25rem;font-weight:700">&#8942;</button>
+      <div id="moreMenu" class="more-menu"></div>
     </div>
     <div class="filters">
-      <input type="text" id="searchInput" placeholder="Search name, phone, message..." oninput="debounceSearch()">
-      <select id="statusFilter" onchange="loadThreads()">
-        <option value="all">All</option>
-        <option value="">Open + Claimed</option>
-        <option value="open">Open</option>
-        <option value="claimed">Claimed</option>
-        <option value="unassigned">Unassigned</option>
-        <option value="closed">Closed</option>
-      </select>
-      <select id="agentFilter" onchange="loadThreads()">
-        <option value="">All Agents</option>
-        <option value="me">My Threads</option>
-        <option value="unassigned">Unassigned</option>
-      </select>
-      <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">Unread</button>
+      <input type="text" id="searchInput" placeholder="搜姓名 / 电话 / 消息…" oninput="debounceSearch()">
+      <div class="filters-row">
+        <select id="statusFilter" onchange="loadThreads()">
+          <option value="all">状态: 全部</option>
+          <option value="">进行中</option>
+          <option value="open">Open</option>
+          <option value="claimed">Claimed</option>
+          <option value="unassigned">无人负责</option>
+          <option value="closed">已关闭</option>
+        </select>
+        <select id="agentFilter" onchange="loadThreads()">
+          <option value="">客服: 全部</option>
+          <option value="me">我负责的</option>
+          <option value="unassigned">无人负责</option>
+        </select>
+        <select id="companyFilter" onchange="loadThreads()">
+          <option value="">公司: 全部</option>
+        </select>
+        <select id="jobtagFilter" onchange="loadThreads()">
+          <option value="">工种: 全部</option>
+        </select>
+        <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">未读</button>
+      </div>
     </div>
     <div class="pull-indicator" id="pullIndicator">Pull to refresh...</div>
     <div class="thread-list" id="threadList"></div>
@@ -319,9 +389,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div style="flex:1;min-width:0">
         <div id="detailName" style="font-size:.92rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
         <div id="detailPhone" style="font-size:.75rem;color:var(--gray-400)"></div>
+        <div id="contactTagRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px"></div>
       </div>
       <span id="detailPriority" class="priority-badge" onclick="cyclePriority()"></span>
       <span id="detailStatus" class="ti-status" style="font-size:.72rem"></span>
+      <button class="btn-icon" onclick="showInterviewModal()" title="面试安排: 标记时间/地址, 发确认短信和工作要求">&#128197;</button>
+      <button class="btn-icon" id="evalBtn" style="display:none" onclick="showEvalModal()" title="AI 评估这段对话里客服的表现 (仅管理员)">&#129302;</button>
+      <button class="btn-icon" onclick="showStarredModal(currentThread && currentThread.id)" title="本对话的星标消息">&#9733;</button>
       <button class="btn-icon" onclick="showEditContactModal()" title="Edit contact">&#9998;</button>
       <button class="btn-icon" onclick="toggleHistory()" title="History">&#128337;</button>
     </div>
@@ -341,7 +415,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         <option value="en">英语</option>
         <option value="es">西班牙语</option>
       </select>
-      <span style="margin-left:auto;font-size:.68rem;color:#4ade80">✓ 收到的消息自动翻译</span>
+      <span class="lb-hint" style="margin-left:auto;font-size:.68rem;color:#4ade80">✓ 收到的消息自动翻译</span>
     </div>
     <div class="messages-area" id="messagesArea"></div>
     <div class="history-panel" id="historyPanel"></div>
@@ -367,9 +441,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <div class="reply-bar" id="replyBar">
       <button class="note-toggle" id="noteToggle" onclick="toggleNoteMode()" title="Internal note">&#128221;</button>
       <button class="note-toggle" id="templateToggle" onclick="toggleTemplates()" title="Quick replies">&#9889;</button>
-      <textarea id="replyInput" rows="1" placeholder="输入消息（自动翻译后发送）..." oninput="autoGrow(this);onComposeInput()"></textarea>
+      <textarea id="replyInput" rows="1" placeholder="输入消息…" oninput="autoGrow(this);onComposeInput()"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendReply()" title="Send">&#9654;</button>
     </div>
+  </div>
+  <!-- 桌面端未选对话时的空态 -->
+  <div id="deskEmpty">
+    <img src="logo.svg" alt="" style="width:72px;opacity:.5">
+    <div style="font-size:1rem;font-weight:600;color:var(--gray-500)">从左侧选择一个对话开始</div>
+    <div style="font-size:.8rem;color:var(--gray-400)">💬 发起对话 · 📊 统计页 · ⚠️ 防封号须知 都在左上工具栏</div>
   </div>
 </div>
 
@@ -385,12 +465,87 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 <!-- Edit Contact Modal -->
 <div class="modal-bg" id="editContactModal">
   <div class="modal">
-    <h3>Edit Contact</h3>
-    <label>Name</label><input id="editName" placeholder="Contact name">
-    <label>Company</label><input id="editCompany" placeholder="Company">
-    <label>Email</label><input id="editEmail" placeholder="Email">
+    <h3>联系人资料 / Contact</h3>
+    <label>Name <span id="nameLockHint" style="display:none;color:#b45309;font-weight:400">&#128274; 名字仅管理员可改, 关联员工账号后自动带出</span></label><input id="editName" placeholder="Contact name">
+    <div id="editEmpLinked" style="display:none;align-items:center;gap:8px;margin-bottom:6px;background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:5px 10px;font-size:.8rem;color:#065f46"></div>
+    <div id="empLinkAdminWrap">
+      <label>关联员工档案（按姓名 / 电话搜；打开时已自动按本号码找过）</label>
+      <input id="editEmpSearch" placeholder="搜员工姓名 / 电话…" oninput="empLinkDebounce()" style="margin-bottom:4px">
+      <div id="editEmpResults" style="max-height:170px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;display:none"></div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:2px">
+      <div style="flex:1"><label>工作的州 Work State</label><select id="editWorkState" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none;background:var(--white);margin-bottom:8px"></select></div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px"><input type="checkbox" id="editIsForeman" style="width:auto;margin:0">🦺 是工头</label>
+    </div>
+    <label>公司 Company（从现有公司选）</label>
+    <select id="editCompany" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;background:var(--white)">
+      <option value="">— 不选 —</option>
+    </select>
+    <label>工作经历（干过哪些公司 / 工种 / 大概时间，可多条）</label>
+    <div id="whList" style="margin-bottom:4px"></div>
+    <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center">
+      <input id="whCompany" placeholder="公司" list="whCompanyList" style="flex:2;margin:0;min-width:0">
+      <datalist id="whCompanyList"></datalist>
+      <input id="whRole" placeholder="工种" list="whRoleList" style="flex:1.5;margin:0;min-width:0">
+      <datalist id="whRoleList"></datalist>
+      <input id="whDate" type="month" style="flex:1.6;margin:0;min-width:0" title="大概时间(选个月份就行)">
+      <button type="button" class="filter-btn" onclick="addWorkHistory()" style="flex-shrink:0">+ 加</button>
+    </div>
+    <div id="emailRowWrap"><label>Email</label><input id="editEmail" placeholder="Email"></div>
+    <label>标签（做过的工种 / 在哪里上过班）</label>
+    <div id="editTagChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
+    <div id="editTagPresets" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+    <input id="editTagInput" placeholder="自定义标签，回车添加（如: GOFO上过班 / 只做白班）" style="margin-bottom:8px" onkeydown="if(event.key==='Enter'){event.preventDefault();addEditTagFromInput();}">
+    <label>备注（要求 / 上班情况等，保存进系统）</label>
+    <textarea id="editNotes" rows="4" placeholder="如: 只做白班，有车；5/20 在 GOFO 卸柜上过一天班，靠谱" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
     <button class="btn" onclick="saveContact()">Save</button>
     <button class="close-modal" onclick="closeEditContactModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- 发起对话: 从员工 / 招工申请找人 -->
+<div class="modal-bg" id="newChatModal">
+  <div class="modal" style="max-width:540px">
+    <h3>&#128172; 发起对话 · 从员工 / 招工申请找人</h3>
+    <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center">
+      <span style="font-size:.78rem;color:var(--gray-500)">渠道:</span>
+      <button type="button" class="filter-btn active" id="ncChanSms" onclick="ncSetChannel('sms')">📱 短信 SMS</button>
+      <button type="button" class="filter-btn" id="ncChanWa" onclick="ncSetChannel('whatsapp')">🟢 WhatsApp</button>
+    </div>
+    <div id="ncWaHint" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 10px;font-size:.74rem;color:#166534;margin-bottom:8px">WhatsApp: 需要在 Twilio 开通 WhatsApp Sender。注意: 对方 24 小时内没给我们发过消息时, 主动发的自由文本会被 WhatsApp 拒收(需要用审核过的模板), 最好等对方先来消息或让他先加我们。</div>
+    <input id="ncSearch" placeholder="搜姓名 / 电话 / 职位 / 公司…" oninput="ncDebounce()" style="margin-bottom:8px">
+    <div id="ncResults" style="max-height:320px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius)">
+      <div style="padding:12px;color:var(--gray-400);text-align:center">输入关键词搜索，或直接浏览</div>
+    </div>
+    <button class="close-modal" onclick="closeNewChatModal()" style="margin-top:8px">Cancel</button>
+  </div>
+</div>
+
+<!-- ⭐ 星标消息汇总 -->
+<div class="modal-bg" id="starredModal">
+  <div class="modal" style="max-width:560px">
+    <h3 id="starredTitle">&#9733; 星标消息</h3>
+    <div id="starredTagFilter" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
+    <div id="starredList" style="max-height:380px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius)"></div>
+    <button class="close-modal" onclick="closeStarredModal()" style="margin-top:8px">Close</button>
+  </div>
+</div>
+
+<!-- 📌 消息标记 (分类 + 备注) -->
+<div class="modal-bg" id="msgMarkModal">
+  <div class="modal" style="max-width:420px">
+    <h3>&#128204; 标记这条消息</h3>
+    <div id="markMsgPreview" style="background:var(--gray-100);border-radius:8px;padding:8px 12px;font-size:.82rem;color:var(--gray-600);margin-bottom:10px;max-height:80px;overflow-y:auto;word-break:break-word"></div>
+    <label>类别（点选或自己填）</label>
+    <div id="markTagChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
+    <input id="markTagInput" placeholder="自定义类别（可留空，只标星）" maxlength="40" style="margin-bottom:4px" oninput="_renderMarkChips()">
+    <div id="markFields"></div>
+    <label>备注（可选）</label>
+    <textarea id="markNote" rows="2" placeholder="其他补充说明" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
+    <button class="btn" onclick="saveMark(false)">保存标记</button>
+    <button id="markSendBtn" onclick="saveMarkAndCompose()" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid var(--sky);color:var(--sky);border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.88rem;margin-top:6px">💬 保存并生成消息发给对方</button>
+    <button id="markRemoveBtn" onclick="saveMark(true)" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid var(--red);color:var(--red);border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:.88rem;margin-top:6px">取消标记</button>
+    <button class="close-modal" onclick="document.getElementById('msgMarkModal').classList.remove('show')">关闭</button>
   </div>
 </div>
 
@@ -450,6 +605,154 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   </div>
 </div>
 
+<!-- 🤖 AI 客服表现评估 (仅 admin) -->
+<div class="modal-bg" id="evalModal">
+  <div class="modal" style="max-width:560px">
+    <h3>&#129302; AI 评估客服表现</h3>
+    <div id="evalBody" style="max-height:420px;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn" id="evalRunBtn" onclick="runEvaluation()">开始评估</button>
+      <button class="close-modal" onclick="document.getElementById('evalModal').classList.remove('show')" style="margin:0">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- 📅 面试安排 -->
+<div class="modal-bg" id="interviewModal">
+  <div class="modal" style="max-width:560px">
+    <h3>&#128197; 面试安排</h3>
+    <div id="ivCurrent" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius);padding:8px 12px;font-size:.85rem;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;margin-bottom:6px">
+      <div style="flex:1"><label>面试时间</label><input id="ivAt" type="datetime-local"></div>
+    </div>
+    <label>面试地址</label><input id="ivAddr" placeholder="如 1431 N Luna Ave, Chicago, IL">
+    <label>备注（可选）</label><input id="ivNote" placeholder="如 找 Jane / 带两份文件">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn" onclick="saveInterview()" style="margin:0">保存面试</button>
+      <button class="filter-btn" onclick="fillInterviewMsg('confirm')" title="按模板生成面试确认短信, 填入发送框, 你确认后发送">✉️ 发面试确认</button>
+      <button class="filter-btn" onclick="fillInterviewMsg('requirements')" title="把工作基本要求模板填入发送框, 你确认后发送">📋 发工作要求</button>
+    </div>
+    <div id="ivUpcomingWrap" style="margin-top:12px">
+      <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px">📆 即将到来的面试（14 天内）</div>
+      <div id="ivUpcoming" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:150px;overflow-y:auto"></div>
+    </div>
+    <div id="ivTplWrap" style="display:none;margin-top:12px">
+      <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px">✏️ 模板（仅管理员可改；占位符 {name} {date} {time} {address}）</div>
+      <label>面试确认模板</label><textarea id="ivTplConfirm" rows="4" style="width:100%;font-size:.8rem;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-family:inherit"></textarea>
+      <label>工作要求模板</label><textarea id="ivTplReq" rows="4" style="width:100%;font-size:.8rem;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-family:inherit"></textarea>
+      <button class="filter-btn" onclick="saveInterviewTpls()" style="margin-top:6px">保存模板</button>
+    </div>
+    <button class="close-modal" onclick="document.getElementById('interviewModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<!-- ⚠️ Twilio 防封号须知 -->
+<div class="modal-bg" id="twilioTipsModal">
+  <div class="modal" style="max-width:560px">
+    <h3>&#9888; Twilio 防封号注意事项</h3>
+    <div style="font-size:.84rem;line-height:1.75;max-height:420px;overflow-y:auto">
+      <b style="color:#dc2626">红线（碰了很快封号）：</b>
+      <ul style="margin:4px 0 10px 18px;padding:0">
+        <li>给<b>从未主动联系过我们/未同意接收</b>的号码群发招工广告（未经同意的营销 = 最快封号路径）</li>
+        <li>对方回了 <b>STOP</b> 还继续发（系统现在会自动拦，但不要想办法绕过）</li>
+        <li>发送贷款、大麻、赌博、成人内容、加密货币等 Twilio 禁类内容</li>
+        <li>用公共短链（bit.ly 等）发链接 — 运营商直接当垃圾拦截并记投诉</li>
+      </ul>
+      <b style="color:#b45309">高风险（积累多了触发审查）：</b>
+      <ul style="margin:4px 0 10px 18px;padding:0">
+        <li>同一段文字瞬间发给大量号码（群发功能已自动加了逐条间隔，一次别超过 100 个，分批发）</li>
+        <li>深夜/清晨打扰：发送尽量放在对方本地 <b>早 8 点 – 晚 9 点</b> 之间（发送时系统会提醒）</li>
+        <li>错误率高：大量发到空号/停机号（名单要干净，退订和无效号及时清理）</li>
+        <li>消息内容和你在 Twilio 注册 A2P Campaign 时申报的用途不一致</li>
+      </ul>
+      <b style="color:#059669">保命做法：</b>
+      <ul style="margin:4px 0 4px 18px;padding:0">
+        <li>确认 Twilio 后台已完成 <b>A2P 10DLC Campaign 注册</b>（未注册的号码发美国短信会被大量过滤）</li>
+        <li>首次给新号码发消息时表明身份（"我是 Prime Anchor Workforce 的招工客服…"）</li>
+        <li>群发底部带上 "Reply STOP to opt out"（回 STOP 退订）字样</li>
+        <li>保持真实对话为主 — 一问一答的双向对话信誉最好，广播越少越安全</li>
+      </ul>
+    </div>
+    <button class="close-modal" onclick="document.getElementById('twilioTipsModal').classList.remove('show')">知道了</button>
+  </div>
+</div>
+
+<!-- 📆 面试总览 (仅 admin) -->
+<div class="modal-bg" id="ivListModal">
+  <div class="modal" style="max-width:640px">
+    <h3>&#128198; 面试总览 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员</span></h3>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="filter-btn" data-ivdays="14" onclick="loadIvList(14)">14 天</button>
+      <button class="filter-btn" data-ivdays="30" onclick="loadIvList(30)">30 天</button>
+      <button class="filter-btn" data-ivdays="60" onclick="loadIvList(60)">60 天</button>
+    </div>
+    <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px">📌 已预约（按时间排序）</div>
+    <div id="ivListUpcoming" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:280px;overflow-y:auto"></div>
+    <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin:12px 0 4px">🗂 最近结果（完成 / 未到 / 取消）</div>
+    <div id="ivListRecent" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:160px;overflow-y:auto"></div>
+    <button class="close-modal" onclick="document.getElementById('ivListModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<!-- 📋 资料修改记录 (仅 admin) -->
+<div class="modal-bg" id="contactEditsModal">
+  <div class="modal" style="max-width:640px">
+    <h3>&#128203; 资料修改记录 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员 · 每天核对客服的修改有没有错</span></h3>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+      <button class="filter-btn" onclick="ceShiftDay(-1)">&larr; 前一天</button>
+      <input type="date" id="ceDate" onchange="loadContactEdits()" style="width:auto;margin:0;padding:6px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem">
+      <button class="filter-btn" onclick="ceShiftDay(1)">后一天 &rarr;</button>
+      <button class="filter-btn" onclick="document.getElementById('ceDate').value='';loadContactEdits()" title="显示最近 300 条, 不按日期过滤">全部</button>
+    </div>
+    <div id="ceList" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:440px;overflow-y:auto"></div>
+    <button class="close-modal" onclick="document.getElementById('contactEditsModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<!-- 🛡️ AI 拦截记录 (仅 admin) -->
+<div class="modal-bg" id="aiBlocksModal">
+  <div class="modal" style="max-width:640px">
+    <h3>&#128737; AI 拦截记录 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员</span></h3>
+    <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:8px">客服发出的消息先经 AI 合规审核，命中 red flag 会被拦截（不会发出去）并短信通知管理员。以下是最近 100 条拦截记录。</div>
+    <div id="aiBlocksList" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:420px;overflow-y:auto"></div>
+    <button class="close-modal" onclick="document.getElementById('aiBlocksModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<!-- 📊 消息统计 (仅 admin) -->
+<div class="modal-bg" id="msgStatsModal">
+  <div class="modal" style="max-width:640px">
+    <h3>&#128202; 消息统计 <span style="font-size:.75rem;font-weight:400;color:var(--gray-400)">(本地时间)</span></h3>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="filter-btn" data-days="7" onclick="loadMsgStats(7)">近 7 天</button>
+      <button class="filter-btn active" data-days="14" onclick="loadMsgStats(14)">近 14 天</button>
+      <button class="filter-btn" data-days="30" onclick="loadMsgStats(30)">近 30 天</button>
+    </div>
+    <div id="msgStatsDaily" style="max-height:230px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:10px"></div>
+    <div id="msgStatsHourTitle" style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px"></div>
+    <div id="msgStatsHours" style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 8px 2px;margin-bottom:10px"></div>
+    <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px">客服发送量（该时段）</div>
+    <div id="msgStatsAgents" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:140px;overflow-y:auto"></div>
+    <button class="close-modal" onclick="document.getElementById('msgStatsModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<!-- 客服账号管理 (仅 admin) -->
+<div class="modal-bg" id="csAccModal">
+  <div class="modal" style="max-width:520px">
+    <h3>👥 客服账号（只能登录 SMS Inbox）</h3>
+    <div id="csAccList" style="max-height:220px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:10px"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <input id="csAccUser" placeholder="用户名 (3-32位字母数字._-)" style="flex:1;min-width:130px">
+      <input id="csAccPass" placeholder="密码 (≥6位)" style="flex:1;min-width:110px">
+      <input id="csAccName" placeholder="显示名 (可选)" style="flex:1;min-width:100px">
+      <button class="btn" onclick="createCsAccount()" style="margin:0">创建</button>
+    </div>
+    <div style="font-size:.75rem;color:var(--gray-400);margin-top:8px">客服用这个账号登录 /sms-inbox 页面；访问管理后台其他任何页面都会被拒绝。</div>
+    <button class="close-modal" onclick="document.getElementById('csAccModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -463,6 +766,8 @@ let currentContact = null;
 let currentMessages = [];
 let currentNotes = [];
 let noteMode = false;
+let _composeNoTranslate = false;   // 面试/工作要求模板已是双语, 发送时跳过机器翻译
+let _composeNoTranslateText = '';
 let searchTimeout = null;
 let listPage = 1;
 let listTotal = 0;
@@ -496,10 +801,38 @@ async function api(path, opts = {}) {
 async function checkAuth() {
   try {
     const r = await api('/admin/me');
-    if (r && r.username) { USER = r; showApp(); return; }
+    if (r && r.username) { USER = r; showApp(); _applyAdminUi(); return; }
   } catch(e) {}
   showLogin();
 }
+function _applyAdminUi() {
+  const isAdmin = USER && USER.role === 'admin';
+  ['csAccBtn', 'ivListBtn', 'aiBlocksBtn', 'contactEditsBtn', 'bcBtn', 'testNotifyBtn'].forEach(id => {
+    const b = document.getElementById(id); if (b) b.style.display = isAdmin ? '' : 'none';
+  });
+}
+// 手机端 ⋮ 菜单: 把顶栏工具按钮收进带文字的下拉列表
+function toggleMoreMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const m = document.getElementById('moreMenu');
+  if (m.classList.contains('show')) { m.classList.remove('show'); return; }
+  const btns = [...document.querySelectorAll('#headerTools .btn-icon')].filter(b => b.style.display !== 'none');
+  window._mmBtns = btns;
+  m.innerHTML = btns.map((b, i) =>
+    '<div class="mm-item" onclick="_mmClick(' + i + ')"><span class="mm-ico" style="' + (b.getAttribute('style') || '').replace(/display:[^;]+;?/, '') + '">' + b.innerHTML + '</span>'
+    + '<span>' + esc((b.title || '').replace(/\s*[(（]仅管理员[)）]/, '')) + (/(仅管理员)/.test(b.title || '') ? ' <span style="font-size:.68rem;color:var(--gray-400)">admin</span>' : '') + '</span></div>'
+  ).join('');
+  m.classList.add('show');
+}
+function _mmClick(i) {
+  document.getElementById('moreMenu').classList.remove('show');
+  const b = (window._mmBtns || [])[i];
+  if (b) b.click();
+}
+document.addEventListener('click', e => {
+  const m = document.getElementById('moreMenu');
+  if (m && m.classList.contains('show') && !m.contains(e.target)) m.classList.remove('show');
+});
 
 function showLogin() {
   document.getElementById('loginWrap').style.display = 'flex';
@@ -510,6 +843,7 @@ function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').classList.add('show');
   loadAgentFilter();
+  loadContactFilters();
   loadThreads();
   refreshInterval = setInterval(loadThreadsSilent, 15000);
   handleHash();
@@ -547,6 +881,7 @@ async function doLogin() {
       localStorage.setItem('adminToken', TOKEN);
       USER = { username: r.username, role: r.role, id: r.user_id };
       showApp();
+      _applyAdminUi();
     } else {
       err.textContent = r.error || 'Login failed';
     }
@@ -616,10 +951,14 @@ async function fetchThreads(silent) {
     const status = document.getElementById('statusFilter').value;
     const search = document.getElementById('searchInput').value.trim();
     const agentF = document.getElementById('agentFilter').value;
+    const companyF = document.getElementById('companyFilter').value;
+    const jobtagF = document.getElementById('jobtagFilter').value;
     let url = '/sms/threads?page=' + listPage + '&limit=30';
     if (status) url += '&status=' + status;
     if (search) url += '&search=' + encodeURIComponent(search);
     if (agentF) url += '&agent_id=' + agentF;
+    if (companyF) url += '&company=' + encodeURIComponent(companyF);
+    if (jobtagF) url += '&jobtag=' + encodeURIComponent(jobtagF);
     if (unreadFilter) url += '&unread=1';
     const r = await api(url);
     listTotal = r.total || 0;
@@ -636,6 +975,57 @@ async function fetchThreads(silent) {
 
 function loadMoreThreads() { listPage++; fetchThreads(false); }
 
+// 公司 / 工种 筛选下拉: 公司来自现有合作公司, 工种用预设
+async function loadContactFilters() {
+  const jf = document.getElementById('jobtagFilter');
+  if (jf && jf.options.length <= 1) {
+    jf.innerHTML = '<option value="">工种: 全部</option>' + CONTACT_TAG_PRESETS.map(t => '<option value="' + t + '">' + t + '</option>').join('');
+  }
+  try {
+    const r = await api('/sms/partners');
+    const names = (r.partners || []).map(p => p.name).filter(Boolean);
+    const cf = document.getElementById('companyFilter');
+    if (cf) cf.innerHTML = '<option value="">公司: 全部</option>' + names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+  } catch (_) {}
+}
+
+// 每个联系人固定一组头像配色
+const _AV_COLORS = [['#fee2e2', '#b91c1c'], ['#dbeafe', '#1d4ed8'], ['#d1fae5', '#065f46'], ['#fef3c7', '#92400e'], ['#ede9fe', '#5b21b6'], ['#ccfbf1', '#0f766e'], ['#ffe4e6', '#be123c'], ['#e0e7ff', '#3730a3']];
+function avatarColor(key) {
+  let h = 0;
+  for (const ch of String(key || '?')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return _AV_COLORS[h % _AV_COLORS.length];
+}
+
+// 跟进状态: 对方最后来消息比我们最后回复晚 → 显示等了多久; 否则显示上次跟进时间
+function followUpBadge(t) {
+  if (t.status === 'closed') return '';
+  const p = s => { if (!s) return null; const d = new Date(String(s).replace(' ', 'T') + 'Z'); return isNaN(d) ? null : d.getTime(); };
+  const ti = p(t.last_inbound_at), to = p(t.last_outbound_at);
+  const fmtDur = ms => {
+    const m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return m + '分钟';
+    if (m < 1440) return Math.round(m / 60) + '小时';
+    return Math.round(m / 1440) + '天';
+  };
+  if (ti && (!to || ti > to)) {
+    const dur = Date.now() - ti;
+    const urgent = dur >= 3600000;   // 超过 1 小时没回 → 红色
+    return '<span style="background:' + (urgent ? '#fee2e2;color:#b91c1c' : '#fef3c7;color:#92400e') + ';font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">⏳ ' + fmtDur(dur) + '未跟进</span>';
+  }
+  if (to) return '<span style="background:var(--gray-100);color:var(--gray-500);font-size:.66rem;font-weight:600;padding:1px 7px;border-radius:10px;white-space:nowrap">✓ 已跟进 ' + fmtDur(Date.now() - to) + '前</span>';
+  return '';
+}
+
+// 工作经历工具: 解析 + 日期显示 (2026-05 → 26/05)
+function parseWorkHistory(s) {
+  try { const a = typeof s === 'string' ? JSON.parse(s || '[]') : (s || []); return Array.isArray(a) ? a : []; } catch (_) { return []; }
+}
+function fmtWhDate(d) {
+  const m = String(d || '').match(/^(\d{4})-(\d{2})/);
+  return m ? m[1].slice(2) + '/' + m[2] : String(d || '');
+}
+
 function renderThreadList() {
   const el = document.getElementById('threadList');
   if (currentThreads.length === 0) {
@@ -643,25 +1033,38 @@ function renderThreadList() {
     return;
   }
   el.innerHTML = currentThreads.map(t => {
-    const name = t.contact.name || fmtPhone(t.contact.phone_e164) || 'Unknown';
+    const name = t.contact.name || fmtPhone(t.contact.phone_e164) || (t.contact.employee_id ? 'Unknown' : '(未入职·未命名)');
     const initials = (t.contact.name || t.contact.phone_e164 || '?').substring(0,2).toUpperCase();
     const preview = esc(t.last_message_preview || 'No messages');
     const time = timeAgo(t.last_message_at);
     const agent = t.assigned_agent ? t.assigned_agent.username : '';
     const isUnread = t.unread_count > 0;
+    // 入职状态(=是否已关联员工账号) + 工作经历(多公司+大概日期)
+    const onboard = t.contact.employee_id
+      ? '<span style="background:#d1fae5;color:#065f46;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">✓ 已入职</span>'
+      : '<span style="background:#fef3c7;color:#92400e;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">未入职</span>';
+    const wh = parseWorkHistory(t.contact.work_history);
+    const whLine = wh.length
+      ? '<div style="font-size:.7rem;color:#3730a3;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🏢 '
+        + wh.slice(0, 3).map(h => esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' '))).join(' · ')
+        + (wh.length > 3 ? '  +' + (wh.length - 3) : '') + '</div>'
+      : '';
+    const av = avatarColor(t.contact.name || t.contact.phone_e164 || String(t.id));
     return '<div class="thread-item' + (isUnread ? ' unread' : '') + '" onclick="openThread(' + t.id + ')">'
-      + '<div class="ti-avatar">' + esc(initials) + '</div>'
+      + '<div class="ti-avatar" style="background:' + av[0] + ';color:' + av[1] + '">' + esc(initials) + '</div>'
       + '<div class="ti-body">'
       + '<div class="ti-top"><span class="ti-name">' + esc(name) + '</span>'
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
       + '<span class="ti-time">' + time + '</span></div>'
       + '<div class="ti-preview">' + preview + '</div>'
-      + '<div class="ti-meta"><span class="ti-status ' + t.status + '">' + t.status + '</span>'
+      + '<div class="ti-meta">' + followUpBadge(t) + (t.channel === 'whatsapp' ? '<span style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🟢 WhatsApp</span>' : '') + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
       + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
       + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
       + '</div>'
       + renderTagsInline(t.tags)
+      + renderContactTagsInline(t.contact && t.contact.tags, t.contact)
+      + whLine
       + '</div></div>';
   }).join('');
 }
@@ -732,14 +1135,31 @@ function renderDetail() {
   dv.classList.add('slide-in-right');
   setTimeout(() => dv.classList.remove('slide-in-right'), 300);
 
-  const name = currentContact.name || fmtPhone(currentContact.phone_e164);
+  const name = currentContact.name || fmtPhone(currentContact.phone_e164) || '(未入职·未命名)';
   document.getElementById('detailName').textContent = name;
   document.getElementById('detailPhone').textContent = fmtPhone(currentContact.phone_e164);
+  renderContactTagRow();
 
   const statusEl = document.getElementById('detailStatus');
   statusEl.textContent = currentThread.status;
   statusEl.className = 'ti-status ' + currentThread.status;
+  // Twilio 合规: 对方已退订 → 红条 + 禁用发送
+  let ob = document.getElementById('optOutBanner');
+  if (!ob) {
+    ob = document.createElement('div');
+    ob.id = 'optOutBanner';
+    ob.style.cssText = 'display:none;background:#fef2f2;border-bottom:1px solid #fecaca;color:#b91c1c;font-size:.8rem;font-weight:700;padding:6px 12px';
+    const bar = document.getElementById('actionBar');
+    if (bar && bar.parentNode) bar.parentNode.insertBefore(ob, bar.nextSibling);
+  }
+  const optedOut = !!(currentContact && currentContact.opted_out);
+  ob.style.display = optedOut ? '' : 'none';
+  ob.textContent = optedOut ? '🚫 对方已回复 STOP 退订 — 系统已禁止向此号码发送（对方用英文回 START 自动恢复）。强行绕过会导致 Twilio 封号。' : '';
+  const sendBtnEl = document.getElementById('sendBtn');
+  if (sendBtnEl) sendBtnEl.disabled = optedOut;
 
+  const eb = document.getElementById('evalBtn');
+  if (eb) eb.style.display = (USER && USER.role === 'admin') ? '' : 'none';
   renderPriorityBadge();
   renderActionBar();
   renderDetailTags();
@@ -751,10 +1171,13 @@ function renderDetail() {
   document.getElementById('templatePicker').classList.remove('show');
   // Reset reply bar and translation preview
   noteMode = false;
+  _composeNoTranslate = false;
+  _composeNoTranslateText = '';
+  _clearSendError();
   document.getElementById('replyBar').classList.remove('note-mode');
   document.getElementById('noteToggle').classList.remove('active');
   document.getElementById('translatePreview').style.display = 'none';
-  document.getElementById('replyInput').placeholder = '输入消息（自动翻译后发送）...';
+  document.getElementById('replyInput').placeholder = '输入消息…';
   document.getElementById('replyInput').value = '';
 }
 
@@ -763,30 +1186,32 @@ function renderActionBar() {
   const s = currentThread.status;
   const isAssigned = !!currentThread.assigned_agent;
   const isMe = currentThread.assigned_agent && currentThread.assigned_agent.id === (USER && USER.id);
+  const isAdmin = USER && USER.role === 'admin';
   let html = '';
 
-  if (s === 'open') {
-    if (isAssigned) {
-      if (!isMe) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
-      html += '<button class="action-btn" onclick="showAssignModal()">Reassign</button>';
-      html += '<button class="action-btn" onclick="unassignThread()">Unassign</button>';
-      html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
-      html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">Assigned: ' + esc(currentThread.assigned_agent.username) + '</span>';
-    } else {
-      html += '<button class="action-btn primary" onclick="claimThread()">Claim</button>';
-      html += '<button class="action-btn" onclick="showAssignModal()">Assign</button>';
-      html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
+  if (s === 'closed') {
+    html = '<button class="action-btn primary" onclick="reopenThread()">Reopen</button>';
+  } else {
+    // 无人负责: 谁都可以认领; 已有人负责: 只有 admin 能接管
+    if (!isAssigned) html += '<button class="action-btn primary" onclick="claimThread()">认领 Claim</button>';
+    else if (!isMe && isAdmin) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
+    // 分配/转派/取消分配: 仅 admin 决定对话给谁
+    if (isAdmin) {
+      html += '<button class="action-btn" onclick="showAssignModal()">' + (isAssigned ? 'Reassign' : 'Assign') + '</button>';
+      if (isAssigned) html += '<button class="action-btn" onclick="unassignThread()">Unassign</button>';
     }
-  } else if (s === 'claimed') {
-    if (!isMe) html += '<button class="action-btn primary" onclick="claimThread()">Take Over</button>';
-    html += '<button class="action-btn" onclick="showAssignModal()">Reassign</button>';
-    html += '<button class="action-btn" onclick="unassignThread()">Unassign</button>';
     html += '<button class="action-btn danger" onclick="closeThread()">Close</button>';
-    if (isAssigned) html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">Assigned: ' + esc(currentThread.assigned_agent.username) + '</span>';
-  } else if (s === 'closed') {
-    html += '<button class="action-btn primary" onclick="reopenThread()">Reopen</button>';
+    if (isAssigned) html += '<span style="font-size:.75rem;color:var(--gray-400);padding:5px 8px">负责人: ' + esc(currentThread.assigned_agent.username) + '</span>';
   }
   bar.innerHTML = html;
+}
+
+// 每个客服固定一个颜色, 一眼看出是谁发的
+const _AGENT_COLORS = ['#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#0891b2', '#be185d', '#4d7c0f'];
+function agentColor(name) {
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return _AGENT_COLORS[h % _AGENT_COLORS.length];
 }
 
 function renderMessages() {
@@ -803,12 +1228,14 @@ function renderMessages() {
   }
 
   let lastDate = '';
+  let lastSender = '';   // 换人/换方向/隔了日期或备注时, 在气泡上方显示发送人
   let html = '';
   items.forEach(item => {
     const d = fmtDate(item._time);
     if (d !== lastDate) {
       html += '<div class="msg-date-divider">' + d + '</div>';
       lastDate = d;
+      lastSender = '';
     }
     if (item._type === 'note') {
       html += '<div class="msg-note">'
@@ -816,6 +1243,7 @@ function renderMessages() {
         + '<div>' + esc(item.body) + '</div>'
         + '<div class="note-author">' + esc(item.author_name || 'Unknown') + ' &middot; ' + fmtTime(item._time) + '</div>'
         + '</div>';
+      lastSender = '';
     } else {
       const dir = item.direction;
       const statusIcon = getStatusIcon(item.delivery_status, item.id);
@@ -826,11 +1254,32 @@ function renderMessages() {
       } else if (dir === 'outbound' && item.translated_body && item.translated_body !== item.body) {
         translationHtml = '<div class="msg-translation" style="text-align:right;color:rgba(255,255,255,.65)">→ ' + esc(item.translated_body) + '</div>';
       }
+      const starBtn = '<span title="' + (item.starred ? '取消特殊标记' : '特殊标记，可在 ⭐ 里汇总回看') + '" onclick="toggleStar(' + item.id + ')" style="cursor:pointer;margin-left:4px;color:' + (item.starred ? '#f59e0b' : 'var(--gray-300)') + '">' + (item.starred ? '&#9733;' : '&#9734;') + '</span>';
+      // 发送人: 出站显示客服名(不同客服不同颜色), 入站显示联系人名; 同一人连续发只标一次
+      const senderName = dir === 'outbound'
+        ? (item.author_name || (item.source === 'agent' ? '客服' : '系统'))
+        : ((currentContact && currentContact.name) || fmtPhone(currentContact && currentContact.phone_e164) || '对方');
+      const senderKey = dir + '|' + senderName;
+      let senderHtml = '';
+      if (senderKey !== lastSender) {
+        senderHtml = '<div class="msg-sender"' + (dir === 'outbound' ? ' style="color:' + agentColor(senderName) + '"' : '') + '>'
+          + (dir === 'outbound' ? '🧑‍💼 ' : '') + esc(senderName) + '</div>';
+        lastSender = senderKey;
+      }
+      const _mds = item.starred ? markDataSummary(item) : '';
+      const markHtml = (item.starred && (item.mark_tag || item.mark_note || _mds))
+        ? '<div class="msg-mark">📌 ' + (item.mark_tag ? '<b>' + esc(item.mark_tag) + '</b>' : '')
+          + (_mds ? ' · ' + esc(_mds) : '')
+          + (item.mark_note ? ' · ' + esc(item.mark_note) : '') + '</div>'
+        : '';
       html += '<div class="msg-row ' + dir + '">'
-        + '<div class="msg-bubble">' + esc(item.body) + translationHtml + '</div>'
+        + senderHtml
+        + '<div class="msg-bubble" onclick="bubbleMark(' + item.id + ')" title="点击标注这条消息（类别+备注）"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : '') + '>' + esc(item.body) + translationHtml + '</div>'
+        + markHtml
         + '<div class="msg-meta">' + fmtTime(item._time)
         + (dir === 'outbound' ? ' &middot; ' + statusIcon : '')
         + (dir === 'outbound' && item.author_name ? ' &middot; ' + esc(item.author_name) : '')
+        + starBtn
         + '</div></div>';
     }
   });
@@ -873,6 +1322,28 @@ async function sendReply() {
     } catch(e) {
       toast('Send failed: ' + (e.message || 'Unknown error'));
     }
+    btn.disabled = false;
+    return;
+  }
+
+  // Twilio 合规: 对方已退订则不发 (服务器还会再拦一道)
+  if (currentContact && currentContact.opted_out) {
+    toast('🚫 对方已回复 STOP 退订, 无法发送。对方用英文回 START 后自动恢复。');
+    return;
+  }
+
+  // Twilio 合规: 建议在对方本地 8:00-21:00 之间发送 (按美中时区算)
+  let hr = new Date().getHours();
+  try { hr = parseInt(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23', hour: 'numeric' }), 10); } catch (_) {}
+  if (hr >= 21 || hr < 8) {
+    const ok = await smsConfirm('对方当地现在约 ' + hr + ' 点（深夜/清晨）。运营商建议只在早 8 点到晚 9 点之间给客户发短信，频繁夜发会增加投诉和封号风险。确定现在发送吗？', { confirmLabel: '仍然发送', cancelLabel: '先不发', danger: true });
+    if (!ok) return;
+  }
+
+  // 面试确认/工作要求模板已经是西英双语, 原样发送, 不再机器翻译
+  if (_composeNoTranslate && body === _composeNoTranslateText) {
+    btn.disabled = true;
+    await doSendMessage(body, true);
     btn.disabled = false;
     return;
   }
@@ -922,38 +1393,76 @@ async function confirmTranslatedSend() {
   _pendingTranslatedText = null;
 }
 
-async function doSendMessage(body) {
+// 发送失败的持久提示条 (toast 3 秒就没了, AI 拦截这类长原因要能一直看到)
+function _showSendError(msg) {
+  let el = document.getElementById('sendErrBanner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sendErrBanner';
+    el.style.cssText = 'display:none;background:#fef2f2;border-bottom:1px solid #fecaca;color:#b91c1c;font-size:.8rem;font-weight:600;padding:6px 34px 6px 12px;position:relative;white-space:pre-wrap;word-break:break-word';
+    el.innerHTML = '<span id="sendErrText"></span><span onclick="_clearSendError()" style="position:absolute;right:10px;top:4px;cursor:pointer;font-weight:800">&times;</span>';
+    const bar = document.getElementById('actionBar');
+    if (bar && bar.parentNode) bar.parentNode.insertBefore(el, bar.nextSibling);
+  }
+  document.getElementById('sendErrText').textContent = msg;
+  el.style.display = '';
+}
+function _clearSendError() {
+  const el = document.getElementById('sendErrBanner');
+  if (el) el.style.display = 'none';
+}
+
+async function doSendMessage(body, noTranslate) {
   const input = document.getElementById('replyInput');
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
+  // Optimistic: add message to UI immediately
+  const tempMsg = {
+    id: Date.now(), thread_id: currentThread.id, direction: 'outbound',
+    source: 'agent', body, delivery_status: 'sending',
+    author_name: USER ? USER.username : '', created_at: new Date().toISOString(),
+    _type: 'message', _time: new Date().toISOString()
+  };
+  const tempId = tempMsg.id;
   try {
-    // Optimistic: add message to UI immediately
-    const tempMsg = {
-      id: Date.now(), thread_id: currentThread.id, direction: 'outbound',
-      source: 'agent', body, delivery_status: 'sending',
-      author_name: USER ? USER.username : '', created_at: new Date().toISOString(),
-      _type: 'message', _time: new Date().toISOString()
-    };
     currentMessages.push(tempMsg);
     renderMessages();
     input.value = '';
     document.getElementById('translatePreview').style.display = 'none';
 
     const r = await api('/sms/threads/' + currentThread.id + '/messages', {
-      method: 'POST', body: JSON.stringify({ body })
+      method: 'POST', body: JSON.stringify(noTranslate ? { body, no_translate: true } : { body })
     });
-    if (r.success && r.message) {
+    if (r && r.success && r.message) {
       // Replace temp message with real one
-      const idx = currentMessages.findIndex(m => m.id === tempMsg.id);
+      const idx = currentMessages.findIndex(m => m.id === tempId);
       if (idx >= 0) currentMessages[idx] = r.message;
       renderMessages();
+      _composeNoTranslate = false;
+      _composeNoTranslateText = '';
+      _clearSendError();
+    } else {
+      // 服务器拒绝 (如对方已退订 / AI 拦截 / Twilio 报错) — 撤掉临时气泡, 把文字放回输入框
+      currentMessages = currentMessages.filter(m => m.id !== tempId);
+      renderMessages();
+      input.value = body;
+      autoGrow(input);
+      toast((r && r.error) || '发送失败');
+      _showSendError((r && r.error) || '发送失败');
+      if (r && r.error && /STOP/.test(r.error) && currentContact) {
+        currentContact.opted_out = 1;
+        const ob = document.getElementById('optOutBanner');
+        if (ob) { ob.style.display = ''; ob.textContent = '🚫 对方已回复 STOP 退订 — 系统已禁止向此号码发送（对方用英文回 START 自动恢复）。强行绕过会导致 Twilio 封号。'; }
+      }
     }
   } catch(e) {
-    toast('Send failed: ' + (e.message || 'Unknown error'));
-    currentMessages = currentMessages.filter(m => m.id !== Date.now());
+    currentMessages = currentMessages.filter(m => m.id !== tempId);
     renderMessages();
+    input.value = body;
+    autoGrow(input);
+    toast('Send failed: ' + (e.message || 'Unknown error'));
   }
-  btn.disabled = false;
+  btn.disabled = !!(currentContact && currentContact.opted_out);
 }
 
 // ─── Language / Translation ───
@@ -1093,7 +1602,8 @@ async function reopenThread() {
 async function retryMessage(msgId) {
   if (!currentThread) return;
   try {
-    await api('/sms/threads/' + currentThread.id + '/retry/' + msgId, { method: 'POST' });
+    const r = await api('/sms/threads/' + currentThread.id + '/retry/' + msgId, { method: 'POST' });
+    if (r && r.error) { toast(r.error); return; }
     toast('Message resent');
     refreshMessages(currentThread.id);
   } catch(e) { toast('Retry failed: ' + (e.message || '')); }
@@ -1127,25 +1637,222 @@ async function doAssign(agentId) {
 }
 
 // ─── Edit Contact ───
+// 工种标签统一全中文 (常见英文写法输入时自动转成中文, 避免中英混着)
+const CONTACT_TAG_PRESETS = ['普工', '拣货', '叉车工', '高位叉车', '卸柜工', '打包', '分拣', '装卸'];
+const _TAG_ZH_MAP = {
+  'order picker': '拣货', 'orderpicker': '拣货', 'picker': '拣货', 'picking': '拣货',
+  'forklift': '叉车工', 'forklift driver': '叉车工', 'reach truck': '高位叉车', 'reach': '高位叉车',
+  'unloader': '卸柜工', 'unloading': '卸柜工', 'lumper': '卸柜工', '卸柜工人': '卸柜工',
+  'packer': '打包', 'packing': '打包', 'sorter': '分拣', 'sorting': '分拣',
+  'loader': '装卸', 'general labor': '普工', 'general labour': '普工', 'general laborer': '普工'
+};
+function normalizeTag(t) {
+  t = String(t || '').trim();
+  return _TAG_ZH_MAP[t.toLowerCase()] || t;
+}
+// 全美州下拉 (存两位代码)
+const _US_STATES = [['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['DC','Washington DC'],['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming']];
+const _US_STATES_COMMON = ['IL', 'TX', 'CA', 'GA', 'NJ', 'NY'];
+function _fillWorkStateSelect(current) {
+  const sel = document.getElementById('editWorkState');
+  const cur = String(current || '').trim().toUpperCase();
+  const opt = c => {
+    const s = _US_STATES.find(x => x[0] === c);
+    return '<option value="' + c + '"' + (c === cur ? ' selected' : '') + '>' + c + ' — ' + (s ? s[1] : c) + '</option>';
+  };
+  let html = '<option value=""' + (cur ? '' : ' selected') + '>— 不选 —</option>';
+  html += '<optgroup label="常用">' + _US_STATES_COMMON.map(opt).join('') + '</optgroup>';
+  html += '<optgroup label="全部州">' + _US_STATES.filter(s => !_US_STATES_COMMON.includes(s[0])).map(s => opt(s[0])).join('') + '</optgroup>';
+  // 老数据里手填的怪值也保留可选, 不丢
+  if (cur && !_US_STATES.some(s => s[0] === cur)) html += '<option value="' + esc(cur) + '" selected>' + esc(cur) + '</option>';
+  sel.innerHTML = html;
+}
+let _editTags = [];
+let _partnerNamesCache = null;
+async function _fillCompanySelect(current) {
+  const sel = document.getElementById('editCompany');
+  if (_partnerNamesCache === null) {
+    try {
+      const r = await api('/sms/partners');
+      _partnerNamesCache = (r.partners || []).map(p => p.name).filter(Boolean);
+    } catch (_) { _partnerNamesCache = []; }
+  }
+  const names = [..._partnerNamesCache];
+  if (current && !names.includes(current)) names.unshift(current);   // 老数据里手填的公司也保留可选
+  sel.innerHTML = '<option value="">— 不选 —</option>' + names.map(n =>
+    '<option value="' + esc(n) + '"' + (n === current ? ' selected' : '') + '>' + esc(n) + '</option>').join('');
+  // 工作经历里的公司/工种输入提示
+  const dl = document.getElementById('whCompanyList');
+  if (dl) dl.innerHTML = _partnerNamesCache.map(n => '<option value="' + esc(n) + '">').join('');
+  const rl = document.getElementById('whRoleList');
+  if (rl) rl.innerHTML = CONTACT_TAG_PRESETS.map(n => '<option value="' + n + '">').join('');
+}
+
+// ─── 工作经历编辑 (一个人可能干过多个公司, 带大概日期) ───
+let _editWH = [];
+function renderWHList() {
+  document.getElementById('whList').innerHTML = _editWH.length ? _editWH.map((h, i) =>
+    '<div style="display:flex;align-items:center;gap:6px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:4px 10px;font-size:.8rem;margin-bottom:4px">'
+    + '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏢 <b>' + esc(h.company || '?') + '</b>'
+    + (h.role ? ' · ' + esc(h.role) : '') + (h.date ? ' · ' + esc(fmtWhDate(h.date)) : '') + '</span>'
+    + '<a style="cursor:pointer;color:#b91c1c;font-weight:700;flex-shrink:0" onclick="removeWH(' + i + ')">&times;</a></div>'
+  ).join('') : '<div style="font-size:.75rem;color:var(--gray-400);margin-bottom:4px">还没记录 — 下面填一条（如: GOFO · 卸柜 · 2026-05）</div>';
+}
+function addWorkHistory() {
+  const c = document.getElementById('whCompany').value.trim();
+  const r = document.getElementById('whRole').value.trim();
+  const d = document.getElementById('whDate').value;
+  if (!c && !r) { toast('至少填公司或工种'); return; }
+  _editWH.push({ company: c, role: normalizeTag(r), date: d });
+  document.getElementById('whCompany').value = '';
+  document.getElementById('whRole').value = '';
+  document.getElementById('whDate').value = '';
+  renderWHList();
+}
+function removeWH(i) { _editWH.splice(i, 1); renderWHList(); }
 function showEditContactModal() {
   if (!currentContact) return;
-  document.getElementById('editName').value = currentContact.name || '';
-  document.getElementById('editCompany').value = currentContact.company || '';
+  // 名字仅 admin 可改 (客服通过关联员工账号自动带出)
+  const _isAdminEc = USER && USER.role === 'admin';
+  const nameEl = document.getElementById('editName');
+  nameEl.value = currentContact.name || '';
+  nameEl.readOnly = !_isAdminEc;
+  nameEl.style.background = _isAdminEc ? '' : 'var(--gray-100)';
+  nameEl.style.color = _isAdminEc ? '' : 'var(--gray-600)';
+  document.getElementById('nameLockHint').style.display = _isAdminEc ? 'none' : '';
+  // 员工关联仅 admin 可操作; 公司/邮箱也仅 admin 可改 (客服只能改 州/工头/工种/备注)
+  document.getElementById('empLinkAdminWrap').style.display = _isAdminEc ? '' : 'none';
+  const compEl = document.getElementById('editCompany');
+  compEl.disabled = !_isAdminEc;
+  compEl.style.background = _isAdminEc ? 'var(--white)' : 'var(--gray-100)';
+  // 客服连邮箱都不显示 (服务器返回时也已抹掉)
+  document.getElementById('emailRowWrap').style.display = _isAdminEc ? '' : 'none';
+  const emailEl = document.getElementById('editEmail');
+  emailEl.readOnly = !_isAdminEc;
+  emailEl.style.background = _isAdminEc ? '' : 'var(--gray-100)';
+  _fillCompanySelect(currentContact.company || '');
   document.getElementById('editEmail').value = currentContact.email || '';
+  _editEmp = undefined;
+  document.getElementById('editEmpSearch').value = '';
+  document.getElementById('editEmpResults').style.display = 'none';
+  renderEmpLinked();
+  // 还没关联员工的, 自动用本号码搜一把 (仅 admin)
+  if (_isAdminEc && !currentContact.employee_id) {
+    const digits = String(currentContact.phone_e164 || '').replace(/\D/g, '').slice(-10);
+    if (digits) { document.getElementById('editEmpSearch').value = digits; empLinkSearch(); }
+  }
+  document.getElementById('editNotes').value = currentContact.notes || '';
+  _fillWorkStateSelect(currentContact.work_state || '');
+  document.getElementById('editIsForeman').checked = !!currentContact.is_foreman;
+  try { _editTags = JSON.parse(currentContact.tags || '[]'); } catch (_) { _editTags = []; }
+  if (!Array.isArray(_editTags)) _editTags = [];
+  _editTags = [...new Set(_editTags.map(normalizeTag))];   // 旧的英文工种(如 Order Picker)打开时就转成中文
+  _editWH = parseWorkHistory(currentContact.work_history);
+  renderWHList();
+  document.getElementById('whCompany').value = '';
+  document.getElementById('whRole').value = '';
+  document.getElementById('whDate').value = '';
+  document.getElementById('editTagInput').value = '';
+  renderEditTags();
   document.getElementById('editContactModal').classList.add('show');
+}
+// 关联员工档案: undefined=未改动, null=解除, {id,name}=新选
+let _editEmp = undefined, _empLinkDebounce = null;
+function empLinkDebounce() { clearTimeout(_empLinkDebounce); _empLinkDebounce = setTimeout(empLinkSearch, 280); }
+async function empLinkSearch() {
+  const term = document.getElementById('editEmpSearch').value.trim();
+  const box = document.getElementById('editEmpResults');
+  if (!term) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  box.innerHTML = '<div style="padding:8px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  try {
+    const r = await api('/sms/people-search?q=' + encodeURIComponent(term));
+    const emps = (r.people || []).filter(p => p.type === 'employee');
+    window._empLinkList = emps;
+    box.innerHTML = emps.length ? emps.map((p, i) =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--gray-200);cursor:pointer;font-size:.82rem" onclick="empLinkPick(' + i + ')">'
+      + '<b style="flex-shrink:0">' + esc(p.name || '(无名)') + '</b>'
+      + (p.extra ? '<span style="font-size:.72rem;color:var(--gray-400)">' + esc(p.extra) + '</span>' : '')
+      + '<span style="margin-left:auto;font-size:.76rem;color:var(--gray-500)">' + esc(p.phone) + '</span></div>'
+    ).join('') : '<div style="padding:8px;color:var(--gray-400);font-size:.8rem">员工档案里没找到</div>';
+  } catch (e) { box.innerHTML = '<div style="padding:8px;color:var(--red);font-size:.8rem">搜索失败</div>'; }
+}
+function empLinkPick(i) {
+  const p = (window._empLinkList || [])[i];
+  if (!p) return;
+  _editEmp = { id: p.ref_id, name: p.name };
+  if (!document.getElementById('editName').value.trim()) document.getElementById('editName').value = p.name || '';
+  document.getElementById('editEmpResults').style.display = 'none';
+  document.getElementById('editEmpSearch').value = '';
+  renderEmpLinked();
+}
+function empLinkClear() { _editEmp = null; renderEmpLinked(); }
+function renderEmpLinked() {
+  const el = document.getElementById('editEmpLinked');
+  if (!el) return;
+  const isAdmin = USER && USER.role === 'admin';
+  const linked = _editEmp === undefined ? !!(currentContact && currentContact.employee_id) : !!_editEmp;
+  el.style.display = 'flex';
+  if (!linked) {
+    // 未关联也要显示出来
+    el.style.background = '#fef3c7'; el.style.borderColor = '#fcd34d'; el.style.color = '#92400e';
+    el.innerHTML = '<span>&#9888; 尚未关联员工账号' + (isAdmin ? ' — 在下面搜索并关联' : ' — 请联系管理员关联') + '</span>';
+    return;
+  }
+  el.style.background = '#d1fae5'; el.style.borderColor = '#6ee7b7'; el.style.color = '#065f46';
+  const label = _editEmp && _editEmp.name ? esc(_editEmp.name) : ('员工档案 #' + esc(String(currentContact && currentContact.employee_id || '')));
+  el.innerHTML = '<span>&#10003; 已关联员工: <b>' + label + '</b></span>'
+    + (isAdmin ? '<a style="margin-left:auto;cursor:pointer;color:#b91c1c;font-size:.76rem;text-decoration:underline" onclick="empLinkClear()">解除</a>' : '');
+}
+function renderEditTags() {
+  document.getElementById('editTagChips').innerHTML = _editTags.map(t =>
+    '<span style="display:inline-flex;align-items:center;gap:4px;background:#dbeafe;color:#1e40af;border-radius:999px;padding:2px 10px;font-size:.76rem;font-weight:600">' + esc(t)
+    + '<a style="cursor:pointer;color:#1e40af;font-weight:700" onclick="removeEditTag(\'' + esc(t).replace(/'/g, "\\'") + '\')">&times;</a></span>'
+  ).join('') || '<span style="font-size:.75rem;color:var(--gray-400)">暂无标签</span>';
+  document.getElementById('editTagPresets').innerHTML = CONTACT_TAG_PRESETS.filter(p => !_editTags.includes(p)).map(p =>
+    '<button type="button" style="border:1px dashed var(--gray-300);background:var(--white);color:var(--gray-600);border-radius:999px;padding:2px 10px;font-size:.76rem;cursor:pointer" onclick="addEditTag(\'' + p + '\')">+ ' + p + '</button>'
+  ).join('');
+}
+function addEditTag(t) {
+  t = normalizeTag(t);
+  if (t && !_editTags.includes(t)) { _editTags.push(t); renderEditTags(); }
+}
+function addEditTagFromInput() {
+  const el = document.getElementById('editTagInput');
+  addEditTag(el.value); el.value = '';
+}
+function removeEditTag(t) {
+  _editTags = _editTags.filter(x => x !== t);
+  renderEditTags();
 }
 function closeEditContactModal() { document.getElementById('editContactModal').classList.remove('show'); }
 
 async function saveContact() {
   if (!currentContact) return;
   try {
-    await api('/sms/contacts/' + currentContact.id, {
-      method: 'PUT', body: JSON.stringify({
-        name: document.getElementById('editName').value.trim(),
-        company: document.getElementById('editCompany').value.trim(),
-        email: document.getElementById('editEmail').value.trim()
-      })
-    });
+    addEditTag(document.getElementById('editTagInput').value);   // 没按回车的也带上
+    // 客服只能改: 州 / 工头 / 工种标签 / 备注; 名字/公司/邮箱/员工关联仅 admin (服务器端同样拦)
+    const isAdmin = USER && USER.role === 'admin';
+    // 输入框里填了但没点"+ 加"的经历也自动带上
+    if (document.getElementById('whCompany').value.trim() || document.getElementById('whRole').value.trim()) addWorkHistory();
+    const payload = {
+      tags: JSON.stringify(_editTags),
+      notes: document.getElementById('editNotes').value.trim(),
+      work_state: document.getElementById('editWorkState').value.trim().toUpperCase(),
+      is_foreman: document.getElementById('editIsForeman').checked ? 1 : 0,
+      work_history: JSON.stringify(_editWH)
+    };
+    if (isAdmin) {
+      payload.name = document.getElementById('editName').value.trim();
+      payload.company = document.getElementById('editCompany').value.trim();
+      payload.email = document.getElementById('editEmail').value.trim();
+    }
+    await api('/sms/contacts/' + currentContact.id, { method: 'PUT', body: JSON.stringify(payload) });
+    if (isAdmin && _editEmp !== undefined) {
+      await api('/sms/contacts/' + currentContact.id + '/link-employee', {
+        method: 'PUT', body: JSON.stringify({ employee_id: _editEmp ? _editEmp.id : null })
+      });
+    }
     closeEditContactModal();
     toast('Contact updated');
     loadThreadDetail(currentThread.id);
@@ -1167,7 +1874,7 @@ function toggleNoteMode() {
   } else {
     bar.classList.remove('note-mode');
     btn.classList.remove('active');
-    input.placeholder = '输入消息（自动翻译后发送）...';
+    input.placeholder = '输入消息…';
   }
   input.focus();
 }
@@ -1242,6 +1949,645 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ─── Phase 2: Tags ───
+function _contactStateForemanBadges(ws, fm, size) {
+  const fs = size || '.68rem';
+  let h = '';
+  if (ws) h += '<span style="background:#ede9fe;color:#5b21b6;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">📍 ' + esc(ws) + '</span>';
+  if (fm) h += '<span style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🦺 工头</span>';
+  return h;
+}
+function renderContactTagRow() {
+  const row = document.getElementById('contactTagRow');
+  if (!row) return;
+  let tags = [];
+  try { tags = JSON.parse((currentContact && currentContact.tags) || '[]'); } catch (_) {}
+  const hasNotes = !!(currentContact && (currentContact.notes || '').trim());
+  // 入职状态 = 是否已关联员工账号
+  const empBadge = (currentContact && currentContact.employee_id)
+    ? '<span style="background:#d1fae5;color:#065f46;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">&#10003; 已入职</span>'
+    : '<span style="background:#fef3c7;color:#92400e;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:700;cursor:pointer" onclick="showEditContactModal()" title="尚未关联员工账号(未完成入职)">&#9888; 未入职</span>';
+  // 工作经历: 干过的公司+工种+大概时间
+  const whChips = parseWorkHistory(currentContact && currentContact.work_history).slice(0, 4).map(h =>
+    '<span style="background:#eef2ff;color:#3730a3;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">🏢 ' + esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join('·')) + '</span>'
+  ).join('');
+  const chanChip = (currentThread && currentThread.channel === 'whatsapp')
+    ? '<span style="background:#dcfce7;color:#15803d;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:700">🟢 WhatsApp</span>' : '';
+  row.innerHTML = chanChip + empBadge
+  + _contactStateForemanBadges(currentContact && currentContact.work_state, currentContact && currentContact.is_foreman)
+  + whChips
+  + (Array.isArray(tags) ? tags : []).map(t =>
+    '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">' + esc(t) + '</span>'
+  ).join('')
+  + (hasNotes ? '<span title="有备注" style="font-size:.68rem;color:#b45309;background:#fef3c7;border-radius:999px;padding:1px 8px;font-weight:600">&#128221; 备注</span>' : '')
+  + '<a style="font-size:.68rem;color:var(--blue,#2563eb);cursor:pointer;text-decoration:underline" onclick="showEditContactModal()">&#127991; 标签/备注</a>';
+}
+function renderContactTagsInline(tagsJson, contact) {
+  let tags = [];
+  try { tags = JSON.parse(tagsJson || '[]'); } catch (_) {}
+  const badges = contact ? _contactStateForemanBadges(contact.work_state, contact.is_foreman, '.64rem') : '';
+  if ((!Array.isArray(tags) || !tags.length) && !badges) return '';
+  if (!Array.isArray(tags)) tags = [];
+  return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">' + badges + tags.slice(0, 4).map(t =>
+    '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:0 7px;font-size:.64rem;font-weight:600">' + esc(t) + '</span>'
+  ).join('') + (tags.length > 4 ? '<span style="font-size:.64rem;color:var(--gray-400)">+' + (tags.length - 4) + '</span>' : '') + '</div>';
+}
+// ─── 发起对话: 员工/申请人搜索 ───
+let _ncDebounce = null;
+function showNewChatModal() {
+  document.getElementById('ncSearch').value = '';
+  document.getElementById('newChatModal').classList.add('show');
+  ncSearch();
+  setTimeout(() => document.getElementById('ncSearch').focus(), 50);
+}
+function closeNewChatModal() { document.getElementById('newChatModal').classList.remove('show'); }
+function ncDebounce() {
+  clearTimeout(_ncDebounce);
+  _ncDebounce = setTimeout(ncSearch, 280);
+}
+async function ncSearch() {
+  const box = document.getElementById('ncResults');
+  box.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">Loading…</div>';
+  try {
+    const r = await api('/sms/people-search?q=' + encodeURIComponent(document.getElementById('ncSearch').value.trim()));
+    const people = r.people || [];
+    if (!people.length) { box.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">没找到，换个关键词试试</div>'; return; }
+    box.innerHTML = people.map((p, i) =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="ncStart(' + i + ')">'
+      + '<span style="flex-shrink:0;font-size:.66rem;font-weight:700;border-radius:5px;padding:2px 6px;' + (p.type === 'employee' ? 'background:#d1fae5;color:#065f46' : 'background:#fef3c7;color:#92400e') + '">' + (p.type === 'employee' ? '员工' : '申请') + '</span>'
+      + '<span style="flex:1;min-width:0"><b style="font-size:.85rem">' + esc(p.name || '(无名)') + '</b>'
+      + (p.extra ? '<span style="font-size:.72rem;color:var(--gray-400);margin-left:6px">' + esc(p.extra) + '</span>' : '') + '</span>'
+      + '<span style="font-size:.76rem;color:var(--gray-500)">' + esc(p.phone) + '</span></div>'
+    ).join('');
+    window._ncPeople = people;
+  } catch (e) { box.innerHTML = '<div style="padding:12px;color:var(--red)">搜索失败: ' + esc(e.message || '') + '</div>'; }
+}
+async function ncStart(i) {
+  const p = (window._ncPeople || [])[i];
+  if (!p) return;
+  try {
+    const r = await api('/sms/start-thread', { method: 'POST', body: JSON.stringify({ phone: p.phone, name: p.name, employee_id: p.type === 'employee' ? p.ref_id : null, type: p.type, ref_id: p.ref_id, channel: _ncChannel }) });
+    if (r && r.error) { toast(r.error); return; }
+    closeNewChatModal();
+    toast('对话已就绪，直接输入消息发送');
+    await loadThreads();
+    openThread(r.thread_id);
+  } catch (e) { toast('发起失败: ' + (e.message || e)); }
+}
+// ─── 发起对话渠道 (sms | whatsapp) ───
+let _ncChannel = 'sms';
+function ncSetChannel(ch) {
+  _ncChannel = ch;
+  document.getElementById('ncChanSms').className = 'filter-btn' + (ch === 'sms' ? ' active' : '');
+  document.getElementById('ncChanWa').className = 'filter-btn' + (ch === 'whatsapp' ? ' active' : '');
+  document.getElementById('ncWaHint').style.display = ch === 'whatsapp' ? '' : 'none';
+}
+
+// ─── 📌 消息标记: 分类(卸柜/面试/发工资…) + 每类专属字段 + 备注 ───
+const MARK_TAG_PRESETS = ['卸柜', '面试', '发工资', '排班', '请假', '投诉'];
+// 每个类别自己的表单字段: [key, 标签, 输入类型, 占位提示]
+const MARK_FIELDS = {
+  '卸柜': [['container', '柜号', 'text', '如 MSKU1234567'], ['date', '日期', 'date', ''], ['detail', '具体细节', 'text', '如 早7点 / GOFO仓库 / 约2000件']],
+  '面试': [['company', '公司', 'text', '如 GOFO'], ['time', '时间', 'datetime-local', ''], ['detail', '地址 / 找谁', 'text', '']],
+  '发工资': [['date', '发薪日期', 'date', ''], ['amount', '金额', 'text', '如 $560'], ['detail', '方式/说明', 'text', '如 支票 / Zelle']],
+  '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']]
+};
+// 一键生成发给对方的消息(中文, 走现有自动翻译流程翻成对方语言)
+const MARK_MSG_TPL = {
+  '卸柜': d => '卸柜安排: ' + [d.container && ('柜号 ' + d.container), d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', '),
+  '面试': d => '面试安排: ' + [d.company && ('公司 ' + d.company), d.time && ('时间 ' + String(d.time).replace('T', ' ')), d.detail].filter(Boolean).join(', '),
+  '发工资': d => '工资通知: ' + [d.date && ('发薪日期 ' + d.date), d.amount && ('金额 ' + d.amount), d.detail].filter(Boolean).join(', '),
+  '排班': d => '排班通知: ' + [d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', ')
+};
+function _collectMarkData() {
+  const data = {};
+  document.querySelectorAll('#markFields [data-mkf]').forEach(el => {
+    const v = el.value.trim();
+    if (v) data[el.getAttribute('data-mkf')] = v;
+  });
+  return data;
+}
+function renderMarkFields(prefill) {
+  const tag = document.getElementById('markTagInput').value.trim();
+  const defs = MARK_FIELDS[tag];
+  const box = document.getElementById('markFields');
+  const sendBtn = document.getElementById('markSendBtn');
+  if (!defs) { box.innerHTML = ''; if (sendBtn) sendBtn.style.display = 'none'; return; }
+  const d = prefill || {};
+  box.innerHTML = defs.map(([k, label, type, ph]) =>
+    '<label style="margin-top:2px">' + label + '</label>'
+    + '<input data-mkf="' + k + '" type="' + type + '" placeholder="' + esc(ph) + '" value="' + esc(d[k] || '') + '" style="margin-bottom:4px">'
+  ).join('');
+  if (sendBtn) sendBtn.style.display = MARK_MSG_TPL[tag] ? '' : 'none';
+}
+let _markMsgId = null;
+// 点消息气泡直接标注 (正在选中文字复制时不触发)
+function bubbleMark(msgId) {
+  try { if (String((window.getSelection && window.getSelection()) || '')) return; } catch (_) {}
+  toggleStar(msgId);
+}
+function toggleStar(msgId) {
+  const m = currentMessages.find(x => x.id === msgId);
+  if (!m) return;
+  if (m.delivery_status === 'sending') { toast('正在发送中, 稍等一下再标注'); return; }
+  _markMsgId = msgId;
+  document.getElementById('markMsgPreview').textContent = (m.body || '').slice(0, 200);
+  document.getElementById('markTagInput').value = m.mark_tag || '';
+  document.getElementById('markNote').value = m.mark_note || '';
+  document.getElementById('markRemoveBtn').style.display = m.starred ? '' : 'none';
+  _renderMarkChips();
+  let pre = {}; try { pre = JSON.parse(m.mark_data || '{}'); } catch (_) {}
+  renderMarkFields(pre);
+  document.getElementById('msgMarkModal').classList.add('show');
+}
+function _renderMarkChips() {
+  const cur = document.getElementById('markTagInput').value.trim();
+  document.getElementById('markTagChips').innerHTML = MARK_TAG_PRESETS.map(t =>
+    '<button type="button" onclick="_pickMarkTag(\'' + t + '\')" style="border:1px solid ' + (t === cur ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)') + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">' + t + '</button>'
+  ).join('');
+  renderMarkFields();
+}
+function _pickMarkTag(t) {
+  const inp = document.getElementById('markTagInput');
+  inp.value = (inp.value.trim() === t) ? '' : t;   // 再点一次取消选择
+  _renderMarkChips();
+}
+async function saveMark(remove) {
+  if (!_markMsgId) return false;
+  try {
+    const payload = remove ? { starred: 0 } : {
+      starred: 1,
+      tag: document.getElementById('markTagInput').value.trim(),
+      note: document.getElementById('markNote').value.trim(),
+      data: _collectMarkData()
+    };
+    const r = await api('/sms/messages/' + _markMsgId + '/star', { method: 'POST', body: JSON.stringify(payload) });
+    if (r && r.error) { toast(r.error); return false; }
+    const m = currentMessages.find(x => x.id === _markMsgId);
+    if (m) {
+      m.starred = r.starred;
+      m.starred_at = r.starred ? new Date().toISOString() : null;
+      m.mark_tag = r.tag || '';
+      m.mark_note = r.note || '';
+      m.mark_data = r.data || '{}';
+    }
+    renderMessages();
+    document.getElementById('msgMarkModal').classList.remove('show');
+    toast(r.starred ? ('📌 已标记' + (r.tag ? ': ' + r.tag : '')) : '已取消标记');
+    return true;
+  } catch (e) { toast('操作失败: ' + (e.message || e)); return false; }
+}
+// 保存标记 + 按类别模板生成消息填入发送框 (走现有自动翻译, 你确认后发送)
+async function saveMarkAndCompose() {
+  const tag = document.getElementById('markTagInput').value.trim();
+  const gen = MARK_MSG_TPL[tag];
+  const data = _collectMarkData();
+  const ok = await saveMark(false);
+  if (!ok || !gen) return;
+  const note = document.getElementById('markNote').value.trim();
+  let text = gen(data);
+  if (note) text += ' (' + note + ')';
+  if (noteMode) toggleNoteMode();
+  const inp = document.getElementById('replyInput');
+  inp.value = text;
+  autoGrow(inp);
+  onComposeInput();
+  inp.focus();
+  toast('消息已生成 — 检查(会自动翻译)后点发送');
+}
+// 结构化字段摘要: 柜号 MSKU123 · 08-04 · 早7点
+function markDataSummary(item) {
+  let d = {}; try { d = JSON.parse(item.mark_data || '{}'); } catch (_) { return ''; }
+  const defs = MARK_FIELDS[item.mark_tag || ''];
+  const parts = defs
+    ? defs.map(([k, label]) => d[k] ? (label + ' ' + String(d[k]).replace('T', ' ')) : '').filter(Boolean)
+    : Object.values(d).filter(Boolean);
+  return parts.join(' · ');
+}
+function closeStarredModal() { document.getElementById('starredModal').classList.remove('show'); }
+let _starredMsgs = [], _starredTagSel = '';
+async function showStarredModal(threadId) {
+  document.getElementById('starredTitle').innerHTML = '&#9733; 星标 / 标记消息' + (threadId ? ' · 本对话' : ' · 全部对话');
+  const box = document.getElementById('starredList');
+  box.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">Loading…</div>';
+  document.getElementById('starredTagFilter').innerHTML = '';
+  document.getElementById('starredModal').classList.add('show');
+  try {
+    const r = await api('/sms/starred' + (threadId ? '?thread_id=' + threadId : ''));
+    _starredMsgs = r.messages || [];
+    _starredTagSel = '';
+    _renderStarred();
+  } catch (e) { box.innerHTML = '<div style="padding:12px;color:var(--red)">加载失败: ' + esc(e.message || '') + '</div>'; }
+}
+function _starredFilterBy(tag) { _starredTagSel = (_starredTagSel === tag) ? '' : tag; _renderStarred(); }
+function _renderStarred() {
+  const box = document.getElementById('starredList');
+  const ft = document.getElementById('starredTagFilter');
+  // 按类别筛选: 有哪些类别就出哪些按钮 (带条数)
+  const counts = {};
+  _starredMsgs.forEach(m => { const t = m.mark_tag || ''; if (t) counts[t] = (counts[t] || 0) + 1; });
+  const tags = Object.keys(counts).sort();
+  ft.innerHTML = tags.length ? ('<button class="filter-btn' + (_starredTagSel === '' ? ' active' : '') + '" onclick="_starredFilterBy(\'\')">全部 (' + _starredMsgs.length + ')</button>'
+    + tags.map(t => '<button class="filter-btn' + (_starredTagSel === t ? ' active' : '') + '" onclick="_starredFilterBy(\'' + esc(t).replace(/'/g, "\\'") + '\')">📌 ' + esc(t) + ' (' + counts[t] + ')</button>').join('')) : '';
+  const msgs = _starredTagSel ? _starredMsgs.filter(m => (m.mark_tag || '') === _starredTagSel) : _starredMsgs;
+  if (!msgs.length) { box.innerHTML = '<div style="padding:14px;color:var(--gray-400);text-align:center">还没有标记的消息。在聊天里点消息旁的 ☆，可以选类别（卸柜/面试/发工资…）加备注。</div>'; return; }
+  box.innerHTML = msgs.map(m =>
+    '<div style="padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="closeStarredModal();openThread(' + m.thread_id + ')">'
+    + '<div style="display:flex;gap:6px;align-items:center;font-size:.76rem;color:var(--gray-500);margin-bottom:2px">'
+    + '<b style="color:var(--gray-700)">' + esc(m.contact_name || fmtPhone(m.phone_e164) || '对方') + '</b>'
+    + '<span>' + (m.direction === 'inbound' ? '⬅ 对方' : '➡ 我们') + '</span>'
+    + (m.mark_tag ? '<span style="background:#fef3c7;color:#92400e;border-radius:999px;padding:0 8px;font-weight:700">📌 ' + esc(m.mark_tag) + '</span>' : '')
+    + '<span style="margin-left:auto">' + fmtDate(m.created_at) + ' ' + fmtTime(m.created_at) + '</span></div>'
+    + '<div style="font-size:.85rem;color:var(--gray-800)">' + esc(m.body || '') + '</div>'
+    + (m.translated_body && m.translated_body !== m.body ? '<div style="font-size:.76rem;color:var(--gray-400)">▸ ' + esc(m.translated_body) + '</div>' : '')
+    + ((m.mark_note || markDataSummary(m)) ? '<div style="font-size:.78rem;color:#92400e;background:#fffbeb;border-radius:6px;padding:2px 8px;margin-top:3px">📝 ' + esc([markDataSummary(m), m.mark_note].filter(Boolean).join(' · ')) + '</div>' : '')
+    + '</div>'
+  ).join('');
+}
+// ─── 🤖 AI 评估 (仅 admin) ───
+function showEvalModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  if (!currentThread) return;
+  document.getElementById('evalModal').classList.add('show');
+  const body = document.getElementById('evalBody');
+  body.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.85rem">Loading…</div>';
+  api('/sms/threads/' + currentThread.id + '/evaluations').then(r => {
+    const evs = (r && r.evaluations) || [];
+    body.innerHTML = evs.length ? evs.map(ev => _renderEval(ev.parsed, ev.raw, ev.created_at + ' · ' + ev.created_by + ' · ' + ev.model)).join('<hr style="border:none;border-top:1px solid var(--gray-200);margin:10px 0">')
+      : '<div style="padding:10px;color:var(--gray-400);font-size:.85rem">还没有评估记录 — 点「开始评估」让 AI 通读这段对话并打分。</div>';
+  }).catch(() => { body.innerHTML = '<div style="padding:10px;color:var(--red)">加载失败</div>'; });
+}
+function _renderEval(p, raw, meta) {
+  if (!p) return '<div style="font-size:.8rem;white-space:pre-wrap">' + esc(raw || '') + '</div>';
+  const li = a => (Array.isArray(a) && a.length) ? '<ul style="margin:4px 0 8px 18px;padding:0;font-size:.83rem">' + a.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '<div style="font-size:.78rem;color:var(--gray-400);margin:2px 0 8px">无</div>';
+  const score = parseInt(p.score) || 0;
+  const col = score >= 8 ? '#059669' : score >= 6 ? '#d97706' : '#dc2626';
+  return '<div>'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="font-size:1.6rem;font-weight:800;color:' + col + '">' + score + '<span style="font-size:.85rem;color:var(--gray-400)">/10</span></span><span style="font-size:.72rem;color:var(--gray-400)">' + esc(meta || '') + '</span></div>'
+    + '<div style="font-size:.85rem;margin-bottom:6px">' + esc(p.summary || '') + '</div>'
+    + (p.response_speed ? '<div style="font-size:.8rem;color:var(--gray-600);margin-bottom:6px">⏱ ' + esc(p.response_speed) + '</div>' : '')
+    + '<div style="font-size:.78rem;font-weight:700;color:#059669">✅ 做得好</div>' + li(p.strengths)
+    + '<div style="font-size:.78rem;font-weight:700;color:#dc2626">⚠️ 问题</div>' + li(p.issues)
+    + '<div style="font-size:.78rem;font-weight:700;color:#2563eb">💡 建议</div>' + li(p.suggestions)
+    + ((Array.isArray(p.risk_flags) && p.risk_flags.length) ? '<div style="font-size:.78rem;font-weight:700;color:#b45309">🚩 风险提示</div>' + li(p.risk_flags) : '')
+    + '</div>';
+}
+async function runEvaluation() {
+  if (!currentThread) return;
+  const btn = document.getElementById('evalRunBtn');
+  btn.disabled = true; btn.textContent = '评估中… (约十几秒)';
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/evaluate', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.error) throw new Error(r.error);
+    document.getElementById('evalBody').innerHTML = _renderEval(r.parsed, r.raw, '刚刚 · ' + (r.model || ''));
+  } catch (e) { toast('评估失败: ' + (e.message || e)); }
+  btn.disabled = false; btn.textContent = '开始评估';
+}
+// ─── 📅 面试安排 ───
+let _ivTpls = null;
+async function showInterviewModal() {
+  if (!currentThread) { toast('先打开一个对话'); return; }
+  document.getElementById('interviewModal').classList.add('show');
+  document.getElementById('ivTplWrap').style.display = (USER && USER.role === 'admin') ? '' : 'none';
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/interview');
+    const iv = r && r.interview;
+    const cur = document.getElementById('ivCurrent');
+    if (iv) {
+      cur.style.display = '';
+      cur.innerHTML = '📌 已安排: <b>' + esc(iv.interview_at.replace('T', ' ')) + '</b>' + (iv.address ? ' · 📍 ' + esc(iv.address) : '')
+        + (iv.note ? ' · ' + esc(iv.note) : '')
+        + ' <a style="cursor:pointer;text-decoration:underline;margin-left:8px" onclick="setInterviewStatus(' + iv.id + ',\'done\')">✅完成</a>'
+        + ' <a style="cursor:pointer;text-decoration:underline" onclick="setInterviewStatus(' + iv.id + ',\'no_show\')">🙅未到</a>'
+        + ' <a style="cursor:pointer;text-decoration:underline;color:#dc2626" onclick="setInterviewStatus(' + iv.id + ',\'cancelled\')">取消</a>';
+      document.getElementById('ivAt').value = iv.interview_at.slice(0, 16);
+      document.getElementById('ivAddr').value = iv.address || '';
+      document.getElementById('ivNote').value = iv.note || '';
+    } else {
+      cur.style.display = 'none';
+      document.getElementById('ivAt').value = '';
+      document.getElementById('ivAddr').value = '';
+      document.getElementById('ivNote').value = '';
+    }
+  } catch (_) {}
+  // 即将到来的面试总览: 仅 admin 可见 (客服只看/管当前对话的面试)
+  const isAdminIv = USER && USER.role === 'admin';
+  document.getElementById('ivUpcomingWrap').style.display = isAdminIv ? '' : 'none';
+  if (isAdminIv) loadUpcomingInterviews();
+  if (!_ivTpls) {
+    try {
+      _ivTpls = await api('/sms/interview-templates');
+      document.getElementById('ivTplConfirm').value = _ivTpls.confirm || '';
+      document.getElementById('ivTplReq').value = _ivTpls.requirements || '';
+    } catch (_) {}
+  }
+}
+async function saveInterview() {
+  const at = document.getElementById('ivAt').value;
+  if (!at) { toast('请选择面试时间'); return; }
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/interview', { method: 'POST', body: JSON.stringify({
+      interview_at: at, address: document.getElementById('ivAddr').value.trim(), note: document.getElementById('ivNote').value.trim()
+    }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('📅 面试已保存');
+    showInterviewModal();
+  } catch (e) { toast(e.message || '保存失败'); }
+}
+async function setInterviewStatus(id, st, from) {
+  try {
+    const r = await api('/sms/interviews/' + id, { method: 'PATCH', body: JSON.stringify({ status: st }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('已更新');
+    if (from === 'list') loadIvList(); else showInterviewModal();
+  } catch (e) { toast(e.message || '操作失败'); }
+}
+async function loadUpcomingInterviews() {
+  const el = document.getElementById('ivUpcoming');
+  try {
+    const r = await api('/sms/interviews/upcoming?days=14');
+    const list = (r && r.interviews) || [];
+    el.innerHTML = list.length ? list.map(iv =>
+      '<div style="display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;' + (iv.thread_id ? 'cursor:pointer" onclick="document.getElementById(\'interviewModal\').classList.remove(\'show\');openThread(' + iv.thread_id + ')"' : '"')  + '>'
+      + '<b style="white-space:nowrap">' + esc(String(iv.interview_at).replace('T', ' ').slice(5, 16)) + '</b>'
+      + '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(iv.contact_name || fmtPhone(iv.phone_e164)) + (iv.address ? ' · 📍' + esc(iv.address) : '') + '</span></div>'
+    ).join('') : '<div style="padding:10px;color:var(--gray-400);font-size:.8rem;text-align:center">近 14 天没有已安排的面试</div>';
+  } catch (_) { el.innerHTML = ''; }
+}
+function fillInterviewMsg(kind) {
+  if (!_ivTpls) { toast('模板还没加载好, 再点一次'); return; }
+  const at = document.getElementById('ivAt').value;
+  if (kind === 'confirm' && !at) { toast('先填好面试时间再发确认'); return; }
+  let text = kind === 'confirm' ? (_ivTpls.confirm || '') : (_ivTpls.requirements || '');
+  const name = (currentContact && currentContact.name) || '';
+  const d = at ? at.slice(0, 10) : '';
+  const t = at ? at.slice(11, 16) : '';
+  text = text.replace(/\{name\}/g, name).replace(/\{date\}/g, d).replace(/\{time\}/g, t)
+             .replace(/\{address\}/g, document.getElementById('ivAddr').value.trim());
+  document.getElementById('interviewModal').classList.remove('show');
+  if (noteMode) toggleNoteMode();   // 备注模式下会存成内部备注而不是真的发出去
+  const inp = document.getElementById('replyInput');
+  inp.value = text;
+  _composeNoTranslate = true;       // 模板本身已是西英双语, 发送时不再机器翻译
+  _composeNoTranslateText = text;
+  document.getElementById('translatePreview').style.display = 'none';
+  autoGrow(inp);
+  inp.focus();
+  toast('模板已填入发送框 — 检查无误后点发送');
+}
+async function saveInterviewTpls() {
+  try {
+    const r = await api('/sms/interview-templates', { method: 'PUT', body: JSON.stringify({
+      confirm: document.getElementById('ivTplConfirm').value,
+      requirements: document.getElementById('ivTplReq').value
+    }) });
+    if (r && r.error) throw new Error(r.error);
+    _ivTpls = { confirm: document.getElementById('ivTplConfirm').value, requirements: document.getElementById('ivTplReq').value };
+    toast('模板已保存');
+  } catch (e) { toast(e.message || '保存失败'); }
+}
+// ─── 📆 面试总览 (仅 admin) ───
+let _ivListDays = 14;
+function showIvListModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('ivListModal').classList.add('show');
+  loadIvList(_ivListDays);
+}
+const _IV_ST_LABEL = { done: '✅ 完成', no_show: '🙅 未到', cancelled: '❌ 取消' };
+function _ivRowHtml(iv, withActions) {
+  const when = esc(String(iv.interview_at).replace('T', ' ').slice(0, 16));
+  const who = esc(iv.contact_name || fmtPhone(iv.phone_e164));
+  const open = iv.thread_id ? ' <a style="cursor:pointer;text-decoration:underline" onclick="document.getElementById(\'ivListModal\').classList.remove(\'show\');openThread(' + iv.thread_id + ')">打开对话</a>' : '';
+  const acts = withActions
+    ? ' <a style="cursor:pointer;text-decoration:underline;margin-left:6px" onclick="setInterviewStatus(' + iv.id + ',\'done\',\'list\')">✅完成</a>'
+      + ' <a style="cursor:pointer;text-decoration:underline" onclick="setInterviewStatus(' + iv.id + ',\'no_show\',\'list\')">🙅未到</a>'
+      + ' <a style="cursor:pointer;text-decoration:underline;color:#dc2626" onclick="setInterviewStatus(' + iv.id + ',\'cancelled\',\'list\')">取消</a>'
+    : ' <span style="color:var(--gray-400)">' + (_IV_ST_LABEL[iv.status] || esc(iv.status)) + '</span>';
+  return '<div style="padding:7px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;line-height:1.5">'
+    + '<b>' + when + '</b> · <b>' + who + '</b>'
+    + (iv.address ? ' · 📍' + esc(iv.address) : '')
+    + (iv.note ? ' · ' + esc(iv.note) : '')
+    + open + acts + '</div>';
+}
+async function loadIvList(days) {
+  _ivListDays = days || _ivListDays;
+  document.querySelectorAll('#ivListModal .filter-btn').forEach(b => b.className = 'filter-btn' + (parseInt(b.dataset.ivdays) === _ivListDays ? ' active' : ''));
+  const up = document.getElementById('ivListUpcoming'), rc = document.getElementById('ivListRecent');
+  up.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  rc.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  try {
+    const r = await api('/sms/interviews/upcoming?days=' + _ivListDays);
+    if (r && r.error) throw new Error(r.error);
+    const list = (r && r.interviews) || [];
+    up.innerHTML = list.length ? list.map(iv => _ivRowHtml(iv, true)).join('')
+      : '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">近 ' + _ivListDays + ' 天没有已预约的面试</div>';
+    const recent = (r && r.recent) || [];
+    rc.innerHTML = recent.length ? recent.map(iv => _ivRowHtml(iv, false)).join('')
+      : '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">暂无记录</div>';
+  } catch (e) {
+    up.innerHTML = '<div style="padding:12px;color:var(--red);font-size:.8rem">' + esc(e.message || '加载失败') + '</div>';
+    rc.innerHTML = '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">加载失败</div>';
+  }
+}
+// ─── 📋 资料修改记录 (仅 admin) ───
+const _CE_FIELD_ZH = { name: '名字', company: '公司', email: '邮箱', tags: '工种标签', notes: '备注', work_state: '州', is_foreman: '工头', work_history: '工作经历' };
+function _ceFmtVal(k, v) {
+  if (k === 'is_foreman') return v ? '是' : '否';
+  if (k === 'work_history') {
+    const a = parseWorkHistory(v);
+    return a.length ? a.map(h => [h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' ')).join('; ') : '(空)';
+  }
+  if (k === 'tags') { try { return (JSON.parse(v || '[]') || []).join(', ') || '(空)'; } catch (_) { return String(v || '(空)'); } }
+  const s = String(v ?? '').trim();
+  return s === '' ? '(空)' : (s.length > 60 ? s.slice(0, 60) + '…' : s);
+}
+function showContactEditsModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('contactEditsModal').classList.add('show');
+  document.getElementById('ceDate').value = new Date().toLocaleDateString('sv-SE');
+  loadContactEdits();
+}
+function ceShiftDay(delta) {
+  const el = document.getElementById('ceDate');
+  const base = el.value ? new Date(el.value + 'T12:00:00') : new Date();
+  base.setDate(base.getDate() + delta);
+  el.value = base.toLocaleDateString('sv-SE');
+  loadContactEdits();
+}
+async function loadContactEdits() {
+  const el = document.getElementById('ceList');
+  el.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  try {
+    const d = document.getElementById('ceDate').value;
+    const q = (d ? 'date=' + d + '&' : '') + 'tzoff=' + new Date().getTimezoneOffset();
+    const r = await api('/sms/contact-edits?' + q);
+    if (r && r.error) throw new Error(r.error);
+    const list = (r && r.edits) || [];
+    el.innerHTML = list.length ? list.map(e2 => {
+      const who = esc(e2.agent_name || '系统');
+      const target = esc(((e2.contact_name || '') + ' ' + fmtPhone(e2.phone_e164 || '')).trim() || ('联系人#' + e2.id));
+      let body = '';
+      if (e2.action === 'updated' && e2.changes) {
+        body = Object.keys(e2.changes).map(k =>
+          '<div style="padding-left:10px">· ' + (_CE_FIELD_ZH[k] || esc(k)) + ': <span style="color:var(--gray-400);text-decoration:line-through">' + esc(_ceFmtVal(k, e2.changes[k].from)) + '</span> → <b>' + esc(_ceFmtVal(k, e2.changes[k].to)) + '</b></div>'
+        ).join('');
+      } else if (e2.action === 'employee_linked') {
+        body = '<div style="padding-left:10px">· 员工关联: ' + (e2.meta && e2.meta.employee_id ? '关联到员工档案 #' + esc(String(e2.meta.employee_id)) : '解除关联') + '</div>';
+      } else if (e2.action === 'opted_out') {
+        body = '<div style="padding-left:10px">· 对方回 STOP 退订</div>';
+      } else if (e2.action === 'opted_in') {
+        body = '<div style="padding-left:10px">· 对方回 START 恢复接收</div>';
+      }
+      const t = e2.created_at ? new Date(String(e2.created_at).replace(' ', 'T') + 'Z') : null;
+      const ts = (t && !isNaN(t)) ? t.toLocaleString('sv-SE').slice(5, 16) : '';
+      return '<div style="padding:8px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;line-height:1.55">'
+        + '<div><b>' + who + '</b> 修改了 <b>' + target + '</b> <span style="color:var(--gray-400);float:right">' + esc(ts) + '</span></div>'
+        + body + '</div>';
+    }).join('') : '<div style="padding:14px;color:var(--gray-400);font-size:.8rem;text-align:center">这一天没有资料修改</div>';
+  } catch (e) { el.innerHTML = '<div style="padding:12px;color:var(--red);font-size:.8rem">' + esc(e.message || '加载失败') + '</div>'; }
+}
+
+// ─── 🛡️ AI 拦截记录 (仅 admin) ───
+function showAiBlocksModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('aiBlocksModal').classList.add('show');
+  loadAiBlocks();
+}
+async function loadAiBlocks() {
+  const el = document.getElementById('aiBlocksList');
+  el.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  try {
+    const r = await api('/sms/ai-blocks');
+    if (r && r.error) throw new Error(r.error);
+    const list = (r && r.blocks) || [];
+    el.innerHTML = list.length ? list.map(b => {
+      let cats = []; try { cats = JSON.parse(b.categories || '[]'); } catch (_) {}
+      const target = b.kind === 'broadcast' ? '📢 群发' : esc((b.contact_name || '') + ' ' + (b.phone_e164 || '')).trim();
+      return '<div style="padding:8px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;line-height:1.55">'
+        + '<div><b style="color:#b91c1c">🚫 ' + esc(b.reason || '违规') + '</b>'
+        + (cats.length ? ' <span style="color:var(--gray-400)">[' + esc(cats.join(', ')) + ']</span>' : '') + '</div>'
+        + '<div style="color:var(--gray-600);background:var(--gray-50);border-radius:6px;padding:4px 8px;margin:3px 0;white-space:pre-wrap;word-break:break-word">' + esc(b.body || '') + '</div>'
+        + '<div style="color:var(--gray-400)">' + esc(String(b.created_at || '').slice(0, 16)) + ' · 客服: <b>' + esc(b.agent_username || '?') + '</b> · 发给: ' + target
+        + (b.admin_notified ? ' · 已短信通知' : '') + '</div></div>';
+    }).join('') : '<div style="padding:14px;color:var(--gray-400);font-size:.8rem;text-align:center">还没有拦截记录 👍</div>';
+  } catch (e) { el.innerHTML = '<div style="padding:12px;color:var(--red);font-size:.8rem">' + esc(e.message || '加载失败') + '</div>'; }
+}
+// ─── 📊 消息统计 (仅 admin) ───
+let _msgStatsDays = 14, _msgStatsDate = '';
+function showMsgStatsModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('msgStatsModal').classList.add('show');
+  _msgStatsDate = new Date().toLocaleDateString('sv-SE');   // 今天 (本地, YYYY-MM-DD)
+  loadMsgStats(_msgStatsDays);
+}
+async function loadMsgStats(days, date) {
+  _msgStatsDays = days || _msgStatsDays;
+  if (date) _msgStatsDate = date;
+  document.querySelectorAll('#msgStatsModal .filter-btn').forEach(b => b.className = 'filter-btn' + (parseInt(b.dataset.days) === _msgStatsDays ? ' active' : ''));
+  const dEl = document.getElementById('msgStatsDaily'), hEl = document.getElementById('msgStatsHours'), aEl = document.getElementById('msgStatsAgents');
+  dEl.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.85rem">Loading…</div>';
+  try {
+    const tzoff = new Date().getTimezoneOffset();
+    const r = await api('/sms/message-stats?days=' + _msgStatsDays + '&tzoff=' + tzoff + '&date=' + encodeURIComponent(_msgStatsDate));
+    if (r && r.error) throw new Error(r.error);
+    // 按天: 合并 收/发
+    const byDay = {};
+    (r.daily || []).forEach(x => {
+      byDay[x.d] = byDay[x.d] || { in: 0, out: 0 };
+      byDay[x.d][x.direction === 'inbound' ? 'in' : 'out'] += x.n;
+    });
+    const dayKeys = Object.keys(byDay).sort().reverse();
+    const maxTotal = Math.max(1, ...dayKeys.map(k => byDay[k].in + byDay[k].out));
+    dEl.innerHTML = dayKeys.length ? dayKeys.map(k => {
+      const v = byDay[k], total = v.in + v.out;
+      const wIn = Math.round(v.in / maxTotal * 100), wOut = Math.round(v.out / maxTotal * 100);
+      const sel = k === _msgStatsDate;
+      return '<div onclick="loadMsgStats(' + _msgStatsDays + ',\'' + k + '\')" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--gray-100);cursor:pointer;font-size:.8rem;' + (sel ? 'background:#eff6ff' : '') + '" title="点击查看这一天的小时分布">'
+        + '<span style="width:84px;flex-shrink:0;font-weight:' + (sel ? '800' : '600') + '">' + k.slice(5) + '</span>'
+        + '<span style="flex:1;display:flex;height:12px;border-radius:3px;overflow:hidden;background:var(--gray-100)">'
+        + '<span style="width:' + wIn + '%;background:#38bdf8"></span><span style="width:' + wOut + '%;background:#34d399"></span></span>'
+        + '<span style="width:140px;flex-shrink:0;text-align:right;color:var(--gray-500)">收 ' + v.in + ' · 发 ' + v.out + ' · 共 <b>' + total + '</b></span></div>';
+    }).join('') : '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">该时段没有消息</div>';
+    // 小时分布
+    document.getElementById('msgStatsHourTitle').textContent = '⏰ ' + _msgStatsDate + ' 的小时分布（点上面的日期切换）';
+    const hr = {};
+    (r.hours || []).forEach(x => {
+      const h = parseInt(x.h);
+      hr[h] = hr[h] || { in: 0, out: 0 };
+      hr[h][x.direction === 'inbound' ? 'in' : 'out'] += x.n;
+    });
+    const maxH = Math.max(1, ...Object.values(hr).map(v => v.in + v.out));
+    let bars = '<div style="display:flex;align-items:flex-end;gap:2px;height:90px">';
+    for (let h = 0; h < 24; h++) {
+      const v = hr[h] || { in: 0, out: 0 };
+      const total = v.in + v.out;
+      const ph = Math.round(total / maxH * 80);
+      const phIn = total ? Math.round(ph * v.in / total) : 0;
+      bars += '<div title="' + h + ':00 — 收 ' + v.in + ' · 发 ' + v.out + '" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%">'
+        + (total ? '<div style="font-size:.58rem;text-align:center;color:var(--gray-500)">' + total + '</div>' : '')
+        + '<div style="height:' + (ph - phIn) + 'px;background:#34d399;border-radius:2px 2px 0 0"></div>'
+        + '<div style="height:' + phIn + 'px;background:#38bdf8;border-radius:' + ((ph - phIn) ? '0' : '2px 2px 0 0') + '"></div></div>';
+    }
+    bars += '</div><div style="display:flex;gap:2px;margin-top:2px">';
+    for (let h = 0; h < 24; h++) bars += '<div style="flex:1;text-align:center;font-size:.55rem;color:var(--gray-400)">' + (h % 3 === 0 ? h : '') + '</div>';
+    bars += '</div><div style="font-size:.68rem;color:var(--gray-400);margin:6px 0 4px"><span style="color:#38bdf8">■</span> 收到 <span style="color:#34d399;margin-left:8px">■</span> 发出</div>';
+    hEl.innerHTML = bars;
+    // 客服发送量
+    aEl.innerHTML = (r.agents || []).length ? r.agents.map(a =>
+      '<div style="display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem"><span>' + esc(a.agent) + '</span><b>' + a.n + '</b></div>'
+    ).join('') : '<div style="padding:10px;color:var(--gray-400);font-size:.8rem;text-align:center">无</div>';
+  } catch (e) { dEl.innerHTML = '<div style="padding:10px;color:var(--red)">加载失败: ' + esc(e.message || '') + '</div>'; }
+}
+// ─── 客服账号管理 (仅 admin) ───
+function showCsAccModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('csAccModal').classList.add('show');
+  loadCsAccounts();
+}
+async function loadCsAccounts() {
+  const el = document.getElementById('csAccList');
+  el.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.85rem">Loading…</div>';
+  try {
+    const r = await api('/sms/cs-accounts');
+    const accs = (r && r.accounts) || [];
+    el.innerHTML = accs.length ? accs.map(a =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--gray-200);font-size:.85rem">'
+      + '<b>' + esc(a.username) + '</b>' + (a.display_name ? '<span style="color:var(--gray-400)">' + esc(a.display_name) + '</span>' : '')
+      + '<span style="margin-left:auto;font-size:.72rem;color:' + (a.active ? '#059669' : '#dc2626') + '">' + (a.active ? '启用' : '停用') + '</span>'
+      + '<a style="cursor:pointer;text-decoration:underline;font-size:.75rem" onclick="toggleCsAccount(' + a.id + ',' + (a.active ? 0 : 1) + ')">' + (a.active ? '停用' : '启用') + '</a>'
+      + '<a style="cursor:pointer;text-decoration:underline;font-size:.75rem" onclick="resetCsPassword(' + a.id + ')">改密码</a>'
+      + '</div>').join('')
+      : '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">还没有客服账号</div>';
+  } catch (e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">加载失败</div>'; }
+}
+async function createCsAccount() {
+  try {
+    const r = await api('/sms/cs-accounts', { method: 'POST', body: JSON.stringify({
+      username: document.getElementById('csAccUser').value.trim(),
+      password: document.getElementById('csAccPass').value,
+      display_name: document.getElementById('csAccName').value.trim()
+    }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('客服账号已创建');
+    document.getElementById('csAccUser').value = ''; document.getElementById('csAccPass').value = ''; document.getElementById('csAccName').value = '';
+    loadCsAccounts();
+  } catch (e) { toast(e.message || '创建失败'); }
+}
+async function toggleCsAccount(id, active) {
+  try {
+    const r = await api('/sms/cs-accounts/' + id, { method: 'PATCH', body: JSON.stringify({ active }) });
+    if (r && r.error) throw new Error(r.error);
+    loadCsAccounts();
+  } catch (e) { toast(e.message || '操作失败'); }
+}
+async function resetCsPassword(id) {
+  const pw = prompt('输入新密码 (≥6位):');
+  if (!pw) return;
+  try {
+    const r = await api('/sms/cs-accounts/' + id, { method: 'PATCH', body: JSON.stringify({ password: pw }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('密码已更新');
+  } catch (e) { toast(e.message || '操作失败'); }
+}
 function renderTagsInline(tagsJson) {
   let tags = [];
   try { tags = typeof tagsJson === 'string' ? JSON.parse(tagsJson) : (tagsJson || []); } catch(e) {}
@@ -1311,25 +2657,7 @@ function renderPriorityBadge() {
 }
 
 // ─── Phase 2: Dashboard ───
-function toggleDashboard() {
-  dashboardVisible = !dashboardVisible;
-  const panel = document.getElementById('dashPanel');
-  if (dashboardVisible) { panel.classList.add('show'); loadDashStats(); }
-  else { panel.classList.remove('show'); }
-}
-
-async function loadDashStats() {
-  try {
-    const r = await api('/sms/stats');
-    document.getElementById('dashStats').innerHTML =
-      '<div class="dash-stat"><div class="num">' + (r.open || 0) + '</div><div class="lbl">Open</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.claimed || 0) + '</div><div class="lbl">Claimed</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.new_today || 0) + '</div><div class="lbl">New Today</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.closed_today || 0) + '</div><div class="lbl">Closed Today</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.avg_response_minutes != null ? r.avg_response_minutes + 'm' : '--') + '</div><div class="lbl">Avg Response</div></div>'
-      + '<div class="dash-stat"><div class="num">' + (r.total_messages || 0) + '</div><div class="lbl">Total Msgs</div></div>';
-  } catch(e) { console.error('Dashboard error:', e); }
-}
+// Dashboard 统计已移到独立页面 /sms-stats
 
 // ─── Phase 2: Unread filter ───
 function toggleUnreadFilter() {
@@ -1394,9 +2722,10 @@ let deferredInstallPrompt = null;
 
 // Register service worker
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then(reg => {
+  // updateViaCache:'none' — sw.js 永远走网络, 保证手机能及时拿到新版本
+  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(reg => {
     console.log('[PWA] SW registered, scope:', reg.scope);
-    // Check for updates every 30 min
+    reg.update();   // 每次打开立即查一次更新
     setInterval(() => reg.update(), 30 * 60 * 1000);
   }).catch(err => console.warn('[PWA] SW registration failed:', err));
 }
@@ -1583,28 +2912,44 @@ async function sendBroadcast() {
   const message = document.getElementById('bcMessage').value.trim();
   if (phones.length === 0) { toast('Please select at least one recipient'); return; }
   if (!message) { toast('Please enter a message'); return; }
-  if (!await smsConfirm('发送短信给 ' + phones.length + ' 个收件人？', { confirmLabel: 'Send' })) return;
+  // Twilio 合规: 深夜/清晨群发风险更高
+  let hr = new Date().getHours();
+  try { hr = parseInt(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23', hour: 'numeric' }), 10); } catch (_) {}
+  if (hr >= 21 || hr < 8) {
+    const okHr = await smsConfirm('对方当地现在约 ' + hr + ' 点（深夜/清晨）。群发在这个时段最容易引发投诉和封号，强烈建议早 8 点到晚 9 点之间再发。确定现在群发吗？', { confirmLabel: '仍然群发', cancelLabel: '先不发', danger: true });
+    if (!okHr) return;
+  }
+  if (!await smsConfirm('发送短信给 ' + phones.length + ' 个收件人？（已回 STOP 退订的号码会自动跳过）', { confirmLabel: 'Send' })) return;
 
   const btn = document.getElementById('bcSendBtn');
   const status = document.getElementById('bcStatus');
   btn.disabled = true;
   btn.textContent = 'Sending...';
-  status.textContent = 'Sending to ' + phones.length + ' recipients...';
+  status.textContent = 'Sending to ' + phones.length + ' recipients... 人多时会比较慢, 请勿关闭或重复点击';
 
   try {
     const r = await api('/sms/broadcast', {
       method: 'POST',
       body: JSON.stringify({ phones, message })
     });
+    if (r && r.error) {
+      status.innerHTML = '<span style="color:var(--red)">' + esc(r.error) + '</span>';
+      toast(r.error);
+      btn.disabled = false;
+      btn.textContent = 'Send to All';
+      return;
+    }
     const sent = r.results ? r.results.filter(x => x.ok).length : 0;
     const failed = r.results ? r.results.filter(x => !x.ok).length : 0;
+    const skipped = r.opted_out_skipped || 0;
     status.innerHTML = '<span style="color:var(--green)">Sent: ' + sent + '</span>' +
-      (failed > 0 ? ' &nbsp; <span style="color:var(--red)">Failed: ' + failed + '</span>' : '');
+      (failed > 0 ? ' &nbsp; <span style="color:var(--red)">Failed: ' + failed + '</span>' : '') +
+      (skipped > 0 ? ' &nbsp; <span style="color:#b45309">已退订跳过: ' + skipped + '</span>' : '');
     btn.textContent = 'Done';
-    toast('Broadcast complete: ' + sent + ' sent, ' + failed + ' failed');
+    toast('Broadcast complete: ' + sent + ' sent, ' + failed + ' failed' + (skipped ? ', ' + skipped + ' 已退订跳过' : ''));
     setTimeout(() => { loadThreads(); }, 1000);
   } catch(e) {
-    status.textContent = 'Error: ' + e.message;
+    status.textContent = 'Error: ' + e.message + ' — 如果是超时(timeout), 后台很可能仍在逐条发送, 不要马上重发同一批, 稍后在会话列表里核对';
     btn.disabled = false;
     btn.textContent = 'Send to All';
   }

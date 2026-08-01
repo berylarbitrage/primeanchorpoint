@@ -2,10 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<!-- Meta Pixel Code -->
-<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js'); fbq('init', '978932388059197'); fbq('track', 'PageView');</script>
-<noscript><img height="1" width="1" src="https://www.facebook.com/tr?id=978932388059197&ev=PageView&noscript=1"/></noscript>
-<!-- End Meta Pixel Code -->
+<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Prime Anchor Workforce — 管理后台</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
@@ -559,14 +556,14 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <div class="app" id="app">
 <div class="mobile-topbar">
   <button class="hamburger" onclick="openAdminSidebar()" aria-label="菜单"><span></span><span></span><span></span></button>
-  <span class="mobile-topbar-title">⚓ 管理后台</span>
+  <span class="mobile-topbar-title" style="display:inline-flex;align-items:center;gap:.4rem"><img src="/logo.svg" alt="Logo" style="height:20px;width:auto;vertical-align:middle">管理后台</span>
   <div class="mobile-topbar-right">
     <button class="btn-logout-m" onclick="logout()">退出</button>
   </div>
 </div>
 <div class="sidebar-overlay" id="adminSidebarOverlay" onclick="closeAdminSidebar()"></div>
 <div class="sidebar" id="sidebar">
-  <h2>⚓ 管理后台</h2>
+  <h2 style="display:flex;align-items:center;gap:.45rem"><img src="/logo.svg" alt="Logo" style="height:26px;width:auto;flex-shrink:0">管理后台</h2>
   <a class="active" onclick="showTab('dashboard')" data-tab="dashboard">🏠 仪表盘</a>
 
   <!-- 客户管理 -->
@@ -2382,7 +2379,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <div class="modal-bg" id="applyInboxModal"><div class="modal" style="max-width:760px;max-height:90vh;display:flex;flex-direction:column">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.2rem">
     <h2 style="margin:0">📨 招工申请收件箱 <span id="applyInboxPartner" style="font-size:.85rem;color:var(--gray-500);font-weight:400"></span></h2>
-    <button class="btn btn-sm btn-outline" onclick="closeApplicantInbox()">× 关闭</button>
+    <div style="display:flex;gap:.4rem">
+      <button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#93c5fd" onclick="window.open('/phone-check.html','_blank')" title="输入电话号码，查这个人是否登记过 / 提交过申请表">📱 电话查重</button>
+      <button class="btn btn-sm btn-outline" onclick="closeApplicantInbox()">× 关闭</button>
+    </div>
   </div>
   <div style="display:flex;gap:.4rem;border-bottom:1px solid var(--gray-200);margin-bottom:.5rem">
     <button id="applyInboxTabActive" class="btn btn-sm" style="background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700" onclick="switchApplicantInboxTab('active')">📥 待处理 <span id="applyInboxCountActive" style="font-weight:600;color:var(--gray-500)"></span></button>
@@ -2545,15 +2545,22 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 </div>
 
 <!-- ════════════════════ PAYMENT RECEIPT MODAL ════════════════════ -->
+<style>
+/* 收款/分包回执弹窗宽版双栏：左=表单, 右=对账单凭证选择器; 窄屏回退单栏 */
+.invp-two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.4rem;align-items:start}
+@media (max-width:980px){.invp-two-col{grid-template-columns:1fr}}
+</style>
 <div class="modal-bg" id="invpReceiptModal" style="display:none" onclick="if(event.target===this)closeInvpReceiptModal()">
-  <div class="modal" style="max-width:560px;width:95vw;max-height:94vh;overflow-y:auto">
+  <div class="modal" style="max-width:1120px;width:95vw;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
       <h2 style="margin:0;font-size:1.15rem;line-height:1.35;min-width:0;flex:1 1 auto" id="invpReceiptModalTitle">标记已付款</h2>
       <button class="btn btn-outline" style="flex:0 0 auto;white-space:nowrap;padding:.4rem .85rem" onclick="closeInvpReceiptModal()">✕ 关闭</button>
     </div>
     <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">记录这笔款项的收款信息并上传凭证（如银行到账截图、转账记录等），支持 PDF / 图片格式，最大 20MB。</p>
+    <div class="invp-two-col"><div style="min-width:0">
     <div id="invpReceiptCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
       当前回执：<a id="invpReceiptCurrentLink" href="#" target="_blank" style="color:var(--green)">查看文件</a>
+      <label style="display:flex;align-items:flex-start;gap:.35rem;margin-top:.45rem;cursor:pointer;font-size:.8rem;color:var(--gray-600)"><input type="checkbox" id="invpReceiptKeepOld" style="margin-top:2px"><span><b>保留原有回执图片</b>——新上传 / 新选的凭证<b>追加</b>在原图后面（默认保留；取消勾选 = 替换并删除原图）</span></label>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
@@ -2605,10 +2612,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
     </div>
 
+    </div><div style="min-width:0">
     <!-- The shared bank-statement voucher picker (#invpVoucherPicker) is moved
          into this slot while the 收款 modal is open, so an income transaction's
          exported snippet lands in 收款回执 (left column) — not 分包回执. -->
     <div id="invpReceiptPickerSlot"></div>
+    </div></div>
 
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeInvpReceiptModal()">取消</button>
@@ -2619,7 +2628,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 
 <!-- ════════════════════ SUBCONTRACTOR PAYMENT MODAL (付给分包商) ════════════════════ -->
 <div class="modal-bg" id="invpSubPayModal" style="display:none" onclick="if(event.target===this)closeInvpSubPayModal()">
-  <div class="modal" style="max-width:560px;width:95vw;max-height:94vh;overflow-y:auto">
+  <div class="modal" style="max-width:1120px;width:95vw;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
       <h2 style="margin:0;font-size:1.15rem;line-height:1.35;min-width:0;flex:1 1 auto" id="invpSubPayModalTitle">记录分包付款</h2>
       <button class="btn btn-outline" style="flex:0 0 auto;white-space:nowrap;padding:.4rem .85rem" onclick="closeInvpSubPayModal()">✕ 关闭</button>
@@ -2627,9 +2636,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">记录这笔<strong>付给分包商</strong>的款项并上传凭证（如转账截图、付款记录等），支持 PDF / 图片格式，最大 20MB。</p>
     <!-- Read-only snapshot of this invoice's line items, so the amount being paid
          can be compared against the billed numbers without leaving the dialog. -->
+    <div class="invp-two-col"><div style="min-width:0">
     <div id="invpSubPayInvInfo" style="display:none;margin-bottom:1rem;padding:.6rem .75rem;background:#f8fafc;border:1px solid var(--gray-200);border-radius:10px;font-size:.82rem"></div>
     <div id="invpSubPayCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
       当前回执：<a id="invpSubPayCurrentLink" href="#" target="_blank" style="color:var(--sky)">查看文件</a>
+      <label style="display:flex;align-items:flex-start;gap:.35rem;margin-top:.45rem;cursor:pointer;font-size:.8rem;color:var(--gray-600)"><input type="checkbox" id="invpSubPayKeepOld" style="margin-top:2px"><span><b>保留原有回执图片</b>——新上传 / 新选的凭证<b>追加</b>在原图后面（默认保留；取消勾选 = 替换并删除原图）</span></label>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
@@ -2681,6 +2692,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
     </div>
 
+    </div><div style="min-width:0">
     <!-- Shared voucher picker: lives here by default, but is re-parented into the
          收款凭证 modal (see #invpReceiptPickerSlot) when that modal opens. Only one
          modal is visible at a time, so the single DOM instance can be shared;
@@ -2717,14 +2729,15 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.35rem">
         <label style="font-size:.74rem;color:var(--gray-500);display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" id="invpSubPayHideUsed" onchange="_invpRenderSubPayList()">仅显示未使用</label>
-        <span style="font-size:.72rem;color:var(--gray-400)"><a onclick="_invpClearSubPayFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem">清除筛选</a><span id="invpSubPayListCount"></span></span>
+        <span style="font-size:.72rem;color:var(--gray-400);display:inline-flex;align-items:center;gap:.35rem"><input id="invpSubPayMatchAmt" type="number" step="0.01" inputmode="decimal" placeholder="输入金额" title="输入任意金额后回车或点「按金额找」；留空则用上方填写的付款/收款金额" style="width:92px;padding:.18rem .35rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.74rem" onkeydown="if(event.key==='Enter'){event.preventDefault();_invpMatchByAmount();}"><a onclick="_invpMatchByAmount()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem" title="先找单笔正好等于该金额的交易；找不到就找几笔合计正好相等的组合。左边输入框留空时用上方填写的付款/收款金额">🎯 按金额找</a><a onclick="_invpClearSubPayFilters()" style="color:var(--sky);text-decoration:underline;cursor:pointer;margin-right:.6rem">清除筛选</a><span id="invpSubPayListCount"></span></span>
       </div>
-      <div id="invpSubPayList" style="max-height:300px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow-wrap:anywhere;word-break:break-word">
+      <div id="invpSubPayList" style="max-height:min(52vh,560px);overflow-y:auto;overflow-x:hidden;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow-wrap:anywhere;word-break:break-word">
         <div style="padding:1rem;text-align:center;color:var(--gray-400);font-size:.82rem">加载中…</div>
       </div>
       <div id="invpSubPaySelected" style="font-size:.78rem;color:var(--sky);font-weight:600;margin-top:.4rem;min-height:1.1em"></div>
       <div style="font-size:.72rem;color:var(--gray-400);margin-top:.2rem">交易<b>可多选</b>（再点一次取消），合计自动累加并与发票金额比对；每条选中的交易都会截取该行作为凭证。选「整份 PDF」用整份对账单。<span style="color:var(--gray-500)">灰色 = 已被用过</span>。可在「📄 对账备注」页上传/标注对账单。</div>
     </div>
+    </div></div>
     </div></div>
 
     <div style="display:flex;gap:.5rem;align-items:center">
@@ -7858,7 +7871,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <option value="">-- 州 --</option>
         </select>
       </div>
-      <div class="field"><label>邮编 ZIP</label><input id="eZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');clearEmpAddrStatus()" onblur="autoVerifyEmpAddr()"></div>
+      <div class="field"><label>邮编 ZIP</label><input id="eZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');clearEmpAddrStatus();_autoStateFromZip()" onblur="autoVerifyEmpAddr()"></div>
     </div>
     <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem">
       <button type="button" class="btn btn-sm btn-outline" onclick="verifyEmpAddr()">🔍 验证地址 Verify</button>
@@ -9758,10 +9771,48 @@ function updateLangSections() {
 // ── Address helpers ──
 const _US_STATES_EARLY = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
 
+// 州名标准化: "Illinois"/"illinois"/"IL"/"il" → "IL" (申请表可能存全称, 员工表单用缩写下拉)
+const _US_STATE_NAME_TO_CODE = { 'ALABAMA':'AL','ALASKA':'AK','ARIZONA':'AZ','ARKANSAS':'AR','CALIFORNIA':'CA','COLORADO':'CO','CONNECTICUT':'CT','DELAWARE':'DE','FLORIDA':'FL','GEORGIA':'GA','HAWAII':'HI','IDAHO':'ID','ILLINOIS':'IL','INDIANA':'IN','IOWA':'IA','KANSAS':'KS','KENTUCKY':'KY','LOUISIANA':'LA','MAINE':'ME','MARYLAND':'MD','MASSACHUSETTS':'MA','MICHIGAN':'MI','MINNESOTA':'MN','MISSISSIPPI':'MS','MISSOURI':'MO','MONTANA':'MT','NEBRASKA':'NE','NEVADA':'NV','NEW HAMPSHIRE':'NH','NEW JERSEY':'NJ','NEW MEXICO':'NM','NEW YORK':'NY','NORTH CAROLINA':'NC','NORTH DAKOTA':'ND','OHIO':'OH','OKLAHOMA':'OK','OREGON':'OR','PENNSYLVANIA':'PA','RHODE ISLAND':'RI','SOUTH CAROLINA':'SC','SOUTH DAKOTA':'SD','TENNESSEE':'TN','TEXAS':'TX','UTAH':'UT','VERMONT':'VT','VIRGINIA':'VA','WASHINGTON':'WA','WEST VIRGINIA':'WV','WISCONSIN':'WI','WYOMING':'WY','DISTRICT OF COLUMBIA':'DC','PUERTO RICO':'PR' };
+function normalizeStateCode(v) {
+  const t = String(v || '').trim().toUpperCase();
+  if (!t) return '';
+  if (t.length === 2) return t;
+  return _US_STATE_NAME_TO_CODE[t] || t;
+}
 function fillStateSelect(selectEl, selectedVal) {
   if (!selectEl) return;
+  selectedVal = normalizeStateCode(selectedVal);
   selectEl.innerHTML = '<option value="">-- 州 --</option>' +
     _US_STATES_EARLY.map(s => `<option value="${s}"${s===selectedVal?' selected':''}>${s}</option>`).join('');
+}
+
+// ZIP → state, by the USPS 3-digit prefix allocations. Exceptions (single
+// prefixes carved out of a neighbor's block) are listed before broad ranges —
+// first match wins.
+const _ZIP3_STATE_RANGES = [
+  [201,201,'VA'],[733,733,'TX'],[885,885,'TX'],[5,5,'NY'],[6,9,'PR'],
+  [10,27,'MA'],[28,29,'RI'],[30,38,'NH'],[39,49,'ME'],[50,59,'VT'],[60,69,'CT'],[70,89,'NJ'],
+  [100,149,'NY'],[150,196,'PA'],[197,199,'DE'],[200,205,'DC'],[206,219,'MD'],[220,246,'VA'],[247,268,'WV'],
+  [270,289,'NC'],[290,299,'SC'],[300,319,'GA'],[320,349,'FL'],[350,369,'AL'],[370,385,'TN'],[386,397,'MS'],[398,399,'GA'],
+  [400,427,'KY'],[430,459,'OH'],[460,479,'IN'],[480,499,'MI'],[500,528,'IA'],[530,549,'WI'],[550,567,'MN'],[570,577,'SD'],[580,588,'ND'],[590,599,'MT'],
+  [600,629,'IL'],[630,658,'MO'],[660,679,'KS'],[680,693,'NE'],[700,714,'LA'],[716,729,'AR'],[730,749,'OK'],[750,799,'TX'],
+  [800,816,'CO'],[820,831,'WY'],[832,838,'ID'],[840,847,'UT'],[850,865,'AZ'],[870,884,'NM'],[889,898,'NV'],
+  [900,961,'CA'],[967,968,'HI'],[970,979,'OR'],[980,994,'WA'],[995,999,'AK']
+];
+function stateFromZip(zip) {
+  const m = String(zip || '').match(/^(\d{3})\d{2}/);
+  if (!m) return '';
+  const p = parseInt(m[1], 10);
+  for (const [a, b, st] of _ZIP3_STATE_RANGES) { if (p >= a && p <= b) return st; }
+  return '';
+}
+// Fill the employee modal's state select from its ZIP when no state is chosen
+// yet (never overrides a manual choice).
+function _autoStateFromZip() {
+  const zipEl = document.getElementById('eZip'), stEl = document.getElementById('eState');
+  if (!zipEl || !stEl || stEl.value) return;
+  const st = stateFromZip(zipEl.value);
+  if (st && _US_STATES_EARLY.includes(st)) stEl.value = st;
 }
 
 // Parse "Street, [Street2,] City, ST [ZIP]" or "City, ST" into parts
@@ -16234,7 +16285,7 @@ function getDobValue() {
 function openEmpModal(id) {
   document.getElementById('empModalTitle').textContent = id ? '编辑员工' : '新增员工';
   document.getElementById('empId').value = id || '';
-  { const _ad = document.getElementById('empApplicantDocs'); if (_ad) { _ad.style.display = 'none'; _ad.innerHTML = ''; } if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); }
+  { const _ad = document.getElementById('empApplicantDocs'); if (_ad) { _ad.style.display = 'none'; _ad.innerHTML = ''; } window._empApplDocsSubId = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); }
   if (id) {
     const e = allEmployees.find(x=>x.id===id) || {};
     document.getElementById('eFirst').value    = e.first_name||'';
@@ -16248,6 +16299,7 @@ function openEmpModal(id) {
     document.getElementById('eCity').value     = e.city||'';
     fillStateSelect(document.getElementById('eState'), e.state||'');
     document.getElementById('eZip').value      = e.zip||'';
+    _autoStateFromZip();
     document.getElementById('eHire').value     = e.hire_date||'';
     document.getElementById('eStatus').value   = e.status||'active';
     document.getElementById('addJobRecordBtn').style.display = '';
@@ -16800,6 +16852,7 @@ function _execDupMerge() {
       const el = document.getElementById(elId);
       if (el && !el.value) el.value = val;
     }
+    _autoStateFromZip();
   }, 100);
 }
 
@@ -16831,7 +16884,25 @@ function addEmpEmail() {
   document.getElementById('extraEmailsContainer').appendChild(_makeExtraContactRow('email','email@example.com',''));
 }
 
+// 保存员工前: 申请证件组(SSN/EAD等)还没有真伪结论的, 提醒先标注
+async function _checkApplDocVerdicts() {
+  if (!window._empApplDocsSubId) return true;   // 不是从申请创建的, 不检查
+  let docs = [];
+  try { docs = await api(`/admin/applicant-submissions/${window._empApplDocsSubId}/docs`); } catch (_) { return true; }
+  if (!Array.isArray(docs) || !docs.length) return true;
+  const groups = {};
+  docs.filter(d => !/\.pdf$/i.test(d.file_name || '')).forEach(d => {
+    const g = (String(d.doc_type || '').split('_')[0] || String(d.id)).toUpperCase();
+    if (!(g in groups)) groups[g] = '';
+    if (d.verify_status) groups[g] = d.verify_status;
+  });
+  const missing = Object.keys(groups).filter(g => !groups[g]);
+  if (!missing.length) return true;
+  return confirm('⚠️ 这些证件组还没有真伪结论: ' + missing.join('、')
+    + '\n\n点「取消」回去标注（点开证件图 → 顶部选 ✅真 / ❌假 / ❓待确定）\n点「确定」跳过标注直接保存');
+}
 async function saveEmployee() {
+  if (!(await _checkApplDocVerdicts())) return;
   const id = document.getElementById('empId').value;
   const extraPhones = _collectExtraContacts('extraPhonesContainer');
   const extraEmails = _collectExtraContacts('extraEmailsContainer');
@@ -32477,7 +32548,7 @@ async function attemptCloseInvpBuilder(fromBackdrop) {
 // renderInvpList() re-applies the filters, recomputes the summary, and rebuilds
 // only the table — so typing in the search box never rebuilds the controls.
 let _invpAllRows = [];
-const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', sort: 'date_desc' };
+const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', amount: '', sort: 'date_desc' };
 
 // Container numbers on a row that match the active 柜号 search, rendered as small
 // highlighted chips under the invoice number so it's obvious which container put
@@ -32760,6 +32831,10 @@ async function loadInvpList() {
         <label style="${lbl}">📦 搜索 Container 号</label>
         <input type="text" id="invpFltContainer" oninput="renderInvpList()" placeholder="输入柜号，如 TCNU2960705…" style="${fld};font-family:monospace;text-transform:uppercase">
       </div>
+      <div style="display:flex;flex-direction:column;gap:.2rem;flex:1 1 130px">
+        <label style="${lbl}">💲 搜索金额</label>
+        <input type="text" id="invpFltAmount" oninput="renderInvpList()" placeholder="如 11180.40" title="匹配账单 / 工资 / 利润 / 实付金额 / 分包付款金额，也匹配单个工人的工资明细金额。不带小数时按整数部分匹配（如 11180 能找到 $11180.40）" style="${fld};font-family:monospace">
+      </div>
       <button class="btn btn-sm btn-outline" onclick="resetInvpFilter()" style="white-space:nowrap">清除筛选</button>
       <button class="btn btn-sm btn-outline" onclick="invpOpenRecover()" style="white-space:nowrap;color:#b45309;border-color:#fcd34d" title="从回收站或每小时自动备份里找回被删除的发票">🗄 恢复已删除</button>
     </div>
@@ -32775,14 +32850,15 @@ async function loadInvpList() {
   set('invpFltTo', _invpFilter.to);
   set('invpFltQ', _invpFilter.q);
   set('invpFltContainer', _invpFilter.container);
+  set('invpFltAmount', _invpFilter.amount);
   renderInvpList();
 }
 
 function resetInvpFilter() {
-  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', sort: 'date_desc' });
+  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', amount: '', sort: 'date_desc' });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltType', ''); set('invpFltState', ''); set('invpFltFrom', ''); set('invpFltTo', '');
-  set('invpFltQ', ''); set('invpFltContainer', '');
+  set('invpFltQ', ''); set('invpFltContainer', ''); set('invpFltAmount', '');
   renderInvpList();
 }
 
@@ -32799,6 +32875,7 @@ function renderInvpList() {
   _invpFilter.to = val('invpFltTo');
   _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
   _invpFilter.container = (val('invpFltContainer') || '').trim().toLowerCase();
+  _invpFilter.amount = (val('invpFltAmount') || '').trim();
 
   // 账号后四位 → 银行名（跨全部发票汇总）。有些发票只记了账号后四位没记银行名，
   // 用同一后四位在别处出现过的唯一银行名补上，让「银行/收款账户」显示成
@@ -32832,6 +32909,25 @@ function renderInvpList() {
   // Container search: keep invoices billing a 柜号 that contains the query (partial
   // match, case-insensitive). container_nos comes from the list endpoint.
   if (_invpFilter.container) list = list.filter(r => (r.container_nos || []).some(cn => cn.toLowerCase().includes(_invpFilter.container)));
+  // 金额搜索：匹配账单/工资/利润/实付金额/分包付款金额任意一项。带小数点按
+  // ±1 分精确匹配；只输整数则按整数部分匹配（11180 能找到 $11180.40）。
+  let _amtHit = null; // 行渲染时用它标出命中的工资明细行
+  if (_invpFilter.amount) {
+    const raw = _invpFilter.amount.replace(/[$,\s]/g, '');
+    const amt = Math.abs(parseFloat(raw));
+    if (Number.isFinite(amt)) {
+      const hasCents = raw.includes('.');
+      _amtHit = v => {
+        const n = Math.abs(Number(v));
+        if (!Number.isFinite(n) || n === 0) return false;
+        return hasCents ? Math.abs(n - amt) <= 0.011 : Math.floor(n) === Math.floor(amt);
+      };
+      const hit = _amtHit;
+      // 除整单金额外，也匹配单条工资明细：每个工人的工资小计 (l.w) 和账单额 (l.b)。
+      list = list.filter(r => hit(r.subtotal) || hit(r.wage_cost) || hit((r.subtotal || 0) - (r.wage_cost || 0)) || hit(r.payment_amount) || hit(r.sub_payment_amount)
+        || (r.worker_lines || []).some(l => hit(l.w) || hit(l.b)));
+    }
+  }
 
   list.sort(_invpComparator(_invpFilter.sort || 'date_desc'));
 
@@ -32840,7 +32936,7 @@ function renderInvpList() {
   const totBill = list.reduce((s, r) => s + (r.subtotal || 0), 0);
   const totWage = list.reduce((s, r) => s + (r.wage_cost || 0), 0);
   const totProfit = totBill - totWage;
-  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q || _invpFilter.container);
+  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q || _invpFilter.container || _invpFilter.amount);
   const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const card = (label, value, color) => `
     <div style="flex:1 1 140px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
@@ -33093,7 +33189,9 @@ function renderInvpList() {
                  <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .45rem;color:var(--green);border-color:var(--green);white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, true)">更新</button>
                </div>`
             : `<button class="btn btn-sm btn-outline" style="color:#1d4ed8;border-color:#1d4ed8;white-space:nowrap" onclick="openInvpSubPayModal(${r.id}, false)">上传分包付款</button>`;
-          const subReceiptCell = subPaid ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)', r.id) : dash;
+          // 未付款但留有回执文件（如转移时选了"分包侧保留回执图片"）也显示缩略图
+          const subReceiptCell = (subPaid || _invpReceiptArr(r.sub_payment_receipt_paths, r.sub_payment_receipt_path).length)
+            ? rcptThumbs(r.sub_payment_receipt_paths, r.sub_payment_receipt_path, 'var(--sky)', r.id) : dash;
           // 双核对标记：收款（实付=账单）与分包付款（金额无差额）都已核对无误 →
           // 发票号前打一个绿色对勾，一眼识别"这张已完全结清且金额全对"。
           const allSettled = isPaid && payAmt != null && !amtMismatch && subPaid && subAmt != null && !subMismatch;
@@ -33117,6 +33215,14 @@ function renderInvpList() {
             return hitNames.length
               ? `<div style="font-size:.72rem;color:#1d4ed8;margin-top:2px">👤 ${hitNames.map(esc).join('、')}</div>`
               : '';
+          })()}${(() => {
+            // 金额搜索命中某条工资明细时：列出是哪个工人的哪笔金额。
+            if (!_amtHit) return '';
+            const hitLines = (r.worker_lines || []).filter(l => _amtHit(l.w) || _amtHit(l.b));
+            if (!hitLines.length) return '';
+            return `<div style="font-size:.72rem;color:#b45309;margin-top:2px;line-height:1.55;white-space:nowrap">${hitLines.map(l =>
+              `💲 ${esc(l.n)} · ${(Number(l.h) || 0).toFixed(1)}h · 工资 $${(Number(l.w) || 0).toFixed(2)} → 账单 $${(Number(l.b) || 0).toFixed(2)}`
+            ).join('<br>')}</div>`;
           })()}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${invpBankLabel(r)
             ? `${esc(invpBankLabel(r))}${_rowEntity(r) ? `<div style="font-size:.72rem;color:var(--gray-400)">${esc(_rowEntity(r))}</div>` : ''}`
@@ -33487,6 +33593,7 @@ function _invpUsedKind(b) { return b && b.used_kind === 'recv' ? 'recv' : 'sub';
 // Move the shared picker into the modal that's opening and mark the context.
 function _invpMountVoucherPicker(ctx) {
   _invpVoucherCtx = ctx;
+  window._invpAmtMatchSet = null; // 清掉上次「按金额找」的高亮
   const picker = document.getElementById('invpVoucherPicker');
   const slot = document.getElementById(ctx === 'recv' ? 'invpReceiptPickerSlot' : 'invpSubPayPickerSlot');
   if (picker && slot && picker.parentElement !== slot) slot.appendChild(picker);
@@ -33535,10 +33642,12 @@ function openInvpReceiptModal(invoiceId, isUpdate) {
   if (isUpdate && curRcpts.length) {
     currentWrap.style.display = 'block';
     currentLink.href = curRcpts[0];
-    currentLink.textContent = curRcpts.length > 1 ? `查看文件（共 ${curRcpts.length} 个；重新上传将替换全部）` : '查看文件';
+    currentLink.textContent = curRcpts.length > 1 ? `查看文件（共 ${curRcpts.length} 个；重新上传默认替换全部，可勾选下方保留）` : '查看文件';
   } else {
     currentWrap.style.display = 'none';
   }
+  const keepOldCb = document.getElementById('invpReceiptKeepOld');
+  if (keepOldCb) keepOldCb.checked = !!(isUpdate && curRcpts.length); // 更新时默认保留原图
   // Bank-statement voucher picker (shared with the 分包付款 modal): an income
   // transaction picked here becomes the 收款回执 — the left receipt column.
   _invpMountVoucherPicker('recv');
@@ -33621,6 +33730,7 @@ async function submitInvpReceipt() {
     formData.append('payment_handler', val('invpReceiptHandler'));
     formData.append('payment_amount', val('invpReceiptAmount'));
     formData.append('payment_date', val('invpReceiptDate'));
+    formData.append('append_receipts', document.getElementById('invpReceiptKeepOld')?.checked ? '1' : '');
     const resp = await fetch('/api/admin/invoices/' + _invpReceiptInvoiceId + '/mark-paid', {
       method: 'POST',
       body: formData
@@ -33960,10 +34070,12 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
   if (isUpdate && curSubRcpts.length) {
     currentWrap.style.display = 'block';
     currentLink.href = curSubRcpts[0];
-    currentLink.textContent = curSubRcpts.length > 1 ? `查看文件（共 ${curSubRcpts.length} 个；重新上传将替换全部）` : '查看文件';
+    currentLink.textContent = curSubRcpts.length > 1 ? `查看文件（共 ${curSubRcpts.length} 个；重新上传默认替换全部，可勾选下方保留）` : '查看文件';
   } else {
     currentWrap.style.display = 'none';
   }
+  const subKeepOldCb = document.getElementById('invpSubPayKeepOld');
+  if (subKeepOldCb) subKeepOldCb.checked = !!(isUpdate && curSubRcpts.length); // 更新时默认保留原图
   // Voucher picker: reclaim the shared picker for the 分包 side, reset filters +
   // selection, then load statements/annotations and (on 更新) preselect whichever
   // transaction this invoice already reserved.
@@ -33981,7 +34093,7 @@ function openInvpSubPayModal(invoiceId, isUpdate) {
 // option; the hide-used checkbox unchecks).
 const _INVP_SUBPAY_FILTER_IDS = ['invpSubPayFilterStmt', 'invpSubPayFilterDir', 'invpSubPayFilterPayee',
   'invpSubPayFilterPurpose', 'invpSubPayFilterAmtMin', 'invpSubPayFilterAmtMax',
-  'invpSubPayFilterDateFrom', 'invpSubPayFilterDateTo'];
+  'invpSubPayFilterDateFrom', 'invpSubPayFilterDateTo', 'invpSubPayMatchAmt'];
 
 // Reset just the filter controls (keeps the current voucher selection). Backs 清除筛选.
 function _invpClearSubPayFilters() {
@@ -34116,6 +34228,38 @@ function _invpPickSubPay(val, label) {
   }
   _invpUpdateSubPaySelSummary(label);
   _invpRenderSubPayList();
+}
+// 全选/全不选某份对账单(PDF)下当前可选的交易 (分包多选模式)。
+// 与当前筛选一致: 已被其它发票占用的灰色行跳过; 若本单可选交易已全部选中则改为全部取消。
+function _invpToggleAllInStmt(stmtId) {
+  if (_invpVoucherCtx !== 'sub') return;
+  const hid = document.getElementById('invpSubPayStmt');
+  if (!hid) return;
+  const cands = _invpAmtMatchCandidates().filter(c => {
+    const p = String(c.val).split(':');   // box:sid:bid
+    return p[0] === 'box' && String(p[1]) === String(stmtId);
+  });
+  if (!cands.length) { showToast('这份对账单当前没有可选交易', 'info'); return; }
+  let cur = hid.value.indexOf('box:') === 0 ? hid.value.split('|').filter(Boolean) : [];
+  const curSet = new Set(cur);
+  const allIn = cands.every(c => curSet.has(c.val));
+  if (allIn) {
+    // 已全选 → 取消本单这些交易
+    const stmtVals = new Set(cands.map(c => c.val));
+    cur = cur.filter(v => !stmtVals.has(v));
+    showToast(`已取消本单 ${cands.length} 笔交易`, 'info');
+  } else {
+    for (const c of cands) if (!curSet.has(c.val)) cur.push(c.val);
+    showToast(`已选入本单 ${cands.length} 笔交易`, 'success');
+  }
+  hid.value = cur.join('|');
+  if (hid.value) {
+    const fi = document.getElementById('invpSubPayFile'); if (fi) fi.value = '';
+    const fn = document.getElementById('invpSubPayFileName'); if (fn) fn.textContent = '未选择文件';
+  }
+  _invpUpdateSubPaySelSummary('');
+  _invpRenderSubPayList();
+  try { _invpSubPayAmtCheck(); } catch (_) {}
 }
 // Currently-selected transaction refs ("box:sid:bid", multi on the 分包 side).
 function _invpSelBoxRefs() {
@@ -34253,7 +34397,11 @@ function _invpRenderSubPayList() {
 
     const wholeVal = String(s.id);
     const wholeSel = selVal === wholeVal;
-    html += `<div style="padding:.4rem .6rem;background:#f8fafc;border-top:1px solid var(--gray-100);font-size:.72rem;color:var(--gray-500);font-weight:700;position:sticky;top:0">${esc(_invpStmtLabel(s))}</div>`;
+    // 分包多选模式: 提供"全选本单交易"一键把这份 PDF 当前可选交易全部选入/取消
+    const selAllLink = _invpVoucherCtx === 'sub'
+      ? `<a onclick="event.stopPropagation();_invpToggleAllInStmt('${s.id}')" style="float:right;color:var(--sky);text-decoration:underline;cursor:pointer;font-weight:600" title="把这份 PDF 里当前可选的交易一次全选/全不选">☑ 全选本单交易</a>`
+      : '';
+    html += `<div style="padding:.4rem .6rem;background:#f8fafc;border-top:1px solid var(--gray-100);font-size:.72rem;color:var(--gray-500);font-weight:700;position:sticky;top:0">${esc(_invpStmtLabel(s))}${selAllLink}</div>`;
     // Whole-PDF option for this statement.
     html += `<div onclick="_invpPickSubPay('${wholeVal}', ${_invpJsStr('📄 整份 PDF · ' + _invpStmtLabel(s))})" style="padding:.5rem .6rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;${wholeSel ? 'background:#eff6ff' : ''}"><span style="min-width:0">📄 整份 PDF <span style="color:var(--gray-400)">（${boxes.length} 条标注）</span></span>${wholeSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
 
@@ -34276,7 +34424,8 @@ function _invpRenderSubPayList() {
         const badge = (invNumById[usedBy] ? ('已用作' + kindTag + ' · ' + invNumById[usedBy]) : ('已用作' + kindTag));
         html += `<div title="已被其他发票用作凭证" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);font-size:.82rem;color:var(--gray-400);background:#fafafa;cursor:not-allowed;display:flex;justify-content:space-between;align-items:center;gap:.5rem"><span style="text-decoration:line-through;min-width:0">${esc(bits)}</span><span style="flex:0 0 auto;font-size:.68rem;color:#b45309;background:#fef3c7;border-radius:4px;padding:.05rem .4rem">${esc(badge)}</span></div>`;
       } else {
-        html += `<div onclick="_invpPickSubPay('${val}', ${_invpJsStr('• ' + bits)})" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;${isSel ? 'background:#eff6ff' : ''}"><span style="min-width:0">• ${esc(bits)}</span>${isSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
+        const isHi = window._invpAmtMatchSet && window._invpAmtMatchSet.has(val);
+        html += `<div data-val="${val}" onclick="_invpPickSubPay('${val}', ${_invpJsStr('• ' + bits)})" style="padding:.5rem .6rem .5rem 1.1rem;border-top:1px solid var(--gray-100);cursor:pointer;font-size:.82rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;${isHi ? 'background:#fef9c3;' : ''}${isSel ? 'background:#eff6ff' : ''}"><span style="min-width:0">${isHi ? '🎯 ' : '• '}${esc(bits)}</span>${isSel ? '<span style="color:var(--sky);font-weight:700;flex:0 0 auto">✓ 已选</span>' : ''}</div>`;
       }
     });
   });
@@ -34287,6 +34436,116 @@ function _invpRenderSubPayList() {
 }
 // Safely embed a string as a JS single-quoted literal inside an inline onclick.
 function _invpJsStr(s) { return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\r?\n/g, ' ') + "'"; }
+
+// ── 🎯 按金额找：用上方填写的金额自动匹配交易 ──
+// 候选 = 当前筛选下所有可选交易（被其他发票占用的灰色行除外）。
+function _invpAmtMatchCandidates() {
+  const stmts = Array.isArray(window._invpBankStmts) ? window._invpBankStmts : [];
+  const boxesMap = window._invpBankStmtBoxes || {};
+  const curInvId = _invpVoucherInvoiceId();
+  const fStmt = (document.getElementById('invpSubPayFilterStmt') || {}).value || '';
+  const fDir = (document.getElementById('invpSubPayFilterDir') || {}).value || '';
+  const fPayee = (document.getElementById('invpSubPayFilterPayee') || {}).value || '';
+  const fPurpose = (document.getElementById('invpSubPayFilterPurpose') || {}).value || '';
+  const _num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : n; };
+  const fAmtMin = _num(document.getElementById('invpSubPayFilterAmtMin')?.value);
+  const fAmtMax = _num(document.getElementById('invpSubPayFilterAmtMax')?.value);
+  const fDateFrom = (document.getElementById('invpSubPayFilterDateFrom') || {}).value || '';
+  const fDateTo = (document.getElementById('invpSubPayFilterDateTo') || {}).value || '';
+  const dateKey = s => {
+    const t = String(s == null ? '' : s).trim();
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+    if (m) { let [, mo, d, y] = m; if (y.length === 2) y = '20' + y; return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`; }
+    return '';
+  };
+  const out = [];
+  stmts.forEach(s => {
+    if (fStmt && String(s.id) !== String(fStmt)) return;
+    (Array.isArray(boxesMap[s.id]) ? boxesMap[s.id] : []).forEach(b => {
+      if (fDir && (b.direction === 'in' ? 'in' : 'out') !== fDir) return;
+      if (fPayee && !_invpSubPayPayeeMatch(b, fPayee)) return;
+      if (fPurpose && (b.purpose || '').trim() !== fPurpose) return;
+      const amt = Math.abs(Number(b.amount) || 0);
+      if (!amt) return;
+      if (fAmtMin != null && amt < fAmtMin) return;
+      if (fAmtMax != null && amt > fAmtMax) return;
+      if (fDateFrom || fDateTo) {
+        const dk = dateKey(b.txn_date);
+        if (!dk) return;
+        if (fDateFrom && dk < fDateFrom) return;
+        if (fDateTo && dk > fDateTo) return;
+      }
+      const usedBy = b.used_invoice_id;
+      const usedByThis = usedBy != null && String(usedBy) === String(curInvId) && _invpUsedKind(b) === _invpVoucherCtx;
+      if (usedBy != null && !usedByThis) return;
+      const bits = [b.direction === 'in' ? '收入' : '支出', '$' + amt.toFixed(2), _bsPayeeDisplay(b.payee), b.purpose, b.txn_date].filter(Boolean).join(' · ');
+      out.push({ val: `box:${s.id}:${b.id}`, cents: Math.round(amt * 100), label: '• ' + bits });
+    });
+  });
+  return out;
+}
+// 子集搜索：在候选里找若干笔（≤maxN）合计正好等于 target（分）的组合。
+// 金额降序 + 剩余和剪枝 + 迭代次数上限，避免卡界面。
+function _invpAmtSubsetSearch(cands, target, maxN) {
+  const arr = cands.filter(c => c.cents > 0 && c.cents <= target).sort((a, b) => b.cents - a.cents).slice(0, 400);
+  const suffix = []; let s = 0;
+  for (let i = arr.length - 1; i >= 0; i--) { s += arr[i].cents; suffix[i] = s; }
+  let budget = 300000, best = null;
+  (function dfs(i, remain, picked) {
+    if (best || budget-- <= 0) return;
+    if (remain === 0) { best = picked.slice(); return; }
+    if (i >= arr.length || picked.length >= maxN) return;
+    if ((suffix[i] || 0) < remain) return;
+    if (arr[i].cents <= remain) { picked.push(arr[i]); dfs(i + 1, remain - arr[i].cents, picked); picked.pop(); }
+    if (!best) dfs(i + 1, remain, picked);
+  })(0, target, []);
+  return best;
+}
+function _invpScrollToAmtMatch() {
+  const set = window._invpAmtMatchSet;
+  const listEl = document.getElementById('invpSubPayList');
+  if (!set || !set.size || !listEl) return;
+  for (const r of listEl.querySelectorAll('[data-val]')) {
+    if (set.has(r.dataset.val)) { try { r.scrollIntoView({ block: 'nearest' }); } catch (_) {} break; }
+  }
+}
+function _invpMatchByAmount() {
+  // 优先用「输入金额」小框里的值；留空则回落到弹窗上方的付款/收款金额。
+  const manual = parseFloat((document.getElementById('invpSubPayMatchAmt') || {}).value);
+  const amtEl = document.getElementById(_invpVoucherCtx === 'recv' ? 'invpReceiptAmount' : 'invpSubPayAmount');
+  const target = Math.round(((manual > 0 ? manual : parseFloat(amtEl && amtEl.value)) || 0) * 100);
+  if (!target || target <= 0) { showToast('请在「输入金额」框填一个金额（或在上方填写付款/收款金额），再点「按金额找」', 'error'); return; }
+  const dollars = '$' + (target / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cands = _invpAmtMatchCandidates();
+  window._invpAmtMatchSet = null;
+  // ① 单笔正好相等 —— 只标黄, 不自动选中; 由你核对后点击选入
+  const exact = cands.filter(c => c.cents === target);
+  if (exact.length) {
+    window._invpAmtMatchSet = new Set(exact.map(c => c.val));
+    _invpRenderSubPayList();
+    showToast(exact.length === 1
+      ? `🎯 找到 1 笔金额正好 ${dollars} 的交易（已标黄）—— 核对无误后点它选入`
+      : `🎯 找到 ${exact.length} 笔金额正好 ${dollars} 的交易（已标黄）—— 核对后点选你要的那笔`, 'success', 5000);
+    _invpScrollToAmtMatch();
+    return;
+  }
+  // ② 组合合计正好相等 —— 只标黄, 不自动写入; 由你核对后逐笔点选
+  const combo = _invpAmtSubsetSearch(cands, target, 6);
+  if (combo) {
+    window._invpAmtMatchSet = new Set(combo.map(c => c.val));
+    _invpRenderSubPayList();
+    if (_invpVoucherCtx === 'sub') {
+      showToast(`🎯 没有单笔正好 ${dollars} 的交易，但找到 ${combo.length} 笔合计正好相等的组合（已标黄）—— 核对后逐笔点选，或只选其中需要的`, 'info', 7000);
+    } else {
+      showToast(`🎯 没有单笔正好 ${dollars} 的交易，但找到 ${combo.length} 笔合计正好相等的组合（已标黄）。收款回执一次只能选一条交易或整份 PDF。`, 'info', 7000);
+    }
+    _invpScrollToAmtMatch();
+    return;
+  }
+  _invpRenderSubPayList();
+  showToast(`按当前筛选范围，没有找到金额等于 ${dollars} 的单笔交易或组合`, 'error', 4500);
+}
 // Person name inside a payee filter option ("👷 SLM GROUP · 张三" → "张三").
 function _invpPayeeOptName(s) {
   const t = String(s || '').replace(/^👷\s*/, '').trim();
@@ -34395,9 +34654,25 @@ async function moveInvpSubPayToReceived() {
   if (invId == null) return;
   const row = (_invpAllRows || []).find(r => r.id === invId) || {};
   const amt = row.sub_payment_amount != null ? ' $' + Number(row.sub_payment_amount).toFixed(2) : '';
-  if (!await showConfirm(`确定把这条分包付款${amt} 整体移到<b>收款回执</b>吗？<br><br>金额、日期、回执文件都会转过去，分包付款侧会被清空。`, { confirmLabel: '移到收款回执', cancelLabel: '取消' })) return;
+  window._invpMoveKeepRcpt = false;
+  if (!await showConfirm(`确定把这条分包付款${amt} 整体移到<b>收款回执</b>吗？<br><br>金额、日期、回执文件都会转过去，分包付款侧会被清空。<br><br><label style="display:flex;align-items:flex-start;gap:.4rem;cursor:pointer;font-size:.85rem;color:#374151"><input type="checkbox" style="margin-top:2px" onchange="window._invpMoveKeepRcpt=this.checked"><span>分包侧<b>保留回执图片</b>（回执文件两边都留，只转移金额/日期等记录）</span></label>`, { confirmLabel: '移到收款回执', cancelLabel: '取消' })) return;
   try {
-    const r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST' });
+    const moveBody = JSON.stringify({ keep_receipts: !!window._invpMoveKeepRcpt });
+    let r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST', body: moveBody });
+    // 收款侧已有记录 → 给出覆盖选项，确认后带 force 重试。
+    if (r && r.error && r.needs_force) {
+      const ex = r.existing || {};
+      const exBits = [
+        ex.amount != null ? '金额 $' + Number(ex.amount).toFixed(2) : null,
+        ex.date ? '日期 ' + ex.date : null,
+        ex.files ? ex.files + ' 个回执文件' : null,
+      ].filter(Boolean).join(' · ');
+      const ok2 = await showConfirm(
+        `收款侧已有记录${exBits ? '（' + esc(exBits) + '）' : ''}。<br><br>确定<b>覆盖</b>吗？收款记录的金额/日期/银行/经手人将替换为这条分包付款${amt} 的内容；<b>原有收款回执文件不会删除</b>，会一并保留在回执列表里。`,
+        { confirmLabel: '覆盖并转移', cancelLabel: '取消', danger: true });
+      if (!ok2) return;
+      r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST', body: JSON.stringify({ force: true, keep_receipts: !!window._invpMoveKeepRcpt }) });
+    }
     if (r && r.error) { showToast(r.error, 'error'); return; }
     showToast('已移到收款回执 ✓');
     window._invpBankStmtBoxes = null; // the txn's used_kind changed — refresh pickers
@@ -34449,6 +34724,7 @@ async function submitInvpSubPay() {
     formData.append('sub_payment_handler', val('invpSubPayHandler'));
     formData.append('sub_payment_amount', val('invpSubPayAmount'));
     formData.append('sub_payment_date', val('invpSubPayDate'));
+    formData.append('append_receipts', document.getElementById('invpSubPayKeepOld')?.checked ? '1' : '');
     const resp = await fetch('/api/admin/invoices/' + _invpSubPayInvoiceId + '/mark-sub-paid', {
       method: 'POST',
       body: formData
@@ -35850,21 +36126,39 @@ async function saveInvpInvoice(status) {
     });
     const allNos = Object.keys(counts).filter(n => !ignoredMap[n]);
     const localDups = allNos.filter(n => counts[n] > 1);
-    let histDups = [];
+    // 与单行失焦检查同一口径：命中已保存发票才算真重复；仅命中扫码收件箱
+    // 待处理记录不算重复开票（同一柜子扫码+手动两条路录入），不标红不拦截。
+    let invoiceDups = [], scanOnly = [];
+    const srcMap = {};
     try {
       const results = await Promise.all(allNos.map(async no => ({ no, r: await _invpQueryDupHistory(no) })));
-      histDups = results.filter(x => x.r.historical).map(x => x.no);
+      for (const { no, r } of results) {
+        if (!r.historical) continue;
+        srcMap[no] = r.sourceSummary || '';
+        if (r.hasInvoice) invoiceDups.push(no);
+        else scanOnly.push(no);
+      }
     } catch (_) { /* network failure → don't block saving */ }
-    const conflicts = [...new Set([...localDups, ...histDups])];
+    const conflicts = [...new Set([...localDups, ...invoiceDups])];
     if (conflicts.length) {
-      histDups.forEach(no => { window._invpDupHistorical[no] = true; });
+      invoiceDups.forEach(no => { window._invpDupHistorical[no] = true; });
       _invpRefreshDupHighlights();
-      const listHtml = conflicts.map(n => `<span style="font-family:monospace;font-weight:700;color:#b91c1c">${esc(n)}</span>`).join('、');
+      const line = n => {
+        const srcs = [];
+        if (counts[n] > 1) srcs.push(`本单中出现 ${counts[n]} 次`);
+        if (srcMap[n]) srcs.push(srcMap[n]);
+        return `<div style="margin:.2rem 0"><span style="font-family:monospace;font-weight:700;color:#b91c1c">${esc(n)}</span> <span style="color:#6b7280;font-size:.82rem">— ${srcs.join('；') || '历史记录中已存在'}</span></div>`;
+      };
+      const scanNote = scanOnly.length
+        ? `<div style="margin-top:.6rem;padding:.45rem .6rem;background:#eff6ff;border-radius:6px;font-size:.8rem;color:#0369a1">ℹ️ 另有 ${scanOnly.length} 个柜号在扫码收件箱有待处理记录（${scanOnly.map(esc).join('、')}）——不是重复开票，不影响保存。</div>`
+        : '';
       const ok = await showConfirm(
-        `⚠️ 保存前核对：发现 <strong>${conflicts.length}</strong> 个 container 号在历史记录中已存在或在本单中重复：<br><br>${listHtml}<br><br>重复的输入框已标红，可逐个点开核对。确定仍要保存吗？`,
+        `⚠️ 保存前核对：发现 <strong>${conflicts.length}</strong> 个 container 号重复：<br><br>${conflicts.map(line).join('')}${scanNote}<br>重复的输入框已标红，可逐个点开核对。确定仍要保存吗？`,
         { confirmLabel: '仍要保存', cancelLabel: '返回核对', danger: true }
       );
       if (!ok) return;
+    } else if (scanOnly.length) {
+      showToast(`ℹ️ ${scanOnly.length} 个柜号在扫码收件箱有待处理记录（非重复开票），已照常保存`, 'info', 5000);
     }
   }
 
@@ -37371,21 +37665,33 @@ function invpBulkAddContainers() {
 async function _invpBulkHistoricalCheck(numbers) {
   const companyName = (document.getElementById('invPageBillName').value || '').trim();
   if (!companyName || !numbers || !numbers.length) return;
-  const hist = [];
+  // 与单行失焦检查同一口径：命中已保存发票才标红；仅命中扫码收件箱的单独蓝色提示
+  const invHist = [], scanOnly = [];
   for (const no of numbers) {
     if ((window._invpDupIgnored || {})[no]) continue;
     try {
       const r = await _invpQueryDupHistory(no);
-      if (r && r.historical) { window._invpDupHistorical[no] = true; hist.push(no); }
+      if (r && r.historical) {
+        if (r.hasInvoice) { window._invpDupHistorical[no] = true; invHist.push(no); }
+        else scanOnly.push(no);
+      }
     } catch (_) {}
   }
-  if (!hist.length) return;
+  if (!invHist.length && !scanOnly.length) return;
   _invpRefreshDupHighlights();
   // Append a note to the result box if it is still visible.
   const holder = document.getElementById('invpBulkHist');
   if (holder) {
-    const chip = hist.map(c => `<span style="display:inline-block;font-family:monospace;font-size:.8rem;color:#b91c1c;background:#fef2f2;border:1px solid #b91c1c22;border-radius:5px;padding:.1rem .4rem;margin:.15rem .25rem .15rem 0">${c}</span>`).join('');
-    holder.innerHTML = `<div style="margin-top:.5rem;color:#b45309"><b>历史记录中已存在（其他发票 / 扫码）· ${hist.length} 个</b><div style="margin-top:.2rem">${chip}</div></div>`;
+    let html = '';
+    if (invHist.length) {
+      const chip = invHist.map(c => `<span style="display:inline-block;font-family:monospace;font-size:.8rem;color:#b91c1c;background:#fef2f2;border:1px solid #b91c1c22;border-radius:5px;padding:.1rem .4rem;margin:.15rem .25rem .15rem 0">${c}</span>`).join('');
+      html += `<div style="margin-top:.5rem;color:#b45309"><b>已保存发票中已存在 · ${invHist.length} 个</b><div style="margin-top:.2rem">${chip}</div></div>`;
+    }
+    if (scanOnly.length) {
+      const chip = scanOnly.map(c => `<span style="display:inline-block;font-family:monospace;font-size:.8rem;color:#0369a1;background:#eff6ff;border:1px solid #0369a122;border-radius:5px;padding:.1rem .4rem;margin:.15rem .25rem .15rem 0">${c}</span>`).join('');
+      html += `<div style="margin-top:.5rem;color:#0369a1"><b>ℹ️ 扫码收件箱有待处理记录（非重复开票）· ${scanOnly.length} 个</b><div style="margin-top:.2rem">${chip}</div></div>`;
+    }
+    holder.innerHTML = html;
   }
 }
 
@@ -37460,7 +37766,20 @@ async function _invpQueryDupHistory(val) {
       detailHtml += `<div style="margin-top:${invoiceMatches.length ? '.5rem' : '0'}">📦 待处理的扫码提交记录：<strong>${submissionMatches.length}</strong> 条</div>`;
     }
   }
-  return { historical, detailHtml, hasInvoice };
+  // 每个号的紧凑来源摘要，供批量弹窗按号列出（发票号+状态 / 扫码收件箱条数）
+  let sourceSummary = '';
+  if (res && res.duplicate) {
+    const parts = (res.matches || []).filter(m => m.invoice_number).map(m => {
+      let t = `发票 ${esc(m.invoice_number)}`;
+      if (m.status === 'draft') t += '（草稿）';
+      if (m.invoice_mode === 'hourly') t += '（工时模式·遗留数据）';
+      return t;
+    });
+    const subN = (res.matches || []).filter(m => m.source === 'submission').length;
+    if (subN) parts.push(`扫码收件箱待处理 ×${subN}`);
+    sourceSummary = parts.join('；');
+  }
+  return { historical, detailHtml, hasInvoice, sourceSummary };
 }
 
 async function invpCheckDuplicateContainerNo(input) {
@@ -40652,9 +40971,15 @@ function renderApplicantInbox() {
       if (isPdf) {
         return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.35rem .6rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${label}</a>`;
       }
+      const vs = d.verify_status || '';
+      const vBadge = vs === 'real' ? '<span style="position:absolute;top:1px;right:1px;background:#059669;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">真✓</span>'
+        : vs === 'fake' ? '<span style="position:absolute;top:1px;right:1px;background:#dc2626;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">假✗</span>'
+        : vs === 'pending' ? '<span style="position:absolute;top:1px;right:1px;background:#d97706;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">待定?</span>' : '';
+      const vBorder = vs === 'fake' ? '#fca5a5' : vs === 'real' ? '#6ee7b7' : vs === 'pending' ? '#fcd34d' : 'var(--gray-200)';
       return `<a href="${url}" target="_blank" title="${label}（点击查看大图）" style="text-decoration:none">
           <span style="display:block;position:relative">
-            <img src="${url}" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;display:block">
+            <img src="${url}" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid ${vBorder};background:#000;display:block">
+            ${vBadge}
             <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.64rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${label}</span>
           </span>
         </a>`;
@@ -40788,6 +41113,9 @@ async function createEmployeeFromApplicant(id) {
 // Fetch an applicant's uploaded docs and show them as a reference strip in the
 // employee modal (so the name can be verified against the real SSN/EAD).
 async function renderApplicantDocPanel(subId) {
+  const rerender = window._empApplDocsSubId === subId;   // 二次渲染(标记后刷新)不再自动弹批量裁剪
+  window._empApplDocsSubId = subId;
+  if (!rerender) window._empApplDocBatchAuto = false;
   const panel = document.getElementById('empApplicantDocs');
   if (!panel) return;
   panel.style.display = '';
@@ -40802,15 +41130,30 @@ async function renderApplicantDocPanel(subId) {
     if (/\.pdf$/i.test(d.file_name || '')) {
       return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.4rem .65rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${label}</a>`;
     }
+    const vs = d.verify_status || '';
+    const vBadge = vs === 'real' ? '<span style="position:absolute;top:2px;right:2px;background:#059669;color:#fff;font-size:.6rem;font-weight:700;border-radius:5px;padding:0 5px">真✓</span>'
+      : vs === 'fake' ? '<span style="position:absolute;top:2px;right:2px;background:#dc2626;color:#fff;font-size:.6rem;font-weight:700;border-radius:5px;padding:0 5px">假✗</span>'
+      : vs === 'pending' ? '<span style="position:absolute;top:2px;right:2px;background:#d97706;color:#fff;font-size:.6rem;font-weight:700;border-radius:5px;padding:0 5px">待定?</span>' : '';
     return `<a href="${url}" onclick="openApplicantDocViewer('${url}','${label}');return false" title="${label}（点击查看，可拖动，不挡表单）" style="text-decoration:none">
         <span style="display:block;position:relative">
-          <img src="${url}" loading="lazy" style="width:86px;height:86px;object-fit:cover;border-radius:8px;border:1px solid #bae6fd;background:#000;display:block">
+          <img src="${url}" loading="lazy" style="width:86px;height:86px;object-fit:cover;border-radius:8px;border:1px solid ${vs === 'fake' ? '#fca5a5' : vs === 'real' ? '#6ee7b7' : vs === 'pending' ? '#fcd34d' : '#bae6fd'};background:#000;display:block">
+          ${vBadge}
           <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.62rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${label}</span>
         </span>
       </a>`;
   }).join('') || '<span style="color:var(--gray-400);font-size:.82rem">无证件 / No documents</span>';
-  panel.innerHTML = `<div style="font-size:.78rem;font-weight:700;color:#1A3F7A;margin-bottom:.5rem">📎 申请人上传的证件 · 请核对姓名 / Applicant's IDs — verify the name</div>
+  const imgDocs = (Array.isArray(docs) ? docs : []).filter(d => !/\.pdf$/i.test(d.file_name || ''));
+  const batchItems = imgDocs.map(d => ({ url: dl(d.id), label: docLabel[d.doc_type] || d.doc_type, docType: d.doc_type || '', verify: d.verify_status || '' }));
+  window._empApplDocBatchItems = batchItems;
+  const batchBtn = batchItems.length ? `<button type="button" class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.72rem;padding:2px 10px;margin-left:.6rem" onclick="startApplicantDocBatchCrop(window._empApplDocBatchItems)">✂️ 连续裁剪处理 (${batchItems.length}张)</button>` : '';
+  panel.innerHTML = `<div style="font-size:.78rem;font-weight:700;color:#1A3F7A;margin-bottom:.5rem">📎 申请人上传的证件 · 请核对姓名 / Applicant's IDs — verify the name${batchBtn}</div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start">${thumbs}</div>`;
+  // 一打开就先处理图片: 有未裁剪过的图时, 自动进入连续裁剪流程 (每次打开只自动弹一次)
+  const uncropped = imgDocs.filter(d => !d.has_cropped);
+  if (uncropped.length && !window._empApplDocBatchAuto) {
+    window._empApplDocBatchAuto = true;
+    setTimeout(() => startApplicantDocBatchCrop(batchItems), 400);
+  }
 }
 
 // Floating, draggable image viewer for applicant docs. Deliberately has NO
@@ -40820,38 +41163,106 @@ function openApplicantDocViewer(url, label) {
   if (!v) {
     v = document.createElement('div');
     v.id = 'applicantDocViewer';
-    v.style.cssText = 'position:fixed;z-index:12000;top:84px;right:24px;width:360px;max-width:92vw;background:#fff;border-radius:12px;box-shadow:0 14px 44px rgba(0,0,0,.4);border:1px solid #cbd5e1;overflow:hidden';
+    v.style.cssText = 'position:fixed;z-index:12000;top:84px;right:24px;width:440px;max-width:94vw;background:#fff;border-radius:12px;box-shadow:0 14px 44px rgba(0,0,0,.4);border:1px solid #cbd5e1;overflow:hidden;user-select:none;-webkit-user-select:none';
     v.innerHTML =
-      `<div id="adVwHead" style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.45rem .35rem .45rem .65rem;background:#1A3F7A;color:#fff;cursor:move;user-select:none">
-        <span id="adVwTitle" style="font-size:.8rem;font-weight:700">证件</span>
-        <span style="display:flex;gap:.4rem;align-items:center">
-          <button type="button" onclick="zoomApplicantDocViewer(-1)" title="缩小" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">－</button>
-          <span id="adVwZoomPct" style="font-size:.68rem;opacity:.85;min-width:2.8em;text-align:center">100%</span>
+      `<div id="adVwHead" style="display:flex;align-items:center;justify-content:space-between;gap:.35rem;padding:.4rem .3rem .4rem .55rem;background:#1A3F7A;color:#fff;cursor:move;user-select:none">
+        <span id="adVwTitle" style="font-size:.8rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:2em">证件</span>
+        <span style="display:flex;gap:.22rem;align-items:center;flex-wrap:nowrap;flex-shrink:0">
+          <button type="button" onclick="zoomApplicantDocViewer(-1)" title="缩小" style="white-space:nowrap;flex-shrink:0;background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">－</button>
+          <span id="adVwZoomPct" style="font-size:.66rem;opacity:.85;min-width:2.2em;text-align:center;white-space:nowrap;flex-shrink:0">100%</span>
           <button type="button" onclick="zoomApplicantDocViewer(1)" title="放大（也可滚轮 / 双击图片）" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .2rem">＋</button>
-          <button type="button" id="adVwRotate" onclick="rotateApplicantDocViewer()" title="旋转 90°" style="background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .25rem">⟳</button>
-          <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap">原图 ↗</a>
-          <button type="button" onclick="closeApplicantDocViewer()" style="background:transparent;border:none;color:#fff;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 .35rem">✕</button>
+          <button type="button" id="adVwRotate" onclick="rotateApplicantDocViewer()" title="旋转 90°" style="white-space:nowrap;flex-shrink:0;background:transparent;border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;padding:0 .25rem">⟳</button>
+          <button type="button" id="adVwOcrBtn" onclick="toggleApplicantDocOcr()" title="识别：框选区域提取文字" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🔍</button>
+          <button type="button" id="adVwAiBtn" onclick="aiReadApplicantDoc()" title="AI 识读：让 Claude 直接读整张证件, 提取姓名/号码/日期等" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🤖</button>
+          <button type="button" id="adVwCropBtn" onclick="armApplicantDocCrop()" title="裁剪：拖框只留框内区域" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">✂️</button>
+          <button type="button" id="adVwAdjBtn" onclick="toggleApplicantDocAdjust()" title="调节：亮度 / 对比度 / 黑白" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🎛</button>
+          <button type="button" id="adVwAfxBtn" onclick="autoFixApplicantDoc()" title="自动修复：自动增强颜色 / 对比度（不旋转不裁剪）" style="white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🪄</button>
+          <button type="button" id="adVwRestoreBtn" onclick="restoreApplicantDocCrop()" title="还原：查看原始图片" style="display:none;white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">↩</button>
+          <button type="button" id="adVwSaveCropBtn" onclick="saveApplicantDocCrop()" title="保存裁剪版：缩略图显示裁剪后的图，原件永远保留" style="display:none;white-space:nowrap;flex-shrink:0;background:#059669;border:1px solid #059669;border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">💾</button>
+          <button type="button" id="adVwClearCropBtn" onclick="clearApplicantDocCrop()" title="取消裁剪版：删除保存的裁剪副本，恢复显示原图" style="display:none;white-space:nowrap;flex-shrink:0;background:transparent;border:1px solid rgba(255,255,255,.55);border-radius:6px;color:#fff;font-size:.78rem;cursor:pointer;line-height:1;padding:2px 5px">🗑</button>
+          <a id="adVwOpen" href="#" target="_blank" style="color:#fff;font-size:.72rem;text-decoration:underline;opacity:.9;white-space:nowrap;flex-shrink:0">原图↗</a>
+          <button type="button" onclick="closeApplicantDocViewer()" style="white-space:nowrap;flex-shrink:0;background:transparent;border:none;color:#fff;font-size:1.1rem;cursor:pointer;line-height:1;padding:0 .3rem">✕</button>
         </span>
       </div>
+      <div id="adVwVerifyBar" style="display:none;align-items:center;gap:.45rem;padding:.32rem .6rem;background:#f8fafc;border-bottom:1px solid #e5e7eb;font-size:.75rem;flex-wrap:nowrap">
+        <span id="adVwVerLabel" style="color:#475569;white-space:nowrap">证件结论:</span>
+        <button type="button" id="adVwVerReal" onclick="setApplicantDocVerify('real')" style="border-radius:999px;font-size:.74rem;padding:2px 11px;cursor:pointer;font-weight:700">✅ 真</button>
+        <button type="button" id="adVwVerFake" onclick="setApplicantDocVerify('fake')" style="border-radius:999px;font-size:.74rem;padding:2px 11px;cursor:pointer;font-weight:700">❌ 假</button>
+        <button type="button" id="adVwVerPend" onclick="setApplicantDocVerify('pending')" style="border-radius:999px;font-size:.74rem;padding:2px 11px;cursor:pointer;font-weight:700">❓ 待确定</button>
+        <span id="adVwVerInfo" style="margin-left:auto;color:#94a3b8;font-size:.7rem;white-space:nowrap"></span>
+      </div>
+      <div id="adVwAdjPanel" style="display:none;padding:.45rem .65rem;background:#0f172a;color:#e2e8f0;font-size:.72rem">
+        <div style="display:flex;align-items:center;gap:.45rem;margin-bottom:.3rem"><span style="white-space:nowrap">☀️ 亮度</span><input id="adVwBright" type="range" min="40" max="220" value="100" style="flex:1;margin:0" oninput="_adVwAdjChange()"><span id="adVwBrightV" style="min-width:3em;text-align:right">100%</span></div>
+        <div style="display:flex;align-items:center;gap:.45rem;margin-bottom:.3rem"><span style="white-space:nowrap">◐ 对比</span><input id="adVwContrast" type="range" min="40" max="260" value="100" style="flex:1;margin:0" oninput="_adVwAdjChange()"><span id="adVwContrastV" style="min-width:3em;text-align:right">100%</span></div>
+        <div style="display:flex;align-items:center;gap:.7rem">
+          <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;color:#e2e8f0;font-size:.72rem;font-weight:400;margin:0"><input type="checkbox" id="adVwGray" style="width:auto;margin:0" onchange="_adVwAdjChange()">黑白</label>
+          <button type="button" onclick="_adVwAdjReset()" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;font-size:.7rem;padding:2px 10px;cursor:pointer">重置</button>
+          <button type="button" onclick="docEnhanceApplicantDoc()" title="模糊文件专用: 去灰底/均衡光照/拉出笔画 (黑白文档模式), 可还原可保存" style="background:#7c3aed;color:#fff;border:1px solid #7c3aed;border-radius:6px;font-size:.7rem;padding:2px 10px;cursor:pointer">📄 文档增强</button>
+          <span style="color:#94a3b8">调节同时作用于识别，对比拉高认字更准</span>
+        </div>
+      </div>
       <div id="adVwImgWrap" style="background:#000;display:flex;align-items:center;justify-content:center;max-height:72vh;overflow:auto">
-        <img id="adVwImg" style="max-width:100%;display:block;transition:transform .15s ease" alt="">
+        <img id="adVwImg" style="max-width:100%;display:block;transition:transform .15s ease" alt="" draggable="false">
+      </div>
+      <div id="adVwOcrPanel" style="display:none;border-top:1px solid #e5e7eb;background:#f8fafc;padding:.5rem .6rem">
+        <div id="adVwOcrStatus" style="font-size:.72rem;color:#6b7280;margin-bottom:.3rem">在图上拖一个框，识别框内文字（英文证件）</div>
+        <textarea id="adVwOcrText" readonly rows="3" style="width:100%;font-size:.8rem;font-family:ui-monospace,Consolas,monospace;border:1px solid #d1d5db;border-radius:6px;padding:.35rem .45rem;resize:vertical;display:none"></textarea>
+        <div style="display:flex;gap:.4rem;margin-top:.3rem">
+          <button type="button" id="adVwOcrCopy" onclick="copyApplicantDocOcr()" style="display:none;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:.72rem;padding:3px 10px;cursor:pointer">📋 复制</button>
+          <button type="button" onclick="toggleApplicantDocOcr(true)" style="background:#fff;color:#6b7280;border:1px solid #d1d5db;border-radius:6px;font-size:.72rem;padding:3px 10px;cursor:pointer">关闭识别</button>
+        </div>
       </div>`;
     document.body.appendChild(v);
     v.addEventListener('mousedown', e => e.stopPropagation());
     _makeDraggable(v, v.querySelector('#adVwHead'));
     // Zoom shortcuts: wheel over the image zooms; double-click toggles 100%↔200%.
     const wrap = v.querySelector('#adVwImgWrap');
-    wrap.addEventListener('wheel', e => { e.preventDefault(); zoomApplicantDocViewer(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+    wrap.addEventListener('wheel', e => { if (_adVwOcrMode) return; e.preventDefault(); zoomApplicantDocViewer(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+    wrap.addEventListener('mousedown', _adVwOcrMouseDown);
     wrap.addEventListener('dblclick', () => { _adVwZoom = _adVwZoom > 1.001 ? 1 : 2; _applyApplicantDocView(); });
   }
   v.style.display = 'block';
   v.querySelector('#adVwTitle').textContent = label || '证件';
   _adVwRotation = 0; // reset orientation for each newly opened document
   _adVwZoom = 1;     // reset zoom too
+  _adVwCropOnce = false;
+  _adVwAdjReset(true);
+  // 申请证件类图片: 记住 subId/docId, 原图永远可从 ?v=orig 取到
+  const dm = String(url).match(/\/api\/admin\/applicant-submissions\/(\d+)\/docs\/(\d+)\/download/);
+  _adVwDocRef = dm ? { subId: dm[1], docId: dm[2] } : null;
+  _adVwOrigUrl = _adVwDocRef ? url.split('?')[0] + '?v=orig' : url;
+  const rsBtn = v.querySelector('#adVwRestoreBtn'); if (rsBtn) rsBtn.style.display = 'none';
+  const cpBtn = v.querySelector('#adVwCropBtn'); if (cpBtn) { cpBtn.style.background = 'transparent'; cpBtn.style.borderColor = 'rgba(255,255,255,.55)'; }
+  const svBtn = v.querySelector('#adVwSaveCropBtn'); if (svBtn) svBtn.style.display = 'none';
+  const clBtn = v.querySelector('#adVwClearCropBtn'); if (clBtn) clBtn.style.display = 'none';
+  _adVwVerify = ''; _adVwVerifyBy = '';
+  _adVwRenderVerify();
+  // 换图: 清空识别面板旧文字; 该图有已存的 AI 识读结果则稍后自动显示
+  {
+    const ocrPanel = document.getElementById('adVwOcrPanel');
+    const ta = document.getElementById('adVwOcrText'), cp = document.getElementById('adVwOcrCopy');
+    if (ta) { ta.value = ''; ta.style.display = 'none'; }
+    if (cp) cp.style.display = 'none';
+    if (ocrPanel && !_adVwOcrMode) ocrPanel.style.display = 'none';
+    _setOcrStatus('在图上拖一个框，识别框内文字（英文证件）');
+  }
+  if (_adVwDocRef) {
+    api(`/admin/applicant-submissions/${_adVwDocRef.subId}/docs`).then(list => {
+      const d = (Array.isArray(list) ? list : []).find(x => String(x.id) === _adVwDocRef.docId);
+      if (d && d.has_cropped) {
+        if (clBtn) clBtn.style.display = '';
+        if (rsBtn) { rsBtn.style.display = ''; rsBtn.title = '查看原始图片（系统当前显示的是保存过的裁剪版）'; }
+      }
+      if (d) { _adVwVerify = d.verify_status || ''; _adVwVerifyBy = d.verify_by || ''; _adVwRenderVerify(); }
+      if (d && d.ai_text) {
+        try { _showAiResult(JSON.parse(d.ai_text), true); } catch (_) {}
+      }
+    }).catch(() => {});
+  }
   const img = v.querySelector('#adVwImg');
   img.src = url;
   _applyApplicantDocView();
-  v.querySelector('#adVwOpen').href = url;
+  v.querySelector('#adVwOpen').href = _adVwOrigUrl;
 }
 let _adVwRotation = 0;
 let _adVwZoom = 1;
@@ -40898,12 +41309,545 @@ function _applyApplicantDocView() {
       img.style.maxHeight = '72vh';
     }
     if (wrap) { wrap.style.alignItems = 'center'; wrap.style.justifyContent = 'center'; }
-    if (panel) panel.style.width = '360px';
+    if (panel) panel.style.width = '440px';
   }
+}
+
+// ── 证件查看器: 框选 OCR 文字识别 (Tesseract 本地引擎, /vendor/tesseract) ──
+let _adVwOcrMode = false, _ocrWorkerP = null, _adVwSelBox = null, _adVwSelStart = null, _adVwCropOnce = false, _adVwOrigUrl = '', _adVwDocRef = null;
+async function _getOcrWorker() {
+  if (_ocrWorkerP) return _ocrWorkerP;
+  _ocrWorkerP = (async () => {
+    if (!window.Tesseract) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = '/vendor/tesseract/tesseract.min.js';
+        s.onload = res; s.onerror = () => rej(new Error('OCR 组件加载失败, 请刷新重试'));
+        document.head.appendChild(s);
+      });
+    }
+    const w = await Tesseract.createWorker('eng', 1, {
+      workerPath: '/vendor/tesseract/worker.min.js',
+      corePath: '/vendor/tesseract',
+      langPath: '/vendor/tesseract/lang',
+    });
+    await w.setParameters({ tessedit_pageseg_mode: '6' }); // 均匀文本块, 适合框选区域
+    return w;
+  })();
+  _ocrWorkerP.catch(() => { _ocrWorkerP = null; });
+  return _ocrWorkerP;
+}
+function toggleApplicantDocOcr(forceOff) {
+  const panel = document.getElementById('adVwOcrPanel');
+  const wrap = document.getElementById('adVwImgWrap');
+  const btn = document.getElementById('adVwOcrBtn');
+  _adVwOcrMode = forceOff ? false : !_adVwOcrMode;
+  if (panel) panel.style.display = _adVwOcrMode ? 'block' : 'none';
+  if (wrap) wrap.style.cursor = (_adVwOcrMode || _adVwCropOnce) ? 'crosshair' : '';
+  if (btn) { btn.style.background = _adVwOcrMode ? '#059669' : 'transparent'; btn.style.borderColor = _adVwOcrMode ? '#059669' : 'rgba(255,255,255,.55)'; }
+  if (_adVwOcrMode) _getOcrWorker().catch(e => _setOcrStatus('⚠️ ' + e.message));
+  if (!_adVwOcrMode) _clearOcrSelBox();
+}
+function _setOcrStatus(t) { const el = document.getElementById('adVwOcrStatus'); if (el) el.textContent = t; }
+function _clearOcrSelBox() { if (_adVwSelBox) { _adVwSelBox.remove(); _adVwSelBox = null; } _adVwSelStart = null; }
+function _adVwOcrMouseDown(e) {
+  if (!_adVwOcrMode && !_adVwCropOnce) { if (e.target && e.target.id === 'adVwImg') e.preventDefault(); return; }
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.src) return;
+  e.preventDefault(); e.stopPropagation();
+  _clearOcrSelBox();
+  _adVwSelStart = { x: e.clientX, y: e.clientY };
+  _adVwSelBox = document.createElement('div');
+  _adVwSelBox.style.cssText = 'position:fixed;z-index:13000;border:2px dashed #22d3ee;background:rgba(34,211,238,.14);pointer-events:none;left:' + e.clientX + 'px;top:' + e.clientY + 'px;width:0;height:0';
+  document.body.appendChild(_adVwSelBox);
+  const move = ev => {
+    if (!_adVwSelStart || !_adVwSelBox) return;
+    const l = Math.min(_adVwSelStart.x, ev.clientX), t = Math.min(_adVwSelStart.y, ev.clientY);
+    _adVwSelBox.style.left = l + 'px'; _adVwSelBox.style.top = t + 'px';
+    _adVwSelBox.style.width = Math.abs(ev.clientX - _adVwSelStart.x) + 'px';
+    _adVwSelBox.style.height = Math.abs(ev.clientY - _adVwSelStart.y) + 'px';
+  };
+  const up = ev => {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    const st = _adVwSelStart; _adVwSelStart = null;
+    if (!st) return;
+    const l = Math.min(st.x, ev.clientX), t = Math.min(st.y, ev.clientY);
+    const w = Math.abs(ev.clientX - st.x), h = Math.abs(ev.clientY - st.y);
+    setTimeout(_clearOcrSelBox, 900);
+    if (w < 8 || h < 8) return;   // 误点
+    if (_adVwCropOnce) { _adVwCropOnce = false; _adVwSetCropArmed(false); _adVwDoCrop(l, t, w, h); }
+    else _runApplicantDocOcr(l, t, w, h);
+  };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+async function _runApplicantDocOcr(cl, ct, cw, ch) {
+  const img = document.getElementById('adVwImg');
+  const rect = img.getBoundingClientRect();
+  // 选区与图片显示区域求交集
+  const l = Math.max(cl, rect.left), t = Math.max(ct, rect.top);
+  const r2 = Math.min(cl + cw, rect.right), b2 = Math.min(ct + ch, rect.bottom);
+  if (r2 - l < 8 || b2 - t < 8) { _setOcrStatus('框要画在图片上'); return; }
+  try {
+    _setOcrStatus('⏳ 识别中…（第一次使用需加载引擎, 稍等几秒）');
+    const rot = _adVwRotation, nw = img.naturalWidth, nh = img.naturalHeight;
+    const rw = (rot === 90 || rot === 270) ? nh : nw, rh = (rot === 90 || rot === 270) ? nw : nh;
+    const full = document.createElement('canvas'); full.width = rw; full.height = rh;
+    const fc = full.getContext('2d');
+    const flt = _adVwFilterStr();
+    if (flt) fc.filter = flt;   // 亮度/对比度调节同样作用于识别
+    fc.translate(rw / 2, rh / 2); fc.rotate(rot * Math.PI / 180); fc.drawImage(img, -nw / 2, -nh / 2);
+    const sx = rw / rect.width, sy = rh / rect.height;
+    let px = Math.round((l - rect.left) * sx), py = Math.round((t - rect.top) * sy);
+    let pw = Math.round((r2 - l) * sx), ph = Math.round((b2 - t) * sy);
+    px = Math.max(0, Math.min(rw - 1, px)); py = Math.max(0, Math.min(rh - 1, py));
+    pw = Math.max(8, Math.min(rw - px, pw)); ph = Math.max(8, Math.min(rh - py, ph));
+    const k = Math.min(3, Math.max(1, Math.ceil(700 / pw)));  // 小选区放大, 提高识别率
+    const out = document.createElement('canvas'); out.width = pw * k; out.height = ph * k;
+    const oc = out.getContext('2d');
+    oc.imageSmoothingEnabled = true; oc.imageSmoothingQuality = 'high';
+    oc.drawImage(full, px, py, pw, ph, 0, 0, pw * k, ph * k);
+    const worker = await _getOcrWorker();
+    const { data } = await worker.recognize(out);
+    const text = String((data && data.text) || '').replace(/\n{3,}/g, '\n\n').trim();
+    const ta = document.getElementById('adVwOcrText'), cp = document.getElementById('adVwOcrCopy');
+    if (ta) { ta.style.display = 'block'; ta.value = text || '(没识别出文字, 试试放大后框小一点的区域)'; }
+    if (cp) cp.style.display = text ? 'inline-block' : 'none';
+    _setOcrStatus(text ? '✅ 识别完成, 可继续框选其他区域' : '😕 没识别出文字 — 放大图片后重新框选试试');
+  } catch (e) {
+    _setOcrStatus('⚠️ 识别失败: ' + (e && e.message || e));
+  }
+}
+function copyApplicantDocOcr() {
+  const ta = document.getElementById('adVwOcrText');
+  if (!ta || !ta.value) return;
+  const done = () => _setOcrStatus('📋 已复制到剪贴板');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); document.execCommand('copy'); done(); });
+  else { ta.select(); document.execCommand('copy'); done(); }
+}
+// ── 查看器内裁剪: 拖框只留框内区域 (可连续裁, 还原回原图) ──
+function _adVwSetCropArmed(on) {
+  const b = document.getElementById('adVwCropBtn');
+  if (b) { b.style.background = on ? '#d97706' : 'transparent'; b.style.borderColor = on ? '#d97706' : 'rgba(255,255,255,.55)'; }
+  const wrap = document.getElementById('adVwImgWrap');
+  if (wrap) wrap.style.cursor = (on || _adVwOcrMode) ? 'crosshair' : '';
+}
+function armApplicantDocCrop() {
+  _adVwCropOnce = !_adVwCropOnce;
+  _adVwSetCropArmed(_adVwCropOnce);
+}
+function _adVwDoCrop(cl, ct, cw, ch) {
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.naturalWidth) return;
+  const rect = img.getBoundingClientRect();
+  const l = Math.max(cl, rect.left), t = Math.max(ct, rect.top);
+  const r2 = Math.min(cl + cw, rect.right), b2 = Math.min(ct + ch, rect.bottom);
+  if (r2 - l < 8 || b2 - t < 8) return;
+  const rot = _adVwRotation, nw = img.naturalWidth, nh = img.naturalHeight;
+  const rw = (rot === 90 || rot === 270) ? nh : nw, rh = (rot === 90 || rot === 270) ? nw : nh;
+  const full = document.createElement('canvas'); full.width = rw; full.height = rh;
+  const fc = full.getContext('2d');
+  fc.translate(rw / 2, rh / 2); fc.rotate(rot * Math.PI / 180); fc.drawImage(img, -nw / 2, -nh / 2);
+  const sx = rw / rect.width, sy = rh / rect.height;
+  let px = Math.round((l - rect.left) * sx), py = Math.round((t - rect.top) * sy);
+  let pw = Math.round((r2 - l) * sx), ph = Math.round((b2 - t) * sy);
+  px = Math.max(0, Math.min(rw - 1, px)); py = Math.max(0, Math.min(rh - 1, py));
+  pw = Math.max(8, Math.min(rw - px, pw)); ph = Math.max(8, Math.min(rh - py, ph));
+  // 限制输出尺寸并用 JPEG — 整张大图(手机原图)按原尺寸 PNG 会超过上传上限导致保存失败
+  const maxDim = 2400;
+  const oScale = Math.min(1, maxDim / Math.max(pw, ph));
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(pw * oScale));
+  out.height = Math.max(1, Math.round(ph * oScale));
+  const octx = out.getContext('2d');
+  octx.imageSmoothingQuality = 'high';
+  octx.drawImage(full, px, py, pw, ph, 0, 0, out.width, out.height);
+  img.src = out.toDataURL('image/jpeg', 0.92);   // 裁剪已包含旋转, 角度归零
+  _adVwRotation = 0; _adVwZoom = 1;
+  _applyApplicantDocView();
+  const rs = document.getElementById('adVwRestoreBtn');
+  if (rs) rs.style.display = '';
+  const sv = document.getElementById('adVwSaveCropBtn');
+  if (sv && _adVwDocRef) sv.style.display = '';
+  if (_adBatch && _adVwDocRef) {
+    // 连续裁剪: 裁完自动保存; 保存失败停在本张重试; 成功后 → 该组没结论则等标注, 有结论直接下一张
+    saveApplicantDocCrop().then(ok => {
+      if (!_adBatch) return;
+      if (!ok) {
+        restoreApplicantDocCrop();   // 回到原图, 重新拖框
+        _adVwCropOnce = true; _adVwSetCropArmed(true);
+        _adBatchRenderBar();
+        showToast('⚠️ 这张没保存成功 — 请重新拖框重试（不会跳过）', 'error', 6000);
+        return;
+      }
+      if (_adBatchGroupVerdict(_adBatch.idx)) { _adBatchAdvance(); }
+      else {
+        _adBatch.awaitVerdict = true;
+        _adBatchRenderBar();
+        const bar2 = document.getElementById('adVwVerifyBar');
+        if (bar2) { bar2.style.background = '#fef3c7'; setTimeout(() => { bar2.style.background = '#f8fafc'; }, 1600); }
+        showToast('✂️ 已裁好 — 给这组证件一个结论 (真/假/待确定) 就跳下一张');
+      }
+    });
+  }
+}
+function restoreApplicantDocCrop() {
+  const img = document.getElementById('adVwImg');
+  if (img && _adVwOrigUrl) img.src = _adVwOrigUrl;
+  _adVwRotation = 0; _adVwZoom = 1; _adVwCropOnce = false;
+  _adVwSetCropArmed(false);
+  _applyApplicantDocView();
+  const rs = document.getElementById('adVwRestoreBtn');
+  if (rs) rs.style.display = 'none';
+}
+// ── ✂️ 连续裁剪: 逐张打开 → 拖框 → 自动保存 → (该组还没结论则等标注) → 跳下一张 ──
+let _adBatch = null;
+function _adBatchGroupOf(i) {
+  const it = _adBatch && _adBatch.items[i];
+  return it ? (String(it.docType || '').split('_')[0] || String(i)) : '';
+}
+function _adBatchGroupVerdict(i) {
+  const g = _adBatchGroupOf(i);
+  return (_adBatch.items.find((it, j) => _adBatchGroupOf(j) === g && it.verify) || {}).verify || '';
+}
+function startApplicantDocBatchCrop(items) {
+  if (!items || !items.length) return;
+  _adBatch = { items, idx: 0 };
+  _adBatchOpen();
+}
+function _adBatchOpen() {
+  const it = _adBatch.items[_adBatch.idx];
+  openApplicantDocViewer(it.url, it.label);
+  _adVwCropOnce = true;
+  _adVwSetCropArmed(true);
+  _adBatchRenderBar();
+}
+function _adBatchRenderBar() {
+  const v = document.getElementById('applicantDocViewer');
+  if (!v || !_adBatch) return;
+  let bar = document.getElementById('adVwBatchBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'adVwBatchBar';
+    const wrap = v.querySelector('#adVwImgWrap');
+    wrap.parentNode.insertBefore(bar, wrap);
+  }
+  bar.style.cssText = 'display:flex;align-items:center;gap:.55rem;padding:.35rem .6rem;background:#fffbeb;border-bottom:1px solid #fde68a;font-size:.74rem;color:#92400e';
+  bar.innerHTML = '<b>✂️ 连续裁剪 ' + (_adBatch.idx + 1) + '/' + _adBatch.items.length + ' · ' + esc(_adBatch.items[_adBatch.idx].label) + '</b>'
+    + (_adBatch.awaitVerdict ? '<span style="color:#b45309;font-weight:700">⬆ 在上方给这组一个结论 → 自动继续</span>' : '<span>歪的先点 ⟳ 转正 → 拖框圈出证件（或点「整张保存」）→ 标结论 → 下一张</span>')
+    + '<a style="margin-left:auto;cursor:pointer;text-decoration:underline;white-space:nowrap" title="不裁剪, 把当前整张(含旋转后的方向)保存为显示版" onclick="_adBatchSaveWhole()">整张保存</a>'
+    + '<a style="cursor:pointer;text-decoration:underline;white-space:nowrap" onclick="_adBatchSkip()">跳过</a>'
+    + '<a style="cursor:pointer;text-decoration:underline;white-space:nowrap" onclick="_adBatchEnd()">结束</a>';
+}
+function _adBatchSkip() { _adBatchAdvance(); }
+// 整张保存: 不用拖框, 把当前整图(含 ⟳ 旋转后的方向)作为"裁剪"保存 → 走同样的标结论流程
+function _adBatchSaveWhole() {
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.naturalWidth) return;
+  const rect = img.getBoundingClientRect();
+  _adVwDoCrop(rect.left, rect.top, rect.width, rect.height);
+}
+function _adBatchEnd(silent) {
+  _adBatch = null;
+  const bar = document.getElementById('adVwBatchBar');
+  if (bar) bar.remove();
+  _adVwCropOnce = false;
+  _adVwSetCropArmed(false);
+  if (!silent) showToast('连续裁剪已结束');
+}
+function _adBatchAdvance() {
+  if (!_adBatch) return;
+  _adBatch.awaitVerdict = false;
+  _adBatch.idx++;
+  if (_adBatch.idx >= _adBatch.items.length) {
+    _adBatchEnd(true);
+    showToast('✅ 图片全部处理完成');
+    closeApplicantDocViewer();
+    return;
+  }
+  _adBatchOpen();
+}
+
+// ── 证件真伪标记: 按证件组(SSN 一组 / EAD·ID 一组)给结论 真/假/待确定 ──
+let _adVwVerify = '', _adVwVerifyBy = '';
+function _adVwGroupName() {
+  // 从标题 "SSN 正" / "EAD 反" 提取组名
+  const t = (document.getElementById('adVwTitle') || {}).textContent || '';
+  const m = t.match(/^([A-Za-z]+)/);
+  return m ? m[1].toUpperCase() : '';
+}
+function _adVwRenderVerify() {
+  const bar = document.getElementById('adVwVerifyBar');
+  if (!bar) return;
+  if (!_adVwDocRef) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  const lbl = document.getElementById('adVwVerLabel');
+  if (lbl) { const g = _adVwGroupName(); lbl.textContent = (g ? g + ' 整组结论:' : '证件结论:'); }
+  const mkStyle = (active, onBg, onBd, offFg, offBd) => 'border-radius:999px;font-size:.74rem;padding:2px 11px;cursor:pointer;font-weight:700;white-space:nowrap;' +
+    (active ? `background:${onBg};color:#fff;border:1px solid ${onBd}` : `background:#fff;color:${offFg};border:1px solid ${offBd}`);
+  const bR = document.getElementById('adVwVerReal'), bF = document.getElementById('adVwVerFake'), bP = document.getElementById('adVwVerPend'), info = document.getElementById('adVwVerInfo');
+  if (bR) bR.style.cssText = mkStyle(_adVwVerify === 'real', '#059669', '#059669', '#065f46', '#a7f3d0');
+  if (bF) bF.style.cssText = mkStyle(_adVwVerify === 'fake', '#dc2626', '#dc2626', '#991b1b', '#fecaca');
+  if (bP) bP.style.cssText = mkStyle(_adVwVerify === 'pending', '#d97706', '#d97706', '#92400e', '#fde68a');
+  const stTxt = { real: '已标真', fake: '已标假', pending: '待确定' };
+  if (info) info.textContent = _adVwVerify ? (stTxt[_adVwVerify] + (_adVwVerifyBy ? ' · ' + _adVwVerifyBy : '') + ' · 再点取消') : '未标记 (正反面一起生效)';
+}
+async function setApplicantDocVerify(st) {
+  if (!_adVwDocRef) return;
+  const next = _adVwVerify === st ? '' : st;   // 点同一个 = 取消
+  try {
+    const r = await api(`/admin/applicant-submissions/${_adVwDocRef.subId}/docs/${_adVwDocRef.docId}/verify`, { method: 'POST', body: JSON.stringify({ status: next }) });
+    if (r && r.error) throw new Error(r.error);
+    _adVwVerify = next;
+    _adVwRenderVerify();
+    showToast(next === 'real' ? '✅ 整组已标记为真' : next === 'fake' ? '❌ 整组已标记为假' : next === 'pending' ? '❓ 整组标为待确定' : '已取消标记');
+    if (window._empApplDocsSubId && typeof renderApplicantDocPanel === 'function') renderApplicantDocPanel(window._empApplDocsSubId);
+    // 连续裁剪流程: 裁剪后等结论 → 给了结论自动跳下一张; 组内状态同步
+    if (_adBatch) {
+      const g = _adBatchGroupOf(_adBatch.idx);
+      _adBatch.items.forEach((it, i) => { if (_adBatchGroupOf(i) === g) it.verify = next; });
+      if (_adBatch.awaitVerdict && next) { _adBatch.awaitVerdict = false; _adBatchAdvance(); }
+    }
+  } catch (e) { showToast('标记失败: ' + (e.message || e)); }
+}
+
+// ── 查看器: 亮度/对比度/黑白 调节 (CSS filter 实时显示; 识别时同样叠加) ──
+function _adVwFilterStr() {
+  const b = parseInt((document.getElementById('adVwBright') || {}).value) || 100;
+  const c = parseInt((document.getElementById('adVwContrast') || {}).value) || 100;
+  const g = (document.getElementById('adVwGray') || {}).checked;
+  let f = '';
+  if (b !== 100) f += `brightness(${b}%) `;
+  if (c !== 100) f += `contrast(${c}%) `;
+  if (g) f += 'grayscale(1) ';
+  return f.trim();
+}
+function _adVwAdjChange() {
+  const img = document.getElementById('adVwImg');
+  const b = parseInt((document.getElementById('adVwBright') || {}).value) || 100;
+  const c = parseInt((document.getElementById('adVwContrast') || {}).value) || 100;
+  const bv = document.getElementById('adVwBrightV'), cv = document.getElementById('adVwContrastV');
+  if (bv) bv.textContent = b + '%';
+  if (cv) cv.textContent = c + '%';
+  if (img) img.style.filter = _adVwFilterStr();
+}
+function _adVwAdjReset(hidePanel) {
+  const bEl = document.getElementById('adVwBright'), cEl = document.getElementById('adVwContrast'), gEl = document.getElementById('adVwGray');
+  if (bEl) bEl.value = 100;
+  if (cEl) cEl.value = 100;
+  if (gEl) gEl.checked = false;
+  _adVwAdjChange();
+  if (hidePanel) {
+    const p = document.getElementById('adVwAdjPanel');
+    if (p) p.style.display = 'none';
+    const btn = document.getElementById('adVwAdjBtn');
+    if (btn) { btn.style.background = 'transparent'; btn.style.borderColor = 'rgba(255,255,255,.55)'; }
+  }
+}
+function toggleApplicantDocAdjust() {
+  const p = document.getElementById('adVwAdjPanel');
+  if (!p) return;
+  const on = p.style.display === 'none';
+  p.style.display = on ? 'block' : 'none';
+  const btn = document.getElementById('adVwAdjBtn');
+  if (btn) { btn.style.background = on ? '#7c3aed' : 'transparent'; btn.style.borderColor = on ? '#7c3aed' : 'rgba(255,255,255,.55)'; }
+}
+// ── 裁剪版保存到系统: 独立新文件, 原件永不改动, ?v=orig 永远可取原件 ──
+async function saveApplicantDocCrop() {
+  const img = document.getElementById('adVwImg');
+  if (!_adVwDocRef) { showToast('这张图不是申请证件，无法保存', 'error'); return false; }
+  if (!img || !/^data:image\//.test(img.src)) { showToast('请先用 ✂️裁剪 框出区域再保存', 'error'); return false; }
+  try {
+    const r = await api(`/admin/applicant-submissions/${_adVwDocRef.subId}/docs/${_adVwDocRef.docId}/cropped`, { method: 'POST', body: JSON.stringify({ data: img.src }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast('✅ 裁剪版已保存，系统缩略图将显示裁剪后的图；原件保留，点「原图 ↗」随时可看');
+    const sv = document.getElementById('adVwSaveCropBtn'); if (sv) sv.style.display = 'none';
+    const cl = document.getElementById('adVwClearCropBtn'); if (cl) cl.style.display = '';
+    _adVwBustThumbs();
+    return true;
+  } catch (e) { showToast('保存失败: ' + (e.message || e), 'error', 6000); return false; }
+}
+async function clearApplicantDocCrop() {
+  if (!_adVwDocRef) return;
+  try {
+    const r = await api(`/admin/applicant-submissions/${_adVwDocRef.subId}/docs/${_adVwDocRef.docId}/cropped`, { method: 'POST', body: JSON.stringify({ data: '' }) });
+    if (r && r.error) throw new Error(r.error);
+    showToast('已取消裁剪版，恢复显示原图');
+    const cl = document.getElementById('adVwClearCropBtn'); if (cl) cl.style.display = 'none';
+    restoreApplicantDocCrop();
+    _adVwBustThumbs();
+  } catch (e) { showToast('操作失败: ' + (e.message || e), 'error'); }
+}
+// 保存/取消裁剪版后, 刷新页面上所有该文件的缩略图 (加时间戳绕过缓存)
+function _adVwBustThumbs() {
+  if (!_adVwDocRef) return;
+  const frag = `/applicant-submissions/${_adVwDocRef.subId}/docs/${_adVwDocRef.docId}/download`;
+  document.querySelectorAll('img').forEach(im => {
+    const s = im.getAttribute('src') || '';
+    if (s.includes(frag) && !s.includes('v=orig') && im.id !== 'adVwImg') {
+      im.src = s.split('?')[0] + '?t=' + Date.now();
+    }
+  });
+}
+// ── 🪄 自动修复: 只做颜色增强 —— 自动色阶(去灰/校色) + 轻锐化; 不旋转不裁剪 ──
+// 全部在浏览器内存进行, 原件不动; 结果可 ↩还原 / 💾保存。
+function _afxEnhance(cv) {
+  const w = cv.width, h = cv.height, ctx = cv.getContext('2d');
+  const blur = document.createElement('canvas'); blur.width = w; blur.height = h;
+  const bx = blur.getContext('2d');
+  bx.filter = 'blur(' + Math.max(1, Math.round(w / 700)) + 'px)';
+  bx.drawImage(cv, 0, 0);
+  const idO = ctx.getImageData(0, 0, w, h), idB = bx.getImageData(0, 0, w, h);
+  const o = idO.data, b = idB.data;
+  const hist = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
+  for (let i = 0; i < w * h; i++) { hist[0][o[i*4]]++; hist[1][o[i*4+1]]++; hist[2][o[i*4+2]]++; }
+  const lut = [];
+  for (let c = 0; c < 3; c++) {
+    const clip = w * h * 0.005;
+    let lo = 0, acc = 0;
+    while (lo < 255 && acc + hist[c][lo] < clip) { acc += hist[c][lo]; lo++; }
+    let hi = 255; acc = 0;
+    while (hi > 0 && acc + hist[c][hi] < clip) { acc += hist[c][hi]; hi--; }
+    if (hi - lo < 30) { lo = 0; hi = 255; }   // 已经均匀, 不拉
+    const L = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) L[v] = (v - lo) * 255 / (hi - lo);
+    lut.push(L);
+  }
+  for (let i = 0; i < w * h; i++) for (let c = 0; c < 3; c++) {
+    const v = lut[c][o[i*4+c]], bv = lut[c][b[i*4+c]];
+    o[i*4+c] = Math.max(0, Math.min(255, v * 1.35 - bv * 0.35));   // 自动色阶 + 轻锐化
+  }
+  ctx.putImageData(idO, 0, 0);
+}
+async function autoFixApplicantDoc() {
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.naturalWidth) return;
+  showToast('🪄 处理中…');
+  try {
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    let cv = document.createElement('canvas');
+    if (nw > 1800) {
+      cv.width = 1800; cv.height = Math.round(nh * 1800 / nw);
+    } else {
+      cv.width = nw; cv.height = nh;
+    }
+    const cx = cv.getContext('2d');
+    cx.imageSmoothingQuality = 'high';
+    cx.drawImage(img, 0, 0, cv.width, cv.height);
+    _afxEnhance(cv);
+    const keepRot = _adVwRotation;   // 只改颜色, 保持当前旋转角度不变
+    img.src = cv.toDataURL('image/jpeg', 0.92);
+    _adVwRotation = keepRot;
+    _applyApplicantDocView();
+    const rs = document.getElementById('adVwRestoreBtn'); if (rs) rs.style.display = '';
+    const sv = document.getElementById('adVwSaveCropBtn'); if (sv && _adVwDocRef) sv.style.display = '';
+    showToast('🪄 已增强颜色/对比 — 不满意 ↩还原, 满意点 💾 保存');
+  } catch (e) { showToast('自动修复失败: ' + (e.message || e), 'error'); }
+}
+// ── 📄 文档增强: 灰度 → 大半径背景估计(除光照不均) → 笔画增益 → 轻锐化 ──
+// 对模糊/灰暗的文件照片显著提升可读性; 失焦细节无法凭空恢复
+async function docEnhanceApplicantDoc() {
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.naturalWidth) return;
+  showToast('📄 文档增强中…');
+  try {
+    const s = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * s)), h = Math.max(1, Math.round(img.naturalHeight * s));
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const cx = cv.getContext('2d'); cx.imageSmoothingQuality = 'high';
+    cx.drawImage(img, 0, 0, w, h);
+    const id = cx.getImageData(0, 0, w, h), d = id.data;
+    for (let i = 0; i < w * h; i++) {
+      const g = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
+      d[i*4] = d[i*4+1] = d[i*4+2] = g;
+    }
+    cx.putImageData(id, 0, 0);
+    // 背景估计: 大半径模糊 ≈ 纸面亮度分布; 减掉它 = 均衡光照 + 提出笔画
+    const bgc = document.createElement('canvas'); bgc.width = w; bgc.height = h;
+    const bx = bgc.getContext('2d');
+    bx.filter = 'blur(' + Math.max(6, Math.round(w / 60)) + 'px)';
+    bx.drawImage(cv, 0, 0);
+    const bd = bx.getImageData(0, 0, w, h).data;
+    const gain = 2.4;
+    for (let i = 0; i < w * h; i++) {
+      const v = Math.max(0, Math.min(255, 255 + (d[i*4] - bd[i*4]) * gain - 12));
+      d[i*4] = d[i*4+1] = d[i*4+2] = v;
+    }
+    cx.putImageData(id, 0, 0);
+    // 轻锐化
+    const blc = document.createElement('canvas'); blc.width = w; blc.height = h;
+    const blx = blc.getContext('2d'); blx.filter = 'blur(1px)'; blx.drawImage(cv, 0, 0);
+    const sd = blx.getImageData(0, 0, w, h).data;
+    const id2 = cx.getImageData(0, 0, w, h), d2 = id2.data;
+    for (let i = 0; i < w * h * 4; i += 4) {
+      const v = Math.max(0, Math.min(255, d2[i] * 1.5 - sd[i] * 0.5));
+      d2[i] = d2[i+1] = d2[i+2] = v;
+    }
+    cx.putImageData(id2, 0, 0);
+    const keepRot = _adVwRotation;
+    img.src = cv.toDataURL('image/jpeg', 0.92);
+    _adVwRotation = keepRot; _adVwZoom = 1;
+    _applyApplicantDocView();
+    const rs = document.getElementById('adVwRestoreBtn'); if (rs) rs.style.display = '';
+    const sv = document.getElementById('adVwSaveCropBtn'); if (sv && _adVwDocRef) sv.style.display = '';
+    showToast('📄 已增强 (黑白文档模式) — 不满意 ↩还原; 失焦太狠的建议让对方重拍');
+  } catch (e) { showToast('增强失败: ' + (e.message || e), 'error'); }
+}
+
+// ── 🤖 AI 识读: 把当前显示的图发给服务器, 由 Claude(或 Google Vision)整张读取 ──
+async function aiReadApplicantDoc() {
+  const img = document.getElementById('adVwImg');
+  if (!img || !img.naturalWidth) return;
+  const panel = document.getElementById('adVwOcrPanel');
+  if (panel) panel.style.display = 'block';
+  _setOcrStatus('🤖 AI 识读中…（约几秒）');
+  try {
+    let data;
+    if (/^data:image\//.test(img.src)) {
+      data = img.src;
+    } else {
+      const s = Math.min(1, 1600 / img.naturalWidth);
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.naturalWidth * s); cv.height = Math.round(img.naturalHeight * s);
+      const cx = cv.getContext('2d'); cx.imageSmoothingQuality = 'high';
+      cx.drawImage(img, 0, 0, cv.width, cv.height);
+      data = cv.toDataURL('image/jpeg', 0.92);
+    }
+    const body = { data };
+    if (_adVwDocRef) { body.sub_id = _adVwDocRef.subId; body.doc_id = _adVwDocRef.docId; }   // 存进系统, 下次打开直接显示
+    const r = await api('/admin/ai-read-image', { method: 'POST', body: JSON.stringify(body) });
+    if (r && r.error) throw new Error(r.error);
+    _showAiResult(r, false);
+  } catch (e) { _setOcrStatus('⚠️ ' + (e.message || e)); }
+}
+function _fmtAiRead(r) {
+  let out = '';
+  if (r.parsed && (r.parsed.fields || r.parsed.doc_type)) {
+    const F = r.parsed.fields || {};
+    const L = { name: '姓名', dob: '生日', id_number: '证件号', address: '地址', issue_date: '签发日', expiry_date: '到期日', category: '类别', other: '其他' };
+    if (r.parsed.doc_type) out += '类型: ' + r.parsed.doc_type + '\n';
+    for (const k of Object.keys(L)) if (F[k]) out += L[k] + ': ' + F[k] + '\n';
+    if (r.parsed.raw_text) out += '―― 全部文字 ――\n' + r.parsed.raw_text;
+  } else {
+    out = r.raw || '(没有读到内容)';
+  }
+  return out.trim();
+}
+function _showAiResult(r, fromCache) {
+  const panel = document.getElementById('adVwOcrPanel');
+  if (panel) panel.style.display = 'block';
+  const out = _fmtAiRead(r);
+  const ta = document.getElementById('adVwOcrText'), cp = document.getElementById('adVwOcrCopy');
+  if (ta) { ta.style.display = 'block'; ta.value = out; ta.rows = 9; }
+  if (cp) cp.style.display = out ? 'inline-block' : 'none';
+  const eng = r.engine === 'claude' ? 'Claude (' + (r.model || '') + ')' : 'Google Vision';
+  _setOcrStatus(fromCache ? ('🤖 已识读过 · ' + eng + ' — 结果已保留, 再点 🤖 可重新识别') : ('🤖 识读完成 · ' + eng + ' — 号码等关键字段请核对'));
 }
 // Back-compat name (older callers) — same behavior.
 function _applyApplicantDocRotation() { _applyApplicantDocView(); }
-function closeApplicantDocViewer() { const v = document.getElementById('applicantDocViewer'); if (v) v.style.display = 'none'; }
+function closeApplicantDocViewer() {
+  if (_adBatch) _adBatchEnd(true); const v = document.getElementById('applicantDocViewer'); if (v) v.style.display = 'none'; }
 
 // Generic drag-by-handle helper (used by the floating doc viewer).
 function _makeDraggable(el, handle) {
@@ -43730,6 +44674,9 @@ function bsEnsureEditor() {
       '<div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--gray-200)">' +
         '<strong id="bsEdTitle" style="font-size:.92rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">编辑对账单</strong>' +
         '<span id="bsEdStatus" style="font-size:.78rem;color:var(--gray-400);white-space:nowrap"></span>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsEdZoom(-0.25)" title="缩小（也可 Ctrl+滚轮）">−</button>' +
+        '<span id="bsEdZoomPct" style="font-size:.78rem;color:var(--gray-500);min-width:2.6rem;text-align:center;cursor:pointer" title="点击恢复 100%" onclick="bsEdZoom(0, true)">100%</span>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsEdZoom(0.25)" title="放大（也可 Ctrl+滚轮）">＋</button>' +
         '<button id="bsBoxModeBtn" class="btn btn-sm btn-outline" onclick="bsToggleBoxMode()" title="开启后在 PDF 上拖动画框，右侧填写付款公司/金额/收支">🔲 框选</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsDownloadOriginal()">⬇️ 下载 PDF</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsCloseEditor()">✕ 关闭</button>' +
@@ -43768,6 +44715,8 @@ async function bsOpenEditor(id) {
     _bsEdBytes = new Uint8Array(await res.arrayBuffer());
     setStatus('渲染页面…');
     await bsRenderPages(_bsEdBytes);
+    _bsZoomReset('bsEdPages', 'bsEdZoomPct');
+    _bsWireZoomWheel('bsEdPages', bsEdZoom);
     bsWireBoxDrawing();
     await bsEnsureCompanies();
     await bsEnsureWarehouses();
@@ -43801,6 +44750,9 @@ function bsEnsureViewer() {
       '<div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--gray-200)">' +
         '<strong id="bsViewerTitle" style="font-size:.92rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">查看对账单</strong>' +
         '<span id="bsViewerStatus" style="font-size:.78rem;color:var(--gray-400);white-space:nowrap"></span>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsViewZoom(-0.25)" title="缩小（也可 Ctrl+滚轮）">−</button>' +
+        '<span id="bsViewZoomPct" style="font-size:.78rem;color:var(--gray-500);min-width:2.6rem;text-align:center;cursor:pointer" title="点击恢复 100%" onclick="bsViewZoom(0, true)">100%</span>' +
+        '<button class="btn btn-sm btn-outline" onclick="bsViewZoom(0.25)" title="放大（也可 Ctrl+滚轮）">＋</button>' +
         '<button class="btn btn-sm btn-green" id="bsViewerDlBtn" onclick="bsViewerDownload()">⬇️ 下载带标注 PDF</button>' +
         '<button class="btn btn-sm btn-outline" onclick="bsCloseViewer()">✕ 关闭</button>' +
       '</div>' +
@@ -43847,6 +44799,8 @@ async function bsOpenViewer(id) {
     _bsViewBytes = new Uint8Array(await res.arrayBuffer());
     setStatus('渲染页面…');
     await bsRenderPages(_bsViewBytes, pagesEl);
+    _bsZoomReset('bsViewerPages', 'bsViewZoomPct');
+    _bsWireZoomWheel('bsViewerPages', bsViewZoom);
     try { _bsViewBoxes = await api(`/admin/bank-statements/${id}/boxes`) || []; } catch (_) { _bsViewBoxes = []; }
     if (!Array.isArray(_bsViewBoxes)) _bsViewBoxes = [];
     _bsViewBoxes.sort((a, b) => (a.page - b.page) || (a.box_y - b.box_y) || (a.id - b.id));
@@ -44012,15 +44966,17 @@ const BS_PAYEE_BANKFEE = '银行费用';
 const BS_PAYEE_CLAIM = 'Claim';
 const BS_PAYEE_CC = '还 Prime Anchor Point 信用卡'; // credit-card repayment (not a bank fee)
 const BS_PAYEE_PAP = 'Prime Anchor Point 转账'; // internal transfer — no extra sub-section
+const BS_PAYEE_PAW = 'Prime Anchor Workforce 转账'; // internal transfer to Prime Anchor Workforce Inc — no extra sub-section
 const BS_PAYEE_BINTIQUE = 'Bintique 货款'; // Bintique goods payment — no extra sub-section
 const BS_PAYEE_CASH = '取现金'; // ATM/cash withdrawal — no extra sub-section
 const BS_PAYEE_CASH_DEP = '存现金'; // cash deposit — no extra sub-section
+const BS_PAYEE_LAWSUIT = '诉讼费'; // litigation/legal fee — no extra sub-section (note describes the case)
 const BS_PAYEE_RETURNED = '退回款 Returned Payment'; // returned/bounced payment — no extra sub-section
 const BS_PAYEE_NA = '无关'; // not relevant to bookkeeping — no extra sub-section
 const BS_PAYEE_PALLET = '__pallet__'; // sentinel: 木板钱, then pick a customer
 const BS_PALLET_PREFIX = '木板钱:'; // stored payee for 木板钱 = prefix + customer name
-// Customer list for 木板钱 (pallet money). Excludes the "TestCustomer" test record.
-const BS_PALLET_CUSTOMERS = ['48', 'All Materials Matter', 'Cargowill', 'DeerValley', 'Efulfillus', 'Jason', 'KC pallet', 'MAYNMARCH INC', 'RYKM LLC', 'SLM GROUP', 'Speed C CHB', 'Wecharmer', '派速捷', '现金自提神秘人'];
+// 木板钱的供应商列表（与发票客户公司无关）。来自 Suppliers 页，不含 TESTSupplier 测试记录。
+const BS_PALLET_CUSTOMERS = ['631', 'All MATERIALS MATTER', 'GOFO', 'GOFO-SELF'];
 // Check deposit / withdrawal: after choosing, pick one or more counterparties.
 const BS_PAYEE_CHECK_DEP = '__checkdep__'; // sentinel: 存支票
 const BS_PAYEE_CHECK_WD = '__checkwd__';   // sentinel: 取支票
@@ -44097,7 +45053,7 @@ function _bsPayeeKind(box) {
   if (_bsIsReferral(p)) return 'referral';
   if (_bsIsWageBonus(p)) return 'wagebonus';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
-  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_RETURNED) return 'company';
+  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_RETURNED) return 'company';
   return 'none'; // Claim / credit-card / cash / irrelevant / PAP transfer / Bintique goods / returned payment: no extra sub-section
 }
 // The invoice/账期 block applies to employee wages and to company income.
@@ -44106,7 +45062,7 @@ function _bsWantsInvoice(box) {
   // 支付卸柜账单、木板钱同样要填 invoice 号码和覆盖的账期范围。
   return k === 'employee' || k === 'unload' || k === 'pallet' || (k === 'company' && box.direction === 'in');
 }
-const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang'];
+const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang', 'Yizhao Cai'];
 async function bsEnsureCompanies() {
   if (_bsCompanies.length) return;
   let names = [];
@@ -44133,9 +45089,11 @@ function _bsPayeeOptions(current, direction) {
     `<option value="${esc(BS_PAYEE_CLAIM)}"${current === BS_PAYEE_CLAIM ? ' selected' : ''}>📋 Claim</option>`,
     `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
     `<option value="${esc(BS_PAYEE_PAP)}"${current === BS_PAYEE_PAP ? ' selected' : ''}>🔁 Prime Anchor Point 转账</option>`,
+    `<option value="${esc(BS_PAYEE_PAW)}"${current === BS_PAYEE_PAW ? ' selected' : ''}>🔁 Prime Anchor Workforce 转账</option>`,
     `<option value="${esc(BS_PAYEE_BINTIQUE)}"${current === BS_PAYEE_BINTIQUE ? ' selected' : ''}>📦 Bintique 货款</option>`,
     `<option value="${esc(BS_PAYEE_CASH)}"${current === BS_PAYEE_CASH ? ' selected' : ''}>💵 取现金</option>`,
     `<option value="${esc(BS_PAYEE_CASH_DEP)}"${current === BS_PAYEE_CASH_DEP ? ' selected' : ''}>💰 存现金</option>`,
+    `<option value="${esc(BS_PAYEE_LAWSUIT)}"${current === BS_PAYEE_LAWSUIT ? ' selected' : ''}>⚖️ 诉讼费</option>`,
     `<option value="${esc(BS_PAYEE_RETURNED)}"${current === BS_PAYEE_RETURNED ? ' selected' : ''}>↩️ 退回款 Returned Payment</option>`,
     `<option value="${BS_PAYEE_TRUCK}"${current === BS_PAYEE_TRUCK ? ' selected' : ''}>🚚 卡车费（选公司）</option>`,
     `<option value="${BS_PAYEE_UNLOAD}"${current === BS_PAYEE_UNLOAD ? ' selected' : ''}>📦 支付卸柜账单（选公司）</option>`,
@@ -44152,7 +45110,7 @@ function _bsPayeeOptions(current, direction) {
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_PAW, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_LAWSUIT, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
@@ -45020,6 +45978,78 @@ function bsFocusBoxItem(id) {
   const prev = item.style.boxShadow;
   item.style.boxShadow = '0 0 0 3px rgba(37,99,235,.35)';
   setTimeout(() => { item.style.boxShadow = prev; }, 1000);
+}
+
+// ── PDF 缩放（标注编辑器与只读查看器共用） ──
+// 页面 wrapper 的 width/height、canvas 的 CSS 尺寸和所有直接子元素（标注框/便签，
+// 均为页内绝对定位的 px 坐标）按同一比例缩放，dataset.scale 同步更新（导出映射用）；
+// 位图先由 CSS 拉伸立即显示，再防抖按当前倍率重渲 canvas 保证清晰。
+const _bsZoomState = {};
+function _bsPdfZoom(contId, lblId, bytes, delta, reset) {
+  const cont = document.getElementById(contId);
+  if (!cont || !bytes || !cont.querySelector('.bs-ed-page')) return;
+  const st = _bsZoomState[contId] = _bsZoomState[contId] || { z: 1, timer: null };
+  const z = reset ? 1 : Math.max(0.5, Math.min(3, Math.round((st.z + delta) * 100) / 100));
+  if (Math.abs(z - st.z) < 0.01) return;
+  const r = z / st.z;
+  st.z = z;
+  const keepRatio = cont.scrollTop / Math.max(1, cont.scrollHeight - cont.clientHeight);
+  cont.querySelectorAll('.bs-ed-page').forEach(p => {
+    p.style.width = (parseFloat(p.style.width) * r) + 'px';
+    p.style.height = (parseFloat(p.style.height) * r) + 'px';
+    p.dataset.scale = parseFloat(p.dataset.scale) * r;
+    Array.from(p.children).forEach(el => {
+      if (el.tagName === 'CANVAS') {
+        el.style.width = (parseFloat(el.style.width) * r) + 'px';
+        el.style.height = (parseFloat(el.style.height) * r) + 'px';
+        return;
+      }
+      ['left', 'top', 'width', 'height'].forEach(k => {
+        const v = parseFloat(el.style[k]);
+        if (!isNaN(v)) el.style[k] = (v * r) + 'px';
+      });
+    });
+  });
+  cont.scrollTop = keepRatio * Math.max(0, cont.scrollHeight - cont.clientHeight);
+  const lbl = document.getElementById(lblId);
+  if (lbl) lbl.textContent = Math.round(z * 100) + '%';
+  clearTimeout(st.timer);
+  st.timer = setTimeout(() => _bsZoomRerenderCrisp(contId, bytes), 280);
+}
+async function _bsZoomRerenderCrisp(contId, bytes) {
+  try {
+    const cont = document.getElementById(contId);
+    if (!cont) return;
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (const wrap of cont.querySelectorAll('.bs-ed-page')) {
+      const cv = wrap.querySelector('canvas');
+      if (!cv) continue;
+      const page = await pdf.getPage(parseInt(wrap.dataset.page));
+      const vp1 = page.getViewport({ scale: 1 });
+      const cssW = parseFloat(wrap.style.width);
+      cv.width = Math.floor(cssW * dpr);
+      cv.height = Math.floor(parseFloat(wrap.style.height) * dpr);
+      await page.render({ canvasContext: cv.getContext('2d'), viewport: page.getViewport({ scale: (cssW / vp1.width) * dpr }) }).promise;
+    }
+  } catch (_) { /* 重渲失败保留 CSS 拉伸的位图 */ }
+}
+function bsEdZoom(delta, reset) { _bsPdfZoom('bsEdPages', 'bsEdZoomPct', _bsEdBytes, delta, reset); }
+function bsViewZoom(delta, reset) { _bsPdfZoom('bsViewerPages', 'bsViewZoomPct', _bsViewBytes, delta, reset); }
+function _bsWireZoomWheel(contId, fn) {
+  const cont = document.getElementById(contId);
+  if (!cont || cont._zoomWheelWired) return;
+  cont._zoomWheelWired = true;
+  cont.addEventListener('wheel', e => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    fn(e.deltaY < 0 ? 0.25 : -0.25);
+  }, { passive: false });
+}
+function _bsZoomReset(contId, lblId) {
+  _bsZoomState[contId] = { z: 1, timer: null };
+  const lbl = document.getElementById(lblId);
+  if (lbl) lbl.textContent = '100%';
 }
 
 async function bsRenderPages(bytes, cont) {
@@ -47436,5 +48466,169 @@ fetch('/api/build', { cache: 'no-store' }).then(r => r.json()).then(b => {
 }).catch(() => { var el = document.getElementById('buildBadge'); if (el) el.style.display = 'none'; });
 </script>
 
+<script>
+// ─── 界面三语切换 (中/EN/ES): 不刷新页面就地切换; 原文记在节点上, 切回中文即刻还原 ───
+(() => {
+  const LANG_KEY = 'adminUiLang';
+  let currentLang = localStorage.getItem(LANG_KEY) || 'zh';
+  const CJK = /[\u4e00-\u9fff]/;
+  const caches = {};
+  function cacheOf(l) {
+    if (!caches[l]) {
+      try { caches[l] = JSON.parse(localStorage.getItem('uiTr_' + l) || '{}'); } catch (_) { caches[l] = {}; }
+    }
+    return caches[l];
+  }
+  let cacheDirty = false;
+  setInterval(() => {
+    if (!cacheDirty) return;
+    cacheDirty = false;
+    for (const l of Object.keys(caches)) {
+      try { localStorage.setItem('uiTr_' + l, JSON.stringify(caches[l])) } catch (_) {}
+    }
+  }, 3000);
+  function _tk() { try { return TOKEN || ''; } catch (_) { return ''; } }
+
+  // ── 应用/还原 ──
+  const apply = (tgt, dst) => {
+    try {
+      if (tgt.nodeType === 3) tgt.nodeValue = dst;
+      else tgt.el.setAttribute(tgt.attr, dst);
+    } catch (_) {}
+  };
+  function origOfText(node) {
+    // 首次翻译前把原文记在节点上
+    if (node.__origText === undefined && CJK.test(node.nodeValue || '')) node.__origText = node.nodeValue;
+    return node.__origText;
+  }
+  function origOfAttr(el, attr) {
+    el.__origAttrs = el.__origAttrs || {};
+    const v = el.getAttribute(attr);
+    if (el.__origAttrs[attr] === undefined && v && CJK.test(v)) el.__origAttrs[attr] = v;
+    return el.__origAttrs[attr];
+  }
+
+  // ── 翻译队列 ──
+  const pending = new Map();
+  let flushTimer = null, inflight = false;
+  function queue(tgt, srcText) {
+    if (currentLang === 'zh' || !srcText) return;
+    const hit = cacheOf(currentLang)[srcText];
+    if (hit) { apply(tgt, hit); return; }
+    if (!pending.has(srcText)) pending.set(srcText, []);
+    pending.get(srcText).push({ tgt, lang: currentLang });
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flush, 250);
+  }
+  async function flush() {
+    if (inflight || !pending.size) return;
+    if (!_tk()) { flushTimer = setTimeout(flush, 2000); return; }   // 未登录: 等登录后再翻
+    inflight = true;
+    const reqLang = currentLang;
+    const keys = [...pending.keys()].slice(0, 400);
+    try {
+      const resp = await fetch('/api/admin/ui-translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _tk() },
+        body: JSON.stringify({ lang: reqLang, texts: keys })
+      });
+      const r = resp.ok ? await resp.json() : null;   // 失败静默, 绝不弹登录框
+      const map = (r && r.map) || {};
+      for (const k of keys) {
+        const tgts = pending.get(k) || [];
+        pending.delete(k);
+        if (map[k]) {
+          cacheOf(reqLang)[k] = map[k]; cacheDirty = true;
+          tgts.forEach(x => { if (x.lang === currentLang && currentLang === reqLang) apply(x.tgt, map[k]); });
+        }
+      }
+    } catch (_) { keys.forEach(k => pending.delete(k)); }
+    inflight = false;
+    if (pending.size) flushTimer = setTimeout(flush, 250);
+  }
+
+  // ── 扫描 ──
+  const SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEXTAREA: 1, CODE: 1, PRE: 1 };
+  function walk(root, mode) {   // mode: 'translate' | 'restore'
+    if (root.nodeType === 3) {
+      if (mode === 'restore') {
+        if (root.__origText !== undefined) root.nodeValue = root.__origText;
+      } else {
+        const o = origOfText(root);
+        if (o !== undefined) queue(root, o);
+      }
+      return;
+    }
+    if (root.nodeType !== 1 || SKIP[root.tagName] || root.id === 'uiLangBar') return;
+    for (const attr of ['placeholder', 'title']) {
+      if (mode === 'restore') {
+        if (root.__origAttrs && root.__origAttrs[attr] !== undefined) root.setAttribute(attr, root.__origAttrs[attr]);
+      } else if (root.getAttribute) {
+        const o = origOfAttr(root, attr);
+        if (o !== undefined) queue({ el: root, attr }, o);
+      }
+    }
+    let c = root.firstChild;
+    while (c) { const nx = c.nextSibling; walk(c, mode); c = nx; }
+  }
+
+  // ── 切换 (不刷新页面) ──
+  function switchLang(next) {
+    if (next === currentLang) return;
+    pending.clear();
+    currentLang = next;
+    localStorage.setItem(LANG_KEY, next);
+    renderBar();
+    walk(document.body, 'restore');            // 先全部还原成中文
+    if (next !== 'zh') walk(document.body, 'translate');   // 再按新语言翻
+  }
+
+  // ── 切换器 ──
+  function renderBar() {
+    let bar = document.getElementById('uiLangBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'uiLangBar';
+      bar.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99999;display:flex;gap:3px;background:#fff;border:1px solid #d1d5db;border-radius:999px;padding:3px 5px;box-shadow:0 2px 10px rgba(0,0,0,.15);font-size:.72rem';
+      bar.addEventListener('click', e => {
+        const b = e.target.closest('button[data-lang]');
+        if (b) switchLang(b.dataset.lang);
+      });
+      document.body.appendChild(bar);
+    }
+    const mk = (code, label) => '<button data-lang="' + code + '" style="border:none;border-radius:999px;padding:2px 9px;cursor:pointer;font-weight:700;background:' + (currentLang === code ? '#1A3F7A' : 'transparent') + ';color:' + (currentLang === code ? '#fff' : '#374151') + '">' + label + '</button>';
+    bar.innerHTML = mk('zh', '中') + mk('en', 'EN') + mk('es', 'ES');
+  }
+
+  // ── 监听动态内容 ──
+  function startObserver() {
+    new MutationObserver(muts => {
+      if (currentLang === 'zh') return;
+      for (const m of muts) {
+        if (m.type === 'characterData') {
+          if (CJK.test(m.target.nodeValue || '')) { m.target.__origText = m.target.nodeValue; queue(m.target, m.target.nodeValue); }
+        } else if (m.type === 'childList') {
+          m.addedNodes.forEach(n => walk(n, 'translate'));
+        } else if (m.type === 'attributes') {
+          const v = m.target.getAttribute(m.attributeName);
+          if (v && CJK.test(v)) {
+            m.target.__origAttrs = m.target.__origAttrs || {};
+            m.target.__origAttrs[m.attributeName] = v;
+            queue({ el: m.target, attr: m.attributeName }, v);
+          }
+        }
+      }
+    }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['placeholder', 'title'] });
+  }
+
+  function boot() {
+    renderBar();
+    startObserver();
+    if (currentLang !== 'zh') walk(document.body, 'translate');
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
 </body>
 </html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>消息统计 — Prime Anchor SMS</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--off-white:#fffbeb;--gray-100:#f3f4f6;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-500:#6b7280;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gray-800);min-height:100vh}
+.header{background:#fff;border-bottom:1.5px solid #fde68a;padding:12px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.header a.back{color:var(--sky);font-weight:700;text-decoration:none;font-size:1rem;padding:4px 8px;border-radius:8px}
+.header a.back:hover{background:var(--sky-light)}
+.header h1{font-size:1.1rem;color:var(--blue)}
+.wrap{max-width:860px;margin:0 auto;padding:18px 14px 40px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:22px}
+.card{background:#fff;border:1px solid #f3e8cd;border-radius:var(--radius);padding:16px 12px;text-align:center;box-shadow:0 1px 3px rgba(146,64,14,.06)}
+.card .num{font-size:1.6rem;font-weight:700;color:var(--blue)}
+.card .lbl{font-size:.74rem;color:var(--gray-400);margin-top:4px;font-weight:600}
+.section{background:#fff;border:1px solid #f3e8cd;border-radius:var(--radius);box-shadow:0 1px 3px rgba(146,64,14,.06);padding:16px;margin-bottom:18px}
+.section h2{font-size:.95rem;color:var(--blue);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.filter-btn{padding:6px 14px;border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;font-weight:600;cursor:pointer;background:#fff;color:var(--gray-600)}
+.filter-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
+.row{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--gray-100);font-size:.82rem;cursor:pointer}
+.row:hover{background:var(--sky-light)}
+.row .d{width:88px;flex-shrink:0;font-weight:600}
+.row .bar{flex:1;display:flex;height:14px;border-radius:4px;overflow:hidden;background:var(--gray-100)}
+.row .n{width:150px;flex-shrink:0;text-align:right;color:var(--gray-500);font-size:.78rem}
+.hint{color:var(--gray-400);font-size:.8rem;padding:12px;text-align:center}
+.hours{display:flex;align-items:flex-end;gap:2px;height:130px;padding:8px 2px 0}
+.hcol{flex:1;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px}
+.hbar{width:100%;background:linear-gradient(180deg,#fbbf24,#d97706);border-radius:3px 3px 0 0;min-height:1px}
+.hlbl{font-size:.58rem;color:var(--gray-400)}
+@media(max-width:600px){.row .n{width:118px}.cards{grid-template-columns:repeat(3,1fr)}}
+</style>
+</head>
+<body>
+<div class="header">
+  <a class="back" href="/sms-inbox">&larr; 收件箱</a>
+  <h1>&#128202; SMS 消息统计</h1>
+  <span id="dateNow" style="margin-left:auto;font-size:.78rem;color:var(--gray-400)"></span>
+</div>
+<div class="wrap">
+  <div class="cards" id="cards"><div class="hint">加载中…</div></div>
+
+  <div class="section" id="dailySec" style="display:none">
+    <h2>&#128200; 每天收 / 发条数 <span style="margin-left:auto;display:flex;gap:6px">
+      <button class="filter-btn" data-days="7" onclick="loadMsg(7)">7 天</button>
+      <button class="filter-btn active" data-days="14" onclick="loadMsg(14)">14 天</button>
+      <button class="filter-btn" data-days="30" onclick="loadMsg(30)">30 天</button>
+    </span></h2>
+    <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:6px"><span style="color:#0284c7">■</span> 收到 &nbsp;<span style="color:#059669">■</span> 发出 · 点某一天看小时分布</div>
+    <div id="daily"></div>
+  </div>
+
+  <div class="section" id="hoursSec" style="display:none">
+    <h2>&#128336; <span id="hoursTitle">小时分布</span></h2>
+    <div class="hours" id="hours"></div>
+  </div>
+
+  <div class="section" id="agentsSec" style="display:none">
+    <h2>&#129489;&#8205;&#128188; 各客服发送量</h2>
+    <div id="agents"></div>
+  </div>
+
+  <div class="hint" id="adminHint" style="display:none">详细统计(每日/小时/客服)仅管理员可见</div>
+</div>
+<script>
+function getToken() {
+  const m = (document.cookie || '').match(/pa_token=([^;]+)/);
+  if (m) return m[1];
+  return localStorage.getItem('adminToken') || '';
+}
+async function api(path) {
+  const res = await fetch('/api' + path, { headers: { 'Authorization': 'Bearer ' + getToken() } });
+  if (res.status === 401) { location.href = '/sms-inbox'; throw new Error('unauthorized'); }
+  return res.json();
+}
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+document.getElementById('dateNow').textContent = new Date().toLocaleDateString('sv-SE');
+
+// 概览数字 (所有登录用户可见)
+(async () => {
+  try {
+    const r = await api('/sms/stats');
+    const card = (n, l) => '<div class="card"><div class="num">' + n + '</div><div class="lbl">' + l + '</div></div>';
+    document.getElementById('cards').innerHTML =
+      card(r.open || 0, '进行中 Open') + card(r.claimed || 0, '已认领 Claimed')
+      + card(r.new_today || 0, '今日新对话') + card(r.closed_today || 0, '今日关闭')
+      + card(r.avg_response_minutes != null ? r.avg_response_minutes + 'm' : '--', '平均响应')
+      + card(r.total_messages || 0, '总消息数');
+  } catch (e) { document.getElementById('cards').innerHTML = '<div class="hint">加载失败</div>'; }
+})();
+
+// 详细统计 (admin)
+let _days = 14, _date = new Date().toLocaleDateString('sv-SE'), _lastData = null;
+async function loadMsg(days, date) {
+  _days = days || _days;
+  if (date) _date = date;
+  document.querySelectorAll('#dailySec .filter-btn').forEach(b => b.className = 'filter-btn' + (parseInt(b.dataset.days) === _days ? ' active' : ''));
+  try {
+    const tzoff = new Date().getTimezoneOffset();
+    const r = await api('/sms/message-stats?days=' + _days + '&tzoff=' + tzoff + '&date=' + encodeURIComponent(_date));
+    if (r && r.error) { document.getElementById('adminHint').style.display = ''; return; }
+    _lastData = r;
+    ['dailySec', 'hoursSec', 'agentsSec'].forEach(id => document.getElementById(id).style.display = '');
+    // 每日
+    const byDay = {};
+    (r.daily || []).forEach(x => { byDay[x.d] = byDay[x.d] || { in: 0, out: 0 }; byDay[x.d][x.direction === 'inbound' ? 'in' : 'out'] += x.n; });
+    const keys = Object.keys(byDay).sort().reverse();
+    const max = Math.max(1, ...keys.map(k => byDay[k].in + byDay[k].out));
+    document.getElementById('daily').innerHTML = keys.length ? keys.map(k => {
+      const v = byDay[k];
+      return '<div class="row" onclick="loadMsg(' + _days + ',\'' + k + '\')" style="' + (k === _date ? 'background:#fff7e6' : '') + '">'
+        + '<span class="d">' + k.slice(5) + '</span>'
+        + '<span class="bar"><span style="width:' + Math.round(v.in / max * 100) + '%;background:#38bdf8"></span><span style="width:' + Math.round(v.out / max * 100) + '%;background:#34d399"></span></span>'
+        + '<span class="n">收 ' + v.in + ' · 发 ' + v.out + ' · 共 <b>' + (v.in + v.out) + '</b></span></div>';
+    }).join('') : '<div class="hint">该时段没有消息</div>';
+    // 小时分布
+    document.getElementById('hoursTitle').textContent = _date + ' 的小时分布';
+    const hmap = {};
+    (r.hours || []).forEach(x => { hmap[parseInt(x.h)] = (hmap[parseInt(x.h)] || 0) + x.n; });
+    const hmax = Math.max(1, ...Object.values(hmap));
+    document.getElementById('hours').innerHTML = Array.from({ length: 24 }, (_, h) =>
+      '<div class="hcol"><div class="hbar" style="height:' + Math.max(1, Math.round((hmap[h] || 0) / hmax * 95)) + 'px" title="' + h + '点: ' + (hmap[h] || 0) + ' 条"></div><div class="hlbl">' + (h % 3 === 0 ? h : '') + '</div></div>'
+    ).join('');
+    // 客服
+    const agents = r.agents || [];
+    const amax = Math.max(1, ...agents.map(a => a.n));
+    document.getElementById('agents').innerHTML = agents.length ? agents.map(a =>
+      '<div class="row" style="cursor:default"><span class="d" style="width:130px">' + esc(a.agent) + '</span>'
+      + '<span class="bar"><span style="width:' + Math.round(a.n / amax * 100) + '%;background:#fbbf24"></span></span>'
+      + '<span class="n"><b>' + a.n + '</b> 条</span></div>'
+    ).join('') : '<div class="hint">暂无数据</div>';
+  } catch (e) { document.getElementById('adminHint').style.display = ''; }
+}
+loadMsg(14);
+</script>
+</body>
+</html>
