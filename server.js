@@ -3361,6 +3361,15 @@ schedule24hReminders();
 // ─── Middleware ───
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+// 搜索引擎屏蔽: 除公开页面(首页/招工/隐私条款等)外, 内部工具页和 API 全部 noindex,
+// 已被 Google 收录的(如 /sms-inbox)会在爬虫重访后被移出搜索结果
+const SEO_PUBLIC_PATHS = new Set(['/', '/index', '/index.html', '/apply', '/privacy', '/terms', '/sms-terms', '/sms-consent-proof', '/data-deletion', '/robots.txt', '/sitemap.xml']);
+app.use((req, res, next) => {
+  const p = req.path.replace(/\.html$/, '').toLowerCase() || '/';
+  const isAsset = /\.(png|jpe?g|svg|gif|ico|css|js|webmanifest|woff2?|ttf|mp4|pdf)$/i.test(req.path);
+  if (!SEO_PUBLIC_PATHS.has(p) && !isAsset) res.set('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
 // Redirect *.html URLs to clean URLs (e.g. /admin.html → /admin). Preserve the query
 // string — dropping it broke links like /emp-doc-review.html?token=…&ids=… (the page
 // then saw no ids and showed 链接无效). Use 302 so a stale cached redirect can't pin a
