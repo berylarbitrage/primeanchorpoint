@@ -282,6 +282,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <button class="btn-icon" onclick="showNewChatModal()" title="从员工 / 招工申请找人发起对话" style="font-size:1.05rem">&#128172;</button>
       <button class="btn-icon" onclick="showBroadcastModal()" title="Compose / Broadcast" style="font-size:1.1rem">&#9993;</button>
       <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
+      <button class="btn-icon" onclick="document.getElementById('twilioTipsModal').classList.add('show')" title="Twilio 防封号注意事项" style="color:#b45309">&#9888;</button>
       <button class="btn-icon" id="msgStatsBtn" style="display:none" onclick="showMsgStatsModal()" title="消息统计: 每天多少条、什么时间发的 (仅管理员)">&#128202;</button>
       <button class="btn-icon" id="csAccBtn" style="display:none" onclick="showCsAccModal()" title="客服账号管理 (仅管理员)">&#128101;</button>
       <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
@@ -327,6 +328,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       </div>
       <span id="detailPriority" class="priority-badge" onclick="cyclePriority()"></span>
       <span id="detailStatus" class="ti-status" style="font-size:.72rem"></span>
+      <button class="btn-icon" onclick="showInterviewModal()" title="面试安排: 标记时间/地址, 发确认短信和工作要求">&#128197;</button>
       <button class="btn-icon" id="evalBtn" style="display:none" onclick="showEvalModal()" title="AI 评估这段对话里客服的表现 (仅管理员)">&#129302;</button>
       <button class="btn-icon" onclick="showStarredModal(currentThread && currentThread.id)" title="本对话的星标消息">&#9733;</button>
       <button class="btn-icon" onclick="showEditContactModal()" title="Edit contact">&#9998;</button>
@@ -507,6 +509,66 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   </div>
 </div>
 
+<!-- 📅 面试安排 -->
+<div class="modal-bg" id="interviewModal">
+  <div class="modal" style="max-width:560px">
+    <h3>&#128197; 面试安排</h3>
+    <div id="ivCurrent" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius);padding:8px 12px;font-size:.85rem;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;margin-bottom:6px">
+      <div style="flex:1"><label>面试时间</label><input id="ivAt" type="datetime-local"></div>
+    </div>
+    <label>面试地址</label><input id="ivAddr" placeholder="如 1431 N Luna Ave, Chicago, IL">
+    <label>备注（可选）</label><input id="ivNote" placeholder="如 找 Jane / 带两份文件">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn" onclick="saveInterview()" style="margin:0">保存面试</button>
+      <button class="filter-btn" onclick="fillInterviewMsg('confirm')" title="按模板生成面试确认短信, 填入发送框, 你确认后发送">✉️ 发面试确认</button>
+      <button class="filter-btn" onclick="fillInterviewMsg('requirements')" title="把工作基本要求模板填入发送框, 你确认后发送">📋 发工作要求</button>
+    </div>
+    <div id="ivUpcomingWrap" style="margin-top:12px">
+      <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px">📆 即将到来的面试（14 天内）</div>
+      <div id="ivUpcoming" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:150px;overflow-y:auto"></div>
+    </div>
+    <div id="ivTplWrap" style="display:none;margin-top:12px">
+      <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin-bottom:4px">✏️ 模板（仅管理员可改；占位符 {name} {date} {time} {address}）</div>
+      <label>面试确认模板</label><textarea id="ivTplConfirm" rows="4" style="width:100%;font-size:.8rem;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-family:inherit"></textarea>
+      <label>工作要求模板</label><textarea id="ivTplReq" rows="4" style="width:100%;font-size:.8rem;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-family:inherit"></textarea>
+      <button class="filter-btn" onclick="saveInterviewTpls()" style="margin-top:6px">保存模板</button>
+    </div>
+    <button class="close-modal" onclick="document.getElementById('interviewModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<!-- ⚠️ Twilio 防封号须知 -->
+<div class="modal-bg" id="twilioTipsModal">
+  <div class="modal" style="max-width:560px">
+    <h3>&#9888; Twilio 防封号注意事项</h3>
+    <div style="font-size:.84rem;line-height:1.75;max-height:420px;overflow-y:auto">
+      <b style="color:#dc2626">红线（碰了很快封号）：</b>
+      <ul style="margin:4px 0 10px 18px;padding:0">
+        <li>给<b>从未主动联系过我们/未同意接收</b>的号码群发招工广告（未经同意的营销 = 最快封号路径）</li>
+        <li>对方回了 <b>STOP</b> 还继续发（系统现在会自动拦，但不要想办法绕过）</li>
+        <li>发送贷款、大麻、赌博、成人内容、加密货币等 Twilio 禁类内容</li>
+        <li>用公共短链（bit.ly 等）发链接 — 运营商直接当垃圾拦截并记投诉</li>
+      </ul>
+      <b style="color:#b45309">高风险（积累多了触发审查）：</b>
+      <ul style="margin:4px 0 10px 18px;padding:0">
+        <li>同一段文字瞬间发给大量号码（群发功能已自动加了逐条间隔，一次别超过 100 个，分批发）</li>
+        <li>深夜/清晨打扰：发送尽量放在对方本地 <b>早 8 点 – 晚 9 点</b> 之间（发送时系统会提醒）</li>
+        <li>错误率高：大量发到空号/停机号（名单要干净，退订和无效号及时清理）</li>
+        <li>消息内容和你在 Twilio 注册 A2P Campaign 时申报的用途不一致</li>
+      </ul>
+      <b style="color:#059669">保命做法：</b>
+      <ul style="margin:4px 0 4px 18px;padding:0">
+        <li>确认 Twilio 后台已完成 <b>A2P 10DLC Campaign 注册</b>（未注册的号码发美国短信会被大量过滤）</li>
+        <li>首次给新号码发消息时表明身份（"我是 Prime Anchor Workforce 的招工客服…"）</li>
+        <li>群发底部带上 "Reply STOP to opt out"（回 STOP 退订）字样</li>
+        <li>保持真实对话为主 — 一问一答的双向对话信誉最好，广播越少越安全</li>
+      </ul>
+    </div>
+    <button class="close-modal" onclick="document.getElementById('twilioTipsModal').classList.remove('show')">知道了</button>
+  </div>
+</div>
+
 <!-- 📊 消息统计 (仅 admin) -->
 <div class="modal-bg" id="msgStatsModal">
   <div class="modal" style="max-width:640px">
@@ -554,6 +616,8 @@ let currentContact = null;
 let currentMessages = [];
 let currentNotes = [];
 let noteMode = false;
+let _composeNoTranslate = false;   // 面试/工作要求模板已是双语, 发送时跳过机器翻译
+let _composeNoTranslateText = '';
 let searchTimeout = null;
 let listPage = 1;
 let listTotal = 0;
@@ -838,6 +902,20 @@ function renderDetail() {
   const statusEl = document.getElementById('detailStatus');
   statusEl.textContent = currentThread.status;
   statusEl.className = 'ti-status ' + currentThread.status;
+  // Twilio 合规: 对方已退订 → 红条 + 禁用发送
+  let ob = document.getElementById('optOutBanner');
+  if (!ob) {
+    ob = document.createElement('div');
+    ob.id = 'optOutBanner';
+    ob.style.cssText = 'display:none;background:#fef2f2;border-bottom:1px solid #fecaca;color:#b91c1c;font-size:.8rem;font-weight:700;padding:6px 12px';
+    const bar = document.getElementById('actionBar');
+    if (bar && bar.parentNode) bar.parentNode.insertBefore(ob, bar.nextSibling);
+  }
+  const optedOut = !!(currentContact && currentContact.opted_out);
+  ob.style.display = optedOut ? '' : 'none';
+  ob.textContent = optedOut ? '🚫 对方已回复 STOP 退订 — 系统已禁止向此号码发送（对方用英文回 START 自动恢复）。强行绕过会导致 Twilio 封号。' : '';
+  const sendBtnEl = document.getElementById('sendBtn');
+  if (sendBtnEl) sendBtnEl.disabled = optedOut;
 
   const eb = document.getElementById('evalBtn');
   if (eb) eb.style.display = (USER && USER.role === 'admin') ? '' : 'none';
@@ -852,6 +930,8 @@ function renderDetail() {
   document.getElementById('templatePicker').classList.remove('show');
   // Reset reply bar and translation preview
   noteMode = false;
+  _composeNoTranslate = false;
+  _composeNoTranslateText = '';
   document.getElementById('replyBar').classList.remove('note-mode');
   document.getElementById('noteToggle').classList.remove('active');
   document.getElementById('translatePreview').style.display = 'none';
@@ -980,6 +1060,28 @@ async function sendReply() {
     return;
   }
 
+  // Twilio 合规: 对方已退订则不发 (服务器还会再拦一道)
+  if (currentContact && currentContact.opted_out) {
+    toast('🚫 对方已回复 STOP 退订, 无法发送。对方用英文回 START 后自动恢复。');
+    return;
+  }
+
+  // Twilio 合规: 建议在对方本地 8:00-21:00 之间发送 (按美中时区算)
+  let hr = new Date().getHours();
+  try { hr = parseInt(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23', hour: 'numeric' }), 10); } catch (_) {}
+  if (hr >= 21 || hr < 8) {
+    const ok = await smsConfirm('对方当地现在约 ' + hr + ' 点（深夜/清晨）。运营商建议只在早 8 点到晚 9 点之间给客户发短信，频繁夜发会增加投诉和封号风险。确定现在发送吗？', { confirmLabel: '仍然发送', cancelLabel: '先不发', danger: true });
+    if (!ok) return;
+  }
+
+  // 面试确认/工作要求模板已经是西英双语, 原样发送, 不再机器翻译
+  if (_composeNoTranslate && body === _composeNoTranslateText) {
+    btn.disabled = true;
+    await doSendMessage(body, true);
+    btn.disabled = false;
+    return;
+  }
+
   // If languages differ, show translation confirmation first
   if (currentContactLang && currentAgentLang && currentContactLang !== currentAgentLang) {
     btn.disabled = true;
@@ -1025,38 +1127,55 @@ async function confirmTranslatedSend() {
   _pendingTranslatedText = null;
 }
 
-async function doSendMessage(body) {
+async function doSendMessage(body, noTranslate) {
   const input = document.getElementById('replyInput');
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
+  // Optimistic: add message to UI immediately
+  const tempMsg = {
+    id: Date.now(), thread_id: currentThread.id, direction: 'outbound',
+    source: 'agent', body, delivery_status: 'sending',
+    author_name: USER ? USER.username : '', created_at: new Date().toISOString(),
+    _type: 'message', _time: new Date().toISOString()
+  };
+  const tempId = tempMsg.id;
   try {
-    // Optimistic: add message to UI immediately
-    const tempMsg = {
-      id: Date.now(), thread_id: currentThread.id, direction: 'outbound',
-      source: 'agent', body, delivery_status: 'sending',
-      author_name: USER ? USER.username : '', created_at: new Date().toISOString(),
-      _type: 'message', _time: new Date().toISOString()
-    };
     currentMessages.push(tempMsg);
     renderMessages();
     input.value = '';
     document.getElementById('translatePreview').style.display = 'none';
 
     const r = await api('/sms/threads/' + currentThread.id + '/messages', {
-      method: 'POST', body: JSON.stringify({ body })
+      method: 'POST', body: JSON.stringify(noTranslate ? { body, no_translate: true } : { body })
     });
-    if (r.success && r.message) {
+    if (r && r.success && r.message) {
       // Replace temp message with real one
-      const idx = currentMessages.findIndex(m => m.id === tempMsg.id);
+      const idx = currentMessages.findIndex(m => m.id === tempId);
       if (idx >= 0) currentMessages[idx] = r.message;
       renderMessages();
+      _composeNoTranslate = false;
+      _composeNoTranslateText = '';
+    } else {
+      // 服务器拒绝 (如对方已退订 / Twilio 报错) — 撤掉临时气泡, 把文字放回输入框
+      currentMessages = currentMessages.filter(m => m.id !== tempId);
+      renderMessages();
+      input.value = body;
+      autoGrow(input);
+      toast((r && r.error) || '发送失败');
+      if (r && r.error && /STOP/.test(r.error) && currentContact) {
+        currentContact.opted_out = 1;
+        const ob = document.getElementById('optOutBanner');
+        if (ob) { ob.style.display = ''; ob.textContent = '🚫 对方已回复 STOP 退订 — 系统已禁止向此号码发送（对方用英文回 START 自动恢复）。强行绕过会导致 Twilio 封号。'; }
+      }
     }
   } catch(e) {
-    toast('Send failed: ' + (e.message || 'Unknown error'));
-    currentMessages = currentMessages.filter(m => m.id !== Date.now());
+    currentMessages = currentMessages.filter(m => m.id !== tempId);
     renderMessages();
+    input.value = body;
+    autoGrow(input);
+    toast('Send failed: ' + (e.message || 'Unknown error'));
   }
-  btn.disabled = false;
+  btn.disabled = !!(currentContact && currentContact.opted_out);
 }
 
 // ─── Language / Translation ───
@@ -1196,7 +1315,8 @@ async function reopenThread() {
 async function retryMessage(msgId) {
   if (!currentThread) return;
   try {
-    await api('/sms/threads/' + currentThread.id + '/retry/' + msgId, { method: 'POST' });
+    const r = await api('/sms/threads/' + currentThread.id + '/retry/' + msgId, { method: 'POST' });
+    if (r && r.error) { toast(r.error); return; }
     toast('Message resent');
     refreshMessages(currentThread.id);
   } catch(e) { toast('Retry failed: ' + (e.message || '')); }
@@ -1592,6 +1712,106 @@ async function runEvaluation() {
     document.getElementById('evalBody').innerHTML = _renderEval(r.parsed, r.raw, '刚刚 · ' + (r.model || ''));
   } catch (e) { toast('评估失败: ' + (e.message || e)); }
   btn.disabled = false; btn.textContent = '开始评估';
+}
+// ─── 📅 面试安排 ───
+let _ivTpls = null;
+async function showInterviewModal() {
+  if (!currentThread) { toast('先打开一个对话'); return; }
+  document.getElementById('interviewModal').classList.add('show');
+  document.getElementById('ivTplWrap').style.display = (USER && USER.role === 'admin') ? '' : 'none';
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/interview');
+    const iv = r && r.interview;
+    const cur = document.getElementById('ivCurrent');
+    if (iv) {
+      cur.style.display = '';
+      cur.innerHTML = '📌 已安排: <b>' + esc(iv.interview_at.replace('T', ' ')) + '</b>' + (iv.address ? ' · 📍 ' + esc(iv.address) : '')
+        + (iv.note ? ' · ' + esc(iv.note) : '')
+        + ' <a style="cursor:pointer;text-decoration:underline;margin-left:8px" onclick="setInterviewStatus(' + iv.id + ',\'done\')">✅完成</a>'
+        + ' <a style="cursor:pointer;text-decoration:underline" onclick="setInterviewStatus(' + iv.id + ',\'no_show\')">🙅未到</a>'
+        + ' <a style="cursor:pointer;text-decoration:underline;color:#dc2626" onclick="setInterviewStatus(' + iv.id + ',\'cancelled\')">取消</a>';
+      document.getElementById('ivAt').value = iv.interview_at.slice(0, 16);
+      document.getElementById('ivAddr').value = iv.address || '';
+      document.getElementById('ivNote').value = iv.note || '';
+    } else {
+      cur.style.display = 'none';
+      document.getElementById('ivAt').value = '';
+      document.getElementById('ivAddr').value = '';
+      document.getElementById('ivNote').value = '';
+    }
+  } catch (_) {}
+  loadUpcomingInterviews();
+  if (!_ivTpls) {
+    try {
+      _ivTpls = await api('/sms/interview-templates');
+      document.getElementById('ivTplConfirm').value = _ivTpls.confirm || '';
+      document.getElementById('ivTplReq').value = _ivTpls.requirements || '';
+    } catch (_) {}
+  }
+}
+async function saveInterview() {
+  const at = document.getElementById('ivAt').value;
+  if (!at) { toast('请选择面试时间'); return; }
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/interview', { method: 'POST', body: JSON.stringify({
+      interview_at: at, address: document.getElementById('ivAddr').value.trim(), note: document.getElementById('ivNote').value.trim()
+    }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('📅 面试已保存');
+    showInterviewModal();
+  } catch (e) { toast(e.message || '保存失败'); }
+}
+async function setInterviewStatus(id, st) {
+  try {
+    const r = await api('/sms/interviews/' + id, { method: 'PATCH', body: JSON.stringify({ status: st }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('已更新');
+    showInterviewModal();
+  } catch (e) { toast(e.message || '操作失败'); }
+}
+async function loadUpcomingInterviews() {
+  const el = document.getElementById('ivUpcoming');
+  try {
+    const r = await api('/sms/interviews/upcoming?days=14');
+    const list = (r && r.interviews) || [];
+    el.innerHTML = list.length ? list.map(iv =>
+      '<div style="display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;' + (iv.thread_id ? 'cursor:pointer" onclick="document.getElementById(\'interviewModal\').classList.remove(\'show\');openThread(' + iv.thread_id + ')"' : '"')  + '>'
+      + '<b style="white-space:nowrap">' + esc(String(iv.interview_at).replace('T', ' ').slice(5, 16)) + '</b>'
+      + '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(iv.contact_name || fmtPhone(iv.phone_e164)) + (iv.address ? ' · 📍' + esc(iv.address) : '') + '</span></div>'
+    ).join('') : '<div style="padding:10px;color:var(--gray-400);font-size:.8rem;text-align:center">近 14 天没有已安排的面试</div>';
+  } catch (_) { el.innerHTML = ''; }
+}
+function fillInterviewMsg(kind) {
+  if (!_ivTpls) { toast('模板还没加载好, 再点一次'); return; }
+  const at = document.getElementById('ivAt').value;
+  if (kind === 'confirm' && !at) { toast('先填好面试时间再发确认'); return; }
+  let text = kind === 'confirm' ? (_ivTpls.confirm || '') : (_ivTpls.requirements || '');
+  const name = (currentContact && currentContact.name) || '';
+  const d = at ? at.slice(0, 10) : '';
+  const t = at ? at.slice(11, 16) : '';
+  text = text.replace(/\{name\}/g, name).replace(/\{date\}/g, d).replace(/\{time\}/g, t)
+             .replace(/\{address\}/g, document.getElementById('ivAddr').value.trim());
+  document.getElementById('interviewModal').classList.remove('show');
+  if (noteMode) toggleNoteMode();   // 备注模式下会存成内部备注而不是真的发出去
+  const inp = document.getElementById('replyInput');
+  inp.value = text;
+  _composeNoTranslate = true;       // 模板本身已是西英双语, 发送时不再机器翻译
+  _composeNoTranslateText = text;
+  document.getElementById('translatePreview').style.display = 'none';
+  autoGrow(inp);
+  inp.focus();
+  toast('模板已填入发送框 — 检查无误后点发送');
+}
+async function saveInterviewTpls() {
+  try {
+    const r = await api('/sms/interview-templates', { method: 'PUT', body: JSON.stringify({
+      confirm: document.getElementById('ivTplConfirm').value,
+      requirements: document.getElementById('ivTplReq').value
+    }) });
+    if (r && r.error) throw new Error(r.error);
+    _ivTpls = { confirm: document.getElementById('ivTplConfirm').value, requirements: document.getElementById('ivTplReq').value };
+    toast('模板已保存');
+  } catch (e) { toast(e.message || '保存失败'); }
 }
 // ─── 📊 消息统计 (仅 admin) ───
 let _msgStatsDays = 14, _msgStatsDate = '';
@@ -2051,13 +2271,20 @@ async function sendBroadcast() {
   const message = document.getElementById('bcMessage').value.trim();
   if (phones.length === 0) { toast('Please select at least one recipient'); return; }
   if (!message) { toast('Please enter a message'); return; }
-  if (!await smsConfirm('发送短信给 ' + phones.length + ' 个收件人？', { confirmLabel: 'Send' })) return;
+  // Twilio 合规: 深夜/清晨群发风险更高
+  let hr = new Date().getHours();
+  try { hr = parseInt(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23', hour: 'numeric' }), 10); } catch (_) {}
+  if (hr >= 21 || hr < 8) {
+    const okHr = await smsConfirm('对方当地现在约 ' + hr + ' 点（深夜/清晨）。群发在这个时段最容易引发投诉和封号，强烈建议早 8 点到晚 9 点之间再发。确定现在群发吗？', { confirmLabel: '仍然群发', cancelLabel: '先不发', danger: true });
+    if (!okHr) return;
+  }
+  if (!await smsConfirm('发送短信给 ' + phones.length + ' 个收件人？（已回 STOP 退订的号码会自动跳过）', { confirmLabel: 'Send' })) return;
 
   const btn = document.getElementById('bcSendBtn');
   const status = document.getElementById('bcStatus');
   btn.disabled = true;
   btn.textContent = 'Sending...';
-  status.textContent = 'Sending to ' + phones.length + ' recipients...';
+  status.textContent = 'Sending to ' + phones.length + ' recipients... 人多时会比较慢, 请勿关闭或重复点击';
 
   try {
     const r = await api('/sms/broadcast', {
@@ -2066,13 +2293,15 @@ async function sendBroadcast() {
     });
     const sent = r.results ? r.results.filter(x => x.ok).length : 0;
     const failed = r.results ? r.results.filter(x => !x.ok).length : 0;
+    const skipped = r.opted_out_skipped || 0;
     status.innerHTML = '<span style="color:var(--green)">Sent: ' + sent + '</span>' +
-      (failed > 0 ? ' &nbsp; <span style="color:var(--red)">Failed: ' + failed + '</span>' : '');
+      (failed > 0 ? ' &nbsp; <span style="color:var(--red)">Failed: ' + failed + '</span>' : '') +
+      (skipped > 0 ? ' &nbsp; <span style="color:#b45309">已退订跳过: ' + skipped + '</span>' : '');
     btn.textContent = 'Done';
-    toast('Broadcast complete: ' + sent + ' sent, ' + failed + ' failed');
+    toast('Broadcast complete: ' + sent + ' sent, ' + failed + ' failed' + (skipped ? ', ' + skipped + ' 已退订跳过' : ''));
     setTimeout(() => { loadThreads(); }, 1000);
   } catch(e) {
-    status.textContent = 'Error: ' + e.message;
+    status.textContent = 'Error: ' + e.message + ' — 如果是超时(timeout), 后台很可能仍在逐条发送, 不要马上重发同一批, 稍后在会话列表里核对';
     btn.disabled = false;
     btn.textContent = 'Send to All';
   }
