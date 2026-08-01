@@ -28748,6 +28748,12 @@ function requireSmsAccess(req, res, next) {
   next();
 }
 
+// 客服(非 admin)不能看到电话/邮箱, 电话只显示尾号 4 位
+function smsMaskPhone(p) {
+  const d = String(p || '').replace(/\D/g, '');
+  return d.length >= 4 ? '••• ' + d.slice(-4) : (d ? '•••' : '');
+}
+
 // ═══ Agent Secure Link ═══
 app.get('/sms/t/:token', (req, res) => {
   try {
@@ -28866,10 +28872,11 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
       LIMIT ? OFFSET ?`;
     const threads = db.prepare(dataSql).all(...params, pageSize, offset);
 
+    const _mask = req.userRole !== 'admin';
     res.json({
       threads: threads.map(t => ({
         id: t.id,
-        contact: { id: t.contact_id, phone_e164: t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out },
+        contact: { id: t.contact_id, phone_e164: _mask ? smsMaskPhone(t.phone_e164) : t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out },
         status: t.status,
         priority: t.priority,
         assigned_agent: t.assigned_agent_id ? { id: t.assigned_agent_id, username: t.agent_username } : null,
@@ -28917,10 +28924,11 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
       },
       contact: {
         id: thread.contact_id,
-        phone_e164: thread.phone_e164,
+        // 客服(非 admin)看不到完整电话/邮箱
+        phone_e164: req.userRole === 'admin' ? thread.phone_e164 : smsMaskPhone(thread.phone_e164),
         name: thread.contact_name,
         company: thread.contact_company,
-        email: thread.contact_email,
+        email: req.userRole === 'admin' ? thread.contact_email : '',
         employee_id: thread.employee_id,
         tags: thread.contact_tags,
         notes: thread.contact_notes,
@@ -28946,6 +28954,9 @@ app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, r
       LEFT JOIN admin_users a ON a.id=n.author_agent_id
       WHERE n.thread_id=? ORDER BY n.created_at ASC`).all(req.params.id);
 
+    if (req.userRole !== 'admin') {
+      for (const m of messages) { m.from_number = smsMaskPhone(m.from_number); m.to_number = smsMaskPhone(m.to_number); }
+    }
     res.json({ messages, notes });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -29035,6 +29046,7 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
 
     const message = db.prepare(`SELECT m.*, COALESCE(NULLIF(a.display_name,''), a.username) as author_name
       FROM sms_messages m LEFT JOIN admin_users a ON a.id=m.author_agent_id WHERE m.id=?`).get(messageId);
+    if (req.userRole !== 'admin' && message) { message.from_number = smsMaskPhone(message.from_number); message.to_number = smsMaskPhone(message.to_number); }
     res.json({ success: true, message });
   } catch(e) {
     console.error('[SMS Send] Error:', e.message);
@@ -29471,6 +29483,17 @@ app.get('/api/sms/threads/:id/history', requireAdmin, requireSmsAccess, (req, re
       WHERE entity_type='thread' AND entity_id=?
       ORDER BY created_at ASC`).all(req.params.id);
 
+    // 客服看不到审计里的完整电话
+    if (req.userRole !== 'admin') {
+      for (const a of audits) {
+        try {
+          const m = JSON.parse(a.metadata || '{}');
+          let dirty = false;
+          for (const k of ['phone', 'to', 'from']) { if (m[k]) { m[k] = smsMaskPhone(m[k]); dirty = true; } }
+          if (dirty) a.metadata = JSON.stringify(m);
+        } catch (_) {}
+      }
+    }
     res.json({ assignments, audits });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -29564,7 +29587,7 @@ app.get('/api/sms/partners', requireAdmin, requireSmsAccess, (req, res) => {
 });
 
 // GET /api/sms/partners/:id/employees — list employees linked to a partner (through jobs)
-app.get('/api/sms/partners/:id/employees', requireAdmin, requireSmsAccess, (req, res) => {
+app.get('/api/sms/partners/:id/employees', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const partnerId = parseInt(req.params.id);
     // Find employees who have worked on jobs for this partner (through time entries)
@@ -29583,7 +29606,7 @@ app.get('/api/sms/partners/:id/employees', requireAdmin, requireSmsAccess, (req,
 });
 
 // GET /api/sms/all-employees — list all active employees with phone numbers
-app.get('/api/sms/all-employees', requireAdmin, requireSmsAccess, (req, res) => {
+app.get('/api/sms/all-employees', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const employees = db.prepare(`SELECT id, first_name, last_name, phone, email, position, status FROM employees WHERE status='active' AND phone != '' ORDER BY first_name, last_name`).all();
     res.json({ employees });
@@ -29615,6 +29638,7 @@ app.get('/api/sms/starred', requireAdmin, requireSmsAccess, (req, res) => {
       LEFT JOIN admin_users u ON u.id = m.starred_by
       WHERE m.starred=1 ${tid ? 'AND m.thread_id=?' : ''}
       ORDER BY m.starred_at DESC LIMIT 300`).all(...(tid ? [tid] : []));
+    if (req.userRole !== 'admin') for (const r2 of rows) r2.phone_e164 = smsMaskPhone(r2.phone_e164);
     res.json({ messages: rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -29825,10 +29849,11 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
     const apps = db.prepare(`SELECT id, name, phone, position, partner_name FROM applicant_submissions
       WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)
       ORDER BY id DESC LIMIT 30`).all(q, like, like, like, like);
+    const _mask = req.userRole !== 'admin';
     const people = [
-      ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: e.phone,
+      ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: _mask ? smsMaskPhone(e.phone) : e.phone,
         extra: [e.position, e.status === 'active' ? '在职' : e.status].filter(Boolean).join(' · ') })),
-      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: a.phone,
+      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: _mask ? smsMaskPhone(a.phone) : a.phone,
         extra: [a.position, a.partner_name].filter(Boolean).join(' · ') })),
     ];
     res.json({ people });
@@ -29839,8 +29864,17 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
 app.post('/api/sms/start-thread', requireAdmin, requireSmsAccess, (req, res) => {
   try {
     const b = req.body || {};
-    const phoneE164 = formatPhoneE164(String(b.phone || ''));
-    if (!phoneE164 || !/^\+\d{8,15}$/.test(phoneE164)) return res.status(400).json({ error: '电话号码无效: ' + (b.phone || '') });
+    // 优先按 type+ref_id 由服务器查电话 (客服端电话是打码的, 不能直接用)
+    let phoneRaw = String(b.phone || '');
+    if (b.type === 'employee' && b.ref_id) {
+      const e = db.prepare('SELECT phone FROM employees WHERE id=?').get(parseInt(b.ref_id) || 0);
+      if (e && e.phone) phoneRaw = e.phone;
+    } else if (b.type === 'applicant' && b.ref_id) {
+      const a = db.prepare('SELECT phone FROM applicant_submissions WHERE id=?').get(parseInt(b.ref_id) || 0);
+      if (a && a.phone) phoneRaw = a.phone;
+    }
+    const phoneE164 = formatPhoneE164(phoneRaw);
+    if (!phoneE164 || !/^\+\d{8,15}$/.test(phoneE164)) return res.status(400).json({ error: '电话号码无效' });
     const contact = smsGetOrCreateContact(phoneE164);
     if (b.name && !contact.name) db.prepare(`UPDATE sms_contacts SET name=?, updated_at=datetime('now') WHERE id=?`).run(String(b.name).slice(0, 120), contact.id);
     if (b.employee_id && !contact.employee_id) db.prepare(`UPDATE sms_contacts SET employee_id=?, updated_at=datetime('now') WHERE id=?`).run(parseInt(b.employee_id) || null, contact.id);
@@ -29851,8 +29885,8 @@ app.post('/api/sms/start-thread', requireAdmin, requireSmsAccess, (req, res) => 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/sms/broadcast — send SMS to multiple recipients
-app.post('/api/sms/broadcast', requireAdmin, requireSmsAccess, async (req, res) => {
+// POST /api/sms/broadcast — send SMS to multiple recipients (群发含电话名单, 仅 admin)
+app.post('/api/sms/broadcast', requireAdmin, requireRole('admin'), async (req, res) => {
   try {
     const { phones, message } = req.body;
     if (!phones || !Array.isArray(phones) || phones.length === 0) return res.status(400).json({ error: 'phones array required' });
