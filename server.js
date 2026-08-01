@@ -28831,7 +28831,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
       _smsNameBackfillAt = Date.now();
       try { smsBackfillContactNames(); } catch (_) {}
     }
-    const { status, agent_id, search, unread, tag, page, limit: lim } = req.query;
+    const { status, agent_id, search, unread, tag, company, jobtag, page, limit: lim } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(lim) || 20));
     const offset = (pageNum - 1) * pageSize;
@@ -28872,6 +28872,17 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     if (tag) {
       where += ` AND t.tags LIKE ?`;
       params.push(`%${tag}%`);
+    }
+
+    // 按公司筛选: 当前公司 或 工作经历里干过的公司
+    if (company) {
+      where += ` AND (COALESCE(c.company,'') LIKE ? OR COALESCE(c.work_history,'[]') LIKE ?)`;
+      params.push(`%${company}%`, `%${company}%`);
+    }
+    // 按工种筛选: 工种标签 或 工作经历里的工种
+    if (jobtag) {
+      where += ` AND (COALESCE(c.tags,'[]') LIKE ? OR COALESCE(c.work_history,'[]') LIKE ?)`;
+      params.push(`%${jobtag}%`, `%${jobtag}%`);
     }
 
     // 回了 STOP 退订的对话对客服(非 admin)隐藏, admin 仍可见
