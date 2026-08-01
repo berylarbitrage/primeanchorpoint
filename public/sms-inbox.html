@@ -2120,7 +2120,8 @@ const MARK_FIELDS = {
   '卸柜': [['container', '柜号', 'text', '如 MSKU1234567'], ['date', '日期', 'date', ''], ['detail', '具体细节', 'text', '如 早7点 / GOFO仓库 / 约2000件']],
   '面试': [['company', '公司', 'text', '如 GOFO'], ['time', '时间', 'datetime-local', ''], ['detail', '地址 / 找谁', 'text', '']],
   '发工资': [['date', '发薪日期', 'date', ''], ['amount', '金额', 'text', '如 $560'], ['detail', '方式/说明', 'text', '如 支票 / Zelle']],
-  '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']]
+  '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']],
+  '请假': [['date', '开始日期', 'date', ''], ['end', '结束日期(可选)', 'date', ''], ['reason', '原因', 'text', '如 生病 / 家里有事']]
 };
 // 一键生成发给对方的消息(中文, 走现有自动翻译流程翻成对方语言)
 const MARK_MSG_TPL = {
