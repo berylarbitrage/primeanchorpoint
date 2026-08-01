@@ -30102,15 +30102,16 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
       WHERE phone != '' AND (? = '' OR first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ? OR phone LIKE ? OR position LIKE ?
         OR replace(replace(replace(replace(replace(phone,'(',''),')',''),'-',''),' ',''),'+','') LIKE ?)
       ORDER BY (status='active') DESC, first_name, last_name LIMIT 30`).all(q, like, like, like, like, like, digitsLike);
-    const apps = db.prepare(`SELECT id, name, phone, position, partner_name FROM applicant_submissions
+    const _mask = req.userRole !== 'admin';
+    // 申请人(还没建档)只有 admin 能看到; 客服只能看到管理员建立过档案的员工
+    const apps = _mask ? [] : db.prepare(`SELECT id, name, phone, position, partner_name FROM applicant_submissions
       WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)
       ORDER BY id DESC LIMIT 30`).all(q, like, like, like, like);
-    const _mask = req.userRole !== 'admin';
     const people = [
-      // 员工=已入职 → 客服可见尾号; 申请人=未入职 → 客服完全看不到电话
+      // 员工=已入职 → 客服可见尾号
       ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: _mask ? smsMaskPhone(e.phone) : e.phone,
         extra: [e.position, e.status === 'active' ? '在职' : e.status].filter(Boolean).join(' · ') })),
-      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: _mask ? '' : a.phone,
+      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: a.phone,
         extra: [a.position, a.partner_name].filter(Boolean).join(' · ') })),
     ];
     res.json({ people });
@@ -30121,6 +30122,8 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
 app.post('/api/sms/start-thread', requireAdmin, requireSmsAccess, (req, res) => {
   try {
     const b = req.body || {};
+    // 申请人(未建档)只有 admin 能发起对话
+    if (b.type === 'applicant' && req.userRole !== 'admin') return res.status(403).json({ error: '申请人需要管理员建档后才能联系' });
     // 优先按 type+ref_id 由服务器查电话 (客服端电话是打码的, 不能直接用)
     let phoneRaw = String(b.phone || '');
     if (b.type === 'employee' && b.ref_id) {
