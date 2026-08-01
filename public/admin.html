@@ -40713,7 +40713,8 @@ let _applyQrLang = 'zh';
 const APPLY_QR_I18N = {
   zh: {
     title: '🪪 招工申请二维码', close: '× 关闭', company: '公司：',
-    loading: '生成中…', copy: '📋 复制链接', download: '⬇ 下载二维码', regen: '↻ 重新生成',
+    loading: '生成中…', copy: '📋 复制链接', download: '⬇ 下载二维码', print46: '🖨 打印 4×6', regen: '↻ 重新生成',
+    scanHint: '扫码申请 · Scan to Apply', printBlocked: '浏览器拦截了打印窗口，请允许弹窗后重试',
     regenTitle: '作废旧二维码并生成新的', loadFail: '加载失败：',
     copied: '已复制链接', regenConfirm: '重新生成后，旧二维码将立即失效。确定继续？', regenFail: '失败：',
     genericName: '通用（不限公司）',
@@ -40722,7 +40723,8 @@ const APPLY_QR_I18N = {
   },
   en: {
     title: '🪪 Applicant QR Code', close: '× Close', company: 'Company: ',
-    loading: 'Generating…', copy: '📋 Copy link', download: '⬇ Download QR', regen: '↻ Regenerate',
+    loading: 'Generating…', copy: '📋 Copy link', download: '⬇ Download QR', print46: '🖨 Print 4×6', regen: '↻ Regenerate',
+    scanHint: 'Scan to Apply · 扫码申请', printBlocked: 'The browser blocked the print window — allow pop-ups and retry',
     regenTitle: 'Void the old QR code and generate a new one', loadFail: 'Load failed: ',
     copied: 'Link copied', regenConfirm: 'Regenerating will immediately invalidate the old QR code. Continue?', regenFail: 'Failed: ',
     genericName: 'General (any company)',
@@ -40731,7 +40733,8 @@ const APPLY_QR_I18N = {
   },
   es: {
     title: '🪪 Código QR de solicitud', close: '× Cerrar', company: 'Empresa: ',
-    loading: 'Generando…', copy: '📋 Copiar enlace', download: '⬇ Descargar QR', regen: '↻ Regenerar',
+    loading: 'Generando…', copy: '📋 Copiar enlace', download: '⬇ Descargar QR', print46: '🖨 Imprimir 4×6', regen: '↻ Regenerar',
+    scanHint: 'Escanee para aplicar · Scan to Apply', printBlocked: 'El navegador bloqueó la ventana de impresión; permita ventanas emergentes y reintente',
     regenTitle: 'Anular el QR anterior y generar uno nuevo', loadFail: 'Error al cargar: ',
     copied: 'Enlace copiado', regenConfirm: 'Al regenerar, el QR anterior quedará invalidado de inmediato. ¿Continuar?', regenFail: 'Error: ',
     genericName: 'General (cualquier empresa)',
@@ -40820,6 +40823,7 @@ function renderApplyQrList() {
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;justify-content:center">
         <button class="btn btn-sm btn-outline" onclick="copyApplyUrlFor(${sel})">${esc(t.copy)}</button>
         <button class="btn btn-sm btn-outline" onclick="downloadApplyQrFor(${sel})">${esc(t.download)}</button>
+        <button class="btn btn-sm btn-outline" onclick="printApplyQr46(${sel})">${esc(t.print46)}</button>
       </div>
     </div>`;
   const box = document.getElementById('applyQrBoxSel');
@@ -40852,6 +40856,44 @@ function downloadApplyQrFor(i) {
   a.href = src;
   a.download = `招工二维码-${(_applyQrState.generic ? '通用' : _applyQrState.partnerName || 'company').replace(/[^\w一-龥-]/g, '_')}${stateSuffix}.png`;
   a.click();
+}
+// 🖨 把当前二维码打成一张 4×6 寸标签（热敏/标签打印机常用尺寸），自动弹打印
+function printApplyQr46(i) {
+  const t = APPLY_QR_I18N[_applyQrLang];
+  const q = (_applyQrState.qrs || [])[i];
+  const box = document.getElementById('applyQrBoxSel');
+  const img = box && (box.querySelector('img') || box.querySelector('canvas'));
+  if (!q || !img) return;
+  const src = img.tagName === 'CANVAS' ? img.toDataURL('image/png') : img.src;
+  const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const name = _applyQrState.generic ? t.genericName : (_applyQrState.partnerName || '');
+  const w = window.open('', '_blank');
+  if (!w) { alert(t.printBlocked); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>QR 4x6</title>
+<style>
+  @page { size: 4in 6in; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Segoe UI', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #0f172a; }
+  .page { width: 4in; height: 6in; padding: 0.22in; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .tt { font-size: 15pt; font-weight: 800; letter-spacing: .5px; }
+  .co { font-size: 11pt; font-weight: 700; color: #3730a3; margin-top: 3px; }
+  .st { font-size: 10.5pt; font-weight: 700; color: #be123c; margin-top: 2px; }
+  img { width: 3.1in; height: 3.1in; margin: 0.12in 0 0.08in; }
+  .hint { font-size: 10pt; font-weight: 700; }
+  .url { font-family: 'Courier New', monospace; font-size: 6.2pt; color: #64748b; word-break: break-all; margin-top: 5px; max-width: 3.4in; }
+  @media screen { body { background: #64748b; } .page { background: #fff; margin: 16px auto; box-shadow: 0 2px 12px rgba(0,0,0,.3); } }
+</style></head><body>
+  <div class="page">
+    <div class="tt">🪪 招工申请 JOB APPLICATION</div>
+    ${name ? `<div class="co">${esca(name)}</div>` : ''}
+    ${q.state ? `<div class="st">📍 ${esca(q.state)}</div>` : ''}
+    <img src="${src}" alt="QR">
+    <div class="hint">${esca(t.scanHint)}</div>
+    <div class="url">${esca(q.url)}</div>
+  </div>
+  <script>window.onload = () => setTimeout(() => window.print(), 200);<\/script>
+</body></html>`);
+  w.document.close();
 }
 async function regenerateApplyQr() {
   if (!_applyQrState.partnerId && !_applyQrState.generic) return;
