@@ -540,9 +540,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   <div class="modal" style="max-width:420px">
     <h3>&#128204; 标记这条消息</h3>
     <div id="markMsgPreview" style="background:var(--gray-100);border-radius:8px;padding:8px 12px;font-size:.82rem;color:var(--gray-600);margin-bottom:10px;max-height:80px;overflow-y:auto;word-break:break-word"></div>
-    <label>类别（点选或自己填）</label>
+    <label>类别（点选，可留空只标星）</label>
     <div id="markTagChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
-    <input id="markTagInput" placeholder="自定义类别（可留空，只标星）" maxlength="40" style="margin-bottom:4px" oninput="_renderMarkChips()">
     <div id="markFields"></div>
     <label>备注（可选）</label>
     <textarea id="markNote" rows="2" placeholder="其他补充说明" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
@@ -2088,13 +2087,22 @@ function ncSetChannel(ch) {
 
 // ─── 📌 消息标记: 分类(卸柜/面试/发工资…) + 每类专属字段 + 备注 ───
 const MARK_TAG_PRESETS = ['卸柜', '面试', '发工资', '排班', '请假', '投诉'];
-// 每个类别自己的表单字段: [key, 标签, 输入类型, 占位提示]
+// 每个类别自己的表单字段: [key, 标签, 输入类型, 占位提示]; 类型 'company' 渲染成合作公司下拉
 const MARK_FIELDS = {
   '卸柜': [['container', '柜号', 'text', '如 MSKU1234567'], ['date', '日期', 'date', ''], ['detail', '具体细节', 'text', '如 早7点 / GOFO仓库 / 约2000件']],
-  '面试': [['company', '公司', 'text', '如 GOFO'], ['time', '时间', 'datetime-local', ''], ['detail', '地址 / 找谁', 'text', '']],
+  '面试': [['company', '公司', 'company', ''], ['time', '时间', 'datetime-local', ''], ['detail', '地址 / 找谁', 'text', '']],
   '发工资': [['date', '发薪日期', 'date', ''], ['amount', '金额', 'text', '如 $560'], ['detail', '方式/说明', 'text', '如 支票 / Zelle']],
   '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']]
 };
+// 公司下拉选项 (来自 /sms/partners, 与列表页公司筛选同一来源)
+let _markPartnerNames = [];
+async function _loadMarkPartners() {
+  if (_markPartnerNames.length) return;
+  try {
+    const r = await api('/sms/partners');
+    _markPartnerNames = (r.partners || []).map(p => p.name).filter(Boolean);
+  } catch (_) {}
+}
 // 一键生成发给对方的消息(中文, 走现有自动翻译流程翻成对方语言)
 const MARK_MSG_TPL = {
   '卸柜': d => '卸柜安排: ' + [d.container && ('柜号 ' + d.container), d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', '),
@@ -2111,19 +2119,30 @@ function _collectMarkData() {
   return data;
 }
 function renderMarkFields(prefill) {
-  const tag = document.getElementById('markTagInput').value.trim();
+  const tag = _markTag;
   const defs = MARK_FIELDS[tag];
   const box = document.getElementById('markFields');
   const sendBtn = document.getElementById('markSendBtn');
   if (!defs) { box.innerHTML = ''; if (sendBtn) sendBtn.style.display = 'none'; return; }
   const d = prefill || {};
-  box.innerHTML = defs.map(([k, label, type, ph]) =>
-    '<label style="margin-top:2px">' + label + '</label>'
-    + '<input data-mkf="' + k + '" type="' + type + '" placeholder="' + esc(ph) + '" value="' + esc(d[k] || '') + '" style="margin-bottom:4px">'
-  ).join('');
+  box.innerHTML = defs.map(([k, label, type, ph]) => {
+    if (type === 'company') {
+      // 下拉选公司; 老数据里的公司名不在列表时也补成一个选项, 保证能回显
+      const names = _markPartnerNames.slice();
+      if (d[k] && !names.includes(d[k])) names.unshift(d[k]);
+      return '<label style="margin-top:2px">' + label + '</label>'
+        + '<select data-mkf="' + k + '" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:4px;outline:none;background:var(--white)">'
+        + '<option value="">— 选择公司 —</option>'
+        + names.map(n => '<option value="' + esc(n) + '"' + (n === d[k] ? ' selected' : '') + '>' + esc(n) + '</option>').join('')
+        + '</select>';
+    }
+    return '<label style="margin-top:2px">' + label + '</label>'
+      + '<input data-mkf="' + k + '" type="' + type + '" placeholder="' + esc(ph) + '" value="' + esc(d[k] || '') + '" style="margin-bottom:4px">';
+  }).join('');
   if (sendBtn) sendBtn.style.display = MARK_MSG_TPL[tag] ? '' : 'none';
 }
 let _markMsgId = null;
+let _markTag = '';   // 当前选中的类别 (只能点选, 不再手填)
 // 点消息气泡直接标注 (正在选中文字复制时不触发)
 function bubbleMark(msgId) {
   try { if (String((window.getSelection && window.getSelection()) || '')) return; } catch (_) {}
@@ -2135,24 +2154,25 @@ function toggleStar(msgId) {
   if (m.delivery_status === 'sending') { toast('正在发送中, 稍等一下再标注'); return; }
   _markMsgId = msgId;
   document.getElementById('markMsgPreview').textContent = (m.body || '').slice(0, 200);
-  document.getElementById('markTagInput').value = m.mark_tag || '';
+  _markTag = m.mark_tag || '';
   document.getElementById('markNote').value = m.mark_note || '';
   document.getElementById('markRemoveBtn').style.display = m.starred ? '' : 'none';
-  _renderMarkChips();
   let pre = {}; try { pre = JSON.parse(m.mark_data || '{}'); } catch (_) {}
-  renderMarkFields(pre);
+  _loadMarkPartners().then(() => { _renderMarkChips(pre); });
+  _renderMarkChips(pre);
   document.getElementById('msgMarkModal').classList.add('show');
 }
-function _renderMarkChips() {
-  const cur = document.getElementById('markTagInput').value.trim();
-  document.getElementById('markTagChips').innerHTML = MARK_TAG_PRESETS.map(t =>
-    '<button type="button" onclick="_pickMarkTag(\'' + t + '\')" style="border:1px solid ' + (t === cur ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)') + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">' + t + '</button>'
+function _renderMarkChips(prefill) {
+  // 老数据里可能有手填的自定义类别, 不在预设里也显示成一个可点的胶囊
+  const tags = MARK_TAG_PRESETS.slice();
+  if (_markTag && !tags.includes(_markTag)) tags.push(_markTag);
+  document.getElementById('markTagChips').innerHTML = tags.map(t =>
+    '<button type="button" onclick="_pickMarkTag(\'' + t + '\')" style="border:1px solid ' + (t === _markTag ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)') + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">' + t + '</button>'
   ).join('');
-  renderMarkFields();
+  renderMarkFields(prefill);
 }
 function _pickMarkTag(t) {
-  const inp = document.getElementById('markTagInput');
-  inp.value = (inp.value.trim() === t) ? '' : t;   // 再点一次取消选择
+  _markTag = (_markTag === t) ? '' : t;   // 再点一次取消选择
   _renderMarkChips();
 }
 async function saveMark(remove) {
@@ -2160,7 +2180,7 @@ async function saveMark(remove) {
   try {
     const payload = remove ? { starred: 0 } : {
       starred: 1,
-      tag: document.getElementById('markTagInput').value.trim(),
+      tag: _markTag,
       note: document.getElementById('markNote').value.trim(),
       data: _collectMarkData()
     };
@@ -2182,7 +2202,7 @@ async function saveMark(remove) {
 }
 // 保存标记 + 按类别模板生成消息填入发送框 (走现有自动翻译, 你确认后发送)
 async function saveMarkAndCompose() {
-  const tag = document.getElementById('markTagInput').value.trim();
+  const tag = _markTag;
   const gen = MARK_MSG_TPL[tag];
   const data = _collectMarkData();
   const ok = await saveMark(false);
