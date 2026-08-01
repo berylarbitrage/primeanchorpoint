@@ -2921,6 +2921,36 @@ db.exec(`CREATE TABLE IF NOT EXISTS sms_interviews (
   updated_at TEXT DEFAULT (datetime('now'))
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_interviews_contact ON sms_interviews(contact_id)`); } catch(e) {}
+// 客服自助注册: 邀请码(二维码) + 邮箱验证码改密码 + admin 可见密码(加密存)
+try { db.exec(`ALTER TABLE admin_users ADD COLUMN pw_visible TEXT DEFAULT ''`); } catch(e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS sms_cs_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  created_by INTEGER,
+  expires_at TEXT,
+  used_count INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS cs_pw_resets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  code_hash TEXT NOT NULL,
+  attempts INTEGER DEFAULT 0,
+  expires_at TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+// 🆘 客服请求管理员协助
+db.exec(`CREATE TABLE IF NOT EXISTS sms_assist_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER DEFAULT NULL,
+  agent_id INTEGER,
+  context TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  status TEXT DEFAULT 'open',
+  created_at TEXT DEFAULT (datetime('now')),
+  done_at TEXT DEFAULT NULL
+)`);
+
 // 🛡️ AI 出站审核拦截记录 (客服消息被 red-flag 拦下时存档, 仅 admin 可看)
 db.exec(`CREATE TABLE IF NOT EXISTS sms_ai_blocks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28881,6 +28911,16 @@ function smsPhoneForRole(req, phone, employeeId) {
   return smsMaskPhone(phone);
 }
 
+// ─── 客服账号: 密码策略 + admin 可见密码(用文件加密钥加密存储) ───
+function csPwPolicy(pw) {
+  const s = String(pw || '');
+  if (s.length < 8) return '密码至少 8 位';
+  if (!/[A-Za-z]/.test(s) || !/\d/.test(s)) return '密码需同时包含字母和数字';
+  return null;
+}
+function csEncPw(pw) { try { return encryptFileBuf(Buffer.from(String(pw), 'utf8')).toString('base64'); } catch (_) { return ''; } }
+function csDecPw(b64) { if (!b64) return ''; try { return decryptFileBuf(Buffer.from(String(b64), 'base64')).toString('utf8'); } catch (_) { return ''; } }
+
 // ═══ Agent Secure Link ═══
 app.get('/sms/t/:token', (req, res) => {
   try {
@@ -29787,7 +29827,7 @@ app.get('/api/sms/all-employees', requireAdmin, requireRole('admin'), (req, res)
 // POST /api/sms/messages/:id/star — ⭐ 特殊标记/取消标记一条消息, 未来可汇总查看
 app.post('/api/sms/messages/:id/star', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const msg = db.prepare('SELECT id, thread_id, starred FROM sms_messages WHERE id=?').get(req.params.id);
+    const msg = db.prepare('SELECT id, thread_id, starred, mark_tag, mark_data FROM sms_messages WHERE id=?').get(req.params.id);
     if (!msg) return res.status(404).json({ error: 'Message not found' });
     const b = req.body || {};
     const on = b.starred !== undefined ? ((b.starred ? 1 : 0)) : (msg.starred ? 0 : 1);
@@ -29802,6 +29842,10 @@ app.post('/api/sms/messages/:id/star', requireAdmin, requireSmsAccess, (req, res
         if (vs) clean[String(k).slice(0, 30)] = vs;
       }
       data = JSON.stringify(clean).slice(0, 1500);
+    }
+    // 发工资/排班是固定信息, 仅 admin 可改结构化字段; 客服只能写备注, 原字段保留
+    if (on && req.userRole !== 'admin' && ['发工资', '排班'].includes(tag)) {
+      data = msg.mark_data || '{}';
     }
     db.prepare(`UPDATE sms_messages SET starred=?, starred_by=?, starred_at=CASE WHEN ? THEN datetime('now') ELSE NULL END, mark_tag=?, mark_note=?, mark_data=?, updated_at=datetime('now') WHERE id=?`)
       .run(on, on ? req.userId : null, on, tag, note, data, msg.id);
@@ -29830,19 +29874,21 @@ app.get('/api/sms/starred', requireAdmin, requireSmsAccess, (req, res) => {
 // ─── 客服(cs)账号管理: 专用登录, 只能进 SMS Inbox (requireAdmin 里对 cs 角色做了路径限制) ───
 app.get('/api/sms/cs-accounts', requireAdmin, requireRole('admin'), (req, res) => {
   try {
-    res.json({ accounts: db.prepare(`SELECT id, username, display_name, active, created_at FROM admin_users WHERE role='cs' ORDER BY username`).all() });
+    const rows = db.prepare(`SELECT id, username, display_name, email, active, created_at, pw_visible FROM admin_users WHERE role='cs' ORDER BY username`).all();
+    res.json({ accounts: rows.map(a => ({ id: a.id, username: a.username, display_name: a.display_name, email: a.email || '', active: a.active, created_at: a.created_at, password: csDecPw(a.pw_visible) })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/sms/cs-accounts', requireAdmin, requireRole('admin'), (req, res) => {
   try {
-    const { username, password, display_name } = req.body || {};
+    const { username, password, display_name, email } = req.body || {};
     const un = String(username || '').trim();
     if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(un)) return res.status(400).json({ error: '用户名 3-32 位, 仅字母数字._-' });
-    if (String(password || '').length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+    const pwErr = csPwPolicy(password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
     if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(un)) return res.status(400).json({ error: '用户名已存在' });
     const salt = crypto.randomBytes(16).toString('hex');
-    db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, active) VALUES (?,?,?,'cs',?,1)`)
-      .run(un, hashPassword(String(password), salt), salt, String(display_name || '').slice(0, 60));
+    db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, email, active, pw_visible) VALUES (?,?,?,'cs',?,?,1,?)`)
+      .run(un, hashPassword(String(password), salt), salt, String(display_name || '').slice(0, 60), String(email || '').trim().slice(0, 120), csEncPw(password));
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -29852,11 +29898,132 @@ app.patch('/api/sms/cs-accounts/:id', requireAdmin, requireRole('admin'), (req, 
     if (!acc) return res.status(404).json({ error: 'Not found' });
     const b = req.body || {};
     if (b.active !== undefined) db.prepare('UPDATE admin_users SET active=? WHERE id=?').run(b.active ? 1 : 0, acc.id);
+    if (b.email !== undefined) db.prepare('UPDATE admin_users SET email=? WHERE id=?').run(String(b.email || '').trim().slice(0, 120), acc.id);
     if (b.password) {
-      if (String(b.password).length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+      const pwErr = csPwPolicy(b.password);
+      if (pwErr) return res.status(400).json({ error: pwErr });
       const salt = crypto.randomBytes(16).toString('hex');
-      db.prepare('UPDATE admin_users SET password_hash=?, salt=? WHERE id=?').run(hashPassword(String(b.password), salt), salt, acc.id);
+      db.prepare('UPDATE admin_users SET password_hash=?, salt=?, pw_visible=? WHERE id=?').run(hashPassword(String(b.password), salt), salt, csEncPw(b.password), acc.id);
     }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 🆘 请求管理员协助: 客服在任何备注场景可一键呼叫 admin ───
+app.post('/api/sms/assist-requests', requireAdmin, requireSmsAccess, (req, res) => {
+  try {
+    const b = req.body || {};
+    const threadId = parseInt(b.thread_id) || null;
+    const info = db.prepare('INSERT INTO sms_assist_requests (thread_id, agent_id, context, note) VALUES (?,?,?,?)')
+      .run(threadId, req.userId, String(b.context || '').slice(0, 300), String(b.note || '').slice(0, 600));
+    smsAudit('thread', threadId || 0, 'assist_requested', 'agent', req.userId, { request_id: info.lastInsertRowid });
+    // 短信通知所有开了通知的 admin (异步)
+    (async () => {
+      try {
+        let label = '';
+        if (threadId) {
+          const t = db.prepare('SELECT c.name, c.phone_e164 FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?').get(threadId);
+          if (t) label = (t.name || '') + ' ' + (t.phone_e164 || '');
+        }
+        let phones = db.prepare(`SELECT sms_notify_phone FROM admin_users WHERE role='admin' AND active=1 AND sms_notify_enabled=1 AND sms_notify_phone != ''`).all().map(a => a.sms_notify_phone);
+        if (!phones.length && process.env.ADMIN_NOTIFY_PHONE) phones = [process.env.ADMIN_NOTIFY_PHONE];
+        for (const p of phones) {
+          await sendSMS(p, `🆘 客服请求协助\n客服: ${req.userName || req.userId}\n${label ? '对象: ' + label + '\n' : ''}${b.context ? '场景: ' + String(b.context).slice(0, 60) + '\n' : ''}说明: ${String(b.note || '').slice(0, 120)}\n处理: SMS Inbox 🆘 协助请求`);
+        }
+      } catch (e) { console.error('[Assist] notify error:', e.message); }
+    })();
+    res.json({ success: true, id: info.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/sms/assist-requests', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT r.*, COALESCE(NULLIF(a.display_name,''), a.username) AS agent_name, c.name AS contact_name, c.phone_e164
+      FROM sms_assist_requests r
+      LEFT JOIN admin_users a ON a.id = r.agent_id
+      LEFT JOIN sms_threads t ON t.id = r.thread_id
+      LEFT JOIN sms_contacts c ON c.id = t.contact_id
+      ORDER BY (r.status='open') DESC, r.id DESC LIMIT 100`).all();
+    res.json({ requests: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.patch('/api/sms/assist-requests/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    db.prepare(`UPDATE sms_assist_requests SET status='done', done_at=datetime('now') WHERE id=?`).run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 客服自助注册: admin 生成邀请二维码, 客服扫码自己开号 ───
+app.post('/api/sms/cs-invites', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const token = crypto.randomBytes(18).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    db.prepare('INSERT INTO sms_cs_invites (token, created_by, expires_at) VALUES (?,?,?)').run(token, req.userId, expiresAt);
+    const url = (BASE_URL || 'https://www.primeanchorpoint.com') + '/cs-signup?t=' + token;
+    const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+    res.json({ success: true, url, qr, expires_at: expiresAt });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 扫码注册 (公开, 需有效邀请码)
+app.post('/api/sms/cs-signup', (req, res) => {
+  try {
+    const b = req.body || {};
+    const inv = db.prepare('SELECT * FROM sms_cs_invites WHERE token=?').get(String(b.token || ''));
+    if (!inv || (inv.expires_at && new Date(inv.expires_at) < new Date())) return res.status(400).json({ error: '邀请码无效或已过期, 请找管理员重新生成二维码' });
+    const un = String(b.username || '').trim();
+    if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(un)) return res.status(400).json({ error: '用户名 3-32 位, 仅字母数字._-' });
+    const pwErr = csPwPolicy(b.password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
+    const email = String(b.email || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: '请填写有效邮箱 (用于验证码改密码)' });
+    if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(un)) return res.status(400).json({ error: '用户名已存在, 换一个' });
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, email, active, pw_visible) VALUES (?,?,?,'cs',?,?,1,?)`)
+      .run(un, hashPassword(String(b.password), salt), salt, String(b.display_name || '').slice(0, 60), email.slice(0, 120), csEncPw(b.password));
+    db.prepare('UPDATE sms_cs_invites SET used_count=used_count+1 WHERE id=?').run(inv.id);
+    smsAudit('contact', 0, 'cs_signup', 'system', null, { username: un, invite: inv.id });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 忘记密码: 发 6 位验证码到注册邮箱 (公开)
+app.post('/api/sms/cs-forgot', async (req, res) => {
+  try {
+    const un = String((req.body || {}).username || '').trim();
+    const acc = db.prepare(`SELECT id, email FROM admin_users WHERE username=? AND role='cs' AND active=1`).get(un);
+    // 统一返回成功, 不暴露账号是否存在
+    if (acc && acc.email) {
+      const recent = db.prepare(`SELECT id FROM cs_pw_resets WHERE user_id=? AND created_at > datetime('now','-60 seconds')`).get(acc.id);
+      if (!recent) {
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        db.prepare('DELETE FROM cs_pw_resets WHERE user_id=?').run(acc.id);
+        db.prepare(`INSERT INTO cs_pw_resets (user_id, code_hash, expires_at) VALUES (?,?,datetime('now','+10 minutes'))`)
+          .run(acc.id, crypto.createHash('sha256').update(code).digest('hex'));
+        sendEmail(acc.email, 'Prime Anchor SMS 密码重置验证码', `你的验证码是: ${code} (10 分钟内有效)。不是你本人操作请忽略。`,
+          `<p>你的 SMS Inbox 密码重置验证码:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p><p>10 分钟内有效。不是你本人操作请忽略。</p>`).catch(() => {});
+      }
+    }
+    res.json({ success: true, message: '如果账号存在且填过邮箱, 验证码已发送' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 用验证码重置密码 (公开)
+app.post('/api/sms/cs-reset', (req, res) => {
+  try {
+    const b = req.body || {};
+    const un = String(b.username || '').trim();
+    const acc = db.prepare(`SELECT id FROM admin_users WHERE username=? AND role='cs' AND active=1`).get(un);
+    if (!acc) return res.status(400).json({ error: '验证码错误或已过期' });
+    const row = db.prepare(`SELECT * FROM cs_pw_resets WHERE user_id=? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1`).get(acc.id);
+    if (!row || row.attempts >= 5) return res.status(400).json({ error: '验证码错误或已过期, 请重新获取' });
+    const ok = row.code_hash === crypto.createHash('sha256').update(String(b.code || '')).digest('hex');
+    if (!ok) {
+      db.prepare('UPDATE cs_pw_resets SET attempts=attempts+1 WHERE id=?').run(row.id);
+      return res.status(400).json({ error: '验证码错误' });
+    }
+    const pwErr = csPwPolicy(b.password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.prepare('UPDATE admin_users SET password_hash=?, salt=?, pw_visible=? WHERE id=?').run(hashPassword(String(b.password), salt), salt, csEncPw(b.password), acc.id);
+    db.prepare('DELETE FROM cs_pw_resets WHERE user_id=?').run(acc.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

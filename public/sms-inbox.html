@@ -322,6 +322,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <input type="password" id="passInput" placeholder="Password">
     <button id="loginBtn" onclick="doLogin()">Login</button>
     <div class="err" id="loginErr"></div>
+    <a onclick="toggleForgot()" style="display:block;margin-top:10px;font-size:.78rem;color:var(--sky);cursor:pointer;text-decoration:underline">忘记密码？(客服账号用邮箱验证码重置)</a>
+    <div id="forgotBox" style="display:none;margin-top:10px;text-align:left;border-top:1px solid var(--gray-200);padding-top:12px">
+      <div style="font-size:.78rem;color:var(--gray-600);margin-bottom:6px">1️⃣ 输入用户名，验证码会发到注册时填的邮箱</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input id="fgUser" placeholder="用户名" style="margin:0;flex:1">
+        <button onclick="sendResetCode()" id="fgSendBtn" style="width:auto;padding:0 14px;font-size:.8rem;white-space:nowrap">发验证码</button>
+      </div>
+      <div style="font-size:.78rem;color:var(--gray-600);margin-bottom:6px">2️⃣ 收到后填验证码和新密码</div>
+      <input id="fgCode" placeholder="6 位验证码" style="margin-bottom:8px">
+      <input id="fgPw" type="password" placeholder="新密码 (≥8位, 含字母+数字)" style="margin-bottom:8px">
+      <button onclick="doResetPw()" style="font-size:.85rem">重置密码</button>
+      <div class="err" id="fgMsg"></div>
+    </div>
   </div>
 </div>
 
@@ -345,8 +358,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div class="header-tools" id="headerTools">
         <button class="btn-icon" onclick="showStarredModal(0)" title="星标消息" style="color:#f59e0b">&#9733;</button>
         <button class="btn-icon" onclick="showNewChatModal()" title="发起对话" style="font-size:1.05rem">&#128172;</button>
-        <button class="btn-icon" id="bcBtn" style="display:none;font-size:1.1rem" onclick="showBroadcastModal()" title="群发 Broadcast (仅管理员)">&#9993;</button>
-        <button class="btn-icon" onclick="document.getElementById('twilioTipsModal').classList.add('show')" title="Twilio 防封号须知" style="color:#b45309">&#9888;</button>
         <button class="btn-icon" id="adminDashBtn" style="display:none;color:#4338ca" onclick="showAdminDash()" title="管理面板 (仅管理员)">&#9881;</button>
         <button class="btn-icon" onclick="loadThreads()" title="刷新 Refresh">&#x21bb;</button>
         <button class="btn-icon" onclick="doLogout()" title="退出登录 Logout">&#x2715;</button>
@@ -443,6 +454,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       </div>
     </div>
     <div class="reply-bar" id="replyBar">
+      <button class="note-toggle" id="assistBtn" onclick="requestAssist('对话求助', null)" title="请求管理员协助" style="color:#dc2626">&#127384;</button>
       <button class="note-toggle" id="noteToggle" onclick="toggleNoteMode()" title="Internal note">&#128221;</button>
       <button class="note-toggle" id="templateToggle" onclick="toggleTemplates()" title="Quick replies">&#9889;</button>
       <textarea id="replyInput" rows="1" placeholder="输入消息…" oninput="autoGrow(this);onComposeInput()"></textarea>
@@ -453,7 +465,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   <div id="deskEmpty">
     <img src="logo.svg" alt="" style="width:72px;opacity:.5">
     <div style="font-size:1rem;font-weight:600;color:var(--gray-500)">从左侧选择一个对话开始</div>
-    <div style="font-size:.8rem;color:var(--gray-400)">💬 发起对话 · 📊 统计页 · ⚠️ 防封号须知 都在左上工具栏</div>
+    <div style="font-size:.8rem;color:var(--gray-400)">💬 发起对话在左上工具栏 · 管理功能都在 ⚙ 管理面板</div>
   </div>
 </div>
 
@@ -500,7 +512,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <div id="editTagChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
     <div id="editTagPresets" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
     <input id="editTagInput" placeholder="自定义标签，回车添加（如: GOFO上过班 / 只做白班）" style="margin-bottom:8px" onkeydown="if(event.key==='Enter'){event.preventDefault();addEditTagFromInput();}">
-    <label>备注（要求 / 上班情况等，保存进系统）</label>
+    <label>备注（要求 / 上班情况等，保存进系统）<a onclick="requestAssist('联系人资料: ' + (document.getElementById('editName').value || ''), document.getElementById('editNotes').value.trim())" style="float:right;cursor:pointer;color:#dc2626;font-weight:700;text-decoration:underline">🆘 请求管理员协助</a></label>
     <textarea id="editNotes" rows="4" placeholder="如: 只做白班，有车；5/20 在 GOFO 卸柜上过一天班，靠谱" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
     <button class="btn" onclick="saveContact()">Save</button>
     <button class="close-modal" onclick="closeEditContactModal()">Cancel</button>
@@ -547,6 +559,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <textarea id="markNote" rows="2" placeholder="其他补充说明" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
     <button class="btn" onclick="saveMark(false)">保存标记</button>
     <button id="markSendBtn" onclick="saveMarkAndCompose()" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid var(--sky);color:var(--sky);border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.88rem;margin-top:6px">💬 保存并生成消息发给对方</button>
+    <button id="markAssistBtn" onclick="requestAssist('消息标记: ' + (document.getElementById('markMsgPreview').textContent || '').slice(0, 60), document.getElementById('markNote').value.trim())" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid #dc2626;color:#dc2626;border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.88rem;margin-top:6px">🆘 请求管理员协助</button>
     <button id="markRemoveBtn" onclick="saveMark(true)" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid var(--red);color:var(--red);border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:.88rem;margin-top:6px">取消标记</button>
     <button class="close-modal" onclick="document.getElementById('msgMarkModal').classList.remove('show')">关闭</button>
   </div>
@@ -689,6 +702,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         <span class="dash-ico">&#128198;</span>
         <div><b>面试总览</b><small>已预约的面试与最近结果</small></div>
       </div>
+      <div class="dash-card" onclick="dashOpen(showAssistModal)">
+        <span class="dash-ico" style="color:#dc2626">&#127384;</span>
+        <div><b>协助请求</b><small>客服发来的待处理协助请求</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(showBroadcastModal)">
+        <span class="dash-ico">&#9993;</span>
+        <div><b>群发 Broadcast</b><small>批量发送短信</small></div>
+      </div>
       <div class="dash-card" onclick="dashOpen(() => location.href = '/sms-stats')">
         <span class="dash-ico">&#128202;</span>
         <div><b>消息统计</b><small>独立统计页（响应时长 / 消息量）</small></div>
@@ -704,6 +725,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div class="dash-card" onclick="dashOpen(showAiBlocksModal)">
         <span class="dash-ico">&#128737;</span>
         <div><b>AI 拦截记录</b><small>被自动拦下的可疑消息</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(() => document.getElementById('twilioTipsModal').classList.add('show'))">
+        <span class="dash-ico" style="color:#b45309">&#9888;</span>
+        <div><b>Twilio 防封号须知</b><small>群发前必读的红线与保命做法</small></div>
       </div>
       <div class="dash-card" onclick="dashOpen(testNotify)">
         <span class="dash-ico" style="font-size:.68rem;font-weight:800;color:var(--red)">TEST</span>
@@ -728,6 +753,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <div style="font-size:.8rem;font-weight:700;color:var(--gray-600);margin:12px 0 4px">🗂 最近结果（完成 / 未到 / 取消）</div>
     <div id="ivListRecent" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:160px;overflow-y:auto"></div>
     <button class="close-modal" onclick="document.getElementById('ivListModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<!-- 🆘 协助请求 (仅 admin) -->
+<div class="modal-bg" id="assistModal">
+  <div class="modal" style="max-width:560px">
+    <h3>&#127384; 客服协助请求 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员</span></h3>
+    <div id="assistList" style="border:1px solid var(--gray-200);border-radius:var(--radius);max-height:420px;overflow-y:auto"></div>
+    <button class="close-modal" onclick="document.getElementById('assistModal').classList.remove('show')">Close</button>
   </div>
 </div>
 
@@ -778,14 +812,23 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 <div class="modal-bg" id="csAccModal">
   <div class="modal" style="max-width:520px">
     <h3>👥 客服账号（只能登录 SMS Inbox）</h3>
-    <div id="csAccList" style="max-height:220px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:10px"></div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center">
+      <button class="filter-btn" onclick="genCsInvite()">📱 生成注册二维码（发给客服自己开号）</button>
+      <span style="font-size:.72rem;color:var(--gray-400)">7 天有效，可多人扫</span>
+    </div>
+    <div id="csInviteBox" style="display:none;text-align:center;border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px;margin-bottom:10px">
+      <img id="csInviteQr" style="width:220px;max-width:100%">
+      <div id="csInviteUrl" style="font-size:.7rem;color:var(--gray-400);word-break:break-all;margin-top:6px"></div>
+    </div>
+    <div id="csAccList" style="max-height:240px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:10px"></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <input id="csAccUser" placeholder="用户名 (3-32位字母数字._-)" style="flex:1;min-width:130px">
-      <input id="csAccPass" placeholder="密码 (≥6位)" style="flex:1;min-width:110px">
-      <input id="csAccName" placeholder="显示名 (可选)" style="flex:1;min-width:100px">
+      <input id="csAccPass" placeholder="密码 (≥8位, 含字母+数字)" style="flex:1;min-width:130px">
+      <input id="csAccName" placeholder="显示名 (可选)" style="flex:1;min-width:90px">
+      <input id="csAccEmail" placeholder="邮箱 (可选)" style="flex:1;min-width:120px">
       <button class="btn" onclick="createCsAccount()" style="margin:0">创建</button>
     </div>
-    <div style="font-size:.75rem;color:var(--gray-400);margin-top:8px">客服用这个账号登录 /sms-inbox 页面；访问管理后台其他任何页面都会被拒绝。</div>
+    <div style="font-size:.75rem;color:var(--gray-400);margin-top:8px">客服用这个账号登录 /sms-inbox 页面；访问管理后台其他任何页面都会被拒绝。忘记密码可在登录页用邮箱验证码自助重置。</div>
     <button class="close-modal" onclick="document.getElementById('csAccModal').classList.remove('show')">Close</button>
   </div>
 </div>
@@ -844,7 +887,7 @@ async function checkAuth() {
 }
 function _applyAdminUi() {
   const isAdmin = USER && USER.role === 'admin';
-  ['adminDashBtn', 'bcBtn'].forEach(id => {
+  ['adminDashBtn'].forEach(id => {
     const b = document.getElementById(id); if (b) b.style.display = isAdmin ? '' : 'none';
   });
 }
@@ -880,6 +923,43 @@ document.addEventListener('click', e => {
 function showLogin() {
   document.getElementById('loginWrap').style.display = 'flex';
   document.getElementById('app').classList.remove('show');
+}
+
+// ─── 忘记密码 (客服邮箱验证码重置) ───
+function toggleForgot() {
+  const b = document.getElementById('forgotBox');
+  b.style.display = b.style.display === 'none' ? '' : 'none';
+  document.getElementById('fgUser').value = document.getElementById('userInput').value.trim();
+}
+async function sendResetCode() {
+  const un = document.getElementById('fgUser').value.trim();
+  const m = document.getElementById('fgMsg');
+  if (!un) { m.textContent = '先填用户名'; return; }
+  const btn = document.getElementById('fgSendBtn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/sms/cs-forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: un }) }).then(x => x.json());
+    m.style.color = '#059669';
+    m.textContent = (r && r.message) || '验证码已发送, 查收邮箱 (含垃圾箱)';
+  } catch (_) { m.style.color = ''; m.textContent = '发送失败, 稍后再试'; }
+  setTimeout(() => { btn.disabled = false; }, 60000);
+}
+async function doResetPw() {
+  const m = document.getElementById('fgMsg');
+  m.style.color = '';
+  try {
+    const r = await fetch('/api/sms/cs-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      username: document.getElementById('fgUser').value.trim(),
+      code: document.getElementById('fgCode').value.trim(),
+      password: document.getElementById('fgPw').value
+    }) }).then(x => x.json());
+    if (r && r.error) { m.textContent = r.error; return; }
+    m.style.color = '#059669';
+    m.textContent = '✅ 密码已重置, 用新密码登录';
+    document.getElementById('passInput').value = '';
+    document.getElementById('userInput').value = document.getElementById('fgUser').value.trim();
+    setTimeout(() => { document.getElementById('forgotBox').style.display = 'none'; }, 1500);
+  } catch (_) { m.textContent = '重置失败, 稍后再试'; }
 }
 
 function showApp() {
@@ -2092,7 +2172,8 @@ const MARK_FIELDS = {
   '卸柜': [['container', '柜号', 'text', '如 MSKU1234567'], ['date', '日期', 'date', ''], ['detail', '具体细节', 'text', '如 早7点 / GOFO仓库 / 约2000件']],
   '面试': [['company', '公司', 'company', ''], ['time', '时间', 'datetime-local', ''], ['detail', '地址 / 找谁', 'text', '']],
   '发工资': [['date', '发薪日期', 'date', ''], ['amount', '金额', 'text', '如 $560'], ['detail', '方式/说明', 'text', '如 支票 / Zelle']],
-  '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']]
+  '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']],
+  '请假': [['date', '开始日期', 'date', ''], ['end', '结束日期(可选)', 'date', ''], ['reason', '原因', 'text', '如 生病 / 家里有事']]
 };
 // 公司下拉选项 (来自 /sms/partners, 与列表页公司筛选同一来源)
 let _markPartnerNames = [];
@@ -2118,26 +2199,30 @@ function _collectMarkData() {
   });
   return data;
 }
+// 发工资/排班是公司固定信息: 客服只读, 只有 admin 能填改
+const MARK_ADMIN_ONLY_TAGS = ['发工资', '排班'];
 function renderMarkFields(prefill) {
   const tag = _markTag;
   const defs = MARK_FIELDS[tag];
   const box = document.getElementById('markFields');
   const sendBtn = document.getElementById('markSendBtn');
   if (!defs) { box.innerHTML = ''; if (sendBtn) sendBtn.style.display = 'none'; return; }
-  const d = prefill || {};
-  box.innerHTML = defs.map(([k, label, type, ph]) => {
+  const d = prefill || ((window._markPre && window._markPre.tag === tag) ? window._markPre.data : {});
+  const locked = MARK_ADMIN_ONLY_TAGS.includes(tag) && !(USER && USER.role === 'admin');
+  box.innerHTML = (locked ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;font-size:.74rem;color:#92400e;margin-bottom:6px">🔒 ' + esc(tag) + ' 信息由管理员维护，你只能看和写备注 — 有问题点下面「请求管理员协助」</div>' : '')
+    + defs.map(([k, label, type, ph]) => {
     if (type === 'company') {
       // 下拉选公司; 老数据里的公司名不在列表时也补成一个选项, 保证能回显
       const names = _markPartnerNames.slice();
       if (d[k] && !names.includes(d[k])) names.unshift(d[k]);
       return '<label style="margin-top:2px">' + label + '</label>'
-        + '<select data-mkf="' + k + '" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:4px;outline:none;background:var(--white)">'
+        + '<select data-mkf="' + k + '"' + (locked ? ' disabled' : '') + ' style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:4px;outline:none;background:' + (locked ? 'var(--gray-100)' : 'var(--white)') + '">'
         + '<option value="">— 选择公司 —</option>'
         + names.map(n => '<option value="' + esc(n) + '"' + (n === d[k] ? ' selected' : '') + '>' + esc(n) + '</option>').join('')
         + '</select>';
     }
     return '<label style="margin-top:2px">' + label + '</label>'
-      + '<input data-mkf="' + k + '" type="' + type + '" placeholder="' + esc(ph) + '" value="' + esc(d[k] || '') + '" style="margin-bottom:4px">';
+      + '<input data-mkf="' + k + '" type="' + type + '" placeholder="' + esc(locked ? '' : ph) + '" value="' + esc(d[k] || '') + '"' + (locked ? ' disabled style="margin-bottom:4px;background:var(--gray-100);color:var(--gray-600)"' : ' style="margin-bottom:4px"') + '>';
   }).join('');
   if (sendBtn) sendBtn.style.display = MARK_MSG_TPL[tag] ? '' : 'none';
 }
@@ -2158,8 +2243,10 @@ function toggleStar(msgId) {
   document.getElementById('markNote').value = m.mark_note || '';
   document.getElementById('markRemoveBtn').style.display = m.starred ? '' : 'none';
   let pre = {}; try { pre = JSON.parse(m.mark_data || '{}'); } catch (_) {}
+  window._markPre = { tag: m.mark_tag || '', data: pre };
   _loadMarkPartners().then(() => { _renderMarkChips(pre); });
   _renderMarkChips(pre);
+  document.getElementById('markAssistBtn').style.display = (USER && USER.role === 'admin') ? 'none' : '';
   document.getElementById('msgMarkModal').classList.add('show');
 }
 function _renderMarkChips(prefill) {
@@ -2452,6 +2539,58 @@ async function loadIvList(days) {
     rc.innerHTML = '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">加载失败</div>';
   }
 }
+// ─── 🆘 请求管理员协助 ───
+async function requestAssist(context, note) {
+  if (note === null || note === undefined || note === '') {
+    note = prompt('描述一下需要管理员协助的事情:');
+    if (!note || !note.trim()) return;
+  }
+  try {
+    const r = await api('/sms/assist-requests', { method: 'POST', body: JSON.stringify({
+      thread_id: currentThread ? currentThread.id : null,
+      context: String(context || ''),
+      note: String(note).trim()
+    }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('🆘 已发给管理员 (短信通知)');
+  } catch (e) { toast(e.message || '发送失败'); }
+}
+function showAssistModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('assistModal').classList.add('show');
+  loadAssist();
+}
+async function loadAssist() {
+  const el = document.getElementById('assistList');
+  el.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.8rem">Loading…</div>';
+  try {
+    const r = await api('/sms/assist-requests');
+    if (r && r.error) throw new Error(r.error);
+    const list = (r && r.requests) || [];
+    el.innerHTML = list.length ? list.map(q => {
+      const t = q.created_at ? new Date(String(q.created_at).replace(' ', 'T') + 'Z') : null;
+      const ts = (t && !isNaN(t)) ? t.toLocaleString('sv-SE').slice(5, 16) : '';
+      return '<div style="padding:8px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;line-height:1.55;' + (q.status === 'open' ? '' : 'opacity:.55') + '">'
+        + '<div><b>' + esc(q.agent_name || '?') + '</b>'
+        + (q.contact_name || q.phone_e164 ? ' · 关于 <b>' + esc(((q.contact_name || '') + ' ' + (q.phone_e164 || '')).trim()) + '</b>' : '')
+        + '<span style="color:var(--gray-400);float:right">' + esc(ts) + '</span></div>'
+        + (q.context ? '<div style="color:var(--gray-400);font-size:.74rem">' + esc(q.context) + '</div>' : '')
+        + '<div style="background:#fff7ed;border-radius:6px;padding:4px 8px;margin:3px 0">' + esc(q.note || '') + '</div>'
+        + '<div style="display:flex;gap:10px">'
+        + (q.thread_id ? '<a style="cursor:pointer;text-decoration:underline" onclick="document.getElementById(\'assistModal\').classList.remove(\'show\');openThread(' + q.thread_id + ')">打开对话</a>' : '')
+        + (q.status === 'open' ? '<a style="cursor:pointer;text-decoration:underline;color:#059669" onclick="doneAssist(' + q.id + ')">✅ 标记已处理</a>' : '<span style="color:var(--gray-400)">已处理</span>')
+        + '</div></div>';
+    }).join('') : '<div style="padding:14px;color:var(--gray-400);font-size:.8rem;text-align:center">没有协助请求 👍</div>';
+  } catch (e) { el.innerHTML = '<div style="padding:12px;color:var(--red);font-size:.8rem">' + esc(e.message || '加载失败') + '</div>'; }
+}
+async function doneAssist(id) {
+  try {
+    const r = await api('/sms/assist-requests/' + id, { method: 'PATCH', body: JSON.stringify({}) });
+    if (r && r.error) throw new Error(r.error);
+    loadAssist();
+  } catch (e) { toast(e.message || '操作失败'); }
+}
+
 // ─── 📋 资料修改记录 (仅 admin) ───
 const _CE_FIELD_ZH = { name: '名字', company: '公司', email: '邮箱', tags: '工种标签', notes: '备注', work_state: '州', is_foreman: '工头', work_history: '工作经历' };
 function _ceFmtVal(k, v) {
@@ -2613,26 +2752,49 @@ async function loadCsAccounts() {
   try {
     const r = await api('/sms/cs-accounts');
     const accs = (r && r.accounts) || [];
-    el.innerHTML = accs.length ? accs.map(a =>
-      '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--gray-200);font-size:.85rem">'
+    window._csAccs = accs;
+    el.innerHTML = accs.length ? accs.map((a, i) =>
+      '<div style="padding:8px 12px;border-bottom:1px solid var(--gray-200);font-size:.85rem">'
+      + '<div style="display:flex;align-items:center;gap:8px">'
       + '<b>' + esc(a.username) + '</b>' + (a.display_name ? '<span style="color:var(--gray-400)">' + esc(a.display_name) + '</span>' : '')
       + '<span style="margin-left:auto;font-size:.72rem;color:' + (a.active ? '#059669' : '#dc2626') + '">' + (a.active ? '启用' : '停用') + '</span>'
       + '<a style="cursor:pointer;text-decoration:underline;font-size:.75rem" onclick="toggleCsAccount(' + a.id + ',' + (a.active ? 0 : 1) + ')">' + (a.active ? '停用' : '启用') + '</a>'
       + '<a style="cursor:pointer;text-decoration:underline;font-size:.75rem" onclick="resetCsPassword(' + a.id + ')">改密码</a>'
-      + '</div>').join('')
-      : '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">还没有客服账号</div>';
+      + '</div>'
+      + '<div style="display:flex;gap:10px;margin-top:3px;font-size:.74rem;color:var(--gray-500);flex-wrap:wrap">'
+      + '<span>📧 ' + (a.email ? esc(a.email) : '<i style="color:#dc2626">未填邮箱</i>') + '</span>'
+      + '<span>🔑 密码: <span id="csPw' + i + '">••••••</span> <a style="cursor:pointer;text-decoration:underline" onclick="_csShowPw(' + i + ')">👁 查看</a></span>'
+      + '</div></div>').join('')
+      : '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">还没有客服账号 — 点上面生成二维码让客服自己注册</div>';
   } catch (e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">加载失败</div>'; }
+}
+function _csShowPw(i) {
+  const a = (window._csAccs || [])[i];
+  const el = document.getElementById('csPw' + i);
+  if (!a || !el) return;
+  el.textContent = a.password || '(未记录 — 老账号改一次密码后可见)';
+}
+async function genCsInvite() {
+  try {
+    const r = await api('/sms/cs-invites', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.error) throw new Error(r.error);
+    document.getElementById('csInviteBox').style.display = '';
+    document.getElementById('csInviteQr').src = r.qr;
+    document.getElementById('csInviteUrl').textContent = r.url;
+    toast('二维码已生成 — 让客服扫码或发链接给他');
+  } catch (e) { toast(e.message || '生成失败'); }
 }
 async function createCsAccount() {
   try {
     const r = await api('/sms/cs-accounts', { method: 'POST', body: JSON.stringify({
       username: document.getElementById('csAccUser').value.trim(),
       password: document.getElementById('csAccPass').value,
-      display_name: document.getElementById('csAccName').value.trim()
+      display_name: document.getElementById('csAccName').value.trim(),
+      email: document.getElementById('csAccEmail').value.trim()
     }) });
     if (r && r.error) throw new Error(r.error);
     toast('客服账号已创建');
-    document.getElementById('csAccUser').value = ''; document.getElementById('csAccPass').value = ''; document.getElementById('csAccName').value = '';
+    ['csAccUser', 'csAccPass', 'csAccName', 'csAccEmail'].forEach(id => document.getElementById(id).value = '');
     loadCsAccounts();
   } catch (e) { toast(e.message || '创建失败'); }
 }
@@ -2644,7 +2806,7 @@ async function toggleCsAccount(id, active) {
   } catch (e) { toast(e.message || '操作失败'); }
 }
 async function resetCsPassword(id) {
-  const pw = prompt('输入新密码 (≥6位):');
+  const pw = prompt('输入新密码 (≥8位, 需含字母和数字):');
   if (!pw) return;
   try {
     const r = await api('/sms/cs-accounts/' + id, { method: 'PATCH', body: JSON.stringify({ password: pw }) });
