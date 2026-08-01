@@ -29466,6 +29466,30 @@ app.patch('/api/sms/cs-accounts/:id', requireAdmin, requireRole('admin'), (req, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── 📊 消息统计 (仅 admin): 每天收/发条数 + 某天的小时分布 + 客服发送量 ───
+// tzoff = 浏览器 getTimezoneOffset() (芝加哥夏令时=300), 用它把 UTC 存储时间换成本地时间统计
+app.get('/api/sms/message-stats', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 14));
+    const tzoff = parseInt(req.query.tzoff);
+    const mod = `${isNaN(tzoff) ? 0 : -tzoff} minutes`;
+    const since = `-${days} days`;
+    const daily = db.prepare(`SELECT date(datetime(created_at, ?)) AS d, direction, COUNT(*) AS n
+      FROM sms_messages WHERE created_at >= datetime('now', ?) GROUP BY d, direction ORDER BY d DESC`).all(mod, since);
+    const date = String(req.query.date || '');
+    let hours = null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      hours = db.prepare(`SELECT strftime('%H', datetime(created_at, ?)) AS h, direction, COUNT(*) AS n
+        FROM sms_messages WHERE date(datetime(created_at, ?)) = ? GROUP BY h, direction`).all(mod, mod, date);
+    }
+    const agents = db.prepare(`SELECT COALESCE(a.username, '(系统/未记录)') AS agent, COUNT(*) AS n
+      FROM sms_messages m LEFT JOIN admin_users a ON a.id = m.author_agent_id
+      WHERE m.direction = 'outbound' AND m.created_at >= datetime('now', ?)
+      GROUP BY agent ORDER BY n DESC LIMIT 20`).all(since);
+    res.json({ daily, hours, agents, days });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── 🤖 AI 评估客服聊天表现 (仅 admin): 把对话整理给 Claude, 输出结构化评估并存档 ───
 app.post('/api/sms/threads/:id/evaluate', requireAdmin, requireRole('admin'), async (req, res) => {
   try {
