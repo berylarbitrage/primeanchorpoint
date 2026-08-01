@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客服账号注册 — Prime Anchor SMS</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#92400e;--sky:#b45309;--off-white:#fffbeb;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:10px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gray-800);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.box{background:#fff;padding:2rem 1.6rem;border-radius:16px;box-shadow:0 4px 24px rgba(146,64,14,.12);width:100%;max-width:400px}
+.box h1{font-size:1.15rem;color:var(--blue);margin-bottom:4px;text-align:center}
+.box p.sub{font-size:.8rem;color:var(--gray-400);margin-bottom:1.2rem;text-align:center}
+label{font-size:.78rem;color:var(--gray-600);display:block;margin-bottom:3px;font-weight:600}
+input{width:100%;padding:11px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:16px;margin-bottom:10px;outline:none}
+input:focus{border-color:var(--sky)}
+button.main{width:100%;padding:12px;background:var(--sky);color:#fff;border:none;border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.95rem;margin-top:4px}
+button.main:disabled{opacity:.5}
+.msg{font-size:.82rem;margin-top:10px;min-height:1.2em;text-align:center}
+.msg.err{color:var(--red)}
+.msg.ok{color:var(--green)}
+.pwhint{font-size:.72rem;color:var(--gray-400);margin:-6px 0 10px}
+.done{text-align:center;padding:20px 0}
+.done .big{font-size:2.4rem;margin-bottom:8px}
+.done a{display:inline-block;margin-top:14px;padding:11px 26px;background:var(--sky);color:#fff;border-radius:var(--radius);text-decoration:none;font-weight:700}
+</style>
+</head>
+<body>
+<div class="box">
+  <div id="form">
+    <img src="logo.svg" alt="" style="width:56px;display:block;margin:0 auto 8px">
+    <h1>客服账号注册</h1>
+    <p class="sub">Prime Anchor SMS Inbox · 凭管理员二维码邀请注册</p>
+    <label>用户名</label>
+    <input id="un" placeholder="3-32 位字母数字 . _ -" autocomplete="username">
+    <label>显示名（同事看到的名字）</label>
+    <input id="dn" placeholder="如: 小李">
+    <label>邮箱（用于接收验证码 / 找回密码）</label>
+    <input id="em" type="email" placeholder="you@example.com" autocomplete="email">
+    <label>密码</label>
+    <input id="pw" type="password" placeholder="至少 8 位, 含字母和数字" autocomplete="new-password">
+    <div class="pwhint">至少 8 位，必须同时包含字母和数字</div>
+    <label>确认密码</label>
+    <input id="pw2" type="password" placeholder="再输一遍" autocomplete="new-password">
+    <button class="main" id="go" onclick="signup()">创建账号</button>
+    <div class="msg" id="msg"></div>
+  </div>
+  <div id="done" class="done" style="display:none">
+    <div class="big">✅</div>
+    <div style="font-weight:700;font-size:1.05rem">账号创建成功</div>
+    <div style="font-size:.82rem;color:var(--gray-400);margin-top:6px">用刚设置的用户名和密码登录</div>
+    <a href="/sms-inbox">去登录 SMS Inbox</a>
+  </div>
+</div>
+<script>
+const token = new URLSearchParams(location.search).get('t') || '';
+const msg = (t, ok) => { const m = document.getElementById('msg'); m.textContent = t; m.className = 'msg ' + (ok ? 'ok' : 'err'); };
+if (!token) msg('链接无效 — 请扫管理员给的二维码打开本页', false);
+async function signup() {
+  const un = document.getElementById('un').value.trim();
+  const pw = document.getElementById('pw').value;
+  if (pw !== document.getElementById('pw2').value) { msg('两次密码不一致', false); return; }
+  if (pw.length < 8 || !/[A-Za-z]/.test(pw) || !/\d/.test(pw)) { msg('密码至少 8 位, 且同时包含字母和数字', false); return; }
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/sms/cs-signup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, username: un, password: pw, display_name: document.getElementById('dn').value.trim(), email: document.getElementById('em').value.trim() })
+    }).then(x => x.json());
+    if (r && r.error) { msg(r.error, false); btn.disabled = false; return; }
+    document.getElementById('form').style.display = 'none';
+    document.getElementById('done').style.display = '';
+  } catch (e) { msg('网络错误, 再试一次', false); btn.disabled = false; }
+}
+</script>
+</body>
+</html>
