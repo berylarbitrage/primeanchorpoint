@@ -246,6 +246,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .msg-row.inbound .msg-sender{text-align:left;color:var(--gray-600)}
 .msg-row.outbound .msg-sender{text-align:right}
 
+/* 📌 消息标记 (分类+备注) 显示在气泡下方 */
+.msg-mark{font-size:.74rem;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:3px 10px;margin-top:3px;max-width:82%;word-break:break-word}
+.msg-row.outbound .msg-mark{align-self:flex-end}
+.msg-row.inbound .msg-mark{align-self:flex-start}
+
 /* 防止窄屏时中文按钮/徽章逐字竖排 */
 .tag,.ti-status,.priority-badge,.action-btn,.filter-btn{white-space:nowrap}
 #detailPhone{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -491,8 +496,25 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 <div class="modal-bg" id="starredModal">
   <div class="modal" style="max-width:560px">
     <h3 id="starredTitle">&#9733; 星标消息</h3>
+    <div id="starredTagFilter" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
     <div id="starredList" style="max-height:380px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius)"></div>
     <button class="close-modal" onclick="closeStarredModal()" style="margin-top:8px">Close</button>
+  </div>
+</div>
+
+<!-- 📌 消息标记 (分类 + 备注) -->
+<div class="modal-bg" id="msgMarkModal">
+  <div class="modal" style="max-width:420px">
+    <h3>&#128204; 标记这条消息</h3>
+    <div id="markMsgPreview" style="background:var(--gray-100);border-radius:8px;padding:8px 12px;font-size:.82rem;color:var(--gray-600);margin-bottom:10px;max-height:80px;overflow-y:auto;word-break:break-word"></div>
+    <label>类别（点选或自己填）</label>
+    <div id="markTagChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
+    <input id="markTagInput" placeholder="自定义类别（可留空，只标星）" maxlength="40" style="margin-bottom:4px" oninput="_renderMarkChips()">
+    <label>备注（可选）</label>
+    <textarea id="markNote" rows="3" placeholder="如: 已安排周一去卸柜 / 面试定在周三 2pm / 工资 8/5 已发" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;resize:vertical;font-family:inherit"></textarea>
+    <button class="btn" onclick="saveMark(false)">保存标记</button>
+    <button id="markRemoveBtn" onclick="saveMark(true)" style="display:none;width:100%;padding:10px;background:#fff;border:1px solid var(--red);color:var(--red);border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:.88rem;margin-top:6px">取消标记</button>
+    <button class="close-modal" onclick="document.getElementById('msgMarkModal').classList.remove('show')">关闭</button>
   </div>
 </div>
 
@@ -1151,9 +1173,14 @@ function renderMessages() {
           + (dir === 'outbound' ? '🧑‍💼 ' : '') + esc(senderName) + '</div>';
         lastSender = senderKey;
       }
+      const markHtml = (item.starred && (item.mark_tag || item.mark_note))
+        ? '<div class="msg-mark">📌 ' + (item.mark_tag ? '<b>' + esc(item.mark_tag) + '</b>' : '')
+          + (item.mark_tag && item.mark_note ? ' · ' : '') + esc(item.mark_note || '') + '</div>'
+        : '';
       html += '<div class="msg-row ' + dir + '">'
         + senderHtml
         + '<div class="msg-bubble"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : '') + '>' + esc(item.body) + translationHtml + '</div>'
+        + markHtml
         + '<div class="msg-meta">' + fmtTime(item._time)
         + (dir === 'outbound' ? ' &middot; ' + statusIcon : '')
         + (dir === 'outbound' && item.author_name ? ' &middot; ' + esc(item.author_name) : '')
@@ -1868,38 +1895,92 @@ async function ncStart(i) {
     openThread(r.thread_id);
   } catch (e) { toast('发起失败: ' + (e.message || e)); }
 }
-// ─── ⭐ 消息特殊标记 ───
-async function toggleStar(msgId) {
+// ─── 📌 消息标记: 分类(卸柜/面试/发工资…) + 备注 ───
+const MARK_TAG_PRESETS = ['卸柜', '面试', '发工资', '排班', '请假', '投诉'];
+let _markMsgId = null;
+function toggleStar(msgId) {
+  const m = currentMessages.find(x => x.id === msgId);
+  if (!m) return;
+  _markMsgId = msgId;
+  document.getElementById('markMsgPreview').textContent = (m.body || '').slice(0, 200);
+  document.getElementById('markTagInput').value = m.mark_tag || '';
+  document.getElementById('markNote').value = m.mark_note || '';
+  document.getElementById('markRemoveBtn').style.display = m.starred ? '' : 'none';
+  _renderMarkChips();
+  document.getElementById('msgMarkModal').classList.add('show');
+}
+function _renderMarkChips() {
+  const cur = document.getElementById('markTagInput').value.trim();
+  document.getElementById('markTagChips').innerHTML = MARK_TAG_PRESETS.map(t =>
+    '<button type="button" onclick="_pickMarkTag(\'' + t + '\')" style="border:1px solid ' + (t === cur ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)') + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">' + t + '</button>'
+  ).join('');
+}
+function _pickMarkTag(t) {
+  const inp = document.getElementById('markTagInput');
+  inp.value = (inp.value.trim() === t) ? '' : t;   // 再点一次取消选择
+  _renderMarkChips();
+}
+async function saveMark(remove) {
+  if (!_markMsgId) return;
   try {
-    const r = await api('/sms/messages/' + msgId + '/star', { method: 'POST', body: JSON.stringify({}) });
+    const payload = remove ? { starred: 0 } : {
+      starred: 1,
+      tag: document.getElementById('markTagInput').value.trim(),
+      note: document.getElementById('markNote').value.trim()
+    };
+    const r = await api('/sms/messages/' + _markMsgId + '/star', { method: 'POST', body: JSON.stringify(payload) });
     if (r && r.error) { toast(r.error); return; }
-    const m = currentMessages.find(x => x.id === msgId);
-    if (m) { m.starred = r.starred; m.starred_at = r.starred ? new Date().toISOString() : null; }
+    const m = currentMessages.find(x => x.id === _markMsgId);
+    if (m) {
+      m.starred = r.starred;
+      m.starred_at = r.starred ? new Date().toISOString() : null;
+      m.mark_tag = r.tag || '';
+      m.mark_note = r.note || '';
+    }
     renderMessages();
-    toast(r.starred ? '⭐ 已标记，可在星标里回看' : '已取消标记');
+    document.getElementById('msgMarkModal').classList.remove('show');
+    toast(r.starred ? ('📌 已标记' + (r.tag ? ': ' + r.tag : '')) : '已取消标记');
   } catch (e) { toast('操作失败: ' + (e.message || e)); }
 }
 function closeStarredModal() { document.getElementById('starredModal').classList.remove('show'); }
+let _starredMsgs = [], _starredTagSel = '';
 async function showStarredModal(threadId) {
-  document.getElementById('starredTitle').innerHTML = '&#9733; 星标消息' + (threadId ? ' · 本对话' : ' · 全部对话');
+  document.getElementById('starredTitle').innerHTML = '&#9733; 星标 / 标记消息' + (threadId ? ' · 本对话' : ' · 全部对话');
   const box = document.getElementById('starredList');
   box.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">Loading…</div>';
+  document.getElementById('starredTagFilter').innerHTML = '';
   document.getElementById('starredModal').classList.add('show');
   try {
     const r = await api('/sms/starred' + (threadId ? '?thread_id=' + threadId : ''));
-    const msgs = r.messages || [];
-    if (!msgs.length) { box.innerHTML = '<div style="padding:14px;color:var(--gray-400);text-align:center">还没有星标消息。在聊天里点消息旁的 ☆ 即可标记。</div>'; return; }
-    box.innerHTML = msgs.map(m =>
-      '<div style="padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="closeStarredModal();openThread(' + m.thread_id + ')">'
-      + '<div style="display:flex;gap:6px;align-items:center;font-size:.76rem;color:var(--gray-500);margin-bottom:2px">'
-      + '<b style="color:var(--gray-700)">' + esc(m.contact_name || fmtPhone(m.phone_e164)) + '</b>'
-      + '<span>' + (m.direction === 'inbound' ? '⬅ 对方' : '➡ 我们') + '</span>'
-      + '<span style="margin-left:auto">' + fmtDate(m.created_at) + ' ' + fmtTime(m.created_at) + '</span></div>'
-      + '<div style="font-size:.85rem;color:var(--gray-800)">' + esc(m.body || '') + '</div>'
-      + (m.translated_body && m.translated_body !== m.body ? '<div style="font-size:.76rem;color:var(--gray-400)">▸ ' + esc(m.translated_body) + '</div>' : '')
-      + '</div>'
-    ).join('');
+    _starredMsgs = r.messages || [];
+    _starredTagSel = '';
+    _renderStarred();
   } catch (e) { box.innerHTML = '<div style="padding:12px;color:var(--red)">加载失败: ' + esc(e.message || '') + '</div>'; }
+}
+function _starredFilterBy(tag) { _starredTagSel = (_starredTagSel === tag) ? '' : tag; _renderStarred(); }
+function _renderStarred() {
+  const box = document.getElementById('starredList');
+  const ft = document.getElementById('starredTagFilter');
+  // 按类别筛选: 有哪些类别就出哪些按钮 (带条数)
+  const counts = {};
+  _starredMsgs.forEach(m => { const t = m.mark_tag || ''; if (t) counts[t] = (counts[t] || 0) + 1; });
+  const tags = Object.keys(counts).sort();
+  ft.innerHTML = tags.length ? ('<button class="filter-btn' + (_starredTagSel === '' ? ' active' : '') + '" onclick="_starredFilterBy(\'\')">全部 (' + _starredMsgs.length + ')</button>'
+    + tags.map(t => '<button class="filter-btn' + (_starredTagSel === t ? ' active' : '') + '" onclick="_starredFilterBy(\'' + esc(t).replace(/'/g, "\\'") + '\')">📌 ' + esc(t) + ' (' + counts[t] + ')</button>').join('')) : '';
+  const msgs = _starredTagSel ? _starredMsgs.filter(m => (m.mark_tag || '') === _starredTagSel) : _starredMsgs;
+  if (!msgs.length) { box.innerHTML = '<div style="padding:14px;color:var(--gray-400);text-align:center">还没有标记的消息。在聊天里点消息旁的 ☆，可以选类别（卸柜/面试/发工资…）加备注。</div>'; return; }
+  box.innerHTML = msgs.map(m =>
+    '<div style="padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="closeStarredModal();openThread(' + m.thread_id + ')">'
+    + '<div style="display:flex;gap:6px;align-items:center;font-size:.76rem;color:var(--gray-500);margin-bottom:2px">'
+    + '<b style="color:var(--gray-700)">' + esc(m.contact_name || fmtPhone(m.phone_e164)) + '</b>'
+    + '<span>' + (m.direction === 'inbound' ? '⬅ 对方' : '➡ 我们') + '</span>'
+    + (m.mark_tag ? '<span style="background:#fef3c7;color:#92400e;border-radius:999px;padding:0 8px;font-weight:700">📌 ' + esc(m.mark_tag) + '</span>' : '')
+    + '<span style="margin-left:auto">' + fmtDate(m.created_at) + ' ' + fmtTime(m.created_at) + '</span></div>'
+    + '<div style="font-size:.85rem;color:var(--gray-800)">' + esc(m.body || '') + '</div>'
+    + (m.translated_body && m.translated_body !== m.body ? '<div style="font-size:.76rem;color:var(--gray-400)">▸ ' + esc(m.translated_body) + '</div>' : '')
+    + (m.mark_note ? '<div style="font-size:.78rem;color:#92400e;background:#fffbeb;border-radius:6px;padding:2px 8px;margin-top:3px">📝 ' + esc(m.mark_note) + '</div>' : '')
+    + '</div>'
+  ).join('');
 }
 // ─── 🤖 AI 评估 (仅 admin) ───
 function showEvalModal() {

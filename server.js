@@ -2945,6 +2945,9 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_eval_thread ON sms_evaluations
 try { db.exec(`ALTER TABLE sms_messages ADD COLUMN starred INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_messages ADD COLUMN starred_by INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_messages ADD COLUMN starred_at TEXT DEFAULT NULL`); } catch(e) {}
+// 标记升级: 分类(卸柜/面试/发工资等) + 备注
+try { db.exec(`ALTER TABLE sms_messages ADD COLUMN mark_tag TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_messages ADD COLUMN mark_note TEXT DEFAULT ''`); } catch(e) {}
 
 // SMS translation columns (added later — safe to add via ALTER TABLE)
 try { db.exec(`ALTER TABLE sms_threads ADD COLUMN contact_lang TEXT DEFAULT 'es'`); } catch(e) {}
@@ -29618,11 +29621,15 @@ app.post('/api/sms/messages/:id/star', requireAdmin, requireSmsAccess, (req, res
   try {
     const msg = db.prepare('SELECT id, thread_id, starred FROM sms_messages WHERE id=?').get(req.params.id);
     if (!msg) return res.status(404).json({ error: 'Message not found' });
-    const on = (req.body || {}).starred !== undefined ? ((req.body.starred ? 1 : 0)) : (msg.starred ? 0 : 1);
-    db.prepare(`UPDATE sms_messages SET starred=?, starred_by=?, starred_at=CASE WHEN ? THEN datetime('now') ELSE NULL END, updated_at=datetime('now') WHERE id=?`)
-      .run(on, on ? req.userId : null, on, msg.id);
-    smsAudit('message', msg.id, on ? 'starred' : 'unstarred', 'agent', req.userId, { thread_id: msg.thread_id });
-    res.json({ success: true, starred: on });
+    const b = req.body || {};
+    const on = b.starred !== undefined ? ((b.starred ? 1 : 0)) : (msg.starred ? 0 : 1);
+    // 分类 + 备注: 取消标记时一并清空
+    const tag = on ? String(b.tag || '').trim().slice(0, 40) : '';
+    const note = on ? String(b.note || '').trim().slice(0, 500) : '';
+    db.prepare(`UPDATE sms_messages SET starred=?, starred_by=?, starred_at=CASE WHEN ? THEN datetime('now') ELSE NULL END, mark_tag=?, mark_note=?, updated_at=datetime('now') WHERE id=?`)
+      .run(on, on ? req.userId : null, on, tag, note, msg.id);
+    smsAudit('message', msg.id, on ? 'starred' : 'unstarred', 'agent', req.userId, { thread_id: msg.thread_id, tag });
+    res.json({ success: true, starred: on, tag, note });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -29630,7 +29637,7 @@ app.post('/api/sms/messages/:id/star', requireAdmin, requireSmsAccess, (req, res
 app.get('/api/sms/starred', requireAdmin, requireSmsAccess, (req, res) => {
   try {
     const tid = parseInt(req.query.thread_id) || 0;
-    const rows = db.prepare(`SELECT m.id, m.thread_id, m.direction, m.body, m.translated_body, m.created_at, m.starred_at,
+    const rows = db.prepare(`SELECT m.id, m.thread_id, m.direction, m.body, m.translated_body, m.created_at, m.starred_at, m.mark_tag, m.mark_note,
         c.name AS contact_name, c.phone_e164, u.username AS starred_by_name
       FROM sms_messages m
       JOIN sms_threads t ON t.id = m.thread_id
