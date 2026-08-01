@@ -496,6 +496,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div style="flex:1"><label>工作的州 Work State</label><select id="editWorkState" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none;background:var(--white);margin-bottom:8px"></select></div>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px"><input type="checkbox" id="editIsForeman" style="width:auto;margin:0">🦺 是工头</label>
     </div>
+    <label id="csHiddenRow" style="display:none;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-bottom:8px"><input type="checkbox" id="editCsHidden" style="width:auto;margin:0">🙈 对客服隐藏此人（客服搜不到、看不到对话，仅管理员可见）</label>
     <label>公司 Company（从现有公司选）</label>
     <select id="editCompany" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;background:var(--white)">
       <option value="">— 不选 —</option>
@@ -1185,7 +1186,7 @@ function renderThreadList() {
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
       + '<span class="ti-time">' + time + '</span></div>'
       + '<div class="ti-preview">' + preview + '</div>'
-      + '<div class="ti-meta">' + followUpBadge(t) + (t.channel === 'whatsapp' ? '<span style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🟢 WhatsApp</span>' : '') + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
+      + '<div class="ti-meta">' + (t.contact.cs_hidden ? '<span style="background:#fee2e2;color:#b91c1c;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🙈 对客服隐藏</span>' : '') + followUpBadge(t) + (t.channel === 'whatsapp' ? '<span style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🟢 WhatsApp</span>' : '') + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
       + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
       + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
@@ -1872,6 +1873,9 @@ function showEditContactModal() {
   document.getElementById('editNotes').value = currentContact.notes || '';
   _fillWorkStateSelect(currentContact.work_state || '');
   document.getElementById('editIsForeman').checked = !!currentContact.is_foreman;
+  // 对客服隐藏: 仅 admin 可见可设
+  document.getElementById('csHiddenRow').style.display = _isAdminEc ? 'flex' : 'none';
+  document.getElementById('editCsHidden').checked = !!currentContact.cs_hidden;
   try { _editTags = JSON.parse(currentContact.tags || '[]'); } catch (_) { _editTags = []; }
   if (!Array.isArray(_editTags)) _editTags = [];
   _editTags = [...new Set(_editTags.map(normalizeTag))];   // 旧的英文工种(如 Order Picker)打开时就转成中文
@@ -1974,6 +1978,7 @@ async function saveContact() {
       payload.name = document.getElementById('editName').value.trim();
       payload.company = document.getElementById('editCompany').value.trim();
       payload.email = document.getElementById('editEmail').value.trim();
+      payload.cs_hidden = document.getElementById('editCsHidden').checked ? 1 : 0;
     }
     await api('/sms/contacts/' + currentContact.id, { method: 'PUT', body: JSON.stringify(payload) });
     if (isAdmin && _editEmp !== undefined) {
@@ -2597,9 +2602,9 @@ async function doneAssist(id) {
 }
 
 // ─── 📋 资料修改记录 (仅 admin) ───
-const _CE_FIELD_ZH = { name: '名字', company: '公司', email: '邮箱', tags: '工种标签', notes: '备注', work_state: '州', is_foreman: '工头', work_history: '工作经历' };
+const _CE_FIELD_ZH = { name: '名字', company: '公司', email: '邮箱', tags: '工种标签', notes: '备注', work_state: '州', is_foreman: '工头', work_history: '工作经历', cs_hidden: '对客服隐藏' };
 function _ceFmtVal(k, v) {
-  if (k === 'is_foreman') return v ? '是' : '否';
+  if (k === 'is_foreman' || k === 'cs_hidden') return v ? '是' : '否';
   if (k === 'work_history') {
     const a = parseWorkHistory(v);
     return a.length ? a.map(h => [h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' ')).join('; ') : '(空)';
