@@ -282,6 +282,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <button class="btn-icon" onclick="showNewChatModal()" title="从员工 / 招工申请找人发起对话" style="font-size:1.05rem">&#128172;</button>
       <button class="btn-icon" onclick="showBroadcastModal()" title="Compose / Broadcast" style="font-size:1.1rem">&#9993;</button>
       <button class="btn-icon" onclick="testNotify()" title="Test SMS Notify" style="font-size:.7rem;color:var(--red)">TEST</button>
+      <button class="btn-icon" id="csAccBtn" style="display:none" onclick="showCsAccModal()" title="客服账号管理 (仅管理员)">&#128101;</button>
       <button class="btn-icon" onclick="toggleDashboard()" title="Dashboard">&#9776;</button>
       <button class="btn-icon" onclick="loadThreads()" title="Refresh">&#x21bb;</button>
       <button class="btn-icon" onclick="doLogout()" title="Logout">&#x2715;</button>
@@ -325,6 +326,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       </div>
       <span id="detailPriority" class="priority-badge" onclick="cyclePriority()"></span>
       <span id="detailStatus" class="ti-status" style="font-size:.72rem"></span>
+      <button class="btn-icon" id="evalBtn" style="display:none" onclick="showEvalModal()" title="AI 评估这段对话里客服的表现 (仅管理员)">&#129302;</button>
       <button class="btn-icon" onclick="showStarredModal(currentThread && currentThread.id)" title="本对话的星标消息">&#9733;</button>
       <button class="btn-icon" onclick="showEditContactModal()" title="Edit contact">&#9998;</button>
       <button class="btn-icon" onclick="toggleHistory()" title="History">&#128337;</button>
@@ -395,6 +397,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <div id="editEmpLinked" style="display:none;align-items:center;gap:8px;margin-bottom:6px;background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:5px 10px;font-size:.8rem;color:#065f46"></div>
     <input id="editEmpSearch" placeholder="搜员工姓名 / 电话…" oninput="empLinkDebounce()" style="margin-bottom:4px">
     <div id="editEmpResults" style="max-height:170px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:8px;display:none"></div>
+    <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:2px">
+      <div style="flex:1"><label>工作的州 Work State</label><input id="editWorkState" placeholder="如 IL / TX" maxlength="20" style="text-transform:uppercase"></div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px"><input type="checkbox" id="editIsForeman" style="width:auto;margin:0">🦺 是工头</label>
+    </div>
     <label>公司 Company（从现有公司选）</label>
     <select id="editCompany" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:8px;outline:none;background:var(--white)">
       <option value="">— 不选 —</option>
@@ -488,6 +494,34 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   </div>
 </div>
 
+<!-- 🤖 AI 客服表现评估 (仅 admin) -->
+<div class="modal-bg" id="evalModal">
+  <div class="modal" style="max-width:560px">
+    <h3>&#129302; AI 评估客服表现</h3>
+    <div id="evalBody" style="max-height:420px;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn" id="evalRunBtn" onclick="runEvaluation()">开始评估</button>
+      <button class="close-modal" onclick="document.getElementById('evalModal').classList.remove('show')" style="margin:0">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- 客服账号管理 (仅 admin) -->
+<div class="modal-bg" id="csAccModal">
+  <div class="modal" style="max-width:520px">
+    <h3>👥 客服账号（只能登录 SMS Inbox）</h3>
+    <div id="csAccList" style="max-height:220px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:10px"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <input id="csAccUser" placeholder="用户名 (3-32位字母数字._-)" style="flex:1;min-width:130px">
+      <input id="csAccPass" placeholder="密码 (≥6位)" style="flex:1;min-width:110px">
+      <input id="csAccName" placeholder="显示名 (可选)" style="flex:1;min-width:100px">
+      <button class="btn" onclick="createCsAccount()" style="margin:0">创建</button>
+    </div>
+    <div style="font-size:.75rem;color:var(--gray-400);margin-top:8px">客服用这个账号登录 /sms-inbox 页面；访问管理后台其他任何页面都会被拒绝。</div>
+    <button class="close-modal" onclick="document.getElementById('csAccModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -534,9 +568,13 @@ async function api(path, opts = {}) {
 async function checkAuth() {
   try {
     const r = await api('/admin/me');
-    if (r && r.username) { USER = r; showApp(); return; }
+    if (r && r.username) { USER = r; showApp(); _applyAdminUi(); return; }
   } catch(e) {}
   showLogin();
+}
+function _applyAdminUi() {
+  const isAdmin = USER && USER.role === 'admin';
+  const b1 = document.getElementById('csAccBtn'); if (b1) b1.style.display = isAdmin ? '' : 'none';
 }
 
 function showLogin() {
@@ -585,6 +623,7 @@ async function doLogin() {
       localStorage.setItem('adminToken', TOKEN);
       USER = { username: r.username, role: r.role, id: r.user_id };
       showApp();
+      _applyAdminUi();
     } else {
       err.textContent = r.error || 'Login failed';
     }
@@ -700,7 +739,7 @@ function renderThreadList() {
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
       + '</div>'
       + renderTagsInline(t.tags)
-      + renderContactTagsInline(t.contact && t.contact.tags)
+      + renderContactTagsInline(t.contact && t.contact.tags, t.contact)
       + '</div></div>';
   }).join('');
 }
@@ -780,6 +819,8 @@ function renderDetail() {
   statusEl.textContent = currentThread.status;
   statusEl.className = 'ti-status ' + currentThread.status;
 
+  const eb = document.getElementById('evalBtn');
+  if (eb) eb.style.display = (USER && USER.role === 'admin') ? '' : 'none';
   renderPriorityBadge();
   renderActionBar();
   renderDetailTags();
@@ -1200,6 +1241,8 @@ function showEditContactModal() {
     if (digits) { document.getElementById('editEmpSearch').value = digits; empLinkSearch(); }
   }
   document.getElementById('editNotes').value = currentContact.notes || '';
+  document.getElementById('editWorkState').value = currentContact.work_state || '';
+  document.getElementById('editIsForeman').checked = !!currentContact.is_foreman;
   try { _editTags = JSON.parse(currentContact.tags || '[]'); } catch (_) { _editTags = []; }
   if (!Array.isArray(_editTags)) _editTags = [];
   document.getElementById('editTagInput').value = '';
@@ -1280,7 +1323,9 @@ async function saveContact() {
         company: document.getElementById('editCompany').value.trim(),
         email: document.getElementById('editEmail').value.trim(),
         tags: JSON.stringify(_editTags),
-        notes: document.getElementById('editNotes').value.trim()
+        notes: document.getElementById('editNotes').value.trim(),
+        work_state: document.getElementById('editWorkState').value.trim().toUpperCase(),
+        is_foreman: document.getElementById('editIsForeman').checked ? 1 : 0
       })
     });
     if (_editEmp !== undefined) {
@@ -1384,23 +1429,33 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ─── Phase 2: Tags ───
+function _contactStateForemanBadges(ws, fm, size) {
+  const fs = size || '.68rem';
+  let h = '';
+  if (ws) h += '<span style="background:#ede9fe;color:#5b21b6;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">📍 ' + esc(ws) + '</span>';
+  if (fm) h += '<span style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🦺 工头</span>';
+  return h;
+}
 function renderContactTagRow() {
   const row = document.getElementById('contactTagRow');
   if (!row) return;
   let tags = [];
   try { tags = JSON.parse((currentContact && currentContact.tags) || '[]'); } catch (_) {}
   const hasNotes = !!(currentContact && (currentContact.notes || '').trim());
-  row.innerHTML = (Array.isArray(tags) ? tags : []).map(t =>
+  row.innerHTML = _contactStateForemanBadges(currentContact && currentContact.work_state, currentContact && currentContact.is_foreman)
+  + (Array.isArray(tags) ? tags : []).map(t =>
     '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">' + esc(t) + '</span>'
   ).join('')
   + (hasNotes ? '<span title="有备注" style="font-size:.68rem;color:#b45309;background:#fef3c7;border-radius:999px;padding:1px 8px;font-weight:600">&#128221; 备注</span>' : '')
   + '<a style="font-size:.68rem;color:var(--blue,#2563eb);cursor:pointer;text-decoration:underline" onclick="showEditContactModal()">&#127991; 标签/备注</a>';
 }
-function renderContactTagsInline(tagsJson) {
+function renderContactTagsInline(tagsJson, contact) {
   let tags = [];
   try { tags = JSON.parse(tagsJson || '[]'); } catch (_) {}
-  if (!Array.isArray(tags) || !tags.length) return '';
-  return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">' + tags.slice(0, 4).map(t =>
+  const badges = contact ? _contactStateForemanBadges(contact.work_state, contact.is_foreman, '.64rem') : '';
+  if ((!Array.isArray(tags) || !tags.length) && !badges) return '';
+  if (!Array.isArray(tags)) tags = [];
+  return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">' + badges + tags.slice(0, 4).map(t =>
     '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:0 7px;font-size:.64rem;font-weight:600">' + esc(t) + '</span>'
   ).join('') + (tags.length > 4 ? '<span style="font-size:.64rem;color:var(--gray-400)">+' + (tags.length - 4) + '</span>' : '') + '</div>';
 }
@@ -1478,6 +1533,96 @@ async function showStarredModal(threadId) {
       + '</div>'
     ).join('');
   } catch (e) { box.innerHTML = '<div style="padding:12px;color:var(--red)">加载失败: ' + esc(e.message || '') + '</div>'; }
+}
+// ─── 🤖 AI 评估 (仅 admin) ───
+function showEvalModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  if (!currentThread) return;
+  document.getElementById('evalModal').classList.add('show');
+  const body = document.getElementById('evalBody');
+  body.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.85rem">Loading…</div>';
+  api('/sms/threads/' + currentThread.id + '/evaluations').then(r => {
+    const evs = (r && r.evaluations) || [];
+    body.innerHTML = evs.length ? evs.map(ev => _renderEval(ev.parsed, ev.raw, ev.created_at + ' · ' + ev.created_by + ' · ' + ev.model)).join('<hr style="border:none;border-top:1px solid var(--gray-200);margin:10px 0">')
+      : '<div style="padding:10px;color:var(--gray-400);font-size:.85rem">还没有评估记录 — 点「开始评估」让 AI 通读这段对话并打分。</div>';
+  }).catch(() => { body.innerHTML = '<div style="padding:10px;color:var(--red)">加载失败</div>'; });
+}
+function _renderEval(p, raw, meta) {
+  if (!p) return '<div style="font-size:.8rem;white-space:pre-wrap">' + esc(raw || '') + '</div>';
+  const li = a => (Array.isArray(a) && a.length) ? '<ul style="margin:4px 0 8px 18px;padding:0;font-size:.83rem">' + a.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '<div style="font-size:.78rem;color:var(--gray-400);margin:2px 0 8px">无</div>';
+  const score = parseInt(p.score) || 0;
+  const col = score >= 8 ? '#059669' : score >= 6 ? '#d97706' : '#dc2626';
+  return '<div>'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="font-size:1.6rem;font-weight:800;color:' + col + '">' + score + '<span style="font-size:.85rem;color:var(--gray-400)">/10</span></span><span style="font-size:.72rem;color:var(--gray-400)">' + esc(meta || '') + '</span></div>'
+    + '<div style="font-size:.85rem;margin-bottom:6px">' + esc(p.summary || '') + '</div>'
+    + (p.response_speed ? '<div style="font-size:.8rem;color:var(--gray-600);margin-bottom:6px">⏱ ' + esc(p.response_speed) + '</div>' : '')
+    + '<div style="font-size:.78rem;font-weight:700;color:#059669">✅ 做得好</div>' + li(p.strengths)
+    + '<div style="font-size:.78rem;font-weight:700;color:#dc2626">⚠️ 问题</div>' + li(p.issues)
+    + '<div style="font-size:.78rem;font-weight:700;color:#2563eb">💡 建议</div>' + li(p.suggestions)
+    + ((Array.isArray(p.risk_flags) && p.risk_flags.length) ? '<div style="font-size:.78rem;font-weight:700;color:#b45309">🚩 风险提示</div>' + li(p.risk_flags) : '')
+    + '</div>';
+}
+async function runEvaluation() {
+  if (!currentThread) return;
+  const btn = document.getElementById('evalRunBtn');
+  btn.disabled = true; btn.textContent = '评估中… (约十几秒)';
+  try {
+    const r = await api('/sms/threads/' + currentThread.id + '/evaluate', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.error) throw new Error(r.error);
+    document.getElementById('evalBody').innerHTML = _renderEval(r.parsed, r.raw, '刚刚 · ' + (r.model || ''));
+  } catch (e) { toast('评估失败: ' + (e.message || e)); }
+  btn.disabled = false; btn.textContent = '开始评估';
+}
+// ─── 客服账号管理 (仅 admin) ───
+function showCsAccModal() {
+  if (!USER || USER.role !== 'admin') { toast('仅管理员可用'); return; }
+  document.getElementById('csAccModal').classList.add('show');
+  loadCsAccounts();
+}
+async function loadCsAccounts() {
+  const el = document.getElementById('csAccList');
+  el.innerHTML = '<div style="padding:10px;color:var(--gray-400);font-size:.85rem">Loading…</div>';
+  try {
+    const r = await api('/sms/cs-accounts');
+    const accs = (r && r.accounts) || [];
+    el.innerHTML = accs.length ? accs.map(a =>
+      '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--gray-200);font-size:.85rem">'
+      + '<b>' + esc(a.username) + '</b>' + (a.display_name ? '<span style="color:var(--gray-400)">' + esc(a.display_name) + '</span>' : '')
+      + '<span style="margin-left:auto;font-size:.72rem;color:' + (a.active ? '#059669' : '#dc2626') + '">' + (a.active ? '启用' : '停用') + '</span>'
+      + '<a style="cursor:pointer;text-decoration:underline;font-size:.75rem" onclick="toggleCsAccount(' + a.id + ',' + (a.active ? 0 : 1) + ')">' + (a.active ? '停用' : '启用') + '</a>'
+      + '<a style="cursor:pointer;text-decoration:underline;font-size:.75rem" onclick="resetCsPassword(' + a.id + ')">改密码</a>'
+      + '</div>').join('')
+      : '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">还没有客服账号</div>';
+  } catch (e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">加载失败</div>'; }
+}
+async function createCsAccount() {
+  try {
+    const r = await api('/sms/cs-accounts', { method: 'POST', body: JSON.stringify({
+      username: document.getElementById('csAccUser').value.trim(),
+      password: document.getElementById('csAccPass').value,
+      display_name: document.getElementById('csAccName').value.trim()
+    }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('客服账号已创建');
+    document.getElementById('csAccUser').value = ''; document.getElementById('csAccPass').value = ''; document.getElementById('csAccName').value = '';
+    loadCsAccounts();
+  } catch (e) { toast(e.message || '创建失败'); }
+}
+async function toggleCsAccount(id, active) {
+  try {
+    const r = await api('/sms/cs-accounts/' + id, { method: 'PATCH', body: JSON.stringify({ active }) });
+    if (r && r.error) throw new Error(r.error);
+    loadCsAccounts();
+  } catch (e) { toast(e.message || '操作失败'); }
+}
+async function resetCsPassword(id) {
+  const pw = prompt('输入新密码 (≥6位):');
+  if (!pw) return;
+  try {
+    const r = await api('/sms/cs-accounts/' + id, { method: 'PATCH', body: JSON.stringify({ password: pw }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('密码已更新');
+  } catch (e) { toast(e.message || '操作失败'); }
 }
 function renderTagsInline(tagsJson) {
   let tags = [];

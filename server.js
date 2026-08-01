@@ -2897,6 +2897,20 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_thread ON sms_message
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_sid ON sms_messages(twilio_message_sid)`); } catch(e) {}
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messages(thread_id, created_at)`); } catch(e) {}
 
+// 联系人标注: 工作的州 + 是否工头
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_state TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_foreman INTEGER DEFAULT 0`); } catch(e) {}
+// AI 聊天表现评估记录 (admin 触发)
+db.exec(`CREATE TABLE IF NOT EXISTS sms_evaluations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL,
+  model TEXT DEFAULT '',
+  result TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_eval_thread ON sms_evaluations(thread_id)`); } catch(e) {}
+
 // 消息特殊标记 (⭐): 标记后可在"星标消息"里汇总回看
 try { db.exec(`ALTER TABLE sms_messages ADD COLUMN starred INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_messages ADD COLUMN starred_by INTEGER DEFAULT NULL`); } catch(e) {}
@@ -8517,6 +8531,12 @@ function requireAdmin(req, res, next) {
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
+  // 客服(cs)专用账号: 只允许 SMS Inbox 相关接口, 其余管理后台一律 403
+  if (session.role === 'cs') {
+    const p = req.originalUrl.split('?')[0];
+    const csAllowed = p.startsWith('/api/sms/') || p === '/api/admin/me' || p === '/api/admin/logout';
+    if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox)' });
+  }
   const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=?').get(session.userId);
   req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
   req.assignedEmployeeIds = (_u && _u.assigned_employee_ids) || '';
@@ -28714,7 +28734,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
 
-    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags,
+    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -28727,7 +28747,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     res.json({
       threads: threads.map(t => ({
         id: t.id,
-        contact: { id: t.contact_id, phone_e164: t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags },
+        contact: { id: t.contact_id, phone_e164: t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman },
         status: t.status,
         priority: t.priority,
         assigned_agent: t.assigned_agent_id ? { id: t.assigned_agent_id, username: t.agent_username } : null,
@@ -28751,7 +28771,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/threads/:id — thread detail
 app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes,
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -28781,7 +28801,9 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
         email: thread.contact_email,
         employee_id: thread.employee_id,
         tags: thread.contact_tags,
-        notes: thread.contact_notes
+        notes: thread.contact_notes,
+        work_state: thread.contact_work_state,
+        is_foreman: thread.contact_is_foreman
       }
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -28988,11 +29010,13 @@ app.post('/api/sms/threads/:id/notes', requireAdmin, requireSmsAccess, (req, res
 // PUT /api/sms/contacts/:id
 app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const { name, company, email, tags, notes } = req.body;
+    const { name, company, email, tags, notes, work_state, is_foreman } = req.body;
     const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
-    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, updated_at=datetime('now') WHERE id=?`)
-      .run(name ?? contact.name, company ?? contact.company, email ?? contact.email, tags ?? contact.tags, notes ?? contact.notes, contact.id);
+    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, updated_at=datetime('now') WHERE id=?`)
+      .run(name ?? contact.name, company ?? contact.company, email ?? contact.email, tags ?? contact.tags, notes ?? contact.notes,
+           work_state !== undefined ? String(work_state || '').toUpperCase().slice(0, 20) : contact.work_state,
+           is_foreman !== undefined ? (is_foreman ? 1 : 0) : contact.is_foreman, contact.id);
     smsAudit('contact', contact.id, 'updated', 'agent', req.userId, {});
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -29405,6 +29429,85 @@ app.get('/api/sms/starred', requireAdmin, requireSmsAccess, (req, res) => {
       WHERE m.starred=1 ${tid ? 'AND m.thread_id=?' : ''}
       ORDER BY m.starred_at DESC LIMIT 300`).all(...(tid ? [tid] : []));
     res.json({ messages: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 客服(cs)账号管理: 专用登录, 只能进 SMS Inbox (requireAdmin 里对 cs 角色做了路径限制) ───
+app.get('/api/sms/cs-accounts', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    res.json({ accounts: db.prepare(`SELECT id, username, display_name, active, created_at FROM admin_users WHERE role='cs' ORDER BY username`).all() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/sms/cs-accounts', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const { username, password, display_name } = req.body || {};
+    const un = String(username || '').trim();
+    if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(un)) return res.status(400).json({ error: '用户名 3-32 位, 仅字母数字._-' });
+    if (String(password || '').length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+    if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(un)) return res.status(400).json({ error: '用户名已存在' });
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, active) VALUES (?,?,?,'cs',?,1)`)
+      .run(un, hashPassword(String(password), salt), salt, String(display_name || '').slice(0, 60));
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.patch('/api/sms/cs-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const acc = db.prepare(`SELECT * FROM admin_users WHERE id=? AND role='cs'`).get(req.params.id);
+    if (!acc) return res.status(404).json({ error: 'Not found' });
+    const b = req.body || {};
+    if (b.active !== undefined) db.prepare('UPDATE admin_users SET active=? WHERE id=?').run(b.active ? 1 : 0, acc.id);
+    if (b.password) {
+      if (String(b.password).length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+      const salt = crypto.randomBytes(16).toString('hex');
+      db.prepare('UPDATE admin_users SET password_hash=?, salt=? WHERE id=?').run(hashPassword(String(b.password), salt), salt, acc.id);
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 🤖 AI 评估客服聊天表现 (仅 admin): 把对话整理给 Claude, 输出结构化评估并存档 ───
+app.post('/api/sms/threads/:id/evaluate', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) return res.status(400).json({ error: '未配置 ANTHROPIC_API_KEY — 在服务器环境变量配上 Claude API 密钥后即可使用 AI 评估' });
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name AS contact_name FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
+    if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    const msgs = db.prepare(`SELECT m.created_at, m.direction, m.body, m.translated_body, a.username AS agent
+      FROM sms_messages m LEFT JOIN admin_users a ON a.id=m.author_agent_id
+      WHERE m.thread_id=? ORDER BY m.created_at ASC LIMIT 300`).all(thread.id);
+    if (!msgs.length) return res.status(400).json({ error: '该对话还没有消息' });
+    const transcript = msgs.map(m => {
+      const who = m.direction === 'inbound' ? ('客户(' + (thread.contact_name || thread.phone_e164) + ')') : ('客服' + (m.agent ? '(' + m.agent + ')' : ''));
+      return `[${m.created_at}] ${who}: ${m.body}${m.translated_body && m.translated_body !== m.body ? ' (译: ' + m.translated_body + ')' : ''}`;
+    }).join('\n');
+    const model = process.env.ANTHROPIC_EVAL_MODEL || 'claude-sonnet-5';
+    const prompt = `你是客服质检主管。下面是一段客服与客户(劳务工人/申请者)的短信对话记录, 客服负责招工、排班、答疑。请评估客服的表现, 只输出 JSON (中文):
+{"score": 1-10 整数, "summary": "两三句总评", "response_speed": "响应速度评价(结合时间戳)", "strengths": ["做得好的点"], "issues": ["问题点(没有就空数组)"], "suggestions": ["具体改进建议"], "risk_flags": ["合规/承诺风险(如有)"]}
+
+对话记录:
+${transcript}`.slice(0, 150000);
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model, max_tokens: 1200, messages: [{ role: 'user', content: prompt }] })
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ error: 'Claude API 错误: ' + ((body.error && body.error.message) || r.status) });
+    const text = ((body.content || []).find(c => c.type === 'text') || {}).text || '';
+    let parsed = null;
+    try { parsed = JSON.parse((text.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch (_) {}
+    const by = (req.session && req.session.username) || req.userName || 'admin';
+    db.prepare('INSERT INTO sms_evaluations (thread_id, model, result, created_by) VALUES (?,?,?,?)')
+      .run(thread.id, model, JSON.stringify({ parsed, raw: text }).slice(0, 60000), by);
+    smsAudit('thread', thread.id, 'ai_evaluated', 'agent', req.userId, { model });
+    res.json({ success: true, model, parsed, raw: text });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/sms/threads/:id/evaluations', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const rows = db.prepare('SELECT id, model, result, created_by, created_at FROM sms_evaluations WHERE thread_id=? ORDER BY id DESC LIMIT 10').all(req.params.id);
+    res.json({ evaluations: rows.map(r2 => { let j = null; try { j = JSON.parse(r2.result); } catch (_) {} return { id: r2.id, model: r2.model, created_by: r2.created_by, created_at: r2.created_at, parsed: j && j.parsed, raw: j && j.raw }; }) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
