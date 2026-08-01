@@ -28930,10 +28930,16 @@ function smsPhoneForRole(req, phone, employeeId) {
 }
 
 // ─── 客服账号: 密码策略 + admin 可见密码(用文件加密钥加密存储) ───
-function csPwPolicy(pw) {
+function csPwPolicy(pw, username) {
   const s = String(pw || '');
   if (s.length < 8) return '密码至少 8 位';
-  if (!/[A-Za-z]/.test(s) || !/\d/.test(s)) return '密码需同时包含字母和数字';
+  if (!/[a-z]/.test(s)) return '密码需要包含小写字母';
+  if (!/[A-Z]/.test(s)) return '密码需要包含大写字母';
+  if (!/\d/.test(s)) return '密码需要包含数字';
+  if (username && s.toLowerCase().includes(String(username).toLowerCase())) return '密码不能包含用户名';
+  const low = s.toLowerCase();
+  if (['password', '12345678', 'qwerty', 'abc123', '111111', 'admin'].some(c => low.includes(c))) return '密码太常见, 换一个';
+  if (/(0123|1234|2345|3456|4567|5678|6789|abcd|qwer|asdf)/.test(low)) return '不要用连续字符 (如 1234 / abcd)';
   return null;
 }
 function csEncPw(pw) { try { return encryptFileBuf(Buffer.from(String(pw), 'utf8')).toString('base64'); } catch (_) { return ''; } }
@@ -29901,7 +29907,7 @@ app.post('/api/sms/cs-accounts', requireAdmin, requireRole('admin'), (req, res) 
     const { username, password, display_name, email } = req.body || {};
     const un = String(username || '').trim();
     if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(un)) return res.status(400).json({ error: '用户名 3-32 位, 仅字母数字._-' });
-    const pwErr = csPwPolicy(password);
+    const pwErr = csPwPolicy(password, un);
     if (pwErr) return res.status(400).json({ error: pwErr });
     if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(un)) return res.status(400).json({ error: '用户名已存在' });
     const salt = crypto.randomBytes(16).toString('hex');
@@ -29918,7 +29924,7 @@ app.patch('/api/sms/cs-accounts/:id', requireAdmin, requireRole('admin'), (req, 
     if (b.active !== undefined) db.prepare('UPDATE admin_users SET active=? WHERE id=?').run(b.active ? 1 : 0, acc.id);
     if (b.email !== undefined) db.prepare('UPDATE admin_users SET email=? WHERE id=?').run(String(b.email || '').trim().slice(0, 120), acc.id);
     if (b.password) {
-      const pwErr = csPwPolicy(b.password);
+      const pwErr = csPwPolicy(b.password, acc.username);
       if (pwErr) return res.status(400).json({ error: pwErr });
       const salt = crypto.randomBytes(16).toString('hex');
       db.prepare('UPDATE admin_users SET password_hash=?, salt=?, pw_visible=? WHERE id=?').run(hashPassword(String(b.password), salt), salt, csEncPw(b.password), acc.id);
@@ -29990,7 +29996,7 @@ app.post('/api/sms/cs-signup', (req, res) => {
     if (!inv || (inv.expires_at && new Date(inv.expires_at) < new Date())) return res.status(400).json({ error: '邀请码无效或已过期, 请找管理员重新生成二维码' });
     const un = String(b.username || '').trim();
     if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(un)) return res.status(400).json({ error: '用户名 3-32 位, 仅字母数字._-' });
-    const pwErr = csPwPolicy(b.password);
+    const pwErr = csPwPolicy(b.password, un);
     if (pwErr) return res.status(400).json({ error: pwErr });
     const email = String(b.email || '').trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: '请填写有效邮箱 (用于验证码改密码)' });
@@ -30037,7 +30043,7 @@ app.post('/api/sms/cs-reset', (req, res) => {
       db.prepare('UPDATE cs_pw_resets SET attempts=attempts+1 WHERE id=?').run(row.id);
       return res.status(400).json({ error: '验证码错误' });
     }
-    const pwErr = csPwPolicy(b.password);
+    const pwErr = csPwPolicy(b.password, un);
     if (pwErr) return res.status(400).json({ error: pwErr });
     const salt = crypto.randomBytes(16).toString('hex');
     db.prepare('UPDATE admin_users SET password_hash=?, salt=?, pw_visible=? WHERE id=?').run(hashPassword(String(b.password), salt), salt, csEncPw(b.password), acc.id);
@@ -30215,15 +30221,16 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
       WHERE phone != '' AND (? = '' OR first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ? OR phone LIKE ? OR position LIKE ?
         OR replace(replace(replace(replace(replace(phone,'(',''),')',''),'-',''),' ',''),'+','') LIKE ?)
       ORDER BY (status='active') DESC, first_name, last_name LIMIT 30`).all(q, like, like, like, like, like, digitsLike);
-    const apps = db.prepare(`SELECT id, name, phone, position, partner_name FROM applicant_submissions
+    const _mask = req.userRole !== 'admin';
+    // 申请人(还没建档)只有 admin 能看到; 客服只能看到管理员建立过档案的员工
+    const apps = _mask ? [] : db.prepare(`SELECT id, name, phone, position, partner_name FROM applicant_submissions
       WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)
       ORDER BY id DESC LIMIT 30`).all(q, like, like, like, like);
-    const _mask = req.userRole !== 'admin';
     const people = [
-      // 员工=已入职 → 客服可见尾号; 申请人=未入职 → 客服完全看不到电话
+      // 员工=已入职 → 客服可见尾号
       ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: _mask ? smsMaskPhone(e.phone) : e.phone,
         extra: [e.position, e.status === 'active' ? '在职' : e.status].filter(Boolean).join(' · ') })),
-      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: _mask ? '' : a.phone,
+      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: a.phone,
         extra: [a.position, a.partner_name].filter(Boolean).join(' · ') })),
     ];
     res.json({ people });
@@ -30234,6 +30241,8 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
 app.post('/api/sms/start-thread', requireAdmin, requireSmsAccess, (req, res) => {
   try {
     const b = req.body || {};
+    // 申请人(未建档)只有 admin 能发起对话
+    if (b.type === 'applicant' && req.userRole !== 'admin') return res.status(403).json({ error: '申请人需要管理员建档后才能联系' });
     // 优先按 type+ref_id 由服务器查电话 (客服端电话是打码的, 不能直接用)
     let phoneRaw = String(b.phone || '');
     if (b.type === 'employee' && b.ref_id) {

@@ -331,7 +331,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       </div>
       <div style="font-size:.78rem;color:var(--gray-600);margin-bottom:6px">2️⃣ 收到后填验证码和新密码</div>
       <input id="fgCode" placeholder="6 位验证码" style="margin-bottom:8px">
-      <input id="fgPw" type="password" placeholder="新密码 (≥8位, 含字母+数字)" style="margin-bottom:8px">
+      <input id="fgPw" type="password" placeholder="新密码 (≥8位, 大小写+数字)" style="margin-bottom:8px">
       <button onclick="doResetPw()" style="font-size:.85rem">重置密码</button>
       <div class="err" id="fgMsg"></div>
     </div>
@@ -823,7 +823,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <div id="csAccList" style="max-height:240px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:10px"></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <input id="csAccUser" placeholder="用户名 (3-32位字母数字._-)" style="flex:1;min-width:130px">
-      <input id="csAccPass" placeholder="密码 (≥8位, 含字母+数字)" style="flex:1;min-width:130px">
+      <input id="csAccPass" placeholder="密码 (≥8位, 大小写+数字)" style="flex:1;min-width:130px">
       <input id="csAccName" placeholder="显示名 (可选)" style="flex:1;min-width:90px">
       <input id="csAccEmail" placeholder="邮箱 (可选)" style="flex:1;min-width:120px">
       <button class="btn" onclick="createCsAccount()" style="margin:0">创建</button>
@@ -2806,7 +2806,7 @@ async function toggleCsAccount(id, active) {
   } catch (e) { toast(e.message || '操作失败'); }
 }
 async function resetCsPassword(id) {
-  const pw = prompt('输入新密码 (≥8位, 需含字母和数字):');
+  const pw = prompt('输入新密码 (≥8位, 需含大小写字母和数字):');
   if (!pw) return;
   try {
     const r = await api('/sms/cs-accounts/' + id, { method: 'PATCH', body: JSON.stringify({ password: pw }) });
