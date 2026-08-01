@@ -29157,15 +29157,52 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
     const { name, company, email, tags, notes, work_state, is_foreman } = req.body;
     const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
-    // 名字仅 admin 可改; 客服通过"关联员工账号"自动带出名字
-    const newName = req.userRole === 'admin' ? (name ?? contact.name) : contact.name;
+    const isAdmin = req.userRole === 'admin';
+    // 非 admin 只能改: 州 / 工头 / 工种标签 / 备注; 名字、公司、邮箱、员工关联仅 admin
+    const next = {
+      name: isAdmin ? (name ?? contact.name) : contact.name,
+      company: isAdmin ? (company ?? contact.company) : contact.company,
+      email: isAdmin ? (email ?? contact.email) : contact.email,
+      tags: tags ?? contact.tags,
+      notes: notes ?? contact.notes,
+      work_state: work_state !== undefined ? String(work_state || '').toUpperCase().slice(0, 20) : contact.work_state,
+      is_foreman: is_foreman !== undefined ? (is_foreman ? 1 : 0) : (contact.is_foreman ? 1 : 0)
+    };
+    // 变更明细存进审计, admin 每天可在「资料修改记录」里核对
+    const changes = {};
+    for (const k of Object.keys(next)) {
+      const oldV = k === 'is_foreman' ? (contact.is_foreman ? 1 : 0) : (contact[k] ?? '');
+      if (String(next[k] ?? '') !== String(oldV)) changes[k] = { from: oldV, to: next[k] };
+    }
     db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, updated_at=datetime('now') WHERE id=?`)
-      .run(newName, company ?? contact.company, email ?? contact.email, tags ?? contact.tags, notes ?? contact.notes,
-           work_state !== undefined ? String(work_state || '').toUpperCase().slice(0, 20) : contact.work_state,
-           is_foreman !== undefined ? (is_foreman ? 1 : 0) : contact.is_foreman, contact.id);
-    smsAudit('contact', contact.id, 'updated', 'agent', req.userId, {});
+      .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, contact.id);
+    if (Object.keys(changes).length) smsAudit('contact', contact.id, 'updated', 'agent', req.userId, { by: req.userName, changes });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 📋 资料修改记录 (仅 admin): 每天核对客服对联系人资料的修改
+app.get('/api/sms/contact-edits', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? req.query.date : null;
+    const tzoff = parseInt(req.query.tzoff) || 0;   // 浏览器 getTimezoneOffset(), 本地时间+tzoff分钟=UTC
+    let where = "l.entity_type='contact' AND l.action IN ('updated','employee_linked','opted_out','opted_in')";
+    const params = [];
+    if (date) {
+      where += " AND l.created_at >= datetime(?, ? || ' minutes') AND l.created_at < datetime(?, '+1 day', ? || ' minutes')";
+      params.push(date, String(tzoff), date, String(tzoff));
+    }
+    const rows = db.prepare(`SELECT l.id, l.entity_id, l.action, l.metadata, l.created_at,
+        COALESCE(NULLIF(a.display_name,''), a.username) AS agent_name,
+        c.name AS contact_name, c.phone_e164
+      FROM sms_audit_logs l
+      LEFT JOIN admin_users a ON a.id = l.actor_id
+      LEFT JOIN sms_contacts c ON c.id = l.entity_id
+      WHERE ${where}
+      ORDER BY l.id DESC LIMIT 300`).all(...params);
+    res.json({ edits: rows.map(r2 => { let m = {}; try { m = JSON.parse(r2.metadata || '{}'); } catch (_) {}
+      return { id: r2.id, action: r2.action, created_at: r2.created_at, agent_name: r2.agent_name, contact_name: r2.contact_name, phone_e164: r2.phone_e164, changes: m.changes || null, meta: m }; }) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // PATCH /api/sms/threads/:id/langs — update contact_lang / agent_lang
@@ -29379,7 +29416,8 @@ app.get('/api/sms/search', requireAdmin, requireSmsAccess, (req, res) => {
 });
 
 // ─── Link contact to employee ───
-app.put('/api/sms/contacts/:id/link-employee', requireAdmin, requireSmsAccess, (req, res) => {
+// 员工关联仅 admin 可操作 (客服不能接触员工关系)
+app.put('/api/sms/contacts/:id/link-employee', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const { employee_id } = req.body;
     const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
