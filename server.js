@@ -2900,6 +2900,8 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messag
 // 联系人标注: 工作的州 + 是否工头
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_state TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_foreman INTEGER DEFAULT 0`); } catch(e) {}
+// 工作经历: 一个人可能干过多个公司, [{company, role, date}] 带大概日期
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_history TEXT DEFAULT '[]'`); } catch(e) {}
 // Twilio 合规: 对方回 STOP 等退订词后必须停发 (opted_out), 回 START 恢复
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out_at TEXT DEFAULT NULL`); } catch(e) {}
@@ -28865,7 +28867,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
 
-    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out,
+    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out, c.employee_id as contact_employee_id, c.work_history as contact_work_history,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -28879,7 +28881,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     res.json({
       threads: threads.map(t => ({
         id: t.id,
-        contact: { id: t.contact_id, phone_e164: _mask ? smsMaskPhone(t.phone_e164) : t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out },
+        contact: { id: t.contact_id, phone_e164: _mask ? smsMaskPhone(t.phone_e164) : t.phone_e164, name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: t.contact_work_state, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out, employee_id: t.contact_employee_id, work_history: t.contact_work_history },
         status: t.status,
         priority: t.priority,
         assigned_agent: t.assigned_agent_id ? { id: t.assigned_agent_id, username: t.agent_username } : null,
@@ -28903,7 +28905,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/threads/:id — thread detail
 app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out,
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out, c.work_history as contact_work_history,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -28937,7 +28939,8 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
         notes: thread.contact_notes,
         work_state: thread.contact_work_state,
         is_foreman: thread.contact_is_foreman,
-        opted_out: thread.contact_opted_out
+        opted_out: thread.contact_opted_out,
+        work_history: thread.contact_work_history
       }
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -29169,11 +29172,23 @@ app.post('/api/sms/threads/:id/notes', requireAdmin, requireSmsAccess, (req, res
 // PUT /api/sms/contacts/:id
 app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const { name, company, email, tags, notes, work_state, is_foreman } = req.body;
+    const { name, company, email, tags, notes, work_state, is_foreman, work_history } = req.body;
     const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
     const isAdmin = req.userRole === 'admin';
-    // 非 admin 只能改: 州 / 工头 / 工种标签 / 备注; 名字、公司、邮箱、员工关联仅 admin
+    // 工作经历: [{company, role, date}] 最多 20 条, 逐字段截断
+    let wh;
+    if (work_history !== undefined) {
+      try {
+        const arr = typeof work_history === 'string' ? JSON.parse(work_history) : work_history;
+        wh = JSON.stringify((Array.isArray(arr) ? arr : []).slice(0, 20).map(x => ({
+          company: String((x && x.company) || '').slice(0, 80),
+          role: String((x && x.role) || '').slice(0, 40),
+          date: String((x && x.date) || '').slice(0, 20)
+        })).filter(x => x.company || x.role));
+      } catch (_) { wh = undefined; }
+    }
+    // 非 admin 只能改: 州 / 工头 / 工种标签 / 工作经历 / 备注; 名字、公司、邮箱、员工关联仅 admin
     const next = {
       name: isAdmin ? (name ?? contact.name) : contact.name,
       company: isAdmin ? (company ?? contact.company) : contact.company,
@@ -29181,7 +29196,8 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
       tags: tags ?? contact.tags,
       notes: notes ?? contact.notes,
       work_state: work_state !== undefined ? String(work_state || '').toUpperCase().slice(0, 20) : contact.work_state,
-      is_foreman: is_foreman !== undefined ? (is_foreman ? 1 : 0) : (contact.is_foreman ? 1 : 0)
+      is_foreman: is_foreman !== undefined ? (is_foreman ? 1 : 0) : (contact.is_foreman ? 1 : 0),
+      work_history: wh !== undefined ? wh : (contact.work_history || '[]')
     };
     // 变更明细存进审计, admin 每天可在「资料修改记录」里核对
     const changes = {};
@@ -29189,8 +29205,8 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
       const oldV = k === 'is_foreman' ? (contact.is_foreman ? 1 : 0) : (contact[k] ?? '');
       if (String(next[k] ?? '') !== String(oldV)) changes[k] = { from: oldV, to: next[k] };
     }
-    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, updated_at=datetime('now') WHERE id=?`)
-      .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, contact.id);
+    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, work_history=?, updated_at=datetime('now') WHERE id=?`)
+      .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, next.work_history, contact.id);
     if (Object.keys(changes).length) smsAudit('contact', contact.id, 'updated', 'agent', req.userId, { by: req.userName, changes });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
