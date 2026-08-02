@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>每日工作要求 — Prime Anchor SMS</title>
+<title>每日工作 — Prime Anchor</title>
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -40,8 +40,9 @@ textarea:focus{border-color:var(--accent)}
 </head>
 <body>
 <div class="header">
-  <a class="back" href="/sms-inbox">&larr; 收件箱</a>
-  <h1>&#128203; 每日工作要求</h1>
+  <img src="logo.svg" alt="" style="height:26px">
+  <h1>&#128203; 每日工作</h1>
+  <span id="roleTag" style="font-size:.7rem;font-weight:700;padding:2px 10px;border-radius:999px;background:var(--sky-light);color:var(--blue)"></span>
   <span id="dateNow" style="margin-left:auto;font-size:.78rem;color:var(--gray-400)"></span>
 </div>
 <div class="wrap">
@@ -81,8 +82,22 @@ textarea:focus{border-color:var(--accent)}
   </div>
   <div class="section" id="emptySec" style="display:none"><div class="hint">今天还没有发布工作要求</div></div>
 
+  <!-- 客服: 每日下班前写完成报告 -->
+  <div class="section" id="myReportSec" style="display:none">
+    <h2>&#9997;&#65039; 我的今日工作报告 <span id="myReportState" style="margin-left:auto;font-size:.72rem;font-weight:700"></span></h2>
+    <textarea id="reportInput" style="min-height:130px" placeholder="下班前写今天完成了多少，比如：&#10;· 跟进了 18 个申请人，12 个已回复&#10;· 约了 5 个面试（GOFO 3 / Tolead 2）&#10;· 2 个投诉已解决，1 个升级给管理员"></textarea>
+    <button class="btn" onclick="saveReport()">提交今日报告</button>
+    <div id="myReportHist" style="margin-top:10px"></div>
+  </div>
+
+  <!-- admin: 看所有客服交的报告 -->
+  <div class="section" id="reportsSec" style="display:none">
+    <h2>&#128202; 客服工作报告</h2>
+    <div id="reportsList"></div>
+  </div>
+
   <div class="section" id="histSec" style="display:none">
-    <h2>&#128337; 往日记录</h2>
+    <h2>&#128337; 往日工作要求</h2>
     <div id="histList"></div>
   </div>
 
@@ -155,9 +170,11 @@ async function load() {
   } catch (e) { document.getElementById('loading').textContent = e.message || '加载失败'; return; }
   document.getElementById('loading').style.display = 'none';
 }
+let _reports = [];
 async function reload() {
-  const r = await api('/sms/briefings');
+  const [r, rp] = await Promise.all([api('/sms/briefings'), api('/sms/cs-reports').catch(() => ({ reports: [] }))]);
   _briefings = (r && r.briefings) || [];
+  _reports = (rp && rp.reports) || [];
   // 打开本页即视为已读, 收件箱红点熄灭 (以全部条目的最新更新时间为准)
   const maxUpd = _briefings.reduce((m, b) => b.updated_at > m ? b.updated_at : m, '');
   if (maxUpd) localStorage.setItem('brief_seen', maxUpd);
@@ -170,6 +187,8 @@ function render() {
   const isAdmin = USER && USER.role === 'admin';
   const today = todayChicago();
   document.getElementById('dateNow').textContent = '📅 ' + today;
+  document.getElementById('roleTag').textContent = isAdmin ? '管理员' : ('客服 · ' + (USER.display_name || USER.username || ''));
+  renderReports(isAdmin, today);
   const todays = _briefings.filter(b => b.brief_date === today);
   document.getElementById('editSec').style.display = isAdmin ? '' : 'none';
   if (isAdmin) {
@@ -207,6 +226,45 @@ function onCompanyChange() { render(); }
 function pickCompany(name) {
   document.getElementById('briefCompany').value = name;
   render();
+}
+function renderReports(isAdmin, today) {
+  // 客服: 自己的报告编辑器 + 自己的历史
+  document.getElementById('myReportSec').style.display = isAdmin ? 'none' : '';
+  document.getElementById('reportsSec').style.display = isAdmin ? '' : 'none';
+  if (!isAdmin) {
+    const mine = _reports.find(x => x.report_date === today);
+    if (document.activeElement !== document.getElementById('reportInput')) {
+      document.getElementById('reportInput').value = mine ? mine.content : '';
+    }
+    const st = document.getElementById('myReportState');
+    st.textContent = mine ? '✅ 已提交 ' + String(mine.updated_at || '').slice(11, 16) + '（可继续修改）' : '⏳ 今天还没提交';
+    st.style.color = mine ? 'var(--green)' : 'var(--red)';
+    const past = _reports.filter(x => x.report_date !== today);
+    document.getElementById('myReportHist').innerHTML = past.length
+      ? '<div style="font-size:.72rem;font-weight:700;color:var(--gray-400);margin-bottom:5px">我交过的报告</div>' + past.map(x =>
+        '<div class="hist-item"><div class="hist-date">' + esc(x.report_date) + '</div><div class="hist-text">' + esc(x.content) + '</div></div>').join('')
+      : '';
+  } else {
+    // admin: 按日期分组看所有客服的报告
+    const dates = [...new Set(_reports.map(x => x.report_date))];
+    document.getElementById('reportsList').innerHTML = dates.length ? dates.map(d => {
+      const day = _reports.filter(x => x.report_date === d);
+      return '<div style="margin-bottom:12px"><div style="font-size:.78rem;font-weight:700;color:' + (d === today ? 'var(--blue)' : 'var(--gray-400)') + ';margin-bottom:5px">'
+        + (d === today ? '📌 今天 ' : '') + esc(d) + '（' + day.length + ' 人已交）</div>'
+        + day.map(x => '<div class="hist-item"><div class="hist-date">👤 ' + esc(x.username) + ' · 更新于 ' + esc(String(x.updated_at || '').slice(11, 16)) + '</div>'
+          + '<div class="hist-text" style="color:var(--gray-800)">' + esc(x.content) + '</div></div>').join('')
+        + '</div>';
+    }).join('') : '<div class="hint">还没有客服提交过报告</div>';
+  }
+}
+async function saveReport() {
+  try {
+    const content = document.getElementById('reportInput').value.trim();
+    const r = await api('/sms/cs-reports', { method: 'POST', body: JSON.stringify({ content }) });
+    if (r && r.error) throw new Error(r.error);
+    toast(r.deleted ? '🗑 已撤回今日报告' : '✅ 报告已提交');
+    await reload();
+  } catch (e) { toast(e.message || '提交失败'); }
 }
 async function saveBriefing() {
   try {

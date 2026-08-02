@@ -2930,6 +2930,16 @@ try {
 } catch (e) {}
 // 工作时间/班次 (如 早班 7:00-15:30), 显示在每条要求的最上面
 try { db.exec(`ALTER TABLE sms_briefings ADD COLUMN shift TEXT DEFAULT ''`); } catch (e) {}
+// ✍️ 客服每日工作报告: 每人每天一条, 当天可反复改; admin 看全部
+db.exec(`CREATE TABLE IF NOT EXISTS sms_cs_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  report_date TEXT NOT NULL,
+  user_id INTEGER NOT NULL,
+  username TEXT DEFAULT '',
+  content TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(report_date, user_id)
+)`);
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out_at TEXT DEFAULT NULL`); } catch(e) {}
 // 面试安排: 标记面试时间/地址, 可发确认短信和工作要求模板
 db.exec(`CREATE TABLE IF NOT EXISTS sms_interviews (
@@ -29961,6 +29971,31 @@ app.post('/api/sms/briefings', requireAdmin, requireRole('admin'), (req, res) =>
       ON CONFLICT(brief_date, partner_name) DO UPDATE SET content=excluded.content, shift=excluded.shift, author=excluded.author, updated_at=datetime('now')`)
       .run(today, partner, content, shift, req.userName || '');
     res.json({ success: true, brief_date: today });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── ✍️ 客服每日工作报告 ───
+// 客服只能看/写自己的; admin 看全部人的
+app.get('/api/sms/cs-reports', requireAdmin, (req, res) => {
+  try {
+    const rows = req.userRole === 'admin'
+      ? db.prepare(`SELECT * FROM sms_cs_reports WHERE report_date >= date('now','-14 days') ORDER BY report_date DESC, username`).all()
+      : db.prepare(`SELECT * FROM sms_cs_reports WHERE user_id=? AND report_date >= date('now','-14 days') ORDER BY report_date DESC`).all(req.userId);
+    res.json({ reports: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/sms/cs-reports', requireAdmin, (req, res) => {
+  try {
+    const content = String((req.body || {}).content || '').trim().slice(0, 8000);
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    if (!content) {
+      db.prepare('DELETE FROM sms_cs_reports WHERE report_date=? AND user_id=?').run(today, req.userId);
+      return res.json({ success: true, deleted: true });
+    }
+    db.prepare(`INSERT INTO sms_cs_reports (report_date, user_id, username, content, updated_at) VALUES (?,?,?,?,datetime('now'))
+      ON CONFLICT(report_date, user_id) DO UPDATE SET content=excluded.content, username=excluded.username, updated_at=datetime('now')`)
+      .run(today, req.userId, req.userName || '', content);
+    res.json({ success: true, report_date: today });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
