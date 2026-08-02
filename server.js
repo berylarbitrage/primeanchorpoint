@@ -3426,11 +3426,14 @@ schedule24hReminders();
 // ─── Middleware ───
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
-// 旧域名 → 新域名 301 跳转 (只跳浏览器页面请求; API/webhook 不跳, 避免 Twilio 等
-// POST 回调跟不上重定向而丢失). 旧域名的 DNS/证书保留期间, 所有旧链接/二维码仍然可用.
+// 旧域名/onrender 子域名 → 新域名 301 跳转 (只跳浏览器页面请求; API/webhook 不跳,
+// 避免 Twilio 等 POST 回调跟不上重定向而丢失; /healthz 不跳, 留给 Render 健康检查).
+// 旧域名的 DNS/证书保留期间, 所有旧链接/二维码仍然可用, 但访客地址栏统一变成新域名.
+app.get('/healthz', (req, res) => res.json({ ok: true }));
 app.use((req, res, next) => {
   const host = String(req.get('host') || '').toLowerCase();
-  if (/(^|\.)primeanchorpoint\.com$/.test(host) && (req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/')) {
+  const oldHost = /(^|\.)primeanchorpoint\.com$/.test(host) || /\.onrender\.com$/.test(host);
+  if (oldHost && (req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/') && req.path !== '/healthz') {
     return res.redirect(301, 'https://primeanchorworkforce.com' + req.originalUrl);
   }
   next();
