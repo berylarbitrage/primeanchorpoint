@@ -15675,6 +15675,7 @@ app.post('/api/admin/ai-read-image', requireAdmin, async (req, res) => {
     if (m[2].length > 11 * 1024 * 1024) return res.status(400).json({ error: '图片过大' });
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     if (anthropicKey) {
+      // 证件识别保留 Sonnet: 读错 SSN/证件号代价高, 且每个申请人只调一次、单次成本约 1-2 美分
       const model = process.env.ANTHROPIC_VISION_MODEL || 'claude-sonnet-5';
       const prompt = `这是一张身份/工作证件或单据的照片(如 SSN 卡、EAD 工卡、驾照、护照等)。请仔细读取, 只输出 JSON, 不要输出其他内容:
 {"doc_type":"证件类型","fields":{"name":"姓名","dob":"出生日期 YYYY-MM-DD","id_number":"证件号","address":"地址","issue_date":"签发日 YYYY-MM-DD","expiry_date":"到期日 YYYY-MM-DD","category":"类别(如 EAD 的 C08)","other":"其他重要信息"},"raw_text":"图里的全部文字"}
@@ -30189,7 +30190,8 @@ app.post('/api/sms/threads/:id/evaluate', requireAdmin, requireRole('admin'), as
       const who = m.direction === 'inbound' ? ('客户(' + (thread.contact_name || thread.phone_e164) + ')') : ('客服' + (m.agent ? '(' + m.agent + ')' : ''));
       return `[${m.created_at}] ${who}: ${m.body}${m.translated_body && m.translated_body !== m.body ? ' (译: ' + m.translated_body + ')' : ''}`;
     }).join('\n');
-    const model = process.env.ANTHROPIC_EVAL_MODEL || 'claude-sonnet-5';
+    // 质检打分是结构化归纳任务, Haiku 足够 (费用约为 Sonnet 的 1/3); 需要更强可用 env 换回 claude-sonnet-5
+    const model = process.env.ANTHROPIC_EVAL_MODEL || 'claude-haiku-4-5-20251001';
     const prompt = `你是客服质检主管。下面是一段客服与客户(劳务工人/申请者)的短信对话记录, 客服负责招工、排班、答疑。请评估客服的表现, 只输出 JSON (中文):
 {"score": 1-10 整数, "summary": "两三句总评", "response_speed": "响应速度评价(结合时间戳)", "strengths": ["做得好的点"], "issues": ["问题点(没有就空数组)"], "suggestions": ["具体改进建议"], "risk_flags": ["合规/承诺风险(如有)"]}
 
