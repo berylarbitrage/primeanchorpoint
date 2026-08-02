@@ -2908,14 +2908,26 @@ try { db.exec(`ALTER TABLE sms_threads ADD COLUMN channel TEXT DEFAULT 'sms'`); 
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN cs_hidden INTEGER DEFAULT 0`); } catch(e) {}
 // Twilio 合规: 对方回 STOP 等退订词后必须停发 (opted_out), 回 START 恢复
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out INTEGER DEFAULT 0`); } catch(e) {}
-// 📋 每日工作要求: 管理员每天写一份, 客服在收件箱里看着聊 (每天一条, 当天可反复改)
+// 📋 每日工作要求: 管理员每天写, 客服照着聊。v2 起可按公司分别写
+// (partner_name 空 = 通用), 每天每公司一条, 当天可反复改。
+// 旧表只按日期唯一 → 先改名再重建迁移 (幂等: 已迁移过则跳过)
+try {
+  const cols = db.prepare(`PRAGMA table_info(sms_briefings)`).all().map(c => c.name);
+  if (cols.length && !cols.includes('partner_name')) db.exec(`ALTER TABLE sms_briefings RENAME TO sms_briefings_old`);
+} catch (e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS sms_briefings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  brief_date TEXT NOT NULL UNIQUE,
+  brief_date TEXT NOT NULL,
+  partner_name TEXT DEFAULT '',
   content TEXT DEFAULT '',
   author TEXT DEFAULT '',
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(brief_date, partner_name)
 )`);
+try {
+  db.exec(`INSERT INTO sms_briefings (brief_date, partner_name, content, author, updated_at) SELECT brief_date, '', content, author, updated_at FROM sms_briefings_old`);
+  db.exec(`DROP TABLE sms_briefings_old`);
+} catch (e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out_at TEXT DEFAULT NULL`); } catch(e) {}
 // 面试安排: 标记面试时间/地址, 可发确认短信和工作要求模板
 db.exec(`CREATE TABLE IF NOT EXISTS sms_interviews (
@@ -29924,19 +29936,27 @@ app.get('/api/sms/cs-accounts', requireAdmin, requireRole('admin'), (req, res) =
 // 客服和管理员都能看 (最近 14 天); 只有管理员能写, 当天的内容可以反复更新
 app.get('/api/sms/briefings', requireAdmin, (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM sms_briefings ORDER BY brief_date DESC LIMIT 14').all();
+    // 最近 14 天的全部条目 (每天可有多条: 通用 + 各公司)
+    const rows = db.prepare(`SELECT * FROM sms_briefings
+      WHERE brief_date >= date('now', '-14 days')
+      ORDER BY brief_date DESC, CASE WHEN partner_name='' THEN 0 ELSE 1 END, partner_name`).all();
     res.json({ briefings: rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/sms/briefings', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const content = String((req.body || {}).content || '').trim().slice(0, 8000);
-    if (!content) return res.status(400).json({ error: '内容不能为空' });
+    const partner = String((req.body || {}).partner_name || '').trim().slice(0, 120);
     // 按芝加哥时间算"今天", 和客服的工作日一致
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
-    db.prepare(`INSERT INTO sms_briefings (brief_date, content, author, updated_at) VALUES (?,?,?,datetime('now'))
-      ON CONFLICT(brief_date) DO UPDATE SET content=excluded.content, author=excluded.author, updated_at=datetime('now')`)
-      .run(today, content, req.userName || '');
+    if (!content) {
+      // 清空内容 = 删除今天该公司的条目
+      db.prepare('DELETE FROM sms_briefings WHERE brief_date=? AND partner_name=?').run(today, partner);
+      return res.json({ success: true, deleted: true, brief_date: today });
+    }
+    db.prepare(`INSERT INTO sms_briefings (brief_date, partner_name, content, author, updated_at) VALUES (?,?,?,?,datetime('now'))
+      ON CONFLICT(brief_date, partner_name) DO UPDATE SET content=excluded.content, author=excluded.author, updated_at=datetime('now')`)
+      .run(today, partner, content, req.userName || '');
     res.json({ success: true, brief_date: today });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
