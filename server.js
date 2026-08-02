@@ -28750,6 +28750,14 @@ function recordAiBlockAndNotify({ threadId, agentId, agentUsername, kind, body, 
       }
       if (sentAny && blockId) db.prepare('UPDATE sms_ai_blocks SET admin_notified=1 WHERE id=?').run(blockId);
     } catch (e) { console.error('[SMS AI Block] notify error:', e.message); }
+    // 邮件同步提醒: 邮件比短信私密, 附上被拦原文方便管理员立刻判断
+    try {
+      let emails = db.prepare(`SELECT email FROM admin_users WHERE role='admin' AND active=1 AND email != ''`).all().map(a => a.email);
+      if (!emails.length && APPLICATION_NOTIFY_EMAIL) emails = [APPLICATION_NOTIFY_EMAIL];
+      const subj = '🚫 AI拦截了客服消息 - ' + (agentUsername || agentId || '?');
+      const txt = `AI 拦截了一条客服消息:\n\n客服: ${agentUsername || agentId || '?'}\n发送对象: ${contactLabel || '-'}\n原因: ${reason}\n\n被拦截的原文:\n${String(body).slice(0, 600)}\n\n详情见 SMS Inbox → ⚙ 管理面板 → AI拦截记录`;
+      for (const em of emails) await sendEmail(em, subj, txt);
+    } catch (e) { console.error('[SMS AI Block] email notify error:', e.message); }
   })();
   return blockId;
 }
@@ -28960,7 +28968,14 @@ app.post('/api/sms/webhook/status', express.urlencoded({ extended: false }), val
 
 // ─── SMS Access Middleware ───
 function requireSmsAccess(req, res, next) {
-  // Allow admin, staff, and manager roles to access SMS Inbox
+  // 共享 admin 账号不能用收件箱 (消息必须能追溯到具体的人)。
+  // 仅当已存在其他启用的个人 admin 账号时才拦, 避免个人账号还没建就把自己锁死。
+  if (req.userRole === 'admin' && String(req.userName || '').toLowerCase() === 'admin') {
+    try {
+      const others = db.prepare(`SELECT COUNT(*) n FROM admin_users WHERE role='admin' AND active=1 AND LOWER(username) != 'admin'`).get().n;
+      if (others > 0) return res.status(403).json({ error: '共享 admin 账号不能使用收件箱, 请用你的个人管理员账号登录 (信息是谁发的要一目了然)' });
+    } catch (_) {}
+  }
   next();
 }
 
@@ -29272,6 +29287,11 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
       const freshThread2 = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
       const translated = await translateText(body.trim(), freshThread2.agent_lang || 'zh', freshThread2.contact_lang || 'es');
       bodyToSend = translated || body.trim();
+      // 客服消息不允许以中文发出 (中文只作输入, 必须由系统翻成西语/英语再发)。
+      // 也兜住翻译失败回退原文的情况, 避免中文原文直接发给对方。
+      if (req.userRole !== 'admin' && /[㐀-鿿豈-﫿]/.test(bodyToSend)) {
+        return res.status(400).json({ error: '🚫 客服消息不能以中文发出。请把上方「对方」语言选成西班牙语或英语, 系统会自动翻译后发送。' });
+      }
     }
 
     // Insert message first
@@ -29513,6 +29533,8 @@ app.patch('/api/sms/threads/:id/langs', requireAdmin, requireSmsAccess, (req, re
     const { contact_lang, agent_lang } = req.body;
     const allowed = ['en', 'es', 'zh'];
     if (contact_lang && !allowed.includes(contact_lang)) return res.status(400).json({ error: 'invalid contact_lang' });
+    // 客服只能给对方选西语/英语 (客服消息必须翻译后发出, 不允许中文直发)
+    if (contact_lang === 'zh' && req.userRole !== 'admin') return res.status(400).json({ error: '客服不能把对方语言设为中文, 请选西班牙语或英语' });
     if (agent_lang && !allowed.includes(agent_lang)) return res.status(400).json({ error: 'invalid agent_lang' });
     const fields = []; const params = [];
     if (contact_lang) { fields.push('contact_lang=?'); params.push(contact_lang); }
