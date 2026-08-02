@@ -3148,6 +3148,11 @@ function useTemplate(idx) {
   const t = templates[idx];
   const text = typeof t === 'string' ? t : (t.text || t.body || '');
   document.getElementById('replyInput').value = text;
+  // 标了 no_translate 的双语模板原样发送, 不再机器翻译 (改动内容后恢复正常翻译)
+  if (t && typeof t === 'object' && t.no_translate) {
+    _composeNoTranslate = true;
+    _composeNoTranslateText = text;
+  }
   document.getElementById('templatePicker').classList.remove('show');
   autoGrow(document.getElementById('replyInput'));
   document.getElementById('replyInput').focus();

@@ -29911,6 +29911,32 @@ app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAcce
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// 班次确认合规话术: 全部用「接单/拒单」措辞(承包商有拒绝权), 避免「必须来/
+// 请假/处分」等雇员管理措辞在 1099 争议里成为控制权证据。西英双语、无需填空,
+// 标 no_translate 发送时原样发出不再机翻。一次性并入快捷回复; 删除不会加回。
+(function seedShiftConfirmTemplates() {
+  try {
+    const FLAG = 'sms_shift_tpl_seeded_v1';
+    if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(FLAG)) return;
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='sms_reply_templates'").get();
+    let arr = [];
+    try { arr = row ? JSON.parse(row.value) : []; } catch (e) { arr = []; }
+    if (!Array.isArray(arr)) arr = [];
+    const seeds = [
+      { text: 'Hola 👋 ¿Aceptas el turno de mañana? Responde SÍ o NO. Si no puedes, no hay problema — asignamos a otra persona. / Hi 👋 Do you accept tomorrow’s shift? Reply YES or NO. If you can’t, no problem — we’ll assign someone else.', no_translate: true },
+      { text: 'Hola, ¿sigues disponible para el turno de mañana? Si no recibimos respuesta hoy, ofreceremos el turno a otra persona. / Hi, are you still available for tomorrow’s shift? If we don’t hear back today, we’ll offer it to someone else.', no_translate: true },
+      { text: '¡Perfecto, confirmado! 🎉 Nos vemos mañana. Si algo cambia, avísanos lo antes posible. / Perfect, confirmed! 🎉 See you tomorrow. If anything changes, let us know as soon as possible.', no_translate: true },
+      { text: 'Gracias por avisar 👍 No hay problema — asignaremos a otra persona. Te avisamos cuando haya más turnos disponibles. / Thanks for letting us know 👍 No problem — we’ll assign someone else. We’ll let you know when more shifts are available.', no_translate: true },
+      { text: '¿Qué días estás disponible para aceptar turnos la próxima semana? Responde con los días. / What days are you available to accept shifts next week? Reply with the days.', no_translate: true }
+    ];
+    const have = new Set(arr.map(t => (typeof t === 'string' ? t : (t && t.text) || '')));
+    for (const s of seeds) { if (!have.has(s.text)) arr.push(s); }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('sms_reply_templates', ?, datetime('now'))").run(JSON.stringify(arr));
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, '1', datetime('now'))").run(FLAG);
+    console.log('[startup] Seeded shift-confirmation quick reply templates');
+  } catch (e) { console.warn('[startup] shift template seed failed:', e.message); }
+})();
+
 // ─── Thread history / assignment log ───
 app.get('/api/sms/threads/:id/history', requireAdmin, requireSmsAccess, (req, res) => {
   try {
