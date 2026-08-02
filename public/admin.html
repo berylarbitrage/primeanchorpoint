@@ -39339,15 +39339,11 @@ async function generateInvpPreview() {
     const tableRows = items.map((i, idx) => {
       // 只有「这一行的 markup 和别的行不一样」才标蓝提醒；整张发票 markup
       // 统一（哪怕和默认值不同）就按正常斑马纹显示。
-      const customMarkup = !allSameMk && Math.abs((i.markup || markupRate) - markupRate) > 0.0001;
-      // 蓝色只是编辑界面里的内部提醒 (这行 markup 与众不同); 打印/PDF 时由
-      // 打印窗口的 CSS 还原成普通斑马纹, 不把内部费率差异暴露给客户。
-      const rowBg = customMarkup ? '#bfdbfe' : (idx % 2 === 1 ? '#f8fafc' : '#ffffff');
-      const rowCls = customMarkup ? ' class="invp-custom-mk"' : '';
+      const rowBg = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
       const posCell = hasPosition
         ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
-      return `<tr${rowCls} style="background:${rowBg}">
+      return `<tr style="background:${rowBg}">
         <td class="invp-name-cell" data-wname="${esc(_invpDisplayWorkerName(i.name))}" onclick="invpToggleNameSel(this)" title="点击选择，可复制选中的名字（逗号分隔）" style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(_invpDisplayWorkerName(i.name))}${(i.note||'').trim() ? `<div style="font-weight:400;font-size:.72rem;color:#64748b;text-transform:none;white-space:normal;max-width:220px">${esc((i.note||'').trim())}</div>` : ''}</td>
         ${posCell}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${hideOt ? ((i.regHours||0)+(i.otHours||0)).toFixed(2) : (i.regHours||0).toFixed(2)}</td>
@@ -39559,8 +39555,6 @@ function printInvpInvoice() {
       thead { display: table-header-group; }
       tfoot { display: table-footer-group; }
       tr, img { page-break-inside: avoid; break-inside: avoid; }
-      /* 编辑界面里 markup 特殊行的蓝色提醒是内部信息, 打印稿还原成普通白底 */
-      tr.invp-custom-mk { background: #ffffff !important; }
     </style>
     </head><body><div class="sheet">${content}</div></body></html>`);
   w.document.close();
