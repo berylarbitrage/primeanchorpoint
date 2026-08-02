@@ -906,10 +906,10 @@ function _applyAdminUi() {
 async function loadBriefings(silent) {
   try {
     const r = await api('/sms/briefings');
-    const latest = ((r && r.briefings) || [])[0];
-    // 最新一条比上次看的时间新 → 工具栏亮红点 (打开 /briefing 页即标记已读)
+    // 任何条目比上次看的时间新 → 工具栏亮红点 (打开 /briefing 页即标记已读)
+    const maxUpd = ((r && r.briefings) || []).reduce((m, b) => b.updated_at > m ? b.updated_at : m, '');
     const dot = document.getElementById('briefDot');
-    if (dot) dot.style.display = latest && latest.updated_at !== localStorage.getItem('brief_seen') ? '' : 'none';
+    if (dot) dot.style.display = maxUpd && maxUpd !== localStorage.getItem('brief_seen') ? '' : 'none';
   } catch (e) { if (!silent) toast(e.message || '加载失败'); }
 }
 
