@@ -8627,6 +8627,37 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
       console.log(`[Auth] Reset admin password for user: ${targetUser}`);
     }
   }
+  // 一次性初始化 5 个实名管理员账号 (收件箱只认个人账号, 共享 admin 进不去)。
+  // 只执行一次: 之后每个人自己改密码不会被后续部署冲掉。
+  {
+    const seededFlag = db.prepare("SELECT value FROM app_settings WHERE key='personal_admins_seeded_v1'").get();
+    if (!seededFlag) {
+      const people = [
+        { username: 'berylzhang',   display: 'Beryl Zhang',   first: 'Beryl' },
+        { username: 'nikizhao',     display: 'Niki Zhao',     first: 'Niki' },
+        { username: 'tiexiongzhou', display: 'Tiexiong Zhou', first: 'Tiexiong' },
+        { username: 'yizhaocai',    display: 'Yizhao Cai',    first: 'Yizhao' },
+        { username: 'abbywong',     display: 'Abby Wong',     first: 'Abby' },
+      ];
+      for (const p of people) {
+        const pass = `Goodluck${p.first}2026$`;
+        const salt = crypto.randomBytes(16).toString('hex');
+        const hash = hashPassword(pass, salt);
+        const existing = db.prepare('SELECT id FROM admin_users WHERE LOWER(username)=?').get(p.username);
+        if (existing) {
+          // 已有同名账号: 统一成 admin 角色 + 约定密码, 并踢掉旧登录
+          db.prepare("UPDATE admin_users SET password_hash=?, salt=?, role='admin', display_name=?, active=1 WHERE id=?")
+            .run(hash, salt, p.display, existing.id);
+          try { db.prepare('DELETE FROM admin_sessions WHERE user_id=?').run(existing.id); } catch (_) {}
+        } else {
+          db.prepare("INSERT INTO admin_users (username, password_hash, salt, role, display_name, active) VALUES (?,?,?,'admin',?,1)")
+            .run(p.username, hash, salt, p.display);
+        }
+        console.log(`[Auth] Seeded personal admin: ${p.username}`);
+      }
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('personal_admins_seeded_v1','1')").run();
+    }
+  }
 }
 
 // ─── Admin Audit Log ───
