@@ -44050,6 +44050,10 @@ function _bsPayeeDisplay(payee) {
     const co = p.slice('卡车费:'.length);
     return '🚚 卡车费' + (co ? ' · ' + co : '');
   }
+  if (p.indexOf('内部转账:') === 0) {
+    const co = p.slice('内部转账:'.length);
+    return '🔁 内部转账' + (co ? ' · ' + co : '');
+  }
   if (p.indexOf('卸柜费:') === 0) {
     const co = p.slice('卸柜费:'.length);
     return '📦 卸柜账单' + (co ? ' · ' + co : '');
@@ -44092,6 +44096,8 @@ function _bsNoteSatisfied(box) {
   if (kind === 'check' && _bsCheckParse(box.payee).names.length) return true;
   // 卡车费: a chosen company already describes the transaction.
   if (kind === 'truck' && _bsTruckParse(box.payee)) return true;
+  // 内部转账: a chosen company already describes the transaction.
+  if (kind === 'internal' && _bsInternalParse(box.payee)) return true;
   // 卸柜账单：公司 + invoice 号 + 付款覆盖的账期都填好才算说明完整。
   if (kind === 'unload' && _bsUnloadParse(box.payee)
     && String(box.invoice_number || '').trim()
@@ -45074,6 +45080,10 @@ const BS_CHECK_WD_PREFIX = '取支票:';
 const BS_PAYEE_TRUCK = '__truck__'; // sentinel: 卡车费
 const BS_TRUCK_PREFIX = '卡车费:';    // stored payee = prefix + company name
 const BS_TRUCK_COMPANIES = ['BOOKFREIGHT INC', 'Dando Chemicals US LLC', 'Nova Express'];
+// 公司内部银行转账: after choosing, pick which of our own companies the transfer involves.
+const BS_PAYEE_INTERNAL = '__internal__'; // sentinel: 公司内部银行转账
+const BS_INTERNAL_PREFIX = '内部转账:';     // stored payee = prefix + company name
+const BS_INTERNAL_COMPANIES = ['Prime Anchor Point LLC', 'Prime Anchor Workforce Inc', 'Surplus Lane Inc'];
 // 支付卸柜账单 (paying a container-unloading bill): after choosing, pick/type the
 // subcontractor company whose 卸柜 bill this payment settled. Stored as "卸柜费:<company>".
 const BS_PAYEE_UNLOAD = '__unload__'; // sentinel: 支付卸柜账单（选公司）
@@ -45134,6 +45144,7 @@ function _bsPayeeKind(box) {
   if (_bsIsPallet(p)) return 'pallet';
   if (_bsIsCheck(p)) return 'check';
   if (_bsIsTruck(p)) return 'truck';
+  if (_bsIsInternal(p)) return 'internal';
   if (_bsIsUnload(p)) return 'unload';
   if (_bsIsRent(p)) return 'rent';
   if (_bsIsFx(p)) return 'fx';
@@ -45178,6 +45189,7 @@ function _bsPayeeOptions(current, direction) {
     `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
     `<option value="${esc(BS_PAYEE_PAP)}"${current === BS_PAYEE_PAP ? ' selected' : ''}>🔁 Prime Anchor Point 转账</option>`,
     `<option value="${esc(BS_PAYEE_PAW)}"${current === BS_PAYEE_PAW ? ' selected' : ''}>🔁 Prime Anchor Workforce 转账</option>`,
+    `<option value="${BS_PAYEE_INTERNAL}"${current === BS_PAYEE_INTERNAL ? ' selected' : ''}>🏦 公司内部银行转账（选公司）</option>`,
     `<option value="${esc(BS_PAYEE_BINTIQUE)}"${current === BS_PAYEE_BINTIQUE ? ' selected' : ''}>📦 Bintique 货款</option>`,
     `<option value="${esc(BS_PAYEE_CASH)}"${current === BS_PAYEE_CASH ? ' selected' : ''}>💵 取现金</option>`,
     `<option value="${esc(BS_PAYEE_CASH_DEP)}"${current === BS_PAYEE_CASH_DEP ? ' selected' : ''}>💰 存现金</option>`,
@@ -45198,7 +45210,7 @@ function _bsPayeeOptions(current, direction) {
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_PAW, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_LAWSUIT, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_PAW, BS_PAYEE_INTERNAL, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_LAWSUIT, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
@@ -45414,7 +45426,7 @@ function _bsRenderBoxPanel() {
         <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value);bsValidateBoxDates(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
       <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
-      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (box.payee || '')))))))))), box.direction)}</select>
+      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsInternal(box.payee) ? BS_PAYEE_INTERNAL : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (box.payee || ''))))))))))), box.direction)}</select>
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
         <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
@@ -45431,6 +45443,10 @@ function _bsRenderBoxPanel() {
       <div class="bs-truck-wrap" style="display:${_bsIsTruck(box.payee) ? '' : 'none'};background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#475569;margin-bottom:.25rem">选择公司</div>
         <select class="bs-bx-truck-co" onchange="bsTruckUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsTruckCoOptions(_bsTruckParse(box.payee))}</select>
+      </div>
+      <div class="bs-internal-wrap" style="display:${_bsIsInternal(box.payee) ? '' : 'none'};background:#eef2ff;border:1px dashed #c7d2fe;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#4338ca;margin-bottom:.25rem">选择公司（转给哪家自己的公司）</div>
+        <select class="bs-bx-internal-co" onchange="bsInternalUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsInternalCoOptions(_bsInternalParse(box.payee))}</select>
       </div>
       <div class="bs-unload-wrap" style="display:${_bsIsUnload(box.payee) ? '' : 'none'};background:#ecfeff;border:1px dashed #a5f3fc;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#0e7490;margin-bottom:.25rem">卸柜账单付给哪个公司</div>
@@ -45525,6 +45541,7 @@ function bsUpdateBoxSections(id) {
   const plw = item.querySelector('.bs-pallet-wrap');
   const ckw = item.querySelector('.bs-check-wrap');
   const tkw = item.querySelector('.bs-truck-wrap');
+  const inw = item.querySelector('.bs-internal-wrap');
   const ulw = item.querySelector('.bs-unload-wrap');
   const rtw = item.querySelector('.bs-rent-wrap');
   const whw = item.querySelector('.bs-whdep-wrap');
@@ -45534,6 +45551,7 @@ function bsUpdateBoxSections(id) {
   if (plw) plw.style.display = kind === 'pallet' ? '' : 'none';
   if (ckw) ckw.style.display = kind === 'check' ? '' : 'none';
   if (tkw) tkw.style.display = kind === 'truck' ? '' : 'none';
+  if (inw) inw.style.display = kind === 'internal' ? '' : 'none';
   if (ulw) ulw.style.display = kind === 'unload' ? '' : 'none';
   if (rtw) rtw.style.display = kind === 'rent' ? '' : 'none';
   const fxwEl = item.querySelector('.bs-fx-wrap');
@@ -45591,6 +45609,22 @@ function _bsTruckCoOptions(current) {
 // Save "卡车费:<company>" from the company select.
 function bsTruckUpdate(id, el) {
   bsUpdateBoxField(id, 'payee', _bsTruckJoin(el.value));
+  bsUpdateBoxSections(id);
+}
+// ── 公司内部银行转账: pick which of our own companies ──
+function _bsIsInternal(payee) { return typeof payee === 'string' && payee.indexOf(BS_INTERNAL_PREFIX) === 0; }
+function _bsInternalParse(payee) { return _bsIsInternal(payee) ? payee.slice(BS_INTERNAL_PREFIX.length) : ''; }
+function _bsInternalJoin(co) { return BS_INTERNAL_PREFIX + (co || ''); }
+function _bsInternalCoOptions(current) {
+  const parts = ['<option value="">— 选择公司 —</option>'];
+  const names = BS_INTERNAL_COMPANIES.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+// Save "内部转账:<company>" from the company select.
+function bsInternalUpdate(id, el) {
+  bsUpdateBoxField(id, 'payee', _bsInternalJoin(el.value));
   bsUpdateBoxSections(id);
 }
 // ── 支付卸柜账单: pick/type the subcontractor company paid ──
@@ -45731,7 +45765,8 @@ function bsPayeeSelChange(id, sel) {
   const xwrap = item.querySelector('.bs-fx-wrap');
   const fwrap = item.querySelector('.bs-referral-wrap');
   const bwrap = item.querySelector('.bs-wagebonus-wrap');
-  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (uwrap) uwrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; if (fwrap) fwrap.style.display = 'none'; if (bwrap) bwrap.style.display = 'none'; };
+  const iwrap = item.querySelector('.bs-internal-wrap');
+  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (iwrap) iwrap.style.display = 'none'; if (uwrap) uwrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; if (fwrap) fwrap.style.display = 'none'; if (bwrap) bwrap.style.display = 'none'; };
   if (sel.value === BS_PAYEE_EMP) {
     hideAll();
     if (wrap) { wrap.style.display = ''; const co = wrap.querySelector('.bs-bx-emp-co'); if (co) co.focus(); bsEmpUpdate(id, co); }
@@ -45741,6 +45776,9 @@ function bsPayeeSelChange(id, sel) {
   } else if (sel.value === BS_PAYEE_TRUCK) {
     hideAll();
     if (twrap) { twrap.style.display = ''; const c = twrap.querySelector('.bs-bx-truck-co'); if (c) { c.focus(); bsTruckUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_INTERNAL) {
+    hideAll();
+    if (iwrap) { iwrap.style.display = ''; const c = iwrap.querySelector('.bs-bx-internal-co'); if (c) { c.focus(); bsInternalUpdate(id, c); } }
   } else if (sel.value === BS_PAYEE_UNLOAD) {
     hideAll();
     if (uwrap) { uwrap.style.display = ''; const c = uwrap.querySelector('.bs-bx-unload-co'); if (c) { c.focus(); bsUnloadUpdate(id, c); } }
