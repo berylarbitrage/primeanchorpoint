@@ -29911,40 +29911,49 @@ app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAcce
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// 班次确认等合规话术: 全部用「接单/拒单」措辞(承包商有拒绝权), 避免「必须来/
+// 班次/卸柜等合规话术: 全部用「接单/拒单」措辞(承包商有拒绝权), 避免「必须来/
 // 请假/处分」等雇员管理措辞在 1099 争议里成为控制权证据。西英双语、无需填空,
-// 标 no_translate 发送时原样发出不再机翻; label/zh 是给客服看的中文标题和大意,
-// 不会发给对方。v2: 按 text 匹配升级 v1 的 5 条并新增更多场景; 删除不会加回。
-(function seedShiftConfirmTemplatesV2() {
+// 标 no_translate 发送时原样发出不再机翻; label/zh/cat 是给客服看的中文标题、
+// 大意和分类, 不会发给对方。v3: 加分类 + 卸柜场景, 按 text 匹配升级旧条目。
+(function seedShiftConfirmTemplatesV3() {
   try {
-    const FLAG = 'sms_shift_tpl_seeded_v2';
+    const FLAG = 'sms_shift_tpl_seeded_v3';
     if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(FLAG)) return;
     const row = db.prepare("SELECT value FROM app_settings WHERE key='sms_reply_templates'").get();
     let arr = [];
     try { arr = row ? JSON.parse(row.value) : []; } catch (e) { arr = []; }
     if (!Array.isArray(arr)) arr = [];
+    const C1 = '📅 班次', C2 = '📦 卸柜', C3 = '📋 招聘·入职', C4 = '💬 通用';
     const seeds = [
-      { label: '📅 明日班次确认', zh: '明天的班次你接不接？回 SÍ 或 NO；不行我们安排别人',
+      { cat: C1, label: '📅 明日班次确认', zh: '明天的班次你接不接？回 SÍ 或 NO；不行我们安排别人',
         text: 'Hola 👋 ¿Aceptas el turno de mañana? Responde SÍ o NO. Si no puedes, no hay problema — asignamos a otra persona. / Hi 👋 Do you accept tomorrow’s shift? Reply YES or NO. If you can’t, no problem — we’ll assign someone else.', no_translate: true },
-      { label: '⏰ 没回复·追问', zh: '还能来明天的班次吗？今天不回复就把班次给别人',
+      { cat: C1, label: '⏰ 没回复·追问', zh: '还能来明天的班次吗？今天不回复就把班次给别人',
         text: 'Hola, ¿sigues disponible para el turno de mañana? Si no recibimos respuesta hoy, ofreceremos el turno a otra persona. / Hi, are you still available for tomorrow’s shift? If we don’t hear back today, we’ll offer it to someone else.', no_translate: true },
-      { label: '✅ 对方接单·确认', zh: '好的已确认，明天见；有变化请尽早告诉我们',
+      { cat: C1, label: '✅ 对方接单·确认', zh: '好的已确认，明天见；有变化请尽早告诉我们',
         text: '¡Perfecto, confirmado! 🎉 Nos vemos mañana. Si algo cambia, avísanos lo antes posible. / Perfect, confirmed! 🎉 See you tomorrow. If anything changes, let us know as soon as possible.', no_translate: true },
-      { label: '🙏 对方拒单·致谢', zh: '谢谢告知，没问题我们安排别人；有新班次再通知你',
+      { cat: C1, label: '🙏 对方拒单·致谢', zh: '谢谢告知，没问题我们安排别人；有新班次再通知你',
         text: 'Gracias por avisar 👍 No hay problema — asignaremos a otra persona. Te avisamos cuando haya más turnos disponibles. / Thanks for letting us know 👍 No problem — we’ll assign someone else. We’ll let you know when more shifts are available.', no_translate: true },
-      { label: '🗓 问下周哪几天能来', zh: '下周哪几天可以接班次？回复具体天数',
+      { cat: C1, label: '🗓 问下周哪几天能来', zh: '下周哪几天可以接班次？回复具体天数',
         text: '¿Qué días estás disponible para aceptar turnos la próxima semana? Responde con los días. / What days are you available to accept shifts next week? Reply with the days.', no_translate: true },
-      { label: '💼 新工作机会', zh: '有个新工作机会，感兴趣回 SÍ，发你详情',
-        text: 'Hola, tenemos una nueva oportunidad de trabajo. ¿Te interesa? Responde SÍ y te enviamos los detalles. / Hi, we have a new job opportunity. Interested? Reply SÍ / YES and we’ll send you the details.', no_translate: true },
-      { label: '📍 班次提醒(已接单的)', zh: '提醒：明天是你接的班次，请提前 10 分钟到，带上 ID',
+      { cat: C1, label: '📍 班次提醒(已接单的)', zh: '提醒：明天是你接的班次，请提前 10 分钟到，带上 ID',
         text: 'Recordatorio: mañana es el turno que aceptaste. Por favor llega 10 minutos antes y trae tu ID. / Reminder: tomorrow is the shift you accepted. Please arrive 10 minutes early and bring your ID.', no_translate: true },
-      { label: '❓ 接了单没到·关心跟进', zh: '客户说你今天没到已接的班次，一切还好吗？以后还想接班次吗？',
+      { cat: C1, label: '❓ 接了单没到·关心跟进', zh: '客户说你今天没到已接的班次，一切还好吗？以后还想接班次吗？',
         text: 'Hola, el cliente nos informó que hoy no llegaste al turno que habías aceptado. ¿Está todo bien? Avísanos si sigues disponible para futuros turnos. / Hi, the client told us you didn’t make it to the shift you had accepted today. Is everything OK? Let us know if you’re still available for future shifts.', no_translate: true },
-      { label: '📎 催补入职文件', zh: '入职资料还缺文件，请查看之前发的链接；需要帮助回 AYUDA',
+      { cat: C2, label: '📦 明天有柜·接不接', zh: '明天到一个柜要卸，你接不接？回 SÍ 或 NO',
+        text: 'Hola, mañana llega un contenedor para descargar. ¿Lo tomas? Responde SÍ o NO. / Hi, a container arrives tomorrow for unloading. Do you take it? Reply SÍ / YES or NO.', no_translate: true },
+      { cat: C2, label: '🕐 卸柜·问几点能到', zh: '明天的柜你几点能到？回复时间',
+        text: '¿A qué hora puedes llegar mañana para el contenedor? Responde con la hora. / What time can you arrive tomorrow for the container? Reply with the time.', no_translate: true },
+      { cat: C2, label: '👥 卸柜·问带几个人', zh: '明天卸柜你能带几个人？回复人数',
+        text: '¿Cuántas personas puedes traer mañana para descargar? Responde con el número. / How many people can you bring tomorrow for unloading? Reply with the number.', no_translate: true },
+      { cat: C2, label: '📲 周柜登记提醒', zh: '提醒工头：用二维码登记本周柜子，密码 123456',
+        text: 'Recuerda registrar los contenedores de esta semana con el código QR. Contraseña: 123456. / Remember to log this week’s containers with the QR code. Password: 123456.', no_translate: true },
+      { cat: C3, label: '💼 新工作机会', zh: '有个新工作机会，感兴趣回 SÍ，发你详情',
+        text: 'Hola, tenemos una nueva oportunidad de trabajo. ¿Te interesa? Responde SÍ y te enviamos los detalles. / Hi, we have a new job opportunity. Interested? Reply SÍ / YES and we’ll send you the details.', no_translate: true },
+      { cat: C3, label: '📎 催补入职文件', zh: '入职资料还缺文件，请查看之前发的链接；需要帮助回 AYUDA',
         text: 'Hola, aún faltan algunos documentos para completar tu registro. Revisa el enlace que te enviamos. ¿Necesitas ayuda? Responde AYUDA. / Hi, some documents are still missing to complete your registration. Please check the link we sent. Need help? Reply HELP.', no_translate: true },
-      { label: '💵 工资问题·已收到', zh: '收到你的工资问题，正在核实，今天内回复你',
+      { cat: C4, label: '💵 工资问题·已收到', zh: '收到你的工资问题，正在核实，今天内回复你',
         text: 'Recibimos tu pregunta sobre el pago. Lo estamos revisando y te respondemos hoy mismo. / We received your question about the payment. We’re checking and will get back to you today.', no_translate: true },
-      { label: '⏳ 稍等·核实后回复', zh: '让我和团队确认一下，很快回复你',
+      { cat: C4, label: '⏳ 稍等·核实后回复', zh: '让我和团队确认一下，很快回复你',
         text: 'Déjame confirmarlo con el equipo y te aviso pronto. / Let me confirm with the team and I’ll get back to you soon.', no_translate: true }
     ];
     const idxByText = new Map(arr.map((t, i) => [(typeof t === 'string' ? t : (t && t.text) || ''), i]));
@@ -29954,7 +29963,7 @@ app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAcce
     }
     db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('sms_reply_templates', ?, datetime('now'))").run(JSON.stringify(arr));
     db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, '1', datetime('now'))").run(FLAG);
-    console.log('[startup] Seeded shift-confirmation quick reply templates (v2)');
+    console.log('[startup] Seeded quick reply templates (v3, categorized)');
   } catch (e) { console.warn('[startup] shift template seed failed:', e.message); }
 })();
 
