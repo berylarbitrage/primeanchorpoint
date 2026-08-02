@@ -64,7 +64,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .thread-item.unread{background:#fffcf2;border-color:#fde68a;border-left:4px solid var(--accent)}
 .thread-item.unread .ti-name{font-weight:700}
 .thread-item.unread .ti-preview{color:var(--gray-800);font-weight:500}
-.ti-avatar{width:40px;height:40px;border-radius:50%;background:var(--sky-light);color:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
+.ti-avwrap{position:relative;flex-shrink:0}
+.ti-avatar{width:40px;height:40px;border-radius:50%;background:var(--sky-light);color:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
+.ti-foreman{position:absolute;bottom:-4px;right:-5px;width:19px;height:19px;font-size:.72rem;line-height:1;background:#fff;border:2px solid #f59e0b;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.3);z-index:1}
 .ti-body{flex:1;min-width:0}
 .ti-top{display:flex;align-items:center;gap:6px;margin-bottom:2px}
 .ti-name{font-size:.88rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
@@ -1135,12 +1137,23 @@ async function loadContactFilters() {
   } catch (_) {}
 }
 
-// 每个联系人固定一组头像配色
-const _AV_COLORS = [['#fee2e2', '#b91c1c'], ['#dbeafe', '#1d4ed8'], ['#d1fae5', '#065f46'], ['#fef3c7', '#92400e'], ['#ede9fe', '#5b21b6'], ['#ccfbf1', '#0f766e'], ['#ffe4e6', '#be123c'], ['#e0e7ff', '#3730a3']];
-function avatarColor(key) {
-  let h = 0;
-  for (const ch of String(key || '?')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return _AV_COLORS[h % _AV_COLORS.length];
+// 头像配色: 平台定色 (绿=WhatsApp 蓝=短信) · 未读=深色实心+光圈 · 已读按最后消息时间逐渐变灰变淡
+function avatarStyle(t) {
+  const wa = t.channel === 'whatsapp';
+  const unread = t.unread_count > 0;
+  let css, tip = wa ? 'WhatsApp' : '短信';
+  if (unread) {
+    css = 'background:' + (wa ? '#16a34a' : '#2563eb') + ';color:#fff;box-shadow:0 0 0 3px ' + (wa ? 'rgba(22,163,74,.28)' : 'rgba(37,99,235,.28)') + ';';
+    tip += ' · 未读';
+  } else {
+    css = 'background:' + (wa ? '#dcfce7' : '#dbeafe') + ';color:' + (wa ? '#15803d' : '#1d4ed8') + ';';
+    const ts = t.last_message_at ? new Date(String(t.last_message_at).replace(' ', 'T') + 'Z').getTime() : 0;
+    const days = ts && !isNaN(ts) ? (Date.now() - ts) / 86400000 : 999;
+    if (days > 30) { css += 'filter:grayscale(1);opacity:.45;'; tip += ' · 超过30天没消息'; }
+    else if (days > 7) { css += 'filter:grayscale(.7);opacity:.6;'; tip += ' · 超过7天没消息'; }
+    else if (days > 1) { css += 'filter:grayscale(.35);opacity:.8;'; }
+  }
+  return { css, tip };
 }
 
 // 跟进状态: 对方最后来消息比我们最后回复晚 → 显示等了多久; 否则显示上次跟进时间
@@ -1195,9 +1208,10 @@ function renderThreadList() {
         + wh.slice(0, 3).map(h => esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' '))).join(' · ')
         + (wh.length > 3 ? '  +' + (wh.length - 3) : '') + '</div>'
       : '';
-    const av = avatarColor(t.contact.name || t.contact.phone_e164 || String(t.id));
+    const av = avatarStyle(t);
+    const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头">🦺</span>' : '';
     return '<div class="thread-item' + (isUnread ? ' unread' : '') + '" onclick="openThread(' + t.id + ')">'
-      + '<div class="ti-avatar" style="background:' + av[0] + ';color:' + av[1] + '">' + esc(initials) + '</div>'
+      + '<div class="ti-avwrap"><div class="ti-avatar" title="' + esc(av.tip) + '" style="' + av.css + '">' + esc(initials) + '</div>' + foreman + '</div>'
       + '<div class="ti-body">'
       + '<div class="ti-top"><span class="ti-name">' + esc(name) + '</span>'
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
