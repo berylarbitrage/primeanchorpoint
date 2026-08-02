@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>每日工作要求 — Prime Anchor SMS</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--off-white:#fffbeb;--gray-100:#f3f4f6;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-500:#6b7280;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;background:var(--off-white);color:var(--gray-800);min-height:100vh}
+.header{background:#fff;border-bottom:1.5px solid #fde68a;padding:12px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.header a.back{color:var(--sky);font-weight:700;text-decoration:none;font-size:1rem;padding:4px 8px;border-radius:8px}
+.header a.back:hover{background:var(--sky-light)}
+.header h1{font-size:1.1rem;color:var(--blue)}
+.wrap{max-width:720px;margin:0 auto;padding:18px 14px 40px}
+.section{background:#fff;border:1px solid #f3e8cd;border-radius:var(--radius);box-shadow:0 1px 3px rgba(146,64,14,.06);padding:16px;margin-bottom:18px}
+.section h2{font-size:.95rem;color:var(--blue);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+textarea{width:100%;padding:12px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.92rem;outline:none;resize:vertical;font-family:inherit;line-height:1.7;min-height:170px}
+textarea:focus{border-color:var(--accent)}
+.btn{width:100%;padding:12px;background:var(--sky);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:.92rem;margin-top:10px;font-family:inherit}
+.btn:hover{background:var(--blue)}
+.today-card{background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:14px 16px}
+.today-meta{font-size:.74rem;color:#92400e;font-weight:700;margin-bottom:8px}
+.today-text{font-size:.95rem;line-height:1.8;white-space:pre-wrap;word-break:break-word}
+.hist-item{border:1px solid var(--gray-200);border-radius:10px;padding:10px 13px;margin-bottom:8px;background:#fff}
+.hist-date{font-size:.72rem;color:var(--gray-400);font-weight:700;margin-bottom:4px}
+.hist-text{font-size:.84rem;line-height:1.65;white-space:pre-wrap;word-break:break-word;color:var(--gray-600)}
+.hint{color:var(--gray-400);font-size:.85rem;padding:16px;text-align:center}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--gray-800);color:#fff;padding:10px 22px;border-radius:999px;font-size:.85rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="header">
+  <a class="back" href="/sms-inbox">&larr; 收件箱</a>
+  <h1>&#128203; 每日工作要求</h1>
+  <span id="dateNow" style="margin-left:auto;font-size:.78rem;color:var(--gray-400)"></span>
+</div>
+<div class="wrap">
+  <div class="section" id="editSec" style="display:none">
+    <h2>&#9999;&#65039; 今天的要求（保存后客服端亮红点提醒）</h2>
+    <textarea id="briefInput" placeholder="写下今天要客服重点做的事，比如：&#10;· 优先跟进 GOFO 面试没到的人，问原因约改期&#10;· 所有新申请人当天必须回复&#10;· 发工资的问题统一回复：周五到账"></textarea>
+    <button class="btn" onclick="saveBriefing()">保存发布</button>
+  </div>
+
+  <div class="section" id="todaySec" style="display:none">
+    <h2>&#128204; 今天</h2>
+    <div class="today-card">
+      <div class="today-meta" id="todayMeta"></div>
+      <div class="today-text" id="todayText"></div>
+    </div>
+  </div>
+  <div class="section" id="emptySec" style="display:none"><div class="hint">今天还没有发布工作要求</div></div>
+
+  <div class="section" id="histSec" style="display:none">
+    <h2>&#128337; 往日记录</h2>
+    <div id="histList"></div>
+  </div>
+
+  <div class="hint" id="loading">加载中…</div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+function getToken() {
+  const m = (document.cookie || '').match(/pa_token=([^;]+)/);
+  if (m) return m[1];
+  return localStorage.getItem('adminToken') || '';
+}
+async function api(path, opts = {}) {
+  const headers = { 'Authorization': 'Bearer ' + getToken(), ...(opts.headers || {}) };
+  if (opts.body && typeof opts.body === 'string') headers['Content-Type'] = 'application/json';
+  const res = await fetch('/api' + path, { ...opts, headers });
+  if (res.status === 401) { location.href = '/sms-inbox'; throw new Error('Unauthorized'); }
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch (_) { throw new Error('服务器暂时不可用（可能正在部署更新），等半分钟再试一次'); }
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+function todayChicago() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); }
+
+let USER = null, _briefings = [];
+async function load() {
+  try {
+    USER = await api('/admin/me');
+    const r = await api('/sms/briefings');
+    _briefings = (r && r.briefings) || [];
+    // 打开本页即视为已读, 收件箱红点熄灭
+    if (_briefings[0]) localStorage.setItem('brief_seen', _briefings[0].updated_at);
+    render();
+  } catch (e) { document.getElementById('loading').textContent = e.message || '加载失败'; return; }
+  document.getElementById('loading').style.display = 'none';
+}
+function render() {
+  const isAdmin = USER && USER.role === 'admin';
+  const today = todayChicago();
+  document.getElementById('dateNow').textContent = '📅 ' + today;
+  const cur = _briefings.find(b => b.brief_date === today);
+  document.getElementById('editSec').style.display = isAdmin ? '' : 'none';
+  if (isAdmin) document.getElementById('briefInput').value = cur ? cur.content : '';
+  // 客服看今天的卡片; 管理员在编辑框里看, 不重复显示
+  document.getElementById('todaySec').style.display = (!isAdmin && cur) ? '' : 'none';
+  document.getElementById('emptySec').style.display = (!isAdmin && !cur) ? '' : 'none';
+  if (cur) {
+    document.getElementById('todayMeta').textContent = '📅 ' + cur.brief_date + (cur.author ? ' · ' + cur.author : '') + ' · 更新于 ' + String(cur.updated_at || '').slice(11, 16);
+    document.getElementById('todayText').textContent = cur.content;
+  }
+  const past = _briefings.filter(b => b.brief_date !== today);
+  document.getElementById('histSec').style.display = past.length ? '' : 'none';
+  document.getElementById('histList').innerHTML = past.map(b =>
+    '<div class="hist-item"><div class="hist-date">' + esc(b.brief_date) + (b.author ? ' · ' + esc(b.author) : '') + '</div>'
+    + '<div class="hist-text">' + esc(b.content) + '</div></div>'
+  ).join('');
+}
+async function saveBriefing() {
+  try {
+    const content = document.getElementById('briefInput').value.trim();
+    if (!content) { toast('内容不能为空'); return; }
+    const r = await api('/sms/briefings', { method: 'POST', body: JSON.stringify({ content }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('📋 已发布 — 客服端会亮红点');
+    const rr = await api('/sms/briefings');
+    _briefings = (rr && rr.briefings) || [];
+    if (_briefings[0]) localStorage.setItem('brief_seen', _briefings[0].updated_at);
+    render();
+  } catch (e) { toast(e.message || '保存失败'); }
+}
+load();
+</script>
+</body>
+</html>
