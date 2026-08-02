@@ -45069,8 +45069,11 @@ const BS_PAYEE_RETURNED = '退回款 Returned Payment'; // returned/bounced paym
 const BS_PAYEE_NA = '无关'; // not relevant to bookkeeping — no extra sub-section
 const BS_PAYEE_PALLET = '__pallet__'; // sentinel: 木板钱, then pick a customer
 const BS_PALLET_PREFIX = '木板钱:'; // stored payee for 木板钱 = prefix + customer name
-// 木板钱的供应商列表（与发票客户公司无关）。来自 Suppliers 页，不含 TESTSupplier 测试记录。
-const BS_PALLET_CUSTOMERS = ['631', 'All MATERIALS MATTER', 'GOFO', 'GOFO-SELF'];
+// 木板钱的对象按收支方向分两份（与发票客户公司无关）：
+// 收入 = 木板卖给谁 → 外部订单系统 Customers 页（不含 TestCustomer 测试记录、已废除的 The Element）；
+// 支出 = 木板从谁那买 → 外部订单系统 Suppliers 页（不含 TESTSupplier 测试记录）。
+const BS_PALLET_CUSTOMERS_IN = ['48', 'All MATERIALS MATTER', 'Cargowill', 'DV Fulfillment LLC', 'Efulfillus', 'Jason', 'KC pallet', 'RYKM LLC', 'SLM GROUP', 'Speed C CHB', 'Wecharmer', '派速捷', '现金自提神秘人'];
+const BS_PALLET_SUPPLIERS_OUT = ['631', 'All MATERIALS MATTER', 'GOFO', 'GOFO-SELF'];
 // Check deposit / withdrawal: after choosing, pick one or more counterparties.
 const BS_PAYEE_CHECK_DEP = '__checkdep__'; // sentinel: 存支票
 const BS_PAYEE_CHECK_WD = '__checkwd__';   // sentinel: 取支票
@@ -45433,8 +45436,8 @@ function _bsRenderBoxPanel() {
         <input type="text" class="bs-bx-emp-name" placeholder="员工姓名（多个用逗号隔开）" value="${esc(_bsEmpParse(box.payee).name)}" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
       <div class="bs-pallet-wrap" style="display:${_bsIsPallet(box.payee) ? '' : 'none'};background:#fefce8;border:1px dashed #fde68a;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
-        <div style="font-size:.72rem;color:#92400e;margin-bottom:.25rem">选择客户</div>
-        <select class="bs-bx-pallet-cust" onchange="bsPalletUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsPalletCustOptions(_bsPalletParse(box.payee))}</select>
+        <div class="bs-pallet-label" style="font-size:.72rem;color:#92400e;margin-bottom:.25rem">${box.direction === 'in' ? '选择客户（木板卖给谁）' : '选择供应商（木板从谁那买）'}</div>
+        <select class="bs-bx-pallet-cust" onchange="bsPalletUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsPalletCustOptions(_bsPalletParse(box.payee), box.direction)}</select>
       </div>
       <div class="bs-check-wrap" style="display:${_bsIsCheck(box.payee) ? '' : 'none'};background:#eff6ff;border:1px dashed #bfdbfe;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#1d4ed8;margin-bottom:.25rem">选择对方（可多选）</div>
@@ -45582,10 +45585,11 @@ function _bsEmpJoin(co, name) { return BS_EMP_PREFIX + (co || '') + '|' + (name 
 function _bsIsPallet(payee) { return typeof payee === 'string' && payee.indexOf(BS_PALLET_PREFIX) === 0; }
 function _bsPalletParse(payee) { return _bsIsPallet(payee) ? payee.slice(BS_PALLET_PREFIX.length) : ''; }
 function _bsPalletJoin(cust) { return BS_PALLET_PREFIX + (cust || ''); }
-// Customer <select> options for the 木板钱 sub-picker.
-function _bsPalletCustOptions(current) {
-  const parts = ['<option value="">— 选择客户 —</option>'];
-  const names = BS_PALLET_CUSTOMERS.slice();
+// Customer/supplier <select> options for the 木板钱 sub-picker (list depends on direction).
+function _bsPalletCustOptions(current, direction) {
+  const isIn = direction === 'in';
+  const parts = [`<option value="">— 选择${isIn ? '客户' : '供应商'} —</option>`];
+  const names = (isIn ? BS_PALLET_CUSTOMERS_IN : BS_PALLET_SUPPLIERS_OUT).slice();
   if (current && !names.includes(current)) names.push(current);
   names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
   return parts.join('');
@@ -45716,7 +45720,7 @@ function _bsCheckJoin(type, names) { return (type === 'wd' ? BS_CHECK_WD_PREFIX 
 function _bsCheckPartyGroups() {
   return [
     { label: '个人', names: BS_PAYEE_PEOPLE },
-    { label: '客户', names: BS_PALLET_CUSTOMERS },
+    { label: '客户', names: [...new Set([...BS_PALLET_CUSTOMERS_IN, ...BS_PALLET_SUPPLIERS_OUT])] },
     { label: '公司', names: _bsCompanies },
   ];
 }
@@ -45907,6 +45911,13 @@ async function bsUpdateBoxField(id, field, value) {
     if (item) item.style.borderLeftColor = color;
     // Payee prompt wording flips: 付给谁 (支出) ↔ 谁付的 (收入).
     if (item) { const ph = item.querySelector('.bs-bx-payee option[value=""]'); if (ph) ph.textContent = `— 选择${_bsPayeeLabel(value)} —`; }
+    // 木板钱的对象列表跟方向走: 收入=客户列表, 支出=供应商列表。
+    if (item) {
+      const ps = item.querySelector('.bs-bx-pallet-cust');
+      if (ps) ps.innerHTML = _bsPalletCustOptions(ps.value, value);
+      const pl = item.querySelector('.bs-pallet-label');
+      if (pl) pl.textContent = value === 'in' ? '选择客户（木板卖给谁）' : '选择供应商（木板从谁那买）';
+    }
     bsUpdateBoxSections(id); // income vs fee section depends on direction too
   }
 }
