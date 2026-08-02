@@ -2897,9 +2897,10 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_thread ON sms_message
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_sid ON sms_messages(twilio_message_sid)`); } catch(e) {}
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messages(thread_id, created_at)`); } catch(e) {}
 
-// 联系人标注: 工作的州 + 是否工头
+// 联系人标注: 工作的州 + 是否工头(负责招人) + 是否领班(管理仓库)
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_state TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_foreman INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_lead INTEGER DEFAULT 0`); } catch(e) {}
 // 工作经历: 一个人可能干过多个公司, [{company, role, date}] 带大概日期
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_history TEXT DEFAULT '[]'`); } catch(e) {}
 // WhatsApp 支持: 同一收件箱, 线程按渠道区分 (sms | whatsapp)
@@ -29228,6 +29229,10 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     if (String(req.query.foreman || '') === '1') {
       where += ` AND COALESCE(c.is_foreman,0)=1`;
     }
+    // 只看被标了 领班 的联系人
+    if (String(req.query.lead || '') === '1') {
+      where += ` AND COALESCE(c.is_lead,0)=1`;
+    }
 
     // 对客服(非 admin)不可见: 回了 STOP 退订的、admin 设为隐藏的、以及
     // 未入职的(未关联员工档案, 即列表里标「未入职」的联系人)
@@ -29236,8 +29241,8 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
 
-    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.employee_id as contact_employee_id, c.work_history as contact_work_history,
-      emp.state as emp_state,
+    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.is_lead as contact_is_lead, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.employee_id as contact_employee_id, c.work_history as contact_work_history,
+      emp.state as emp_state, emp.pay_rate as emp_pay_rate, emp.pay_type as emp_pay_type, emp.status as emp_status,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -29253,7 +29258,10 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
         const ws = _smsResolvedState(t);
         return {
         id: t.id,
-        contact: { id: t.contact_id, phone_e164: smsPhoneForRole(req, t.phone_e164, t.contact_employee_id), name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: ws.state, state_guess: ws.guess, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out, cs_hidden: t.contact_cs_hidden, employee_id: t.contact_employee_id, work_history: t.contact_work_history },
+        contact: { id: t.contact_id, phone_e164: smsPhoneForRole(req, t.phone_e164, t.contact_employee_id), name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: ws.state, state_guess: ws.guess, is_foreman: t.contact_is_foreman, is_lead: t.contact_is_lead, opted_out: t.contact_opted_out, cs_hidden: t.contact_cs_hidden, employee_id: t.contact_employee_id, work_history: t.contact_work_history,
+          // 当前工资: 仅 admin 可见, 且仅在职(active)员工显示
+          pay_rate: (req.userRole === 'admin' && t.emp_status === 'active' && t.emp_pay_rate) ? t.emp_pay_rate : null,
+          pay_type: t.emp_pay_type || '' },
         channel: t.channel || 'sms',
         status: t.status,
         priority: t.priority,
@@ -29280,8 +29288,8 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/threads/:id — thread detail
 app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.work_history as contact_work_history,
-      emp.state as emp_state,
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.is_lead as contact_is_lead, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.work_history as contact_work_history,
+      emp.state as emp_state, emp.pay_rate as emp_pay_rate, emp.pay_type as emp_pay_type, emp.status as emp_status,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -29321,6 +29329,10 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
         work_state: wsResolved.state,
         state_guess: wsResolved.guess,
         is_foreman: thread.contact_is_foreman,
+        is_lead: thread.contact_is_lead,
+        // 当前工资: 仅 admin 可见, 且仅在职(active)员工显示
+        pay_rate: (req.userRole === 'admin' && thread.emp_status === 'active' && thread.emp_pay_rate) ? thread.emp_pay_rate : null,
+        pay_type: thread.emp_pay_type || '',
         opted_out: thread.contact_opted_out,
         cs_hidden: thread.contact_cs_hidden,
         work_history: thread.contact_work_history
@@ -29574,7 +29586,7 @@ app.post('/api/sms/threads/:id/notes', requireAdmin, requireSmsAccess, (req, res
 // PUT /api/sms/contacts/:id
 app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const { name, company, email, tags, notes, work_state, is_foreman, work_history, cs_hidden } = req.body;
+    const { name, company, email, tags, notes, work_state, is_foreman, is_lead, work_history, cs_hidden } = req.body;
     const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
     const isAdmin = req.userRole === 'admin';
@@ -29599,6 +29611,7 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
       notes: notes ?? contact.notes,
       work_state: work_state !== undefined ? String(work_state || '').toUpperCase().slice(0, 20) : contact.work_state,
       is_foreman: is_foreman !== undefined ? (is_foreman ? 1 : 0) : (contact.is_foreman ? 1 : 0),
+      is_lead: is_lead !== undefined ? (is_lead ? 1 : 0) : (contact.is_lead ? 1 : 0),
       work_history: wh !== undefined ? wh : (contact.work_history || '[]'),
       // 对客服隐藏: 仅 admin 可设
       cs_hidden: (isAdmin && cs_hidden !== undefined) ? (cs_hidden ? 1 : 0) : (contact.cs_hidden ? 1 : 0)
@@ -29606,11 +29619,11 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
     // 变更明细存进审计, admin 每天可在「资料修改记录」里核对
     const changes = {};
     for (const k of Object.keys(next)) {
-      const oldV = k === 'is_foreman' ? (contact.is_foreman ? 1 : 0) : (contact[k] ?? '');
+      const oldV = (k === 'is_foreman' || k === 'is_lead') ? (contact[k] ? 1 : 0) : (contact[k] ?? '');
       if (String(next[k] ?? '') !== String(oldV)) changes[k] = { from: oldV, to: next[k] };
     }
-    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, work_history=?, cs_hidden=?, updated_at=datetime('now') WHERE id=?`)
-      .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, next.work_history, next.cs_hidden, contact.id);
+    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, is_lead=?, work_history=?, cs_hidden=?, updated_at=datetime('now') WHERE id=?`)
+      .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, next.is_lead, next.work_history, next.cs_hidden, contact.id);
     if (Object.keys(changes).length) smsAudit('contact', contact.id, 'updated', 'agent', req.userId, { by: req.userName, changes });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
