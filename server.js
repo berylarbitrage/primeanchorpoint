@@ -29914,10 +29914,10 @@ app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAcce
 // 班次/卸柜等合规话术: 全部用「接单/拒单」措辞(承包商有拒绝权), 避免「必须来/
 // 请假/处分」等雇员管理措辞在 1099 争议里成为控制权证据。西英双语、无需填空,
 // 标 no_translate 发送时原样发出不再机翻; label/zh/cat 是给客服看的中文标题、
-// 大意和分类, 不会发给对方。v4: 卸柜加「发照片报人数」; 按 text 匹配升级旧条目。
-(function seedShiftConfirmTemplatesV4() {
+// 大意和分类, 不会发给对方。v5: 班次加「本周默认照常·有事提前说」; 按 text 匹配升级旧条目。
+(function seedShiftConfirmTemplatesV5() {
   try {
-    const FLAG = 'sms_shift_tpl_seeded_v4';
+    const FLAG = 'sms_shift_tpl_seeded_v5';
     if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(FLAG)) return;
     const row = db.prepare("SELECT value FROM app_settings WHERE key='sms_reply_templates'").get();
     let arr = [];
@@ -29939,6 +29939,8 @@ app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAcce
         text: 'Recordatorio: mañana es el turno que aceptaste. Por favor llega 10 minutos antes y trae tu ID. / Reminder: tomorrow is the shift you accepted. Please arrive 10 minutes early and bring your ID.', no_translate: true },
       { cat: C1, label: '❓ 接了单没到·关心跟进', zh: '客户说你今天没到已接的班次，一切还好吗？以后还想接班次吗？',
         text: 'Hola, el cliente nos informó que hoy no llegaste al turno que habías aceptado. ¿Está todo bien? Avísanos si sigues disponible para futuros turnos. / Hi, the client told us you didn’t make it to the shift you had accepted today. Is everything OK? Let us know if you’re still available for future shifts.', no_translate: true },
+      { cat: C1, label: '📌 本周默认照常·有事提前说', zh: '本周默认你会照常完成已接的活；有特殊情况请务必提前发短信告诉我们',
+        text: 'Contamos contigo para los trabajos de esta semana que ya aceptaste. Si surge algún imprevisto y no puedes venir, por favor avísanos por mensaje con la mayor anticipación posible. / We’re counting on you for the jobs you accepted this week. If something comes up and you can’t make it, please text us as far in advance as possible.', no_translate: true },
       { cat: C2, label: '📦 明天有柜·接不接', zh: '明天到一个柜要卸，你接不接？回 SÍ 或 NO',
         text: 'Hola, mañana llega un contenedor para descargar. ¿Lo tomas? Responde SÍ o NO. / Hi, a container arrives tomorrow for unloading. Do you take it? Reply SÍ / YES or NO.', no_translate: true },
       { cat: C2, label: '🕐 卸柜·问几点能到', zh: '明天的柜你几点能到？回复时间',
