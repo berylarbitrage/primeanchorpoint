@@ -28915,6 +28915,28 @@ app.post('/api/admin/ui-translate', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 轻量语言识别 (中/西/英): 供收件箱自动跟随对方语言。返回 'zh'/'es'/'en',
+// 太短或分不清时返回 '' (调用方保持原设置)。纯规则实现, 不依赖外部服务。
+const _SMS_ES_WORDS = new Set(['hola','si','sí','gracias','buenos','buenas','dias','días','tardes','noches','trabajo','trabajar','mañana','manana','cuando','cuándo','donde','dónde','como','cómo','que','qué','por','favor','necesito','puedo','voy','estoy','tengo','hay','pero','para','con','usted','ustedes','porque','ya','muy','bien','esta','está','este','hoy','semana','hora','pago','dinero','ayuda','quiero','hacer','llegar','turno','jefe','amigo','claro','vale','listo','el','la','los','las','un','una','de','en','es','se','mi','yo','tu','su']);
+const _SMS_EN_WORDS = new Set(['the','you','yes','hello','hi','hey','thanks','thank','please','work','working','tomorrow','today','when','where','how','what','why','can','will','would','need','want','going','time','shift','job','pay','money','help','morning','week','hour','boss','friend','sure','good','see','be','am','is','are','do','not','my','me','to','at','on','in','for','and','but','i','a','of','have','get','got','ok','okay']);
+function _smsDetectLang(text) {
+  const t = String(text || '').trim();
+  if (!t) return '';
+  if (/[㐀-鿿豈-﫿]/.test(t)) return 'zh';
+  if (/[ñ¿¡]/i.test(t)) return 'es';
+  const words = t.toLowerCase().split(/[^a-záéíóúüñ]+/).filter(Boolean);
+  if (!words.length) return '';
+  let es = 0, en = 0;
+  for (const w of words) {
+    if (_SMS_ES_WORDS.has(w)) es++;
+    if (_SMS_EN_WORDS.has(w)) en++;
+    if (/[áéíóú]/.test(w)) es++;
+  }
+  if (es > en) return 'es';
+  if (en > es) return 'en';
+  return '';
+}
+
 // ═══ Twilio Inbound Webhook ═══
 app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), validateTwilioWebhook, async (req, res) => {
   try {
@@ -28952,6 +28974,15 @@ app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), va
 
     // 3. Auto-translate inbound message (contact_lang → agent_lang)
     const freshThread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
+    // 自动识别对方这条消息的语言 (西/英), 更新对话的「对方语言」—— 客服打中文
+    // 后翻译方向自动跟对方实际用的语言走, 不用手动切。太短/不确定的消息不动;
+    // 中文消息不改 contact_lang (客服端政策: 发给工人的消息必须是西语/英语)。
+    const detectedLang = _smsDetectLang(Body);
+    if ((detectedLang === 'es' || detectedLang === 'en') && detectedLang !== freshThread.contact_lang) {
+      db.prepare(`UPDATE sms_threads SET contact_lang=?, updated_at=datetime('now') WHERE id=?`).run(detectedLang, thread.id);
+      smsAudit('thread', thread.id, 'contact_lang_auto', 'system', null, { from: freshThread.contact_lang || '', to: detectedLang });
+      freshThread.contact_lang = detectedLang;
+    }
     const translatedBody = await translateText(Body || '', freshThread.contact_lang || 'es', freshThread.agent_lang || 'zh');
 
     // 4. Insert message
