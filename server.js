@@ -29158,8 +29158,9 @@ function smsFirstContactCompliance(contactId, text) {
     if (n > 0) return text;
   } catch (e) { return text; }
   let out = text;
-  // 署名与二维码域名一致 (primeanchorpoint.com); 需要换名时用 SMS_BRAND_NAME 覆盖
-  if (!/prime\s*anchor/i.test(out)) out = '[' + (process.env.SMS_BRAND_NAME || 'Prime Anchor Point LLC') + '] ' + out;
+  // 首条用自然的人称开头 (比方括号署名更不像机器人); 公司名与二维码域名一致
+  // (primeanchorpoint.com), 需要换名时用 SMS_BRAND_NAME 覆盖
+  if (!/prime\s*anchor/i.test(out)) out = 'This is HR from ' + (process.env.SMS_BRAND_NAME || 'Prime Anchor Point LLC') + '. ' + out;
   if (!/\bSTOP\b/i.test(out)) out += '\nReply STOP to opt out. Msg & data rates may apply.';
   return out;
 }
