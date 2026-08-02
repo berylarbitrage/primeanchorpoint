@@ -1223,11 +1223,14 @@ function renderThreadList() {
     const onboard = t.contact.employee_id
       ? '<span style="background:#d1fae5;color:#065f46;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">✓ 已入职</span>'
       : '<span style="background:#fef3c7;color:#92400e;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">未入职</span>';
+    // 工作经历: 公司显示全称(可换行不截断), 工种带对应小图标
     const wh = parseWorkHistory(t.contact.work_history);
     const whLine = wh.length
-      ? '<div style="font-size:.7rem;color:#3730a3;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🏢 '
-        + wh.slice(0, 3).map(h => esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' '))).join(' · ')
-        + (wh.length > 3 ? '  +' + (wh.length - 3) : '') + '</div>'
+      ? '<div style="font-size:.7rem;color:#3730a3;margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">'
+        + wh.slice(0, 3).map(h => '<span style="background:#eef2ff;border-radius:999px;padding:0 7px;font-weight:600">🏢 ' + esc(h.company || '')
+          + (h.role ? ' · ' + (jobIcon(h.role) ? jobIcon(h.role) + ' ' : '') + esc(h.role) : '')
+          + (h.date ? ' · ' + esc(fmtWhDate(h.date)) : '') + '</span>').join('')
+        + (wh.length > 3 ? '<span style="color:#94a3b8">+' + (wh.length - 3) + '</span>' : '') + '</div>'
       : '';
     const av = avatarStyle(t);
     const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头">🦺</span>' : '';
@@ -1238,7 +1241,11 @@ function renderThreadList() {
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
       + '<span class="ti-time">' + time + '</span></div>'
       + '<div class="ti-preview">' + preview + '</div>'
-      + '<div class="ti-meta">' + (t.contact.cs_hidden ? '<span style="background:#fee2e2;color:#b91c1c;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🙈 对客服隐藏</span>' : '') + followUpBadge(t) + (t.channel === 'whatsapp' ? '<span style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🟢 WhatsApp</span>' : '') + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
+      + '<div class="ti-meta">' + (t.contact.cs_hidden ? '<span style="background:#fee2e2;color:#b91c1c;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🙈 对客服隐藏</span>' : '') + followUpBadge(t)
+      + (t.channel === 'whatsapp'
+        ? '<span title="WhatsApp" style="background:#dcfce7;color:#15803d;font-size:.78rem;font-weight:700;padding:1px 6px;border-radius:10px;line-height:1.2">🟢</span>'
+        : '<span title="短信 SMS" style="background:#e0f2fe;color:#0369a1;font-size:.78rem;font-weight:700;padding:1px 6px;border-radius:10px;line-height:1.2">💬</span>')
+      + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
       + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
       + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
@@ -2141,6 +2148,23 @@ function _contactStateForemanBadges(ws, fm, size) {
   if (fm) h += '<span style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🦺 工头</span>';
   return h;
 }
+// 工种 → 小图标 (关键词匹配, 中英文都认; 匹配不到返回空串不加图标)
+const JOB_ICON_RULES = [
+  [/forklift|high\s*reach|reach\s*truck|叉车/i, '🚜'],
+  [/order\s*picker|picker|拣货/i, '📦'],
+  [/pack|打包/i, '🎁'],
+  [/load|unload|lumper|装卸|卸柜|装柜/i, '🏋️'],
+  [/driver|cdl|司机/i, '🚚'],
+  [/clean|janitor|清洁|保洁/i, '🧹'],
+  [/sort|分拣/i, '🗂️'],
+  [/machine|operator|机器|操作/i, '⚙️'],
+  [/general|labor|普工|杂工/i, '👷'],
+];
+function jobIcon(s) {
+  const v = String(s || '');
+  for (const [re, ico] of JOB_ICON_RULES) { if (re.test(v)) return ico; }
+  return '';
+}
 // 小圆图标徽标: 只显示图标, 信息放悬停提示 (title), 让状态一目了然
 function _icoChip(icon, title, bg, color, onclick) {
   return '<span ' + (onclick ? 'onclick="' + onclick + '" ' : '') + 'title="' + esc(title) + '" ' +
@@ -2156,19 +2180,22 @@ function renderContactTagRow() {
   const empBadge = (currentContact && currentContact.employee_id)
     ? _icoChip('&#10003;', '已入职 (已关联员工档案)', '#d1fae5', '#065f46')
     : _icoChip('&#9888;', '未入职: 尚未关联员工账号, 点击关联', '#fef3c7', '#92400e', 'showEditContactModal()');
-  // 工作经历: 干过的公司+工种+大概时间 (信息本体, 保留文字)
+  // 工作经历: 公司全称 + 工种小图标 + 时间 (信息本体, 保留文字)
   const whChips = parseWorkHistory(currentContact && currentContact.work_history).slice(0, 4).map(h =>
-    '<span style="background:#eef2ff;color:#3730a3;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">🏢 ' + esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join('·')) + '</span>'
+    '<span style="background:#eef2ff;color:#3730a3;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">🏢 ' + esc(h.company || '')
+    + (h.role ? '·' + (jobIcon(h.role) ? jobIcon(h.role) + ' ' : '') + esc(h.role) : '')
+    + (h.date ? '·' + esc(fmtWhDate(h.date)) : '') + '</span>'
   ).join('');
   const chanChip = (currentThread && currentThread.channel === 'whatsapp')
-    ? _icoChip('🟢', 'WhatsApp 对话', '#dcfce7', '#15803d') : '';
+    ? _icoChip('🟢', 'WhatsApp 对话', '#dcfce7', '#15803d')
+    : _icoChip('💬', '短信 SMS 对话', '#e0f2fe', '#0369a1');
   const ws = currentContact && currentContact.work_state;
   const stateChip = ws ? _icoChip('📍' + esc(ws), '工作州: ' + ws, '#ede9fe', '#5b21b6') : '';
   const foremanChip = (currentContact && currentContact.is_foreman) ? _icoChip('🦺', '工头', '#ffedd5', '#9a3412') : '';
   row.innerHTML = chanChip + empBadge + stateChip + foremanChip
   + whChips
   + (Array.isArray(tags) ? tags : []).map(t =>
-    '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">' + esc(t) + '</span>'
+    '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">' + (jobIcon(t) ? jobIcon(t) + ' ' : '') + esc(t) + '</span>'
   ).join('')
   + (noteTxt ? _icoChip('&#128221;', '备注: ' + noteTxt.slice(0, 120), '#fef3c7', '#b45309', 'showEditContactModal()') : '')
   + _icoChip('&#127991;', '编辑标签/备注', '#e0e7ff', '#4338ca', 'showEditContactModal()');
@@ -2180,7 +2207,7 @@ function renderContactTagsInline(tagsJson, contact) {
   if ((!Array.isArray(tags) || !tags.length) && !badges) return '';
   if (!Array.isArray(tags)) tags = [];
   return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">' + badges + tags.slice(0, 4).map(t =>
-    '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:0 7px;font-size:.64rem;font-weight:600">' + esc(t) + '</span>'
+    '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:0 7px;font-size:.64rem;font-weight:600">' + (jobIcon(t) ? jobIcon(t) + ' ' : '') + esc(t) + '</span>'
   ).join('') + (tags.length > 4 ? '<span style="font-size:.64rem;color:var(--gray-400)">+' + (tags.length - 4) + '</span>' : '') + '</div>';
 }
 // ─── 发起对话: 员工/申请人搜索 ───
