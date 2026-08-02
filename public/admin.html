@@ -42686,10 +42686,10 @@ async function openContainerWeekQrModal(partnerId, partnerName) {
 function closeContainerWeekQrModal() {
   document.getElementById('cwQrModal').classList.remove('show');
 }
-// 公开二维码链接统一用 www 主服务域名（Render 上 www 是主域，裸域是平台级
+// 公开二维码链接统一用主服务域名（Render 上新域名裸域是主域，www 是平台级
 // 跳转）。管理员无论在哪个域名下操作，码里都是同一个域。本地环境保持原 origin。
 function _pubOrigin() {
-  return /(^|\.)primeanchor(point|workforce)\.com$/i.test(location.hostname) ? 'https://www.primeanchorworkforce.com' : location.origin;
+  return /(^|\.)primeanchor(point|workforce)\.com$/i.test(location.hostname) ? 'https://primeanchorworkforce.com' : location.origin;
 }
 // Build the /cw URL for a given submitter name ('' = generic, no name).
 function _cwUrlFor(name) {
