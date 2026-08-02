@@ -3141,12 +3141,29 @@ async function loadTemplates() {
   } catch(e) { templates = []; }
 }
 
+// 分类折叠: 点分类标题展开该类, 不用一次滑完整个长列表
+let _tplOpenCat = '';
+let _tplCats = [];
 function toggleTemplates() {
   const picker = document.getElementById('templatePicker');
   if (picker.classList.contains('show')) { picker.classList.remove('show'); return; }
   if (templates.length === 0) { toast('No templates configured yet'); return; }
+  _tplOpenCat = '';
+  renderTemplatePicker();
+  picker.classList.add('show');
+}
+function renderTemplatePicker() {
+  const picker = document.getElementById('templatePicker');
+  const byCat = {};
+  _tplCats = [];
+  templates.forEach((t, i) => {
+    const cat = (t && typeof t === 'object' && t.cat) ? t.cat : '其他';
+    if (!byCat[cat]) { byCat[cat] = []; _tplCats.push(cat); }
+    byCat[cat].push(i);
+  });
   // 中文标题+大意给客服看着选; 实际发出去的只有西英原文 (text)
-  picker.innerHTML = templates.map((t, i) => {
+  const itemHtml = i => {
+    const t = templates[i];
     const text = typeof t === 'string' ? t : (t.text || t.body || '');
     const label = (t && typeof t === 'object' && t.label) ? t.label : '';
     const zh = (t && typeof t === 'object' && t.zh) ? t.zh : '';
@@ -3155,8 +3172,23 @@ function toggleTemplates() {
       + (zh ? '<div style="font-size:.74rem;color:#0f766e;margin-bottom:2px">' + esc(zh) + '</div>' : '')
       + '<div style="font-size:.72rem;color:var(--gray-500);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">' + esc(text) + '</div>'
       + '</div>';
+  };
+  // 只有一个分类(或都没分类)时不折叠, 直接平铺
+  if (_tplCats.length <= 1) {
+    picker.innerHTML = templates.map((t, i) => itemHtml(i)).join('');
+    return;
+  }
+  picker.innerHTML = _tplCats.map((cat, ci) => {
+    const open = _tplOpenCat === cat;
+    return '<div onclick="_tplToggleCat(' + ci + ')" style="padding:9px 14px;font-size:.82rem;font-weight:800;color:#92400e;background:' + (open ? '#fef3c7' : '#fffbeb') + ';border-bottom:1px solid var(--gray-100);cursor:pointer;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0">'
+      + '<span>' + esc(cat) + ' <span style="font-weight:600;color:#b45309">(' + byCat[cat].length + ')</span></span><span>' + (open ? '▾' : '▸') + '</span></div>'
+      + (open ? byCat[cat].map(itemHtml).join('') : '');
   }).join('');
-  picker.classList.add('show');
+}
+function _tplToggleCat(ci) {
+  const cat = _tplCats[ci];
+  _tplOpenCat = _tplOpenCat === cat ? '' : cat;
+  renderTemplatePicker();
 }
 
 function useTemplate(idx) {
