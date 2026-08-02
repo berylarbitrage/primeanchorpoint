@@ -830,7 +830,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <input id="csAccUser" placeholder="用户名 (3-32位字母数字._-)" style="flex:1;min-width:130px">
       <input id="csAccPass" placeholder="密码 (≥8位, 大小写+数字)" style="flex:1;min-width:130px">
       <input id="csAccName" placeholder="显示名 (可选)" style="flex:1;min-width:90px">
-      <input id="csAccEmail" placeholder="邮箱 (可选)" style="flex:1;min-width:120px">
+      <input id="csAccEmail" type="email" placeholder="邮箱 (必填, 用于找回密码)" style="flex:1;min-width:120px">
       <button class="btn" onclick="createCsAccount()" style="margin:0">创建</button>
     </div>
     <div style="font-size:.75rem;color:var(--gray-400);margin-top:8px">客服用这个账号登录 /sms-inbox 页面；访问管理后台其他任何页面都会被拒绝。忘记密码可在登录页用邮箱验证码自助重置。</div>
@@ -2797,6 +2797,8 @@ async function genCsInvite() {
 }
 async function createCsAccount() {
   try {
+    const em = document.getElementById('csAccEmail').value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { toast('请填写有效邮箱 (用于验证码改密码)'); return; }
     const r = await api('/sms/cs-accounts', { method: 'POST', body: JSON.stringify({
       username: document.getElementById('csAccUser').value.trim(),
       password: document.getElementById('csAccPass').value,
