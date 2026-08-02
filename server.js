@@ -13315,7 +13315,7 @@ app.post('/api/admin/worker-accounts/:id/send-reset-link', requireAdmin, require
     try {
       const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
       await twilio.messages.create({
-        body: `Prime Anchor Workforce 密码重置链接 / Password Reset:\n${resetUrl}\n24小时内有效。`,
+        body: `[Prime Anchor Point LLC] 密码重置链接 / Password Reset:\n${resetUrl}\n24小时内有效。`,
         from: process.env.TWILIO_PHONE_NUMBER,
         to: w.phone
       });
