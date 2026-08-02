@@ -2189,11 +2189,10 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ─── Phase 2: Tags ───
-function _contactStateForemanBadges(ws, fm, size, guess) {
+function _contactStateForemanBadges(ws, fm, size) {
   const fs = size || '.68rem';
   let h = '';
-  if (ws) h += '<span title="工作州" style="background:#ede9fe;color:#5b21b6;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">📍 ' + esc(ws) + '</span>';
-  else if (guess) h += '<span title="按手机区号推测的州(档案未设置)" style="background:#f1f5f9;color:#64748b;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">📍 ' + esc(guess) + '?</span>';
+  if (ws) h += '<span title="工作州(来自入职信息)" style="background:#ede9fe;color:#5b21b6;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">📍 ' + esc(ws) + '</span>';
   if (fm) h += '<span style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🦺 工头</span>';
   return h;
 }
@@ -2259,9 +2258,7 @@ function renderContactTagRow() {
     ? '<span title="WhatsApp 对话" style="display:inline-flex;align-items:center;gap:3px;height:22px;border-radius:999px;padding:0 8px;background:#dcfce7;color:#15803d;font-size:.68rem;font-weight:700;line-height:1">' + waLogo(12) + 'WhatsApp</span>'
     : _icoChip('💬', '短信 SMS 对话', '#e0f2fe', '#0369a1');
   const ws = currentContact && currentContact.work_state;
-  const wsGuess = currentContact && currentContact.state_guess;
-  const stateChip = ws ? _icoChip('📍' + esc(ws), '工作州: ' + ws, '#ede9fe', '#5b21b6')
-    : wsGuess ? _icoChip('📍' + esc(wsGuess) + '?', '按手机区号推测的州(档案未设置): ' + wsGuess, '#f1f5f9', '#64748b') : '';
+  const stateChip = ws ? _icoChip('📍' + esc(ws), '工作州: ' + ws, '#ede9fe', '#5b21b6') : '';
   const foremanChip = (currentContact && currentContact.is_foreman) ? _icoChip('🦺', '工头', '#ffedd5', '#9a3412') : '';
   row.innerHTML = chanChip + empBadge + stateChip + foremanChip
   + whChips
@@ -2274,7 +2271,7 @@ function renderContactTagRow() {
 function renderContactTagsInline(tagsJson, contact) {
   let tags = [];
   try { tags = JSON.parse(tagsJson || '[]'); } catch (_) {}
-  const badges = contact ? _contactStateForemanBadges(contact.work_state, contact.is_foreman, '.64rem', contact.state_guess) : '';
+  const badges = contact ? _contactStateForemanBadges(contact.work_state, contact.is_foreman, '.64rem') : '';
   if ((!Array.isArray(tags) || !tags.length) && !badges) return '';
   if (!Array.isArray(tags)) tags = [];
   return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">' + badges + tags.slice(0, 4).map(t =>
