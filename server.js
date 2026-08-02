@@ -29005,6 +29005,9 @@ function requireSmsAccess(req, res, next) {
   // 收件箱消息必须能追溯到具体的人。仅当还没有任何个人管理员账号时放行,
   // 避免个人账号还没建就把自己锁死。
   if (req.userRole === 'admin' && String(req.userName || '').toLowerCase() === 'admin') {
+    // 例外: 未读数角标 (admin 后台页面也在用, 只是个数字, 不泄露消息内容)
+    const p = (req.originalUrl || '').split('?')[0];
+    if (p === '/api/sms/unread-count') return next();
     try {
       const others = db.prepare(`SELECT COUNT(*) n FROM admin_users WHERE role='admin' AND active=1 AND LOWER(username) != 'admin'`).get().n;
       if (others > 0) return res.status(403).json({ error: 'admin 账号不能登录收件箱, 请用你的个人管理员账号 (信息是谁发的要一目了然)' });
