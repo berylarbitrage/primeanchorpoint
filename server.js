@@ -29914,10 +29914,10 @@ app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAcce
 // 班次/卸柜等合规话术: 全部用「接单/拒单」措辞(承包商有拒绝权), 避免「必须来/
 // 请假/处分」等雇员管理措辞在 1099 争议里成为控制权证据。西英双语、无需填空,
 // 标 no_translate 发送时原样发出不再机翻; label/zh/cat 是给客服看的中文标题、
-// 大意和分类, 不会发给对方。v3: 加分类 + 卸柜场景, 按 text 匹配升级旧条目。
-(function seedShiftConfirmTemplatesV3() {
+// 大意和分类, 不会发给对方。v4: 卸柜加「发照片报人数」; 按 text 匹配升级旧条目。
+(function seedShiftConfirmTemplatesV4() {
   try {
-    const FLAG = 'sms_shift_tpl_seeded_v3';
+    const FLAG = 'sms_shift_tpl_seeded_v4';
     if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(FLAG)) return;
     const row = db.prepare("SELECT value FROM app_settings WHERE key='sms_reply_templates'").get();
     let arr = [];
@@ -29947,6 +29947,8 @@ app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAcce
         text: '¿Cuántas personas puedes traer mañana para descargar? Responde con el número. / How many people can you bring tomorrow for unloading? Reply with the number.', no_translate: true },
       { cat: C2, label: '📲 周柜登记提醒', zh: '提醒工头：用二维码登记本周柜子，密码 123456',
         text: 'Recuerda registrar los contenedores de esta semana con el código QR. Contraseña: 123456. / Remember to log this week’s containers with the QR code. Password: 123456.', no_translate: true },
+      { cat: C2, label: '📷 卸柜·发照片报人数', zh: '今天卸的柜请拍照发过来（柜号要拍清楚），并告诉我们几个人参与了卸柜',
+        text: 'Por favor envía fotos de los contenedores descargados hoy (que se vea el número del contenedor) y dinos cuántas personas participaron en la descarga. / Please send photos of the containers unloaded today (container number visible) and tell us how many people participated in the unloading.', no_translate: true },
       { cat: C3, label: '💼 新工作机会', zh: '有个新工作机会，感兴趣回 SÍ，发你详情',
         text: 'Hola, tenemos una nueva oportunidad de trabajo. ¿Te interesa? Responde SÍ y te enviamos los detalles. / Hi, we have a new job opportunity. Interested? Reply SÍ / YES and we’ll send you the details.', no_translate: true },
       { cat: C3, label: '📎 催补入职文件', zh: '入职资料还缺文件，请查看之前发的链接；需要帮助回 AYUDA',
