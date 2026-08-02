@@ -481,6 +481,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 </div>
 
 <!-- Assign Modal -->
+<!-- 通用弹窗: 代替浏览器原生 prompt/confirm, 与系统风格一致 -->
+<div class="modal-bg" id="uiDlg" style="z-index:2000">
+  <div class="modal" style="max-width:380px">
+    <h3 id="uiDlgTitle" style="margin-bottom:12px"></h3>
+    <textarea id="uiDlgInput" rows="3" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none;resize:vertical;font-family:inherit"></textarea>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button onclick="_uiDlgDone(false)" style="flex:1;padding:10px;background:var(--gray-100);border:none;border-radius:var(--radius);cursor:pointer;font-size:.85rem;color:var(--gray-600)">取消</button>
+      <button onclick="_uiDlgDone(true)" style="flex:1;padding:10px;background:var(--sky);border:none;border-radius:var(--radius);cursor:pointer;font-size:.85rem;color:#fff;font-weight:700">确定</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="assignModal">
   <div class="modal">
     <h3>Assign to Agent</h3>
@@ -1047,8 +1059,8 @@ async function doLogin() {
   btn.disabled = false; btn.textContent = 'Login';
 }
 
-function confirmLogout() {
-  if (confirm('确定退出登录吗？ Log out?')) doLogout();
+async function confirmLogout() {
+  if (await uiConfirm('确定退出登录吗？')) doLogout();
 }
 function doLogout() {
   try { api('/admin/logout', { method: 'POST' }).catch(() => {}); } catch (_) {}
@@ -2643,11 +2655,41 @@ async function loadIvList(days) {
     rc.innerHTML = '<div style="padding:12px;color:var(--gray-400);font-size:.8rem;text-align:center">加载失败</div>';
   }
 }
+// ─── 通用弹窗 (代替原生 prompt/confirm, 与系统风格一致) ───
+let _uiDlgResolve = null;
+function uiPrompt(title, placeholder) {
+  return new Promise(resolve => {
+    _uiDlgResolve = resolve;
+    document.getElementById('uiDlgTitle').textContent = title;
+    const inp = document.getElementById('uiDlgInput');
+    inp.style.display = '';
+    inp.value = '';
+    inp.placeholder = placeholder || '';
+    document.getElementById('uiDlg').classList.add('show');
+    setTimeout(() => inp.focus(), 60);
+  });
+}
+function uiConfirm(title) {
+  return new Promise(resolve => {
+    _uiDlgResolve = v => resolve(v !== null);
+    document.getElementById('uiDlgTitle').textContent = title;
+    document.getElementById('uiDlgInput').style.display = 'none';
+    document.getElementById('uiDlg').classList.add('show');
+  });
+}
+function _uiDlgDone(ok) {
+  const inp = document.getElementById('uiDlgInput');
+  const val = !ok ? null : (inp.style.display === 'none' ? true : inp.value.trim());
+  document.getElementById('uiDlg').classList.remove('show');
+  const r = _uiDlgResolve; _uiDlgResolve = null;
+  if (r) r(val);
+}
+
 // ─── 🆘 请求管理员协助 ───
 async function requestAssist(context, note) {
   if (note === null || note === undefined || note === '') {
-    note = prompt('描述一下需要管理员协助的事情:');
-    if (!note || !note.trim()) return;
+    note = await uiPrompt('🆘 请求管理员协助', '描述一下需要管理员协助的事情…');
+    if (!note || !String(note).trim()) return;
   }
   try {
     const r = await api('/sms/assist-requests', { method: 'POST', body: JSON.stringify({
@@ -2912,7 +2954,7 @@ async function toggleCsAccount(id, active) {
   } catch (e) { toast(e.message || '操作失败'); }
 }
 async function resetCsPassword(id) {
-  const pw = prompt('输入新密码 (≥8位, 需含大小写字母和数字):');
+  const pw = await uiPrompt('重置客服密码', '输入新密码 (≥8位, 需含大小写字母和数字)');
   if (!pw) return;
   try {
     const r = await api('/sms/cs-accounts/' + id, { method: 'PATCH', body: JSON.stringify({ password: pw }) });
