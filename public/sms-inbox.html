@@ -1223,14 +1223,19 @@ function renderThreadList() {
     const onboard = t.contact.employee_id
       ? '<span style="background:#d1fae5;color:#065f46;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">✓ 已入职</span>'
       : '<span style="background:#fef3c7;color:#92400e;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">未入职</span>';
-    // 工作经历: 公司显示全称(可换行不截断), 工种带对应小图标
+    // 工作经历: 整行一次看全 —— 公司名超长时单独截断(悬停看全称),
+    // 工种小图标 + 工种 + 时间固定显示不被挤掉
     const wh = parseWorkHistory(t.contact.work_history);
+    const whChip = h => '<span title="' + esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' · ')) + '"'
+      + ' style="background:#eef2ff;border-radius:999px;padding:0 7px;font-weight:600;display:inline-flex;align-items:center;white-space:nowrap;min-width:0">'
+      + '<span style="overflow:hidden;text-overflow:ellipsis;max-width:9.5em">🏢 ' + esc(h.company || '') + '</span>'
+      + (h.role ? '<span style="flex:none">&nbsp;· ' + (jobIcon(h.role) ? jobIcon(h.role) + ' ' : '') + esc(h.role) + '</span>' : '')
+      + (h.date ? '<span style="flex:none;color:#6d28d9">&nbsp;· ' + esc(fmtWhDate(h.date)) + '</span>' : '')
+      + '</span>';
     const whLine = wh.length
-      ? '<div style="font-size:.7rem;color:#3730a3;margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">'
-        + wh.slice(0, 3).map(h => '<span style="background:#eef2ff;border-radius:999px;padding:0 7px;font-weight:600">🏢 ' + esc(h.company || '')
-          + (h.role ? ' · ' + (jobIcon(h.role) ? jobIcon(h.role) + ' ' : '') + esc(h.role) : '')
-          + (h.date ? ' · ' + esc(fmtWhDate(h.date)) : '') + '</span>').join('')
-        + (wh.length > 3 ? '<span style="color:#94a3b8">+' + (wh.length - 3) + '</span>' : '') + '</div>'
+      ? '<div style="font-size:.7rem;color:#3730a3;margin-top:3px;display:flex;gap:3px;overflow:hidden">'
+        + wh.slice(0, 3).map(whChip).join('')
+        + (wh.length > 3 ? '<span style="color:#94a3b8;flex:none">+' + (wh.length - 3) + '</span>' : '') + '</div>'
       : '';
     const av = avatarStyle(t);
     const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头">🦺</span>' : '';
@@ -2180,11 +2185,14 @@ function renderContactTagRow() {
   const empBadge = (currentContact && currentContact.employee_id)
     ? _icoChip('&#10003;', '已入职 (已关联员工档案)', '#d1fae5', '#065f46')
     : _icoChip('&#9888;', '未入职: 尚未关联员工账号, 点击关联', '#fef3c7', '#92400e', 'showEditContactModal()');
-  // 工作经历: 公司全称 + 工种小图标 + 时间 (信息本体, 保留文字)
+  // 工作经历: 公司名超长时单独截断(悬停看全称), 工种小图标 + 时间固定显示
   const whChips = parseWorkHistory(currentContact && currentContact.work_history).slice(0, 4).map(h =>
-    '<span style="background:#eef2ff;color:#3730a3;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">🏢 ' + esc(h.company || '')
-    + (h.role ? '·' + (jobIcon(h.role) ? jobIcon(h.role) + ' ' : '') + esc(h.role) : '')
-    + (h.date ? '·' + esc(fmtWhDate(h.date)) : '') + '</span>'
+    '<span title="' + esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' · ')) + '"'
+    + ' style="background:#eef2ff;color:#3730a3;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600;display:inline-flex;align-items:center;white-space:nowrap;min-width:0">'
+    + '<span style="overflow:hidden;text-overflow:ellipsis;max-width:10em">🏢 ' + esc(h.company || '') + '</span>'
+    + (h.role ? '<span style="flex:none">&nbsp;· ' + (jobIcon(h.role) ? jobIcon(h.role) + ' ' : '') + esc(h.role) + '</span>' : '')
+    + (h.date ? '<span style="flex:none;color:#6d28d9">&nbsp;· ' + esc(fmtWhDate(h.date)) + '</span>' : '')
+    + '</span>'
   ).join('');
   const chanChip = (currentThread && currentThread.channel === 'whatsapp')
     ? _icoChip('🟢', 'WhatsApp 对话', '#dcfce7', '#15803d')
