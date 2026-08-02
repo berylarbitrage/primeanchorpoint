@@ -21,7 +21,7 @@ committed to git.
 | `R2_SECRET_ACCESS_KEY` | `STORAGE_BACKEND=r2` | (from Cloudflare R2 token) |
 | `R2_BUCKET` | `STORAGE_BACKEND=r2` | `prime-anchor-files` |
 | `R2_ACCOUNT_ID` | optional, informational | — |
-| `R2_PUBLIC_BASE_URL` | optional | `https://files.primeanchorpoint.com` |
+| `R2_PUBLIC_BASE_URL` | optional | `https://files.primeanchorworkforce.com` |
 | `R2_PRESIGN_TTL_SEC` | optional, defaults `900` (15min) | — |
 
 If `R2_PUBLIC_BASE_URL` is set, file URLs use that domain directly

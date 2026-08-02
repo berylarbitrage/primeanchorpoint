@@ -226,7 +226,7 @@ function verifyStripeWebhook(rawBody, sigHeader) {
 // ─── Email ───
 // Prefer SendGrid HTTP API (works through firewalls that block SMTP ports).
 // Set SENDGRID_API_KEY, or reuse SMTP_PASS when SMTP_USER=apikey (SendGrid SMTP creds).
-const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
+const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorworkforce.com';
 const _sgKey = process.env.SENDGRID_API_KEY ||
   (process.env.SMTP_USER === 'apikey' ? process.env.SMTP_PASS : null);
 
@@ -3426,6 +3426,15 @@ schedule24hReminders();
 // ─── Middleware ───
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+// 旧域名 → 新域名 301 跳转 (只跳浏览器页面请求; API/webhook 不跳, 避免 Twilio 等
+// POST 回调跟不上重定向而丢失). 旧域名的 DNS/证书保留期间, 所有旧链接/二维码仍然可用.
+app.use((req, res, next) => {
+  const host = String(req.get('host') || '').toLowerCase();
+  if (/(^|\.)primeanchorpoint\.com$/.test(host) && (req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/')) {
+    return res.redirect(301, 'https://www.primeanchorworkforce.com' + req.originalUrl);
+  }
+  next();
+});
 // 搜索引擎屏蔽: 除公开页面(首页/招工/隐私条款等)外, 内部工具页和 API 全部 noindex,
 // 已被 Google 收录的(如 /sms-inbox)会在爬虫重访后被移出搜索结果
 const SEO_PUBLIC_PATHS = new Set(['/', '/index', '/index.html', '/apply', '/privacy', '/terms', '/sms-terms', '/sms-consent-proof', '/data-deletion', '/robots.txt', '/sitemap.xml']);
@@ -13284,7 +13293,7 @@ app.post('/api/admin/worker-accounts/:id/send-reset-link', requireAdmin, require
       const nodemailer = require('nodemailer');
       const t = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT)||587, secure: process.env.SMTP_SECURE==='true', auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS} });
       await t.sendMail({
-        from: process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com',
+        from: process.env.EMAIL_FROM || 'noreply@primeanchorworkforce.com',
         to: w.email,
         subject: 'Prime Anchor Workforce - 密码重置 / Password Reset',
         html: `<p>请点击以下链接重置密码 / Click to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>链接24小时内有效 / Valid for 24 hours.</p>`
@@ -15568,7 +15577,7 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
 
 // Send the company a notification email for a new applicant submission.
 // Includes all form fields + attaches the uploaded SSN/EAD photos.
-const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@primeanchorpoint.com';
+const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@primeanchorworkforce.com';
 // 每封新申请通知额外发送一份给以下收件人（逗号分隔可配多个）
 const APPLICATION_NOTIFY_CC = (process.env.APPLICATION_NOTIFY_CC || 'boyingwong02@gmail.com')
   .split(',').map(s => s.trim()).filter(Boolean);
@@ -28647,7 +28656,7 @@ function smsAudit(entityType, entityId, action, actorType, actorId, metadata = {
 async function sendSmsNotification(threadId, messageId, agentId, agentPhone, contactName, contactPhone, messagePreview) {
   const token = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + SMS_NOTIFICATION_TOKEN_TTL).toISOString();
-  const baseUrl = BASE_URL || 'https://www.primeanchorpoint.com';
+  const baseUrl = BASE_URL || 'https://www.primeanchorworkforce.com';
   const link = `${baseUrl}/sms/t/${token}`;
   const displayName = contactName || contactPhone;
   const preview = (messagePreview || '').substring(0, 80);
@@ -30083,7 +30092,7 @@ app.post('/api/sms/cs-invites', requireAdmin, requireRole('admin'), async (req, 
     const token = crypto.randomBytes(18).toString('hex');
     const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
     db.prepare('INSERT INTO sms_cs_invites (token, created_by, expires_at) VALUES (?,?,?)').run(token, req.userId, expiresAt);
-    const url = (BASE_URL || 'https://www.primeanchorpoint.com') + '/cs-signup?t=' + token;
+    const url = (BASE_URL || 'https://www.primeanchorworkforce.com') + '/cs-signup?t=' + token;
     const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
     res.json({ success: true, url, qr, expires_at: expiresAt });
   } catch (e) { res.status(500).json({ error: e.message }); }
