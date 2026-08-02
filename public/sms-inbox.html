@@ -35,6 +35,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 
 /* Header */
 .header{background:var(--white);border-bottom:1.5px solid #fde68a;padding:10px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:52px}
+#detail-view .header{flex-wrap:wrap;row-gap:2px}
 .header h1{font-size:1.05rem;color:var(--blue);white-space:nowrap}
 .header .badge-unread{background:var(--red);color:#fff;font-size:.7rem;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:4px}
 .header .spacer{flex:1}
@@ -283,9 +284,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   #list-view .header-tools{display:none}
   #moreMenuBtn{display:block!important}
   .back-btn{padding:5px 6px}
-  #detail-view .header{flex-wrap:nowrap}
   #detailName{font-size:.86rem}
-  #contactTagRow{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none}
+  /* 标签行独占整行、允许换行尽量显示完全; 超过约三行时可上下滑动 */
+  #contactTagRow{max-height:72px;overflow-y:auto;scrollbar-width:none}
   #contactTagRow::-webkit-scrollbar{display:none}
   .action-bar{flex-wrap:nowrap;overflow-x:auto;padding:5px 8px;gap:5px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
   .action-bar::-webkit-scrollbar{display:none}
@@ -415,7 +416,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div style="flex:1;min-width:0">
         <div id="detailName" style="font-size:.92rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
         <div id="detailPhone" style="font-size:.75rem;color:var(--gray-400)"></div>
-        <div id="contactTagRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px"></div>
       </div>
       <span id="detailPriority" class="priority-badge" onclick="cyclePriority()"></span>
       <span id="detailStatus" class="ti-status" style="font-size:.72rem"></span>
@@ -424,6 +424,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <button class="btn-icon" onclick="showStarredModal(currentThread && currentThread.id)" title="本对话的星标消息">&#9733;</button>
       <button class="btn-icon" onclick="showEditContactModal()" title="Edit contact">&#9998;</button>
       <button class="btn-icon" onclick="toggleHistory()" title="History">&#128337;</button>
+      <div id="contactTagRow" style="width:100%;display:flex;flex-wrap:wrap;gap:4px;margin-top:2px"></div>
     </div>
     <div class="action-bar" id="actionBar"></div>
     <div id="detailTags" style="padding:4px 12px;background:var(--white);border-bottom:1px solid var(--gray-200);display:none"></div>
