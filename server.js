@@ -3431,7 +3431,7 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use((req, res, next) => {
   const host = String(req.get('host') || '').toLowerCase();
   if (/(^|\.)primeanchorpoint\.com$/.test(host) && (req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/')) {
-    return res.redirect(301, 'https://www.primeanchorworkforce.com' + req.originalUrl);
+    return res.redirect(301, 'https://primeanchorworkforce.com' + req.originalUrl);
   }
   next();
 });
@@ -28656,7 +28656,7 @@ function smsAudit(entityType, entityId, action, actorType, actorId, metadata = {
 async function sendSmsNotification(threadId, messageId, agentId, agentPhone, contactName, contactPhone, messagePreview) {
   const token = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + SMS_NOTIFICATION_TOKEN_TTL).toISOString();
-  const baseUrl = BASE_URL || 'https://www.primeanchorworkforce.com';
+  const baseUrl = BASE_URL || 'https://primeanchorworkforce.com';
   const link = `${baseUrl}/sms/t/${token}`;
   const displayName = contactName || contactPhone;
   const preview = (messagePreview || '').substring(0, 80);
@@ -30092,7 +30092,7 @@ app.post('/api/sms/cs-invites', requireAdmin, requireRole('admin'), async (req, 
     const token = crypto.randomBytes(18).toString('hex');
     const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
     db.prepare('INSERT INTO sms_cs_invites (token, created_by, expires_at) VALUES (?,?,?)').run(token, req.userId, expiresAt);
-    const url = (BASE_URL || 'https://www.primeanchorworkforce.com') + '/cs-signup?t=' + token;
+    const url = (BASE_URL || 'https://primeanchorworkforce.com') + '/cs-signup?t=' + token;
     const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
     res.json({ success: true, url, qr, expires_at: expiresAt });
   } catch (e) { res.status(500).json({ error: e.message }); }
