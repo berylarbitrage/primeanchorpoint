@@ -25,6 +25,7 @@ textarea:focus{border-color:var(--accent)}
 .today-card{background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:14px 16px;margin-bottom:10px}
 .co-badge{display:inline-block;background:#fde68a;color:#92400e;border-radius:999px;padding:1px 10px;font-size:.72rem;font-weight:700;margin-right:6px}
 .co-badge.general{background:#dbeafe;color:#1d4ed8}
+.shift-line{background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;border-radius:8px;padding:5px 10px;font-size:.85rem;font-weight:700;margin-bottom:8px;display:inline-block}
 .chip{cursor:pointer;border:1.5px solid var(--gray-200);background:#fff;border-radius:999px;padding:4px 12px;font-size:.78rem;font-weight:600;color:var(--gray-600);font-family:inherit}
 .chip.active{border-color:var(--accent);background:var(--sky-light);color:var(--blue)}
 .today-meta{font-size:.74rem;color:#92400e;font-weight:700;margin-bottom:8px}
@@ -49,7 +50,8 @@ textarea:focus{border-color:var(--accent)}
     <select id="briefCompany" onchange="onCompanyChange()" style="width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.9rem;font-family:inherit;background:#fff;margin-bottom:8px;outline:none;cursor:pointer;font-weight:600;color:var(--gray-800)">
       <option value="">📢 通用（所有公司）</option>
     </select>
-    <textarea id="briefInput" placeholder="写下今天要客服重点做的事，比如：&#10;· 优先跟进面试没到的人，问原因约改期&#10;· 所有新申请人当天必须回复&#10;· 发工资的问题统一回复：周五到账&#10;&#10;（清空内容保存 = 删除该条）"></textarea>
+    <input id="briefShift" placeholder="⏰ 工作时间 / Shift（如：早班 7:00–15:30 · 晚班 18:00–02:00 · 周日休）" style="width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.9rem;font-family:inherit;margin-bottom:8px;outline:none">
+    <textarea id="briefInput" placeholder="写下今天要客服重点做的事，比如：&#10;· 优先跟进面试没到的人，问原因约改期&#10;· 所有新申请人当天必须回复&#10;· 发工资的问题统一回复：周五到账&#10;&#10;（内容和工作时间都清空保存 = 删除该条）"></textarea>
     <button class="btn" onclick="saveBriefing()">保存发布</button>
     <div id="todayChips" style="display:none;margin-top:10px">
       <div style="font-size:.72rem;font-weight:700;color:var(--gray-400);margin-bottom:5px">今天已发布（点击切换编辑）</div>
@@ -135,6 +137,7 @@ function render() {
     const sel = document.getElementById('briefCompany').value;
     const cur = todays.find(b => (b.partner_name || '') === sel);
     document.getElementById('briefInput').value = cur ? cur.content : '';
+    document.getElementById('briefShift').value = cur ? (cur.shift || '') : '';
     // 今天已发布的条目做成胶囊, 点击切换到该公司继续编辑
     document.getElementById('todayChips').style.display = todays.length ? '' : 'none';
     document.getElementById('todayChipList').innerHTML = todays.map(b =>
@@ -148,14 +151,16 @@ function render() {
   document.getElementById('todayCards').innerHTML = todays.map(b =>
     '<div class="today-card"><div class="today-meta">' + _coBadge(b.partner_name)
     + '📅 ' + esc(b.brief_date) + (b.author ? ' · ' + esc(b.author) : '') + ' · 更新于 ' + esc(String(b.updated_at || '').slice(11, 16)) + '</div>'
-    + '<div class="today-text">' + esc(b.content) + '</div></div>'
+    + (b.shift ? '<div class="shift-line">⏰ 工作时间：' + esc(b.shift) + '</div>' : '')
+    + (b.content ? '<div class="today-text">' + esc(b.content) + '</div>' : '') + '</div>'
   ).join('');
   // 往日记录: 同一天的多条并列, 各带公司标
   const past = _briefings.filter(b => b.brief_date !== today);
   document.getElementById('histSec').style.display = past.length ? '' : 'none';
   document.getElementById('histList').innerHTML = past.map(b =>
     '<div class="hist-item"><div class="hist-date">' + _coBadge(b.partner_name) + esc(b.brief_date) + (b.author ? ' · ' + esc(b.author) : '') + '</div>'
-    + '<div class="hist-text">' + esc(b.content) + '</div></div>'
+    + (b.shift ? '<div class="shift-line" style="font-size:.76rem;padding:3px 8px">⏰ ' + esc(b.shift) + '</div>' : '')
+    + (b.content ? '<div class="hist-text">' + esc(b.content) + '</div>' : '') + '</div>'
   ).join('');
 }
 function onCompanyChange() { render(); }
@@ -167,7 +172,8 @@ async function saveBriefing() {
   try {
     const content = document.getElementById('briefInput').value.trim();
     const partner = document.getElementById('briefCompany').value;
-    const r = await api('/sms/briefings', { method: 'POST', body: JSON.stringify({ content, partner_name: partner }) });
+    const shift = document.getElementById('briefShift').value.trim();
+    const r = await api('/sms/briefings', { method: 'POST', body: JSON.stringify({ content, partner_name: partner, shift }) });
     if (r && r.error) throw new Error(r.error);
     toast(r.deleted ? '🗑 已删除该条' : '📋 已发布 — 客服端会亮红点');
     await reload();
