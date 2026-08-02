@@ -50,8 +50,24 @@ textarea:focus{border-color:var(--accent)}
     <select id="briefCompany" onchange="onCompanyChange()" style="width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.9rem;font-family:inherit;background:#fff;margin-bottom:8px;outline:none;cursor:pointer;font-weight:600;color:var(--gray-800)">
       <option value="">📢 通用（所有公司）</option>
     </select>
-    <input id="briefShift" placeholder="⏰ 工作时间 / Shift（如：早班 7:00–15:30 · 晚班 18:00–02:00 · 周日休）" style="width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.9rem;font-family:inherit;margin-bottom:8px;outline:none">
-    <textarea id="briefInput" placeholder="写下今天要客服重点做的事，比如：&#10;· 优先跟进面试没到的人，问原因约改期&#10;· 所有新申请人当天必须回复&#10;· 发工资的问题统一回复：周五到账&#10;&#10;（内容和工作时间都清空保存 = 删除该条）"></textarea>
+    <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;align-items:center">
+      <select id="shiftName" style="padding:9px 10px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.86rem;font-family:inherit;background:#fff;outline:none;cursor:pointer;font-weight:600">
+        <option value="早班">⏰ 早班</option>
+        <option value="中班">⏰ 中班</option>
+        <option value="晚班">⏰ 晚班</option>
+        <option value="夜班">⏰ 夜班</option>
+        <option value="白班">⏰ 白班</option>
+        <option value="周末班">⏰ 周末班</option>
+        <option value="加班">⏰ 加班</option>
+        <option value="今日休息">🛌 今日休息</option>
+      </select>
+      <input type="time" id="shiftStart" style="padding:8px 9px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.86rem;font-family:inherit;outline:none">
+      <span style="color:var(--gray-400)">–</span>
+      <input type="time" id="shiftEnd" style="padding:8px 9px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.86rem;font-family:inherit;outline:none">
+      <button type="button" onclick="addShift()" style="padding:9px 16px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:.86rem;cursor:pointer;font-family:inherit">+ 加班次</button>
+    </div>
+    <div id="shiftChips" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+    <textarea id="briefInput" placeholder="写下今天要客服重点做的事，比如：&#10;· 优先跟进面试没到的人，问原因约改期&#10;· 所有新申请人当天必须回复&#10;· 发工资的问题统一回复：周五到账&#10;&#10;（内容清空、班次都删掉后保存 = 删除该条）"></textarea>
     <button class="btn" onclick="saveBriefing()">保存发布</button>
     <div id="todayChips" style="display:none;margin-top:10px">
       <div style="font-size:.72rem;font-weight:700;color:var(--gray-400);margin-bottom:5px">今天已发布（点击切换编辑）</div>
@@ -99,7 +115,30 @@ function toast(msg) {
 }
 function todayChicago() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); }
 
-let USER = null, _briefings = [], _partners = [];
+let USER = null, _briefings = [], _partners = [], _shifts = [];
+// 班次串格式: "早班 07:00–15:30 · 晚班 18:00–02:00" (与显示格式一致, 可反解析)
+function renderShiftChips() {
+  const wrap = document.getElementById('shiftChips');
+  wrap.style.display = _shifts.length ? 'flex' : 'none';
+  wrap.innerHTML = _shifts.map((sf, i) =>
+    '<span class="chip active" style="cursor:default">⏰ ' + esc(sf)
+    + ' <span onclick="removeShift(' + i + ')" style="cursor:pointer;font-weight:900;margin-left:4px;color:var(--red)">&times;</span></span>'
+  ).join('');
+}
+function addShift() {
+  const name = document.getElementById('shiftName').value;
+  const st = document.getElementById('shiftStart').value;
+  const en = document.getElementById('shiftEnd').value;
+  let sf = name;
+  if (st && en) sf += ' ' + st + '\u2013' + en;
+  else if (st) sf += ' ' + st + ' \u5f00\u59cb';
+  if (_shifts.includes(sf)) { toast('这个班次已经加过了'); return; }
+  _shifts.push(sf);
+  document.getElementById('shiftStart').value = '';
+  document.getElementById('shiftEnd').value = '';
+  renderShiftChips();
+}
+function removeShift(i) { _shifts.splice(i, 1); renderShiftChips(); }
 async function load() {
   try {
     USER = await api('/admin/me');
@@ -137,7 +176,8 @@ function render() {
     const sel = document.getElementById('briefCompany').value;
     const cur = todays.find(b => (b.partner_name || '') === sel);
     document.getElementById('briefInput').value = cur ? cur.content : '';
-    document.getElementById('briefShift').value = cur ? (cur.shift || '') : '';
+    _shifts = cur && cur.shift ? cur.shift.split(' · ').filter(Boolean) : [];
+    renderShiftChips();
     // 今天已发布的条目做成胶囊, 点击切换到该公司继续编辑
     document.getElementById('todayChips').style.display = todays.length ? '' : 'none';
     document.getElementById('todayChipList').innerHTML = todays.map(b =>
@@ -172,7 +212,7 @@ async function saveBriefing() {
   try {
     const content = document.getElementById('briefInput').value.trim();
     const partner = document.getElementById('briefCompany').value;
-    const shift = document.getElementById('briefShift').value.trim();
+    const shift = _shifts.join(' · ');
     const r = await api('/sms/briefings', { method: 'POST', body: JSON.stringify({ content, partner_name: partner, shift }) });
     if (r && r.error) throw new Error(r.error);
     toast(r.deleted ? '🗑 已删除该条' : '📋 已发布 — 客服端会亮红点');
