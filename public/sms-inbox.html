@@ -361,7 +361,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div class="header-tools" id="headerTools">
         <button class="btn-icon" onclick="showStarredModal(0)" title="星标消息" style="color:#f59e0b">&#9733;</button>
         <button class="btn-icon" onclick="showNewChatModal()" title="发起对话" style="font-size:1.05rem">&#128172;</button>
-        <button class="btn-icon" onclick="showBriefModal()" title="今日工作要求" style="position:relative">&#128203;<span id="briefDot" style="display:none;position:absolute;top:3px;right:1px;width:8px;height:8px;background:var(--red);border-radius:50%"></span></button>
+        <button class="btn-icon" onclick="location.href='/briefing'" title="今日工作要求" style="position:relative">&#128203;<span id="briefDot" style="display:none;position:absolute;top:3px;right:1px;width:8px;height:8px;background:var(--red);border-radius:50%"></span></button>
         <button class="btn-icon" id="adminDashBtn" style="display:none;color:#4338ca" onclick="showAdminDash()" title="管理面板 (仅管理员)">&#9881;</button>
         <button class="btn-icon" onclick="loadThreads()" title="刷新 Refresh">&#x21bb;</button>
         <button class="btn-icon" onclick="doLogout()" title="退出登录 Logout">&#x2715;</button>
@@ -699,25 +699,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   </div>
 </div>
 
-<!-- 📋 每日工作要求 — 管理员每天写, 客服照着聊 -->
-<div class="modal-bg" id="briefModal">
-  <div class="modal" style="max-width:560px">
-    <h3>&#128203; 今日工作要求</h3>
-    <div id="briefEditWrap" style="display:none">
-      <textarea id="briefInput" rows="7" placeholder="写下今天要客服重点做的事，比如：&#10;· 优先跟进 GOFO 面试没到的人，问原因约改期&#10;· 所有新申请人当天必须回复&#10;· 发工资的问题统一回复周五到账" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none;resize:vertical;font-family:inherit;line-height:1.6"></textarea>
-      <button class="btn" onclick="saveBriefing()" style="margin-top:8px">保存（客服端会亮红点提醒）</button>
-    </div>
-    <div id="briefToday" style="display:none;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:12px 14px;margin-top:4px">
-      <div id="briefTodayMeta" style="font-size:.72rem;color:#92400e;font-weight:700;margin-bottom:6px"></div>
-      <div id="briefTodayText" style="font-size:.9rem;line-height:1.7;white-space:pre-wrap;word-break:break-word"></div>
-    </div>
-    <div id="briefEmpty" style="display:none;padding:14px;text-align:center;color:var(--gray-400);font-size:.85rem">今天还没有发布工作要求</div>
-    <div id="briefHistTitle" style="font-size:.78rem;font-weight:700;color:var(--gray-500);margin:12px 0 4px;display:none">往日记录</div>
-    <div id="briefHistory" style="max-height:220px;overflow-y:auto"></div>
-    <button class="close-modal" onclick="document.getElementById('briefModal').classList.remove('show')">关闭</button>
-  </div>
-</div>
-
 <!-- ⚙ 管理面板 (仅 admin) — 面试/统计/账号/记录等管理功能的统一入口 -->
 <div class="modal-bg" id="adminDashModal">
   <div class="modal" style="max-width:520px">
@@ -921,65 +902,15 @@ function _applyAdminUi() {
     const b = document.getElementById(id); if (b) b.style.display = isAdmin ? '' : 'none';
   });
 }
-// ─── 📋 每日工作要求: 管理员每天写, 客服照着聊 ───
-let _briefings = [];
-function _todayChicago() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); }
+// ─── 📋 每日工作要求 (内容在独立页 /briefing, 这里只管工具栏红点) ───
 async function loadBriefings(silent) {
   try {
     const r = await api('/sms/briefings');
-    _briefings = (r && r.briefings) || [];
-    // 最新一条比上次看的时间新 → 工具栏亮红点
-    const latest = _briefings[0];
+    const latest = ((r && r.briefings) || [])[0];
+    // 最新一条比上次看的时间新 → 工具栏亮红点 (打开 /briefing 页即标记已读)
     const dot = document.getElementById('briefDot');
     if (dot) dot.style.display = latest && latest.updated_at !== localStorage.getItem('brief_seen') ? '' : 'none';
   } catch (e) { if (!silent) toast(e.message || '加载失败'); }
-}
-function _renderBriefModal() {
-  const isAdmin = USER && USER.role === 'admin';
-  const today = _todayChicago();
-  const cur = _briefings.find(b => b.brief_date === today);
-  document.getElementById('briefEditWrap').style.display = isAdmin ? '' : 'none';
-  if (isAdmin) document.getElementById('briefInput').value = cur ? cur.content : '';
-  const tBox = document.getElementById('briefToday');
-  const empty = document.getElementById('briefEmpty');
-  if (cur) {
-    tBox.style.display = isAdmin ? 'none' : '';   // 管理员直接在编辑框里看, 不重复显示
-    empty.style.display = 'none';
-    document.getElementById('briefTodayMeta').textContent = '📅 ' + cur.brief_date + (cur.author ? ' · ' + cur.author : '') + ' · 更新于 ' + String(cur.updated_at || '').slice(11, 16);
-    document.getElementById('briefTodayText').textContent = cur.content;
-  } else {
-    tBox.style.display = 'none';
-    empty.style.display = isAdmin ? 'none' : '';
-  }
-  const past = _briefings.filter(b => b.brief_date !== today);
-  document.getElementById('briefHistTitle').style.display = past.length ? '' : 'none';
-  document.getElementById('briefHistory').innerHTML = past.map(b =>
-    '<div style="border:1px solid var(--gray-200);border-radius:8px;padding:8px 11px;margin-bottom:6px">'
-    + '<div style="font-size:.7rem;color:var(--gray-400);font-weight:700;margin-bottom:3px">' + esc(b.brief_date) + (b.author ? ' · ' + esc(b.author) : '') + '</div>'
-    + '<div style="font-size:.82rem;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--gray-600)">' + esc(b.content) + '</div></div>'
-  ).join('');
-}
-async function showBriefModal() {
-  await loadBriefings();
-  _renderBriefModal();
-  const latest = _briefings[0];
-  if (latest) localStorage.setItem('brief_seen', latest.updated_at);
-  const dot = document.getElementById('briefDot');
-  if (dot) dot.style.display = 'none';
-  document.getElementById('briefModal').classList.add('show');
-}
-async function saveBriefing() {
-  try {
-    const content = document.getElementById('briefInput').value.trim();
-    if (!content) { toast('内容不能为空'); return; }
-    const r = await api('/sms/briefings', { method: 'POST', body: JSON.stringify({ content }) });
-    if (r && r.error) throw new Error(r.error);
-    toast('📋 已发布 — 客服端会亮红点');
-    await loadBriefings(true);
-    const latest = _briefings[0];
-    if (latest) localStorage.setItem('brief_seen', latest.updated_at);
-    _renderBriefModal();
-  } catch (e) { toast(e.message || '保存失败'); }
 }
 
 // ⚙ 管理面板: 面试总览/消息统计/客服账号/资料修改/AI 拦截/测试通知的统一入口
