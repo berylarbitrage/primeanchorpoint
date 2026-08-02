@@ -324,7 +324,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <h1>SMS Inbox</h1>
     <p>Prime Anchor Workforce</p>
     <input type="text" id="userInput" placeholder="Username">
-    <input type="password" id="passInput" placeholder="Password">
+    <div style="position:relative;margin-bottom:1rem">
+      <input type="password" id="passInput" placeholder="Password" style="margin-bottom:0;padding-right:44px">
+      <button type="button" id="passEye" onclick="togglePassEye()" title="显示/隐藏密码" aria-label="显示/隐藏密码"
+        style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:auto;padding:4px 10px;background:transparent;border:none;cursor:pointer;font-size:1.05rem;line-height:1">👁</button>
+    </div>
     <button id="loginBtn" onclick="doLogin()">Login</button>
     <div class="err" id="loginErr"></div>
     <a onclick="toggleForgot()" style="display:block;margin-top:10px;font-size:.78rem;color:var(--sky);cursor:pointer;text-decoration:underline">忘记密码？(客服账号用邮箱验证码重置)</a>
@@ -1009,6 +1013,13 @@ async function loadAgentFilter() {
   } catch(e) {}
 }
 
+function togglePassEye() {
+  const p = document.getElementById('passInput'), b = document.getElementById('passEye');
+  const show = p.type === 'password';
+  p.type = show ? 'text' : 'password';
+  b.textContent = show ? '🙈' : '👁';
+  p.focus();
+}
 async function doLogin() {
   const u = document.getElementById('userInput').value.trim();
   const p = document.getElementById('passInput').value;
