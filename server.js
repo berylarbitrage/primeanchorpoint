@@ -29919,10 +29919,13 @@ app.post('/api/sms/cs-accounts', requireAdmin, requireRole('admin'), (req, res) 
     if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(un)) return res.status(400).json({ error: '用户名 3-32 位, 仅字母数字._-' });
     const pwErr = csPwPolicy(password, un);
     if (pwErr) return res.status(400).json({ error: pwErr });
+    // 邮箱必填: 忘记密码走邮箱验证码, 没有邮箱的账号无法自助重置
+    const em = String(email || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return res.status(400).json({ error: '请填写有效邮箱 (用于验证码改密码)' });
     if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(un)) return res.status(400).json({ error: '用户名已存在' });
     const salt = crypto.randomBytes(16).toString('hex');
     db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, email, active, pw_visible) VALUES (?,?,?,'cs',?,?,1,?)`)
-      .run(un, hashPassword(String(password), salt), salt, String(display_name || '').slice(0, 60), String(email || '').trim().slice(0, 120), csEncPw(password));
+      .run(un, hashPassword(String(password), salt), salt, String(display_name || '').slice(0, 60), em.slice(0, 120), csEncPw(password));
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
