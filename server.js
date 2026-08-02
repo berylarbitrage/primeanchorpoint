@@ -29112,8 +29112,9 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
       where += ` AND COALESCE(c.is_foreman,0)=1`;
     }
 
-    // 回了 STOP 退订的对话 + admin 设为隐藏的联系人, 对客服(非 admin)都不可见
-    if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0 AND COALESCE(c.cs_hidden,0)=0`;
+    // 对客服(非 admin)不可见: 回了 STOP 退订的、admin 设为隐藏的、以及
+    // 未入职的(未关联员工档案, 即列表里标「未入职」的联系人)
+    if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0 AND COALESCE(c.cs_hidden,0)=0 AND c.employee_id IS NOT NULL`;
 
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
@@ -29165,8 +29166,8 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
       LEFT JOIN admin_users a ON a.id=t.assigned_agent_id
       WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
-    // 退订对话 / admin 设为隐藏的联系人, 对客服(非 admin)不可见
-    if (req.userRole !== 'admin' && (thread.contact_opted_out || thread.contact_cs_hidden)) return res.status(403).json({ error: '该对话仅管理员可见' });
+    // 退订 / admin 隐藏 / 未入职(未关联员工档案)的联系人, 对客服(非 admin)不可见
+    if (req.userRole !== 'admin' && (thread.contact_opted_out || thread.contact_cs_hidden || !thread.employee_id)) return res.status(403).json({ error: '该对话仅管理员可见' });
 
     smsAudit('thread', thread.id, 'viewed', 'agent', req.userId, {});
 
@@ -29208,7 +29209,7 @@ app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, r
   try {
     const thread = db.prepare('SELECT t.id, c.employee_id AS c_emp, c.opted_out AS c_opt, c.cs_hidden AS c_hid FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?').get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
-    if (req.userRole !== 'admin' && (thread.c_opt || thread.c_hid)) return res.status(403).json({ error: '该对话仅管理员可见' });
+    if (req.userRole !== 'admin' && (thread.c_opt || thread.c_hid || !thread.c_emp)) return res.status(403).json({ error: '该对话仅管理员可见' });
 
     const messages = db.prepare(`SELECT m.*, COALESCE(NULLIF(a.display_name,''), a.username) as author_name FROM sms_messages m
       LEFT JOIN admin_users a ON a.id=m.author_agent_id
@@ -29228,8 +29229,10 @@ app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, r
 // POST /api/sms/threads/:id/messages — send a reply
 app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out, c.name AS contact_name, c.employee_id AS contact_employee_id FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out, c.cs_hidden, c.name AS contact_name, c.employee_id AS contact_employee_id FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    // 未入职 / admin 隐藏的联系人, 客服(非 admin)不能回复
+    if (req.userRole !== 'admin' && (thread.cs_hidden || !thread.contact_employee_id)) return res.status(403).json({ error: '该对话仅管理员可见' });
     // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
     if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
 
@@ -29326,8 +29329,9 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
 // POST /api/sms/threads/:id/claim
 app.post('/api/sms/threads/:id/claim', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(req.params.id);
+    const thread = db.prepare('SELECT t.*, c.employee_id AS c_emp, c.opted_out AS c_opt, c.cs_hidden AS c_hid FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?').get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
+    if (req.userRole !== 'admin' && (thread.c_opt || thread.c_hid || !thread.c_emp)) return res.status(403).json({ error: '该对话仅管理员可见' });
     if (thread.assigned_agent_id && thread.assigned_agent_id !== req.userId && req.userRole !== 'admin') {
       const agent = db.prepare('SELECT username FROM admin_users WHERE id=?').get(thread.assigned_agent_id);
       return res.status(409).json({ error: `Already claimed by ${agent ? agent.username : 'another agent'}` });
