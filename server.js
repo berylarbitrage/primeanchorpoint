@@ -2928,6 +2928,8 @@ try {
   db.exec(`INSERT INTO sms_briefings (brief_date, partner_name, content, author, updated_at) SELECT brief_date, '', content, author, updated_at FROM sms_briefings_old`);
   db.exec(`DROP TABLE sms_briefings_old`);
 } catch (e) {}
+// 工作时间/班次 (如 早班 7:00-15:30), 显示在每条要求的最上面
+try { db.exec(`ALTER TABLE sms_briefings ADD COLUMN shift TEXT DEFAULT ''`); } catch (e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN opted_out_at TEXT DEFAULT NULL`); } catch(e) {}
 // 面试安排: 标记面试时间/地址, 可发确认短信和工作要求模板
 db.exec(`CREATE TABLE IF NOT EXISTS sms_interviews (
@@ -29947,16 +29949,17 @@ app.post('/api/sms/briefings', requireAdmin, requireRole('admin'), (req, res) =>
   try {
     const content = String((req.body || {}).content || '').trim().slice(0, 8000);
     const partner = String((req.body || {}).partner_name || '').trim().slice(0, 120);
+    const shift = String((req.body || {}).shift || '').trim().slice(0, 300);
     // 按芝加哥时间算"今天", 和客服的工作日一致
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
-    if (!content) {
-      // 清空内容 = 删除今天该公司的条目
+    if (!content && !shift) {
+      // 内容和工作时间都清空 = 删除今天该公司的条目
       db.prepare('DELETE FROM sms_briefings WHERE brief_date=? AND partner_name=?').run(today, partner);
       return res.json({ success: true, deleted: true, brief_date: today });
     }
-    db.prepare(`INSERT INTO sms_briefings (brief_date, partner_name, content, author, updated_at) VALUES (?,?,?,?,datetime('now'))
-      ON CONFLICT(brief_date, partner_name) DO UPDATE SET content=excluded.content, author=excluded.author, updated_at=datetime('now')`)
-      .run(today, partner, content, req.userName || '');
+    db.prepare(`INSERT INTO sms_briefings (brief_date, partner_name, content, shift, author, updated_at) VALUES (?,?,?,?,?,datetime('now'))
+      ON CONFLICT(brief_date, partner_name) DO UPDATE SET content=excluded.content, shift=excluded.shift, author=excluded.author, updated_at=datetime('now')`)
+      .run(today, partner, content, shift, req.userName || '');
     res.json({ success: true, brief_date: today });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
