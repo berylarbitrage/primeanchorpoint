@@ -20,5 +20,5 @@ Default password: `prime2026`
 5. Deploy
 
 ## Custom Domain
-In Railway → Settings → Custom Domain → add `primeanchorpoint.com`
+In Railway → Settings → Custom Domain → add `primeanchorworkforce.com`
 Then update DNS A record to Railway's IP.
