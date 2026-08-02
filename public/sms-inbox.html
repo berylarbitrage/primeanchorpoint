@@ -200,7 +200,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .dash-stat .lbl{font-size:.65rem;color:var(--gray-400);margin-top:2px}
 
 /* Template picker */
-.template-picker{position:absolute;bottom:100%;left:0;right:0;background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);max-height:180px;overflow-y:auto;box-shadow:0 -4px 16px rgba(0,0,0,.1);display:none;z-index:50}
+.template-picker{position:absolute;bottom:100%;left:0;right:0;background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);max-height:340px;overflow-y:auto;box-shadow:0 -4px 16px rgba(0,0,0,.1);display:none;z-index:50}
 .template-picker.show{display:block}
 .template-item{padding:10px 14px;font-size:.82rem;cursor:pointer;border-bottom:1px solid var(--gray-100);transition:background .1s}
 .template-item:hover{background:var(--sky-light)}
@@ -1234,12 +1234,19 @@ function followUpBadge(t) {
     if (m < 1440) return Math.round(m / 60) + '小时';
     return Math.round(m / 1440) + '天';
   };
+  // 短格式 5m/3h/2d, 完整说明放悬停提示
+  const fmtShort = ms => {
+    const m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return m + 'm';
+    if (m < 1440) return Math.round(m / 60) + 'h';
+    return Math.round(m / 1440) + 'd';
+  };
   if (ti && (!to || ti > to)) {
     const dur = Date.now() - ti;
     const urgent = dur >= 3600000;   // 超过 1 小时没回 → 红色
-    return '<span style="background:' + (urgent ? '#fee2e2;color:#b91c1c' : '#fef3c7;color:#92400e') + ';font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">⏳ ' + fmtDur(dur) + '未跟进</span>';
+    return '<span title="' + fmtDur(dur) + '未跟进 (对方最后发消息后我们还没回)" style="background:' + (urgent ? '#fee2e2;color:#b91c1c' : '#fef3c7;color:#92400e') + ';font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">⏳' + fmtShort(dur) + '</span>';
   }
-  if (to) return '<span style="background:var(--gray-100);color:var(--gray-500);font-size:.66rem;font-weight:600;padding:1px 7px;border-radius:10px;white-space:nowrap">✓ 已跟进 ' + fmtDur(Date.now() - to) + '前</span>';
+  if (to) return '<span title="已跟进, 最后回复于 ' + fmtDur(Date.now() - to) + '前" style="background:var(--gray-100);color:var(--gray-500);font-size:.68rem;font-weight:600;padding:1px 6px;border-radius:10px;white-space:nowrap">✓' + fmtShort(Date.now() - to) + '</span>';
   return '';
 }
 
@@ -1267,8 +1274,8 @@ function renderThreadList() {
     const isUnread = t.unread_count > 0;
     // 入职状态(=是否已关联员工账号) + 工作经历(多公司+大概日期)
     const onboard = t.contact.employee_id
-      ? '<span style="background:#d1fae5;color:#065f46;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">✓ 已入职</span>'
-      : '<span style="background:#fef3c7;color:#92400e;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">未入职</span>';
+      ? '<span title="已入职 (已关联员工档案)" style="background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">✓</span>'
+      : '<span title="未入职 (尚未关联员工档案)" style="background:#fef3c7;color:#92400e;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">⚠</span>';
     // 工作经历: 整行一次看全 —— 公司名超长时单独截断(悬停看全称),
     // 工种小图标 + 工种 + 时间固定显示不被挤掉
     const wh = parseWorkHistory(t.contact.work_history);
@@ -1281,7 +1288,7 @@ function renderThreadList() {
     const whLine = wh.length
       ? '<div style="font-size:.7rem;color:#3730a3;margin-top:3px;display:flex;gap:3px;overflow:hidden">'
         + wh.slice(0, 3).map(whChip).join('')
-        + (wh.length > 3 ? '<span style="color:#94a3b8;flex:none">+' + (wh.length - 3) + '</span>' : '') + '</div>'
+        + (wh.length > 3 ? '<span title="' + esc(wh.slice(3).map(h => [h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join('·')).join('\n')) + '" style="color:#94a3b8;flex:none;cursor:default">+' + (wh.length - 3) + '</span>' : '') + '</div>'
       : '';
     const av = avatarStyle(t);
     const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头(负责招人)">🦺</span>' : '';
@@ -1294,11 +1301,11 @@ function renderThreadList() {
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
       + '<span class="ti-time">' + time + '</span></div>'
       + '<div class="ti-preview">' + preview + '</div>'
-      + '<div class="ti-meta">' + (t.contact.cs_hidden ? '<span style="background:#fee2e2;color:#b91c1c;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🙈 对客服隐藏</span>' : '') + followUpBadge(t)
+      + '<div class="ti-meta">' + (t.contact.cs_hidden ? '<span title="对客服隐藏 (仅管理员可见此对话)" style="background:#fee2e2;color:#b91c1c;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">🙈</span>' : '') + followUpBadge(t)
       + (t.channel === 'whatsapp'
         ? '<span title="WhatsApp 对话" style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:3px">' + waLogo(11) + 'WhatsApp</span>'
         : '<span title="短信 SMS" style="background:#e0f2fe;color:#0369a1;font-size:.78rem;font-weight:700;padding:1px 6px;border-radius:10px;line-height:1.2">💬</span>')
-      + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
+      + onboard + '<span class="ti-status ' + t.status + '" title="' + ({ open: '待处理 OPEN', claimed: '已认领 CLAIMED', closed: '已关闭 CLOSED' }[t.status] || t.status) + '">' + ({ open: '待', claimed: '接', closed: '闭' }[t.status] || t.status) + '</span>'
       + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
       + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
@@ -2293,7 +2300,7 @@ function renderContactTagsInline(tagsJson, contact) {
   if (!Array.isArray(tags)) tags = [];
   return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">' + badges + tags.slice(0, 4).map(t =>
     '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:0 7px;font-size:.64rem;font-weight:600">' + (jobIcon(t) ? jobIcon(t) + ' ' : '') + esc(t) + '</span>'
-  ).join('') + (tags.length > 4 ? '<span style="font-size:.64rem;color:var(--gray-400)">+' + (tags.length - 4) + '</span>' : '') + '</div>';
+  ).join('') + (tags.length > 4 ? '<span title="' + esc(tags.slice(4).map(x => (jobIcon(x) ? jobIcon(x) + ' ' : '') + x).join('、')) + '" style="font-size:.64rem;color:var(--gray-400);cursor:default">+' + (tags.length - 4) + '</span>' : '') + '</div>';
 }
 // ─── 发起对话: 员工/申请人搜索 ───
 let _ncDebounce = null;
@@ -3138,9 +3145,17 @@ function toggleTemplates() {
   const picker = document.getElementById('templatePicker');
   if (picker.classList.contains('show')) { picker.classList.remove('show'); return; }
   if (templates.length === 0) { toast('No templates configured yet'); return; }
-  picker.innerHTML = templates.map((t, i) =>
-    '<div class="template-item" onclick="useTemplate(' + i + ')">' + esc(typeof t === 'string' ? t : t.text || t.body || '') + '</div>'
-  ).join('');
+  // 中文标题+大意给客服看着选; 实际发出去的只有西英原文 (text)
+  picker.innerHTML = templates.map((t, i) => {
+    const text = typeof t === 'string' ? t : (t.text || t.body || '');
+    const label = (t && typeof t === 'object' && t.label) ? t.label : '';
+    const zh = (t && typeof t === 'object' && t.zh) ? t.zh : '';
+    return '<div class="template-item" onclick="useTemplate(' + i + ')">'
+      + (label ? '<div style="font-weight:700;font-size:.8rem;color:#92400e;margin-bottom:2px">' + esc(label) + '</div>' : '')
+      + (zh ? '<div style="font-size:.74rem;color:#0f766e;margin-bottom:2px">' + esc(zh) + '</div>' : '')
+      + '<div style="font-size:.72rem;color:var(--gray-500);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">' + esc(text) + '</div>'
+      + '</div>';
+  }).join('');
   picker.classList.add('show');
 }
 
