@@ -200,7 +200,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .dash-stat .lbl{font-size:.65rem;color:var(--gray-400);margin-top:2px}
 
 /* Template picker */
-.template-picker{position:absolute;bottom:100%;left:0;right:0;background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);max-height:180px;overflow-y:auto;box-shadow:0 -4px 16px rgba(0,0,0,.1);display:none;z-index:50}
+.template-picker{position:absolute;bottom:100%;left:0;right:0;background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);max-height:340px;overflow-y:auto;box-shadow:0 -4px 16px rgba(0,0,0,.1);display:none;z-index:50}
 .template-picker.show{display:block}
 .template-item{padding:10px 14px;font-size:.82rem;cursor:pointer;border-bottom:1px solid var(--gray-100);transition:background .1s}
 .template-item:hover{background:var(--sky-light)}
@@ -398,7 +398,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
           <option value="">工种: 全部</option>
         </select>
         <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">未读</button>
-        <button class="filter-btn" id="foremanFilterBtn" onclick="toggleForemanFilter()" title="只看标了 🦺 工头 的联系人">🦺 工头</button>
+        <button class="filter-btn" id="foremanFilterBtn" onclick="toggleForemanFilter()" title="只看标了 🦺 工头（负责招人）的联系人">🦺 工头</button>
+        <button class="filter-btn" id="leadFilterBtn" onclick="toggleLeadFilter()" title="只看标了 🏭 领班（管理仓库）的联系人">🏭 领班</button>
       </div>
     </div>
     <div class="pull-indicator" id="pullIndicator">Pull to refresh...</div>
@@ -527,7 +528,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     </div>
     <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:2px">
       <div style="flex:1"><label>工作的州 Work State</label><select id="editWorkState" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none;background:var(--white);margin-bottom:8px"></select></div>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px"><input type="checkbox" id="editIsForeman" style="width:auto;margin:0">🦺 是工头</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px" title="工头：负责招人"><input type="checkbox" id="editIsForeman" style="width:auto;margin:0">🦺 是工头</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px" title="领班：管理仓库"><input type="checkbox" id="editIsLead" style="width:auto;margin:0">🏭 是领班</label>
     </div>
     <label id="csHiddenRow" style="display:none;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-bottom:8px"><input type="checkbox" id="editCsHidden" style="width:auto;margin:0">🙈 对客服隐藏此人（客服搜不到、看不到对话，仅管理员可见）</label>
     <label>公司 Company（从现有公司选）</label>
@@ -892,6 +894,7 @@ let refreshInterval = null;
 let msgRefreshInterval = null;
 let unreadFilter = false;
 let foremanFilter = false;
+let leadFilter = false;
 let dashboardVisible = false;
 let templates = [];
 let currentContactLang = 'es';
@@ -1171,6 +1174,7 @@ async function fetchThreads(silent) {
     if (jobtagF) url += '&jobtag=' + encodeURIComponent(jobtagF);
     if (unreadFilter) url += '&unread=1';
     if (foremanFilter) url += '&foreman=1';
+    if (leadFilter) url += '&lead=1';
     const r = await api(url);
     listTotal = r.total || 0;
     if (listPage === 1) {
@@ -1230,12 +1234,19 @@ function followUpBadge(t) {
     if (m < 1440) return Math.round(m / 60) + '小时';
     return Math.round(m / 1440) + '天';
   };
+  // 短格式 5m/3h/2d, 完整说明放悬停提示
+  const fmtShort = ms => {
+    const m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return m + 'm';
+    if (m < 1440) return Math.round(m / 60) + 'h';
+    return Math.round(m / 1440) + 'd';
+  };
   if (ti && (!to || ti > to)) {
     const dur = Date.now() - ti;
     const urgent = dur >= 3600000;   // 超过 1 小时没回 → 红色
-    return '<span style="background:' + (urgent ? '#fee2e2;color:#b91c1c' : '#fef3c7;color:#92400e') + ';font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">⏳ ' + fmtDur(dur) + '未跟进</span>';
+    return '<span title="' + fmtDur(dur) + '未跟进 (对方最后发消息后我们还没回)" style="background:' + (urgent ? '#fee2e2;color:#b91c1c' : '#fef3c7;color:#92400e') + ';font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">⏳' + fmtShort(dur) + '</span>';
   }
-  if (to) return '<span style="background:var(--gray-100);color:var(--gray-500);font-size:.66rem;font-weight:600;padding:1px 7px;border-radius:10px;white-space:nowrap">✓ 已跟进 ' + fmtDur(Date.now() - to) + '前</span>';
+  if (to) return '<span title="已跟进, 最后回复于 ' + fmtDur(Date.now() - to) + '前" style="background:var(--gray-100);color:var(--gray-500);font-size:.68rem;font-weight:600;padding:1px 6px;border-radius:10px;white-space:nowrap">✓' + fmtShort(Date.now() - to) + '</span>';
   return '';
 }
 
@@ -1263,8 +1274,8 @@ function renderThreadList() {
     const isUnread = t.unread_count > 0;
     // 入职状态(=是否已关联员工账号) + 工作经历(多公司+大概日期)
     const onboard = t.contact.employee_id
-      ? '<span style="background:#d1fae5;color:#065f46;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">✓ 已入职</span>'
-      : '<span style="background:#fef3c7;color:#92400e;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">未入职</span>';
+      ? '<span title="已入职 (已关联员工档案)" style="background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">✓</span>'
+      : '<span title="未入职 (尚未关联员工档案)" style="background:#fef3c7;color:#92400e;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">⚠</span>';
     // 工作经历: 整行一次看全 —— 公司名超长时单独截断(悬停看全称),
     // 工种小图标 + 工种 + 时间固定显示不被挤掉
     const wh = parseWorkHistory(t.contact.work_history);
@@ -1277,23 +1288,24 @@ function renderThreadList() {
     const whLine = wh.length
       ? '<div style="font-size:.7rem;color:#3730a3;margin-top:3px;display:flex;gap:3px;overflow:hidden">'
         + wh.slice(0, 3).map(whChip).join('')
-        + (wh.length > 3 ? '<span style="color:#94a3b8;flex:none">+' + (wh.length - 3) + '</span>' : '') + '</div>'
+        + (wh.length > 3 ? '<span title="' + esc(wh.slice(3).map(h => [h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join('·')).join('\n')) + '" style="color:#94a3b8;flex:none;cursor:default">+' + (wh.length - 3) + '</span>' : '') + '</div>'
       : '';
     const av = avatarStyle(t);
-    const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头">🦺</span>' : '';
+    const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头(负责招人)">🦺</span>' : '';
+    const lead = t.contact.is_lead ? '<span class="ti-foreman" title="领班(管理仓库)" style="border-color:#0d9488;left:-5px;right:auto">🏭</span>' : '';
     const chanBadge = t.channel === 'whatsapp' ? '<span class="ti-chan-wa" title="WhatsApp">' + waLogo(11) + '</span>' : '';
     return '<div class="thread-item' + (isUnread ? ' unread' : '') + '" onclick="openThread(' + t.id + ')">'
-      + '<div class="ti-avwrap"><div class="ti-avatar" title="' + esc(av.tip) + '" style="' + av.css + '">' + esc(initials) + '</div>' + chanBadge + foreman + '</div>'
+      + '<div class="ti-avwrap"><div class="ti-avatar" title="' + esc(av.tip) + '" style="' + av.css + '">' + esc(initials) + '</div>' + chanBadge + foreman + lead + '</div>'
       + '<div class="ti-body">'
       + '<div class="ti-top"><span class="ti-name">' + esc(name) + '</span>'
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
       + '<span class="ti-time">' + time + '</span></div>'
       + '<div class="ti-preview">' + preview + '</div>'
-      + '<div class="ti-meta">' + (t.contact.cs_hidden ? '<span style="background:#fee2e2;color:#b91c1c;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🙈 对客服隐藏</span>' : '') + followUpBadge(t)
+      + '<div class="ti-meta">' + (t.contact.cs_hidden ? '<span title="对客服隐藏 (仅管理员可见此对话)" style="background:#fee2e2;color:#b91c1c;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">🙈</span>' : '') + followUpBadge(t)
       + (t.channel === 'whatsapp'
         ? '<span title="WhatsApp 对话" style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:3px">' + waLogo(11) + 'WhatsApp</span>'
         : '<span title="短信 SMS" style="background:#e0f2fe;color:#0369a1;font-size:.78rem;font-weight:700;padding:1px 6px;border-radius:10px;line-height:1.2">💬</span>')
-      + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
+      + onboard + '<span title="' + ({ open: '状态: 待处理 OPEN', claimed: '状态: 已认领 CLAIMED' + (agent ? ' · ' + esc(agent) : ''), closed: '状态: 已关闭 CLOSED' }[t.status] || t.status) + '" style="font-size:.7rem;line-height:1;cursor:default;color:' + ({ open: '#059669', claimed: '#2563eb', closed: '#9ca3af' }[t.status] || '#9ca3af') + '">●</span>'
       + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
       + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
@@ -1980,6 +1992,7 @@ function showEditContactModal() {
   document.getElementById('editNotes').value = currentContact.notes || '';
   _fillWorkStateSelect(currentContact.work_state || '');
   document.getElementById('editIsForeman').checked = !!currentContact.is_foreman;
+  document.getElementById('editIsLead').checked = !!currentContact.is_lead;
   // 对客服隐藏: 仅 admin 可见可设
   document.getElementById('csHiddenRow').style.display = _isAdminEc ? 'flex' : 'none';
   document.getElementById('editCsHidden').checked = !!currentContact.cs_hidden;
@@ -2079,6 +2092,7 @@ async function saveContact() {
       notes: document.getElementById('editNotes').value.trim(),
       work_state: document.getElementById('editWorkState').value.trim().toUpperCase(),
       is_foreman: document.getElementById('editIsForeman').checked ? 1 : 0,
+      is_lead: document.getElementById('editIsLead').checked ? 1 : 0,
       work_history: JSON.stringify(_editWH)
     };
     if (isAdmin) {
@@ -2189,12 +2203,19 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ─── Phase 2: Tags ───
-function _contactStateForemanBadges(ws, fm, size) {
+function _contactStateForemanBadges(ws, fm, size, lead, payLabel) {
   const fs = size || '.68rem';
   let h = '';
   if (ws) h += '<span title="工作州(来自入职信息)" style="background:#ede9fe;color:#5b21b6;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">📍 ' + esc(ws) + '</span>';
-  if (fm) h += '<span style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🦺 工头</span>';
+  if (fm) h += '<span title="工头(负责招人)" style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🦺 工头</span>';
+  if (lead) h += '<span title="领班(管理仓库)" style="background:#ccfbf1;color:#0f766e;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🏭 领班</span>';
+  if (payLabel) h += '<span title="当前工资(员工档案·在职)" style="background:#dcfce7;color:#166534;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">💵 ' + esc(payLabel) + '</span>';
   return h;
+}
+// 当前工资标签: 仅已关联在职员工且 admin 可见时服务端才会下发 pay_rate
+function _payLabel(c) {
+  if (!c || !c.pay_rate) return '';
+  return '$' + Number(c.pay_rate).toFixed(0) + '/' + (c.pay_type === 'salary' ? 'yr' : 'hr');
 }
 // 工种 → 小图标 (关键词匹配, 中英文都认; 匹配不到返回空串不加图标)
 const JOB_ICON_RULES = [
@@ -2259,8 +2280,11 @@ function renderContactTagRow() {
     : _icoChip('💬', '短信 SMS 对话', '#e0f2fe', '#0369a1');
   const ws = currentContact && currentContact.work_state;
   const stateChip = ws ? _icoChip('📍' + esc(ws), '工作州: ' + ws, '#ede9fe', '#5b21b6') : '';
-  const foremanChip = (currentContact && currentContact.is_foreman) ? _icoChip('🦺', '工头', '#ffedd5', '#9a3412') : '';
-  row.innerHTML = chanChip + empBadge + stateChip + foremanChip
+  const foremanChip = (currentContact && currentContact.is_foreman) ? _icoChip('🦺', '工头 (负责招人)', '#ffedd5', '#9a3412') : '';
+  const leadChip = (currentContact && currentContact.is_lead) ? _icoChip('🏭', '领班 (管理仓库)', '#ccfbf1', '#0f766e') : '';
+  const payL = _payLabel(currentContact);
+  const payChip = payL ? _icoChip('💵' + payL, '当前工资 (员工档案·在职)', '#dcfce7', '#166534') : '';
+  row.innerHTML = chanChip + empBadge + stateChip + foremanChip + leadChip + payChip
   + whChips
   + (Array.isArray(tags) ? tags : []).map(t =>
     '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">' + (jobIcon(t) ? jobIcon(t) + ' ' : '') + esc(t) + '</span>'
@@ -2271,12 +2295,12 @@ function renderContactTagRow() {
 function renderContactTagsInline(tagsJson, contact) {
   let tags = [];
   try { tags = JSON.parse(tagsJson || '[]'); } catch (_) {}
-  const badges = contact ? _contactStateForemanBadges(contact.work_state, contact.is_foreman, '.64rem') : '';
+  const badges = contact ? _contactStateForemanBadges(contact.work_state, contact.is_foreman, '.64rem', contact.is_lead, _payLabel(contact)) : '';
   if ((!Array.isArray(tags) || !tags.length) && !badges) return '';
   if (!Array.isArray(tags)) tags = [];
   return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">' + badges + tags.slice(0, 4).map(t =>
     '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:0 7px;font-size:.64rem;font-weight:600">' + (jobIcon(t) ? jobIcon(t) + ' ' : '') + esc(t) + '</span>'
-  ).join('') + (tags.length > 4 ? '<span style="font-size:.64rem;color:var(--gray-400)">+' + (tags.length - 4) + '</span>' : '') + '</div>';
+  ).join('') + (tags.length > 4 ? '<span title="' + esc(tags.slice(4).map(x => (jobIcon(x) ? jobIcon(x) + ' ' : '') + x).join('、')) + '" style="font-size:.64rem;color:var(--gray-400);cursor:default">+' + (tags.length - 4) + '</span>' : '') + '</div>';
 }
 // ─── 发起对话: 员工/申请人搜索 ───
 let _ncDebounce = null;
@@ -2786,9 +2810,9 @@ async function doneAssist(id) {
 }
 
 // ─── 📋 资料修改记录 (仅 admin) ───
-const _CE_FIELD_ZH = { name: '名字', company: '公司', email: '邮箱', tags: '工种标签', notes: '备注', work_state: '州', is_foreman: '工头', work_history: '工作经历', cs_hidden: '对客服隐藏' };
+const _CE_FIELD_ZH = { name: '名字', company: '公司', email: '邮箱', tags: '工种标签', notes: '备注', work_state: '州', is_foreman: '工头', is_lead: '领班', work_history: '工作经历', cs_hidden: '对客服隐藏' };
 function _ceFmtVal(k, v) {
-  if (k === 'is_foreman' || k === 'cs_hidden') return v ? '是' : '否';
+  if (k === 'is_foreman' || k === 'is_lead' || k === 'cs_hidden') return v ? '是' : '否';
   if (k === 'work_history') {
     const a = parseWorkHistory(v);
     return a.length ? a.map(h => [h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' ')).join('; ') : '(空)';
@@ -3102,6 +3126,12 @@ function toggleForemanFilter() {
   document.getElementById('foremanFilterBtn').classList.toggle('active', foremanFilter);
   loadThreads();
 }
+// 🏭 只看领班
+function toggleLeadFilter() {
+  leadFilter = !leadFilter;
+  document.getElementById('leadFilterBtn').classList.toggle('active', leadFilter);
+  loadThreads();
+}
 
 // ─── Phase 2: Quick Reply Templates ───
 async function loadTemplates() {
@@ -3111,20 +3141,65 @@ async function loadTemplates() {
   } catch(e) { templates = []; }
 }
 
+// 分类折叠: 点分类标题展开该类, 不用一次滑完整个长列表
+let _tplOpenCat = '';
+let _tplCats = [];
 function toggleTemplates() {
   const picker = document.getElementById('templatePicker');
   if (picker.classList.contains('show')) { picker.classList.remove('show'); return; }
   if (templates.length === 0) { toast('No templates configured yet'); return; }
-  picker.innerHTML = templates.map((t, i) =>
-    '<div class="template-item" onclick="useTemplate(' + i + ')">' + esc(typeof t === 'string' ? t : t.text || t.body || '') + '</div>'
-  ).join('');
+  _tplOpenCat = '';
+  renderTemplatePicker();
   picker.classList.add('show');
+}
+function renderTemplatePicker() {
+  const picker = document.getElementById('templatePicker');
+  const byCat = {};
+  _tplCats = [];
+  templates.forEach((t, i) => {
+    const cat = (t && typeof t === 'object' && t.cat) ? t.cat : '其他';
+    if (!byCat[cat]) { byCat[cat] = []; _tplCats.push(cat); }
+    byCat[cat].push(i);
+  });
+  // 中文标题+大意给客服看着选; 实际发出去的只有西英原文 (text)
+  const itemHtml = i => {
+    const t = templates[i];
+    const text = typeof t === 'string' ? t : (t.text || t.body || '');
+    const label = (t && typeof t === 'object' && t.label) ? t.label : '';
+    const zh = (t && typeof t === 'object' && t.zh) ? t.zh : '';
+    return '<div class="template-item" onclick="useTemplate(' + i + ')">'
+      + (label ? '<div style="font-weight:700;font-size:.8rem;color:#92400e;margin-bottom:2px">' + esc(label) + '</div>' : '')
+      + (zh ? '<div style="font-size:.74rem;color:#0f766e;margin-bottom:2px">' + esc(zh) + '</div>' : '')
+      + '<div style="font-size:.72rem;color:var(--gray-500);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">' + esc(text) + '</div>'
+      + '</div>';
+  };
+  // 只有一个分类(或都没分类)时不折叠, 直接平铺
+  if (_tplCats.length <= 1) {
+    picker.innerHTML = templates.map((t, i) => itemHtml(i)).join('');
+    return;
+  }
+  picker.innerHTML = _tplCats.map((cat, ci) => {
+    const open = _tplOpenCat === cat;
+    return '<div onclick="_tplToggleCat(' + ci + ')" style="padding:9px 14px;font-size:.82rem;font-weight:800;color:#92400e;background:' + (open ? '#fef3c7' : '#fffbeb') + ';border-bottom:1px solid var(--gray-100);cursor:pointer;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0">'
+      + '<span>' + esc(cat) + ' <span style="font-weight:600;color:#b45309">(' + byCat[cat].length + ')</span></span><span>' + (open ? '▾' : '▸') + '</span></div>'
+      + (open ? byCat[cat].map(itemHtml).join('') : '');
+  }).join('');
+}
+function _tplToggleCat(ci) {
+  const cat = _tplCats[ci];
+  _tplOpenCat = _tplOpenCat === cat ? '' : cat;
+  renderTemplatePicker();
 }
 
 function useTemplate(idx) {
   const t = templates[idx];
   const text = typeof t === 'string' ? t : (t.text || t.body || '');
   document.getElementById('replyInput').value = text;
+  // 标了 no_translate 的双语模板原样发送, 不再机器翻译 (改动内容后恢复正常翻译)
+  if (t && typeof t === 'object' && t.no_translate) {
+    _composeNoTranslate = true;
+    _composeNoTranslateText = text;
+  }
   document.getElementById('templatePicker').classList.remove('show');
   autoGrow(document.getElementById('replyInput'));
   document.getElementById('replyInput').focus();

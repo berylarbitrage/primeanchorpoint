@@ -2897,9 +2897,10 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_thread ON sms_message
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_sid ON sms_messages(twilio_message_sid)`); } catch(e) {}
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messages(thread_id, created_at)`); } catch(e) {}
 
-// 联系人标注: 工作的州 + 是否工头
+// 联系人标注: 工作的州 + 是否工头(负责招人) + 是否领班(管理仓库)
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_state TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_foreman INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_lead INTEGER DEFAULT 0`); } catch(e) {}
 // 工作经历: 一个人可能干过多个公司, [{company, role, date}] 带大概日期
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_history TEXT DEFAULT '[]'`); } catch(e) {}
 // WhatsApp 支持: 同一收件箱, 线程按渠道区分 (sms | whatsapp)
@@ -28915,6 +28916,28 @@ app.post('/api/admin/ui-translate', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 轻量语言识别 (中/西/英): 供收件箱自动跟随对方语言。返回 'zh'/'es'/'en',
+// 太短或分不清时返回 '' (调用方保持原设置)。纯规则实现, 不依赖外部服务。
+const _SMS_ES_WORDS = new Set(['hola','si','sí','gracias','buenos','buenas','dias','días','tardes','noches','trabajo','trabajar','mañana','manana','cuando','cuándo','donde','dónde','como','cómo','que','qué','por','favor','necesito','puedo','voy','estoy','tengo','hay','pero','para','con','usted','ustedes','porque','ya','muy','bien','esta','está','este','hoy','semana','hora','pago','dinero','ayuda','quiero','hacer','llegar','turno','jefe','amigo','claro','vale','listo','el','la','los','las','un','una','de','en','es','se','mi','yo','tu','su']);
+const _SMS_EN_WORDS = new Set(['the','you','yes','hello','hi','hey','thanks','thank','please','work','working','tomorrow','today','when','where','how','what','why','can','will','would','need','want','going','time','shift','job','pay','money','help','morning','week','hour','boss','friend','sure','good','see','be','am','is','are','do','not','my','me','to','at','on','in','for','and','but','i','a','of','have','get','got','ok','okay']);
+function _smsDetectLang(text) {
+  const t = String(text || '').trim();
+  if (!t) return '';
+  if (/[㐀-鿿豈-﫿]/.test(t)) return 'zh';
+  if (/[ñ¿¡]/i.test(t)) return 'es';
+  const words = t.toLowerCase().split(/[^a-záéíóúüñ]+/).filter(Boolean);
+  if (!words.length) return '';
+  let es = 0, en = 0;
+  for (const w of words) {
+    if (_SMS_ES_WORDS.has(w)) es++;
+    if (_SMS_EN_WORDS.has(w)) en++;
+    if (/[áéíóú]/.test(w)) es++;
+  }
+  if (es > en) return 'es';
+  if (en > es) return 'en';
+  return '';
+}
+
 // ═══ Twilio Inbound Webhook ═══
 app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), validateTwilioWebhook, async (req, res) => {
   try {
@@ -28952,6 +28975,15 @@ app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), va
 
     // 3. Auto-translate inbound message (contact_lang → agent_lang)
     const freshThread = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
+    // 自动识别对方这条消息的语言 (西/英), 更新对话的「对方语言」—— 客服打中文
+    // 后翻译方向自动跟对方实际用的语言走, 不用手动切。太短/不确定的消息不动;
+    // 中文消息不改 contact_lang (客服端政策: 发给工人的消息必须是西语/英语)。
+    const detectedLang = _smsDetectLang(Body);
+    if ((detectedLang === 'es' || detectedLang === 'en') && detectedLang !== freshThread.contact_lang) {
+      db.prepare(`UPDATE sms_threads SET contact_lang=?, updated_at=datetime('now') WHERE id=?`).run(detectedLang, thread.id);
+      smsAudit('thread', thread.id, 'contact_lang_auto', 'system', null, { from: freshThread.contact_lang || '', to: detectedLang });
+      freshThread.contact_lang = detectedLang;
+    }
     const translatedBody = await translateText(Body || '', freshThread.contact_lang || 'es', freshThread.agent_lang || 'zh');
 
     // 4. Insert message
@@ -29127,8 +29159,9 @@ function smsFirstContactCompliance(contactId, text) {
     if (n > 0) return text;
   } catch (e) { return text; }
   let out = text;
-  // 署名与二维码域名一致 (primeanchorpoint.com); 需要换名时用 SMS_BRAND_NAME 覆盖
-  if (!/prime\s*anchor/i.test(out)) out = '[' + (process.env.SMS_BRAND_NAME || 'Prime Anchor Point LLC') + '] ' + out;
+  // 首条用自然的人称开头 (比方括号署名更不像机器人); 公司名与二维码域名一致
+  // (primeanchorpoint.com), 需要换名时用 SMS_BRAND_NAME 覆盖
+  if (!/prime\s*anchor/i.test(out)) out = 'This is HR from ' + (process.env.SMS_BRAND_NAME || 'Prime Anchor Point LLC') + '. ' + out;
   if (!/\bSTOP\b/i.test(out)) out += '\nReply STOP to opt out. Msg & data rates may apply.';
   return out;
 }
@@ -29196,6 +29229,10 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     if (String(req.query.foreman || '') === '1') {
       where += ` AND COALESCE(c.is_foreman,0)=1`;
     }
+    // 只看被标了 领班 的联系人
+    if (String(req.query.lead || '') === '1') {
+      where += ` AND COALESCE(c.is_lead,0)=1`;
+    }
 
     // 对客服(非 admin)不可见: 回了 STOP 退订的、admin 设为隐藏的、以及
     // 未入职的(未关联员工档案, 即列表里标「未入职」的联系人)
@@ -29204,8 +29241,8 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
 
-    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.employee_id as contact_employee_id, c.work_history as contact_work_history,
-      emp.state as emp_state,
+    const dataSql = `SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.tags as contact_tags, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.is_lead as contact_is_lead, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.employee_id as contact_employee_id, c.work_history as contact_work_history,
+      emp.state as emp_state, emp.pay_rate as emp_pay_rate, emp.pay_type as emp_pay_type, emp.status as emp_status,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -29221,7 +29258,10 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
         const ws = _smsResolvedState(t);
         return {
         id: t.id,
-        contact: { id: t.contact_id, phone_e164: smsPhoneForRole(req, t.phone_e164, t.contact_employee_id), name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: ws.state, state_guess: ws.guess, is_foreman: t.contact_is_foreman, opted_out: t.contact_opted_out, cs_hidden: t.contact_cs_hidden, employee_id: t.contact_employee_id, work_history: t.contact_work_history },
+        contact: { id: t.contact_id, phone_e164: smsPhoneForRole(req, t.phone_e164, t.contact_employee_id), name: t.contact_name, company: t.contact_company, tags: t.contact_tags, work_state: ws.state, state_guess: ws.guess, is_foreman: t.contact_is_foreman, is_lead: t.contact_is_lead, opted_out: t.contact_opted_out, cs_hidden: t.contact_cs_hidden, employee_id: t.contact_employee_id, work_history: t.contact_work_history,
+          // 当前工资: 仅 admin 可见, 且仅在职(active)员工显示
+          pay_rate: (req.userRole === 'admin' && t.emp_status === 'active' && t.emp_pay_rate) ? t.emp_pay_rate : null,
+          pay_type: t.emp_pay_type || '' },
         channel: t.channel || 'sms',
         status: t.status,
         priority: t.priority,
@@ -29248,8 +29288,8 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/threads/:id — thread detail
 app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.work_history as contact_work_history,
-      emp.state as emp_state,
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.is_lead as contact_is_lead, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.work_history as contact_work_history,
+      emp.state as emp_state, emp.pay_rate as emp_pay_rate, emp.pay_type as emp_pay_type, emp.status as emp_status,
       a.username as agent_username
       FROM sms_threads t
       JOIN sms_contacts c ON c.id=t.contact_id
@@ -29289,6 +29329,10 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
         work_state: wsResolved.state,
         state_guess: wsResolved.guess,
         is_foreman: thread.contact_is_foreman,
+        is_lead: thread.contact_is_lead,
+        // 当前工资: 仅 admin 可见, 且仅在职(active)员工显示
+        pay_rate: (req.userRole === 'admin' && thread.emp_status === 'active' && thread.emp_pay_rate) ? thread.emp_pay_rate : null,
+        pay_type: thread.emp_pay_type || '',
         opted_out: thread.contact_opted_out,
         cs_hidden: thread.contact_cs_hidden,
         work_history: thread.contact_work_history
@@ -29542,7 +29586,7 @@ app.post('/api/sms/threads/:id/notes', requireAdmin, requireSmsAccess, (req, res
 // PUT /api/sms/contacts/:id
 app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const { name, company, email, tags, notes, work_state, is_foreman, work_history, cs_hidden } = req.body;
+    const { name, company, email, tags, notes, work_state, is_foreman, is_lead, work_history, cs_hidden } = req.body;
     const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
     const isAdmin = req.userRole === 'admin';
@@ -29567,6 +29611,7 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
       notes: notes ?? contact.notes,
       work_state: work_state !== undefined ? String(work_state || '').toUpperCase().slice(0, 20) : contact.work_state,
       is_foreman: is_foreman !== undefined ? (is_foreman ? 1 : 0) : (contact.is_foreman ? 1 : 0),
+      is_lead: is_lead !== undefined ? (is_lead ? 1 : 0) : (contact.is_lead ? 1 : 0),
       work_history: wh !== undefined ? wh : (contact.work_history || '[]'),
       // 对客服隐藏: 仅 admin 可设
       cs_hidden: (isAdmin && cs_hidden !== undefined) ? (cs_hidden ? 1 : 0) : (contact.cs_hidden ? 1 : 0)
@@ -29574,11 +29619,11 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
     // 变更明细存进审计, admin 每天可在「资料修改记录」里核对
     const changes = {};
     for (const k of Object.keys(next)) {
-      const oldV = k === 'is_foreman' ? (contact.is_foreman ? 1 : 0) : (contact[k] ?? '');
+      const oldV = (k === 'is_foreman' || k === 'is_lead') ? (contact[k] ? 1 : 0) : (contact[k] ?? '');
       if (String(next[k] ?? '') !== String(oldV)) changes[k] = { from: oldV, to: next[k] };
     }
-    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, work_history=?, cs_hidden=?, updated_at=datetime('now') WHERE id=?`)
-      .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, next.work_history, next.cs_hidden, contact.id);
+    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, is_lead=?, work_history=?, cs_hidden=?, updated_at=datetime('now') WHERE id=?`)
+      .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, next.is_lead, next.work_history, next.cs_hidden, contact.id);
     if (Object.keys(changes).length) smsAudit('contact', contact.id, 'updated', 'agent', req.userId, { by: req.userName, changes });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -29865,6 +29910,66 @@ app.put('/api/sms/templates', requireAdmin, requireRole('admin'), requireSmsAcce
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+// 班次/卸柜等合规话术: 全部用「接单/拒单」措辞(承包商有拒绝权), 避免「必须来/
+// 请假/处分」等雇员管理措辞在 1099 争议里成为控制权证据。西英双语、无需填空,
+// 标 no_translate 发送时原样发出不再机翻; label/zh/cat 是给客服看的中文标题、
+// 大意和分类, 不会发给对方。v5: 班次加「本周默认照常·有事提前说」; 按 text 匹配升级旧条目。
+(function seedShiftConfirmTemplatesV5() {
+  try {
+    const FLAG = 'sms_shift_tpl_seeded_v5';
+    if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(FLAG)) return;
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='sms_reply_templates'").get();
+    let arr = [];
+    try { arr = row ? JSON.parse(row.value) : []; } catch (e) { arr = []; }
+    if (!Array.isArray(arr)) arr = [];
+    const C1 = '📅 班次', C2 = '📦 卸柜', C3 = '📋 招聘·入职', C4 = '💬 通用';
+    const seeds = [
+      { cat: C1, label: '📅 明日班次确认', zh: '明天的班次你接不接？回 SÍ 或 NO；不行我们安排别人',
+        text: 'Hola 👋 ¿Aceptas el turno de mañana? Responde SÍ o NO. Si no puedes, no hay problema — asignamos a otra persona. / Hi 👋 Do you accept tomorrow’s shift? Reply YES or NO. If you can’t, no problem — we’ll assign someone else.', no_translate: true },
+      { cat: C1, label: '⏰ 没回复·追问', zh: '还能来明天的班次吗？今天不回复就把班次给别人',
+        text: 'Hola, ¿sigues disponible para el turno de mañana? Si no recibimos respuesta hoy, ofreceremos el turno a otra persona. / Hi, are you still available for tomorrow’s shift? If we don’t hear back today, we’ll offer it to someone else.', no_translate: true },
+      { cat: C1, label: '✅ 对方接单·确认', zh: '好的已确认，明天见；有变化请尽早告诉我们',
+        text: '¡Perfecto, confirmado! 🎉 Nos vemos mañana. Si algo cambia, avísanos lo antes posible. / Perfect, confirmed! 🎉 See you tomorrow. If anything changes, let us know as soon as possible.', no_translate: true },
+      { cat: C1, label: '🙏 对方拒单·致谢', zh: '谢谢告知，没问题我们安排别人；有新班次再通知你',
+        text: 'Gracias por avisar 👍 No hay problema — asignaremos a otra persona. Te avisamos cuando haya más turnos disponibles. / Thanks for letting us know 👍 No problem — we’ll assign someone else. We’ll let you know when more shifts are available.', no_translate: true },
+      { cat: C1, label: '🗓 问下周哪几天能来', zh: '下周哪几天可以接班次？回复具体天数',
+        text: '¿Qué días estás disponible para aceptar turnos la próxima semana? Responde con los días. / What days are you available to accept shifts next week? Reply with the days.', no_translate: true },
+      { cat: C1, label: '📍 班次提醒(已接单的)', zh: '提醒：明天是你接的班次，请提前 10 分钟到，带上 ID',
+        text: 'Recordatorio: mañana es el turno que aceptaste. Por favor llega 10 minutos antes y trae tu ID. / Reminder: tomorrow is the shift you accepted. Please arrive 10 minutes early and bring your ID.', no_translate: true },
+      { cat: C1, label: '❓ 接了单没到·关心跟进', zh: '客户说你今天没到已接的班次，一切还好吗？以后还想接班次吗？',
+        text: 'Hola, el cliente nos informó que hoy no llegaste al turno que habías aceptado. ¿Está todo bien? Avísanos si sigues disponible para futuros turnos. / Hi, the client told us you didn’t make it to the shift you had accepted today. Is everything OK? Let us know if you’re still available for future shifts.', no_translate: true },
+      { cat: C1, label: '📌 本周默认照常·有事提前说', zh: '本周默认你会照常完成已接的活；有特殊情况请务必提前发短信告诉我们',
+        text: 'Contamos contigo para los trabajos de esta semana que ya aceptaste. Si surge algún imprevisto y no puedes venir, por favor avísanos por mensaje con la mayor anticipación posible. / We’re counting on you for the jobs you accepted this week. If something comes up and you can’t make it, please text us as far in advance as possible.', no_translate: true },
+      { cat: C2, label: '📦 明天有柜·接不接', zh: '明天到一个柜要卸，你接不接？回 SÍ 或 NO',
+        text: 'Hola, mañana llega un contenedor para descargar. ¿Lo tomas? Responde SÍ o NO. / Hi, a container arrives tomorrow for unloading. Do you take it? Reply SÍ / YES or NO.', no_translate: true },
+      { cat: C2, label: '🕐 卸柜·问几点能到', zh: '明天的柜你几点能到？回复时间',
+        text: '¿A qué hora puedes llegar mañana para el contenedor? Responde con la hora. / What time can you arrive tomorrow for the container? Reply with the time.', no_translate: true },
+      { cat: C2, label: '👥 卸柜·问带几个人', zh: '明天卸柜你能带几个人？回复人数',
+        text: '¿Cuántas personas puedes traer mañana para descargar? Responde con el número. / How many people can you bring tomorrow for unloading? Reply with the number.', no_translate: true },
+      { cat: C2, label: '📲 周柜登记提醒', zh: '提醒工头：用二维码登记本周柜子，密码 123456',
+        text: 'Recuerda registrar los contenedores de esta semana con el código QR. Contraseña: 123456. / Remember to log this week’s containers with the QR code. Password: 123456.', no_translate: true },
+      { cat: C2, label: '📷 卸柜·发照片报人数', zh: '今天卸的柜请拍照发过来（柜号要拍清楚），并告诉我们几个人参与了卸柜',
+        text: 'Por favor envía fotos de los contenedores descargados hoy (que se vea el número del contenedor) y dinos cuántas personas participaron en la descarga. / Please send photos of the containers unloaded today (container number visible) and tell us how many people participated in the unloading.', no_translate: true },
+      { cat: C3, label: '💼 新工作机会', zh: '有个新工作机会，感兴趣回 SÍ，发你详情',
+        text: 'Hola, tenemos una nueva oportunidad de trabajo. ¿Te interesa? Responde SÍ y te enviamos los detalles. / Hi, we have a new job opportunity. Interested? Reply SÍ / YES and we’ll send you the details.', no_translate: true },
+      { cat: C3, label: '📎 催补入职文件', zh: '入职资料还缺文件，请查看之前发的链接；需要帮助回 AYUDA',
+        text: 'Hola, aún faltan algunos documentos para completar tu registro. Revisa el enlace que te enviamos. ¿Necesitas ayuda? Responde AYUDA. / Hi, some documents are still missing to complete your registration. Please check the link we sent. Need help? Reply HELP.', no_translate: true },
+      { cat: C4, label: '💵 工资问题·已收到', zh: '收到你的工资问题，正在核实，今天内回复你',
+        text: 'Recibimos tu pregunta sobre el pago. Lo estamos revisando y te respondemos hoy mismo. / We received your question about the payment. We’re checking and will get back to you today.', no_translate: true },
+      { cat: C4, label: '⏳ 稍等·核实后回复', zh: '让我和团队确认一下，很快回复你',
+        text: 'Déjame confirmarlo con el equipo y te aviso pronto. / Let me confirm with the team and I’ll get back to you soon.', no_translate: true }
+    ];
+    const idxByText = new Map(arr.map((t, i) => [(typeof t === 'string' ? t : (t && t.text) || ''), i]));
+    for (const s of seeds) {
+      const i = idxByText.get(s.text);
+      if (i !== undefined) arr[i] = s; else arr.push(s);
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('sms_reply_templates', ?, datetime('now'))").run(JSON.stringify(arr));
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, '1', datetime('now'))").run(FLAG);
+    console.log('[startup] Seeded quick reply templates (v3, categorized)');
+  } catch (e) { console.warn('[startup] shift template seed failed:', e.message); }
+})();
 
 // ─── Thread history / assignment log ───
 app.get('/api/sms/threads/:id/history', requireAdmin, requireSmsAccess, (req, res) => {
