@@ -1305,7 +1305,7 @@ function renderThreadList() {
       + (t.channel === 'whatsapp'
         ? '<span title="WhatsApp 对话" style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:3px">' + waLogo(11) + 'WhatsApp</span>'
         : '<span title="短信 SMS" style="background:#e0f2fe;color:#0369a1;font-size:.78rem;font-weight:700;padding:1px 6px;border-radius:10px;line-height:1.2">💬</span>')
-      + onboard + '<span class="ti-status ' + t.status + '" title="' + ({ open: '待处理 OPEN', claimed: '已认领 CLAIMED', closed: '已关闭 CLOSED' }[t.status] || t.status) + '">' + ({ open: '待', claimed: '接', closed: '闭' }[t.status] || t.status) + '</span>'
+      + onboard + '<span title="' + ({ open: '状态: 待处理 OPEN', claimed: '状态: 已认领 CLAIMED' + (agent ? ' · ' + esc(agent) : ''), closed: '状态: 已关闭 CLOSED' }[t.status] || t.status) + '" style="font-size:.7rem;line-height:1;cursor:default;color:' + ({ open: '#059669', claimed: '#2563eb', closed: '#9ca3af' }[t.status] || '#9ca3af') + '">●</span>'
       + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
       + (agent ? '<span class="ti-agent">' + esc(agent) + '</span>' : '')
       + (isUnread ? '<span class="ti-unread">' + t.unread_count + '</span>' : '')
