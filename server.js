@@ -29130,12 +29130,38 @@ function _areaCodeStateFromPhone(phone) {
   const digits = String(phone || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
   return digits.length === 10 ? (US_AREA_CODE_STATE[digits.slice(0, 3)] || '') : '';
 }
+// 入职申请里填过地址的, 直接用申请表的州 (地址州优先, 其次是扫的哪个州的码)
+function _applicantStateForPhone(phone) {
+  const p10 = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (p10.length !== 10) return '';
+  try {
+    const r = db.prepare(`SELECT state, apply_state FROM applicant_submissions WHERE phone10(phone)=? AND phone!='' ORDER BY id DESC LIMIT 1`).get(p10);
+    const st = String((r && (r.state || r.apply_state)) || '').trim().toUpperCase();
+    return /^[A-Z]{2}$/.test(st) ? st : '';
+  } catch (e) { return ''; }
+}
 function _smsResolvedState(row) {
   const set = String(row.contact_work_state || '').trim().toUpperCase();
   if (set) return { state: set, guess: '' };
   const emp = String(row.emp_state || '').trim().toUpperCase();
   if (emp) return { state: emp, guess: '' };
+  const app = _applicantStateForPhone(row.phone_e164);
+  if (app) return { state: app, guess: '' };
   return { state: '', guess: _areaCodeStateFromPhone(row.phone_e164) };
+}
+
+// 首条外发合规: 该联系人从未收到过我们的消息时, 自动补公司署名和退订说明。
+// 号码都是扫码提交表单后进系统的 (申请表已带 opt-in 声明), 首条消息再表明
+// 身份 + 给出退出方式, 合规链就完整了; 之后的消息不再重复追加。
+function smsFirstContactCompliance(contactId, text) {
+  try {
+    const n = db.prepare(`SELECT COUNT(*) AS n FROM sms_messages m JOIN sms_threads t ON t.id=m.thread_id WHERE t.contact_id=? AND m.direction='outbound'`).get(contactId).n;
+    if (n > 0) return text;
+  } catch (e) { return text; }
+  let out = text;
+  if (!/prime\s*anchor/i.test(out)) out = '[' + (process.env.COMPANY_DISPLAY_NAME || 'Prime Anchor Workforce') + '] ' + out;
+  if (!/\bSTOP\b/i.test(out)) out += '\nReply STOP to opt out. Msg & data rates may apply.';
+  return out;
 }
 
 app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
@@ -29376,6 +29402,9 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
         return res.status(400).json({ error: '🚫 客服消息不能以中文发出。请把上方「对方」语言选成西班牙语或英语, 系统会自动翻译后发送。' });
       }
     }
+
+    // 首条外发: 自动补公司署名 + STOP 退订说明 (之后的消息不追加)
+    bodyToSend = smsFirstContactCompliance(thread.contact_id, bodyToSend);
 
     // Insert message first
     const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
@@ -30523,8 +30552,11 @@ app.post('/api/sms/broadcast', requireAdmin, requireRole('admin'), async (req, r
         const twilioNumber = TWILIO_FROM || process.env.TWILIO_PHONE_NUMBER || '';
         const thread = smsFindOrCreateThread(contact.id, twilioNumber);
 
+        // 首条外发: 自动补公司署名 + STOP 退订说明 (发过的联系人不追加)
+        const bodyOut = smsFirstContactCompliance(contact.id, message.trim());
+
         // Send SMS
-        const opts = { body: message.trim(), to: phoneE164 };
+        const opts = { body: bodyOut, to: phoneE164 };
         if (TWILIO_MESSAGING_SID) {
           opts.messagingServiceSid = TWILIO_MESSAGING_SID;
         } else {
@@ -30534,12 +30566,12 @@ app.post('/api/sms/broadcast', requireAdmin, requireRole('admin'), async (req, r
 
         // Store outbound message
         db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, from_number, to_number, body, delivery_status, twilio_message_sid, author_agent_id)
-          VALUES (?,?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', twilioNumber, phoneE164, message.trim(), msg.status || 'queued', msg.sid || '', req.userId);
+          VALUES (?,?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', twilioNumber, phoneE164, bodyOut, msg.status || 'queued', msg.sid || '', req.userId);
 
         // Update thread
         db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_message_preview=?, status=CASE WHEN status='open' THEN 'claimed' ELSE status END,
           assigned_agent_id=COALESCE(assigned_agent_id,?), updated_at=datetime('now') WHERE id=?`)
-          .run(message.trim().substring(0, 120), req.userId, thread.id);
+          .run(bodyOut.substring(0, 120), req.userId, thread.id);
 
         smsAudit('message', 0, 'broadcast_sent', 'agent', req.userId, { thread_id: thread.id, to: phoneE164 });
         results.push({ phone: phoneE164, ok: true, sid: msg.sid });
