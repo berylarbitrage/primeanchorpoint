@@ -8622,6 +8622,8 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
       const salt = crypto.randomBytes(16).toString('hex');
       const hash = hashPassword(newPass, salt);
       db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
+      // 改密后作废该账号所有旧登录, 逼所有设备重新输新密码
+      try { db.prepare('DELETE FROM admin_sessions WHERE user_id=?').run(user.id); } catch (_) {}
       console.log(`[Auth] Reset admin password for user: ${targetUser}`);
     }
   }
@@ -28968,14 +28970,8 @@ app.post('/api/sms/webhook/status', express.urlencoded({ extended: false }), val
 
 // ─── SMS Access Middleware ───
 function requireSmsAccess(req, res, next) {
-  // 共享 admin 账号不能用收件箱 (消息必须能追溯到具体的人)。
-  // 仅当已存在其他启用的个人 admin 账号时才拦, 避免个人账号还没建就把自己锁死。
-  if (req.userRole === 'admin' && String(req.userName || '').toLowerCase() === 'admin') {
-    try {
-      const others = db.prepare(`SELECT COUNT(*) n FROM admin_users WHERE role='admin' AND active=1 AND LOWER(username) != 'admin'`).get().n;
-      if (others > 0) return res.status(403).json({ error: '共享 admin 账号不能使用收件箱, 请用你的个人管理员账号登录 (信息是谁发的要一目了然)' });
-    } catch (_) {}
-  }
+  // 共享 admin 账号可以用收件箱, 但前端 (sms-inbox) 对它强制每次重新输密码登录,
+  // 不做自动登录 — 防止共用/未锁屏设备被随手打开。个人管理员账号不受影响。
   next();
 }
 
