@@ -1345,6 +1345,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </select>
     <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
+  <!-- 入职进度分页：已完成入职 / 入职进行中 两个列表分开看 -->
+  <div style="display:flex;gap:.45rem;margin-bottom:.7rem">
+    <button class="btn" id="empTabDone" onclick="setEmpOnboardTab('done')" style="font-size:.85rem">🎉 已完成入职 (0)</button>
+    <button class="btn" id="empTabPending" onclick="setEmpOnboardTab('pending')" style="font-size:.85rem">📋 入职进行中 (0)</button>
+  </div>
   <div class="card" style="padding:0;overflow:hidden">
     <div class="emp-table-wrap">
     <table class="emp-table">
@@ -15572,7 +15577,25 @@ async function loadEmployees() {
   allEmployees = await api('/admin/employees');
   updateEmpStats(allEmployees);
   populateDeptFilter(allEmployees);
-  renderEmployees(allEmployees);
+  filterEmployees();
+}
+
+// 入职进度分页：'done' = 全部入职任务已完成(已入职/可入职)，'pending' = 还在走入职流程
+let _empOnboardTab = 'done';
+function setEmpOnboardTab(t) { _empOnboardTab = t; filterEmployees(); }
+function _updateEmpOnboardTabs() {
+  const done = allEmployees.filter(e => !!e.onboarded).length;
+  const pending = allEmployees.length - done;
+  const paint = (id, label, count, on) => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.textContent = `${label} (${count})`;
+    b.style.cssText = 'font-size:.85rem;' + (on
+      ? 'background:#065f46;color:#fff;border:1.5px solid #065f46'
+      : 'background:#fff;color:#475569;border:1.5px solid var(--gray-200)');
+  };
+  paint('empTabDone', '🎉 已完成入职', done, _empOnboardTab === 'done');
+  paint('empTabPending', '📋 入职进行中', pending, _empOnboardTab === 'pending');
 }
 
 function updateEmpStats(list) {
@@ -15602,6 +15625,8 @@ function filterEmployees() {
   });
   if (st)   f = f.filter(e=> e.status===st);
   if (company) f = f.filter(e=> (e.current_jobs||[]).some(j=>j.company_name===company));
+  f = f.filter(e => _empOnboardTab === 'done' ? !!e.onboarded : !e.onboarded);
+  _updateEmpOnboardTabs();
   renderEmployees(f);
 }
 
