@@ -366,7 +366,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         <button class="btn-icon" onclick="location.href='/briefing'" title="今日工作要求" style="position:relative">&#128203;<span id="briefDot" style="display:none;position:absolute;top:3px;right:1px;width:8px;height:8px;background:var(--red);border-radius:50%"></span></button>
         <button class="btn-icon" id="adminDashBtn" style="display:none;color:#4338ca" onclick="showAdminDash()" title="管理面板 (仅管理员)">&#9881;</button>
         <button class="btn-icon" onclick="loadThreads()" title="刷新 Refresh">&#x21bb;</button>
-        <button class="btn-icon" onclick="doLogout()" title="退出登录 Logout">&#x2715;</button>
+        <button class="btn-icon" onclick="confirmLogout()" title="退出登录 Logout" style="color:#b91c1c">&#x23FB;</button>
       </div>
       <button class="btn-icon" id="moreMenuBtn" onclick="toggleMoreMenu(event)" title="菜单" style="display:none;font-size:1.25rem;font-weight:700">&#8942;</button>
       <div id="moreMenu" class="more-menu"></div>
@@ -1036,7 +1036,11 @@ async function doLogin() {
   btn.disabled = false; btn.textContent = 'Login';
 }
 
+function confirmLogout() {
+  if (confirm('确定退出登录吗？ Log out?')) doLogout();
+}
 function doLogout() {
+  try { api('/admin/logout', { method: 'POST' }).catch(() => {}); } catch (_) {}
   TOKEN = '';
   document.cookie = 'pa_token=;path=/;max-age=0';
   localStorage.removeItem('adminToken');
