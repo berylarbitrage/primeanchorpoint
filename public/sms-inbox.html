@@ -923,9 +923,8 @@ async function api(path, opts = {}) {
 async function checkAuth() {
   try {
     const r = await api('/admin/me');
-    // 共享 admin 账号在收件箱不允许自动登录: 即使有存着的登录状态也强制重新输密码。
-    // (个人账号不受影响; TOKEN 有值说明是本次手动登录, 放行)
-    if (r && r.username && String(r.username).toLowerCase() === 'admin' && !TOKEN) { showLogin(); return; }
+    // 共享 admin 账号不能进收件箱: 就算带着 admin 后台的登录状态打开本页, 也直接给登录页
+    if (r && r.username && String(r.username).toLowerCase() === 'admin') { showLogin(); return; }
     if (r && r.username) { USER = r; showApp(); _applyAdminUi(); loadBriefings(true); setInterval(() => loadBriefings(true), 120000); return; }
   } catch(e) {}
   showLogin();
@@ -1066,13 +1065,14 @@ async function doLogin() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: u, password: p })
     }).then(r => r.json());
-    if (r.success) {
+    if (r.success && String(r.username).toLowerCase() === 'admin') {
+      // 共享 admin 账号只能用在 admin 后台, 不能登录收件箱
+      err.textContent = 'admin 账号不能登录收件箱, 请用你的个人管理员账号';
+      TOKEN = '';
+    } else if (r.success) {
       TOKEN = r.token;
-      // 共享 admin 账号只在本次页面内有效, 不持久化 → 下次打开必须重新输密码
-      if (String(r.username).toLowerCase() !== 'admin') {
-        document.cookie = 'pa_token=' + TOKEN + ';path=/;max-age=2592000;SameSite=Strict';
-        localStorage.setItem('adminToken', TOKEN);
-      }
+      document.cookie = 'pa_token=' + TOKEN + ';path=/;max-age=2592000;SameSite=Strict';
+      localStorage.setItem('adminToken', TOKEN);
       USER = { username: r.username, role: r.role, id: r.user_id };
       showApp();
       _applyAdminUi();

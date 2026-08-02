@@ -28970,8 +28970,15 @@ app.post('/api/sms/webhook/status', express.urlencoded({ extended: false }), val
 
 // ─── SMS Access Middleware ───
 function requireSmsAccess(req, res, next) {
-  // 共享 admin 账号可以用收件箱, 但前端 (sms-inbox) 对它强制每次重新输密码登录,
-  // 不做自动登录 — 防止共用/未锁屏设备被随手打开。个人管理员账号不受影响。
+  // 共享 admin 账号只能用于 admin 后台等其他地方, 一律不能进 SMS 收件箱 —
+  // 收件箱消息必须能追溯到具体的人。仅当还没有任何个人管理员账号时放行,
+  // 避免个人账号还没建就把自己锁死。
+  if (req.userRole === 'admin' && String(req.userName || '').toLowerCase() === 'admin') {
+    try {
+      const others = db.prepare(`SELECT COUNT(*) n FROM admin_users WHERE role='admin' AND active=1 AND LOWER(username) != 'admin'`).get().n;
+      if (others > 0) return res.status(403).json({ error: 'admin 账号不能登录收件箱, 请用你的个人管理员账号 (信息是谁发的要一目了然)' });
+    } catch (_) {}
+  }
   next();
 }
 
