@@ -68,6 +68,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 .ti-avwrap{position:relative;flex-shrink:0}
 .ti-avatar{width:40px;height:40px;border-radius:50%;background:var(--sky-light);color:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
 .ti-foreman{position:absolute;bottom:-4px;right:-5px;width:19px;height:19px;font-size:.72rem;line-height:1;background:#fff;border:2px solid #f59e0b;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.3);z-index:1}
+.ti-chan-wa{position:absolute;bottom:-4px;left:-5px;width:19px;height:19px;background:#fff;border:2px solid #25D366;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.3);z-index:1}
 .ti-body{flex:1;min-width:0}
 .ti-top{display:flex;align-items:center;gap:6px;margin-bottom:2px}
 .ti-name{font-size:.88rem;font-weight:600;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
@@ -551,7 +552,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center">
       <span style="font-size:.78rem;color:var(--gray-500)">渠道:</span>
       <button type="button" class="filter-btn active" id="ncChanSms" onclick="ncSetChannel('sms')">📱 短信 SMS</button>
-      <button type="button" class="filter-btn" id="ncChanWa" onclick="ncSetChannel('whatsapp')">🟢 WhatsApp</button>
+      <button type="button" class="filter-btn" id="ncChanWa" onclick="ncSetChannel('whatsapp')" style="display:inline-flex;align-items:center;gap:4px"><svg viewBox="0 0 448 512" width="13" height="13"><path fill="#25D366" d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L0 480l117.7-30.9c32.4 17.7 68.9 27 106.1 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-157zm-157 341.6c-33.2 0-65.7-8.9-94-25.7l-6.7-4-69.8 18.3L72 359.2l-4.4-7c-18.5-29.4-28.2-63.3-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.2-138.2c-5.5-2.8-32.8-16.2-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.5-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7.9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2-3.7 0-9.7 1.4-14.8 6.9-5.1 5.6-19.4 19-19.4 46.3 0 27.3 19.9 53.7 22.6 57.4 2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z"/></svg>WhatsApp</button>
     </div>
     <div id="ncWaHint" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 10px;font-size:.74rem;color:#166534;margin-bottom:8px">WhatsApp: 需要在 Twilio 开通 WhatsApp Sender。注意: 对方 24 小时内没给我们发过消息时, 主动发的自由文本会被 WhatsApp 拒收(需要用审核过的模板), 最好等对方先来消息或让他先加我们。</div>
     <input id="ncSearch" placeholder="搜姓名 / 电话 / 职位 / 公司…" oninput="ncDebounce()" style="margin-bottom:8px">
@@ -920,6 +921,11 @@ function _applyAdminUi() {
   ['adminDashBtn'].forEach(id => {
     const b = document.getElementById(id); if (b) b.style.display = isAdmin ? '' : 'none';
   });
+  // 客服消息必须翻成西语/英语发出 → 对方语言下拉不给客服「中文」选项
+  if (!isAdmin) {
+    const sel = document.getElementById('contactLangSel');
+    if (sel) [...sel.options].forEach(o => { if (o.value === 'zh') o.remove(); });
+  }
 }
 // ─── 📋 每日工作要求 (内容在独立页 /briefing, 这里只管工具栏红点) ───
 async function loadBriefings(silent) {
@@ -1071,6 +1077,12 @@ function doLogout() {
   clearInterval(refreshInterval);
   clearInterval(msgRefreshInterval);
   showLogin();
+}
+
+// WhatsApp 官方 logo (内联 SVG), 代替之前看不出含义的绿点
+function waLogo(sz) {
+  sz = sz || 12;
+  return '<svg viewBox="0 0 448 512" width="' + sz + '" height="' + sz + '" style="vertical-align:-1px;flex-shrink:0"><path fill="#25D366" d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L0 480l117.7-30.9c32.4 17.7 68.9 27 106.1 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-157zm-157 341.6c-33.2 0-65.7-8.9-94-25.7l-6.7-4-69.8 18.3L72 359.2l-4.4-7c-18.5-29.4-28.2-63.3-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.2-138.2c-5.5-2.8-32.8-16.2-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.5-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7.9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2-3.7 0-9.7 1.4-14.8 6.9-5.1 5.6-19.4 19-19.4 46.3 0 27.3 19.9 53.7 22.6 57.4 2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z"/></svg>';
 }
 
 // 人名统一显示成首字母大写 (DELMI SIERRA → Delmi Sierra); 中文名不受影响
@@ -1252,8 +1264,9 @@ function renderThreadList() {
       : '';
     const av = avatarStyle(t);
     const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头">🦺</span>' : '';
+    const chanBadge = t.channel === 'whatsapp' ? '<span class="ti-chan-wa" title="WhatsApp">' + waLogo(11) + '</span>' : '';
     return '<div class="thread-item' + (isUnread ? ' unread' : '') + '" onclick="openThread(' + t.id + ')">'
-      + '<div class="ti-avwrap"><div class="ti-avatar" title="' + esc(av.tip) + '" style="' + av.css + '">' + esc(initials) + '</div>' + foreman + '</div>'
+      + '<div class="ti-avwrap"><div class="ti-avatar" title="' + esc(av.tip) + '" style="' + av.css + '">' + esc(initials) + '</div>' + chanBadge + foreman + '</div>'
       + '<div class="ti-body">'
       + '<div class="ti-top"><span class="ti-name">' + esc(name) + '</span>'
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
@@ -1261,7 +1274,7 @@ function renderThreadList() {
       + '<div class="ti-preview">' + preview + '</div>'
       + '<div class="ti-meta">' + (t.contact.cs_hidden ? '<span style="background:#fee2e2;color:#b91c1c;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;white-space:nowrap">🙈 对客服隐藏</span>' : '') + followUpBadge(t)
       + (t.channel === 'whatsapp'
-        ? '<span title="WhatsApp" style="background:#dcfce7;color:#15803d;font-size:.78rem;font-weight:700;padding:1px 6px;border-radius:10px;line-height:1.2">🟢</span>'
+        ? '<span title="WhatsApp 对话" style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:3px">' + waLogo(11) + 'WhatsApp</span>'
         : '<span title="短信 SMS" style="background:#e0f2fe;color:#0369a1;font-size:.78rem;font-weight:700;padding:1px 6px;border-radius:10px;line-height:1.2">💬</span>')
       + onboard + '<span class="ti-status ' + t.status + '">' + t.status + '</span>'
       + (t.priority && t.priority !== 'normal' ? '<span class="priority-badge ' + t.priority + '">' + t.priority + '</span>' : '')
@@ -2208,7 +2221,7 @@ function renderContactTagRow() {
     + '</span>'
   ).join('');
   const chanChip = (currentThread && currentThread.channel === 'whatsapp')
-    ? _icoChip('🟢', 'WhatsApp 对话', '#dcfce7', '#15803d')
+    ? '<span title="WhatsApp 对话" style="display:inline-flex;align-items:center;gap:3px;height:22px;border-radius:999px;padding:0 8px;background:#dcfce7;color:#15803d;font-size:.68rem;font-weight:700;line-height:1">' + waLogo(12) + 'WhatsApp</span>'
     : _icoChip('💬', '短信 SMS 对话', '#e0f2fe', '#0369a1');
   const ws = currentContact && currentContact.work_state;
   const stateChip = ws ? _icoChip('📍' + esc(ws), '工作州: ' + ws, '#ede9fe', '#5b21b6') : '';
