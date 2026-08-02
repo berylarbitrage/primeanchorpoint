@@ -2135,30 +2135,37 @@ function _contactStateForemanBadges(ws, fm, size) {
   if (fm) h += '<span style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🦺 工头</span>';
   return h;
 }
+// 小圆图标徽标: 只显示图标, 信息放悬停提示 (title), 让状态一目了然
+function _icoChip(icon, title, bg, color, onclick) {
+  return '<span ' + (onclick ? 'onclick="' + onclick + '" ' : '') + 'title="' + esc(title) + '" ' +
+    'style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:999px;padding:0 4px;background:' + bg + ';color:' + color + ';font-size:.8rem;font-weight:700;line-height:1;' + (onclick ? 'cursor:pointer' : 'cursor:default') + '">' + icon + '</span>';
+}
 function renderContactTagRow() {
   const row = document.getElementById('contactTagRow');
   if (!row) return;
   let tags = [];
   try { tags = JSON.parse((currentContact && currentContact.tags) || '[]'); } catch (_) {}
-  const hasNotes = !!(currentContact && (currentContact.notes || '').trim());
+  const noteTxt = ((currentContact && currentContact.notes) || '').trim();
   // 入职状态 = 是否已关联员工账号
   const empBadge = (currentContact && currentContact.employee_id)
-    ? '<span style="background:#d1fae5;color:#065f46;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">&#10003; 已入职</span>'
-    : '<span style="background:#fef3c7;color:#92400e;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:700;cursor:pointer" onclick="showEditContactModal()" title="尚未关联员工账号(未完成入职)">&#9888; 未入职</span>';
-  // 工作经历: 干过的公司+工种+大概时间
+    ? _icoChip('&#10003;', '已入职 (已关联员工档案)', '#d1fae5', '#065f46')
+    : _icoChip('&#9888;', '未入职: 尚未关联员工账号, 点击关联', '#fef3c7', '#92400e', 'showEditContactModal()');
+  // 工作经历: 干过的公司+工种+大概时间 (信息本体, 保留文字)
   const whChips = parseWorkHistory(currentContact && currentContact.work_history).slice(0, 4).map(h =>
     '<span style="background:#eef2ff;color:#3730a3;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">🏢 ' + esc([h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join('·')) + '</span>'
   ).join('');
   const chanChip = (currentThread && currentThread.channel === 'whatsapp')
-    ? '<span style="background:#dcfce7;color:#15803d;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:700">🟢 WhatsApp</span>' : '';
-  row.innerHTML = chanChip + empBadge
-  + _contactStateForemanBadges(currentContact && currentContact.work_state, currentContact && currentContact.is_foreman)
+    ? _icoChip('🟢', 'WhatsApp 对话', '#dcfce7', '#15803d') : '';
+  const ws = currentContact && currentContact.work_state;
+  const stateChip = ws ? _icoChip('📍' + esc(ws), '工作州: ' + ws, '#ede9fe', '#5b21b6') : '';
+  const foremanChip = (currentContact && currentContact.is_foreman) ? _icoChip('🦺', '工头', '#ffedd5', '#9a3412') : '';
+  row.innerHTML = chanChip + empBadge + stateChip + foremanChip
   + whChips
   + (Array.isArray(tags) ? tags : []).map(t =>
     '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">' + esc(t) + '</span>'
   ).join('')
-  + (hasNotes ? '<span title="有备注" style="font-size:.68rem;color:#b45309;background:#fef3c7;border-radius:999px;padding:1px 8px;font-weight:600">&#128221; 备注</span>' : '')
-  + '<a style="font-size:.68rem;color:var(--blue,#2563eb);cursor:pointer;text-decoration:underline" onclick="showEditContactModal()">&#127991; 标签/备注</a>';
+  + (noteTxt ? _icoChip('&#128221;', '备注: ' + noteTxt.slice(0, 120), '#fef3c7', '#b45309', 'showEditContactModal()') : '')
+  + _icoChip('&#127991;', '编辑标签/备注', '#e0e7ff', '#4338ca', 'showEditContactModal()');
 }
 function renderContactTagsInline(tagsJson, contact) {
   let tags = [];
