@@ -1060,6 +1060,12 @@ function doLogout() {
   showLogin();
 }
 
+// 人名统一显示成首字母大写 (DELMI SIERRA → Delmi Sierra); 中文名不受影响
+function titleCase(s) {
+  if (!s) return '';
+  return String(s).toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // ─── Phone formatting ───
 function fmtPhone(e164) {
   if (!e164) return '';
@@ -1207,7 +1213,7 @@ function renderThreadList() {
     return;
   }
   el.innerHTML = currentThreads.map(t => {
-    const name = t.contact.name || fmtPhone(t.contact.phone_e164) || (t.contact.employee_id ? 'Unknown' : '(未入职·未命名)');
+    const name = titleCase(t.contact.name) || fmtPhone(t.contact.phone_e164) || (t.contact.employee_id ? 'Unknown' : '(未入职·未命名)');
     const initials = (t.contact.name || t.contact.phone_e164 || '?').substring(0,2).toUpperCase();
     const preview = esc(t.last_message_preview || 'No messages');
     const time = timeAgo(t.last_message_at);
@@ -1310,7 +1316,7 @@ function renderDetail() {
   dv.classList.add('slide-in-right');
   setTimeout(() => dv.classList.remove('slide-in-right'), 300);
 
-  const name = currentContact.name || fmtPhone(currentContact.phone_e164) || '(未入职·未命名)';
+  const name = titleCase(currentContact.name) || fmtPhone(currentContact.phone_e164) || '(未入职·未命名)';
   document.getElementById('detailName').textContent = name;
   document.getElementById('detailPhone').textContent = fmtPhone(currentContact.phone_e164);
   renderContactTagRow();
@@ -1433,7 +1439,7 @@ function renderMessages() {
       // 发送人: 出站显示客服名(不同客服不同颜色), 入站显示联系人名; 同一人连续发只标一次
       const senderName = dir === 'outbound'
         ? (item.author_name || (item.source === 'agent' ? '客服' : '系统'))
-        : ((currentContact && currentContact.name) || fmtPhone(currentContact && currentContact.phone_e164) || '对方');
+        : (titleCase(currentContact && currentContact.name) || fmtPhone(currentContact && currentContact.phone_e164) || '对方');
       const senderKey = dir + '|' + senderName;
       let senderHtml = '';
       if (senderKey !== lastSender) {
@@ -1949,7 +1955,7 @@ async function empLinkSearch() {
     window._empLinkList = emps;
     box.innerHTML = emps.length ? emps.map((p, i) =>
       '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--gray-200);cursor:pointer;font-size:.82rem" onclick="empLinkPick(' + i + ')">'
-      + '<b style="flex-shrink:0">' + esc(p.name || '(无名)') + '</b>'
+      + '<b style="flex-shrink:0">' + esc(titleCase(p.name) || '(无名)') + '</b>'
       + (p.extra ? '<span style="font-size:.72rem;color:var(--gray-400)">' + esc(p.extra) + '</span>' : '')
       + '<span style="margin-left:auto;font-size:.76rem;color:var(--gray-500)">' + esc(p.phone) + '</span></div>'
     ).join('') : '<div style="padding:8px;color:var(--gray-400);font-size:.8rem">员工档案里没找到</div>';
@@ -2200,7 +2206,7 @@ async function ncSearch() {
     box.innerHTML = people.map((p, i) =>
       '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="ncStart(' + i + ')">'
       + '<span style="flex-shrink:0;font-size:.66rem;font-weight:700;border-radius:5px;padding:2px 6px;' + (p.type === 'employee' ? 'background:#d1fae5;color:#065f46' : 'background:#fef3c7;color:#92400e') + '">' + (p.type === 'employee' ? '员工' : '申请') + '</span>'
-      + '<span style="flex:1;min-width:0"><b style="font-size:.85rem">' + esc(p.name || '(无名)') + '</b>'
+      + '<span style="flex:1;min-width:0"><b style="font-size:.85rem">' + esc(titleCase(p.name) || '(无名)') + '</b>'
       + (p.extra ? '<span style="font-size:.72rem;color:var(--gray-400);margin-left:6px">' + esc(p.extra) + '</span>' : '') + '</span>'
       + '<span style="font-size:.76rem;color:var(--gray-500)">' + esc(p.phone) + '</span></div>'
     ).join('');
@@ -2407,7 +2413,7 @@ function _renderStarred() {
   box.innerHTML = msgs.map(m =>
     '<div style="padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="closeStarredModal();openThread(' + m.thread_id + ')">'
     + '<div style="display:flex;gap:6px;align-items:center;font-size:.76rem;color:var(--gray-500);margin-bottom:2px">'
-    + '<b style="color:var(--gray-700)">' + esc(m.contact_name || fmtPhone(m.phone_e164) || '对方') + '</b>'
+    + '<b style="color:var(--gray-700)">' + esc(titleCase(m.contact_name) || fmtPhone(m.phone_e164) || '对方') + '</b>'
     + '<span>' + (m.direction === 'inbound' ? '⬅ 对方' : '➡ 我们') + '</span>'
     + (m.mark_tag ? '<span style="background:#fef3c7;color:#92400e;border-radius:999px;padding:0 8px;font-weight:700">📌 ' + esc(m.mark_tag) + '</span>' : '')
     + '<span style="margin-left:auto">' + fmtDate(m.created_at) + ' ' + fmtTime(m.created_at) + '</span></div>'
@@ -2523,7 +2529,7 @@ async function loadUpcomingInterviews() {
     el.innerHTML = list.length ? list.map(iv =>
       '<div style="display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;' + (iv.thread_id ? 'cursor:pointer" onclick="document.getElementById(\'interviewModal\').classList.remove(\'show\');openThread(' + iv.thread_id + ')"' : '"')  + '>'
       + '<b style="white-space:nowrap">' + esc(String(iv.interview_at).replace('T', ' ').slice(5, 16)) + '</b>'
-      + '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(iv.contact_name || fmtPhone(iv.phone_e164)) + (iv.address ? ' · 📍' + esc(iv.address) : '') + '</span></div>'
+      + '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(titleCase(iv.contact_name) || fmtPhone(iv.phone_e164)) + (iv.address ? ' · 📍' + esc(iv.address) : '') + '</span></div>'
     ).join('') : '<div style="padding:10px;color:var(--gray-400);font-size:.8rem;text-align:center">近 14 天没有已安排的面试</div>';
   } catch (_) { el.innerHTML = ''; }
 }
@@ -2569,7 +2575,7 @@ function showIvListModal() {
 const _IV_ST_LABEL = { done: '✅ 完成', no_show: '🙅 未到', cancelled: '❌ 取消' };
 function _ivRowHtml(iv, withActions) {
   const when = esc(String(iv.interview_at).replace('T', ' ').slice(0, 16));
-  const who = esc(iv.contact_name || fmtPhone(iv.phone_e164));
+  const who = esc(titleCase(iv.contact_name) || fmtPhone(iv.phone_e164));
   const open = iv.thread_id ? ' <a style="cursor:pointer;text-decoration:underline" onclick="document.getElementById(\'ivListModal\').classList.remove(\'show\');openThread(' + iv.thread_id + ')">打开对话</a>' : '';
   const acts = withActions
     ? ' <a style="cursor:pointer;text-decoration:underline;margin-left:6px" onclick="setInterviewStatus(' + iv.id + ',\'done\',\'list\')">✅完成</a>'
@@ -2635,7 +2641,7 @@ async function loadAssist() {
       const ts = (t && !isNaN(t)) ? t.toLocaleString('sv-SE').slice(5, 16) : '';
       return '<div style="padding:8px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;line-height:1.55;' + (q.status === 'open' ? '' : 'opacity:.55') + '">'
         + '<div><b>' + esc(q.agent_name || '?') + '</b>'
-        + (q.contact_name || q.phone_e164 ? ' · 关于 <b>' + esc(((q.contact_name || '') + ' ' + (q.phone_e164 || '')).trim()) + '</b>' : '')
+        + (q.contact_name || q.phone_e164 ? ' · 关于 <b>' + esc((titleCase(q.contact_name) + ' ' + (q.phone_e164 || '')).trim()) + '</b>' : '')
         + '<span style="color:var(--gray-400);float:right">' + esc(ts) + '</span></div>'
         + (q.context ? '<div style="color:var(--gray-400);font-size:.74rem">' + esc(q.context) + '</div>' : '')
         + '<div style="background:#fff7ed;border-radius:6px;padding:4px 8px;margin:3px 0">' + esc(q.note || '') + '</div>'
@@ -2690,7 +2696,7 @@ async function loadContactEdits() {
     const list = (r && r.edits) || [];
     el.innerHTML = list.length ? list.map(e2 => {
       const who = esc(e2.agent_name || '系统');
-      const target = esc(((e2.contact_name || '') + ' ' + fmtPhone(e2.phone_e164 || '')).trim() || ('联系人#' + e2.id));
+      const target = esc((titleCase(e2.contact_name) + ' ' + fmtPhone(e2.phone_e164 || '')).trim() || ('联系人#' + e2.id));
       let body = '';
       if (e2.action === 'updated' && e2.changes) {
         body = Object.keys(e2.changes).map(k =>
@@ -2727,7 +2733,7 @@ async function loadAiBlocks() {
     const list = (r && r.blocks) || [];
     el.innerHTML = list.length ? list.map(b => {
       let cats = []; try { cats = JSON.parse(b.categories || '[]'); } catch (_) {}
-      const target = b.kind === 'broadcast' ? '📢 群发' : esc((b.contact_name || '') + ' ' + (b.phone_e164 || '')).trim();
+      const target = b.kind === 'broadcast' ? '📢 群发' : esc(titleCase(b.contact_name) + ' ' + (b.phone_e164 || '')).trim();
       return '<div style="padding:8px 10px;border-bottom:1px solid var(--gray-100);font-size:.8rem;line-height:1.55">'
         + '<div><b style="color:#b91c1c">🚫 ' + esc(b.reason || '违规') + '</b>'
         + (cats.length ? ' <span style="color:var(--gray-400)">[' + esc(cats.join(', ')) + ']</span>' : '') + '</div>'
