@@ -3432,9 +3432,11 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 app.use((req, res, next) => {
   const host = String(req.get('host') || '').toLowerCase();
-  const oldHost = /(^|\.)primeanchorpoint\.com$/.test(host) || /\.onrender\.com$/.test(host);
+  // 主域名 = primeanchorpoint.com (入职二维码统一印这个域); workforce 域名的
+  // 旧链接仍可达, 但访客地址栏统一跳成 point
+  const oldHost = /(^|\.)primeanchorworkforce\.com$/.test(host) || /\.onrender\.com$/.test(host);
   if (oldHost && (req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/') && req.path !== '/healthz') {
-    return res.redirect(301, 'https://primeanchorworkforce.com' + req.originalUrl);
+    return res.redirect(301, 'https://primeanchorpoint.com' + req.originalUrl);
   }
   next();
 });
@@ -12020,9 +12022,7 @@ app.post('/api/admin/worker-accounts/:id/mobile-upload-link', requireAdmin, (req
   const createdBy = (req.session && req.session.username) || 'admin';
   db.prepare(`INSERT INTO mobile_upload_tokens (token, worker_account_id, doc_type, expires_at, created_by) VALUES (?,?,?,?,?)`)
     .run(token, workerId, docType, expiresAt, createdBy);
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const url = `${proto}://${host}/scan/${token}`;
+  const url = `${_applyQrBase(req)}/scan/${token}`;
   res.json({ success: true, url, token, expires_at: expiresAt, worker_name: w.name || w.username || '', doc_type: docType });
 });
 
@@ -15226,9 +15226,9 @@ function _applyQrBase(req) {
     const v = r && r.value ? r.value.trim().replace(/\/+$/, '') : '';
     if (v && /^https?:\/\//i.test(v)) return v;
   } catch (_) {}
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
-  return `${proto}://${host}`;
+  // 未配置时固定用主域名 primeanchorpoint —— 不跟随管理员当前访问的域名,
+  // 避免从 workforce 域名打开后台时生成的二维码带 workforce 域名
+  return String(process.env.PUBLIC_QR_BASE_URL || 'https://primeanchorpoint.com').replace(/\/+$/, '');
 }
 
 // Look up a partner by their public applicant-form token. null if not found.
@@ -15911,9 +15911,7 @@ function _validWorkerDocToken(token) {
 app.get('/api/admin/worker-doc-qr', requireAdmin, blockManager, async (req, res) => {
   try {
     const token = _getWorkerDocToken();
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
-    const url = `${proto}://${host}/wd/${token}`;
+    const url = `${_applyQrBase(req)}/wd/${token}`;
     const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
     res.json({ token, url, qr_data_url: qrDataUrl, master_code: MASTER_VERIFY_CODE || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -16290,9 +16288,7 @@ app.get('/api/admin/partners/:id/container-qr', requireAdmin, blockManager, asyn
       token = crypto.randomBytes(20).toString('hex');
       db.prepare('UPDATE partners SET container_submit_token=? WHERE id=?').run(token, partnerId);
     }
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http'));
-    const url = `${proto}://${host}/c/${token}`;
+    const url = `${_applyQrBase(req)}/c/${token}`;
     const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
     res.json({ token, url, qr_data_url: qrDataUrl, partner_name: p.name });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -28692,7 +28688,7 @@ function smsAudit(entityType, entityId, action, actorType, actorId, metadata = {
 async function sendSmsNotification(threadId, messageId, agentId, agentPhone, contactName, contactPhone, messagePreview) {
   const token = crypto.randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + SMS_NOTIFICATION_TOKEN_TTL).toISOString();
-  const baseUrl = BASE_URL || 'https://primeanchorworkforce.com';
+  const baseUrl = BASE_URL || 'https://primeanchorpoint.com';
   const link = `${baseUrl}/sms/t/${token}`;
   const displayName = contactName || contactPhone;
   const preview = (messagePreview || '').substring(0, 80);
@@ -30203,7 +30199,7 @@ app.post('/api/sms/cs-invites', requireAdmin, requireRole('admin'), async (req, 
     const token = crypto.randomBytes(18).toString('hex');
     const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
     db.prepare('INSERT INTO sms_cs_invites (token, created_by, expires_at) VALUES (?,?,?)').run(token, req.userId, expiresAt);
-    const url = (BASE_URL || 'https://primeanchorworkforce.com') + '/cs-signup?t=' + token;
+    const url = (BASE_URL || 'https://primeanchorpoint.com') + '/cs-signup?t=' + token;
     const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
     res.json({ success: true, url, qr, expires_at: expiresAt });
   } catch (e) { res.status(500).json({ error: e.message }); }
