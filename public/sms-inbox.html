@@ -398,7 +398,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
           <option value="">工种: 全部</option>
         </select>
         <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">未读</button>
-        <button class="filter-btn" id="foremanFilterBtn" onclick="toggleForemanFilter()" title="只看标了 🦺 工头 的联系人">🦺 工头</button>
+        <button class="filter-btn" id="foremanFilterBtn" onclick="toggleForemanFilter()" title="只看标了 🦺 工头（负责招人）的联系人">🦺 工头</button>
+        <button class="filter-btn" id="leadFilterBtn" onclick="toggleLeadFilter()" title="只看标了 🏭 领班（管理仓库）的联系人">🏭 领班</button>
       </div>
     </div>
     <div class="pull-indicator" id="pullIndicator">Pull to refresh...</div>
@@ -527,7 +528,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     </div>
     <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:2px">
       <div style="flex:1"><label>工作的州 Work State</label><select id="editWorkState" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;outline:none;background:var(--white);margin-bottom:8px"></select></div>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px"><input type="checkbox" id="editIsForeman" style="width:auto;margin:0">🦺 是工头</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px" title="工头：负责招人"><input type="checkbox" id="editIsForeman" style="width:auto;margin:0">🦺 是工头</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;padding-bottom:10px" title="领班：管理仓库"><input type="checkbox" id="editIsLead" style="width:auto;margin:0">🏭 是领班</label>
     </div>
     <label id="csHiddenRow" style="display:none;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-bottom:8px"><input type="checkbox" id="editCsHidden" style="width:auto;margin:0">🙈 对客服隐藏此人（客服搜不到、看不到对话，仅管理员可见）</label>
     <label>公司 Company（从现有公司选）</label>
@@ -892,6 +894,7 @@ let refreshInterval = null;
 let msgRefreshInterval = null;
 let unreadFilter = false;
 let foremanFilter = false;
+let leadFilter = false;
 let dashboardVisible = false;
 let templates = [];
 let currentContactLang = 'es';
@@ -1171,6 +1174,7 @@ async function fetchThreads(silent) {
     if (jobtagF) url += '&jobtag=' + encodeURIComponent(jobtagF);
     if (unreadFilter) url += '&unread=1';
     if (foremanFilter) url += '&foreman=1';
+    if (leadFilter) url += '&lead=1';
     const r = await api(url);
     listTotal = r.total || 0;
     if (listPage === 1) {
@@ -1280,10 +1284,11 @@ function renderThreadList() {
         + (wh.length > 3 ? '<span style="color:#94a3b8;flex:none">+' + (wh.length - 3) + '</span>' : '') + '</div>'
       : '';
     const av = avatarStyle(t);
-    const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头">🦺</span>' : '';
+    const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头(负责招人)">🦺</span>' : '';
+    const lead = t.contact.is_lead ? '<span class="ti-foreman" title="领班(管理仓库)" style="border-color:#0d9488;left:-5px;right:auto">🏭</span>' : '';
     const chanBadge = t.channel === 'whatsapp' ? '<span class="ti-chan-wa" title="WhatsApp">' + waLogo(11) + '</span>' : '';
     return '<div class="thread-item' + (isUnread ? ' unread' : '') + '" onclick="openThread(' + t.id + ')">'
-      + '<div class="ti-avwrap"><div class="ti-avatar" title="' + esc(av.tip) + '" style="' + av.css + '">' + esc(initials) + '</div>' + chanBadge + foreman + '</div>'
+      + '<div class="ti-avwrap"><div class="ti-avatar" title="' + esc(av.tip) + '" style="' + av.css + '">' + esc(initials) + '</div>' + chanBadge + foreman + lead + '</div>'
       + '<div class="ti-body">'
       + '<div class="ti-top"><span class="ti-name">' + esc(name) + '</span>'
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
@@ -1980,6 +1985,7 @@ function showEditContactModal() {
   document.getElementById('editNotes').value = currentContact.notes || '';
   _fillWorkStateSelect(currentContact.work_state || '');
   document.getElementById('editIsForeman').checked = !!currentContact.is_foreman;
+  document.getElementById('editIsLead').checked = !!currentContact.is_lead;
   // 对客服隐藏: 仅 admin 可见可设
   document.getElementById('csHiddenRow').style.display = _isAdminEc ? 'flex' : 'none';
   document.getElementById('editCsHidden').checked = !!currentContact.cs_hidden;
@@ -2079,6 +2085,7 @@ async function saveContact() {
       notes: document.getElementById('editNotes').value.trim(),
       work_state: document.getElementById('editWorkState').value.trim().toUpperCase(),
       is_foreman: document.getElementById('editIsForeman').checked ? 1 : 0,
+      is_lead: document.getElementById('editIsLead').checked ? 1 : 0,
       work_history: JSON.stringify(_editWH)
     };
     if (isAdmin) {
@@ -2189,12 +2196,19 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ─── Phase 2: Tags ───
-function _contactStateForemanBadges(ws, fm, size) {
+function _contactStateForemanBadges(ws, fm, size, lead, payLabel) {
   const fs = size || '.68rem';
   let h = '';
   if (ws) h += '<span title="工作州(来自入职信息)" style="background:#ede9fe;color:#5b21b6;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">📍 ' + esc(ws) + '</span>';
-  if (fm) h += '<span style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🦺 工头</span>';
+  if (fm) h += '<span title="工头(负责招人)" style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🦺 工头</span>';
+  if (lead) h += '<span title="领班(管理仓库)" style="background:#ccfbf1;color:#0f766e;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">🏭 领班</span>';
+  if (payLabel) h += '<span title="当前工资(员工档案·在职)" style="background:#dcfce7;color:#166534;border-radius:999px;padding:1px 8px;font-size:' + fs + ';font-weight:700">💵 ' + esc(payLabel) + '</span>';
   return h;
+}
+// 当前工资标签: 仅已关联在职员工且 admin 可见时服务端才会下发 pay_rate
+function _payLabel(c) {
+  if (!c || !c.pay_rate) return '';
+  return '$' + Number(c.pay_rate).toFixed(0) + '/' + (c.pay_type === 'salary' ? 'yr' : 'hr');
 }
 // 工种 → 小图标 (关键词匹配, 中英文都认; 匹配不到返回空串不加图标)
 const JOB_ICON_RULES = [
@@ -2259,8 +2273,11 @@ function renderContactTagRow() {
     : _icoChip('💬', '短信 SMS 对话', '#e0f2fe', '#0369a1');
   const ws = currentContact && currentContact.work_state;
   const stateChip = ws ? _icoChip('📍' + esc(ws), '工作州: ' + ws, '#ede9fe', '#5b21b6') : '';
-  const foremanChip = (currentContact && currentContact.is_foreman) ? _icoChip('🦺', '工头', '#ffedd5', '#9a3412') : '';
-  row.innerHTML = chanChip + empBadge + stateChip + foremanChip
+  const foremanChip = (currentContact && currentContact.is_foreman) ? _icoChip('🦺', '工头 (负责招人)', '#ffedd5', '#9a3412') : '';
+  const leadChip = (currentContact && currentContact.is_lead) ? _icoChip('🏭', '领班 (管理仓库)', '#ccfbf1', '#0f766e') : '';
+  const payL = _payLabel(currentContact);
+  const payChip = payL ? _icoChip('💵' + payL, '当前工资 (员工档案·在职)', '#dcfce7', '#166534') : '';
+  row.innerHTML = chanChip + empBadge + stateChip + foremanChip + leadChip + payChip
   + whChips
   + (Array.isArray(tags) ? tags : []).map(t =>
     '<span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:1px 8px;font-size:.68rem;font-weight:600">' + (jobIcon(t) ? jobIcon(t) + ' ' : '') + esc(t) + '</span>'
@@ -2271,7 +2288,7 @@ function renderContactTagRow() {
 function renderContactTagsInline(tagsJson, contact) {
   let tags = [];
   try { tags = JSON.parse(tagsJson || '[]'); } catch (_) {}
-  const badges = contact ? _contactStateForemanBadges(contact.work_state, contact.is_foreman, '.64rem') : '';
+  const badges = contact ? _contactStateForemanBadges(contact.work_state, contact.is_foreman, '.64rem', contact.is_lead, _payLabel(contact)) : '';
   if ((!Array.isArray(tags) || !tags.length) && !badges) return '';
   if (!Array.isArray(tags)) tags = [];
   return '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px">' + badges + tags.slice(0, 4).map(t =>
@@ -2786,9 +2803,9 @@ async function doneAssist(id) {
 }
 
 // ─── 📋 资料修改记录 (仅 admin) ───
-const _CE_FIELD_ZH = { name: '名字', company: '公司', email: '邮箱', tags: '工种标签', notes: '备注', work_state: '州', is_foreman: '工头', work_history: '工作经历', cs_hidden: '对客服隐藏' };
+const _CE_FIELD_ZH = { name: '名字', company: '公司', email: '邮箱', tags: '工种标签', notes: '备注', work_state: '州', is_foreman: '工头', is_lead: '领班', work_history: '工作经历', cs_hidden: '对客服隐藏' };
 function _ceFmtVal(k, v) {
-  if (k === 'is_foreman' || k === 'cs_hidden') return v ? '是' : '否';
+  if (k === 'is_foreman' || k === 'is_lead' || k === 'cs_hidden') return v ? '是' : '否';
   if (k === 'work_history') {
     const a = parseWorkHistory(v);
     return a.length ? a.map(h => [h.company, h.role, fmtWhDate(h.date)].filter(Boolean).join(' ')).join('; ') : '(空)';
@@ -3100,6 +3117,12 @@ function toggleUnreadFilter() {
 function toggleForemanFilter() {
   foremanFilter = !foremanFilter;
   document.getElementById('foremanFilterBtn').classList.toggle('active', foremanFilter);
+  loadThreads();
+}
+// 🏭 只看领班
+function toggleLeadFilter() {
+  leadFilter = !leadFilter;
+  document.getElementById('leadFilterBtn').classList.toggle('active', leadFilter);
   loadThreads();
 }
 
