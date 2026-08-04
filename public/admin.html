@@ -1221,8 +1221,17 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-sm" style="background:#fff1f2;color:#be123c;border:1px solid #fda4af;margin-left:auto" onclick="deleteLaborCompanyW9()">删除</button>
     </div>
     <div id="lcW9Upload" style="margin-top:.4rem">
-      <input type="file" id="lcW9File" accept=".pdf,.jpg,.jpeg,.png" style="font-size:.83rem">
-      <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">支持 PDF / 图片（≤20MB）</div>
+      <div id="lcW9DropZone"
+           ondragover="event.preventDefault();this.style.background='#eff6ff';this.style.borderColor='#0ea5e9'"
+           ondragleave="this.style.background='#f8fafc';this.style.borderColor='#cbd5e1'"
+           ondrop="lcW9HandleDrop(event)"
+           onclick="document.getElementById('lcW9File').click()"
+           style="border:2px dashed #cbd5e1;border-radius:8px;padding:.9rem;text-align:center;background:#f8fafc;cursor:pointer;transition:all .15s">
+        <div style="font-size:1.3rem">📎</div>
+        <div id="lcW9DropText" style="font-size:.82rem;font-weight:600;color:#0f2b5b">拖拽 W-9 到此处或点击选择</div>
+        <div style="font-size:.72rem;color:#64748b;margin-top:.15rem">支持 PDF / 图片（≤20MB）</div>
+      </div>
+      <input type="file" id="lcW9File" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="lcW9ShowPicked()">
     </div>
   </div>
 
@@ -12449,6 +12458,7 @@ function openLaborCompanyModal(c) {
     document.getElementById('lcW9Upload').style.display = '';
   }
   document.getElementById('lcW9File').value = '';
+  if (typeof lcW9ShowPicked === 'function') lcW9ShowPicked();
   // Agreement
   document.getElementById('lcAgreementSigned').checked = !!(c?.agreement_signed);
   document.getElementById('lcAgreementNotes').value = c?.agreement_notes || '';
@@ -24330,6 +24340,25 @@ async function loadPaperW9List() {
   }
 }
 
+// 分包商 W-9 拖拽上传: 拖进来的文件塞进隐藏的 file input, 保存逻辑不变
+function lcW9HandleDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('lcW9DropZone');
+  if (dz) { dz.style.background = '#f8fafc'; dz.style.borderColor = '#cbd5e1'; }
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (!files || !files.length) return;
+  const f = files[0];
+  if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { showToast('只支持 PDF / JPG / PNG', 'error'); return; }
+  const dt = new DataTransfer();
+  dt.items.add(f);
+  document.getElementById('lcW9File').files = dt.files;
+  lcW9ShowPicked();
+}
+function lcW9ShowPicked() {
+  const inp = document.getElementById('lcW9File');
+  const t = document.getElementById('lcW9DropText');
+  if (t) t.textContent = (inp.files && inp.files[0]) ? '✅ ' + inp.files[0].name + '（保存时上传）' : '拖拽 W-9 到此处或点击选择';
+}
 function paperW9HandleDrop(e) {
   e.preventDefault();
   const dz = document.getElementById('paperW9DropZone');
