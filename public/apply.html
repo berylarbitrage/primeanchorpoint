@@ -149,11 +149,12 @@
       </div>
       <div class="msg" id="phoneMsg"></div>
       <div class="verified-tag" id="phoneVerified">✓ <span id="t-verified1">Verificado</span></div>
-      <!-- SMS opt-in 声明: 让扫码提交 = 有明确书面同意接收短信 (TCPA/A2P 合规依据) -->
+      <!-- SMS opt-in 声明: 让扫码提交 = 有明确书面同意接收短信 (TCPA/A2P 合规依据)。
+           三种语言各写一份, 只显示当前页面语言那份 (applyLang 里切换)。 -->
       <div style="font-size:.72rem;color:#94a3b8;margin-top:.5rem;line-height:1.55">
-        📱 Al enviar esta solicitud, acepta recibir mensajes SMS/WhatsApp de Prime Anchor Point LLC relacionados con su solicitud y su trabajo. Responda STOP para cancelar en cualquier momento. Pueden aplicarse tarifas de mensajes y datos.<br>
-        By submitting this application, you agree to receive job-related SMS/WhatsApp messages from Prime Anchor Point LLC. Reply STOP to opt out at any time. Msg &amp; data rates may apply.<br>
-        提交本申请即表示您同意接收 Prime Anchor Point LLC 发送的与求职及工作相关的短信/WhatsApp 消息，可随时回复 STOP 退订。
+        <span class="sms-optin" data-ol="es">📱 Al enviar esta solicitud, acepta recibir mensajes SMS/WhatsApp de Prime Anchor Point LLC relacionados con su solicitud y su trabajo. Responda STOP para cancelar en cualquier momento. Pueden aplicarse tarifas de mensajes y datos.</span>
+        <span class="sms-optin" data-ol="en" style="display:none">📱 By submitting this application, you agree to receive job-related SMS/WhatsApp messages from Prime Anchor Point LLC. Reply STOP to opt out at any time. Msg &amp; data rates may apply.</span>
+        <span class="sms-optin" data-ol="zh" style="display:none">📱 提交本申请即表示您同意接收 Prime Anchor Point LLC 发送的与求职及工作相关的短信/WhatsApp 消息，可随时回复 STOP 退订。</span>
       </div>
     </div>
 
@@ -315,6 +316,8 @@ function applyLang() {
   const L = I18N[_lang];
   document.documentElement.lang = _lang;
   document.title = L.title;
+  // 短信同意声明只显示当前语言那份
+  document.querySelectorAll('.sms-optin').forEach(el => { el.style.display = el.getAttribute('data-ol') === _lang ? '' : 'none'; });
   txt('t-title', 'title'); txt('t-secInfo', 'secInfo'); txt('t-secAddr', 'secAddr'); txt('t-secPhone', 'secPhone');
   txt('t-secEmail', 'secEmail'); txt('t-secDocs', 'secDocs');
   txt('t-verified1', 'verified'); txt('t-verified2', 'verified'); txt('t-verified3', 'verified');
