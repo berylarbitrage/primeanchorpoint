@@ -3837,6 +3837,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="field"><label>邮箱</label>
       <input id="refrEmail" placeholder="email@example.com" type="email"></div>
     <div class="field"><label>关联系统员工 / 工人账户（可选）</label>
+      <input id="refrLinkedSearch" type="text" placeholder="🔍 输名字搜索过滤…" autocomplete="off" style="margin-bottom:.3rem">
       <select id="refrLinkedPerson"><option value="">— 不关联 —</option></select></div>
   </div>
 
@@ -3921,6 +3922,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <h2>添加推荐记录</h2>
   <input type="hidden" id="arrReferrerId">
   <div class="field"><label>被推荐人（从系统员工/工人账户选择）</label>
+    <input id="arrRefereeSearch" type="text" placeholder="🔍 输名字搜索过滤…" autocomplete="off" style="margin-bottom:.3rem">
     <select id="arrReferee"><option value="">— 选择 —</option></select>
   </div>
   <div class="field"><label>或手动填写被推荐人姓名（外部）</label>
@@ -29258,6 +29260,25 @@ function renderReferrersFiltered() {
   }).join('') : '<tr><td colspan="8" class="empty">暂无推荐人，点击"+ 新增推荐人"添加</td></tr>';
 }
 
+// 大名单下拉配搜索框: 输入过滤 <select> 选项 (当前选中项始终保留)。
+// 每次重灌 select.innerHTML 后调用一次, 会重置快照并清空搜索框。
+function attachSelectSearch(inputId, selectId) {
+  const inp = document.getElementById(inputId), sel = document.getElementById(selectId);
+  if (!inp || !sel) return;
+  inp.value = '';
+  const all = [...sel.options].map(o => ({ v: o.value, t: o.textContent }));
+  inp.oninput = () => {
+    const q = inp.value.trim().toLowerCase();
+    const cur = sel.value;
+    const keep = all.filter(o => o.v === '' || o.v === cur || !q || o.t.toLowerCase().includes(q));
+    sel.innerHTML = keep.map(o => `<option value="${esc(o.v)}">${esc(o.t)}</option>`).join('');
+    sel.value = cur;
+    if (sel.selectedIndex < 0) sel.selectedIndex = 0;
+    // 只剩一个匹配时自动选中, 省一次点击
+    const hits = keep.filter(o => o.v !== '' && o.v !== cur);
+    if (q && hits.length === 1 && !cur) sel.value = hits[0].v;
+  };
+}
 function _buildRefrPeopleSelectHTML(selectedKey) {
   // selectedKey format: 'emp:<id>' or 'wa:<id>' or ''
   let html = '<option value="">— 不关联（外部推荐人）—</option>';
@@ -29329,6 +29350,7 @@ async function openReferrerModal(id) {
   const linkedKey = r.linked_employee_id ? `emp:${r.linked_employee_id}`
                    : r.linked_worker_account_id ? `wa:${r.linked_worker_account_id}` : '';
   document.getElementById('refrLinkedPerson').innerHTML = _buildRefrPeopleSelectHTML(linkedKey);
+  attachSelectSearch('refrLinkedSearch', 'refrLinkedPerson');
   document.getElementById('refrPosBonusBody').innerHTML = _buildPositionBonusRows(r.position_bonuses);
   document.getElementById('referrerModal').classList.add('show');
 }
@@ -29465,6 +29487,7 @@ function openAddReferralRecordModal() {
   if (!_refrCurrentDetailId) return;
   document.getElementById('arrReferrerId').value = _refrCurrentDetailId;
   document.getElementById('arrReferee').innerHTML = _buildRefrPeopleSelectHTML('');
+  attachSelectSearch('arrRefereeSearch', 'arrReferee');
   document.getElementById('arrRefereeName').value = '';
   document.getElementById('arrBonus').value = '';
   document.getElementById('arrMinHours').value = '';
