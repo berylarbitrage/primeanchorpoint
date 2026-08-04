@@ -2416,6 +2416,25 @@ try { db.exec("ALTER TABLE labor_companies ADD COLUMN w9_uploaded_at DATETIME DE
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein_file_path TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein_file_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein_uploaded_at DATETIME DEFAULT NULL"); } catch {}
+// 分包商多文件表 (W-9 / EIN 确认信各自可传多张, 如多页照片)
+db.exec(`CREATE TABLE IF NOT EXISTS labor_company_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  doc_type TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  file_name TEXT DEFAULT '',
+  uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+// 老的单文件列迁入多文件表 (幂等: 同路径不重复插入)
+try {
+  const _lcLegacy = db.prepare(`SELECT id, w9_file_path, w9_file_name, ein_file_path, ein_file_name FROM labor_companies WHERE COALESCE(w9_file_path,'') != '' OR COALESCE(ein_file_path,'') != ''`).all();
+  const _lcHas = db.prepare(`SELECT 1 FROM labor_company_files WHERE company_id=? AND doc_type=? AND file_path=?`);
+  const _lcIns = db.prepare(`INSERT INTO labor_company_files (company_id, doc_type, file_path, file_name) VALUES (?,?,?,?)`);
+  for (const r of _lcLegacy) {
+    if (r.w9_file_path && !_lcHas.get(r.id, 'w9', r.w9_file_path)) _lcIns.run(r.id, 'w9', r.w9_file_path, r.w9_file_name || '');
+    if (r.ein_file_path && !_lcHas.get(r.id, 'ein', r.ein_file_path)) _lcIns.run(r.id, 'ein', r.ein_file_path, r.ein_file_name || '');
+  }
+} catch (e) { console.error('[LaborCompanyFiles] migrate error:', e.message); }
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN agreement_signed INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN agreement_signed_at DATETIME DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN agreement_notes TEXT DEFAULT ''"); } catch {}
@@ -17064,7 +17083,42 @@ app.post('/api/review/submit', (req, res) => {
 // ─── Labor Companies (劳务公司管理) ───
 app.get('/api/admin/labor-companies', requireAdmin, (req, res) => {
   const rows = db.prepare(`SELECT lc.*, (SELECT COUNT(*) FROM worker_accounts wa WHERE wa.payment_labor_company_id=lc.id) AS worker_count FROM labor_companies lc ORDER BY lc.active DESC, lc.name ASC`).all();
+  // 附上每家的 W-9 / EIN 文件列表 (可多张)
+  const files = db.prepare(`SELECT id, company_id, doc_type, file_name FROM labor_company_files ORDER BY id`).all();
+  const byCo = {};
+  for (const f of files) {
+    (byCo[f.company_id] = byCo[f.company_id] || { w9: [], ein: [] })[f.doc_type === 'ein' ? 'ein' : 'w9'].push({ id: f.id, file_name: f.file_name });
+  }
+  for (const r of rows) { const g = byCo[r.id] || { w9: [], ein: [] }; r.w9_files = g.w9; r.ein_files = g.ein; }
   res.json(rows);
+});
+
+// 分包商文件 (W-9 / EIN, 可多张): 批量上传 / 单个下载 / 单个删除
+app.post('/api/admin/labor-companies/:id/files/:type', requireAdmin, docUpload.array('files', 10), (req, res) => {
+  const type = req.params.type === 'ein' ? 'ein' : (req.params.type === 'w9' ? 'w9' : null);
+  if (!type) return res.status(400).json({ error: 'Invalid type' });
+  if (!req.files || !req.files.length) return res.status(400).json({ error: 'File required' });
+  const id = parseInt(req.params.id);
+  const lc = db.prepare('SELECT id FROM labor_companies WHERE id=?').get(id);
+  if (!lc) return res.status(404).json({ error: 'Not found' });
+  const ins = db.prepare(`INSERT INTO labor_company_files (company_id, doc_type, file_path, file_name) VALUES (?,?,?,?)`);
+  for (const f of req.files) ins.run(id, type, f.path, f.originalname);
+  db.prepare(`UPDATE labor_companies SET updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id);
+  res.json({ success: true, count: req.files.length });
+});
+app.get('/api/admin/labor-companies/files/:fid', requireAdmin, async (req, res) => {
+  const f = db.prepare('SELECT file_path, file_name FROM labor_company_files WHERE id=?').get(req.params.fid);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  if (storage && storage.isR2 && storage.isR2()) {
+    try { return res.redirect(302, await storage.getDownloadUrl(f.file_path)); }
+    catch (e) { return res.status(404).json({ error: 'File not found' }); }
+  }
+  if (!fs.existsSync(f.file_path)) return res.status(404).json({ error: 'File missing' });
+  res.download(f.file_path, f.file_name || 'file');
+});
+app.delete('/api/admin/labor-companies/files/:fid', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM labor_company_files WHERE id=?').run(req.params.fid);
+  res.json({ success: true });
 });
 
 app.post('/api/admin/labor-companies', requireAdmin, (req, res) => {

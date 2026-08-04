@@ -1216,10 +1216,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <!-- EIN 确认信上传 -->
   <div style="margin-top:.8rem">
     <label style="font-size:.85rem;font-weight:500;color:var(--gray-700)">EIN 文件（IRS 确认信 CP 575 等）</label>
-    <div id="lcEinDocCurrent" style="display:none;margin-top:.3rem;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:6px;padding:.5rem .7rem;font-size:.83rem;align-items:center;gap:.6rem">
-      <span>📄 <a id="lcEinDocLink" href="#" target="_blank" style="color:var(--sky)">已上传 EIN 文件</a></span>
-      <button class="btn btn-sm" style="background:#fff1f2;color:#be123c;border:1px solid #fda4af;margin-left:auto" onclick="deleteLaborCompanyEinDoc()">删除</button>
-    </div>
+    <div id="lcEinDocCurrent" style="margin-top:.3rem"></div>
     <div id="lcEinDocUpload" style="margin-top:.4rem">
       <div id="lcEinDocDropZone"
            ondragover="event.preventDefault();this.style.background='#eff6ff';this.style.borderColor='#0ea5e9'"
@@ -1228,20 +1225,17 @@ tr:hover td.invp-frz{background:var(--sky-light)}
            onclick="document.getElementById('lcEinDocFile').click()"
            style="border:2px dashed #cbd5e1;border-radius:8px;padding:.9rem;text-align:center;background:#f8fafc;cursor:pointer;transition:all .15s">
         <div style="font-size:1.3rem">📎</div>
-        <div id="lcEinDocDropText" style="font-size:.82rem;font-weight:600;color:#0f2b5b">拖拽 EIN 文件到此处或点击选择</div>
+        <div id="lcEinDocDropText" style="font-size:.82rem;font-weight:600;color:#0f2b5b">拖拽 EIN 文件到此处或点击选择（可多张）</div>
         <div style="font-size:.72rem;color:#64748b;margin-top:.15rem">支持 PDF / 图片（≤20MB）</div>
       </div>
-      <input type="file" id="lcEinDocFile" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="lcEinDocShowPicked()">
+      <input type="file" id="lcEinDocFile" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none" onchange="lcEinDocShowPicked()">
     </div>
   </div>
 
   <!-- W9 上传 -->
   <div style="margin-top:.8rem">
     <label style="font-size:.85rem;font-weight:500;color:var(--gray-700)">W-9 文件</label>
-    <div id="lcW9Current" style="display:none;margin-top:.3rem;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:6px;padding:.5rem .7rem;font-size:.83rem;display:flex;align-items:center;gap:.6rem">
-      <span>📄 <a id="lcW9Link" href="#" target="_blank" style="color:var(--sky)">已上传 W-9</a></span>
-      <button class="btn btn-sm" style="background:#fff1f2;color:#be123c;border:1px solid #fda4af;margin-left:auto" onclick="deleteLaborCompanyW9()">删除</button>
-    </div>
+    <div id="lcW9Current" style="margin-top:.3rem"></div>
     <div id="lcW9Upload" style="margin-top:.4rem">
       <div id="lcW9DropZone"
            ondragover="event.preventDefault();this.style.background='#eff6ff';this.style.borderColor='#0ea5e9'"
@@ -1250,10 +1244,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
            onclick="document.getElementById('lcW9File').click()"
            style="border:2px dashed #cbd5e1;border-radius:8px;padding:.9rem;text-align:center;background:#f8fafc;cursor:pointer;transition:all .15s">
         <div style="font-size:1.3rem">📎</div>
-        <div id="lcW9DropText" style="font-size:.82rem;font-weight:600;color:#0f2b5b">拖拽 W-9 到此处或点击选择</div>
+        <div id="lcW9DropText" style="font-size:.82rem;font-weight:600;color:#0f2b5b">拖拽 W-9 到此处或点击选择（可多张）</div>
         <div style="font-size:.72rem;color:#64748b;margin-top:.15rem">支持 PDF / 图片（≤20MB）</div>
       </div>
-      <input type="file" id="lcW9File" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="lcW9ShowPicked()">
+      <input type="file" id="lcW9File" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none" onchange="lcW9ShowPicked()">
     </div>
   </div>
 
@@ -12435,8 +12429,8 @@ function renderLaborCompanies() {
       <td><strong>${esc(c.name)}</strong></td>
       <td>${esc(c.contact_person||'')}</td>
       <td>${esc(c.phone||'')}</td>
-      <td style="font-family:monospace;font-size:.83rem">${c.ein?`${esc(c.ein)} ${c.ein_verified?'<span title="已验证" style="color:#16a34a">✔</span>':''}`:'-'}${c.ein_file_name?` <a href="/api/admin/labor-companies/${c.id}/ein-doc" target="_blank" title="EIN 确认信" style="color:var(--sky);font-size:.78rem;font-family:inherit">📄</a>`:''}</td>
-      <td>${c.w9_file_name?`<a href="/api/admin/labor-companies/${c.id}/w9" target="_blank" style="color:var(--sky);font-size:.8rem">📄 W-9</a>`:'<span style="color:var(--gray-300);font-size:.8rem">—</span>'}</td>
+      <td style="font-family:monospace;font-size:.83rem">${c.ein?`${esc(c.ein)} ${c.ein_verified?'<span title="已验证" style="color:#16a34a">✔</span>':''}`:'-'}${(c.ein_files||[]).map(f=>` <a href="/api/admin/labor-companies/files/${f.id}" target="_blank" title="EIN 文件: ${esc(f.file_name||'')}" style="color:var(--sky);font-size:.78rem;font-family:inherit">📄</a>`).join('')}</td>
+      <td>${(c.w9_files||[]).length?(c.w9_files.map((f,i)=>`<a href="/api/admin/labor-companies/files/${f.id}" target="_blank" title="${esc(f.file_name||'')}" style="color:var(--sky);font-size:.8rem;white-space:nowrap">📄 W-9${c.w9_files.length>1?' '+(i+1):''}</a>`).join(' ')):'<span style="color:var(--gray-300);font-size:.8rem">—</span>'}</td>
       <td>${c.agreement_signed?'<span class="badge badge-completed" style="font-size:.75rem">已签</span>':'<span style="color:var(--gray-300);font-size:.8rem">—</span>'}</td>
       <td style="font-size:.83rem">${c.payment_method_type?(pmLabel[c.payment_method_type]||c.payment_method_type):'—'}</td>
       <td>${c.worker_count||0}</td>
@@ -12468,32 +12462,13 @@ function openLaborCompanyModal(c) {
   document.getElementById('lcEinVerifiedBadge').style.display = einVerified ? '' : 'none';
   document.getElementById('lcVerifyEinBtn').textContent = einVerified ? '✓ 已验证（点击撤销）' : '✓ 标记已验证';
   document.getElementById('lcVerifyEinBtn').style.display = c?.id ? '' : 'none';
-  // W9
-  const w9Wrap = document.getElementById('lcW9Current');
-  if (c?.w9_file_name) {
-    w9Wrap.style.display = 'flex';
-    document.getElementById('lcW9Link').href = `/api/admin/labor-companies/${c.id}/w9`;
-    document.getElementById('lcW9Link').textContent = '📄 ' + c.w9_file_name;
-    document.getElementById('lcW9Upload').style.display = 'none';
-  } else {
-    w9Wrap.style.display = 'none';
-    document.getElementById('lcW9Upload').style.display = '';
-  }
+  // W9 / EIN 文件列表 (可多张); 上传区始终显示, 随时可补传
+  _lcRenderFileList('lcW9Current', c ? c.w9_files : []);
+  _lcRenderFileList('lcEinDocCurrent', c ? c.ein_files : []);
   document.getElementById('lcW9File').value = '';
-  if (typeof lcW9ShowPicked === 'function') lcW9ShowPicked();
-  // EIN 确认信
-  const einDocWrap = document.getElementById('lcEinDocCurrent');
-  if (c?.ein_file_name) {
-    einDocWrap.style.display = 'flex';
-    document.getElementById('lcEinDocLink').href = `/api/admin/labor-companies/${c.id}/ein-doc`;
-    document.getElementById('lcEinDocLink').textContent = '📄 ' + c.ein_file_name;
-    document.getElementById('lcEinDocUpload').style.display = 'none';
-  } else {
-    einDocWrap.style.display = 'none';
-    document.getElementById('lcEinDocUpload').style.display = '';
-  }
   document.getElementById('lcEinDocFile').value = '';
-  if (typeof lcEinDocShowPicked === 'function') lcEinDocShowPicked();
+  lcW9ShowPicked();
+  lcEinDocShowPicked();
   // Agreement
   document.getElementById('lcAgreementSigned').checked = !!(c?.agreement_signed);
   document.getElementById('lcAgreementNotes').value = c?.agreement_notes || '';
@@ -12576,19 +12551,14 @@ async function saveLaborCompany() {
       const r = await api('/admin/labor-companies', { method: 'POST', body: JSON.stringify(payload) });
       savedId = r.id;
     }
-    // Upload W9 if a file was selected
-    const w9File = document.getElementById('lcW9File').files[0];
-    if (w9File && savedId) {
-      const fd = new FormData();
-      fd.append('file', w9File);
-      await fetch(`/api/admin/labor-companies/${savedId}/w9`, { method: 'POST', body: fd, credentials: 'include' });
-    }
-    // Upload EIN document if a file was selected
-    const einDocFile = document.getElementById('lcEinDocFile').files[0];
-    if (einDocFile && savedId) {
-      const fd = new FormData();
-      fd.append('file', einDocFile);
-      await fetch(`/api/admin/labor-companies/${savedId}/ein-doc`, { method: 'POST', body: fd, credentials: 'include' });
+    // Upload any selected W-9 / EIN files (multi-file)
+    for (const [inputId, type] of [['lcW9File', 'w9'], ['lcEinDocFile', 'ein']]) {
+      const files = [...document.getElementById(inputId).files];
+      if (files.length && savedId) {
+        const fd = new FormData();
+        files.forEach(f => fd.append('files', f));
+        await fetch(`/api/admin/labor-companies/${savedId}/files/${type}`, { method: 'POST', body: fd, credentials: 'include' });
+      }
     }
     closeLaborCompanyModal();
     await loadLaborCompanies();
@@ -12611,14 +12581,13 @@ async function verifyLaborCompanyEin() {
     showToast(updated?.ein_verified ? 'EIN 已标记为已验证' : '已撤销 EIN 验证', 'success');
   } catch(e) { showToast('操作失败', 'error'); }
 }
+// (旧单文件删除入口已由 deleteLcFile 逐张删除取代, 保留函数防旧引用)
 async function deleteLaborCompanyW9() {
   const id = document.getElementById('lcId').value;
   if (!id || !confirm('确认删除 W-9 文件？')) return;
   try {
     await api(`/admin/labor-companies/${id}/w9`, { method: 'DELETE' });
     await loadLaborCompanies();
-    document.getElementById('lcW9Current').style.display = 'none';
-    document.getElementById('lcW9Upload').style.display = '';
     showToast('W-9 已删除', 'success');
   } catch(e) { showToast('删除失败', 'error'); }
 }
@@ -24382,53 +24351,60 @@ async function loadPaperW9List() {
   }
 }
 
-// 分包商 W-9 拖拽上传: 拖进来的文件塞进隐藏的 file input, 保存逻辑不变
+// 分包商 W-9 / EIN 文件: 可多张, 拖拽或点选, 多次拖拽累加到隐藏 input, 保存时统一上传
+function _lcAddFiles(inputId, textId, incoming, label) {
+  const inp = document.getElementById(inputId);
+  const dt = new DataTransfer();
+  [...(inp.files || [])].forEach(f => dt.items.add(f));
+  let rejected = 0;
+  [...incoming].forEach(f => { /\.(pdf|jpe?g|png)$/i.test(f.name) ? dt.items.add(f) : rejected++; });
+  if (rejected) showToast('已跳过不支持的格式 (只收 PDF / JPG / PNG)', 'error');
+  inp.files = dt.files;
+  _lcShowPicked(inputId, textId, label);
+}
+function _lcShowPicked(inputId, textId, label) {
+  const inp = document.getElementById(inputId);
+  const t = document.getElementById(textId);
+  if (!t) return;
+  const fs = [...(inp.files || [])];
+  t.textContent = fs.length
+    ? `✅ 已选 ${fs.length} 张（保存时上传）: ` + fs.map(f => f.name).join('、')
+    : `拖拽${label}到此处或点击选择（可多张）`;
+}
 function lcW9HandleDrop(e) {
   e.preventDefault();
   const dz = document.getElementById('lcW9DropZone');
   if (dz) { dz.style.background = '#f8fafc'; dz.style.borderColor = '#cbd5e1'; }
-  const files = e.dataTransfer && e.dataTransfer.files;
-  if (!files || !files.length) return;
-  const f = files[0];
-  if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { showToast('只支持 PDF / JPG / PNG', 'error'); return; }
-  const dt = new DataTransfer();
-  dt.items.add(f);
-  document.getElementById('lcW9File').files = dt.files;
-  lcW9ShowPicked();
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) _lcAddFiles('lcW9File', 'lcW9DropText', e.dataTransfer.files, ' W-9 ');
 }
-function lcW9ShowPicked() {
-  const inp = document.getElementById('lcW9File');
-  const t = document.getElementById('lcW9DropText');
-  if (t) t.textContent = (inp.files && inp.files[0]) ? '✅ ' + inp.files[0].name + '（保存时上传）' : '拖拽 W-9 到此处或点击选择';
-}
-// 分包商 EIN 确认信拖拽上传 (与 W-9 同款)
+function lcW9ShowPicked() { _lcShowPicked('lcW9File', 'lcW9DropText', ' W-9 '); }
 function lcEinDocHandleDrop(e) {
   e.preventDefault();
   const dz = document.getElementById('lcEinDocDropZone');
   if (dz) { dz.style.background = '#f8fafc'; dz.style.borderColor = '#cbd5e1'; }
-  const files = e.dataTransfer && e.dataTransfer.files;
-  if (!files || !files.length) return;
-  const f = files[0];
-  if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { showToast('只支持 PDF / JPG / PNG', 'error'); return; }
-  const dt = new DataTransfer();
-  dt.items.add(f);
-  document.getElementById('lcEinDocFile').files = dt.files;
-  lcEinDocShowPicked();
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) _lcAddFiles('lcEinDocFile', 'lcEinDocDropText', e.dataTransfer.files, ' EIN 文件');
 }
-function lcEinDocShowPicked() {
-  const inp = document.getElementById('lcEinDocFile');
-  const t = document.getElementById('lcEinDocDropText');
-  if (t) t.textContent = (inp.files && inp.files[0]) ? '✅ ' + inp.files[0].name + '（保存时上传）' : '拖拽 EIN 文件到此处或点击选择';
+function lcEinDocShowPicked() { _lcShowPicked('lcEinDocFile', 'lcEinDocDropText', ' EIN 文件'); }
+// 已上传文件列表 (每张: 下载链接 + 删除)
+function _lcRenderFileList(containerId, files) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = (files || []).map(f =>
+    `<div style="display:flex;align-items:center;gap:.6rem;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:6px;padding:.4rem .7rem;font-size:.83rem;margin-bottom:.3rem">
+      <a href="/api/admin/labor-companies/files/${f.id}" target="_blank" style="color:var(--sky);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 ${esc(f.file_name || '文件')}</a>
+      <button class="btn btn-sm" style="background:#fff1f2;color:#be123c;border:1px solid #fda4af;margin-left:auto;flex-shrink:0" onclick="deleteLcFile(${f.id})">删除</button>
+    </div>`).join('');
 }
-async function deleteLaborCompanyEinDoc() {
-  const id = document.getElementById('lcId').value;
-  if (!id) return;
-  if (!confirm('确定删除已上传的 EIN 文件？')) return;
+async function deleteLcFile(fid) {
+  if (!confirm('确定删除这张文件？')) return;
   try {
-    await api(`/admin/labor-companies/${id}/ein-doc`, { method: 'DELETE' });
-    document.getElementById('lcEinDocCurrent').style.display = 'none';
-    document.getElementById('lcEinDocUpload').style.display = '';
+    await api(`/admin/labor-companies/files/${fid}`, { method: 'DELETE' });
     await loadLaborCompanies();
+    // 弹窗还开着: 用刷新后的数据重画两个文件列表
+    const id = parseInt(document.getElementById('lcId').value);
+    const c = _allLaborCompanies.find(x => x.id === id);
+    _lcRenderFileList('lcW9Current', c ? c.w9_files : []);
+    _lcRenderFileList('lcEinDocCurrent', c ? c.ein_files : []);
     showToast('已删除', 'success');
   } catch (e) { showToast('删除失败', 'error'); }
 }
