@@ -2413,6 +2413,9 @@ try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein_verified_at DATETIME D
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN w9_file_path TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN w9_file_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN w9_uploaded_at DATETIME DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein_file_path TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein_file_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE labor_companies ADD COLUMN ein_uploaded_at DATETIME DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN agreement_signed INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN agreement_signed_at DATETIME DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE labor_companies ADD COLUMN agreement_notes TEXT DEFAULT ''"); } catch {}
@@ -17133,6 +17136,38 @@ app.get('/api/admin/labor-companies/:id/w9', requireAdmin, async (req, res) => {
 app.delete('/api/admin/labor-companies/:id/w9', requireAdmin, (req, res) => {
   const id = parseInt(req.params.id);
   db.prepare(`UPDATE labor_companies SET w9_file_path='', w9_file_name='', w9_uploaded_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id);
+  res.json({ success: true });
+});
+
+// EIN 确认信 (CP 575 等) upload / download / delete for labor company — mirrors the W9 flow
+app.post('/api/admin/labor-companies/:id/ein-doc', requireAdmin, docUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'File required' });
+  const id = parseInt(req.params.id);
+  const lc = db.prepare('SELECT id FROM labor_companies WHERE id=?').get(id);
+  if (!lc) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE labor_companies SET ein_file_path=?, ein_file_name=?, ein_uploaded_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(req.file.path, req.file.originalname, id);
+  res.json({ success: true, file_name: req.file.originalname });
+});
+app.get('/api/admin/labor-companies/:id/ein-doc', requireAdmin, async (req, res) => {
+  const lc = db.prepare('SELECT ein_file_path, ein_file_name FROM labor_companies WHERE id=?').get(req.params.id);
+  if (!lc || !lc.ein_file_path) return res.status(404).json({ error: 'No EIN document on file' });
+  const filePath = lc.ein_file_path;
+  const fileName = lc.ein_file_name || 'EIN.pdf';
+  if (storage && storage.isR2 && storage.isR2()) {
+    try {
+      const url = await storage.getDownloadUrl(filePath);
+      return res.redirect(302, url);
+    } catch (e) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+  }
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
+  res.download(filePath, fileName);
+});
+app.delete('/api/admin/labor-companies/:id/ein-doc', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  db.prepare(`UPDATE labor_companies SET ein_file_path='', ein_file_name='', ein_uploaded_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id);
   res.json({ success: true });
 });
 

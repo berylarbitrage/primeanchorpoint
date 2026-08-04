@@ -1213,6 +1213,28 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
   <div id="lcEinVerifiedBadge" style="display:none;margin-top:.4rem;font-size:.8rem;color:#16a34a">✅ 税号已验证</div>
 
+  <!-- EIN 确认信上传 -->
+  <div style="margin-top:.8rem">
+    <label style="font-size:.85rem;font-weight:500;color:var(--gray-700)">EIN 文件（IRS 确认信 CP 575 等）</label>
+    <div id="lcEinDocCurrent" style="display:none;margin-top:.3rem;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:6px;padding:.5rem .7rem;font-size:.83rem;align-items:center;gap:.6rem">
+      <span>📄 <a id="lcEinDocLink" href="#" target="_blank" style="color:var(--sky)">已上传 EIN 文件</a></span>
+      <button class="btn btn-sm" style="background:#fff1f2;color:#be123c;border:1px solid #fda4af;margin-left:auto" onclick="deleteLaborCompanyEinDoc()">删除</button>
+    </div>
+    <div id="lcEinDocUpload" style="margin-top:.4rem">
+      <div id="lcEinDocDropZone"
+           ondragover="event.preventDefault();this.style.background='#eff6ff';this.style.borderColor='#0ea5e9'"
+           ondragleave="this.style.background='#f8fafc';this.style.borderColor='#cbd5e1'"
+           ondrop="lcEinDocHandleDrop(event)"
+           onclick="document.getElementById('lcEinDocFile').click()"
+           style="border:2px dashed #cbd5e1;border-radius:8px;padding:.9rem;text-align:center;background:#f8fafc;cursor:pointer;transition:all .15s">
+        <div style="font-size:1.3rem">📎</div>
+        <div id="lcEinDocDropText" style="font-size:.82rem;font-weight:600;color:#0f2b5b">拖拽 EIN 文件到此处或点击选择</div>
+        <div style="font-size:.72rem;color:#64748b;margin-top:.15rem">支持 PDF / 图片（≤20MB）</div>
+      </div>
+      <input type="file" id="lcEinDocFile" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="lcEinDocShowPicked()">
+    </div>
+  </div>
+
   <!-- W9 上传 -->
   <div style="margin-top:.8rem">
     <label style="font-size:.85rem;font-weight:500;color:var(--gray-700)">W-9 文件</label>
@@ -12413,7 +12435,7 @@ function renderLaborCompanies() {
       <td><strong>${esc(c.name)}</strong></td>
       <td>${esc(c.contact_person||'')}</td>
       <td>${esc(c.phone||'')}</td>
-      <td style="font-family:monospace;font-size:.83rem">${c.ein?`${esc(c.ein)} ${c.ein_verified?'<span title="已验证" style="color:#16a34a">✔</span>':''}`:'-'}</td>
+      <td style="font-family:monospace;font-size:.83rem">${c.ein?`${esc(c.ein)} ${c.ein_verified?'<span title="已验证" style="color:#16a34a">✔</span>':''}`:'-'}${c.ein_file_name?` <a href="/api/admin/labor-companies/${c.id}/ein-doc" target="_blank" title="EIN 确认信" style="color:var(--sky);font-size:.78rem;font-family:inherit">📄</a>`:''}</td>
       <td>${c.w9_file_name?`<a href="/api/admin/labor-companies/${c.id}/w9" target="_blank" style="color:var(--sky);font-size:.8rem">📄 W-9</a>`:'<span style="color:var(--gray-300);font-size:.8rem">—</span>'}</td>
       <td>${c.agreement_signed?'<span class="badge badge-completed" style="font-size:.75rem">已签</span>':'<span style="color:var(--gray-300);font-size:.8rem">—</span>'}</td>
       <td style="font-size:.83rem">${c.payment_method_type?(pmLabel[c.payment_method_type]||c.payment_method_type):'—'}</td>
@@ -12459,6 +12481,19 @@ function openLaborCompanyModal(c) {
   }
   document.getElementById('lcW9File').value = '';
   if (typeof lcW9ShowPicked === 'function') lcW9ShowPicked();
+  // EIN 确认信
+  const einDocWrap = document.getElementById('lcEinDocCurrent');
+  if (c?.ein_file_name) {
+    einDocWrap.style.display = 'flex';
+    document.getElementById('lcEinDocLink').href = `/api/admin/labor-companies/${c.id}/ein-doc`;
+    document.getElementById('lcEinDocLink').textContent = '📄 ' + c.ein_file_name;
+    document.getElementById('lcEinDocUpload').style.display = 'none';
+  } else {
+    einDocWrap.style.display = 'none';
+    document.getElementById('lcEinDocUpload').style.display = '';
+  }
+  document.getElementById('lcEinDocFile').value = '';
+  if (typeof lcEinDocShowPicked === 'function') lcEinDocShowPicked();
   // Agreement
   document.getElementById('lcAgreementSigned').checked = !!(c?.agreement_signed);
   document.getElementById('lcAgreementNotes').value = c?.agreement_notes || '';
@@ -12547,6 +12582,13 @@ async function saveLaborCompany() {
       const fd = new FormData();
       fd.append('file', w9File);
       await fetch(`/api/admin/labor-companies/${savedId}/w9`, { method: 'POST', body: fd, credentials: 'include' });
+    }
+    // Upload EIN document if a file was selected
+    const einDocFile = document.getElementById('lcEinDocFile').files[0];
+    if (einDocFile && savedId) {
+      const fd = new FormData();
+      fd.append('file', einDocFile);
+      await fetch(`/api/admin/labor-companies/${savedId}/ein-doc`, { method: 'POST', body: fd, credentials: 'include' });
     }
     closeLaborCompanyModal();
     await loadLaborCompanies();
@@ -24358,6 +24400,37 @@ function lcW9ShowPicked() {
   const inp = document.getElementById('lcW9File');
   const t = document.getElementById('lcW9DropText');
   if (t) t.textContent = (inp.files && inp.files[0]) ? '✅ ' + inp.files[0].name + '（保存时上传）' : '拖拽 W-9 到此处或点击选择';
+}
+// 分包商 EIN 确认信拖拽上传 (与 W-9 同款)
+function lcEinDocHandleDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('lcEinDocDropZone');
+  if (dz) { dz.style.background = '#f8fafc'; dz.style.borderColor = '#cbd5e1'; }
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (!files || !files.length) return;
+  const f = files[0];
+  if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { showToast('只支持 PDF / JPG / PNG', 'error'); return; }
+  const dt = new DataTransfer();
+  dt.items.add(f);
+  document.getElementById('lcEinDocFile').files = dt.files;
+  lcEinDocShowPicked();
+}
+function lcEinDocShowPicked() {
+  const inp = document.getElementById('lcEinDocFile');
+  const t = document.getElementById('lcEinDocDropText');
+  if (t) t.textContent = (inp.files && inp.files[0]) ? '✅ ' + inp.files[0].name + '（保存时上传）' : '拖拽 EIN 文件到此处或点击选择';
+}
+async function deleteLaborCompanyEinDoc() {
+  const id = document.getElementById('lcId').value;
+  if (!id) return;
+  if (!confirm('确定删除已上传的 EIN 文件？')) return;
+  try {
+    await api(`/admin/labor-companies/${id}/ein-doc`, { method: 'DELETE' });
+    document.getElementById('lcEinDocCurrent').style.display = 'none';
+    document.getElementById('lcEinDocUpload').style.display = '';
+    await loadLaborCompanies();
+    showToast('已删除', 'success');
+  } catch (e) { showToast('删除失败', 'error'); }
 }
 function paperW9HandleDrop(e) {
   e.preventDefault();
