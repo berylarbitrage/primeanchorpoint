@@ -25630,6 +25630,27 @@ app.delete('/api/admin/recruit-jobs/:id', requireAdmin, requireRole('admin'), (r
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// 分享文案 (发工人群/朋友圈用): 只含对外信息, 不带工头上限等内部内容; en/es 自动翻译
+app.get('/api/admin/recruit-jobs/:id/share-text', requireAdmin, async (req, res) => {
+  try {
+    const job = db.prepare('SELECT * FROM recruit_jobs WHERE id=?').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    const lang = ['en', 'es'].includes(req.query.lang) ? req.query.lang : 'zh';
+    const zh = [
+      '📢 招工啦！',
+      '🏭 仓库: ' + job.warehouse,
+      '👷 工种: ' + job.position,
+      job.worker_pay ? '💰 工资: ' + job.worker_pay : '',
+      job.details ? '📋 ' + job.details : ''
+    ].filter(Boolean).join('\n');
+    let text = zh;
+    if (lang !== 'zh') {
+      const t = await translateText(zh, 'zh', lang);
+      if (t) text = t;
+    }
+    res.json({ text, lang });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
   const sites = db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all();
