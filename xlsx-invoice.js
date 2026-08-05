@@ -149,6 +149,50 @@ function readXlsx(buf) {
   return parseSheet(files.get(sheetPath).toString('utf8'), shared);
 }
 
+// 全部工作表 (按 tab 顺序) → [{name, rows}]。「每个班次一个分页」的时间表用。
+function allSheetPaths(files) {
+  const out = [];
+  const wb = files.get('xl/workbook.xml');
+  const rels = files.get('xl/_rels/workbook.xml.rels');
+  if (wb && rels) {
+    // rels 的属性顺序不固定 (Excel 写 Id 在前, openpyxl 写 Target 在前) →
+    // 逐个 <Relationship> 标签独立取 Id / Target
+    const relMap = {};
+    for (const rtag of (rels.toString('utf8').match(/<Relationship\b[^>]*\/?>/g) || [])) {
+      const idM = rtag.match(/\bId="([^"]+)"/);
+      const tgtM = rtag.match(/\bTarget="([^"]+)"/);
+      if (idM && tgtM) relMap[idM[1]] = tgtM[1];
+    }
+    const tags = wb.toString('utf8').match(/<sheet\b[^>]*\/?>/g) || [];
+    for (const tag of tags) {
+      const nameM = tag.match(/\bname="([^"]*)"/);
+      const ridM = tag.match(/\br:id="([^"]+)"/);
+      if (!ridM || !relMap[ridM[1]]) continue;
+      let t = relMap[ridM[1]].replace(/^\//, '');
+      if (!t.startsWith('xl/')) t = 'xl/' + t.replace(/^\.\//, '');
+      if (files.has(t)) out.push({ name: nameM ? decodeXml(nameM[1]) : 'Sheet', path: t });
+    }
+  }
+  if (!out.length) { const p = firstSheetPath(files); if (p) out.push({ name: 'Sheet1', path: p }); }
+  return out;
+}
+function readXlsxAll(buf) {
+  const files = unzip(buf);
+  const sharedBuf = files.get('xl/sharedStrings.xml');
+  const shared = parseSharedStrings(sharedBuf ? sharedBuf.toString('utf8') : '');
+  return allSheetPaths(files).map(s => ({ name: s.name, rows: parseSheet(files.get(s.path).toString('utf8'), shared) }));
+}
+function readAllSheetsAny(buf) {
+  try { return readXlsxAll(buf); } catch (e) {
+    let XLSX;
+    try { XLSX = require('xlsx'); } catch (_) {
+      throw new Error('这看起来是旧版 .xls 文件；请在 Excel / WPS 里「另存为 .xlsx」后再上传（或让管理员安装 xlsx 组件）。');
+    }
+    const wb = XLSX.read(buf, { type: 'buffer' });
+    return (wb.SheetNames || []).map(nm => ({ name: nm, rows: XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: true, defval: null }) }));
+  }
+}
+
 // Read either a modern .xlsx (dependency-free, above) or a legacy .xls (OLE2/BIFF)
 // into rows[][]. .xls needs SheetJS, which is only require()d on that fallback path so
 // the light .xlsx reader keeps working even if the optional package isn't installed.
@@ -535,7 +579,23 @@ function buildFromShiftLog(rows, warnings) {
 }
 
 module.exports = function parseInvoiceWorkbook(buf, filename) {
-  const data = buildInvoiceData(readAnyWorkbook(buf));
+  // 读全部分页: 「每个班次一个 sheet」的时间表, 用 sheet 名 (如 "7.20 night")
+  // 生成日期块头再拼成一张大表; 单 sheet 文件行为不变。说明页跳过。
+  let sheets = [];
+  try { sheets = readAllSheetsAny(buf); } catch (_) { sheets = []; }
+  let data = null;
+  if (sheets.length) {
+    const combined = [];
+    for (const sh of sheets) {
+      const nm = String(sh.name || '');
+      if (/说明|instruction|readme/i.test(nm)) continue;
+      const m = nm.match(/(\d{1,2})[\/.\-月]\s*(\d{1,2})/);
+      if (m) combined.push([null, (+m[1]) + '/' + (+m[2]) + ' ' + nm]);
+      combined.push(...sh.rows);
+    }
+    if (looksLikeShiftLog(combined)) data = buildFromShiftLog(combined, []);
+  }
+  if (!data) data = buildInvoiceData(readAnyWorkbook(buf));
   // If the sheet carried no service period, fall back to the one embedded in the
   // file name (weekly exports do this) and drop the "no period" warning.
   if (data && data.ok && !data.periodStart && filename) {
