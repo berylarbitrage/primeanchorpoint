@@ -25574,7 +25574,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS recruit_jobs (
   status_at DATETIME DEFAULT NULL,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// 班次工资: JSON 数组 [{shift:'早班 07:00–15:30', worker_pay:'$18/h', foreman_cap:'$20/h'}, ...]
+try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN shifts TEXT DEFAULT ''"); } catch {}
+// 面试: 是否需要 + 面试要求 (带什么/找谁/地址等)
+try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN interview_required INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN interview_notes TEXT DEFAULT ''"); } catch {}
 function _recruitToday() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); }
+function _recruitCleanShifts(v) {
+  try {
+    const a = typeof v === 'string' ? JSON.parse(v || '[]') : (v || []);
+    if (!Array.isArray(a)) return '';
+    const clean = a.slice(0, 10).map(s => ({
+      shift: String((s && s.shift) || '').trim().slice(0, 80),
+      worker_pay: String((s && s.worker_pay) || '').trim().slice(0, 40),
+      foreman_cap: String((s && s.foreman_cap) || '').trim().slice(0, 40)
+    })).filter(s => s.shift);
+    return clean.length ? JSON.stringify(clean) : '';
+  } catch (_) { return ''; }
+}
 // 列表: 在招的全部 + 最近 30 天内关闭/找到人的 (核对历史一目了然)
 app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
   try {
@@ -25586,13 +25603,14 @@ app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
 });
 app.post('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
   try {
-    const { warehouse, position, details, worker_pay, foreman_cap } = req.body || {};
+    const { warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes } = req.body || {};
     if (!String(warehouse || '').trim()) return res.status(400).json({ error: '请选择仓库' });
     if (!String(position || '').trim()) return res.status(400).json({ error: '请填写工种' });
-    const info = db.prepare(`INSERT INTO recruit_jobs (warehouse, position, details, worker_pay, foreman_cap, created_by, last_check_date, last_check_by)
-      VALUES (?,?,?,?,?,?,?,?)`).run(
+    const info = db.prepare(`INSERT INTO recruit_jobs (warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, created_by, last_check_date, last_check_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
       String(warehouse).trim(), String(position).trim(), String(details || '').trim(),
       String(worker_pay || '').trim(), String(foreman_cap || '').trim(),
+      _recruitCleanShifts(shifts), interview_required ? 1 : 0, String(interview_notes || '').trim(),
       req.userName || '', _recruitToday(), req.userName || '');
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -25613,13 +25631,16 @@ app.patch('/api/admin/recruit-jobs/:id', requireAdmin, (req, res) => {
         .run(b.status, req.userName || '', _recruitToday(), req.userName || '', job.id);
       return res.json({ ok: true });
     }
-    db.prepare(`UPDATE recruit_jobs SET warehouse=?, position=?, details=?, worker_pay=?, foreman_cap=?, updated_at=datetime('now') WHERE id=?`)
+    db.prepare(`UPDATE recruit_jobs SET warehouse=?, position=?, details=?, worker_pay=?, foreman_cap=?, shifts=?, interview_required=?, interview_notes=?, updated_at=datetime('now') WHERE id=?`)
       .run(
         String(b.warehouse !== undefined ? b.warehouse : job.warehouse).trim(),
         String(b.position !== undefined ? b.position : job.position).trim(),
         String(b.details !== undefined ? b.details : job.details).trim(),
         String(b.worker_pay !== undefined ? b.worker_pay : job.worker_pay).trim(),
         String(b.foreman_cap !== undefined ? b.foreman_cap : job.foreman_cap).trim(),
+        b.shifts !== undefined ? _recruitCleanShifts(b.shifts) : (job.shifts || ''),
+        b.interview_required !== undefined ? (b.interview_required ? 1 : 0) : (job.interview_required ? 1 : 0),
+        String(b.interview_notes !== undefined ? b.interview_notes : (job.interview_notes || '')).trim(),
         job.id);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -25636,12 +25657,20 @@ app.get('/api/admin/recruit-jobs/:id/share-text', requireAdmin, async (req, res)
     const job = db.prepare('SELECT * FROM recruit_jobs WHERE id=?').get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Not found' });
     const lang = ['en', 'es'].includes(req.query.lang) ? req.query.lang : 'zh';
+    // 班次工资逐条列出 (只给工人价, 不带工头上限)
+    let shiftLines = [];
+    try {
+      shiftLines = JSON.parse(job.shifts || '[]').map(s =>
+        '⏰ ' + s.shift + (s.worker_pay ? ' · 💰 ' + s.worker_pay : ''));
+    } catch (_) {}
     const zh = [
       '📢 招工啦！',
       '🏭 仓库: ' + job.warehouse,
       '👷 工种: ' + job.position,
-      job.worker_pay ? '💰 工资: ' + job.worker_pay : '',
-      job.details ? '📋 ' + job.details : ''
+      ...shiftLines,
+      (!shiftLines.length && job.worker_pay) ? '💰 工资: ' + job.worker_pay : '',
+      job.details ? '📋 ' + job.details : '',
+      job.interview_required ? '🗣 需要面试' + (job.interview_notes ? ': ' + job.interview_notes : '') : ''
     ].filter(Boolean).join('\n');
     let text = zh;
     if (lang !== 'zh') {

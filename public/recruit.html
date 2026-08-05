@@ -81,11 +81,35 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
         <input id="fHeadcount" placeholder="如 5">
       </div>
     </div>
+    <label>班次 &amp; 工资（不同班次可以不同价，可加多条）</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <select id="sfName" style="width:auto;padding:9px 10px">
+        <option value="早班">⏰ 早班</option><option value="中班">⏰ 中班</option>
+        <option value="晚班">⏰ 晚班</option><option value="夜班">⏰ 夜班</option>
+        <option value="白班">⏰ 白班</option><option value="周末班">⏰ 周末班</option>
+        <option value="临时">⏰ 临时</option>
+      </select>
+      <input type="time" id="sfStart" style="width:auto;padding:8px 9px">
+      <span style="color:var(--gray-400)">–</span>
+      <input type="time" id="sfEnd" style="width:auto;padding:8px 9px">
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+      <input id="sfWorkerPay" placeholder="给工人 如 $18/h" style="flex:1">
+      <input id="sfForemanCap" placeholder="工头上限（内部）" style="flex:1">
+      <button type="button" onclick="addShiftRow()" style="width:auto;flex-shrink:0;padding:10px 16px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:.86rem;cursor:pointer;font-family:inherit">+ 加班次</button>
+    </div>
+    <div id="shiftRows" style="margin-top:8px"></div>
     <label>具体工作内容</label>
     <textarea id="fDetails" placeholder="比如：&#10;· 早7点到仓库，卸两个柜，约2000件&#10;· 需要有经验，能搬重物&#10;· 地址 / 找谁报到"></textarea>
+    <label>是否需要面试</label>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.88rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fIv" value="0" checked onchange="onIvChange()" style="width:auto">不需要，直接上班</label>
+      <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.88rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fIv" value="1" onchange="onIvChange()" style="width:auto">🗣 需要面试</label>
+    </div>
+    <textarea id="fIvNotes" style="display:none;margin-top:6px;min-height:60px" placeholder="面试要求：什么时间、去哪、找谁、带什么（如带ID、穿劳保鞋）"></textarea>
     <div class="grid2">
       <div>
-        <label>给工人多少钱</label>
+        <label>给工人多少钱（不分班次时填这里）</label>
         <input id="fWorkerPay" placeholder="如 $18/h 或 $0.10/件">
       </div>
       <div>
@@ -178,11 +202,57 @@ async function reload() {
   _today = (r && r.today) || '';
   render();
 }
+function parseShifts(s) {
+  try { const a = JSON.parse(s || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; }
+}
 function payChips(j) {
+  const shifts = parseShifts(j.shifts);
   let h = '';
-  if (j.worker_pay) h += '<span class="pay-chip">👷 工人 ' + esc(j.worker_pay) + '</span>';
-  if (j.foreman_cap) h += '<span class="pay-chip cap">🦺 工头上限 ' + esc(j.foreman_cap) + '</span>';
-  return h ? '<div class="pay-line">' + h + '</div>' : '';
+  // 分班次工资: 每班一行
+  h += shifts.map(s =>
+    '<div class="pay-line"><span class="pay-chip" style="background:#fef3c7;border-color:#fcd34d;color:#92400e">⏰ ' + esc(s.shift) + '</span>'
+    + (s.worker_pay ? '<span class="pay-chip">👷 ' + esc(s.worker_pay) + '</span>' : '')
+    + (s.foreman_cap ? '<span class="pay-chip cap">🦺 上限 ' + esc(s.foreman_cap) + '</span>' : '')
+    + '</div>').join('');
+  let g = '';
+  if (j.worker_pay) g += '<span class="pay-chip">👷 工人 ' + esc(j.worker_pay) + '</span>';
+  if (j.foreman_cap) g += '<span class="pay-chip cap">🦺 工头上限 ' + esc(j.foreman_cap) + '</span>';
+  if (g) h += '<div class="pay-line">' + g + '</div>';
+  if (j.interview_required) h += '<div class="pay-line"><span class="pay-chip" style="background:#fdf4ff;border-color:#e9d5ff;color:#7e22ce">🗣 需要面试' + (j.interview_notes ? ': ' + esc(j.interview_notes) : '') + '</span></div>';
+  return h;
+}
+// ─── 班次+工资 构建器 ───
+let _shiftRows = [];
+function onIvChange() {
+  const need = document.querySelector('input[name="fIv"]:checked').value === '1';
+  document.getElementById('fIvNotes').style.display = need ? '' : 'none';
+}
+function addShiftRow() {
+  const name = document.getElementById('sfName').value;
+  const st = document.getElementById('sfStart').value;
+  const en = document.getElementById('sfEnd').value;
+  let shift = name;
+  if (st && en) shift += ' ' + st + '–' + en;
+  else if (st) shift += ' ' + st + ' 开始';
+  const wp = document.getElementById('sfWorkerPay').value.trim();
+  const fc = document.getElementById('sfForemanCap').value.trim();
+  if (_shiftRows.some(r => r.shift === shift)) { toast('这个班次已经加过了'); return; }
+  _shiftRows.push({ shift, worker_pay: wp, foreman_cap: fc });
+  document.getElementById('sfStart').value = '';
+  document.getElementById('sfEnd').value = '';
+  document.getElementById('sfWorkerPay').value = '';
+  document.getElementById('sfForemanCap').value = '';
+  renderShiftRows();
+}
+function removeShiftRow(i) { _shiftRows.splice(i, 1); renderShiftRows(); }
+function renderShiftRows() {
+  document.getElementById('shiftRows').innerHTML = _shiftRows.map((r, i) =>
+    '<div style="display:flex;align-items:center;gap:8px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;margin-bottom:5px;font-size:.85rem;flex-wrap:wrap">'
+    + '<b>⏰ ' + esc(r.shift) + '</b>'
+    + (r.worker_pay ? '<span style="color:#065f46;font-weight:700">👷 ' + esc(r.worker_pay) + '</span>' : '')
+    + (r.foreman_cap ? '<span style="color:#1d4ed8;font-weight:700">🦺 上限 ' + esc(r.foreman_cap) + '</span>' : '')
+    + '<span onclick="removeShiftRow(' + i + ')" style="margin-left:auto;cursor:pointer;font-weight:900;color:var(--red)">&times;</span>'
+    + '</div>').join('');
 }
 function render() {
   document.getElementById('dateNow').textContent = '📅 ' + _today;
@@ -318,6 +388,11 @@ function startEdit(id) {
   document.getElementById('fWorkerPay').value = j.worker_pay || '';
   document.getElementById('fForemanCap').value = j.foreman_cap || '';
   document.getElementById('fHeadcount').value = '';
+  _shiftRows = parseShifts(j.shifts);
+  renderShiftRows();
+  document.querySelector('input[name="fIv"][value="' + (j.interview_required ? 1 : 0) + '"]').checked = true;
+  document.getElementById('fIvNotes').value = j.interview_notes || '';
+  onIvChange();
   document.getElementById('formTitle').textContent = '✏️ 编辑招工需求 #' + id;
   document.getElementById('saveBtn').textContent = '保存修改';
   document.getElementById('cancelEditBtn').style.display = '';
@@ -325,7 +400,11 @@ function startEdit(id) {
 }
 function cancelEdit() {
   document.getElementById('editId').value = '';
-  ['fPosition', 'fDetails', 'fWorkerPay', 'fForemanCap', 'fHeadcount', 'fWarehouseOther'].forEach(id => document.getElementById(id).value = '');
+  ['fPosition', 'fDetails', 'fWorkerPay', 'fForemanCap', 'fHeadcount', 'fWarehouseOther', 'fIvNotes', 'sfWorkerPay', 'sfForemanCap'].forEach(id => document.getElementById(id).value = '');
+  _shiftRows = [];
+  renderShiftRows();
+  document.querySelector('input[name="fIv"][value="0"]').checked = true;
+  onIvChange();
   renderWhOptions('');
   document.getElementById('formTitle').textContent = '➕ 新增招工需求';
   document.getElementById('saveBtn').textContent = '发布';
@@ -343,7 +422,10 @@ async function saveJob() {
       position: position + (headcount ? ' × ' + headcount + '人' : ''),
       details: document.getElementById('fDetails').value.trim(),
       worker_pay: document.getElementById('fWorkerPay').value.trim(),
-      foreman_cap: document.getElementById('fForemanCap').value.trim()
+      foreman_cap: document.getElementById('fForemanCap').value.trim(),
+      shifts: _shiftRows,
+      interview_required: document.querySelector('input[name="fIv"]:checked').value === '1' ? 1 : 0,
+      interview_notes: document.getElementById('fIvNotes').value.trim()
     };
     const editId = document.getElementById('editId').value;
     const r = editId
