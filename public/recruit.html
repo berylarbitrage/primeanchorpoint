@@ -68,6 +68,8 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
     <label>仓库（下拉选择）</label>
     <select id="fWarehouse" onchange="onWhChange()"></select>
     <input id="fWarehouseOther" placeholder="输入仓库名" style="display:none;margin-top:6px">
+    <label>地址（选仓库自动带出，可改）</label>
+    <input id="fAddress" placeholder="如 950 Lunt Ave, Elk Grove Village, IL">
     <div class="grid2">
       <div>
         <label>工种</label>
@@ -197,7 +199,7 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
-let USER = null, _jobs = [], _today = '', _warehouses = [];
+let USER = null, _jobs = [], _today = '', _warehouses = [], _whAddr = {};
 const OTHER = '__other__';
 
 async function load() {
@@ -215,6 +217,15 @@ async function load() {
         ...(Array.isArray(partners) ? partners : []).map(p => (p && p.name) || '')
       ].filter(Boolean);
       _warehouses = [...new Set(names)];
+      // 仓库名 → 地址 (工作地点的 address 优先, 合作公司其次)
+      _whAddr = {};
+      (Array.isArray(partners) ? partners : []).forEach(pt => {
+        if (!pt || !pt.name) return;
+        let a = pt.address || '';
+        if (!a && pt.addresses) { try { const arr = JSON.parse(pt.addresses); if (Array.isArray(arr) && arr.length) a = arr[0].address || arr[0] || ''; } catch (_) {} }
+        if (a) _whAddr[pt.name] = String(a);
+      });
+      (Array.isArray(sites) ? sites : []).forEach(st => { if (st && st.name && st.address) _whAddr[st.name] = String(st.address); });
     } catch (_) { _warehouses = []; }
     renderWhOptions('');
     await reload();
@@ -230,8 +241,14 @@ function renderWhOptions(current) {
   onWhChange();
 }
 function onWhChange() {
-  document.getElementById('fWarehouseOther').style.display =
-    document.getElementById('fWarehouse').value === OTHER ? '' : 'none';
+  const v = document.getElementById('fWarehouse').value;
+  document.getElementById('fWarehouseOther').style.display = v === OTHER ? '' : 'none';
+  // 选到已知仓库且地址栏为空或还是上一个仓库的地址 → 自动带出
+  const addrEl = document.getElementById('fAddress');
+  if (v && v !== OTHER && _whAddr[v] && (!addrEl.value.trim() || addrEl.value === (addrEl._auto || ''))) {
+    addrEl.value = _whAddr[v];
+    addrEl._auto = _whAddr[v];
+  }
 }
 async function reload() {
   const r = await api('/admin/recruit-jobs');
@@ -342,6 +359,7 @@ function render() {
     return '<div class="job-card' + (checkedToday ? '' : ' unchecked') + '">'
       + '<span class="wh-badge">🏭 ' + esc(j.warehouse) + '</span>'
       + '<div class="pos">' + esc(j.position) + '</div>'
+      + (j.address ? '<div style="font-size:.82rem;color:var(--gray-600);margin:2px 0">📍 ' + esc(j.address) + '</div>' : '')
       + payChips(j)
       + (j.details ? '<div class="details">' + esc(j.details) + '</div>' : '')
       + '<div class="meta">发布: ' + esc(j.created_by || '') + ' · ' + esc(String(j.created_at || '').slice(0, 10)) + '</div>'
@@ -523,6 +541,8 @@ function startEdit(id) {
   document.getElementById('fIvNotes').value = j.interview_notes || '';
   onIvChange();
   _setLangValue(j.language_req || '');
+  document.getElementById('fAddress').value = j.address || '';
+  document.getElementById('fAddress')._auto = '';
   document.querySelector('input[name="fEad"][value="' + (j.ead_required ? 1 : 0) + '"]').checked = true;
   document.getElementById('formTitle').textContent = '✏️ 编辑招工需求 #' + id;
   document.getElementById('saveBtn').textContent = '保存修改';
@@ -531,7 +551,8 @@ function startEdit(id) {
 }
 function cancelEdit() {
   document.getElementById('editId').value = '';
-  ['fPosition', 'fDetails', 'fWorkerPay', 'fForemanCap', 'fHeadcount', 'fWarehouseOther', 'fIvNotes', 'sfWorkerPay', 'sfForemanCap'].forEach(id => document.getElementById(id).value = '');
+  ['fPosition', 'fDetails', 'fWorkerPay', 'fForemanCap', 'fHeadcount', 'fWarehouseOther', 'fIvNotes', 'sfWorkerPay', 'sfForemanCap', 'fAddress'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('fAddress')._auto = '';
   _shiftRows = [];
   renderShiftRows();
   document.querySelector('input[name="fIv"][value="0"]').checked = true;
@@ -562,7 +583,8 @@ async function saveJob() {
       interview_required: document.querySelector('input[name="fIv"]:checked').value === '1' ? 1 : 0,
       interview_notes: document.getElementById('fIvNotes').value.trim(),
       language_req,
-      ead_required: document.querySelector('input[name="fEad"]:checked').value === '1' ? 1 : 0
+      ead_required: document.querySelector('input[name="fEad"]:checked').value === '1' ? 1 : 0,
+      address: document.getElementById('fAddress').value.trim()
     };
     const editId = document.getElementById('editId').value;
     const r = editId

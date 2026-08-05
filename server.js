@@ -25583,6 +25583,8 @@ try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN interview_notes TEXT DEFAULT 
 try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN language_req TEXT DEFAULT ''"); } catch {}
 // 是否要求真 EAD (工卡)
 try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN ead_required INTEGER DEFAULT 0"); } catch {}
+// 仓库地址 (选仓库时自动带出, 可手改)
+try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN address TEXT DEFAULT ''"); } catch {}
 function _recruitToday() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); }
 function _recruitCleanShifts(v) {
   try {
@@ -25608,16 +25610,16 @@ app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
 });
 app.post('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
   try {
-    const { warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, language_req, ead_required } = req.body || {};
+    const { warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, language_req, ead_required, address } = req.body || {};
     if (!String(warehouse || '').trim()) return res.status(400).json({ error: '请选择仓库' });
     if (!String(position || '').trim()) return res.status(400).json({ error: '请填写工种' });
     if (!String(language_req || '').trim()) return res.status(400).json({ error: '请选择语言要求' });
-    const info = db.prepare(`INSERT INTO recruit_jobs (warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, language_req, ead_required, created_by, last_check_date, last_check_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    const info = db.prepare(`INSERT INTO recruit_jobs (warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, language_req, ead_required, address, created_by, last_check_date, last_check_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       String(warehouse).trim(), String(position).trim(), String(details || '').trim(),
       String(worker_pay || '').trim(), String(foreman_cap || '').trim(),
       _recruitCleanShifts(shifts), interview_required ? 1 : 0, String(interview_notes || '').trim(),
-      String(language_req).trim().slice(0, 80), ead_required ? 1 : 0,
+      String(language_req).trim().slice(0, 80), ead_required ? 1 : 0, String(address || '').trim().slice(0, 200),
       req.userName || '', _recruitToday(), req.userName || '');
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -25638,7 +25640,7 @@ app.patch('/api/admin/recruit-jobs/:id', requireAdmin, (req, res) => {
         .run(b.status, req.userName || '', _recruitToday(), req.userName || '', job.id);
       return res.json({ ok: true });
     }
-    db.prepare(`UPDATE recruit_jobs SET warehouse=?, position=?, details=?, worker_pay=?, foreman_cap=?, shifts=?, interview_required=?, interview_notes=?, language_req=?, ead_required=?, updated_at=datetime('now') WHERE id=?`)
+    db.prepare(`UPDATE recruit_jobs SET warehouse=?, position=?, details=?, worker_pay=?, foreman_cap=?, shifts=?, interview_required=?, interview_notes=?, language_req=?, ead_required=?, address=?, updated_at=datetime('now') WHERE id=?`)
       .run(
         String(b.warehouse !== undefined ? b.warehouse : job.warehouse).trim(),
         String(b.position !== undefined ? b.position : job.position).trim(),
@@ -25650,6 +25652,7 @@ app.patch('/api/admin/recruit-jobs/:id', requireAdmin, (req, res) => {
         String(b.interview_notes !== undefined ? b.interview_notes : (job.interview_notes || '')).trim(),
         String(b.language_req !== undefined ? b.language_req : (job.language_req || '')).trim().slice(0, 80),
         b.ead_required !== undefined ? (b.ead_required ? 1 : 0) : (job.ead_required ? 1 : 0),
+        String(b.address !== undefined ? b.address : (job.address || '')).trim().slice(0, 200),
         job.id);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -25693,6 +25696,7 @@ app.post('/api/admin/recruit-jobs/:id/share-text-foreman', requireAdmin, async (
     const zh = [
       '📢 招工啦！（工头合作）',
       '🏭 仓库: ' + job.warehouse,
+      job.address ? '📍 地址: ' + job.address : '',
       '👷 工种: ' + job.position,
       ...lines,
       job.language_req ? '🗨️ 语言要求: ' + job.language_req : '',
@@ -25724,6 +25728,7 @@ app.get('/api/admin/recruit-jobs/:id/share-text', requireAdmin, async (req, res)
     const zh = [
       '📢 招工啦！',
       '🏭 仓库: ' + job.warehouse,
+      job.address ? '📍 地址: ' + job.address : '',
       '👷 工种: ' + job.position,
       ...shiftLines,
       (!shiftLines.length && job.worker_pay) ? '💰 工资: ' + job.worker_pay : '',
