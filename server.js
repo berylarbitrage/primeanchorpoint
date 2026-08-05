@@ -25591,7 +25591,8 @@ function _recruitCleanShifts(v) {
     const clean = a.slice(0, 10).map(s => ({
       shift: String((s && s.shift) || '').trim().slice(0, 80),
       worker_pay: String((s && s.worker_pay) || '').trim().slice(0, 40),
-      foreman_cap: String((s && s.foreman_cap) || '').trim().slice(0, 40)
+      foreman_cap: String((s && s.foreman_cap) || '').trim().slice(0, 40),
+      lang: String((s && s.lang) || '').trim().slice(0, 80)
     })).filter(s => s.shift);
     return clean.length ? JSON.stringify(clean) : '';
   } catch (_) { return ''; }
@@ -25669,7 +25670,7 @@ app.get('/api/admin/recruit-jobs/:id/share-text', requireAdmin, async (req, res)
     let shiftLines = [];
     try {
       shiftLines = JSON.parse(job.shifts || '[]').map(s =>
-        '⏰ ' + s.shift + (s.worker_pay ? ' · 💰 ' + s.worker_pay : ''));
+        '⏰ ' + s.shift + (s.worker_pay ? ' · 💰 ' + s.worker_pay : '') + (s.lang ? ' · 🗨️ ' + s.lang : ''));
     } catch (_) {}
     const zh = [
       '📢 招工啦！',

@@ -100,6 +100,13 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
       <span style="color:var(--gray-400)">–</span>
       <input type="time" id="sfEnd" style="width:auto;padding:8px 9px">
     </div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:.74rem;font-weight:700;color:var(--gray-500)">该班次语言（不选 = 按整体语言要求）:</span>
+      <button type="button" class="lang-chip sf-lang" data-lv="不限" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🌐 不限</button>
+      <button type="button" class="lang-chip sf-lang" data-lv="英语" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇺🇸 英语</button>
+      <button type="button" class="lang-chip sf-lang" data-lv="西班牙语" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇲🇽 西班牙语</button>
+      <button type="button" class="lang-chip sf-lang" data-lv="中文" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇨🇳 中文</button>
+    </div>
     <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
       <input id="sfWorkerPay" placeholder="给工人 如 $18/h" style="flex:1">
       <input id="sfForemanCap" placeholder="工头上限（内部）" style="flex:1">
@@ -108,7 +115,7 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
     <div id="shiftRows" style="margin-top:8px"></div>
     <label>具体工作内容</label>
     <textarea id="fDetails" placeholder="比如：&#10;· 早7点到仓库，卸两个柜，约2000件&#10;· 需要有经验，能搬重物&#10;· 地址 / 找谁报到"></textarea>
-    <label>语言要求（必选，可多选）</label>
+    <label>语言要求（整体，必选，可多选 — 个别班次不同的在上面班次里单独选）</label>
     <div id="langChips" style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="lang-chip" data-lv="不限" onclick="toggleLang(this)" style="width:auto">🌐 不限</button>
       <button type="button" class="lang-chip" data-lv="英语" onclick="toggleLang(this)" style="width:auto">🇺🇸 英语</button>
@@ -232,6 +239,7 @@ function payChips(j) {
     '<div class="pay-line"><span class="pay-chip" style="background:#fef3c7;border-color:#fcd34d;color:#92400e">⏰ ' + esc(s.shift) + '</span>'
     + (s.worker_pay ? '<span class="pay-chip">👷 ' + esc(s.worker_pay) + '</span>' : '')
     + (s.foreman_cap ? '<span class="pay-chip cap">🦺 上限 ' + esc(s.foreman_cap) + '</span>' : '')
+    + (s.lang ? '<span class="pay-chip" style="background:#f0f9ff;border-color:#bae6fd;color:#0369a1">🗨️ ' + esc(s.lang) + '</span>' : '')
     + '</div>').join('');
   let g = '';
   if (j.worker_pay) g += '<span class="pay-chip">👷 工人 ' + esc(j.worker_pay) + '</span>';
@@ -245,19 +253,29 @@ function payChips(j) {
 // ─── 班次+工资 构建器 ───
 let _shiftRows = [];
 // 语言要求多选: 选「不限」清掉其他; 选具体语言清掉「不限」
+function toggleSfLang(btn) {
+  const v = btn.getAttribute('data-lv');
+  const on = btn.classList.contains('on');
+  if (!on && v === '不限') document.querySelectorAll('.sf-lang.on').forEach(b => b.classList.remove('on'));
+  if (!on && v !== '不限') { const any = document.querySelector('.sf-lang[data-lv="不限"]'); if (any) any.classList.remove('on'); }
+  btn.classList.toggle('on');
+}
+function _sfLangValue() {
+  return [...document.querySelectorAll('.sf-lang.on')].map(b => b.getAttribute('data-lv')).join(', ');
+}
 function toggleLang(btn) {
   const v = btn.getAttribute('data-lv');
   const on = btn.classList.contains('on');
-  if (!on && v === '不限') document.querySelectorAll('.lang-chip.on').forEach(b => b.classList.remove('on'));
-  if (!on && v !== '不限') { const any = document.querySelector('.lang-chip[data-lv="不限"]'); if (any) any.classList.remove('on'); }
+  if (!on && v === '不限') document.querySelectorAll('#langChips .lang-chip.on').forEach(b => b.classList.remove('on'));
+  if (!on && v !== '不限') { const any = document.querySelector('#langChips .lang-chip[data-lv="不限"]'); if (any) any.classList.remove('on'); }
   btn.classList.toggle('on');
 }
 function _langValue() {
-  return [...document.querySelectorAll('.lang-chip.on')].map(b => b.getAttribute('data-lv')).join(', ');
+  return [...document.querySelectorAll('#langChips .lang-chip.on')].map(b => b.getAttribute('data-lv')).join(', ');
 }
 function _setLangValue(v) {
   const parts = String(v || '').split(',').map(x => x.trim()).filter(Boolean);
-  document.querySelectorAll('.lang-chip').forEach(b => b.classList.toggle('on', parts.includes(b.getAttribute('data-lv'))));
+  document.querySelectorAll('#langChips .lang-chip').forEach(b => b.classList.toggle('on', parts.includes(b.getAttribute('data-lv'))));
 }
 function onIvChange() {
   const need = document.querySelector('input[name="fIv"]:checked').value === '1';
@@ -273,11 +291,12 @@ function addShiftRow() {
   const wp = document.getElementById('sfWorkerPay').value.trim();
   const fc = document.getElementById('sfForemanCap').value.trim();
   if (_shiftRows.some(r => r.shift === shift)) { toast('这个班次已经加过了'); return; }
-  _shiftRows.push({ shift, worker_pay: wp, foreman_cap: fc });
+  _shiftRows.push({ shift, worker_pay: wp, foreman_cap: fc, lang: _sfLangValue() });
   document.getElementById('sfStart').value = '';
   document.getElementById('sfEnd').value = '';
   document.getElementById('sfWorkerPay').value = '';
   document.getElementById('sfForemanCap').value = '';
+  document.querySelectorAll('.sf-lang.on').forEach(b => b.classList.remove('on'));
   renderShiftRows();
 }
 function removeShiftRow(i) { _shiftRows.splice(i, 1); renderShiftRows(); }
@@ -287,6 +306,7 @@ function renderShiftRows() {
     + '<b>⏰ ' + esc(r.shift) + '</b>'
     + (r.worker_pay ? '<span style="color:#065f46;font-weight:700">👷 ' + esc(r.worker_pay) + '</span>' : '')
     + (r.foreman_cap ? '<span style="color:#1d4ed8;font-weight:700">🦺 上限 ' + esc(r.foreman_cap) + '</span>' : '')
+    + (r.lang ? '<span style="color:#0369a1;font-weight:700">🗨️ ' + esc(r.lang) + '</span>' : '')
     + '<span onclick="removeShiftRow(' + i + ')" style="margin-left:auto;cursor:pointer;font-weight:900;color:var(--red)">&times;</span>'
     + '</div>').join('');
 }
