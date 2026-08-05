@@ -215,11 +215,13 @@ function parseDuration(v) {
   return 0;
 }
 
-// rows → structured invoice data for the builder to auto-fill. Auto-detects two
-// worksheet shapes: a finished payroll/billing worksheet (rates + markup), or a
-// raw time-clock attendance report (one row per person per day, hours only).
+// rows → structured invoice data for the builder to auto-fill. Auto-detects three
+// worksheet shapes: a finished payroll/billing worksheet (rates + markup), a raw
+// time-clock attendance report (one row per person per day, hours only), or a
+// Tolead-style shift log ("M/D shift" blocks with 序号|STAFF|上下班|时薪|工时).
 function buildInvoiceData(rows) {
   const warnings = [];
+  if (looksLikeShiftLog(rows)) return buildFromShiftLog(rows, warnings);
 
   // Locate the header row — accept either the payroll layout (Employee + rate/pay)
   // or the attendance layout (Person Name + Clock / 工作时长).
@@ -413,6 +415,121 @@ function buildFromAttendance({ rows, headerIdx, find, cellStr, warnings }) {
   return {
     ok: true, format: 'attendance', warehouse: '',
     period: (periodStart && periodEnd) ? `${periodStart} ~ ${periodEnd}` : '',
+    periodStart, periodEnd, defaultMarkupRate: null, markupMultiplier: null, employees, warnings,
+  };
+}
+
+// ─── Tolead 式排班流水 ────────────────────────────────────────────────────────
+// 结构: 每个班次一块 — 某格写 "7/20 night" 作块头, 跟一行表头
+// (序号|STAFF|CHECK IN|break|check out|[工种]|pay|total|Total Pay), 再跟人员行。
+// 汇总: 每人每天工时进 days 映射; 同一个人出现不同时薪 (如叉车日) 拆成两行。
+function looksLikeShiftLog(rows) {
+  let hasBlockDate = false, hasStaffHeader = false;
+  for (let i = 0; i < Math.min(rows.length, 60); i++) {
+    for (const c of rows[i] || []) {
+      if (/^\d{1,2}\/\d{1,2}(\s|$)/.test(String(c == null ? '' : c).trim())) hasBlockDate = true;
+    }
+    const cells = (rows[i] || []).map(norm);
+    if (cells.some(c => c === 'staff' || c === '姓名') && cells.some(c => c.includes('check'))) hasStaffHeader = true;
+    if (hasBlockDate && hasStaffHeader) return true;
+  }
+  return false;
+}
+
+function buildFromShiftLog(rows, warnings) {
+  const year = new Date().getFullYear();
+  let col = null, curDate = '';
+  const order = [], byKey = new Map(), allDates = [];
+  const numOf = v => { const n = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
+
+  for (const row0 of rows) {
+    const row = row0 || [];
+    const cellsN = row.map(norm);
+    // 表头行 → 建立列映射 (每块可能重复表头, 重建无妨)
+    if (cellsN.some(c => c === 'staff' || c === '姓名')) {
+      const idx = p => cellsN.findIndex(c => c && p(c));
+      col = {
+        name: idx(c => c === 'staff' || c === '姓名'),
+        checkin: idx(c => c.replace(/[^a-z一-鿿]/g, '').includes('checkin') || c.includes('上班')),
+        brk: idx(c => c.includes('break') || c.includes('休息')),
+        checkout: idx(c => c.replace(/[^a-z一-鿿]/g, '').includes('checkout') || c.includes('下班')),
+        pay: idx(c => c === 'pay' || c === 'rate' || c.includes('时薪')),
+        totalPay: idx(c => (c.includes('total') && c.includes('pay')) || c.includes('总额') || c.includes('总工资')),
+      };
+      col.hours = cellsN.findIndex((c, i2) => c && i2 !== col.totalPay && (c === 'total' || c === 'hours' || c.includes('工时')));
+      // 工种列: 有表头的 (工种/role/position) 优先; 否则取 check out 和 pay 之间
+      // 没有表头的那一列 (Forklift 之类写在这)
+      col.role = idx(c => c.includes('工种') || c === 'role' || c.includes('position'));
+      if (col.role < 0 && col.checkout >= 0 && col.pay > col.checkout + 1) {
+        for (let c2 = col.checkout + 1; c2 < col.pay; c2++) if (!cellsN[c2]) { col.role = c2; break; }
+      }
+      continue;
+    }
+    // 块头行 → 当前日期 (只有 M/D, 年份按今年)
+    const dCell = row.map(v => String(v == null ? '' : v).trim()).find(s => /^\d{1,2}\/\d{1,2}(\s|$)/.test(s));
+    if (dCell) {
+      const m = dCell.match(/^(\d{1,2})\/(\d{1,2})/);
+      curDate = toISO(m[1], m[2], String(year));
+      continue;
+    }
+    if (!col || !curDate || col.name < 0) continue;
+    const name = cleanPersonName(row[col.name]);
+    if (!name || /^(total|合计|小计)$/i.test(name)) continue;
+    const rate = col.pay >= 0 ? numOf(row[col.pay]) : null;
+    // 工时: 优先表里的 total 列; 没有就用上下班时间减休息自己算 (跨午夜自动 +24h)
+    let hrs = col.hours >= 0 ? (numOf(row[col.hours]) || 0) : 0;
+    if (!hrs && col.checkin >= 0 && col.checkout >= 0) {
+      const inH = parseDuration(row[col.checkin]);
+      let outH = parseDuration(row[col.checkout]);
+      if (inH || outH) {
+        if (outH <= inH) outH += 24;
+        let b = 0;
+        const bs = String(row[col.brk] == null ? '' : row[col.brk]);
+        const bm = bs.match(/(\d+)\s*min/i);
+        if (bm) b = (+bm[1]) / 60;
+        else { const bn = parseFloat(bs); if (Number.isFinite(bn)) b = bn > 5 ? bn / 60 : bn; }
+        hrs = Math.max(0, outH - inH - b);
+      }
+    }
+    hrs = Math.round(hrs * 1000) / 1000;
+    if (!hrs) continue;
+    const role = col.role >= 0 ? String(row[col.role] == null ? '' : row[col.role]).trim() : '';
+    const key = name.toLowerCase() + '|' + (rate == null ? '' : rate);
+    if (!byKey.has(key)) { byKey.set(key, { name, type: role, rate, total: 0, days: {} }); order.push(key); }
+    const rec = byKey.get(key);
+    if (role && !rec.type) rec.type = role;
+    rec.days[curDate] = Math.round(((rec.days[curDate] || 0) + hrs) * 1000) / 1000;
+    rec.total = Math.round((rec.total + hrs) * 1000) / 1000;
+    allDates.push(curDate);
+  }
+
+  if (!order.length) throw new Error('没解析到工时行：每个班次块需要一个日期头（如 "7/20 night"）和 STAFF 表头');
+
+  let periodStart = '', periodEnd = '';
+  if (allDates.length) { const s = [...allDates].sort(); periodStart = s[0]; periodEnd = s[s.length - 1]; }
+
+  const employees = order.map(k => {
+    const r = byKey.get(k);
+    return {
+      name: r.name, type: r.type || '', regRate: r.rate, otRate: null,
+      regHours: null, otHours: null, totalHours: r.total, days: r.days,
+      reimbursement: 0, markupRate: null,
+      regPay: null, otPay: null, totalPay: null, afterMarkup: null,
+    };
+  });
+
+  const multiRate = new Set();
+  const seenNames = new Map();
+  for (const e of employees) {
+    const k = e.name.toLowerCase();
+    if (seenNames.has(k)) multiRate.add(e.name); else seenNames.set(k, 1);
+  }
+  warnings.push('识别为「日期+班次」排班流水：已按天汇总每人工时。日期没写年份，按 ' + year + ' 年处理，请核对服务周期。Markup 需手动填写。');
+  if (multiRate.size) warnings.push('同一人出现不同时薪（如叉车班），已拆成多行：' + [...multiRate].join('、'));
+
+  return {
+    ok: true, format: 'shiftlog', warehouse: '',
+    period: periodStart && periodEnd ? periodStart + ' ~ ' + periodEnd : '',
     periodStart, periodEnd, defaultMarkupRate: null, markupMultiplier: null, employees, warnings,
   };
 }
