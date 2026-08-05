@@ -32483,6 +32483,7 @@ function openInvpBuilderModal() {
   window._invpCurrentSavedId = null;
   window._invpLoadedStatus = null;
   window._invpLoadedWageCost = null;
+  window._invpShiftBlocks = null;
   const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageOtFeeRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
@@ -32546,6 +32547,7 @@ async function openInvpForEdit(id) {
     const otf = document.getElementById('invPageOtFeeRate');
     if (otf) otf.value = (inv.profile && Number(inv.profile.ot_fee_rate) > 0) ? String(inv.profile.ot_fee_rate) : '';
   }
+  window._invpShiftBlocks = (inv.profile && Array.isArray(inv.profile.shift_blocks) && inv.profile.shift_blocks.length) ? inv.profile.shift_blocks : null;
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   _invpSetupAddrPicker([]); // editing a saved invoice keeps its stored address; no picker
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
@@ -36330,6 +36332,8 @@ async function saveInvpInvoice(status) {
   const profileWithMode = { ...getInvpProfile(), invoice_mode: mode, container_items: containerItems };
   // 加班服务费系数随发票存档（0 = 未启用，编辑旧发票时保持旧算法）。
   profileWithMode.ot_fee_rate = (mode !== 'container' && _invpOtFeeRate() != null) ? _invpOtFeeRate() : 0;
+  // 班次分组样式随发票存档 (无则不存)
+  if (mode !== 'container' && window._invpShiftBlocks && window._invpShiftBlocks.length) profileWithMode.shift_blocks = window._invpShiftBlocks;
   // 两边分开记账：从「按月付款」转来的发票，行项目按公司价（从公司收）开给客户，真实「付给
   // 工人」工资单独存进 profile.wage_cost，后台列表才能正确显示工资/利润。由转入时留底的逐人
   // 工资时薪重算；重新编辑已存发票（行项目里没有工资时薪）时沿用原值，避免利润被清零。
@@ -37156,6 +37160,8 @@ function invpApplyExcelData(data) {
 
   if (data.periodStart) document.getElementById('invPageStart').value = data.periodStart;
   if (data.periodEnd) document.getElementById('invPageEnd').value = data.periodEnd;
+  // 班次流水导入: 记住每班明细, 发票按 shift 分组样式打印 (组内编号+每班小计+总计)
+  window._invpShiftBlocks = (data.format === 'shiftlog' && Array.isArray(data.shift_blocks) && data.shift_blocks.length) ? data.shift_blocks : null;
   if (data.markupMultiplier && data.markupMultiplier > 0) {
     document.getElementById('invPageMarkupRate').value = data.markupMultiplier;
   }
@@ -39487,6 +39493,62 @@ async function generateInvpPreview() {
           </tr>
         </tbody>
       </table>`;
+
+    // ── 班次分组样式 (班次流水 Excel 导入时自动启用) ─────────────────────────
+    // 每个 shift 一段: 段头 + 组内编号 + 每班小计, 表尾全部合计。金额 = 各班
+    // 工时×时薪的平价合计 (与时间表 Total Pay 一致), Markup 照页面设置加成。
+    const shiftBlocks = (window._invpShiftBlocks && window._invpShiftBlocks.length) ? window._invpShiftBlocks : null;
+    if (shiftBlocks) {
+      const hasRole = shiftBlocks.some(b => (b.entries || []).some(en => (en.role || '').trim()));
+      let grandH = 0, grandA = 0;
+      const cols = hasRole ? 6 : 5;
+      const bodyRows = shiftBlocks.map(b => {
+        const head = `<tr><td colspan="${cols}" style="background:#e8f5fb;color:#075985;font-weight:700;padding:7px 9px;border-top:2px solid #29AAE1;font-size:.8rem">⏰ ${esc(b.label || b.date || '')}</td></tr>`;
+        const rows = (b.entries || []).map((en, i2) => `<tr style="background:${i2 % 2 === 1 ? '#f8fafc' : '#ffffff'}">
+            <td style="padding:6px 6px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b">${i2 + 1}</td>
+            <td class="invp-name-cell" data-wname="${esc(_invpDisplayWorkerName(en.name))}" onclick="invpToggleNameSel(this)" style="padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(_invpDisplayWorkerName(en.name))}</td>
+            ${hasRole ? `<td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:left;color:#475569">${esc(en.role || '')}</td>` : ''}
+            <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${(Number(en.hours) || 0).toFixed(2)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:right">$${(Number(en.rate) || 0).toFixed(2)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">$${(Number(en.amount) || 0).toFixed(2)}</td>
+          </tr>`).join('');
+        grandH += Number(b.hours) || 0; grandA += Number(b.amount) || 0;
+        const sub = `<tr style="background:#f0f9ff;font-weight:700;color:#0369a1;font-size:.78rem">
+            <td colspan="${cols - 3}" style="padding:5px 9px;text-align:right;text-transform:uppercase;letter-spacing:.03em">Subtotal</td>
+            <td style="padding:5px 8px;text-align:right">${(Number(b.hours) || 0).toFixed(2)}h</td>
+            <td></td>
+            <td style="padding:5px 8px;text-align:right">$${(Number(b.amount) || 0).toFixed(2)}</td>
+          </tr>`;
+        return head + rows + sub;
+      }).join('');
+      grandH = Math.round(grandH * 100) / 100;
+      baseAmt = Math.round(grandA * 100) / 100;
+      billedAmt = Math.round(baseAmt * markupRate * 100) / 100;
+      totalRegHrs = grandH; totalOtHrs = 0;
+      window._invpAllOtZero = true;
+      lineItemTableHtml = `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.8rem;border:1px solid #29AAE1">
+        <thead>
+          <tr style="background:#f0f9ff;color:#075985;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
+            <th style="padding:7px 6px;font-weight:700;text-align:center">N.</th>
+            <th style="padding:7px 8px;font-weight:700;text-align:left">Worker</th>
+            ${hasRole ? `<th style="padding:7px 8px;font-weight:700;text-align:left">Position</th>` : ''}
+            <th style="padding:7px 8px;font-weight:700;text-align:right;white-space:nowrap">Hours</th>
+            <th style="padding:7px 8px;font-weight:700;text-align:right;white-space:nowrap">Rate</th>
+            <th style="padding:7px 8px;font-weight:700;text-align:right;white-space:nowrap">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bodyRows}
+          <tr style="background:#e8f5fb;font-weight:800;color:#1e293b;border-top:2px solid #29AAE1">
+            <td colspan="${cols - 3}" style="padding:8px 9px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Grand Total</td>
+            <td style="padding:8px 8px;text-align:right">${grandH.toFixed(2)}h</td>
+            <td></td>
+            <td style="padding:8px 8px;text-align:right">$${baseAmt.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+    }
   }
 
   // Two simple lines: ①收款方/银行/账号 ②三个汇款号码（ACH / Wire / SWIFT）
