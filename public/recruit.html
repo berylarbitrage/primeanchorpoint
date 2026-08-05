@@ -43,6 +43,8 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
 .ja.edit{background:var(--gray-100);color:var(--gray-600)}
 .ja.reopen{background:var(--sky-light);color:var(--blue)}
 .status-badge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:.72rem;font-weight:700;margin-left:6px}
+.lang-chip{border:1.5px solid var(--gray-200);background:#fff;border-radius:999px;padding:7px 14px;font-size:.84rem;font-weight:700;color:var(--gray-600);cursor:pointer;font-family:inherit}
+.lang-chip.on{border-color:var(--accent);background:var(--sky-light);color:var(--blue)}
 .hint{color:var(--gray-400);font-size:.85rem;padding:16px;text-align:center}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--gray-800);color:#fff;padding:10px 22px;border-radius:999px;font-size:.85rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
 .toast.show{opacity:1}
@@ -101,6 +103,13 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
     <div id="shiftRows" style="margin-top:8px"></div>
     <label>具体工作内容</label>
     <textarea id="fDetails" placeholder="比如：&#10;· 早7点到仓库，卸两个柜，约2000件&#10;· 需要有经验，能搬重物&#10;· 地址 / 找谁报到"></textarea>
+    <label>语言要求（必选，可多选）</label>
+    <div id="langChips" style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="lang-chip" data-lv="不限" onclick="toggleLang(this)" style="width:auto">🌐 不限</button>
+      <button type="button" class="lang-chip" data-lv="英语" onclick="toggleLang(this)" style="width:auto">🇺🇸 英语</button>
+      <button type="button" class="lang-chip" data-lv="西班牙语" onclick="toggleLang(this)" style="width:auto">🇲🇽 西班牙语</button>
+      <button type="button" class="lang-chip" data-lv="中文" onclick="toggleLang(this)" style="width:auto">🇨🇳 中文</button>
+    </div>
     <label>是否需要面试</label>
     <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
       <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.88rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fIv" value="0" checked onchange="onIvChange()" style="width:auto">不需要，直接上班</label>
@@ -218,11 +227,27 @@ function payChips(j) {
   if (j.worker_pay) g += '<span class="pay-chip">👷 工人 ' + esc(j.worker_pay) + '</span>';
   if (j.foreman_cap) g += '<span class="pay-chip cap">🦺 工头上限 ' + esc(j.foreman_cap) + '</span>';
   if (g) h += '<div class="pay-line">' + g + '</div>';
+  if (j.language_req) h += '<div class="pay-line"><span class="pay-chip" style="background:#f0f9ff;border-color:#bae6fd;color:#0369a1">🗨️ 语言: ' + esc(j.language_req) + '</span></div>';
   if (j.interview_required) h += '<div class="pay-line"><span class="pay-chip" style="background:#fdf4ff;border-color:#e9d5ff;color:#7e22ce">🗣 需要面试' + (j.interview_notes ? ': ' + esc(j.interview_notes) : '') + '</span></div>';
   return h;
 }
 // ─── 班次+工资 构建器 ───
 let _shiftRows = [];
+// 语言要求多选: 选「不限」清掉其他; 选具体语言清掉「不限」
+function toggleLang(btn) {
+  const v = btn.getAttribute('data-lv');
+  const on = btn.classList.contains('on');
+  if (!on && v === '不限') document.querySelectorAll('.lang-chip.on').forEach(b => b.classList.remove('on'));
+  if (!on && v !== '不限') { const any = document.querySelector('.lang-chip[data-lv="不限"]'); if (any) any.classList.remove('on'); }
+  btn.classList.toggle('on');
+}
+function _langValue() {
+  return [...document.querySelectorAll('.lang-chip.on')].map(b => b.getAttribute('data-lv')).join(', ');
+}
+function _setLangValue(v) {
+  const parts = String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+  document.querySelectorAll('.lang-chip').forEach(b => b.classList.toggle('on', parts.includes(b.getAttribute('data-lv'))));
+}
 function onIvChange() {
   const need = document.querySelector('input[name="fIv"]:checked').value === '1';
   document.getElementById('fIvNotes').style.display = need ? '' : 'none';
@@ -393,6 +418,7 @@ function startEdit(id) {
   document.querySelector('input[name="fIv"][value="' + (j.interview_required ? 1 : 0) + '"]').checked = true;
   document.getElementById('fIvNotes').value = j.interview_notes || '';
   onIvChange();
+  _setLangValue(j.language_req || '');
   document.getElementById('formTitle').textContent = '✏️ 编辑招工需求 #' + id;
   document.getElementById('saveBtn').textContent = '保存修改';
   document.getElementById('cancelEditBtn').style.display = '';
@@ -405,6 +431,7 @@ function cancelEdit() {
   renderShiftRows();
   document.querySelector('input[name="fIv"][value="0"]').checked = true;
   onIvChange();
+  _setLangValue('');
   renderWhOptions('');
   document.getElementById('formTitle').textContent = '➕ 新增招工需求';
   document.getElementById('saveBtn').textContent = '发布';
@@ -417,6 +444,8 @@ async function saveJob() {
     const headcount = document.getElementById('fHeadcount').value.trim();
     if (!warehouse) { toast('请选择仓库'); return; }
     if (!position) { toast('请填写工种'); return; }
+    const language_req = _langValue();
+    if (!language_req) { toast('请选择语言要求（不限也要选）'); return; }
     const payload = {
       warehouse,
       position: position + (headcount ? ' × ' + headcount + '人' : ''),
@@ -425,7 +454,8 @@ async function saveJob() {
       foreman_cap: document.getElementById('fForemanCap').value.trim(),
       shifts: _shiftRows,
       interview_required: document.querySelector('input[name="fIv"]:checked').value === '1' ? 1 : 0,
-      interview_notes: document.getElementById('fIvNotes').value.trim()
+      interview_notes: document.getElementById('fIvNotes').value.trim(),
+      language_req
     };
     const editId = document.getElementById('editId').value;
     const r = editId
