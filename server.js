@@ -25693,17 +25693,23 @@ app.post('/api/admin/recruit-jobs/:id/share-text-foreman', requireAdmin, async (
       }
       lines.push('💰 工资: ' + generalRate);
     }
-    const zh = [
+    const SEP = '──────────────';
+    const secs = [
       '📢 招工啦！（工头合作）',
-      '🏭 仓库: ' + job.warehouse,
-      job.address ? '📍 地址: ' + job.address : '',
-      '👷 工种: ' + job.position,
-      ...lines,
-      job.language_req ? '🗨️ 语言要求: ' + job.language_req : '',
-      job.ead_required ? '🪪 需要真实有效的 EAD 工卡' : '',
-      job.details ? '📋 ' + job.details : '',
-      job.interview_required ? '🗣 需要面试' + (job.interview_notes ? ': ' + job.interview_notes : '') : ''
-    ].filter(Boolean).join('\n');
+      [
+        '🏭 仓库：' + job.warehouse,
+        job.address ? '📍 地址：' + job.address : '',
+        '👷 工种：' + job.position
+      ].filter(Boolean).join('\n'),
+      lines.join('\n'),
+      [
+        job.language_req ? '🗨️ 语言要求：' + job.language_req : '',
+        job.ead_required ? '🪪 需要真实有效的 EAD 工卡' : '',
+        job.interview_required ? '🗣 需要面试' + (job.interview_notes ? '：' + job.interview_notes : '') : ''
+      ].filter(Boolean).join('\n'),
+      job.details ? '📋 工作内容：\n' + job.details : ''
+    ].filter(Boolean);
+    const zh = secs.join('\n' + SEP + '\n');
     let text = zh;
     if (lang !== 'zh') {
       const t = await translateText(zh, 'zh', lang);
@@ -25725,18 +25731,24 @@ app.get('/api/admin/recruit-jobs/:id/share-text', requireAdmin, async (req, res)
       shiftLines = JSON.parse(job.shifts || '[]').map(s =>
         '⏰ ' + s.shift + (s.worker_pay ? ' · 💰 ' + s.worker_pay : '') + (s.lang ? ' · 🗨️ ' + s.lang : ''));
     } catch (_) {}
-    const zh = [
+    // 分区排版: 标题 / 地点 / 班次工资 / 要求 / 工作内容, 组间分隔线
+    const SEP = '──────────────';
+    const secs = [
       '📢 招工啦！',
-      '🏭 仓库: ' + job.warehouse,
-      job.address ? '📍 地址: ' + job.address : '',
-      '👷 工种: ' + job.position,
-      ...shiftLines,
-      (!shiftLines.length && job.worker_pay) ? '💰 工资: ' + job.worker_pay : '',
-      job.language_req ? '🗨️ 语言要求: ' + job.language_req : '',
-      job.ead_required ? '🪪 需要真实有效的 EAD 工卡' : '',
-      job.details ? '📋 ' + job.details : '',
-      job.interview_required ? '🗣 需要面试' + (job.interview_notes ? ': ' + job.interview_notes : '') : ''
-    ].filter(Boolean).join('\n');
+      [
+        '🏭 仓库：' + job.warehouse,
+        job.address ? '📍 地址：' + job.address : '',
+        '👷 工种：' + job.position
+      ].filter(Boolean).join('\n'),
+      (shiftLines.length ? shiftLines : (job.worker_pay ? ['💰 工资：' + job.worker_pay] : [])).join('\n'),
+      [
+        job.language_req ? '🗨️ 语言要求：' + job.language_req : '',
+        job.ead_required ? '🪪 需要真实有效的 EAD 工卡' : '',
+        job.interview_required ? '🗣 需要面试' + (job.interview_notes ? '：' + job.interview_notes : '') : ''
+      ].filter(Boolean).join('\n'),
+      job.details ? '📋 工作内容：\n' + job.details : ''
+    ].filter(Boolean);
+    const zh = secs.join('\n' + SEP + '\n');
     let text = zh;
     if (lang !== 'zh') {
       const t = await translateText(zh, 'zh', lang);
