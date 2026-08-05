@@ -160,6 +160,17 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
 
   <div class="hint" id="loading">加载中…</div>
 </div>
+<div id="rateModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:14px;padding:18px;max-width:420px;width:100%">
+    <h2 style="font-size:.95rem;color:var(--blue);margin-bottom:4px">🦺 生成工头版 — 填给工头的工资</h2>
+    <div style="font-size:.76rem;color:var(--gray-500)">每项都不能超过你设置的上限；上限本身不会出现在生成的内容里。</div>
+    <div id="rateInputs"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button onclick="closeRateModal()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--gray-100);color:var(--gray-600);font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="confirmRateModal()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--sky);color:#fff;font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">生成</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <script>
 function getToken() {
@@ -343,6 +354,8 @@ function render() {
       + '<button class="ja edit" onclick="startEdit(' + j.id + ')">✏️ 编辑</button>'
       + '</div>'
       + '<div class="job-actions" style="margin-top:6px;align-items:center">'
+      + '<select id="shareAud-' + j.id + '" style="width:auto;padding:6px 8px;font-size:.8rem;border-radius:8px">'
+      + '<option value="worker">👷 工人版</option><option value="foreman">🦺 工头版</option></select>'
       + '<select id="shareLang-' + j.id + '" style="width:auto;padding:6px 8px;font-size:.8rem;border-radius:8px">'
       + '<option value="zh">中文</option><option value="en">English</option><option value="es">Español</option></select>'
       + '<button class="ja edit" onclick="copyShare(' + j.id + ')">📋 复制文案</button>'
@@ -371,7 +384,63 @@ async function _shareText(id) {
   if (r && r.error) throw new Error(r.error);
   return r.text || '';
 }
+function _shareAud(id) { return (document.getElementById('shareAud-' + id) || {}).value || 'worker'; }
+// ─── 工头版: 输入实际给工头的工资 (≤ 上限), 再生成 ───
+let _rateJobId = 0, _rateAction = 'copy';
+function openRateModal(id, action) {
+  const j = _jobs.find(x => x.id === id);
+  if (!j) return;
+  _rateJobId = id; _rateAction = action;
+  const shifts = parseShifts(j.shifts);
+  const num = v => { const m = String(v || '').match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+  const box = document.getElementById('rateInputs');
+  if (shifts.length) {
+    box.innerHTML = shifts.map((sf, i) =>
+      '<label style="margin-top:8px">⏰ ' + esc(sf.shift) + (sf.foreman_cap ? '（上限 ' + esc(sf.foreman_cap) + '）' : '') + '</label>'
+      + '<input class="rate-in" data-cap="' + (num(sf.foreman_cap) != null ? num(sf.foreman_cap) : '') + '" placeholder="给这个班次的工头 如 $' + (num(sf.foreman_cap) != null ? num(sf.foreman_cap) : '18') + '/h">').join('');
+  } else {
+    box.innerHTML = '<label style="margin-top:8px">给工头的工资' + (j.foreman_cap ? '（上限 ' + esc(j.foreman_cap) + '）' : '') + '</label>'
+      + '<input class="rate-in" data-cap="' + (num(j.foreman_cap) != null ? num(j.foreman_cap) : '') + '" placeholder="如 $18/h">';
+  }
+  document.getElementById('rateModal').style.display = 'flex';
+}
+function closeRateModal() { document.getElementById('rateModal').style.display = 'none'; }
+async function confirmRateModal() {
+  const j = _jobs.find(x => x.id === _rateJobId);
+  if (!j) return;
+  const inputs = [...document.querySelectorAll('#rateInputs .rate-in')];
+  const num = v => { const m = String(v || '').match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+  // 前端先校验一遍, 超上限直接标红拦下
+  for (const el of inputs) {
+    const cap = el.getAttribute('data-cap');
+    const v = el.value.trim();
+    if (!v) { el.style.borderColor = 'var(--red)'; toast('每一项都要填'); return; }
+    if (cap !== '' && num(v) != null && num(v) > parseFloat(cap) + 1e-9) {
+      el.style.borderColor = 'var(--red)'; toast('超过上限 ' + cap + ' 了'); return;
+    }
+    el.style.borderColor = '';
+  }
+  const shifts = parseShifts(j.shifts);
+  const lang = (document.getElementById('shareLang-' + _rateJobId) || {}).value || 'zh';
+  const body = shifts.length
+    ? { lang, rates: inputs.map(el => el.value.trim()) }
+    : { lang, general_rate: inputs[0].value.trim() };
+  try {
+    const r = await api('/admin/recruit-jobs/' + _rateJobId + '/share-text-foreman', { method: 'POST', body: JSON.stringify(body) });
+    if (r && r.error) throw new Error(r.error);
+    closeRateModal();
+    if (_rateAction === 'copy') {
+      try { await navigator.clipboard.writeText(r.text); }
+      catch (_) { const ta = document.createElement('textarea'); ta.value = r.text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+      toast('📋 工头版文案已复制');
+    } else {
+      drawPoster(r.text, 'foreman-job-' + _rateJobId + '-' + lang + '.png');
+      toast('🖼 工头版图片已生成下载');
+    }
+  } catch (e) { toast(e.message || '生成失败'); }
+}
 async function copyShare(id) {
+  if (_shareAud(id) === 'foreman') { openRateModal(id, 'copy'); return; }
   try {
     const text = await _shareText(id);
     try {
@@ -385,8 +454,14 @@ async function copyShare(id) {
   } catch (e) { toast(e.message || '复制失败'); }
 }
 async function shareImage(id) {
+  if (_shareAud(id) === 'foreman') { openRateModal(id, 'image'); return; }
   try {
     const text = await _shareText(id);
+    drawPoster(text, 'job-' + id + '-' + ((document.getElementById('shareLang-' + id) || {}).value || 'zh') + '.png');
+    toast('🖼 图片已生成下载，可直接发群');
+  } catch (e) { toast(e.message || '生成失败'); }
+}
+function drawPoster(text, filename) {
     const W = 750, pad = 46, lineH = 52, font = '32px "DM Sans","PingFang SC","Microsoft YaHei",sans-serif';
     // 先量行数再定画布高度 (逐字折行, 中英文都稳)
     const meas = document.createElement('canvas').getContext('2d');
@@ -416,10 +491,8 @@ async function shareImage(id) {
     ctx.fillText('Prime Anchor Workforce', pad, H - footH / 2 + 10);
     const a = document.createElement('a');
     a.href = cv.toDataURL('image/png');
-    a.download = 'job-' + id + '-' + ((document.getElementById('shareLang-' + id) || {}).value || 'zh') + '.png';
+    a.download = filename;
     a.click();
-    toast('🖼 图片已生成下载，可直接发群');
-  } catch (e) { toast(e.message || '生成失败'); }
 }
 async function act(id, what) {
   try {
