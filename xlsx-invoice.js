@@ -482,9 +482,12 @@ function looksLikeShiftLog(rows) {
 
 function buildFromShiftLog(rows, warnings) {
   const year = new Date().getFullYear();
-  let col = null, curDate = '';
+  let col = null, curDate = '', curLabel = '';
   const order = [], byKey = new Map(), allDates = [];
   const numOf = v => { const n = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(n) ? n : null; };
+  // 班次明细 (发票可按 shift 分组打印: 组内编号 + 每班小计 + 总计)
+  const blocks = [];
+  let curBlock = null;
 
   for (const row0 of rows) {
     const row = row0 || [];
@@ -514,6 +517,9 @@ function buildFromShiftLog(rows, warnings) {
     if (dCell) {
       const m = dCell.match(/^(\d{1,2})\/(\d{1,2})/);
       curDate = toISO(m[1], m[2], String(year));
+      curBlock = null; // 数据行出现时再开块, 避免空块
+      var _pendingLabel = dCell.replace(/\s+/g, ' ').trim();
+      curLabel = _pendingLabel;
       continue;
     }
     if (!col || !curDate || col.name < 0) continue;
@@ -545,6 +551,15 @@ function buildFromShiftLog(rows, warnings) {
     rec.days[curDate] = Math.round(((rec.days[curDate] || 0) + hrs) * 1000) / 1000;
     rec.total = Math.round((rec.total + hrs) * 1000) / 1000;
     allDates.push(curDate);
+    // 班次明细行
+    if (!curBlock || curBlock.date !== curDate || curBlock.label !== (typeof curLabel === 'string' ? curLabel : '')) {
+      curBlock = { label: typeof curLabel === 'string' ? curLabel : curDate, date: curDate, entries: [], hours: 0, amount: 0 };
+      blocks.push(curBlock);
+    }
+    const amt = Math.round(hrs * (rate || 0) * 100) / 100;
+    curBlock.entries.push({ name, role, rate: rate || 0, hours: hrs, amount: amt });
+    curBlock.hours = Math.round((curBlock.hours + hrs) * 100) / 100;
+    curBlock.amount = Math.round((curBlock.amount + amt) * 100) / 100;
   }
 
   if (!order.length) throw new Error('没解析到工时行：每个班次块需要一个日期头（如 "7/20 night"）和 STAFF 表头');
@@ -555,7 +570,8 @@ function buildFromShiftLog(rows, warnings) {
   const employees = order.map(k => {
     const r = byKey.get(k);
     return {
-      name: r.name, type: r.type || '', regRate: r.rate, otRate: null,
+      // 排班流水的时薪是每班一口价 (加班不另加成) → otRate = 时薪, 账面和表格一致
+      name: r.name, type: r.type || '', regRate: r.rate, otRate: r.rate,
       regHours: null, otHours: null, totalHours: r.total, days: r.days,
       reimbursement: 0, markupRate: null,
       regPay: null, otPay: null, totalPay: null, afterMarkup: null,
@@ -575,6 +591,7 @@ function buildFromShiftLog(rows, warnings) {
     ok: true, format: 'shiftlog', warehouse: '',
     period: periodStart && periodEnd ? periodStart + ' ~ ' + periodEnd : '',
     periodStart, periodEnd, defaultMarkupRate: null, markupMultiplier: null, employees, warnings,
+    shift_blocks: blocks,
   };
 }
 
@@ -590,7 +607,7 @@ module.exports = function parseInvoiceWorkbook(buf, filename) {
       const nm = String(sh.name || '');
       if (/说明|instruction|readme/i.test(nm)) continue;
       const m = nm.match(/(\d{1,2})[\/.\-月]\s*(\d{1,2})/);
-      if (m) combined.push([null, (+m[1]) + '/' + (+m[2]) + ' ' + nm]);
+      if (m) combined.push([null, nm.replace(/(\d{1,2})[.\-月]\s*(\d{1,2})日?/, (a, x, y) => (+x) + '/' + (+y))]);
       combined.push(...sh.rows);
     }
     if (looksLikeShiftLog(combined)) data = buildFromShiftLog(combined, []);
