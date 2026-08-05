@@ -345,6 +345,24 @@ function addShiftRow() {
   renderShiftRows();
 }
 function removeShiftRow(i) { _shiftRows.splice(i, 1); renderShiftRows(); }
+// 点「修改」把这条班次装回上面的编辑区, 改完再点「+加班次」放回列表
+function editShiftRow(i) {
+  const r = _shiftRows[i];
+  if (!r) return;
+  const m = String(r.shift || '').match(/^(\S+)(?:\s+(\d{2}:\d{2})[\u2013-](\d{2}:\d{2}))?(?:\s+(\d{2}:\d{2})\s*开始)?/);
+  const nameSel = document.getElementById('sfName');
+  if (m && [...nameSel.options].some(o => o.value === m[1])) nameSel.value = m[1];
+  document.getElementById('sfStart').value = (m && (m[2] || m[4])) || '';
+  document.getElementById('sfEnd').value = (m && m[3]) || '';
+  document.getElementById('sfWorkerPay').value = r.worker_pay || '';
+  document.getElementById('sfForemanCap').value = r.foreman_cap || '';
+  const parts = String(r.lang || '').split(',').map(x => x.trim()).filter(Boolean);
+  document.querySelectorAll('.sf-lang').forEach(b => b.classList.toggle('on', parts.includes(b.getAttribute('data-lv'))));
+  _shiftRows.splice(i, 1);
+  renderShiftRows();
+  toast('已放回上面编辑，改完点「+ 加班次」');
+  document.getElementById('sfName').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
 function renderShiftRows() {
   document.getElementById('shiftRows').innerHTML = _shiftRows.map((r, i) =>
     '<div style="display:flex;align-items:center;gap:8px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;margin-bottom:5px;font-size:.85rem;flex-wrap:wrap">'
@@ -352,7 +370,8 @@ function renderShiftRows() {
     + (r.worker_pay ? '<span style="color:#065f46;font-weight:700">👷 ' + esc(r.worker_pay) + '</span>' : '')
     + (r.foreman_cap ? '<span style="color:#1d4ed8;font-weight:700">🦺 上限 ' + esc(r.foreman_cap) + '</span>' : '')
     + (r.lang ? '<span style="color:#0369a1;font-weight:700">🗨️ ' + esc(r.lang) + '</span>' : '')
-    + '<span onclick="removeShiftRow(' + i + ')" style="margin-left:auto;cursor:pointer;font-weight:900;color:var(--red)">&times;</span>'
+    + '<span onclick="editShiftRow(' + i + ')" style="margin-left:auto;cursor:pointer;font-weight:700;color:var(--sky)">✏️ 修改</span>'
+    + '<span onclick="removeShiftRow(' + i + ')" style="cursor:pointer;font-weight:900;color:var(--red);padding-left:6px">&times;</span>'
     + '</div>').join('');
 }
 function render() {
