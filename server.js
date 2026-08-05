@@ -25556,6 +25556,81 @@ app.get('/api/admin/job-sites/lookup-tz', requireAdmin, async (req, res) => {
   res.json({ timezone: tz });
 });
 
+// ─── 📢 每日招工信息 (daily recruiting board) ───────────────────────────────
+// 每条 = 一个仓库的一个用工需求; 每天要人工核对一遍还在不在招 (last_check_date)。
+db.exec(`CREATE TABLE IF NOT EXISTS recruit_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  warehouse TEXT DEFAULT '',
+  position TEXT DEFAULT '',
+  details TEXT DEFAULT '',
+  worker_pay TEXT DEFAULT '',
+  foreman_cap TEXT DEFAULT '',
+  status TEXT DEFAULT 'open',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  last_check_date TEXT DEFAULT '',
+  last_check_by TEXT DEFAULT '',
+  status_by TEXT DEFAULT '',
+  status_at DATETIME DEFAULT NULL,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+function _recruitToday() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); }
+// 列表: 在招的全部 + 最近 30 天内关闭/找到人的 (核对历史一目了然)
+app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
+  try {
+    const jobs = db.prepare(`SELECT * FROM recruit_jobs
+      WHERE status='open' OR datetime(COALESCE(status_at, updated_at)) >= datetime('now', '-30 days')
+      ORDER BY CASE WHEN status='open' THEN 0 ELSE 1 END, id DESC`).all();
+    res.json({ jobs, today: _recruitToday() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
+  try {
+    const { warehouse, position, details, worker_pay, foreman_cap } = req.body || {};
+    if (!String(warehouse || '').trim()) return res.status(400).json({ error: '请选择仓库' });
+    if (!String(position || '').trim()) return res.status(400).json({ error: '请填写工种' });
+    const info = db.prepare(`INSERT INTO recruit_jobs (warehouse, position, details, worker_pay, foreman_cap, created_by, last_check_date, last_check_by)
+      VALUES (?,?,?,?,?,?,?,?)`).run(
+      String(warehouse).trim(), String(position).trim(), String(details || '').trim(),
+      String(worker_pay || '').trim(), String(foreman_cap || '').trim(),
+      req.userName || '', _recruitToday(), req.userName || '');
+    res.json({ ok: true, id: info.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 更新: 内容编辑 / 每日核对 (action:'check') / 状态流转 (open|filled|closed)
+app.patch('/api/admin/recruit-jobs/:id', requireAdmin, (req, res) => {
+  try {
+    const job = db.prepare('SELECT * FROM recruit_jobs WHERE id=?').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    const b = req.body || {};
+    if (b.action === 'check') {
+      db.prepare(`UPDATE recruit_jobs SET last_check_date=?, last_check_by=?, updated_at=datetime('now') WHERE id=?`)
+        .run(_recruitToday(), req.userName || '', job.id);
+      return res.json({ ok: true });
+    }
+    if (b.status && ['open', 'filled', 'closed'].includes(b.status)) {
+      db.prepare(`UPDATE recruit_jobs SET status=?, status_by=?, status_at=datetime('now'), last_check_date=?, last_check_by=?, updated_at=datetime('now') WHERE id=?`)
+        .run(b.status, req.userName || '', _recruitToday(), req.userName || '', job.id);
+      return res.json({ ok: true });
+    }
+    db.prepare(`UPDATE recruit_jobs SET warehouse=?, position=?, details=?, worker_pay=?, foreman_cap=?, updated_at=datetime('now') WHERE id=?`)
+      .run(
+        String(b.warehouse !== undefined ? b.warehouse : job.warehouse).trim(),
+        String(b.position !== undefined ? b.position : job.position).trim(),
+        String(b.details !== undefined ? b.details : job.details).trim(),
+        String(b.worker_pay !== undefined ? b.worker_pay : job.worker_pay).trim(),
+        String(b.foreman_cap !== undefined ? b.foreman_cap : job.foreman_cap).trim(),
+        job.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/admin/recruit-jobs/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    db.prepare('DELETE FROM recruit_jobs WHERE id=?').run(req.params.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
   const sites = db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all();
   const allPartners = db.prepare('SELECT id, name FROM partners ORDER BY name').all();

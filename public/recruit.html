@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>每日招工 — Prime Anchor</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--off-white:#fffbeb;--gray-100:#f3f4f6;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-500:#6b7280;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;background:var(--off-white);color:var(--gray-800);min-height:100vh}
+.header{background:#fff;border-bottom:1.5px solid #fde68a;padding:12px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.header h1{font-size:1.1rem;color:var(--blue)}
+.wrap{max-width:760px;margin:0 auto;padding:18px 14px 40px}
+.section{background:#fff;border:1px solid #f3e8cd;border-radius:var(--radius);box-shadow:0 1px 3px rgba(146,64,14,.06);padding:16px;margin-bottom:18px}
+.section h2{font-size:.95rem;color:var(--blue);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+input,select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.9rem;outline:none;font-family:inherit;background:#fff}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:90px;line-height:1.7}
+label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margin:10px 0 4px}
+.btn{width:100%;padding:12px;background:var(--sky);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:.92rem;margin-top:12px;font-family:inherit}
+.btn:hover{background:var(--blue)}
+.alert{background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:10px 14px;font-weight:700;font-size:.88rem;margin-bottom:14px}
+.alert.ok{background:#ecfdf5;border-color:#6ee7b7;color:#065f46}
+.job-card{border:1.5px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:13px 15px;margin-bottom:10px}
+.job-card.unchecked{border-color:#fca5a5;background:#fff7f7}
+.job-card.done{border-color:var(--gray-200);background:#fafafa;opacity:.85}
+.wh-badge{display:inline-block;background:#fde68a;color:#92400e;border-radius:999px;padding:1px 10px;font-size:.74rem;font-weight:700}
+.pos{font-size:1rem;font-weight:700;color:var(--gray-800);margin:4px 0}
+.pay-line{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
+.pay-chip{background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;border-radius:8px;padding:3px 10px;font-size:.82rem;font-weight:700}
+.pay-chip.cap{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.details{font-size:.88rem;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:var(--gray-600);margin:4px 0 8px}
+.meta{font-size:.72rem;color:var(--gray-400);margin-bottom:8px}
+.check-state{font-size:.78rem;font-weight:700;margin-bottom:8px}
+.job-actions{display:flex;gap:6px;flex-wrap:wrap}
+.ja{border:none;border-radius:8px;padding:7px 13px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
+.ja.check{background:var(--green);color:#fff}
+.ja.filled{background:#dbeafe;color:#1d4ed8}
+.ja.closed{background:#fee2e2;color:#b91c1c}
+.ja.edit{background:var(--gray-100);color:var(--gray-600)}
+.ja.reopen{background:var(--sky-light);color:var(--blue)}
+.status-badge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:.72rem;font-weight:700;margin-left:6px}
+.hint{color:var(--gray-400);font-size:.85rem;padding:16px;text-align:center}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--gray-800);color:#fff;padding:10px 22px;border-radius:999px;font-size:.85rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+.toast.show{opacity:1}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:520px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="header">
+  <img src="logo.svg" alt="" style="height:26px">
+  <h1>&#128226; 每日招工</h1>
+  <span id="roleTag" style="font-size:.7rem;font-weight:700;padding:2px 10px;border-radius:999px;background:var(--sky-light);color:var(--blue)"></span>
+  <span id="dateNow" style="margin-left:auto;font-size:.78rem;color:var(--gray-400)"></span>
+</div>
+<div class="wrap">
+  <div id="checkAlert" style="display:none"></div>
+
+  <div class="section">
+    <h2 id="formTitle">&#10133; 新增招工需求</h2>
+    <input type="hidden" id="editId">
+    <label>仓库（下拉选择）</label>
+    <select id="fWarehouse" onchange="onWhChange()"></select>
+    <input id="fWarehouseOther" placeholder="输入仓库名" style="display:none;margin-top:6px">
+    <div class="grid2">
+      <div>
+        <label>工种</label>
+        <input id="fPosition" list="posList" placeholder="如 卸柜工 / 叉车工">
+        <datalist id="posList">
+          <option value="普工"></option><option value="叉车工"></option><option value="高位叉车"></option>
+          <option value="拣货 Order Picker"></option><option value="卸柜工"></option><option value="分拣"></option>
+          <option value="装卸"></option><option value="打包"></option><option value="工头"></option>
+        </datalist>
+      </div>
+      <div>
+        <label>要几个人（选填）</label>
+        <input id="fHeadcount" placeholder="如 5">
+      </div>
+    </div>
+    <label>具体工作内容</label>
+    <textarea id="fDetails" placeholder="比如：&#10;· 早7点到仓库，卸两个柜，约2000件&#10;· 需要有经验，能搬重物&#10;· 地址 / 找谁报到"></textarea>
+    <div class="grid2">
+      <div>
+        <label>给工人多少钱</label>
+        <input id="fWorkerPay" placeholder="如 $18/h 或 $0.10/件">
+      </div>
+      <div>
+        <label>给工头的上限</label>
+        <input id="fForemanCap" placeholder="如 $20/h（内部，别外传）">
+      </div>
+    </div>
+    <button class="btn" id="saveBtn" onclick="saveJob()">发布</button>
+    <button class="btn" id="cancelEditBtn" onclick="cancelEdit()" style="display:none;background:var(--gray-100);color:var(--gray-600)">取消编辑</button>
+  </div>
+
+  <div class="section" id="openSec" style="display:none">
+    <h2>&#128204; 在招的活 <span id="openCount" style="color:var(--gray-400);font-weight:400;font-size:.8rem"></span></h2>
+    <div id="openList"></div>
+  </div>
+  <div class="section" id="emptySec" style="display:none"><div class="hint">现在没有在招的活 — 有新需求就在上面发布</div></div>
+
+  <div class="section" id="histSec" style="display:none">
+    <h2>&#128337; 最近结束的（30 天内）</h2>
+    <div id="histList"></div>
+  </div>
+
+  <div class="hint" id="loading">加载中…</div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+function getToken() {
+  const m = (document.cookie || '').match(/pa_token=([^;]+)/);
+  if (m) return m[1];
+  return localStorage.getItem('adminToken') || '';
+}
+async function api(path, opts = {}) {
+  const headers = { 'Authorization': 'Bearer ' + getToken(), ...(opts.headers || {}) };
+  if (opts.body && typeof opts.body === 'string') headers['Content-Type'] = 'application/json';
+  const res = await fetch('/api' + path, { ...opts, headers });
+  if (res.status === 401) { location.href = '/sms-inbox'; throw new Error('Unauthorized'); }
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch (_) { throw new Error('服务器暂时不可用（可能正在部署更新），等半分钟再试一次'); }
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+let USER = null, _jobs = [], _today = '', _warehouses = [];
+const OTHER = '__other__';
+
+async function load() {
+  try {
+    USER = await api('/admin/me');
+    document.getElementById('roleTag').textContent = '👤 ' + (USER.display_name || USER.username || '');
+    // 仓库下拉: 工作地点列表 + 手填
+    try {
+      const sites = await api('/admin/job-sites');
+      _warehouses = (Array.isArray(sites) ? sites : []).map(s => (s && s.name) || '').filter(Boolean);
+    } catch (_) { _warehouses = []; }
+    renderWhOptions('');
+    await reload();
+  } catch (e) { document.getElementById('loading').textContent = e.message || '加载失败'; return; }
+  document.getElementById('loading').style.display = 'none';
+}
+function renderWhOptions(current) {
+  const names = _warehouses.slice();
+  if (current && current !== OTHER && !names.includes(current)) names.push(current);
+  document.getElementById('fWarehouse').innerHTML = '<option value="">— 选择仓库 —</option>'
+    + names.map(n => '<option value="' + esc(n) + '"' + (n === current ? ' selected' : '') + '>🏭 ' + esc(n) + '</option>').join('')
+    + '<option value="' + OTHER + '"' + (current === OTHER ? ' selected' : '') + '>✏️ 其他（手填）</option>';
+  onWhChange();
+}
+function onWhChange() {
+  document.getElementById('fWarehouseOther').style.display =
+    document.getElementById('fWarehouse').value === OTHER ? '' : 'none';
+}
+async function reload() {
+  const r = await api('/admin/recruit-jobs');
+  _jobs = (r && r.jobs) || [];
+  _today = (r && r.today) || '';
+  render();
+}
+function payChips(j) {
+  let h = '';
+  if (j.worker_pay) h += '<span class="pay-chip">👷 工人 ' + esc(j.worker_pay) + '</span>';
+  if (j.foreman_cap) h += '<span class="pay-chip cap">🦺 工头上限 ' + esc(j.foreman_cap) + '</span>';
+  return h ? '<div class="pay-line">' + h + '</div>' : '';
+}
+function render() {
+  document.getElementById('dateNow').textContent = '📅 ' + _today;
+  const open = _jobs.filter(j => j.status === 'open');
+  const done = _jobs.filter(j => j.status !== 'open');
+  const unchecked = open.filter(j => j.last_check_date !== _today);
+  // 顶部核对提醒: 每天第一件事
+  const al = document.getElementById('checkAlert');
+  al.style.display = open.length ? '' : 'none';
+  al.className = 'alert' + (unchecked.length ? '' : ' ok');
+  al.textContent = unchecked.length
+    ? '⚠️ 今天还有 ' + unchecked.length + ' 条招工没核对 — 请逐条确认：还在招？找到人了？不需要了？'
+    : '✅ 今天的招工信息已全部核对完';
+
+  document.getElementById('openSec').style.display = open.length ? '' : 'none';
+  document.getElementById('emptySec').style.display = open.length ? 'none' : '';
+  document.getElementById('openCount').textContent = '（' + open.length + ' 条）';
+  document.getElementById('openList').innerHTML = open.map(j => {
+    const checkedToday = j.last_check_date === _today;
+    return '<div class="job-card' + (checkedToday ? '' : ' unchecked') + '">'
+      + '<span class="wh-badge">🏭 ' + esc(j.warehouse) + '</span>'
+      + '<div class="pos">' + esc(j.position) + '</div>'
+      + payChips(j)
+      + (j.details ? '<div class="details">' + esc(j.details) + '</div>' : '')
+      + '<div class="meta">发布: ' + esc(j.created_by || '') + ' · ' + esc(String(j.created_at || '').slice(0, 10)) + '</div>'
+      + '<div class="check-state" style="color:' + (checkedToday ? 'var(--green)' : 'var(--red)') + '">'
+      + (checkedToday ? '✅ 今天已核对（' + esc(j.last_check_by || '') + '）' : '⚠️ 今天还没核对') + '</div>'
+      + '<div class="job-actions">'
+      + (checkedToday ? '' : '<button class="ja check" onclick="act(' + j.id + ',\'check\')">✓ 还在招</button>')
+      + '<button class="ja filled" onclick="act(' + j.id + ',\'filled\')">🎉 找到人了</button>'
+      + '<button class="ja closed" onclick="act(' + j.id + ',\'closed\')">🚫 不需要了</button>'
+      + '<button class="ja edit" onclick="startEdit(' + j.id + ')">✏️ 编辑</button>'
+      + '</div></div>';
+  }).join('');
+
+  document.getElementById('histSec').style.display = done.length ? '' : 'none';
+  document.getElementById('histList').innerHTML = done.map(j =>
+    '<div class="job-card done">'
+    + '<span class="wh-badge">🏭 ' + esc(j.warehouse) + '</span>'
+    + '<span class="status-badge" style="' + (j.status === 'filled' ? 'background:#dbeafe;color:#1d4ed8' : 'background:#fee2e2;color:#b91c1c') + '">'
+    + (j.status === 'filled' ? '🎉 已找到人' : '🚫 不需要了') + (j.status_by ? ' · ' + esc(j.status_by) : '') + '</span>'
+    + '<div class="pos">' + esc(j.position) + '</div>'
+    + payChips(j)
+    + (j.details ? '<div class="details">' + esc(j.details) + '</div>' : '')
+    + '<div class="meta">结束于 ' + esc(String(j.status_at || j.updated_at || '').slice(0, 10)) + '</div>'
+    + '<div class="job-actions"><button class="ja reopen" onclick="act(' + j.id + ',\'open\')">↩ 重新打开（继续招）</button></div>'
+    + '</div>'
+  ).join('');
+}
+async function act(id, what) {
+  try {
+    const body = what === 'check' ? { action: 'check' } : { status: what };
+    const r = await api('/admin/recruit-jobs/' + id, { method: 'PATCH', body: JSON.stringify(body) });
+    if (r && r.error) throw new Error(r.error);
+    toast(what === 'check' ? '✅ 已核对：还在招' : what === 'filled' ? '🎉 已标记找到人' : what === 'closed' ? '🚫 已标记不需要' : '↩ 已重新打开');
+    await reload();
+  } catch (e) { toast(e.message || '操作失败'); }
+}
+function _whValue() {
+  const sel = document.getElementById('fWarehouse').value;
+  return sel === OTHER ? document.getElementById('fWarehouseOther').value.trim() : sel;
+}
+function startEdit(id) {
+  const j = _jobs.find(x => x.id === id);
+  if (!j) return;
+  document.getElementById('editId').value = id;
+  renderWhOptions(j.warehouse);
+  document.getElementById('fPosition').value = j.position || '';
+  document.getElementById('fDetails').value = j.details || '';
+  document.getElementById('fWorkerPay').value = j.worker_pay || '';
+  document.getElementById('fForemanCap').value = j.foreman_cap || '';
+  document.getElementById('fHeadcount').value = '';
+  document.getElementById('formTitle').textContent = '✏️ 编辑招工需求 #' + id;
+  document.getElementById('saveBtn').textContent = '保存修改';
+  document.getElementById('cancelEditBtn').style.display = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function cancelEdit() {
+  document.getElementById('editId').value = '';
+  ['fPosition', 'fDetails', 'fWorkerPay', 'fForemanCap', 'fHeadcount', 'fWarehouseOther'].forEach(id => document.getElementById(id).value = '');
+  renderWhOptions('');
+  document.getElementById('formTitle').textContent = '➕ 新增招工需求';
+  document.getElementById('saveBtn').textContent = '发布';
+  document.getElementById('cancelEditBtn').style.display = 'none';
+}
+async function saveJob() {
+  try {
+    const warehouse = _whValue();
+    const position = document.getElementById('fPosition').value.trim();
+    const headcount = document.getElementById('fHeadcount').value.trim();
+    if (!warehouse) { toast('请选择仓库'); return; }
+    if (!position) { toast('请填写工种'); return; }
+    const payload = {
+      warehouse,
+      position: position + (headcount ? ' × ' + headcount + '人' : ''),
+      details: document.getElementById('fDetails').value.trim(),
+      worker_pay: document.getElementById('fWorkerPay').value.trim(),
+      foreman_cap: document.getElementById('fForemanCap').value.trim()
+    };
+    const editId = document.getElementById('editId').value;
+    const r = editId
+      ? await api('/admin/recruit-jobs/' + editId, { method: 'PATCH', body: JSON.stringify(payload) })
+      : await api('/admin/recruit-jobs', { method: 'POST', body: JSON.stringify(payload) });
+    if (r && r.error) throw new Error(r.error);
+    toast(editId ? '✅ 已保存修改' : '📢 已发布');
+    cancelEdit();
+    await reload();
+  } catch (e) { toast(e.message || '保存失败'); }
+}
+load();
+</script>
+</body>
+</html>

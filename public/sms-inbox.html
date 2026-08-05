@@ -737,6 +737,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   <div class="modal" style="max-width:520px">
     <h3>&#9881; 管理面板 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员</span></h3>
     <div class="dash-grid">
+      <div class="dash-card" onclick="dashOpen(() => location.href = '/recruit')">
+        <span class="dash-ico">&#128226;</span>
+        <div><b>每日招工</b><small>仓库用工需求 · 每天核对还在不在招</small></div>
+      </div>
       <div class="dash-card" onclick="dashOpen(showIvListModal)">
         <span class="dash-ico">&#128198;</span>
         <div><b>面试总览</b><small>已预约的面试与最近结果</small></div>
