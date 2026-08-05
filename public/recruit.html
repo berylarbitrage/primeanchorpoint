@@ -501,7 +501,7 @@ function drawPoster(text, filename) {
       }
       lines.push(cur);
     }
-    const headH = 110, footH = 84;
+    const headH = 110, footH = 36;   // 底部只留空白, 不放公司名
     const H = headH + 30 + lines.length * lineH + footH;
     const cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
@@ -510,11 +510,17 @@ function drawPoster(text, filename) {
     ctx.fillStyle = '#b45309'; ctx.fillRect(0, 0, W, headH);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 42px "DM Sans","PingFang SC",sans-serif';
     ctx.fillText('📢 招工 · Job Opening', pad, 68);
-    ctx.fillStyle = '#2D3748'; ctx.font = font;
-    lines.forEach((ln, i) => ctx.fillText(ln, pad, headH + 30 + (i + 0.8) * lineH));
-    ctx.fillStyle = '#b45309'; ctx.fillRect(0, H - footH, W, footH);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 28px "DM Sans","PingFang SC",sans-serif';
-    ctx.fillText('Prime Anchor Workforce', pad, H - footH / 2 + 10);
+    ctx.font = font;
+    lines.forEach((ln, i) => {
+      const y = headH + 30 + (i + 0.8) * lineH;
+      if (/^─+$/.test(ln.trim())) {
+        ctx.strokeStyle = '#e8d9b8'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(pad, y - 12); ctx.lineTo(W - pad, y - 12); ctx.stroke();
+      } else {
+        ctx.fillStyle = '#2D3748';
+        ctx.fillText(ln, pad, y);
+      }
+    });
     showPosterPreview(cv.toDataURL('image/png'), filename);
 }
 // ─── 图片预览: 先看再下载/复制 ───
