@@ -164,6 +164,13 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
 </div>
 <div id="posterModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:45;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closePosterModal()">
   <div style="background:#fff;border-radius:14px;padding:14px;max-width:460px;width:100%;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center">
+      <span style="font-size:.76rem;font-weight:700;color:var(--gray-500)">语言:</span>
+      <button class="pl-lang" data-pl="zh" onclick="regenPoster('zh')" style="width:auto;padding:5px 12px;border:1.5px solid var(--gray-200);background:#fff;border-radius:999px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit">中文</button>
+      <button class="pl-lang" data-pl="en" onclick="regenPoster('en')" style="width:auto;padding:5px 12px;border:1.5px solid var(--gray-200);background:#fff;border-radius:999px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit">English</button>
+      <button class="pl-lang" data-pl="es" onclick="regenPoster('es')" style="width:auto;padding:5px 12px;border:1.5px solid var(--gray-200);background:#fff;border-radius:999px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit">Español</button>
+      <span id="posterBusy" style="display:none;font-size:.76rem;color:var(--gray-400)">生成中…</span>
+    </div>
     <img id="posterImg" style="width:100%;border-radius:10px;border:1px solid var(--gray-200)" alt="预览">
     <div style="display:flex;gap:8px;margin-top:10px">
       <button onclick="closePosterModal()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--gray-100);color:var(--gray-600);font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">关闭</button>
@@ -384,7 +391,7 @@ function render() {
       + '<div class="job-actions" style="margin-top:6px;align-items:center">'
       + '<select id="shareAud-' + j.id + '" style="width:auto;padding:6px 8px;font-size:.8rem;border-radius:8px">'
       + '<option value="worker">👷 工人版</option><option value="foreman">🦺 工头版</option></select>'
-      + '<select id="shareLang-' + j.id + '" style="width:auto;padding:6px 8px;font-size:.8rem;border-radius:8px">'
+      + '<select id="shareLang-' + j.id + '" onchange="onShareLangChange(' + j.id + ')" style="width:auto;padding:6px 8px;font-size:.8rem;border-radius:8px">'
       + '<option value="zh">中文</option><option value="en">English</option><option value="es">Español</option></select>'
       + '<button class="ja edit" onclick="copyShare(' + j.id + ')">📋 复制文案</button>'
       + '<button class="ja edit" onclick="shareImage(' + j.id + ')">🖼 生成图片</button>'
@@ -450,18 +457,21 @@ async function confirmRateModal() {
   }
   const shifts = parseShifts(j.shifts);
   const lang = (document.getElementById('shareLang-' + _rateJobId) || {}).value || 'zh';
-  const body = shifts.length
-    ? { lang, rates: inputs.map(el => el.value.trim()) }
-    : { lang, general_rate: inputs[0].value.trim() };
+  const rateBody = shifts.length
+    ? { rates: inputs.map(el => el.value.trim()), general_rate: '' }
+    : { rates: [], general_rate: inputs[0].value.trim() };
+  const body = { lang, ...rateBody };
   try {
     const r = await api('/admin/recruit-jobs/' + _rateJobId + '/share-text-foreman', { method: 'POST', body: JSON.stringify(body) });
     if (r && r.error) throw new Error(r.error);
+    _rateCache[_rateJobId] = rateBody; // 记住这次填的工资, 换语言/再次生成不用重填
     closeRateModal();
     if (_rateAction === 'copy') {
       try { await navigator.clipboard.writeText(r.text); }
       catch (_) { const ta = document.createElement('textarea'); ta.value = r.text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
       toast('📋 工头版文案已复制');
     } else {
+      _posterCtx = { jobId: _rateJobId, audience: 'foreman', lang, ...rateBody };
       drawPoster(r.text, 'foreman-job-' + _rateJobId + '-' + lang + '.png');
     }
   } catch (e) { toast(e.message || '生成失败'); }
@@ -481,11 +491,29 @@ async function copyShare(id) {
   } catch (e) { toast(e.message || '复制失败'); }
 }
 async function shareImage(id) {
-  if (_shareAud(id) === 'foreman') { openRateModal(id, 'image'); return; }
+  if (_shareAud(id) === 'foreman') {
+    // 之前填过工资的, 直接用缓存立即出预览; 没填过的先弹输入
+    if (_rateCache[id]) {
+      _posterCtx = { jobId: id, audience: 'foreman', lang: (document.getElementById('shareLang-' + id) || {}).value || 'zh', ..._rateCache[id] };
+      regenPoster(_posterCtx.lang);
+      document.getElementById('posterModal').style.display = 'flex';
+      return;
+    }
+    openRateModal(id, 'image'); return;
+  }
   try {
+    const lang = (document.getElementById('shareLang-' + id) || {}).value || 'zh';
+    _posterCtx = { jobId: id, audience: 'worker', lang };
     const text = await _shareText(id);
-    drawPoster(text, 'job-' + id + '-' + ((document.getElementById('shareLang-' + id) || {}).value || 'zh') + '.png');
+    drawPoster(text, 'job-' + id + '-' + lang + '.png');
   } catch (e) { toast(e.message || '生成失败'); }
+}
+// 卡片上换语言 → 预览开着就立刻按新语言重生成
+function onShareLangChange(id) {
+  const modalOpen = document.getElementById('posterModal').style.display === 'flex';
+  if (modalOpen && _posterCtx && _posterCtx.jobId === id) {
+    regenPoster((document.getElementById('shareLang-' + id) || {}).value || 'zh');
+  }
 }
 function drawPoster(text, filename) {
     const W = 750, pad = 46, lineH = 52, font = '32px "DM Sans","PingFang SC","Microsoft YaHei",sans-serif';
@@ -523,12 +551,46 @@ function drawPoster(text, filename) {
     });
     showPosterPreview(cv.toDataURL('image/png'), filename);
 }
-// ─── 图片预览: 先看再下载/复制 ───
-let _posterUrl = '', _posterName = '';
+// ─── 图片预览: 先看再下载/复制; 弹窗内可即时切换语言 ───
+let _posterUrl = '', _posterName = '', _posterCtx = null; // {jobId, audience, lang, rates, general_rate}
+const _rateCache = {}; // jobId → 上次填过的工头工资, 换语言重生成时直接复用
 function showPosterPreview(dataUrl, filename) {
   _posterUrl = dataUrl; _posterName = filename;
   document.getElementById('posterImg').src = dataUrl;
   document.getElementById('posterModal').style.display = 'flex';
+  _plHighlight();
+}
+function _plHighlight() {
+  const cur = (_posterCtx && _posterCtx.lang) || 'zh';
+  document.querySelectorAll('.pl-lang').forEach(b => {
+    const on = b.getAttribute('data-pl') === cur;
+    b.style.borderColor = on ? 'var(--accent)' : 'var(--gray-200)';
+    b.style.background = on ? 'var(--sky-light)' : '#fff';
+    b.style.color = on ? 'var(--blue)' : 'var(--gray-600)';
+  });
+}
+async function regenPoster(lang) {
+  if (!_posterCtx) return;
+  const busy = document.getElementById('posterBusy');
+  busy.style.display = '';
+  try {
+    let text;
+    if (_posterCtx.audience === 'foreman') {
+      const body = { lang, rates: _posterCtx.rates, general_rate: _posterCtx.general_rate };
+      const r = await api('/admin/recruit-jobs/' + _posterCtx.jobId + '/share-text-foreman', { method: 'POST', body: JSON.stringify(body) });
+      if (r && r.error) throw new Error(r.error);
+      text = r.text;
+    } else {
+      const r = await api('/admin/recruit-jobs/' + _posterCtx.jobId + '/share-text?lang=' + lang);
+      if (r && r.error) throw new Error(r.error);
+      text = r.text;
+    }
+    _posterCtx.lang = lang;
+    const sel = document.getElementById('shareLang-' + _posterCtx.jobId);
+    if (sel) sel.value = lang;
+    drawPoster(text, (_posterCtx.audience === 'foreman' ? 'foreman-' : '') + 'job-' + _posterCtx.jobId + '-' + lang + '.png');
+  } catch (e) { toast(e.message || '生成失败'); }
+  busy.style.display = 'none';
 }
 function closePosterModal() { document.getElementById('posterModal').style.display = 'none'; }
 function downloadPoster() {
