@@ -39437,7 +39437,7 @@ async function generateInvpPreview() {
     // 合并成一个「Hours 总工时」列、去掉 OT 两列。只有真有加班加价时才保留拆分。
     const hideOt = !items.some(i => (i.otHours || 0) > 0 && (i.otRate || 0) > (i.rate || 0) + 0.001);
     const totalAllHrs = totalRegHrs + totalOtHrs;
-    totalRowColspan = hasPosition ? 4 : 3;
+    totalRowColspan = hasPosition ? 5 : 4;   // 含最前面的序号列
     const tableRows = items.map((i, idx) => {
       // 只有「这一行的 markup 和别的行不一样」才标蓝提醒；整张发票 markup
       // 统一（哪怕和默认值不同）就按正常斑马纹显示。
@@ -39446,6 +39446,7 @@ async function generateInvpPreview() {
         ? `<td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>`
         : '';
       return `<tr style="background:${rowBg}">
+        <td style="padding:9px 6px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b">${idx + 1}</td>
         <td class="invp-name-cell" data-wname="${esc(_invpDisplayWorkerName(i.name))}" onclick="invpToggleNameSel(this)" title="点击选择，可复制选中的名字（逗号分隔）" style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(_invpDisplayWorkerName(i.name))}${(i.note||'').trim() ? `<div style="font-weight:400;font-size:.72rem;color:#64748b;text-transform:none;white-space:normal;max-width:220px">${esc((i.note||'').trim())}</div>` : ''}</td>
         ${posCell}
         <td style="padding:9px 8px;border-bottom:1px solid #e2e8f0;text-align:right">${hideOt ? ((i.regHours||0)+(i.otHours||0)).toFixed(2) : (i.regHours||0).toFixed(2)}</td>
@@ -39466,6 +39467,7 @@ async function generateInvpPreview() {
       <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.82rem;border:1px solid #29AAE1">
         <thead>
           <tr style="background:#f0f9ff;color:#075985;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
+            <th style="padding:8px 6px;font-weight:700;text-align:center">N.</th>
             <th style="padding:8px 8px;font-weight:700;text-align:left">Worker</th>
             ${hasPosition ? `<th style="padding:8px 8px;font-weight:700;text-align:left">Position</th>` : ''}
             <th style="padding:8px 8px;font-weight:700;text-align:right;white-space:nowrap">${hideOt ? 'Hours' : 'Reg Hours'}</th>
