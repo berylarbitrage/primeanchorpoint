@@ -80,7 +80,12 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
       </div>
       <div>
         <label>要几个人（选填）</label>
-        <input id="fHeadcount" placeholder="如 5">
+        <input id="fHeadcount" list="hcList" placeholder="如 5 / 越多越好">
+        <datalist id="hcList">
+          <option value="越多越好"></option>
+          <option value="1"></option><option value="2"></option><option value="3"></option>
+          <option value="5"></option><option value="10"></option><option value="20"></option>
+        </datalist>
       </div>
     </div>
     <label>班次 &amp; 工资（不同班次可以不同价，可加多条）</label>
@@ -456,7 +461,7 @@ async function saveJob() {
     if (!language_req) { toast('请选择语言要求（不限也要选）'); return; }
     const payload = {
       warehouse,
-      position: position + (headcount ? ' × ' + headcount + '人' : ''),
+      position: position + (headcount ? ' × ' + headcount + (/^\d+$/.test(headcount) ? '人' : '') : ''),
       details: document.getElementById('fDetails').value.trim(),
       worker_pay: document.getElementById('fWorkerPay').value.trim(),
       foreman_cap: document.getElementById('fForemanCap').value.trim(),
