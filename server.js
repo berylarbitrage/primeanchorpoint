@@ -25660,6 +25660,55 @@ app.delete('/api/admin/recruit-jobs/:id', requireAdmin, requireRole('admin'), (r
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// 工头版文案: 需要提供实际给工头的工资 (逐班次), 服务器校验不得超过存的上限
+app.post('/api/admin/recruit-jobs/:id/share-text-foreman', requireAdmin, async (req, res) => {
+  try {
+    const job = db.prepare('SELECT * FROM recruit_jobs WHERE id=?').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    const lang = ['en', 'es'].includes((req.body || {}).lang) ? req.body.lang : 'zh';
+    const rates = Array.isArray((req.body || {}).rates) ? req.body.rates.map(r => String(r || '').trim()) : [];
+    const generalRate = String((req.body || {}).general_rate || '').trim();
+    const num = v => { const m = String(v || '').match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+    let shifts = [];
+    try { shifts = JSON.parse(job.shifts || '[]'); } catch (_) {}
+    // 校验: 每个班次给工头的钱 ≤ 该班次上限; 总体价 ≤ 总体上限
+    const lines = [];
+    for (let i = 0; i < shifts.length; i++) {
+      const s = shifts[i], offered = rates[i] || '';
+      if (!offered) return res.status(400).json({ error: '请填写「' + s.shift + '」给工头的工资' });
+      const capN = num(s.foreman_cap), offN = num(offered);
+      if (capN != null && offN != null && offN > capN + 1e-9) {
+        return res.status(400).json({ error: '「' + s.shift + '」给工头 ' + offered + ' 超过了上限 ' + s.foreman_cap });
+      }
+      lines.push('⏰ ' + s.shift + ' · 💰 ' + offered + (s.lang ? ' · 🗨️ ' + s.lang : ''));
+    }
+    if (!shifts.length) {
+      if (!generalRate) return res.status(400).json({ error: '请填写给工头的工资' });
+      const capN = num(job.foreman_cap), offN = num(generalRate);
+      if (capN != null && offN != null && offN > capN + 1e-9) {
+        return res.status(400).json({ error: '给工头 ' + generalRate + ' 超过了上限 ' + job.foreman_cap });
+      }
+      lines.push('💰 工资: ' + generalRate);
+    }
+    const zh = [
+      '📢 招工啦！（工头合作）',
+      '🏭 仓库: ' + job.warehouse,
+      '👷 工种: ' + job.position,
+      ...lines,
+      job.language_req ? '🗨️ 语言要求: ' + job.language_req : '',
+      job.ead_required ? '🪪 需要真实有效的 EAD 工卡' : '',
+      job.details ? '📋 ' + job.details : '',
+      job.interview_required ? '🗣 需要面试' + (job.interview_notes ? ': ' + job.interview_notes : '') : ''
+    ].filter(Boolean).join('\n');
+    let text = zh;
+    if (lang !== 'zh') {
+      const t = await translateText(zh, 'zh', lang);
+      if (t) text = t;
+    }
+    res.json({ text, lang });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 分享文案 (发工人群/朋友圈用): 只含对外信息, 不带工头上限等内部内容; en/es 自动翻译
 app.get('/api/admin/recruit-jobs/:id/share-text', requireAdmin, async (req, res) => {
   try {
