@@ -162,6 +162,16 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
 
   <div class="hint" id="loading">加载中…</div>
 </div>
+<div id="posterModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:45;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closePosterModal()">
+  <div style="background:#fff;border-radius:14px;padding:14px;max-width:460px;width:100%;max-height:92vh;overflow-y:auto">
+    <img id="posterImg" style="width:100%;border-radius:10px;border:1px solid var(--gray-200)" alt="预览">
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button onclick="closePosterModal()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--gray-100);color:var(--gray-600);font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">关闭</button>
+      <button onclick="copyPosterImg()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">📋 复制图片</button>
+      <button onclick="downloadPoster()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--sky);color:#fff;font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">⬇ 下载</button>
+    </div>
+  </div>
+</div>
 <div id="rateModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40;align-items:center;justify-content:center;padding:16px">
   <div style="background:#fff;border-radius:14px;padding:18px;max-width:420px;width:100%">
     <h2 style="font-size:.95rem;color:var(--blue);margin-bottom:4px">🦺 生成工头版 — 填给工头的工资</h2>
@@ -453,7 +463,6 @@ async function confirmRateModal() {
       toast('📋 工头版文案已复制');
     } else {
       drawPoster(r.text, 'foreman-job-' + _rateJobId + '-' + lang + '.png');
-      toast('🖼 工头版图片已生成下载');
     }
   } catch (e) { toast(e.message || '生成失败'); }
 }
@@ -476,7 +485,6 @@ async function shareImage(id) {
   try {
     const text = await _shareText(id);
     drawPoster(text, 'job-' + id + '-' + ((document.getElementById('shareLang-' + id) || {}).value || 'zh') + '.png');
-    toast('🖼 图片已生成下载，可直接发群');
   } catch (e) { toast(e.message || '生成失败'); }
 }
 function drawPoster(text, filename) {
@@ -507,10 +515,27 @@ function drawPoster(text, filename) {
     ctx.fillStyle = '#b45309'; ctx.fillRect(0, H - footH, W, footH);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 28px "DM Sans","PingFang SC",sans-serif';
     ctx.fillText('Prime Anchor Workforce', pad, H - footH / 2 + 10);
-    const a = document.createElement('a');
-    a.href = cv.toDataURL('image/png');
-    a.download = filename;
-    a.click();
+    showPosterPreview(cv.toDataURL('image/png'), filename);
+}
+// ─── 图片预览: 先看再下载/复制 ───
+let _posterUrl = '', _posterName = '';
+function showPosterPreview(dataUrl, filename) {
+  _posterUrl = dataUrl; _posterName = filename;
+  document.getElementById('posterImg').src = dataUrl;
+  document.getElementById('posterModal').style.display = 'flex';
+}
+function closePosterModal() { document.getElementById('posterModal').style.display = 'none'; }
+function downloadPoster() {
+  const a = document.createElement('a');
+  a.href = _posterUrl; a.download = _posterName; a.click();
+  toast('⬇ 已下载');
+}
+async function copyPosterImg() {
+  try {
+    const blob = await (await fetch(_posterUrl)).blob();
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    toast('📋 图片已复制，可直接粘贴到聊天里');
+  } catch (_) { toast('这个浏览器不支持复制图片，请点下载'); }
 }
 async function act(id, what) {
   try {
