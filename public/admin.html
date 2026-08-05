@@ -8498,10 +8498,11 @@ function showConfirm(message, { confirmLabel = '确认', cancelLabel = '取消',
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000;font-family:\'DM Sans\',sans-serif';
     const box = document.createElement('div');
-    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem';
+    // max-height + 内容区滚动: 提示很长时(如几十条工时查重)按钮仍固定可见, 中间可滑动
+    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem;max-height:85vh;display:flex;flex-direction:column';
     const confirmBg = danger ? '#E63946' : '#b45309';
     box.innerHTML =
-      '<div style="font-size:.9rem;color:#2D3748;line-height:1.7;margin-bottom:1.5rem;white-space:pre-line">' + message + '</div>' +
+      '<div style="font-size:.9rem;color:#2D3748;line-height:1.7;margin-bottom:1.5rem;white-space:pre-line;overflow-y:auto;flex:1 1 auto;min-height:0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch">' + message + '</div>' +
       '<div style="display:flex;gap:.6rem;justify-content:flex-end">' +
         '<button class="_sc-cancel" style="padding:8px 18px;border:1px solid #e2e5ea;border-radius:8px;background:transparent;color:#5F6B7A;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">' + cancelLabel + '</button>' +
         '<button class="_sc-confirm" style="padding:8px 18px;border:none;border-radius:8px;background:' + confirmBg + ';color:#fff;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">' + confirmLabel + '</button>' +
@@ -36311,18 +36312,24 @@ async function saveInvpInvoice(status) {
       if (byName.has(k)) problems.push(`同名工人出现多次：<b>${esc(it.name)}</b>`);
       else byName.set(k, true);
     }
+    // 相同工时按组合并成一行（REG x + OT y：共 N 人），否则一批人工时相同时
+    // 两两配对会列出几十行，弹窗根本看不完。
     const byTime = new Map();
     for (const it of items) {
       const reg = Math.round((it.regHours || 0) * 100) / 100, ot = Math.round((it.otHours || 0) * 100) / 100;
       if (reg + ot <= 0) continue;
       if (reg === 40 && ot === 0) continue;   // 满勤整周无加班，相同属正常
       const k = reg + '/' + ot;
-      if (byTime.has(k)) problems.push(`工时完全相同（REG ${reg}h + OT ${ot}h）：<b>${esc(byTime.get(k))}</b> 和 <b>${esc(it.name)}</b>`);
-      else byTime.set(k, it.name);
+      if (!byTime.has(k)) byTime.set(k, { reg, ot, names: [] });
+      byTime.get(k).names.push(it.name);
+    }
+    for (const g of byTime.values()) {
+      if (g.names.length < 2) continue;
+      problems.push(`工时完全相同（REG ${g.reg}h + OT ${g.ot}h）共 <b>${g.names.length}</b> 人：<b>${g.names.map(esc).join('、')}</b>`);
     }
     if (problems.length) {
       const ok = await showConfirm(
-        `⚠️ 保存前核对，发现疑似重复的工人工时：<br><br>${[...new Set(problems)].join('<br>')}<br><br>确认这些不是重复录入、仍要保存吗？`,
+        `⚠️ 保存前核对，发现疑似重复的工人工时：<br><br>${[...new Set(problems)].join('<br><br>')}<br><br>确认这些不是重复录入、仍要保存吗？`,
         { confirmLabel: '确认无误，保存', cancelLabel: '返回核对', danger: true }
       );
       if (!ok) return;
