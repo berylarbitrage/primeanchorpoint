@@ -1172,6 +1172,12 @@ try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_date TEXT DEFAULT NUL
 // Manual 工资↔分包回执 correspondence groups (JSON): [{ w:[itemIndex...], t:[txnId...] }].
 try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_match_groups TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
+// 兼容：invoices 有两处同名建表定义（2470 行的旧版没有这些列）。全新数据库会按旧版
+// 建表，导致发票管理接口 SELECT items_json/status 直接报错。生产库已有这些列，此处为 no-op。
+try { db.exec(`ALTER TABLE invoices ADD COLUMN for_label TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN items_json TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN profile_json TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN status TEXT DEFAULT 'draft'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`UPDATE employees SET employee_id = REPLACE(employee_id, 'STAFF-', 'WRK-') WHERE employee_id LIKE 'STAFF-%'`); } catch(e) {}
 // Migration: fix employee_id date part to match hire_date (UTC timezone offset bug)
