@@ -343,8 +343,16 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   /* Media & form controls must never push past the viewport width. */
   img,svg,video,canvas{ max-width:100%; height:auto; }
   input,select,textarea{ max-width:100%; box-sizing:border-box; }
+  /* 宽表格在卡片内横向滚动，而不是把整个页面撑宽 —— 页面一旦被撑宽，
+     手机浏览器会把布局视口扩到内容宽度，固定定位的弹窗就会跑出屏幕。 */
+  .card{ overflow-x:auto; }
   /* Use the screen for modals; trim the desktop padding. */
-  .modal{ max-width:96vw !important; padding:1.1rem !important; }
+  .modal{ max-width:96vw !important; padding:1.1rem !important; max-height:88vh; max-height:88dvh; }
+  /* 顶部对齐 + 背景可滚动：弹窗高过屏幕时底部按钮仍然够得着
+     (dvh 按手机浏览器的实际可视高度算，不会被地址栏吃掉) */
+  .modal-bg.show{ align-items:flex-start; padding:1rem .5rem; overflow-y:auto; }
+  /* 仓库弹窗里的地图预览在小屏上压矮，给表单和按钮留空间 */
+  #siteMapPreview{ height:150px !important; }
   /* Let the full invoice page be reached by scrolling from its left edge. */
   #invpPreviewContent{ justify-content:flex-start !important; padding:.5rem !important; }
 }
@@ -28565,7 +28573,10 @@ function updateSiteMap() {
   }
   wrap.style.display = '';
   if (!_siteMap) {
-    _siteMap = L.map('siteMapPreview', { zoomControl: true, scrollWheelZoom: false });
+    // 触屏上禁用单指拖动（保留双指缩放），否则手指划到地图上时弹窗滚不动，
+    // 底部的取消/保存按钮就够不着了。这张图只是预览，不需要拖。
+    const touch = ('ontouchstart' in window);
+    _siteMap = L.map('siteMapPreview', { zoomControl: true, scrollWheelZoom: false, dragging: !touch, tap: false });
     L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
       attribution: '© Google Maps',
       maxZoom: 20,
