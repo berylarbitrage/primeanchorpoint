@@ -35,6 +35,7 @@ tr:hover td{background:#FAFBFD}
 .tag-break{background:#FEF5E7;color:var(--amber)}
 .tag-closed{background:var(--off);color:var(--gray-500)}
 .tag-gps{background:#EAF2FB;color:var(--sky)}
+.tag-warn{background:#FDECEA;color:var(--red)}
 .summary{font-size:.85rem;color:var(--gray-600);margin-bottom:.6rem}
 .empty{text-align:center;padding:2.5rem 1rem;color:var(--gray-400)}
 .table-scroll{overflow-x:auto;border-radius:10px;border:1px solid var(--gray-200)}
@@ -240,9 +241,10 @@ function renderTable() {
     const status = e.status === 'open'
       ? (e.on_break ? '<span class="tag tag-break">休息中</span>' : '<span class="tag tag-open">在班</span>')
       : '<span class="tag tag-closed">已下班</span>';
+    const warn = e.suspect_proxy ? ` <span class="tag tag-warn" title="${esc(e.suspect_note || '')}">⚠ 同设备多人</span>` : '';
     return `<tr>
       <td>${i + 1}</td>
-      <td style="font-weight:600">${esc(e.name)}</td>
+      <td style="font-weight:600">${esc(e.name)}${warn}</td>
       <td>${esc(e.emp_code)}</td>
       <td>${esc(e.site_name)}${e.site_code ? ' <span style="color:var(--gray-400)">(' + esc(e.site_code) + ')</span>' : ''}</td>
       <td>${fmtTime(e.clock_in, e.timezone)}</td>
@@ -260,9 +262,10 @@ function renderTable() {
       ? (e.on_break ? '<span class="tag tag-break">休息中</span>' : '<span class="tag tag-open">在班</span>')
       : '<span class="tag tag-closed">已下班</span>';
     const breaks = (e.breaks || []).map(b => fmtTime(b.start, e.timezone) + '–' + (b.end ? fmtTime(b.end, e.timezone) : '…')).join('、');
-    return `<div class="rec-card">
-      <div class="rc-top"><strong>${esc(e.name)}</strong><span>${e.geo_verified ? '<span class="tag tag-gps">GPS ✓</span> ' : ''}${status}</span></div>
+    return `<div class="rec-card"${e.suspect_proxy ? ' style="border-color:var(--red)"' : ''}>
+      <div class="rc-top"><strong>${esc(e.name)}</strong><span>${e.suspect_proxy ? '<span class="tag tag-warn">⚠ 同设备多人</span> ' : ''}${e.geo_verified ? '<span class="tag tag-gps">GPS ✓</span> ' : ''}${status}</span></div>
       <div class="rc-sub">${esc(e.site_name)}${e.site_code ? ' (' + esc(e.site_code) + ')' : ''}${e.emp_code ? ' · ' + esc(e.emp_code) : ''}</div>
+      ${e.suspect_proxy && e.suspect_note ? `<div class="rc-sub" style="color:var(--red)">${esc(e.suspect_note)}</div>` : ''}
       <div class="rc-times">
         <span>上班 <b>${fmtTime(e.clock_in, e.timezone)}</b></span>
         <span>下班 <b>${fmtTime(e.clock_out, e.timezone)}</b></span>

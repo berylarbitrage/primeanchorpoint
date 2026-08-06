@@ -762,6 +762,10 @@ db.exec(`
 try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE warehouses ADD COLUMN company_ids TEXT DEFAULT '[]'`); } catch(e) {}
+// 防代打卡：记录打卡设备的匿名标识；同一设备短时间内为多人打卡 → 标记疑似代打卡
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN checkin_device_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN suspect_proxy INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN suspect_note TEXT DEFAULT ''`); } catch(e) {}
 // Compensation / liability incidents logged per warehouse (what happened, how
 // much we paid, how it was resolved, and a receipt/invoice scan).
 try { db.exec(`CREATE TABLE IF NOT EXISTS warehouse_claims (
@@ -25401,7 +25405,7 @@ app.post('/api/checkin/send-code', async (req, res) => {
   _checkinCodes[normalizedPhone] = { code, expires: Date.now() + 5 * 60 * 1000, site_id: parseInt(site_id) };
 
   console.log(`[Checkin] Code for ${normalizedPhone}: ${code}`);
-  await sendSMS(phone, `[Prime Anchor Point LLC] Su código de registro / Your check-in code: ${code}  (válido 5 min)`);
+  await sendSMS(phone, `[Prime Anchor Point LLC] Su código de registro / Your check-in code: ${code} (válido 5 min). NO comparta este código / Do NOT share this code / 请勿转发验证码，代打卡将被记录`);
 
   res.json({ success: true });
 });
@@ -25514,7 +25518,7 @@ app.post('/api/checkin/verify', (req, res) => {
 
 // POST /api/checkin/punch
 app.post('/api/checkin/punch', async (req, res) => {
-  const { site_id, phone, token, latitude, longitude, accuracy, photo, punch_type: requestedPunchType } = req.body;
+  const { site_id, phone, token, latitude, longitude, accuracy, photo, punch_type: requestedPunchType, device_id } = req.body;
   if (!site_id || !token) return res.status(400).json({ error: '缺少必要参数' });
 
   // Verify token
@@ -25567,6 +25571,25 @@ app.post('/api/checkin/punch', async (req, res) => {
   // Check if employee already has an open entry today at this site
   const empDbId = sess.employee_id;
   if (!empDbId) return res.status(400).json({ error: '未找到对应的员工记录' });
+
+  // 防代打卡：同一台设备近一天内为多个不同工人打卡 → 双向标记疑似代打卡。
+  // 设备标识是前端 localStorage 里的匿名随机串，清掉可绕过，但配合短信警告足以威慑常规代打。
+  const deviceId = String(device_id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
+  let suspectNote = '';
+  if (deviceId) {
+    const others = db.prepare(`SELECT DISTINCT COALESCE(NULLIF(TRIM(e.first_name || ' ' || e.last_name), ''), '#' || t.employee_id) AS nm
+      FROM time_entries t LEFT JOIN employees e ON t.employee_id = e.id
+      WHERE t.checkin_device_id = ? AND t.employee_id != ? AND DATE(t.clock_in) >= DATE('now', '-1 day')`)
+      .all(deviceId, empDbId);
+    if (others.length) {
+      suspectNote = '同一设备近一天内还为其他工人打卡: ' + others.map(o => o.nm).slice(0, 5).join(', ');
+      db.prepare(`UPDATE time_entries SET suspect_proxy = 1,
+          suspect_note = CASE WHEN COALESCE(suspect_note, '') = '' THEN '同一设备近一天内还为其他工人打卡' ELSE suspect_note END
+        WHERE checkin_device_id = ? AND employee_id != ? AND DATE(clock_in) >= DATE('now', '-1 day')`)
+        .run(deviceId, empDbId);
+      console.log(`[Checkin] SUSPECT proxy punch: employee ${empDbId}, device ${deviceId.slice(0, 12)}…, ${suspectNote}`);
+    }
+  }
 
   // Get today's date in site timezone
   const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: siteTimezone }); // YYYY-MM-DD
@@ -25653,6 +25676,16 @@ app.post('/api/checkin/punch', async (req, res) => {
     clockTime = now;
   }
 
+  // 把设备标识和疑似标记落到本次涉及的工时记录上（新建和更新的打卡都覆盖）
+  if (entryId && (deviceId || suspectNote)) {
+    db.prepare(`UPDATE time_entries SET
+        checkin_device_id = CASE WHEN COALESCE(checkin_device_id, '') = '' THEN ? ELSE checkin_device_id END,
+        suspect_proxy = CASE WHEN ? THEN 1 ELSE suspect_proxy END,
+        suspect_note = CASE WHEN ? != '' AND COALESCE(suspect_note, '') = '' THEN ? ELSE suspect_note END
+      WHERE id = ?`)
+      .run(deviceId, suspectNote ? 1 : 0, suspectNote, suspectNote, entryId);
+  }
+
   // Invalidate the token after use
   delete _checkinTokens[token];
 
@@ -25688,6 +25721,7 @@ app.get('/api/admin/checkin-daily', requireAdmin, (req, res) => {
     : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
   const rows = db.prepare(`SELECT t.id, t.employee_id AS emp_db_id, t.clock_in, t.clock_out,
       t.total_hours, t.overtime_hours, t.status, t.on_break, t.break_records, t.geo_verified,
+      t.suspect_proxy, t.suspect_note,
       COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz,
       e.first_name, e.last_name, e.employee_id AS emp_code, e.phone,
       js.id AS site_id, js.name AS site_name, js.code AS site_code, js.partner_id, js.partner_ids
@@ -25736,7 +25770,9 @@ app.get('/api/admin/checkin-daily', requireAdmin, (req, res) => {
         total_hours: r.total_hours || 0,
         overtime_hours: r.overtime_hours || 0,
         status: r.status,
-        geo_verified: !!r.geo_verified
+        geo_verified: !!r.geo_verified,
+        suspect_proxy: !!r.suspect_proxy,
+        suspect_note: r.suspect_note || ''
       };
     })
   });
@@ -26092,7 +26128,7 @@ app.get('/api/admin/checkins', requireAdmin, (req, res) => {
   const q = String(req.query.q || '').trim();
 
   let sql = `SELECT t.id, t.employee_id AS emp_db_id, t.clock_in, t.clock_out, t.latitude, t.longitude,
-      t.geo_verified, t.clock_in_photo_path, t.punch_photo_path, t.status,
+      t.geo_verified, t.clock_in_photo_path, t.punch_photo_path, t.status, t.suspect_proxy, t.suspect_note,
       COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz,
       e.first_name, e.last_name, e.employee_id AS emp_code, e.phone,
       js.name AS site_name, js.code AS site_code, js.latitude AS site_lat, js.longitude AS site_lng,
@@ -26158,7 +26194,9 @@ app.get('/api/admin/checkins', requireAdmin, (req, res) => {
         gps_verified: !!r.geo_verified,
         distance_from_warehouse: distance,
         media_path: r.clock_in_photo_path || r.punch_photo_path || '',
-        status: r.status
+        status: r.status,
+        suspect_proxy: !!r.suspect_proxy,
+        suspect_note: r.suspect_note || ''
       };
     })
   });
