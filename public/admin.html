@@ -353,8 +353,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   .modal-bg.show{ align-items:flex-start; padding:1rem .5rem; overflow-y:auto; }
   /* 仓库弹窗里的地图预览在小屏上压矮，给表单和按钮留空间 */
   #siteMapPreview{ height:150px !important; }
-  /* Let the full invoice page be reached by scrolling from its left edge. */
+  /* Let the full invoice page be reached by scrolling from its left edge.
+     (invpFitPaper 会把发票纸 zoom 到屏幕宽，此处 padding 压小给纸留最大空间) */
   #invpPreviewContent{ justify-content:flex-start !important; padding:.5rem !important; }
+  /* 预览工具栏按钮不许竖排折字：整行换行、单个按钮文字不折行 */
+  #invpPreviewBtns .btn{ white-space:nowrap; font-size:.8rem !important; padding:.42rem .6rem !important; }
 }
 /* Day toggle buttons */
 .day-btn{padding:5px 9px;border:1.5px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-600);font-size:.78rem;cursor:pointer;transition:all .15s;font-weight:600;white-space:nowrap}
@@ -36411,6 +36414,26 @@ async function invpCopyNames() {
   showToast(`已复制 ${names.length} 个名字${sel.length ? '' : '（全部）'}：${text.length > 60 ? text.slice(0, 60) + '…' : text}`, 'success', 3500);
 }
 
+// 手机上把 8.5in（816px）宽的发票纸整体缩放到刚好占满屏幕宽，
+// 不用左右滑也能看全；想看细节可以双指放大。桌面端不缩放。
+function invpFitPaper() {
+  const paper = document.getElementById('invpPaper');
+  const box = document.getElementById('invpPreviewContent');
+  if (!paper || !box) return;
+  const mobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+  if (!mobile) { paper.style.zoom = ''; return; }
+  const cs = getComputedStyle(box);
+  const avail = box.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0) - 2;
+  if (avail < 50) return; // 弹窗还没显示（clientWidth=0）时跳过，显示后会再调一次
+  paper.style.zoom = '';
+  const k = Math.min(1, avail / (paper.offsetWidth || 816)); // 8.5in @ 96dpi
+  if (k < 1) paper.style.zoom = k;
+}
+if (!window._invpFitBound) {
+  window._invpFitBound = true;
+  window.addEventListener('resize', () => { clearTimeout(window._invpFitT); window._invpFitT = setTimeout(invpFitPaper, 150); });
+}
+
 function updateInvpPreviewBtns() {
   const wrap = document.getElementById('invpPreviewBtns');
   if (!wrap) return;
@@ -38950,6 +38973,7 @@ async function generateInvpSubcontractorStatement() {
     </div>`;
 
   document.getElementById('invpPreviewContent').innerHTML = html;
+  invpFitPaper();
   window._invpPreviewKind = 'subcontractor';
   // 存档上下文：保存对账单时随快照一起入库（实付金额之后在存档里手动填）。
   window._invpStmtCtx = {
@@ -38959,6 +38983,7 @@ async function generateInvpSubcontractorStatement() {
     wage_total: Math.round(grandTotal * 100) / 100, items: stmtItems,
   };
   document.getElementById('invpPreviewModal').style.display = 'flex';
+  invpFitPaper();
   updateInvpPreviewBtns();
 }
 
@@ -39038,8 +39063,10 @@ async function viewSubStmt(id) {
   if (!s || !s.html) { showToast('该存档没有可显示的快照', 'error'); return; }
   const ov = document.getElementById('subStmtArchiveOverlay'); if (ov) ov.remove();
   document.getElementById('invpPreviewContent').innerHTML = s.html;
+  invpFitPaper();
   window._invpPreviewKind = 'substmt-view';
   document.getElementById('invpPreviewModal').style.display = 'flex';
+  invpFitPaper();
   updateInvpPreviewBtns();
 }
 
@@ -39977,11 +40004,13 @@ async function generateInvpPreview() {
     </div>`;
 
   document.getElementById('invpPreviewContent').innerHTML = html;
+  invpFitPaper();
   window._invpPreviewKind = 'invoice';
   // Reset saved/OT-toggle state for new previews (unless editing existing)
   const editId = document.getElementById('invPageEditId').value;
   window._invpPreviewSaved = !!editId;
   document.getElementById('invpPreviewModal').style.display = 'flex';
+  invpFitPaper();
   updateInvpPreviewBtns();
 
   // Show invoice number confirmation
@@ -40797,9 +40826,9 @@ function printInvoice() {
 
 <div class="modal-bg" id="invpPreviewModal" style="display:none">
   <div class="modal" style="max-width:960px;max-height:94vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:.5rem">
       <h2 style="margin:0">Invoice 预览</h2>
-      <div id="invpPreviewBtns" style="display:flex;gap:.6rem">
+      <div id="invpPreviewBtns" style="display:flex;gap:.6rem;flex-wrap:wrap">
         <!-- buttons rendered dynamically by updateInvpPreviewBtns() -->
       </div>
     </div>
