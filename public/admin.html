@@ -4757,6 +4757,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button type="button" class="btn btn-sm btn-outline" onclick="_verifySiteAddress()">验证地址</button>
     </div>
     <span id="siteAddrStatus" style="font-size:.8rem;font-weight:600"></span>
+    <div id="sitePartnerAddrs" style="display:none;margin-top:.5rem"></div>
   </div>
   <div style="display:flex;gap:1rem">
     <div class="field" style="flex:1"><label>纬度 LATITUDE *</label><input id="siteLat" type="number" step="any" placeholder="验证地址后自动填入" oninput="updateSiteMap()"></div>
@@ -28622,17 +28623,50 @@ function _setSitePartner(id, name, skipAutoGen) {
   document.getElementById('sitePartnerId').value = id || '';
   document.getElementById('sitePartnerSearch').value = name || '';
   document.getElementById('sitePartnerDropdown').style.display = 'none';
+  _renderSitePartnerAddrs(id, !skipAutoGen);
   if (id && !skipAutoGen) {
     const p = (_allPartners||[]).find(x => String(x.id) === String(id));
-    if (p) {
-      const addrParts = [p.address, p.city, p.state, p.zip].filter(Boolean);
-      if (addrParts.length && !document.getElementById('siteAddress').value.trim()) {
-        document.getElementById('siteAddress').value = addrParts.join(', ');
-        _verifySiteAddress();
-      }
-      _autoGenSiteCodeName(p.name);
-    }
+    if (p) _autoGenSiteCodeName(p.name);
   }
+}
+
+// 该公司在系统里已录入的所有地址（新版 addresses JSON 数组 + 旧版单地址字段，去重）
+function _sitePartnerAddrList(p) {
+  const out = [], seen = new Set();
+  const push = s => {
+    const v = String(s || '').trim();
+    if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); out.push(v); }
+  };
+  try {
+    const arr = JSON.parse(p.addresses || '[]');
+    if (Array.isArray(arr)) arr.forEach(a => push(_addrStr(a)));
+  } catch (_) {}
+  push([p.address, p.city, p.state, p.zip].filter(Boolean).join(', '));
+  return out;
+}
+
+// 选中公司后：只有一个地址且地址栏为空 → 直接填入；同时把全部已有地址列出来点击选用
+function _renderSitePartnerAddrs(partnerId, autoFill) {
+  const box = document.getElementById('sitePartnerAddrs');
+  const p = partnerId ? (_allPartners||[]).find(x => String(x.id) === String(partnerId)) : null;
+  const addrs = p ? _sitePartnerAddrList(p) : [];
+  if (!addrs.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  if (autoFill && addrs.length === 1 && !document.getElementById('siteAddress').value.trim()) {
+    document.getElementById('siteAddress').value = addrs[0];
+    _verifySiteAddress();
+  }
+  box.innerHTML = `<div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.3rem">📍 该公司在系统中已有 ${addrs.length} 个地址，点击选用：</div>` +
+    addrs.map(a => {
+      const safe = esc(a).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+      return `<div data-addr="${safe}" onclick="_useSitePartnerAddr(this)" style="padding:.45rem .7rem;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:.35rem;cursor:pointer;font-size:.84rem;background:#f8fafc" onmouseenter="this.style.background='#eff6ff'" onmouseleave="this.style.background='#f8fafc'">${esc(a)}</div>`;
+    }).join('');
+  box.style.display = '';
+}
+
+function _useSitePartnerAddr(el) {
+  document.getElementById('siteAddress').value = el.dataset.addr;
+  clearAddrStatus('siteAddrStatus');
+  _verifySiteAddress();
 }
 
 function _autoGenSiteCodeName(companyName) {
