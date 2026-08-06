@@ -31145,6 +31145,7 @@ async function openWhModal(id) {
     if (!existingIds.length && w.company_id) existingIds = [w.company_id];
   }
   await loadWhCompanyOptions(existingIds);
+  _renderWhPartnerAddrs();
   document.getElementById('whModal').classList.add('show');
 }
 
@@ -31177,26 +31178,50 @@ function getWhSelectedCompanyIds() {
 }
 
 function onWhCompanyCheck(checkbox) {
+  _renderWhPartnerAddrs();
   if (!checkbox.checked) return;
   const id = parseInt(checkbox.value);
   const p = _whPartners.find(x => x.id === id);
   if (!p) return;
-  // Auto-fill address only if address field is currently empty
+  // 地址栏为空且该公司只有一个地址时才自动填；多个地址列在下方让用户选
   const addrEl = document.getElementById('whAddress');
   if (addrEl.value.trim()) return;
-  let addr = p.address || '';
-  if (!addr) {
-    try {
-      const arr = JSON.parse(p.addresses || '[]');
-      if (arr.length) addr = arr[0].address || arr[0] || '';
-    } catch(e) {}
-  }
-  if (addr) {
-    addrEl.value = addr;
+  const addrs = _sitePartnerAddrList(p);
+  if (addrs.length === 1) {
+    addrEl.value = addrs[0];
     document.getElementById('whAddrVerified').style.display = 'none';
     document.getElementById('whLat').value = '';
     document.getElementById('whLng').value = '';
   }
+}
+
+// 列出所有已勾选公司在系统里的全部地址（点击选用并自动验证取坐标）
+function _renderWhPartnerAddrs() {
+  const box = document.getElementById('whPartnerAddrs');
+  if (!box) return;
+  const ids = getWhSelectedCompanyIds();
+  const items = [];
+  for (const id of ids) {
+    const p = _whPartners.find(x => x.id === id);
+    if (!p) continue;
+    for (const a of _sitePartnerAddrList(p)) items.push({ company: p.name, addr: a });
+  }
+  if (!items.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const multi = ids.length > 1;
+  box.innerHTML = `<div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.3rem">📍 已选公司在系统中共有 ${items.length} 个地址，点击选用：</div>` +
+    items.map(it => {
+      const safe = escHtml(it.addr).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+      return `<div data-addr="${safe}" onclick="_useWhPartnerAddr(this)" style="padding:.45rem .7rem;border:1px solid var(--gray-300);border-radius:8px;margin-bottom:.35rem;cursor:pointer;font-size:.84rem;background:#f8fafc" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#f8fafc'">${multi ? '<span style="color:var(--gray-400)">' + escHtml(it.company) + ' · </span>' : ''}${escHtml(it.addr)}</div>`;
+    }).join('');
+  box.style.display = '';
+}
+
+function _useWhPartnerAddr(el) {
+  document.getElementById('whAddress').value = el.dataset.addr;
+  document.getElementById('whAddrVerified').style.display = 'none';
+  document.getElementById('whLat').value = '';
+  document.getElementById('whLng').value = '';
+  geocodeWhAddress();
 }
 
 async function geocodeWhAddress() {
@@ -40751,6 +40776,7 @@ function printInvoice() {
         <button class="btn btn-outline" id="whGeocodeBtn" onclick="geocodeWhAddress()" style="white-space:nowrap">验证地址</button>
       </div>
       <div id="whAddrVerified" style="display:none;font-size:.78rem;color:var(--green);margin-top:.35rem;padding:.3rem .5rem;background:#f0fdf4;border-radius:5px"></div>
+      <div id="whPartnerAddrs" style="display:none;margin-top:.5rem"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
       <div class="field">
