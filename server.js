@@ -26047,6 +26047,88 @@ app.delete('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) =>
   res.json({ success: true });
 });
 
+// ─── 仓库现场定位链接：发给在仓库的人，打开后用他的 GPS 校准仓库真实坐标 ───
+db.exec(`CREATE TABLE IF NOT EXISTS site_locate_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  site_id INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used INTEGER DEFAULT 0,
+  used_at DATETIME,
+  submitted_lat REAL, submitted_lng REAL, submitted_accuracy REAL,
+  prev_lat REAL, prev_lng REAL,
+  sent_to_phone TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// 生成定位链接（可选直接短信发给现场人员）。每次调用生成新 token，7 天有效、一次性。
+app.post('/api/admin/job-sites/:id/locate-link', requireAdmin, async (req, res) => {
+  const site = db.prepare('SELECT id, name, code, address FROM job_sites WHERE id=?').get(parseInt(req.params.id));
+  if (!site) return res.status(404).json({ error: '仓库不存在' });
+  const token = crypto.randomBytes(20).toString('hex');
+  const expiresAt = Date.now() + 7 * 24 * 3600 * 1000;
+  db.prepare('INSERT INTO site_locate_tokens (token, site_id, expires_at, sent_to_phone, created_by) VALUES (?,?,?,?,?)')
+    .run(token, site.id, expiresAt, String(req.body && req.body.phone || ''), req.userName || '');
+  const url = `${_applyQrBase(req)}/locate-site/${token}`;
+  let smsSent = false;
+  const phone = String(req.body && req.body.phone || '').trim();
+  if (phone) {
+    await sendSMS(phone, `[Prime Anchor Point LLC] 请到「${site.name}」仓库现场打开此链接定位仓库 / Open this link AT the warehouse to set its location / Abra este enlace EN el almacén: ${url} (7天有效 / valid 7 days)`);
+    smsSent = true;
+  }
+  const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 260 });
+  res.json({ success: true, url, qr, expires_at: expiresAt, sms_sent: smsSent, site_name: site.name });
+});
+
+// 定位页（公开，凭一次性 token）
+app.get('/locate-site/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'locate-site.html'));
+});
+
+function _locateTokenRow(token) {
+  if (!token || typeof token !== 'string' || token.length < 20) return null;
+  return db.prepare('SELECT * FROM site_locate_tokens WHERE token=?').get(token);
+}
+
+app.get('/api/locate-site/:token', (req, res) => {
+  const row = _locateTokenRow(req.params.token);
+  if (!row) return res.status(404).json({ error: '链接无效' });
+  if (row.used) return res.status(410).json({ error: '该链接已使用过' });
+  if (row.expires_at < Date.now()) return res.status(410).json({ error: '链接已过期，请联系管理员重新发送' });
+  const site = db.prepare('SELECT name, code, address FROM job_sites WHERE id=?').get(row.site_id);
+  if (!site) return res.status(404).json({ error: '仓库不存在' });
+  res.json({ site_name: site.name, site_code: site.code || '', address: site.address || '' });
+});
+
+// 提交现场 GPS → 直接更新仓库坐标（原坐标留档在 token 记录里），并按新坐标刷新时区
+app.post('/api/locate-site/:token', async (req, res) => {
+  const row = _locateTokenRow(req.params.token);
+  if (!row) return res.status(404).json({ error: '链接无效' });
+  if (row.used) return res.status(410).json({ error: '该链接已使用过' });
+  if (row.expires_at < Date.now()) return res.status(410).json({ error: '链接已过期，请联系管理员重新发送' });
+  const lat = parseFloat(req.body && req.body.latitude);
+  const lng = parseFloat(req.body && req.body.longitude);
+  const acc = Math.max(0, parseFloat(req.body && req.body.accuracy) || 99999);
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ error: '无法获取有效的位置信息，请开启定位权限后重试' });
+  }
+  if (acc > 150) {
+    return res.status(400).json({ error: `定位精度不足（±${Math.round(acc)}米）。请走到室外开阔处，等精度提高后再提交` });
+  }
+  const site = db.prepare('SELECT id, name, latitude, longitude FROM job_sites WHERE id=?').get(row.site_id);
+  if (!site) return res.status(404).json({ error: '仓库不存在' });
+  let tz = null;
+  try { tz = await lookupTimezone(lat, lng); } catch (_) {}
+  db.prepare('UPDATE job_sites SET latitude=?, longitude=?, timezone=COALESCE(?, timezone) WHERE id=?')
+    .run(lat, lng, tz, site.id);
+  db.prepare(`UPDATE site_locate_tokens SET used=1, used_at=datetime('now'),
+      submitted_lat=?, submitted_lng=?, submitted_accuracy=?, prev_lat=?, prev_lng=? WHERE id=?`)
+    .run(lat, lng, acc, site.latitude, site.longitude, row.id);
+  console.log(`[LocateSite] Site #${site.id} "${site.name}" moved (${site.latitude},${site.longitude}) → (${lat},${lng}) ±${Math.round(acc)}m`);
+  res.json({ success: true, site_name: site.name, latitude: lat, longitude: lng, accuracy: Math.round(acc) });
+});
+
 // ─── Admin: 仓库签到页 (tab-warehouses) 的接口 ───
 // 该页面历史上设计对接一套独立的 warehouses 表，但后端从未实现过。这里把它
 // 直接映射到 job_sites：两个仓库管理页操作同一批仓库，打卡记录同一份数据，

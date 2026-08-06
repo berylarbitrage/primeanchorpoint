@@ -4807,6 +4807,25 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Warehouse Locate-Link Modal -->
+<div class="modal-bg" id="siteLocateModal"><div class="modal" style="max-width:400px;text-align:center">
+  <h2 style="margin-bottom:.4rem">📍 现场定位链接</h2>
+  <p id="siteLocateName" style="font-weight:600;margin-bottom:.35rem"></p>
+  <p style="font-size:.8rem;color:var(--gray-500);margin-bottom:1rem">把链接或二维码发给在仓库现场的人，他打开授权定位后，仓库坐标自动更新为他所在的真实位置（一次性，7 天有效）</p>
+  <img id="siteLocateQR" src="" alt="QR" style="width:220px;height:220px;border:1px solid var(--gray-200);border-radius:10px;margin-bottom:.75rem">
+  <div style="display:flex;gap:.5rem;margin-bottom:.75rem">
+    <input type="text" id="siteLocateUrl" readonly style="flex:1;font-size:.75rem;background:var(--gray-50)">
+    <button class="btn btn-sm btn-outline" onclick="copySiteLocateUrl()">📋 复制</button>
+  </div>
+  <div style="display:flex;gap:.5rem;margin-bottom:1rem">
+    <input type="tel" id="siteLocatePhone" placeholder="手机号（直接短信发给他）" style="flex:1">
+    <button class="btn btn-sm btn-blue" id="siteLocateSendBtn" onclick="sendSiteLocateSMS()">发短信</button>
+  </div>
+  <div class="modal-actions" style="justify-content:center">
+    <button class="btn" onclick="closeModal('siteLocateModal')">关闭</button>
+  </div>
+</div></div>
+
 <!-- Compliance Review Modal -->
 <div class="modal-bg" id="complianceReviewModal"><div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto">
   <h2>审核合规文件</h2>
@@ -28618,6 +28637,7 @@ async function loadJobSites() {
     <td>${s.active ? '<span style="color:var(--green);font-weight:600">启用</span>' : '<span style="color:var(--gray-400)">禁用</span>'}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="showSiteQR(${s.id})">📱 二维码</button>
+      <button class="btn btn-sm" style="background:#f0fdf4;color:#166534;border:1px solid #bbf7d0" onclick="showSiteLocateLink(${s.id})">📍 定位</button>
       <button class="btn btn-sm" onclick="editJobSite(${s.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteJobSite(${s.id})">删除</button>
     </td>
@@ -28774,6 +28794,44 @@ async function showSiteQR(siteId) {
 
 function copySiteQRUrl() {
   navigator.clipboard.writeText(_siteQRUrl).then(() => showToast('✅ 链接已复制')).catch(() => showToast('复制失败', 'error'));
+}
+
+// ── 现场定位链接：发给在仓库的人，用他的 GPS 校准仓库真实坐标 ──
+let _siteLocateId = null;
+
+async function showSiteLocateLink(siteId) {
+  _siteLocateId = siteId;
+  const d = await api(`/admin/job-sites/${siteId}/locate-link`, { method: 'POST', body: JSON.stringify({}) });
+  if (!d || d.error || !d.url) return showToast(d && d.error || '生成失败', 'error');
+  document.getElementById('siteLocateName').textContent = d.site_name || '';
+  document.getElementById('siteLocateQR').src = d.qr || '';
+  document.getElementById('siteLocateUrl').value = d.url;
+  document.getElementById('siteLocatePhone').value = '';
+  document.getElementById('siteLocateModal').classList.add('show');
+}
+
+function copySiteLocateUrl() {
+  navigator.clipboard.writeText(document.getElementById('siteLocateUrl').value)
+    .then(() => showToast('✅ 链接已复制')).catch(() => showToast('复制失败', 'error'));
+}
+
+async function sendSiteLocateSMS() {
+  const phone = document.getElementById('siteLocatePhone').value.replace(/\D/g, '');
+  if (phone.length < 10) return showToast('请输入有效的手机号', 'error');
+  const btn = document.getElementById('siteLocateSendBtn');
+  btn.disabled = true; btn.textContent = '发送中...';
+  try {
+    // 每次发送生成新链接（旧链接仍在有效期内可用）
+    const d = await api(`/admin/job-sites/${_siteLocateId}/locate-link`, { method: 'POST', body: JSON.stringify({ phone }) });
+    if (!d || d.error || !d.sms_sent) throw new Error(d && d.error || '发送失败');
+    document.getElementById('siteLocateQR').src = d.qr || '';
+    document.getElementById('siteLocateUrl').value = d.url;
+    showToast('✅ 短信已发送');
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '发短信';
+  }
 }
 
 function printSiteQR() {
@@ -31140,6 +31198,7 @@ async function loadWarehouses() {
       <td style="white-space:nowrap">
         <button class="btn btn-sm btn-outline" onclick="openWhModal(${w.id})">✏️ 编辑</button>
         ${w.warehouse_code ? `<button class="btn btn-sm btn-outline" data-code="${escAttr(w.warehouse_code)}" data-name="${escAttr(w.warehouse_name)}" onclick="showWhQR(this.dataset.code, this.dataset.name)">QR</button>` : `<button class="btn btn-sm btn-outline" disabled title="请先填写仓库代码">QR</button>`}
+        <button class="btn btn-sm btn-outline" onclick="showSiteLocateLink(${w.id})">📍 定位</button>
         <button class="btn btn-sm btn-blue" data-code="${escAttr(w.warehouse_code || '')}" onclick="viewWhCheckins(this.dataset.code)">签到记录</button>
       </td>
     </tr>`).join('');
