@@ -640,7 +640,9 @@ function initMap() {
   if (_map || typeof L === 'undefined') return;
   try {
     document.getElementById('gpsMapWrap').style.display = '';
-    _map = L.map('gpsMap', { zoomControl: false, attributionControl: false });
+    // 手机上禁用单指拖动（保留双指缩放）：否则手指划到地图上页面滚不动，
+    // 下面的拍照和打卡按钮够不着。地图只用于显示位置，不需要拖。
+    _map = L.map('gpsMap', { zoomControl: false, attributionControl: false, dragging: !('ontouchstart' in window), tap: false });
     L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains: ['0','1','2','3'], attribution: '© Google Maps' }).addTo(_map);
     if (_siteLat != null && _siteLng != null) {
       L.marker([_siteLat, _siteLng], {
