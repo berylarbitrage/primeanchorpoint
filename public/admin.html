@@ -32681,6 +32681,7 @@ function _invpClearRenderedRows() {
 function openInvpBuilderModal() {
   // Reset form state
   window._invpManualEmps = [];
+  window._invpStmtSubSavedId = null;
   _invpManualUidSeq = 1;
   window._invpContainerItems = [];
   _invpContainerUidSeq = 1;
@@ -32775,6 +32776,10 @@ async function openInvpForEdit(id) {
   // good (saveInvpInvoice builds its payload from getInvpProfile()). When empty,
   // clearing to {} lets loadInvpPresets() below re-seed a consistent default.
   saveInvpProfileData(inv.profile && Object.keys(inv.profile).length ? inv.profile : {});
+
+  // 恢复这张发票上次选定的对账单收款分包商（container 模式的 PAY TO）
+  window._invpStmtSubSavedId = (inv.profile && inv.profile.stmt_sub_entity_id != null)
+    ? String(inv.profile.stmt_sub_entity_id) : null;
 
   // Restore billing mode (container vs hourly)
   const mode = (inv.profile && inv.profile.invoice_mode) === 'container' ? 'container' : 'hourly';
@@ -36471,6 +36476,7 @@ function updateInvpPreviewBtns() {
       ${copyBtn}
       <button class="btn btn-green" style="background:#047857;border-color:#047857" onclick="saveSubStatement()">💾 保存对账单</button>
       <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="openSubStmtArchive()">📚 对账单存档</button>
+      <button class="btn btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="invpChangeStmtSub()" title="重新选择这张对账单的收款分包商">🔄 换分包商</button>
       <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
       <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
     `;
@@ -36672,6 +36678,8 @@ async function saveInvpInvoice(status) {
   }
 
   const profileWithMode = { ...getInvpProfile(), invoice_mode: mode, container_items: containerItems };
+  // 这张发票选定过的对账单收款分包商随档案一起保存（重开后生成对账单不用再选）
+  if (window._invpStmtSubSavedId != null) profileWithMode.stmt_sub_entity_id = window._invpStmtSubSavedId;
   // 加班服务费系数随发票存档（0 = 未启用，编辑旧发票时保持旧算法）。
   profileWithMode.ot_fee_rate = (mode !== 'container' && _invpOtFeeRate() != null) ? _invpOtFeeRate() : 0;
   // 班次分组样式随发票存档 (无则不存)
@@ -38639,6 +38647,15 @@ window._invpStmtSubFilter = null;
 // Each `s` is { key, label, sub?, count?, note? } — `sub` is a secondary line
 // (e.g. address), `count` shows "N 人", `note` shows a right-side tag (e.g. W-9 ✓).
 // opts: { title, sub } customize the heading.
+// 换收款分包商：清掉记住的选择，重新生成对账单（会重新弹出选择器）
+function invpChangeStmtSub() {
+  window._invpStmtSubSavedId = null;
+  window._invpStmtSubEntityId = null;
+  window._invpStmtSubFilter = null;
+  closeInvpPreview();
+  generateInvpSubcontractorStatement();
+}
+
 function invpPickSubcontractor(subs, onPick, opts = {}) {
   const existing = document.getElementById('invpSubPickOverlay');
   if (existing) existing.remove();
@@ -38679,8 +38696,51 @@ function _invpFindLaborCompany(name) {
 // triggered by the container picker (mirrors _invpStmtSubFilter for hourly mode).
 window._invpStmtSubEntityId = null;
 
+// 生成分包商对账单时，把表格里刚填的「分包商/介绍人/备注」等标注字段静默保存
+// 进发票档案 —— 很多人填完分包商直接打对账单、不点「更新保存」，重开发票后
+// 这些填写就全丢了。只在金额相关明细完全一致时才回写工人行，绝不改动账目数字。
+async function _invpSilentPersistAnnotations() {
+  const editId = document.getElementById('invPageEditId').value;
+  if (!editId || window._invpAnnoSaving) return;
+  window._invpAnnoSaving = true;
+  try {
+    const inv = await api('/admin/invoices/' + editId);
+    if (!inv || inv.error) return;
+    const strip = arr => (arr || []).map(i => {
+      const c = { ...i };
+      delete c.subcontractor; delete c.referrer; delete c.note; delete c.noteType; delete c.noteDate; delete c.category;
+      return c;
+    });
+    let items = inv.items || [];
+    let changed = false;
+    if ((window._invpMode || 'hourly') !== 'container') {
+      const cur = getInvpManualItems();
+      if (cur.length
+        && JSON.stringify(strip(cur)) === JSON.stringify(strip(inv.items))
+        && JSON.stringify(cur) !== JSON.stringify(inv.items)) {
+        items = cur;
+        changed = true;
+      }
+    }
+    const profile = inv.profile || {};
+    if (window._invpStmtSubSavedId != null && String(profile.stmt_sub_entity_id || '') !== String(window._invpStmtSubSavedId)) {
+      profile.stmt_sub_entity_id = window._invpStmtSubSavedId;
+      changed = true;
+    }
+    if (!changed) return;
+    await api('/admin/invoices/' + editId, { method: 'PUT', body: JSON.stringify({
+      invoice_number: inv.invoice_number, invoice_date: inv.invoice_date, company_name: inv.company_name,
+      bill_to_addr: inv.bill_to_addr, period_start: inv.period_start, period_end: inv.period_end,
+      for_label: inv.for_label, subtotal: inv.subtotal, items, profile,
+      status: inv.status, markup_rate: inv.markup_rate, force: true
+    }) });
+  } catch (_) { /* 静默兜底保存失败不打断对账单生成 */ }
+  finally { window._invpAnnoSaving = false; }
+}
+
 async function generateInvpSubcontractorStatement() {
   const mode = window._invpMode || 'hourly';
+  _invpSilentPersistAnnotations(); // 不阻塞对账单生成，后台落库
 
   // Ensure the managed 分包商 list is available so the recipient can be picked
   // from it. Hourly mode loads it lazily on table render; container mode may not
@@ -38722,7 +38782,14 @@ async function generateInvpSubcontractorStatement() {
     const mgd = (window._invpLaborCompanies || _allLaborCompanies || []).filter(c => c && c.active !== 0);
     if (window._invpStmtSubEntityId != null) {
       recipientEntity = mgd.find(c => String(c.id) === String(window._invpStmtSubEntityId)) || null;
+      if (recipientEntity) {
+        // 记住这张发票选定的收款分包商并落库，重开后生成对账单不用再选
+        window._invpStmtSubSavedId = String(window._invpStmtSubEntityId);
+        _invpSilentPersistAnnotations();
+      }
       window._invpStmtSubEntityId = null;
+    } else if (window._invpStmtSubSavedId != null && mgd.some(c => String(c.id) === String(window._invpStmtSubSavedId))) {
+      recipientEntity = mgd.find(c => String(c.id) === String(window._invpStmtSubSavedId));
     } else if (mgd.length) {
       const subs = mgd
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
