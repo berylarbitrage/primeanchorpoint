@@ -37067,11 +37067,13 @@ function renderInvpManualTable(skipSave) {
           ${catOptsHtml}
         </select>
       </td>
-      <td style="padding:3px 4px">
+      <td style="padding:3px 4px;white-space:nowrap">
         <input type="text" class="invp-man-sub" data-uid="${emp.uid}" value="${esc(emp.subcontractor||'')}" list="invpSubcontractorList"
           placeholder="分包商" title="分包商 Subcontractor（按此分组生成分包商对账单）"
           style="width:110px;border:1px solid #6ee7b7;border-radius:4px;padding:3px 6px;font-size:.84rem;background:#f0fdf4"
-          onchange="_invpSaveTableState();renderInvpManualTable(true)">
+          onchange="_invpSaveTableState();renderInvpManualTable(true)">${(emp.subcontractor || '').trim()
+            ? `<button type="button" tabindex="-1" onclick="invpClearRowSub('${emp.uid}')" title="清除这名工人的分包商" style="border:none;background:none;color:#dc2626;font-size:.92rem;cursor:pointer;padding:0 3px;line-height:1;vertical-align:middle">✕</button>`
+            : ''}
       </td>
       <td style="padding:3px 4px">
         <input type="text" class="invp-man-ref" data-uid="${emp.uid}" value="${esc(emp.referrer||'')}"
@@ -37188,6 +37190,15 @@ function invpEnsureLaborCompanies() {
     .catch(() => { window._invpLaborCompanies = []; window._invpLaborCompaniesLoading = false; });
 }
 
+// 单行清除：只清掉这一名工人的分包商
+function invpClearRowSub(uid) {
+  _invpSaveTableState();
+  const emp = (window._invpManualEmps || []).find(e => String(e.uid) === String(uid));
+  if (!emp) return;
+  emp.subcontractor = '';
+  renderInvpManualTable(true);
+}
+
 // Batch-fill the 分包商 column for all (or only empty) hourly workers
 function invpBulkSetSubcontractor() {
   const emps = window._invpManualEmps || [];
@@ -37207,8 +37218,10 @@ function invpBulkSetSubcontractor() {
     <input type="text" id="invpBulkSubInput" list="invpBulkSubList" placeholder="输入分包商名（可自动补全）" autocomplete="off"
       style="width:100%;padding:.5rem .6rem;border:1px solid #6ee7b7;border-radius:6px;font-size:.92rem;background:#f0fdf4;margin-bottom:.85rem">
     <datalist id="invpBulkSubList">${subOpts}</datalist>
+    <div style="font-size:.74rem;color:var(--gray-500);margin:-.35rem 0 .7rem">🧹 清除：输入分包商名 → 只清掉是这个分包商的工人；留空 → 清掉所有人的分包商</div>
     <div style="display:flex;gap:.5rem;justify-content:flex-end;flex-wrap:wrap">
       <button type="button" class="btn btn-outline" id="invpBulkSubCancel">取消</button>
+      <button type="button" class="btn btn-outline" style="color:#dc2626;border-color:#fca5a5" id="invpBulkSubClear">🧹 清除</button>
       <button type="button" class="btn btn-outline" style="color:#047857;border-color:#047857" id="invpBulkSubEmpty">仅填充空白</button>
       <button type="button" class="btn btn-green" id="invpBulkSubAll">应用到全部</button>
     </div>
@@ -37225,6 +37238,19 @@ function invpBulkSetSubcontractor() {
   };
   document.getElementById('invpBulkSubAll').addEventListener('click', () => apply(false));
   document.getElementById('invpBulkSubEmpty').addEventListener('click', () => apply(true));
+  document.getElementById('invpBulkSubClear').addEventListener('click', () => {
+    const val = document.getElementById('invpBulkSubInput').value.trim();
+    let n = 0;
+    emps.forEach(e => {
+      const cur = (e.subcontractor || '').trim();
+      if (!cur) return;
+      if (!val || cur.toLowerCase() === val.toLowerCase()) { e.subcontractor = ''; n++; }
+    });
+    if (!n) { showToast(val ? `没有工人的分包商是「${val}」` : '没有已填写的分包商', 'error'); return; }
+    ov.remove();
+    renderInvpManualTable(true);
+    showToast(val ? `已清除 ${n} 名工人的分包商「${val}」` : `已清除全部 ${n} 名工人的分包商`, 'success');
+  });
   document.getElementById('invpBulkSubCancel').addEventListener('click', () => ov.remove());
   ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
   setTimeout(() => { const el = document.getElementById('invpBulkSubInput'); if (el) el.focus(); }, 50);
