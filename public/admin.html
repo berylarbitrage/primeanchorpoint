@@ -9,7 +9,11 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--white:#fff;--off-white:#fffbeb;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:8px}
-*{margin:0;padding:0;box-sizing:border-box}body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gray-800)}
+*{margin:0;padding:0;box-sizing:border-box}
+/* 禁用 iOS Safari 的字体自动放大：发票纸等宽内容缩放后，Safari 会把段落文字
+   强行放大，造成表格小字、段落巨字混在一页的怪相 */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gray-800)}
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center}
 .login-box{background:var(--white);padding:3rem;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.08);width:100%;max-width:360px;text-align:center}
 .login-box h1{font-size:1.3rem;color:var(--blue);margin-bottom:.5rem}.login-box p{font-size:.85rem;color:var(--gray-400);margin-bottom:2rem}
@@ -36414,20 +36418,40 @@ async function invpCopyNames() {
   showToast(`已复制 ${names.length} 个名字${sel.length ? '' : '（全部）'}：${text.length > 60 ? text.slice(0, 60) + '…' : text}`, 'success', 3500);
 }
 
-// 手机上把 8.5in（816px）宽的发票纸整体缩放到刚好占满屏幕宽，
-// 不用左右滑也能看全；想看细节可以双指放大。桌面端不缩放。
+// 手机上把 8.5in（816px）宽的发票纸整体等比缩小到刚好占满屏幕宽 —— 用
+// transform 而不是 zoom：先按打印原版排版，再像 PDF 缩略图一样整体缩放，
+// 保证所有文字/表格按同一比例变小，不会出现局部被浏览器放大的怪相。
+// 想看细节可以双指放大。桌面端不缩放。
 function invpFitPaper() {
   const paper = document.getElementById('invpPaper');
   const box = document.getElementById('invpPreviewContent');
   if (!paper || !box) return;
+  paper.style.zoom = '';
+  paper.style.transform = '';
+  const holder = paper.parentElement && paper.parentElement.id === 'invpFitHolder' ? paper.parentElement : null;
   const mobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
-  if (!mobile) { paper.style.zoom = ''; return; }
+  if (!mobile) {
+    if (holder) { holder.style.width = ''; holder.style.height = ''; }
+    return;
+  }
   const cs = getComputedStyle(box);
   const avail = box.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0) - 2;
   if (avail < 50) return; // 弹窗还没显示（clientWidth=0）时跳过，显示后会再调一次
-  paper.style.zoom = '';
-  const k = Math.min(1, avail / (paper.offsetWidth || 816)); // 8.5in @ 96dpi
-  if (k < 1) paper.style.zoom = k;
+  const w = paper.offsetWidth || 816; // 8.5in @ 96dpi（transform 不影响布局尺寸）
+  const k = Math.min(1, avail / w);
+  if (k >= 1) return;
+  // transform 不收缩占位空间，包一层按缩放后尺寸定宽高的容器
+  let h = holder;
+  if (!h) {
+    h = document.createElement('div');
+    h.id = 'invpFitHolder';
+    paper.parentNode.insertBefore(h, paper);
+    h.appendChild(paper);
+  }
+  paper.style.transformOrigin = 'top left';
+  paper.style.transform = `scale(${k})`;
+  h.style.width = Math.ceil(w * k) + 'px';
+  h.style.height = Math.ceil(paper.offsetHeight * k) + 'px';
 }
 if (!window._invpFitBound) {
   window._invpFitBound = true;
