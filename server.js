@@ -3484,6 +3484,21 @@ app.use((req, res, next) => {
   }
   next();
 });
+// 打卡二维码兼容: /checkin?wh=仓库代码 → /checkin?site=ID。必须放在 static 之前,
+// 否则 extensions:['html'] 会先把 /checkin 直接映射到 checkin.html, 拿不到跳转机会。
+app.get('/checkin', (req, res, next) => {
+  if (req.query.wh && !req.query.site) {
+    try {
+      const s = db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND active=1')
+        .get(String(req.query.wh).trim().toUpperCase());
+      if (s) {
+        const lang = req.query.lang ? '&lang=' + encodeURIComponent(String(req.query.lang)) : '';
+        return res.redirect(302, '/checkin?site=' + s.id + lang);
+      }
+    } catch (_) {}
+  }
+  next();
+});
 app.use(express.static('public', {
   extensions: ['html'],
   setHeaders(res, filePath) {
@@ -25314,7 +25329,8 @@ function _employeeFromApplicant(sub) {
   return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
 }
 
-// Serve checkin page
+// Serve checkin page (fallback — normally handled by the static middleware;
+// the ?wh=code redirect lives right before express.static)
 app.get('/checkin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'checkin.html'));
 });
@@ -25957,6 +25973,158 @@ app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, async (req, res)
 app.delete('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
   db.prepare('DELETE FROM job_sites WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Admin: 仓库签到页 (tab-warehouses) 的接口 ───
+// 该页面历史上设计对接一套独立的 warehouses 表，但后端从未实现过。这里把它
+// 直接映射到 job_sites：两个仓库管理页操作同一批仓库，打卡记录同一份数据，
+// 不会出现两套仓库/两套记录各管各的情况。
+
+function _siteToWarehouse(s, partnerMap) {
+  const pids = (s.partner_ids || '').split(',').filter(Boolean).map(Number);
+  if (!pids.length && s.partner_id) pids.push(s.partner_id);
+  return {
+    id: s.id,
+    warehouse_code: s.code || '',
+    warehouse_name: s.name,
+    company_id: pids[0] || null,
+    company_ids: JSON.stringify(pids),
+    company_name: pids.map(id => partnerMap[id] || '').filter(Boolean).join(', '),
+    address: s.address || '',
+    latitude: s.latitude,
+    longitude: s.longitude,
+    geofence_radius_meters: s.radius_meters || 200,
+    timezone: s.timezone || 'America/Chicago',
+    is_active: s.active ? 1 : 0
+  };
+}
+
+app.get('/api/admin/warehouses', requireAdmin, (req, res) => {
+  const sites = db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all();
+  const partnerMap = {};
+  db.prepare('SELECT id, name FROM partners').all().forEach(p => { partnerMap[p.id] = p.name; });
+  res.json({ ok: true, warehouses: sites.map(s => _siteToWarehouse(s, partnerMap)) });
+});
+
+app.post('/api/admin/warehouses', requireAdmin, blockManager, async (req, res) => {
+  const d = req.body || {};
+  const code = String(d.warehouse_code || '').trim().toUpperCase();
+  const name = String(d.warehouse_name || '').trim();
+  const lat = parseFloat(d.latitude), lng = parseFloat(d.longitude);
+  if (!code || !name || isNaN(lat) || isNaN(lng))
+    return res.status(400).json({ ok: false, error: '请填写仓库代码、名称，并验证地址以获取经纬度' });
+  // 代码要能唯一定位仓库（二维码 /checkin?wh=代码 按它解析），不允许重复
+  const clash = db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=?').get(code);
+  if (clash) return res.status(400).json({ ok: false, error: `仓库代码 ${code} 已存在` });
+  const pids = Array.isArray(d.company_ids) ? d.company_ids.map(Number).filter(Boolean) : [];
+  const tz = d.timezone || await lookupTimezone(lat, lng);
+  const r = db.prepare('INSERT INTO job_sites (name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone, active) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(name, code, d.address || '', lat, lng, parseInt(d.geofence_radius_meters) || 150,
+      pids[0] || null, pids.join(','), tz, d.is_active === 0 ? 0 : 1);
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/warehouses/:id', requireAdmin, blockManager, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const s = db.prepare('SELECT * FROM job_sites WHERE id=?').get(id);
+  if (!s) return res.status(404).json({ ok: false, error: '仓库不存在' });
+  const d = req.body || {};
+  const code = String(d.warehouse_code || s.code || '').trim().toUpperCase();
+  const name = String(d.warehouse_name || '').trim() || s.name;
+  const lat = d.latitude != null && d.latitude !== '' ? parseFloat(d.latitude) : s.latitude;
+  const lng = d.longitude != null && d.longitude !== '' ? parseFloat(d.longitude) : s.longitude;
+  if (isNaN(lat) || isNaN(lng)) return res.status(400).json({ ok: false, error: '经纬度无效' });
+  const clash = code ? db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND id!=?').get(code, id) : null;
+  if (clash) return res.status(400).json({ ok: false, error: `仓库代码 ${code} 已被其他仓库使用` });
+  const pids = Array.isArray(d.company_ids) ? d.company_ids.map(Number).filter(Boolean) : null;
+  db.prepare('UPDATE job_sites SET name=?, code=?, address=?, latitude=?, longitude=?, radius_meters=?, partner_id=?, partner_ids=?, timezone=?, active=? WHERE id=?')
+    .run(name, code, d.address != null ? d.address : s.address, lat, lng,
+      parseInt(d.geofence_radius_meters) || s.radius_meters || 150,
+      pids ? (pids[0] || null) : s.partner_id,
+      pids ? pids.join(',') : s.partner_ids,
+      d.timezone || s.timezone, d.is_active != null ? (d.is_active ? 1 : 0) : s.active, id);
+  res.json({ ok: true });
+});
+
+// 签到记录（tab-warehouse-checkins）：读 time_entries，按各仓库时区显示本地时间。
+// 一条记录 = 一个班次（上班打卡时间 + 下班时间），支持按仓库/日期/关键词过滤和分页。
+app.get('/api/admin/checkins', requireAdmin, (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const per = Math.min(200, Math.max(1, parseInt(req.query.per) || 50));
+  const code = String(req.query.warehouse_code || '').trim();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : '';
+  const q = String(req.query.q || '').trim();
+
+  let sql = `SELECT t.id, t.employee_id AS emp_db_id, t.clock_in, t.clock_out, t.latitude, t.longitude,
+      t.geo_verified, t.clock_in_photo_path, t.punch_photo_path, t.status,
+      COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz,
+      e.first_name, e.last_name, e.employee_id AS emp_code, e.phone,
+      js.name AS site_name, js.code AS site_code, js.latitude AS site_lat, js.longitude AS site_lng,
+      js.partner_id, js.partner_ids
+    FROM time_entries t
+    LEFT JOIN employees e ON t.employee_id = e.id
+    LEFT JOIN job_sites js ON t.site_id = js.id
+    WHERE t.site_id IS NOT NULL`;
+  const p = [];
+  if (code) { sql += ' AND UPPER(js.code)=?'; p.push(code.toUpperCase()); }
+  if (date) { sql += " AND DATE(t.clock_in) BETWEEN DATE(?, '-1 day') AND DATE(?, '+1 day')"; p.push(date, date); }
+  if (q) {
+    sql += " AND ((COALESCE(e.first_name,'') || ' ' || COALESCE(e.last_name,'')) LIKE ? OR e.employee_id LIKE ? OR e.phone LIKE ?)";
+    const like = `%${q}%`;
+    p.push(like, like, like);
+  }
+  sql += ' ORDER BY t.clock_in DESC LIMIT 5000';
+  let rows = db.prepare(sql).all(...p);
+
+  const localDate = (utc, tz) => {
+    try { return new Date(String(utc).replace(' ', 'T') + 'Z').toLocaleDateString('en-CA', { timeZone: tz }); }
+    catch (_) { return String(utc).slice(0, 10); }
+  };
+  const localDT = (utc, tz) => {
+    if (!utc) return '';
+    try {
+      return new Date(String(utc).replace(' ', 'T') + 'Z')
+        .toLocaleString('sv-SE', { timeZone: tz }).slice(0, 16);
+    } catch (_) { return String(utc).slice(0, 16); }
+  };
+  if (date) rows = rows.filter(r => localDate(r.clock_in, r.tz) === date);
+
+  // Manager 只能看到自己负责的公司(仓库)或直接分配的员工（与 checkin-daily 同规则）
+  if (req.userRole === 'manager') {
+    const pids = managerPartnerIds(req);
+    const eids = managerEmployeeIds(req);
+    rows = (pids.length || eids.length) ? rows.filter(r => {
+      if (eids.includes(r.emp_db_id)) return true;
+      if (r.partner_id && pids.includes(r.partner_id)) return true;
+      const arr = (r.partner_ids || '').split(',').filter(Boolean).map(Number);
+      return arr.some(x => pids.includes(x));
+    }) : [];
+  }
+
+  const total = rows.length;
+  const slice = rows.slice((page - 1) * per, (page - 1) * per + per);
+  res.json({
+    ok: true, page, total,
+    checkins: slice.map(r => {
+      let distance = null;
+      if (r.latitude != null && r.longitude != null && r.site_lat != null && r.site_lng != null)
+        distance = Math.round(haversineDistance(r.latitude, r.longitude, r.site_lat, r.site_lng));
+      return {
+        id: r.id,
+        checkin_time: localDT(r.clock_in, r.tz),
+        clock_out_time: localDT(r.clock_out, r.tz),
+        employee_name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || '(未知)',
+        employee_no: r.emp_code || '',
+        phone: r.phone || '',
+        warehouse_name: r.site_name || '',
+        warehouse_code: r.site_code || '',
+        gps_verified: !!r.geo_verified,
+        distance_from_warehouse: distance,
+        media_path: r.clock_in_photo_path || r.punch_photo_path || '',
+        status: r.status
+      };
+    })
+  });
 });
 
 // ─── Admin: Integration Settings ───

@@ -31281,11 +31281,25 @@ async function saveWarehouse() {
   }
 }
 
-function showWhQR(code, name) {
+async function showWhQR(code, name) {
   const url = `${location.origin}/checkin?wh=${encodeURIComponent(code)}`;
   document.getElementById('whQRName').textContent = name;
   document.getElementById('whQRUrl').value = url;
-  document.getElementById('whQRImg').src = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(url)}`;
+  const img = document.getElementById('whQRImg');
+  img.src = '';
+  try {
+    // 本地生成二维码，不依赖外部二维码服务
+    await _loadQRLib();
+    const tmp = document.createElement('div');
+    tmp.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(tmp);
+    new QRCode(tmp, { text: url, width: 260, height: 260, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    const cv = tmp.querySelector('canvas');
+    img.src = cv ? cv.toDataURL() : ((tmp.querySelector('img') || {}).src || '');
+    tmp.remove();
+  } catch (e) {
+    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(url)}`;
+  }
   document.getElementById('whQRModal').classList.add('show');
 }
 
@@ -31342,8 +31356,9 @@ async function loadWarehouseCheckins() {
   }
   tbody.innerHTML = d.checkins.map(c => {
     const t = (c.checkin_time || '').replace('T', ' ').slice(0, 16);
+    const out = (c.clock_out_time || '').replace('T', ' ').slice(11, 16);
     const dist = c.distance_from_warehouse != null ? (+c.distance_from_warehouse).toFixed(0) + ' m' : '—';
-    const photo = c.media_path ? `<a href="/checkin-photos/${c.media_path.split('/').pop()}" target="_blank" class="btn btn-sm btn-outline">查看</a>` : '—';
+    const photo = c.media_path ? `<a href="/api/admin/punch-photo/${encodeURIComponent(c.media_path.split('/').pop())}" target="_blank" class="btn btn-sm btn-outline">查看</a>` : '—';
     return `<tr>
       <td style="font-size:.82rem;white-space:nowrap">${t}</td>
       <td>${escHtml(c.employee_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${c.employee_no || ''}</span></td>
@@ -31352,7 +31367,7 @@ async function loadWarehouseCheckins() {
       <td><span class="badge ${c.gps_verified ? 'badge-active' : 'badge-terminated'}">${c.gps_verified ? '✓ 通过' : '✗ 未验证'}</span></td>
       <td style="font-size:.83rem">${dist}</td>
       <td>${photo}</td>
-      <td><span class="badge ${c.sms_sent ? 'badge-active' : 'badge-terminated'}">${c.sms_sent ? '已发' : '未发'}</span></td>
+      <td style="font-size:.83rem;white-space:nowrap">${out || '<span style="color:var(--amber);font-weight:600">在班</span>'}</td>
     </tr>`;
   }).join('');
   document.getElementById('whCIPager').textContent = `第 ${d.page} 页，共 ${d.total} 条`;
@@ -40733,7 +40748,7 @@ function printInvoice() {
           <th style="min-width:90px">GPS</th>
           <th style="min-width:70px">距离</th>
           <th style="min-width:70px">照片</th>
-          <th style="min-width:70px">短信</th>
+          <th style="min-width:70px">下班</th>
         </tr></thead>
         <tbody id="whCheckinTable"></tbody>
       </table>
