@@ -3762,7 +3762,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <div id="tab-jobsites" style="display:none">
   <div class="top">
     <h1>🏭 仓库管理</h1>
-    <button class="btn btn-green" onclick="openJobSiteModal()">+ 新增仓库</button>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="printAllSiteQRs()">🖨️ 打印全部二维码</button>
+      <button class="btn btn-green" onclick="openJobSiteModal()">+ 新增仓库</button>
+    </div>
   </div>
   <div class="card">
     <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">工人打卡时系统用 Haversine 公式计算是否在指定半径内</p>
@@ -4754,6 +4757,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button type="button" class="btn btn-sm btn-outline" onclick="_verifySiteAddress()">验证地址</button>
     </div>
     <span id="siteAddrStatus" style="font-size:.8rem;font-weight:600"></span>
+    <div id="sitePartnerAddrs" style="display:none;margin-top:.5rem"></div>
   </div>
   <div style="display:flex;gap:1rem">
     <div class="field" style="flex:1"><label>纬度 LATITUDE *</label><input id="siteLat" type="number" step="any" placeholder="验证地址后自动填入" oninput="updateSiteMap()"></div>
@@ -28619,17 +28623,50 @@ function _setSitePartner(id, name, skipAutoGen) {
   document.getElementById('sitePartnerId').value = id || '';
   document.getElementById('sitePartnerSearch').value = name || '';
   document.getElementById('sitePartnerDropdown').style.display = 'none';
+  _renderSitePartnerAddrs(id, !skipAutoGen);
   if (id && !skipAutoGen) {
     const p = (_allPartners||[]).find(x => String(x.id) === String(id));
-    if (p) {
-      const addrParts = [p.address, p.city, p.state, p.zip].filter(Boolean);
-      if (addrParts.length && !document.getElementById('siteAddress').value.trim()) {
-        document.getElementById('siteAddress').value = addrParts.join(', ');
-        _verifySiteAddress();
-      }
-      _autoGenSiteCodeName(p.name);
-    }
+    if (p) _autoGenSiteCodeName(p.name);
   }
+}
+
+// 该公司在系统里已录入的所有地址（新版 addresses JSON 数组 + 旧版单地址字段，去重）
+function _sitePartnerAddrList(p) {
+  const out = [], seen = new Set();
+  const push = s => {
+    const v = String(s || '').trim();
+    if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); out.push(v); }
+  };
+  try {
+    const arr = JSON.parse(p.addresses || '[]');
+    if (Array.isArray(arr)) arr.forEach(a => push(_addrStr(a)));
+  } catch (_) {}
+  push([p.address, p.city, p.state, p.zip].filter(Boolean).join(', '));
+  return out;
+}
+
+// 选中公司后：只有一个地址且地址栏为空 → 直接填入；同时把全部已有地址列出来点击选用
+function _renderSitePartnerAddrs(partnerId, autoFill) {
+  const box = document.getElementById('sitePartnerAddrs');
+  const p = partnerId ? (_allPartners||[]).find(x => String(x.id) === String(partnerId)) : null;
+  const addrs = p ? _sitePartnerAddrList(p) : [];
+  if (!addrs.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  if (autoFill && addrs.length === 1 && !document.getElementById('siteAddress').value.trim()) {
+    document.getElementById('siteAddress').value = addrs[0];
+    _verifySiteAddress();
+  }
+  box.innerHTML = `<div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.3rem">📍 该公司在系统中已有 ${addrs.length} 个地址，点击选用：</div>` +
+    addrs.map(a => {
+      const safe = esc(a).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+      return `<div data-addr="${safe}" onclick="_useSitePartnerAddr(this)" style="padding:.45rem .7rem;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:.35rem;cursor:pointer;font-size:.84rem;background:#f8fafc" onmouseenter="this.style.background='#eff6ff'" onmouseleave="this.style.background='#f8fafc'">${esc(a)}</div>`;
+    }).join('');
+  box.style.display = '';
+}
+
+function _useSitePartnerAddr(el) {
+  document.getElementById('siteAddress').value = el.dataset.addr;
+  clearAddrStatus('siteAddrStatus');
+  _verifySiteAddress();
 }
 
 function _autoGenSiteCodeName(companyName) {
@@ -28740,6 +28777,58 @@ function printSiteQR() {
   w.document.write(`<html><head><title>打卡二维码</title></head><body style="text-align:center;font-family:sans-serif;padding:2rem"><h2>${title}</h2><p style="color:#666;margin:.5rem 0 1.5rem">${sub}</p>${imgHtml}<p style="margin-top:1rem;font-size:12px;color:#999">${_siteQRUrl}</p><p style="margin-top:2rem;font-size:14px;color:#333">扫码打卡 · Scan to Clock In</p></body></html>`);
   w.document.close();
   setTimeout(() => { w.print(); }, 300);
+}
+
+// 一键打印所有启用仓库的打卡二维码：每个仓库一页，贴到各仓库现场
+async function printAllSiteQRs() {
+  // 窗口必须在任何 await 之前同步打开，否则会被浏览器当成非用户触发的弹窗拦截
+  const w = window.open('', '_blank');
+  if (!w) return showToast('浏览器拦截了弹窗，请允许本站弹窗后重试', 'error');
+  w.document.write('<html><head><title>仓库打卡二维码</title></head><body style="font-family:sans-serif;padding:2rem;color:#666">正在生成二维码…</body></html>');
+  let pages;
+  try {
+    if (!_jobSites.length) await loadJobSites();
+    const sites = _jobSites.filter(s => s.active);
+    if (!sites.length) { w.close(); return showToast('没有启用中的仓库', 'error'); }
+    await _loadQRLib();
+    // 在隐藏容器里逐个生成二维码 canvas，取 dataURL 后销毁
+    const tmp = document.createElement('div');
+    tmp.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(tmp);
+    pages = [];
+    for (const s of sites) {
+      const url = location.origin + '/checkin?site=' + s.id;
+      const box = document.createElement('div');
+      tmp.appendChild(box);
+      new QRCode(box, { text: url, width: 300, height: 300, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      const cv = box.querySelector('canvas');
+      const img = cv ? cv.toDataURL() : (box.querySelector('img') || {}).src;
+      pages.push({ s, url, img });
+    }
+    tmp.remove();
+  } catch (e) {
+    w.close();
+    return showToast('二维码生成失败：' + e.message, 'error');
+  }
+  const escP = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  w.document.open();
+  w.document.write(`<html><head><title>仓库打卡二维码</title><style>
+    body{font-family:sans-serif;margin:0}
+    .page{text-align:center;padding:3rem 2rem;page-break-after:always}
+    .page:last-child{page-break-after:auto}
+    h2{font-size:26px;margin:0 0 4px}
+    .sub{color:#666;font-size:15px;margin:0 0 24px}
+    .url{margin-top:14px;font-size:12px;color:#999;word-break:break-all}
+    .foot{margin-top:28px;font-size:18px;color:#333;font-weight:700}
+  </style></head><body>` + pages.map(p => `<div class="page">
+    <h2>${escP(p.s.name)}</h2>
+    <p class="sub">${escP(p.s.code ? p.s.code + ' · ' : '')}${escP(p.s.address || '')}</p>
+    <img src="${p.img}" style="width:320px;height:320px">
+    <p class="url">${escP(p.url)}</p>
+    <p class="foot">📱 扫码打卡 · Scan to Clock In · Escanear para Marcar</p>
+  </div>`).join('') + '</body></html>');
+  w.document.close();
+  setTimeout(() => { w.print(); }, 400);
 }
 
 async function openJobSiteModal() {
@@ -31028,9 +31117,10 @@ async function loadWarehouses() {
     tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无仓库，点击右上角新增</td></tr>';
     return;
   }
+  const escAttr = s => escHtml(s).replace(/'/g, '&#39;');
   tbody.innerHTML = _whList.map(w => `
     <tr>
-      <td><code style="background:var(--gray-100);padding:2px 7px;border-radius:4px;font-size:.85rem">${w.warehouse_code}</code></td>
+      <td><code style="background:var(--gray-100);padding:2px 7px;border-radius:4px;font-size:.85rem">${escHtml(w.warehouse_code || '—')}</code></td>
       <td style="font-weight:600">${escHtml(w.warehouse_name)}</td>
       <td style="font-size:.82rem;color:var(--gray-600)">${escHtml(w.company_name || w.partner_name || '—')}</td>
       <td style="color:var(--gray-500);font-size:.82rem">${escHtml(w.address || '—')}</td>
@@ -31038,8 +31128,8 @@ async function loadWarehouses() {
       <td><span class="badge ${w.is_active ? 'badge-active' : 'badge-terminated'}">${w.is_active ? '启用' : '停用'}</span></td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm btn-outline" onclick="openWhModal(${w.id})">✏️ 编辑</button>
-        <button class="btn btn-sm btn-outline" onclick="showWhQR('${w.warehouse_code}','${escHtml(w.warehouse_name)}')">QR</button>
-        <button class="btn btn-sm btn-blue" onclick="viewWhCheckins('${w.warehouse_code}')">签到记录</button>
+        ${w.warehouse_code ? `<button class="btn btn-sm btn-outline" data-code="${escAttr(w.warehouse_code)}" data-name="${escAttr(w.warehouse_name)}" onclick="showWhQR(this.dataset.code, this.dataset.name)">QR</button>` : `<button class="btn btn-sm btn-outline" disabled title="请先填写仓库代码">QR</button>`}
+        <button class="btn btn-sm btn-blue" data-code="${escAttr(w.warehouse_code || '')}" onclick="viewWhCheckins(this.dataset.code)">签到记录</button>
       </td>
     </tr>`).join('');
 }
@@ -31066,6 +31156,7 @@ async function openWhModal(id) {
     if (!existingIds.length && w.company_id) existingIds = [w.company_id];
   }
   await loadWhCompanyOptions(existingIds);
+  _renderWhPartnerAddrs();
   document.getElementById('whModal').classList.add('show');
 }
 
@@ -31098,26 +31189,50 @@ function getWhSelectedCompanyIds() {
 }
 
 function onWhCompanyCheck(checkbox) {
+  _renderWhPartnerAddrs();
   if (!checkbox.checked) return;
   const id = parseInt(checkbox.value);
   const p = _whPartners.find(x => x.id === id);
   if (!p) return;
-  // Auto-fill address only if address field is currently empty
+  // 地址栏为空且该公司只有一个地址时才自动填；多个地址列在下方让用户选
   const addrEl = document.getElementById('whAddress');
   if (addrEl.value.trim()) return;
-  let addr = p.address || '';
-  if (!addr) {
-    try {
-      const arr = JSON.parse(p.addresses || '[]');
-      if (arr.length) addr = arr[0].address || arr[0] || '';
-    } catch(e) {}
-  }
-  if (addr) {
-    addrEl.value = addr;
+  const addrs = _sitePartnerAddrList(p);
+  if (addrs.length === 1) {
+    addrEl.value = addrs[0];
     document.getElementById('whAddrVerified').style.display = 'none';
     document.getElementById('whLat').value = '';
     document.getElementById('whLng').value = '';
   }
+}
+
+// 列出所有已勾选公司在系统里的全部地址（点击选用并自动验证取坐标）
+function _renderWhPartnerAddrs() {
+  const box = document.getElementById('whPartnerAddrs');
+  if (!box) return;
+  const ids = getWhSelectedCompanyIds();
+  const items = [];
+  for (const id of ids) {
+    const p = _whPartners.find(x => x.id === id);
+    if (!p) continue;
+    for (const a of _sitePartnerAddrList(p)) items.push({ company: p.name, addr: a });
+  }
+  if (!items.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const multi = ids.length > 1;
+  box.innerHTML = `<div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.3rem">📍 已选公司在系统中共有 ${items.length} 个地址，点击选用：</div>` +
+    items.map(it => {
+      const safe = escHtml(it.addr).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+      return `<div data-addr="${safe}" onclick="_useWhPartnerAddr(this)" style="padding:.45rem .7rem;border:1px solid var(--gray-300);border-radius:8px;margin-bottom:.35rem;cursor:pointer;font-size:.84rem;background:#f8fafc" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#f8fafc'">${multi ? '<span style="color:var(--gray-400)">' + escHtml(it.company) + ' · </span>' : ''}${escHtml(it.addr)}</div>`;
+    }).join('');
+  box.style.display = '';
+}
+
+function _useWhPartnerAddr(el) {
+  document.getElementById('whAddress').value = el.dataset.addr;
+  document.getElementById('whAddrVerified').style.display = 'none';
+  document.getElementById('whLat').value = '';
+  document.getElementById('whLng').value = '';
+  geocodeWhAddress();
 }
 
 async function geocodeWhAddress() {
@@ -31177,11 +31292,25 @@ async function saveWarehouse() {
   }
 }
 
-function showWhQR(code, name) {
+async function showWhQR(code, name) {
   const url = `${location.origin}/checkin?wh=${encodeURIComponent(code)}`;
   document.getElementById('whQRName').textContent = name;
   document.getElementById('whQRUrl').value = url;
-  document.getElementById('whQRImg').src = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(url)}`;
+  const img = document.getElementById('whQRImg');
+  img.src = '';
+  try {
+    // 本地生成二维码，不依赖外部二维码服务
+    await _loadQRLib();
+    const tmp = document.createElement('div');
+    tmp.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(tmp);
+    new QRCode(tmp, { text: url, width: 260, height: 260, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    const cv = tmp.querySelector('canvas');
+    img.src = cv ? cv.toDataURL() : ((tmp.querySelector('img') || {}).src || '');
+    tmp.remove();
+  } catch (e) {
+    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(url)}`;
+  }
   document.getElementById('whQRModal').classList.add('show');
 }
 
@@ -31204,7 +31333,7 @@ async function loadWhCheckinWarehouseOptions() {
   const sel = document.getElementById('whCheckinCodeFilter');
   if (!sel) return;
   const cur = sel.value;
-  sel.innerHTML = '<option value="">全部仓库</option>' + _whList.map(w => `<option value="${w.warehouse_code}">${w.warehouse_name}</option>`).join('');
+  sel.innerHTML = '<option value="">全部仓库</option>' + _whList.map(w => `<option value="${escHtml(w.warehouse_code).replace(/'/g, '&#39;')}">${escHtml(w.warehouse_name)}</option>`).join('');
   if (cur) sel.value = cur;
 }
 
@@ -31218,6 +31347,7 @@ function viewWhCheckins(warehouseCode) {
   }, 50);
 }
 
+let _whCISeq = 0;
 async function loadWarehouseCheckins() {
   const code = document.getElementById('whCheckinCodeFilter')?.value || '';
   const date = document.getElementById('whCheckinDate')?.value || '';
@@ -31228,9 +31358,14 @@ async function loadWarehouseCheckins() {
   if (q) params.set('q', q);
   const tbody = document.getElementById('whCheckinTable');
   tbody.innerHTML = '<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--gray-400)">加载中...</td></tr>';
-  const res = await fetch('/api/admin/checkins?' + params);
-  const d = await res.json();
-  if (!d.ok) { tbody.innerHTML = '<tr><td colspan="8" class="empty">加载失败</td></tr>'; return; }
+  const seq = ++_whCISeq; // 输入过滤会触发并发请求，只认最后一次的结果
+  let d;
+  try {
+    const res = await fetch('/api/admin/checkins?' + params);
+    d = await res.json();
+  } catch (e) { d = null; }
+  if (seq !== _whCISeq) return;
+  if (!d || !d.ok) { tbody.innerHTML = '<tr><td colspan="8" class="empty">加载失败</td></tr>'; return; }
   if (!d.checkins.length) {
     tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无签到记录</td></tr>';
     document.getElementById('whCIPager').textContent = '';
@@ -31238,17 +31373,18 @@ async function loadWarehouseCheckins() {
   }
   tbody.innerHTML = d.checkins.map(c => {
     const t = (c.checkin_time || '').replace('T', ' ').slice(0, 16);
+    const out = (c.clock_out_time || '').replace('T', ' ').slice(11, 16);
     const dist = c.distance_from_warehouse != null ? (+c.distance_from_warehouse).toFixed(0) + ' m' : '—';
-    const photo = c.media_path ? `<a href="/checkin-photos/${c.media_path.split('/').pop()}" target="_blank" class="btn btn-sm btn-outline">查看</a>` : '—';
+    const photo = c.media_path ? `<a href="/api/admin/punch-photo/${encodeURIComponent(c.media_path.split('/').pop())}" target="_blank" class="btn btn-sm btn-outline">查看</a>` : '—';
     return `<tr>
-      <td style="font-size:.82rem;white-space:nowrap">${t}</td>
-      <td>${escHtml(c.employee_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${c.employee_no || ''}</span></td>
-      <td style="font-size:.83rem">${c.phone || ''}</td>
-      <td>${escHtml(c.warehouse_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${c.warehouse_code}</span></td>
+      <td style="font-size:.82rem;white-space:nowrap">${escHtml(t)}</td>
+      <td>${escHtml(c.employee_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${escHtml(c.employee_no || '')}</span></td>
+      <td style="font-size:.83rem">${escHtml(c.phone || '')}</td>
+      <td>${escHtml(c.warehouse_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${escHtml(c.warehouse_code)}</span></td>
       <td><span class="badge ${c.gps_verified ? 'badge-active' : 'badge-terminated'}">${c.gps_verified ? '✓ 通过' : '✗ 未验证'}</span></td>
       <td style="font-size:.83rem">${dist}</td>
       <td>${photo}</td>
-      <td><span class="badge ${c.sms_sent ? 'badge-active' : 'badge-terminated'}">${c.sms_sent ? '已发' : '未发'}</span></td>
+      <td style="font-size:.83rem;white-space:nowrap">${out || '<span style="color:#F5A623;font-weight:600">在班</span>'}</td>
     </tr>`;
   }).join('');
   document.getElementById('whCIPager').textContent = `第 ${d.page} 页，共 ${d.total} 条`;
@@ -40629,7 +40765,7 @@ function printInvoice() {
           <th style="min-width:90px">GPS</th>
           <th style="min-width:70px">距离</th>
           <th style="min-width:70px">照片</th>
-          <th style="min-width:70px">短信</th>
+          <th style="min-width:70px">下班</th>
         </tr></thead>
         <tbody id="whCheckinTable"></tbody>
       </table>
@@ -40672,6 +40808,7 @@ function printInvoice() {
         <button class="btn btn-outline" id="whGeocodeBtn" onclick="geocodeWhAddress()" style="white-space:nowrap">验证地址</button>
       </div>
       <div id="whAddrVerified" style="display:none;font-size:.78rem;color:var(--green);margin-top:.35rem;padding:.3rem .5rem;background:#f0fdf4;border-radius:5px"></div>
+      <div id="whPartnerAddrs" style="display:none;margin-top:.5rem"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
       <div class="field">

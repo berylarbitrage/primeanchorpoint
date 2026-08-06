@@ -3484,6 +3484,22 @@ app.use((req, res, next) => {
   }
   next();
 });
+// 打卡二维码兼容: /checkin?wh=仓库代码 → /checkin?site=ID。必须放在 static 之前,
+// 否则 extensions:['html'] 会先把 /checkin 直接映射到 checkin.html, 拿不到跳转机会。
+app.get('/checkin', (req, res, next) => {
+  if (req.query.wh && !req.query.site) {
+    try {
+      // 历史数据可能存在重复代码，取最新的启用仓库，保证解析结果确定
+      const s = db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND active=1 ORDER BY id DESC LIMIT 1')
+        .get(String(req.query.wh).trim().toUpperCase());
+      if (s) {
+        const lang = req.query.lang ? '&lang=' + encodeURIComponent(String(req.query.lang)) : '';
+        return res.redirect(302, '/checkin?site=' + s.id + lang);
+      }
+    } catch (_) {}
+  }
+  next();
+});
 app.use(express.static('public', {
   extensions: ['html'],
   setHeaders(res, filePath) {
@@ -25238,7 +25254,101 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Serve checkin page
+// 该仓库对应的入职申请表链接：优先用仓库所属公司(partner)的专属申请表，
+// 仓库没有绑定公司时退回通用申请表。token 不存在时懒创建（与后台二维码接口同逻辑）。
+function _applyUrlForSite(siteId, req) {
+  let partnerId = null;
+  try {
+    const s = db.prepare('SELECT partner_id, partner_ids FROM job_sites WHERE id=?').get(parseInt(siteId));
+    if (s) {
+      // partner_ids 存的是 CSV（如 "5" 或 "3,7"），取第一个；旧数据可能只有 partner_id
+      partnerId = parseInt(String(s.partner_ids || '').split(',')[0]) || s.partner_id || null;
+    }
+  } catch (_) {}
+  let token = '';
+  if (partnerId) {
+    const p = db.prepare('SELECT id, applicant_form_token FROM partners WHERE id=?').get(partnerId);
+    if (p) {
+      token = p.applicant_form_token || '';
+      if (!token) {
+        token = crypto.randomBytes(20).toString('hex');
+        db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
+      }
+    }
+  }
+  if (!token) {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+    token = (row && row.value) || '';
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
+    }
+  }
+  return `${_applyQrBase(req)}/apply/${token}`;
+}
+
+// 打卡兜底：手机号不在员工/工人账号里，但已经提交过入职申请（手机已 OTP 验证）。
+// 该手机号只要已有任何员工档案或工人账号（含已离职/停用的），一律不走申请通道——
+// 在职的正常通道本来就能匹配到；离职/停用的不允许借申请自动建档复活。
+function _checkinApplicantByPhone(digits10) {
+  const empByPhone = db.prepare('SELECT id FROM employees WHERE phone10(phone)=?').get(digits10);
+  if (empByPhone) return null;
+  const waByPhone = db.prepare('SELECT id FROM worker_accounts WHERE phone10(phone)=?').get(digits10);
+  if (waByPhone) return null;
+  const sub = db.prepare(
+    'SELECT * FROM applicant_submissions WHERE phone10(phone)=? AND phone_verified=1 ORDER BY id DESC LIMIT 1'
+  ).get(digits10);
+  if (!sub) return null;
+  // 申请已关联到员工档案（可能换过手机号）→ 按档案状态放行
+  if (sub.employee_id) {
+    const emp = db.prepare('SELECT id, status FROM employees WHERE id=?').get(sub.employee_id);
+    if (emp && emp.status !== 'active') return null;
+  }
+  return sub;
+}
+
+// time_entries.clock_in 有两种历史格式：'YYYY-MM-DD HH:MM:SS'（UTC，本文件的扫码打卡）
+// 和 ISO 'YYYY-MM-DDTHH:MM:SS.sssZ'（工人端/经理端 punch 用 toISOString 存）。统一解析。
+function _utcEntryDate(v) {
+  let s = String(v || '').trim();
+  if (!s) return null;
+  if (!s.includes('T')) s = s.replace(' ', 'T');
+  if (!/(Z|[+-]\d{2}:?\d{2})$/.test(s)) s += 'Z';
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// 从入职申请自动创建员工档案（工人填完表后直接回来打卡，不用等后台手动建档）。
+// 返回 employees 行；档案备注里标明来源，方便后台事后补审。
+function _employeeFromApplicant(sub) {
+  if (sub.employee_id) {
+    const existing = db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(sub.employee_id);
+    if (existing) return existing;
+  }
+  const nameParts = String(sub.name || '').trim().split(/\s+/);
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.slice(1).join(' ');
+  const today = new Date().toISOString().slice(0, 10);
+  const insert = empId => db.prepare(`INSERT INTO employees
+      (employee_id, first_name, last_name, email, phone, address, city, state, zip, hire_date, position, status, notes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?)`)
+    .run(empId, firstName, lastName, sub.email || '', sub.phone || '',
+      [sub.address1, sub.address2].filter(Boolean).join(' '), sub.city || '', sub.state || '', sub.zip || '',
+      today, sub.position || '', `打卡自动建档 · 来自入职申请 #${sub.id}${sub.partner_name ? ' (' + sub.partner_name + ')' : ''}`);
+  let r;
+  try { r = insert(nextEmployeeId(sub.state, today)); }
+  catch (e) {
+    if (!e.message.includes('UNIQUE')) throw e;
+    r = insert(nextEmployeeId(sub.state, today)); // 自动编号撞车重试一次
+  }
+  const newId = r.lastInsertRowid;
+  db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(newId, sub.id);
+  console.log(`[Checkin] Auto-created employee #${newId} from applicant submission #${sub.id} (${sub.name})`);
+  return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
+}
+
+// Serve checkin page (fallback — normally handled by the static middleware;
+// the ?wh=code redirect lives right before express.static)
 app.get('/checkin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'checkin.html'));
 });
@@ -25273,8 +25383,17 @@ app.post('/api/checkin/send-code', async (req, res) => {
     emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status='active'").get(digits10);
   }
 
-  if (!worker && !emp) {
-    return res.status(404).json({ error: '该手机号未在系统中注册' });
+  // 员工/工人账号里没有 → 看是否已提交入职申请（填过表就放行，验证时自动建档）
+  const applicant = (!worker && !emp) ? _checkinApplicantByPhone(digits10) : null;
+
+  if (!worker && !emp && !applicant) {
+    // 未注册：带上该仓库对应的入职申请表链接 + 二维码，前端引导先填表再回来打卡
+    let applyUrl = '', applyQr = '';
+    try {
+      applyUrl = _applyUrlForSite(site_id, req);
+      applyQr = await QRCode.toDataURL(applyUrl, { errorCorrectionLevel: 'M', margin: 1, width: 260 });
+    } catch (e) { console.error('[Checkin] apply-url error:', e.message); }
+    return res.status(404).json({ error: '该手机号未在系统中注册', need_register: true, apply_url: applyUrl, apply_qr: applyQr });
   }
 
   const normalizedPhone = formatPhoneE164(phone);
@@ -25331,6 +25450,21 @@ app.post('/api/checkin/verify', (req, res) => {
       empName = `${emp.first_name} ${emp.last_name}`.trim();
       empId = emp.employee_id || '';
       empDbId = emp.id;
+    } else {
+      // 已提交入职申请但还没有员工档案 → 自动建档，让工人填完表就能直接打卡
+      const sub = _checkinApplicantByPhone(digits10);
+      if (sub) {
+        try {
+          const created = _employeeFromApplicant(sub);
+          empName = `${created.first_name} ${created.last_name}`.trim();
+          empId = created.employee_id || '';
+          empDbId = created.id;
+        } catch (e) {
+          console.error('[Checkin] Auto-create employee failed:', e.message);
+          // 建档失败时不能发会话 token —— 否则到最后一步打卡才报错，白折腾一轮
+          return res.status(500).json({ error: '系统暂时无法完成建档，请稍后重试或联系管理员' });
+        }
+      }
     }
   }
 
@@ -25538,6 +25672,73 @@ app.post('/api/checkin/punch', async (req, res) => {
     clock_time: displayTime,
     photo_saved: !!photoFilename,
     entry_id: entryId
+  });
+});
+
+// ─── 打卡记录查看页（需管理/经理账号登录） ───
+app.get('/checkin-records', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'checkin-records.html'));
+});
+
+// GET /api/admin/checkin-daily?date=YYYY-MM-DD — 某天所有仓库的打卡记录。
+// 记录以 UTC 存储，先取前后一天的窗口，再按各仓库时区换算出的本地日期过滤。
+app.get('/api/admin/checkin-daily', requireAdmin, (req, res) => {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || ''))
+    ? String(req.query.date)
+    : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  const rows = db.prepare(`SELECT t.id, t.employee_id AS emp_db_id, t.clock_in, t.clock_out,
+      t.total_hours, t.overtime_hours, t.status, t.on_break, t.break_records, t.geo_verified,
+      COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz,
+      e.first_name, e.last_name, e.employee_id AS emp_code, e.phone,
+      js.id AS site_id, js.name AS site_name, js.code AS site_code, js.partner_id, js.partner_ids
+    FROM time_entries t
+    LEFT JOIN employees e ON t.employee_id = e.id
+    LEFT JOIN job_sites js ON t.site_id = js.id
+    WHERE t.site_id IS NOT NULL
+      AND DATE(t.clock_in) BETWEEN DATE(?, '-1 day') AND DATE(?, '+1 day')
+    ORDER BY t.clock_in ASC`).all(date, date);
+  const localDate = (utc, tz) => {
+    const d = _utcEntryDate(utc);
+    if (!d) return String(utc).slice(0, 10);
+    try { return d.toLocaleDateString('en-CA', { timeZone: tz }); }
+    catch (_) { return String(utc).slice(0, 10); }
+  };
+  let entries = rows.filter(r => r.clock_in && localDate(r.clock_in, r.tz) === date);
+  // Manager 只能看到自己负责的公司(仓库)或直接分配的员工。partner_ids 是 CSV（如 "3,7"）
+  if (req.userRole === 'manager') {
+    const pids = managerPartnerIds(req);
+    const eids = managerEmployeeIds(req);
+    entries = (pids.length || eids.length) ? entries.filter(r => {
+      if (eids.includes(r.emp_db_id)) return true;
+      if (r.partner_id && pids.includes(r.partner_id)) return true;
+      const arr = (r.partner_ids || '').split(',').filter(Boolean).map(Number);
+      return arr.some(x => pids.includes(x));
+    }) : [];
+  }
+  res.json({
+    date,
+    entries: entries.map(r => {
+      let breaks = [];
+      try { breaks = JSON.parse(r.break_records || '[]'); } catch (_) {}
+      return {
+        id: r.id,
+        name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || '(未知)',
+        emp_code: r.emp_code || '',
+        phone: r.phone || '',
+        site_name: r.site_name || '',
+        site_code: r.site_code || '',
+        site_id: r.site_id,
+        timezone: r.tz,
+        clock_in: r.clock_in,
+        clock_out: r.clock_out,
+        breaks: breaks.map(b => ({ start: b.start || '', end: b.end || '' })),
+        on_break: !!r.on_break,
+        total_hours: r.total_hours || 0,
+        overtime_hours: r.overtime_hours || 0,
+        status: r.status,
+        geo_verified: !!r.geo_verified
+      };
+    })
   });
 });
 
@@ -25773,25 +25974,194 @@ app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
 app.post('/api/admin/job-sites', requireAdmin, blockManager, async (req, res) => {
   const { name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone } = req.body;
   if (!name || !latitude || !longitude) return res.status(400).json({ error: 'Name, latitude, longitude required' });
+  // 非空代码必须唯一 —— 打卡二维码 /checkin?wh=代码 靠它解析仓库
+  const codeUp = String(code || '').trim().toUpperCase();
+  if (codeUp && db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=?').get(codeUp)) {
+    return res.status(400).json({ error: `仓库代码 ${codeUp} 已存在` });
+  }
   const tz = timezone || await lookupTimezone(latitude, longitude);
   const pids = partner_ids || (partner_id ? String(partner_id) : '');
+  // partner_id 与 partner_ids 保持同步（经理限权同时看这两个字段）
+  const firstPid = parseInt(String(pids).split(',')[0]) || partner_id || null;
   const r = db.prepare('INSERT INTO job_sites (name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone) VALUES (?,?,?,?,?,?,?,?,?)')
-    .run(name, code || '', address || '', latitude, longitude, radius_meters || 200, partner_id || null, pids, tz);
+    .run(name, code || '', address || '', latitude, longitude, radius_meters || 200, firstPid, pids, tz);
   res.json({ success: true, id: r.lastInsertRowid, timezone: tz });
 });
 
 app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, async (req, res) => {
   const { name, code, address, latitude, longitude, radius_meters, active, partner_ids, timezone } = req.body;
+  const codeUp = String(code || '').trim().toUpperCase();
+  if (codeUp && db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND id!=?').get(codeUp, req.params.id)) {
+    return res.status(400).json({ error: `仓库代码 ${codeUp} 已被其他仓库使用` });
+  }
   let tz = timezone || null;
   if (!tz && latitude && longitude) tz = await lookupTimezone(latitude, longitude);
   db.prepare('UPDATE job_sites SET name=COALESCE(?,name), code=COALESCE(?,code), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active), partner_ids=COALESCE(?,partner_ids), timezone=COALESCE(?,timezone) WHERE id=?')
     .run(name, code, address, latitude, longitude, radius_meters, active, partner_ids, tz, req.params.id);
+  // partner_id 跟随最终的 partner_ids 第一项，避免留下过期值误导经理限权
+  if (partner_ids != null) {
+    const firstPid = parseInt(String(partner_ids).split(',')[0]) || null;
+    db.prepare('UPDATE job_sites SET partner_id=? WHERE id=?').run(firstPid, req.params.id);
+  }
   res.json({ success: true });
 });
 
 app.delete('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
   db.prepare('DELETE FROM job_sites WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Admin: 仓库签到页 (tab-warehouses) 的接口 ───
+// 该页面历史上设计对接一套独立的 warehouses 表，但后端从未实现过。这里把它
+// 直接映射到 job_sites：两个仓库管理页操作同一批仓库，打卡记录同一份数据，
+// 不会出现两套仓库/两套记录各管各的情况。
+
+function _siteToWarehouse(s, partnerMap) {
+  const pids = (s.partner_ids || '').split(',').filter(Boolean).map(Number);
+  if (!pids.length && s.partner_id) pids.push(s.partner_id);
+  return {
+    id: s.id,
+    warehouse_code: s.code || '',
+    warehouse_name: s.name,
+    company_id: pids[0] || null,
+    company_ids: JSON.stringify(pids),
+    company_name: pids.map(id => partnerMap[id] || '').filter(Boolean).join(', '),
+    address: s.address || '',
+    latitude: s.latitude,
+    longitude: s.longitude,
+    geofence_radius_meters: s.radius_meters || 200,
+    timezone: s.timezone || 'America/Chicago',
+    is_active: s.active ? 1 : 0
+  };
+}
+
+app.get('/api/admin/warehouses', requireAdmin, (req, res) => {
+  const sites = db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all();
+  const partnerMap = {};
+  db.prepare('SELECT id, name FROM partners').all().forEach(p => { partnerMap[p.id] = p.name; });
+  res.json({ ok: true, warehouses: sites.map(s => _siteToWarehouse(s, partnerMap)) });
+});
+
+app.post('/api/admin/warehouses', requireAdmin, blockManager, async (req, res) => {
+  const d = req.body || {};
+  const code = String(d.warehouse_code || '').trim().toUpperCase();
+  const name = String(d.warehouse_name || '').trim();
+  const lat = parseFloat(d.latitude), lng = parseFloat(d.longitude);
+  if (!code || !name || isNaN(lat) || isNaN(lng))
+    return res.status(400).json({ ok: false, error: '请填写仓库代码、名称，并验证地址以获取经纬度' });
+  // 代码要能唯一定位仓库（二维码 /checkin?wh=代码 按它解析），不允许重复
+  const clash = db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=?').get(code);
+  if (clash) return res.status(400).json({ ok: false, error: `仓库代码 ${code} 已存在` });
+  const pids = Array.isArray(d.company_ids) ? d.company_ids.map(Number).filter(Boolean) : [];
+  const tz = d.timezone || await lookupTimezone(lat, lng);
+  const r = db.prepare('INSERT INTO job_sites (name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone, active) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(name, code, d.address || '', lat, lng, parseInt(d.geofence_radius_meters) || 150,
+      pids[0] || null, pids.join(','), tz, d.is_active === 0 ? 0 : 1);
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/warehouses/:id', requireAdmin, blockManager, async (req, res) => {
+  const id = parseInt(req.params.id);
+  const s = db.prepare('SELECT * FROM job_sites WHERE id=?').get(id);
+  if (!s) return res.status(404).json({ ok: false, error: '仓库不存在' });
+  const d = req.body || {};
+  const code = String(d.warehouse_code || s.code || '').trim().toUpperCase();
+  const name = String(d.warehouse_name || '').trim() || s.name;
+  const lat = d.latitude != null && d.latitude !== '' ? parseFloat(d.latitude) : s.latitude;
+  const lng = d.longitude != null && d.longitude !== '' ? parseFloat(d.longitude) : s.longitude;
+  if (isNaN(lat) || isNaN(lng)) return res.status(400).json({ ok: false, error: '经纬度无效' });
+  const clash = code ? db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND id!=?').get(code, id) : null;
+  if (clash) return res.status(400).json({ ok: false, error: `仓库代码 ${code} 已被其他仓库使用` });
+  const pids = Array.isArray(d.company_ids) ? d.company_ids.map(Number).filter(Boolean) : null;
+  db.prepare('UPDATE job_sites SET name=?, code=?, address=?, latitude=?, longitude=?, radius_meters=?, partner_id=?, partner_ids=?, timezone=?, active=? WHERE id=?')
+    .run(name, code, d.address != null ? d.address : s.address, lat, lng,
+      parseInt(d.geofence_radius_meters) || s.radius_meters || 150,
+      pids ? (pids[0] || null) : s.partner_id,
+      pids ? pids.join(',') : s.partner_ids,
+      d.timezone || s.timezone, d.is_active != null ? (d.is_active ? 1 : 0) : s.active, id);
+  res.json({ ok: true });
+});
+
+// 签到记录（tab-warehouse-checkins）：读 time_entries，按各仓库时区显示本地时间。
+// 一条记录 = 一个班次（上班打卡时间 + 下班时间），支持按仓库/日期/关键词过滤和分页。
+app.get('/api/admin/checkins', requireAdmin, (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const per = Math.min(200, Math.max(1, parseInt(req.query.per) || 50));
+  const code = String(req.query.warehouse_code || '').trim();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : '';
+  const q = String(req.query.q || '').trim();
+
+  let sql = `SELECT t.id, t.employee_id AS emp_db_id, t.clock_in, t.clock_out, t.latitude, t.longitude,
+      t.geo_verified, t.clock_in_photo_path, t.punch_photo_path, t.status,
+      COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz,
+      e.first_name, e.last_name, e.employee_id AS emp_code, e.phone,
+      js.name AS site_name, js.code AS site_code, js.latitude AS site_lat, js.longitude AS site_lng,
+      js.partner_id, js.partner_ids
+    FROM time_entries t
+    LEFT JOIN employees e ON t.employee_id = e.id
+    LEFT JOIN job_sites js ON t.site_id = js.id
+    WHERE t.site_id IS NOT NULL`;
+  const p = [];
+  if (code) { sql += ' AND UPPER(js.code)=?'; p.push(code.toUpperCase()); }
+  if (date) { sql += " AND DATE(t.clock_in) BETWEEN DATE(?, '-1 day') AND DATE(?, '+1 day')"; p.push(date, date); }
+  if (q) {
+    sql += " AND ((COALESCE(e.first_name,'') || ' ' || COALESCE(e.last_name,'')) LIKE ? OR e.employee_id LIKE ? OR e.phone LIKE ?)";
+    const like = `%${q}%`;
+    p.push(like, like, like);
+  }
+  sql += ' ORDER BY t.clock_in DESC LIMIT 5000';
+  let rows = db.prepare(sql).all(...p);
+
+  const localDate = (utc, tz) => {
+    const d = _utcEntryDate(utc);
+    if (!d) return String(utc).slice(0, 10);
+    try { return d.toLocaleDateString('en-CA', { timeZone: tz }); }
+    catch (_) { return String(utc).slice(0, 10); }
+  };
+  const localDT = (utc, tz) => {
+    const d = _utcEntryDate(utc);
+    if (!d) return utc ? String(utc).slice(0, 16) : '';
+    try { return d.toLocaleString('sv-SE', { timeZone: tz }).slice(0, 16); }
+    catch (_) { return String(utc).slice(0, 16); }
+  };
+  if (date) rows = rows.filter(r => localDate(r.clock_in, r.tz) === date);
+
+  // Manager 只能看到自己负责的公司(仓库)或直接分配的员工（与 checkin-daily 同规则）
+  if (req.userRole === 'manager') {
+    const pids = managerPartnerIds(req);
+    const eids = managerEmployeeIds(req);
+    rows = (pids.length || eids.length) ? rows.filter(r => {
+      if (eids.includes(r.emp_db_id)) return true;
+      if (r.partner_id && pids.includes(r.partner_id)) return true;
+      const arr = (r.partner_ids || '').split(',').filter(Boolean).map(Number);
+      return arr.some(x => pids.includes(x));
+    }) : [];
+  }
+
+  const total = rows.length;
+  const slice = rows.slice((page - 1) * per, (page - 1) * per + per);
+  res.json({
+    ok: true, page, total,
+    checkins: slice.map(r => {
+      let distance = null;
+      if (r.latitude != null && r.longitude != null && r.site_lat != null && r.site_lng != null)
+        distance = Math.round(haversineDistance(r.latitude, r.longitude, r.site_lat, r.site_lng));
+      return {
+        id: r.id,
+        checkin_time: localDT(r.clock_in, r.tz),
+        clock_out_time: localDT(r.clock_out, r.tz),
+        employee_name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || '(未知)',
+        employee_no: r.emp_code || '',
+        phone: r.phone || '',
+        warehouse_name: r.site_name || '',
+        warehouse_code: r.site_code || '',
+        gps_verified: !!r.geo_verified,
+        distance_from_warehouse: distance,
+        media_path: r.clock_in_photo_path || r.punch_photo_path || '',
+        status: r.status
+      };
+    })
+  });
 });
 
 // ─── Admin: Integration Settings ───
