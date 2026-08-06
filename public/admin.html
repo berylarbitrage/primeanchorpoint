@@ -36911,8 +36911,10 @@ function _invpParsePasteLines(text) {
       if (rate === null && nums[idx] != null) { rate = parseFloat(nums[idx]); s = s.replace(nums[idx], ' '); idx++; }
       if (hours === null && nums[idx] != null) { hours = parseFloat(nums[idx]); s = s.replace(nums[idx], ' '); }
     }
-    // name = leftover text, minus stray $ and surrounding punctuation
-    const name = s.replace(/\$/g, ' ').replace(/\s+/g, ' ').trim().replace(/^[,;·、]+|[,;·、]+$/g, '').trim();
+    // name = leftover text, minus stray $ and surrounding punctuation。抠掉数字后
+    // 残留的孤立横杠（如 "37h-18$" 的 -）也要清掉，但保留名字内部的连字符。
+    const name = s.replace(/\$/g, ' ').replace(/(^|\s)[-–—~]+(?=\s|$)/g, ' ')
+      .replace(/\s+/g, ' ').trim().replace(/^[,;·、\-–—]+|[,;·、\-–—]+$/g, '').trim();
     if (!name) { bad.push({ raw: line }); return; }
     rows.push({ name, rate: (rate != null && isFinite(rate)) ? rate : null, hours: (hours != null && isFinite(hours)) ? hours : null, raw: line });
   });
