@@ -185,6 +185,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
 <script>
 const params = new URLSearchParams(location.search);
 const _siteId = params.get('site');
+
+// 匿名设备标识（防代打卡）：同一台手机为多个工人打卡时后台会自动标记
+let _deviceId = '';
+try {
+  _deviceId = localStorage.getItem('pa_ci_device') || '';
+  if (!_deviceId) {
+    _deviceId = (crypto.randomUUID && crypto.randomUUID()) ||
+      Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem('pa_ci_device', _deviceId);
+  }
+} catch (e) {}
+
 let _phone = '';
 let _token = '';
 let _empInfo = {};
@@ -803,7 +815,8 @@ async function submitPunch() {
         longitude: _userLng,
         accuracy: _gpsBestAccuracy,
         photo: _photoData,
-        punch_type: pt
+        punch_type: pt,
+        device_id: _deviceId
       })
     });
 

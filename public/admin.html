@@ -31389,7 +31389,7 @@ async function loadWarehouseCheckins() {
     const photo = c.media_path ? `<a href="/api/admin/punch-photo/${encodeURIComponent(c.media_path.split('/').pop())}" target="_blank" class="btn btn-sm btn-outline">查看</a>` : '—';
     return `<tr>
       <td style="font-size:.82rem;white-space:nowrap">${escHtml(t)}</td>
-      <td>${escHtml(c.employee_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${escHtml(c.employee_no || '')}</span></td>
+      <td>${escHtml(c.employee_name)}${c.suspect_proxy ? ` <span class="badge badge-terminated" title="${escHtml(c.suspect_note || '')}">⚠ 疑似代打卡</span>` : ''}<br><span style="font-size:.77rem;color:var(--gray-500)">${escHtml(c.employee_no || '')}</span></td>
       <td style="font-size:.83rem">${escHtml(c.phone || '')}</td>
       <td>${escHtml(c.warehouse_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${escHtml(c.warehouse_code)}</span></td>
       <td><span class="badge ${c.gps_verified ? 'badge-active' : 'badge-terminated'}">${c.gps_verified ? '✓ 通过' : '✗ 未验证'}</span></td>
