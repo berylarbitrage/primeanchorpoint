@@ -3762,7 +3762,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <div id="tab-jobsites" style="display:none">
   <div class="top">
     <h1>🏭 仓库管理</h1>
-    <button class="btn btn-green" onclick="openJobSiteModal()">+ 新增仓库</button>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="printAllSiteQRs()">🖨️ 打印全部二维码</button>
+      <button class="btn btn-green" onclick="openJobSiteModal()">+ 新增仓库</button>
+    </div>
   </div>
   <div class="card">
     <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">工人打卡时系统用 Haversine 公式计算是否在指定半径内</p>
@@ -28740,6 +28743,48 @@ function printSiteQR() {
   w.document.write(`<html><head><title>打卡二维码</title></head><body style="text-align:center;font-family:sans-serif;padding:2rem"><h2>${title}</h2><p style="color:#666;margin:.5rem 0 1.5rem">${sub}</p>${imgHtml}<p style="margin-top:1rem;font-size:12px;color:#999">${_siteQRUrl}</p><p style="margin-top:2rem;font-size:14px;color:#333">扫码打卡 · Scan to Clock In</p></body></html>`);
   w.document.close();
   setTimeout(() => { w.print(); }, 300);
+}
+
+// 一键打印所有启用仓库的打卡二维码：每个仓库一页，贴到各仓库现场
+async function printAllSiteQRs() {
+  if (!_jobSites.length) await loadJobSites();
+  const sites = _jobSites.filter(s => s.active);
+  if (!sites.length) return showToast('没有启用中的仓库', 'error');
+  await _loadQRLib();
+  // 在隐藏容器里逐个生成二维码 canvas，取 dataURL 后销毁
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'position:fixed;left:-9999px;top:0';
+  document.body.appendChild(tmp);
+  const pages = [];
+  for (const s of sites) {
+    const url = location.origin + '/checkin?site=' + s.id;
+    const box = document.createElement('div');
+    tmp.appendChild(box);
+    new QRCode(box, { text: url, width: 300, height: 300, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    const cv = box.querySelector('canvas');
+    const img = cv ? cv.toDataURL() : (box.querySelector('img') || {}).src;
+    pages.push({ s, url, img });
+  }
+  tmp.remove();
+  const escP = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const w = window.open('', '_blank');
+  w.document.write(`<html><head><title>仓库打卡二维码</title><style>
+    body{font-family:sans-serif;margin:0}
+    .page{text-align:center;padding:3rem 2rem;page-break-after:always}
+    .page:last-child{page-break-after:auto}
+    h2{font-size:26px;margin:0 0 4px}
+    .sub{color:#666;font-size:15px;margin:0 0 24px}
+    .url{margin-top:14px;font-size:12px;color:#999;word-break:break-all}
+    .foot{margin-top:28px;font-size:18px;color:#333;font-weight:700}
+  </style></head><body>` + pages.map(p => `<div class="page">
+    <h2>${escP(p.s.name)}</h2>
+    <p class="sub">${escP(p.s.code ? p.s.code + ' · ' : '')}${escP(p.s.address || '')}</p>
+    <img src="${p.img}" style="width:320px;height:320px">
+    <p class="url">${escP(p.url)}</p>
+    <p class="foot">📱 扫码打卡 · Scan to Clock In · Escanear para Marcar</p>
+  </div>`).join('') + '</body></html>');
+  w.document.close();
+  setTimeout(() => { w.print(); }, 400);
 }
 
 async function openJobSiteModal() {

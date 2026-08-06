@@ -25238,6 +25238,82 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// 该仓库对应的入职申请表链接：优先用仓库所属公司(partner)的专属申请表，
+// 仓库没有绑定公司时退回通用申请表。token 不存在时懒创建（与后台二维码接口同逻辑）。
+function _applyUrlForSite(siteId, req) {
+  let partnerId = null;
+  try {
+    const s = db.prepare('SELECT partner_id, partner_ids FROM job_sites WHERE id=?').get(parseInt(siteId));
+    if (s) {
+      partnerId = s.partner_id || null;
+      if (!partnerId && s.partner_ids) {
+        try {
+          const arr = JSON.parse(s.partner_ids);
+          if (Array.isArray(arr) && arr.length) partnerId = parseInt(arr[0]) || null;
+        } catch (_) {
+          partnerId = parseInt(String(s.partner_ids).split(',')[0]) || null;
+        }
+      }
+    }
+  } catch (_) {}
+  let token = '';
+  if (partnerId) {
+    const p = db.prepare('SELECT id, applicant_form_token FROM partners WHERE id=?').get(partnerId);
+    if (p) {
+      token = p.applicant_form_token || '';
+      if (!token) {
+        token = crypto.randomBytes(20).toString('hex');
+        db.prepare('UPDATE partners SET applicant_form_token=? WHERE id=?').run(token, partnerId);
+      }
+    }
+  }
+  if (!token) {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+    token = (row && row.value) || '';
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
+    }
+  }
+  return `${_applyQrBase(req)}/apply/${token}`;
+}
+
+// 打卡兜底：手机号不在员工/工人账号里，但已经提交过入职申请（手机已 OTP 验证）。
+function _checkinApplicantByPhone(digits10) {
+  return db.prepare(
+    'SELECT * FROM applicant_submissions WHERE phone10(phone)=? AND phone_verified=1 ORDER BY id DESC LIMIT 1'
+  ).get(digits10);
+}
+
+// 从入职申请自动创建员工档案（工人填完表后直接回来打卡，不用等后台手动建档）。
+// 返回 employees 行；档案备注里标明来源，方便后台事后补审。
+function _employeeFromApplicant(sub) {
+  if (sub.employee_id) {
+    const existing = db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(sub.employee_id);
+    if (existing) return existing;
+  }
+  const nameParts = String(sub.name || '').trim().split(/\s+/);
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.slice(1).join(' ');
+  const today = new Date().toISOString().slice(0, 10);
+  const insert = empId => db.prepare(`INSERT INTO employees
+      (employee_id, first_name, last_name, email, phone, address, city, state, zip, hire_date, position, status, notes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?)`)
+    .run(empId, firstName, lastName, sub.email || '', sub.phone || '',
+      [sub.address1, sub.address2].filter(Boolean).join(' '), sub.city || '', sub.state || '', sub.zip || '',
+      today, sub.position || '', `打卡自动建档 · 来自入职申请 #${sub.id}${sub.partner_name ? ' (' + sub.partner_name + ')' : ''}`);
+  let r;
+  try { r = insert(nextEmployeeId(sub.state, today)); }
+  catch (e) {
+    if (!e.message.includes('UNIQUE')) throw e;
+    r = insert(nextEmployeeId(sub.state, today)); // 自动编号撞车重试一次
+  }
+  const newId = r.lastInsertRowid;
+  db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(newId, sub.id);
+  console.log(`[Checkin] Auto-created employee #${newId} from applicant submission #${sub.id} (${sub.name})`);
+  return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
+}
+
 // Serve checkin page
 app.get('/checkin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'checkin.html'));
@@ -25273,8 +25349,17 @@ app.post('/api/checkin/send-code', async (req, res) => {
     emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status='active'").get(digits10);
   }
 
-  if (!worker && !emp) {
-    return res.status(404).json({ error: '该手机号未在系统中注册' });
+  // 员工/工人账号里没有 → 看是否已提交入职申请（填过表就放行，验证时自动建档）
+  const applicant = (!worker && !emp) ? _checkinApplicantByPhone(digits10) : null;
+
+  if (!worker && !emp && !applicant) {
+    // 未注册：带上该仓库对应的入职申请表链接 + 二维码，前端引导先填表再回来打卡
+    let applyUrl = '', applyQr = '';
+    try {
+      applyUrl = _applyUrlForSite(site_id, req);
+      applyQr = await QRCode.toDataURL(applyUrl, { errorCorrectionLevel: 'M', margin: 1, width: 260 });
+    } catch (e) { console.error('[Checkin] apply-url error:', e.message); }
+    return res.status(404).json({ error: '该手机号未在系统中注册', need_register: true, apply_url: applyUrl, apply_qr: applyQr });
   }
 
   const normalizedPhone = formatPhoneE164(phone);
@@ -25331,6 +25416,19 @@ app.post('/api/checkin/verify', (req, res) => {
       empName = `${emp.first_name} ${emp.last_name}`.trim();
       empId = emp.employee_id || '';
       empDbId = emp.id;
+    } else {
+      // 已提交入职申请但还没有员工档案 → 自动建档，让工人填完表就能直接打卡
+      const sub = _checkinApplicantByPhone(digits10);
+      if (sub) {
+        try {
+          const created = _employeeFromApplicant(sub);
+          empName = `${created.first_name} ${created.last_name}`.trim();
+          empId = created.employee_id || '';
+          empDbId = created.id;
+        } catch (e) {
+          console.error('[Checkin] Auto-create employee failed:', e.message);
+        }
+      }
     }
   }
 
@@ -25538,6 +25636,73 @@ app.post('/api/checkin/punch', async (req, res) => {
     clock_time: displayTime,
     photo_saved: !!photoFilename,
     entry_id: entryId
+  });
+});
+
+// ─── 打卡记录查看页（需管理/经理账号登录） ───
+app.get('/checkin-records', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'checkin-records.html'));
+});
+
+// GET /api/admin/checkin-daily?date=YYYY-MM-DD — 某天所有仓库的打卡记录。
+// 记录以 UTC 存储，先取前后一天的窗口，再按各仓库时区换算出的本地日期过滤。
+app.get('/api/admin/checkin-daily', requireAdmin, (req, res) => {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || ''))
+    ? String(req.query.date)
+    : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  const rows = db.prepare(`SELECT t.id, t.employee_id AS emp_db_id, t.clock_in, t.clock_out,
+      t.total_hours, t.overtime_hours, t.status, t.on_break, t.break_records, t.geo_verified,
+      COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz,
+      e.first_name, e.last_name, e.employee_id AS emp_code, e.phone,
+      js.id AS site_id, js.name AS site_name, js.code AS site_code, js.partner_id, js.partner_ids
+    FROM time_entries t
+    LEFT JOIN employees e ON t.employee_id = e.id
+    LEFT JOIN job_sites js ON t.site_id = js.id
+    WHERE DATE(t.clock_in) BETWEEN DATE(?, '-1 day') AND DATE(?, '+1 day')
+    ORDER BY t.clock_in ASC`).all(date, date);
+  const localDate = (utc, tz) => {
+    try { return new Date(String(utc).replace(' ', 'T') + 'Z').toLocaleDateString('en-CA', { timeZone: tz }); }
+    catch (_) { return String(utc).slice(0, 10); }
+  };
+  let entries = rows.filter(r => r.clock_in && localDate(r.clock_in, r.tz) === date);
+  // Manager 只能看到自己负责的公司(仓库)或直接分配的员工
+  if (req.userRole === 'manager') {
+    const pids = managerPartnerIds(req);
+    const eids = managerEmployeeIds(req);
+    entries = (pids.length || eids.length) ? entries.filter(r => {
+      if (eids.includes(r.emp_db_id)) return true;
+      if (r.partner_id && pids.includes(r.partner_id)) return true;
+      try {
+        const arr = JSON.parse(r.partner_ids || '[]');
+        if (Array.isArray(arr) && arr.some(x => pids.includes(parseInt(x)))) return true;
+      } catch (_) {}
+      return false;
+    }) : [];
+  }
+  res.json({
+    date,
+    entries: entries.map(r => {
+      let breaks = [];
+      try { breaks = JSON.parse(r.break_records || '[]'); } catch (_) {}
+      return {
+        id: r.id,
+        name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || '(未知)',
+        emp_code: r.emp_code || '',
+        phone: r.phone || '',
+        site_name: r.site_name || '',
+        site_code: r.site_code || '',
+        site_id: r.site_id,
+        timezone: r.tz,
+        clock_in: r.clock_in,
+        clock_out: r.clock_out,
+        breaks: breaks.map(b => ({ start: b.start || '', end: b.end || '' })),
+        on_break: !!r.on_break,
+        total_hours: r.total_hours || 0,
+        overtime_hours: r.overtime_hours || 0,
+        status: r.status,
+        geo_verified: !!r.geo_verified
+      };
+    })
   });
 });
 

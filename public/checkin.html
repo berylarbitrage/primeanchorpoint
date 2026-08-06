@@ -109,6 +109,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
     </div>
   </div>
 
+  <!-- Register prompt: phone not in system → fill onboarding form first -->
+  <div class="card" id="registerCard" style="display:none;border:2px solid #F5A623">
+    <h2>📋 <span id="regTitle">请先填写入职信息</span></h2>
+    <p id="regMsg" style="font-size:.88rem;color:var(--gray-600);margin-bottom:.85rem"></p>
+    <div style="text-align:center;margin-bottom:.85rem">
+      <img id="regQrImg" alt="QR" style="width:200px;height:200px;border:2px solid var(--gray-200);border-radius:12px;padding:8px;background:#fff;display:none">
+      <div id="regScan" style="font-size:.78rem;color:var(--gray-400);margin-top:.35rem"></div>
+    </div>
+    <button class="btn btn-primary" id="btnOpenApply" onclick="openApplyForm()" style="margin-bottom:.6rem"></button>
+    <button class="btn" id="btnRegDone" onclick="hideRegisterCard()" style="background:var(--off);color:var(--gray-800)"></button>
+    <p id="regNote" style="font-size:.78rem;color:var(--gray-500);margin-top:.75rem;text-align:center"></p>
+  </div>
+
   <!-- Step 2: Verify Code -->
   <div class="card step" id="step2">
     <h2><span class="step-badge">2</span> <span id="s2Title">输入验证码 / Enter Code / Ingrese Código</span></h2>
@@ -228,6 +241,12 @@ const CI_LANG = {
     codeExpired: '验证码已过期，请返回重新获取',
     countdownFmt: (m, s) => `验证码有效期：${m}:${s}`,
     mapLegend: '🔴 仓库位置 &nbsp; 🔵 您的位置 &nbsp; ⭕ 签到范围',
+    regTitle: '请先填写入职信息',
+    regMsg: '该手机号还未在系统中注册。请先填写入职申请表（请务必使用同一个手机号），填写完成后返回本页面重新打卡。',
+    regScan: '扫描二维码 或 点击下方按钮打开表单',
+    regOpenBtn: '📝 打开入职申请表',
+    regDoneBtn: '✅ 我已填写完成，重新打卡',
+    regNote: '提示：填表时的手机号必须与打卡手机号一致',
   },
   en: {
     subtitle: 'Warehouse Check-in',
@@ -264,6 +283,12 @@ const CI_LANG = {
     codeExpired: 'Code expired. Go back to request a new one.',
     countdownFmt: (m, s) => `Code valid for: ${m}:${s}`,
     mapLegend: '🔴 Warehouse &nbsp; 🔵 Your Location &nbsp; ⭕ Check-in Range',
+    regTitle: 'Complete Onboarding First',
+    regMsg: 'This phone number is not registered yet. Please fill out the onboarding form first (use the SAME phone number), then come back to this page to check in.',
+    regScan: 'Scan the QR code or tap the button below to open the form',
+    regOpenBtn: '📝 Open Onboarding Form',
+    regDoneBtn: '✅ I finished the form — check in again',
+    regNote: 'Note: the phone number on the form must match your check-in phone number',
   },
   es: {
     subtitle: 'Registro de Entrada',
@@ -300,6 +325,12 @@ const CI_LANG = {
     codeExpired: 'Código expirado. Regrese para obtener uno nuevo.',
     countdownFmt: (m, s) => `Código válido por: ${m}:${s}`,
     mapLegend: '🔴 Almacén &nbsp; 🔵 Su Ubicación &nbsp; ⭕ Zona de Registro',
+    regTitle: 'Complete el Registro Primero',
+    regMsg: 'Este número de teléfono aún no está registrado. Complete primero el formulario de ingreso (use el MISMO número de teléfono) y luego regrese a esta página para marcar.',
+    regScan: 'Escanee el código QR o toque el botón de abajo para abrir el formulario',
+    regOpenBtn: '📝 Abrir Formulario de Ingreso',
+    regDoneBtn: '✅ Terminé el formulario — marcar de nuevo',
+    regNote: 'Nota: el teléfono del formulario debe ser el mismo con el que marca',
   }
 };
 
@@ -369,6 +400,8 @@ function ciSetLang(lang) {
   document.getElementById('s2SentText').textContent = t.s2Sent;
   const legend = document.getElementById('s4MapLegend');
   if (legend) legend.innerHTML = t.mapLegend;
+  // Re-render register prompt if visible
+  if (document.getElementById('registerCard').style.display === 'block') renderRegisterCard();
 }
 
 // Initialize language from URL param or default en
@@ -394,7 +427,11 @@ function goStep(n) {
 async function api(url, opts) {
   const r = await fetch(url, opts);
   const d = await r.json();
-  if (!r.ok) throw new Error(d.error || CI_LANG[_ciLang].errReqFail);
+  if (!r.ok) {
+    const err = new Error(d.error || CI_LANG[_ciLang].errReqFail);
+    err.data = d;
+    throw err;
+  }
   return d;
 }
 
@@ -449,11 +486,52 @@ async function sendCode() {
     startCountdown(300);
     codeInput.focus();
   } catch (e) {
-    showMsg('msg1', xlateErr(e.message), 'err');
+    if (e.data && e.data.need_register) {
+      showRegisterCard(e.data);
+    } else {
+      showMsg('msg1', xlateErr(e.message), 'err');
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = t.btnSendCode;
   }
+}
+
+// ─── 未注册 → 引导先填入职申请表 ───
+let _applyInfo = null;
+
+function showRegisterCard(data) {
+  _applyInfo = data;
+  renderRegisterCard();
+  document.getElementById('step1').classList.remove('active');
+  document.getElementById('registerCard').style.display = 'block';
+  document.getElementById('registerCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+function renderRegisterCard() {
+  if (!_applyInfo) return;
+  const t = CI_LANG[_ciLang];
+  document.getElementById('regTitle').textContent = t.regTitle;
+  document.getElementById('regMsg').textContent = t.regMsg;
+  document.getElementById('regScan').textContent = t.regScan;
+  document.getElementById('btnOpenApply').textContent = t.regOpenBtn;
+  document.getElementById('btnRegDone').textContent = t.regDoneBtn;
+  document.getElementById('regNote').textContent = t.regNote;
+  const img = document.getElementById('regQrImg');
+  if (_applyInfo.apply_qr) { img.src = _applyInfo.apply_qr; img.style.display = 'inline-block'; }
+  else img.style.display = 'none';
+  document.getElementById('btnOpenApply').style.display = _applyInfo.apply_url ? 'block' : 'none';
+}
+
+function openApplyForm() {
+  if (_applyInfo && _applyInfo.apply_url) window.open(_applyInfo.apply_url, '_blank');
+}
+
+function hideRegisterCard() {
+  document.getElementById('registerCard').style.display = 'none';
+  document.getElementById('step1').classList.add('active');
+  hideMsg('msg1');
+  phoneInput.focus();
 }
 
 // Code input handling
