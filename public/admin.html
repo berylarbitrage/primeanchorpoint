@@ -37071,8 +37071,9 @@ function renderInvpManualTable(skipSave) {
         <input type="text" class="invp-man-sub" data-uid="${emp.uid}" value="${esc(emp.subcontractor||'')}" list="invpSubcontractorList"
           placeholder="分包商" title="分包商 Subcontractor（按此分组生成分包商对账单）"
           style="width:110px;border:1px solid #6ee7b7;border-radius:4px;padding:3px 6px;font-size:.84rem;background:#f0fdf4"
+          onfocus="this.select()"
           onchange="_invpSaveTableState();renderInvpManualTable(true)">${(emp.subcontractor || '').trim()
-            ? `<button type="button" tabindex="-1" onclick="invpClearRowSub('${emp.uid}')" title="清除这名工人的分包商" style="border:none;background:none;color:#dc2626;font-size:.92rem;cursor:pointer;padding:0 3px;line-height:1;vertical-align:middle">✕</button>`
+            ? `<button type="button" tabindex="-1" onclick="invpClearRowSub('${emp.uid}')" title="清除这名工人的分包商" style="border:none;background:#fef2f2;color:#dc2626;font-size:.95rem;cursor:pointer;padding:3px 8px;border-radius:5px;line-height:1;vertical-align:middle;margin-left:2px">✕</button>`
             : ''}
       </td>
       <td style="padding:3px 4px">
