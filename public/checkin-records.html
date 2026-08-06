@@ -110,8 +110,23 @@ tr:hover td{background:#FAFBFD}
 <script>
 let _token = sessionStorage.getItem('ci_rec_token') || '';
 let _entries = [];
+let _loadError = false;
 
-function todayStr() { return new Date().toLocaleDateString('en-CA'); }
+// 默认日期与服务端一致（美国中部时区），避免半夜浏览器本地日期和记录日期错位
+function todayStr() {
+  try { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); }
+  catch (e) { return new Date().toLocaleDateString('en-CA'); }
+}
+
+// clock_in 有两种存储格式：'YYYY-MM-DD HH:MM:SS'（UTC）和 ISO '…T…Z'，统一解析
+function parseUtc(v) {
+  let s = String(v || '').trim();
+  if (!s) return null;
+  if (!s.includes('T')) s = s.replace(' ', 'T');
+  if (!/(Z|[+-]\d{2}:?\d{2})$/.test(s)) s += 'Z';
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
 
 async function doLogin() {
   const u = document.getElementById('loginUser').value.trim();
@@ -160,7 +175,9 @@ async function loadRecords() {
   try {
     const r = await fetch('/api/admin/checkin-daily?date=' + date, { headers: { Authorization: 'Bearer ' + _token } });
     if (r.status === 401) { doLogout(); return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
+    _loadError = false;
     _entries = d.entries || [];
     // Rebuild site filter, keeping current selection when possible
     const sel = document.getElementById('siteFilter');
@@ -170,6 +187,7 @@ async function loadRecords() {
     if (sites.some(([id]) => id === prev)) sel.value = prev;
     renderTable();
   } catch (e) {
+    _loadError = true;
     _entries = [];
     renderTable();
   }
@@ -178,9 +196,10 @@ async function loadRecords() {
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
 function fmtTime(utc, tz) {
-  if (!utc) return '—';
+  const d = parseUtc(utc);
+  if (!d) return utc ? String(utc).slice(11, 16) : '—';
   try {
-    return new Date(String(utc).replace(' ', 'T') + 'Z').toLocaleTimeString('zh-CN', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toLocaleTimeString('zh-CN', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
   } catch (e) { return String(utc).slice(11, 16); }
 }
 
@@ -192,9 +211,13 @@ function renderTable() {
   document.getElementById('printSub').textContent = '日期 Date: ' + date + ' · 打印时间 Printed: ' + new Date().toLocaleString('zh-CN', { hour12: false });
   const open = rows.filter(e => e.status === 'open').length;
   const totalHrs = rows.reduce((s, e) => s + (e.total_hours || 0), 0);
-  document.getElementById('summary').textContent =
-    `日期 ${date} · 共 ${rows.length} 条记录 · 在班 ${open} 人 · 合计工时 ${Math.round(totalHrs * 100) / 100} 小时`;
+  document.getElementById('summary').textContent = _loadError
+    ? '⚠️ 加载失败，请点击「刷新」重试 / Failed to load, please retry'
+    : `日期 ${date} · 共 ${rows.length} 条记录 · 在班 ${open} 人 · 合计工时 ${Math.round(totalHrs * 100) / 100} 小时`;
   document.getElementById('emptyBox').style.display = rows.length ? 'none' : 'block';
+  document.getElementById('emptyBox').textContent = _loadError
+    ? '加载失败 / Load failed'
+    : '当天暂无打卡记录 / No records for this date';
   tbody.innerHTML = rows.map((e, i) => {
     const breaks = (e.breaks || []).map(b => fmtTime(b.start, e.timezone) + '–' + (b.end ? fmtTime(b.end, e.timezone) : '…')).join('<br>') || '—';
     const status = e.status === 'open'

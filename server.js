@@ -3489,7 +3489,8 @@ app.use((req, res, next) => {
 app.get('/checkin', (req, res, next) => {
   if (req.query.wh && !req.query.site) {
     try {
-      const s = db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND active=1')
+      // 历史数据可能存在重复代码，取最新的启用仓库，保证解析结果确定
+      const s = db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND active=1 ORDER BY id DESC LIMIT 1')
         .get(String(req.query.wh).trim().toUpperCase());
       if (s) {
         const lang = req.query.lang ? '&lang=' + encodeURIComponent(String(req.query.lang)) : '';
@@ -25260,15 +25261,8 @@ function _applyUrlForSite(siteId, req) {
   try {
     const s = db.prepare('SELECT partner_id, partner_ids FROM job_sites WHERE id=?').get(parseInt(siteId));
     if (s) {
-      partnerId = s.partner_id || null;
-      if (!partnerId && s.partner_ids) {
-        try {
-          const arr = JSON.parse(s.partner_ids);
-          if (Array.isArray(arr) && arr.length) partnerId = parseInt(arr[0]) || null;
-        } catch (_) {
-          partnerId = parseInt(String(s.partner_ids).split(',')[0]) || null;
-        }
-      }
+      // partner_ids 存的是 CSV（如 "5" 或 "3,7"），取第一个；旧数据可能只有 partner_id
+      partnerId = parseInt(String(s.partner_ids || '').split(',')[0]) || s.partner_id || null;
     }
   } catch (_) {}
   let token = '';
@@ -25294,10 +25288,34 @@ function _applyUrlForSite(siteId, req) {
 }
 
 // 打卡兜底：手机号不在员工/工人账号里，但已经提交过入职申请（手机已 OTP 验证）。
+// 该手机号只要已有任何员工档案或工人账号（含已离职/停用的），一律不走申请通道——
+// 在职的正常通道本来就能匹配到；离职/停用的不允许借申请自动建档复活。
 function _checkinApplicantByPhone(digits10) {
-  return db.prepare(
+  const empByPhone = db.prepare('SELECT id FROM employees WHERE phone10(phone)=?').get(digits10);
+  if (empByPhone) return null;
+  const waByPhone = db.prepare('SELECT id FROM worker_accounts WHERE phone10(phone)=?').get(digits10);
+  if (waByPhone) return null;
+  const sub = db.prepare(
     'SELECT * FROM applicant_submissions WHERE phone10(phone)=? AND phone_verified=1 ORDER BY id DESC LIMIT 1'
   ).get(digits10);
+  if (!sub) return null;
+  // 申请已关联到员工档案（可能换过手机号）→ 按档案状态放行
+  if (sub.employee_id) {
+    const emp = db.prepare('SELECT id, status FROM employees WHERE id=?').get(sub.employee_id);
+    if (emp && emp.status !== 'active') return null;
+  }
+  return sub;
+}
+
+// time_entries.clock_in 有两种历史格式：'YYYY-MM-DD HH:MM:SS'（UTC，本文件的扫码打卡）
+// 和 ISO 'YYYY-MM-DDTHH:MM:SS.sssZ'（工人端/经理端 punch 用 toISOString 存）。统一解析。
+function _utcEntryDate(v) {
+  let s = String(v || '').trim();
+  if (!s) return null;
+  if (!s.includes('T')) s = s.replace(' ', 'T');
+  if (!/(Z|[+-]\d{2}:?\d{2})$/.test(s)) s += 'Z';
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // 从入职申请自动创建员工档案（工人填完表后直接回来打卡，不用等后台手动建档）。
@@ -25443,6 +25461,8 @@ app.post('/api/checkin/verify', (req, res) => {
           empDbId = created.id;
         } catch (e) {
           console.error('[Checkin] Auto-create employee failed:', e.message);
+          // 建档失败时不能发会话 token —— 否则到最后一步打卡才报错，白折腾一轮
+          return res.status(500).json({ error: '系统暂时无法完成建档，请稍后重试或联系管理员' });
         }
       }
     }
@@ -25674,25 +25694,25 @@ app.get('/api/admin/checkin-daily', requireAdmin, (req, res) => {
     FROM time_entries t
     LEFT JOIN employees e ON t.employee_id = e.id
     LEFT JOIN job_sites js ON t.site_id = js.id
-    WHERE DATE(t.clock_in) BETWEEN DATE(?, '-1 day') AND DATE(?, '+1 day')
+    WHERE t.site_id IS NOT NULL
+      AND DATE(t.clock_in) BETWEEN DATE(?, '-1 day') AND DATE(?, '+1 day')
     ORDER BY t.clock_in ASC`).all(date, date);
   const localDate = (utc, tz) => {
-    try { return new Date(String(utc).replace(' ', 'T') + 'Z').toLocaleDateString('en-CA', { timeZone: tz }); }
+    const d = _utcEntryDate(utc);
+    if (!d) return String(utc).slice(0, 10);
+    try { return d.toLocaleDateString('en-CA', { timeZone: tz }); }
     catch (_) { return String(utc).slice(0, 10); }
   };
   let entries = rows.filter(r => r.clock_in && localDate(r.clock_in, r.tz) === date);
-  // Manager 只能看到自己负责的公司(仓库)或直接分配的员工
+  // Manager 只能看到自己负责的公司(仓库)或直接分配的员工。partner_ids 是 CSV（如 "3,7"）
   if (req.userRole === 'manager') {
     const pids = managerPartnerIds(req);
     const eids = managerEmployeeIds(req);
     entries = (pids.length || eids.length) ? entries.filter(r => {
       if (eids.includes(r.emp_db_id)) return true;
       if (r.partner_id && pids.includes(r.partner_id)) return true;
-      try {
-        const arr = JSON.parse(r.partner_ids || '[]');
-        if (Array.isArray(arr) && arr.some(x => pids.includes(parseInt(x)))) return true;
-      } catch (_) {}
-      return false;
+      const arr = (r.partner_ids || '').split(',').filter(Boolean).map(Number);
+      return arr.some(x => pids.includes(x));
     }) : [];
   }
   res.json({
@@ -25954,19 +25974,35 @@ app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
 app.post('/api/admin/job-sites', requireAdmin, blockManager, async (req, res) => {
   const { name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone } = req.body;
   if (!name || !latitude || !longitude) return res.status(400).json({ error: 'Name, latitude, longitude required' });
+  // 非空代码必须唯一 —— 打卡二维码 /checkin?wh=代码 靠它解析仓库
+  const codeUp = String(code || '').trim().toUpperCase();
+  if (codeUp && db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=?').get(codeUp)) {
+    return res.status(400).json({ error: `仓库代码 ${codeUp} 已存在` });
+  }
   const tz = timezone || await lookupTimezone(latitude, longitude);
   const pids = partner_ids || (partner_id ? String(partner_id) : '');
+  // partner_id 与 partner_ids 保持同步（经理限权同时看这两个字段）
+  const firstPid = parseInt(String(pids).split(',')[0]) || partner_id || null;
   const r = db.prepare('INSERT INTO job_sites (name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone) VALUES (?,?,?,?,?,?,?,?,?)')
-    .run(name, code || '', address || '', latitude, longitude, radius_meters || 200, partner_id || null, pids, tz);
+    .run(name, code || '', address || '', latitude, longitude, radius_meters || 200, firstPid, pids, tz);
   res.json({ success: true, id: r.lastInsertRowid, timezone: tz });
 });
 
 app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, async (req, res) => {
   const { name, code, address, latitude, longitude, radius_meters, active, partner_ids, timezone } = req.body;
+  const codeUp = String(code || '').trim().toUpperCase();
+  if (codeUp && db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND id!=?').get(codeUp, req.params.id)) {
+    return res.status(400).json({ error: `仓库代码 ${codeUp} 已被其他仓库使用` });
+  }
   let tz = timezone || null;
   if (!tz && latitude && longitude) tz = await lookupTimezone(latitude, longitude);
   db.prepare('UPDATE job_sites SET name=COALESCE(?,name), code=COALESCE(?,code), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active), partner_ids=COALESCE(?,partner_ids), timezone=COALESCE(?,timezone) WHERE id=?')
     .run(name, code, address, latitude, longitude, radius_meters, active, partner_ids, tz, req.params.id);
+  // partner_id 跟随最终的 partner_ids 第一项，避免留下过期值误导经理限权
+  if (partner_ids != null) {
+    const firstPid = parseInt(String(partner_ids).split(',')[0]) || null;
+    db.prepare('UPDATE job_sites SET partner_id=? WHERE id=?').run(firstPid, req.params.id);
+  }
   res.json({ success: true });
 });
 
@@ -26077,15 +26113,16 @@ app.get('/api/admin/checkins', requireAdmin, (req, res) => {
   let rows = db.prepare(sql).all(...p);
 
   const localDate = (utc, tz) => {
-    try { return new Date(String(utc).replace(' ', 'T') + 'Z').toLocaleDateString('en-CA', { timeZone: tz }); }
+    const d = _utcEntryDate(utc);
+    if (!d) return String(utc).slice(0, 10);
+    try { return d.toLocaleDateString('en-CA', { timeZone: tz }); }
     catch (_) { return String(utc).slice(0, 10); }
   };
   const localDT = (utc, tz) => {
-    if (!utc) return '';
-    try {
-      return new Date(String(utc).replace(' ', 'T') + 'Z')
-        .toLocaleString('sv-SE', { timeZone: tz }).slice(0, 16);
-    } catch (_) { return String(utc).slice(0, 16); }
+    const d = _utcEntryDate(utc);
+    if (!d) return utc ? String(utc).slice(0, 16) : '';
+    try { return d.toLocaleString('sv-SE', { timeZone: tz }).slice(0, 16); }
+    catch (_) { return String(utc).slice(0, 16); }
   };
   if (date) rows = rows.filter(r => localDate(r.clock_in, r.tz) === date);
 

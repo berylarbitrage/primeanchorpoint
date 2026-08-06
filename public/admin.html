@@ -28781,27 +28781,37 @@ function printSiteQR() {
 
 // 一键打印所有启用仓库的打卡二维码：每个仓库一页，贴到各仓库现场
 async function printAllSiteQRs() {
-  if (!_jobSites.length) await loadJobSites();
-  const sites = _jobSites.filter(s => s.active);
-  if (!sites.length) return showToast('没有启用中的仓库', 'error');
-  await _loadQRLib();
-  // 在隐藏容器里逐个生成二维码 canvas，取 dataURL 后销毁
-  const tmp = document.createElement('div');
-  tmp.style.cssText = 'position:fixed;left:-9999px;top:0';
-  document.body.appendChild(tmp);
-  const pages = [];
-  for (const s of sites) {
-    const url = location.origin + '/checkin?site=' + s.id;
-    const box = document.createElement('div');
-    tmp.appendChild(box);
-    new QRCode(box, { text: url, width: 300, height: 300, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-    const cv = box.querySelector('canvas');
-    const img = cv ? cv.toDataURL() : (box.querySelector('img') || {}).src;
-    pages.push({ s, url, img });
-  }
-  tmp.remove();
-  const escP = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  // 窗口必须在任何 await 之前同步打开，否则会被浏览器当成非用户触发的弹窗拦截
   const w = window.open('', '_blank');
+  if (!w) return showToast('浏览器拦截了弹窗，请允许本站弹窗后重试', 'error');
+  w.document.write('<html><head><title>仓库打卡二维码</title></head><body style="font-family:sans-serif;padding:2rem;color:#666">正在生成二维码…</body></html>');
+  let pages;
+  try {
+    if (!_jobSites.length) await loadJobSites();
+    const sites = _jobSites.filter(s => s.active);
+    if (!sites.length) { w.close(); return showToast('没有启用中的仓库', 'error'); }
+    await _loadQRLib();
+    // 在隐藏容器里逐个生成二维码 canvas，取 dataURL 后销毁
+    const tmp = document.createElement('div');
+    tmp.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(tmp);
+    pages = [];
+    for (const s of sites) {
+      const url = location.origin + '/checkin?site=' + s.id;
+      const box = document.createElement('div');
+      tmp.appendChild(box);
+      new QRCode(box, { text: url, width: 300, height: 300, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      const cv = box.querySelector('canvas');
+      const img = cv ? cv.toDataURL() : (box.querySelector('img') || {}).src;
+      pages.push({ s, url, img });
+    }
+    tmp.remove();
+  } catch (e) {
+    w.close();
+    return showToast('二维码生成失败：' + e.message, 'error');
+  }
+  const escP = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  w.document.open();
   w.document.write(`<html><head><title>仓库打卡二维码</title><style>
     body{font-family:sans-serif;margin:0}
     .page{text-align:center;padding:3rem 2rem;page-break-after:always}
@@ -31107,9 +31117,10 @@ async function loadWarehouses() {
     tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无仓库，点击右上角新增</td></tr>';
     return;
   }
+  const escAttr = s => escHtml(s).replace(/'/g, '&#39;');
   tbody.innerHTML = _whList.map(w => `
     <tr>
-      <td><code style="background:var(--gray-100);padding:2px 7px;border-radius:4px;font-size:.85rem">${w.warehouse_code}</code></td>
+      <td><code style="background:var(--gray-100);padding:2px 7px;border-radius:4px;font-size:.85rem">${escHtml(w.warehouse_code || '—')}</code></td>
       <td style="font-weight:600">${escHtml(w.warehouse_name)}</td>
       <td style="font-size:.82rem;color:var(--gray-600)">${escHtml(w.company_name || w.partner_name || '—')}</td>
       <td style="color:var(--gray-500);font-size:.82rem">${escHtml(w.address || '—')}</td>
@@ -31117,8 +31128,8 @@ async function loadWarehouses() {
       <td><span class="badge ${w.is_active ? 'badge-active' : 'badge-terminated'}">${w.is_active ? '启用' : '停用'}</span></td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm btn-outline" onclick="openWhModal(${w.id})">✏️ 编辑</button>
-        <button class="btn btn-sm btn-outline" onclick="showWhQR('${w.warehouse_code}','${escHtml(w.warehouse_name)}')">QR</button>
-        <button class="btn btn-sm btn-blue" onclick="viewWhCheckins('${w.warehouse_code}')">签到记录</button>
+        ${w.warehouse_code ? `<button class="btn btn-sm btn-outline" data-code="${escAttr(w.warehouse_code)}" data-name="${escAttr(w.warehouse_name)}" onclick="showWhQR(this.dataset.code, this.dataset.name)">QR</button>` : `<button class="btn btn-sm btn-outline" disabled title="请先填写仓库代码">QR</button>`}
+        <button class="btn btn-sm btn-blue" data-code="${escAttr(w.warehouse_code || '')}" onclick="viewWhCheckins(this.dataset.code)">签到记录</button>
       </td>
     </tr>`).join('');
 }
@@ -31322,7 +31333,7 @@ async function loadWhCheckinWarehouseOptions() {
   const sel = document.getElementById('whCheckinCodeFilter');
   if (!sel) return;
   const cur = sel.value;
-  sel.innerHTML = '<option value="">全部仓库</option>' + _whList.map(w => `<option value="${w.warehouse_code}">${w.warehouse_name}</option>`).join('');
+  sel.innerHTML = '<option value="">全部仓库</option>' + _whList.map(w => `<option value="${escHtml(w.warehouse_code).replace(/'/g, '&#39;')}">${escHtml(w.warehouse_name)}</option>`).join('');
   if (cur) sel.value = cur;
 }
 
@@ -31336,6 +31347,7 @@ function viewWhCheckins(warehouseCode) {
   }, 50);
 }
 
+let _whCISeq = 0;
 async function loadWarehouseCheckins() {
   const code = document.getElementById('whCheckinCodeFilter')?.value || '';
   const date = document.getElementById('whCheckinDate')?.value || '';
@@ -31346,9 +31358,14 @@ async function loadWarehouseCheckins() {
   if (q) params.set('q', q);
   const tbody = document.getElementById('whCheckinTable');
   tbody.innerHTML = '<tr><td colspan="8" style="padding:1.5rem;text-align:center;color:var(--gray-400)">加载中...</td></tr>';
-  const res = await fetch('/api/admin/checkins?' + params);
-  const d = await res.json();
-  if (!d.ok) { tbody.innerHTML = '<tr><td colspan="8" class="empty">加载失败</td></tr>'; return; }
+  const seq = ++_whCISeq; // 输入过滤会触发并发请求，只认最后一次的结果
+  let d;
+  try {
+    const res = await fetch('/api/admin/checkins?' + params);
+    d = await res.json();
+  } catch (e) { d = null; }
+  if (seq !== _whCISeq) return;
+  if (!d || !d.ok) { tbody.innerHTML = '<tr><td colspan="8" class="empty">加载失败</td></tr>'; return; }
   if (!d.checkins.length) {
     tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无签到记录</td></tr>';
     document.getElementById('whCIPager').textContent = '';
@@ -31360,14 +31377,14 @@ async function loadWarehouseCheckins() {
     const dist = c.distance_from_warehouse != null ? (+c.distance_from_warehouse).toFixed(0) + ' m' : '—';
     const photo = c.media_path ? `<a href="/api/admin/punch-photo/${encodeURIComponent(c.media_path.split('/').pop())}" target="_blank" class="btn btn-sm btn-outline">查看</a>` : '—';
     return `<tr>
-      <td style="font-size:.82rem;white-space:nowrap">${t}</td>
-      <td>${escHtml(c.employee_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${c.employee_no || ''}</span></td>
-      <td style="font-size:.83rem">${c.phone || ''}</td>
-      <td>${escHtml(c.warehouse_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${c.warehouse_code}</span></td>
+      <td style="font-size:.82rem;white-space:nowrap">${escHtml(t)}</td>
+      <td>${escHtml(c.employee_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${escHtml(c.employee_no || '')}</span></td>
+      <td style="font-size:.83rem">${escHtml(c.phone || '')}</td>
+      <td>${escHtml(c.warehouse_name)}<br><span style="font-size:.77rem;color:var(--gray-500)">${escHtml(c.warehouse_code)}</span></td>
       <td><span class="badge ${c.gps_verified ? 'badge-active' : 'badge-terminated'}">${c.gps_verified ? '✓ 通过' : '✗ 未验证'}</span></td>
       <td style="font-size:.83rem">${dist}</td>
       <td>${photo}</td>
-      <td style="font-size:.83rem;white-space:nowrap">${out || '<span style="color:var(--amber);font-weight:600">在班</span>'}</td>
+      <td style="font-size:.83rem;white-space:nowrap">${out || '<span style="color:#F5A623;font-weight:600">在班</span>'}</td>
     </tr>`;
   }).join('');
   document.getElementById('whCIPager').textContent = `第 ${d.page} 页，共 ${d.total} 条`;

@@ -348,6 +348,7 @@ const ERR_MAP = {
     '未找到该工作地点': { en: 'Work site not found', es: 'Sitio de trabajo no encontrado' },
     '无法获取您的位置信息，请开启定位权限': { en: 'Cannot get your location. Please enable location permission.', es: 'No se puede obtener su ubicación. Active el permiso de ubicación.' },
     '未找到对应的员工记录': { en: 'No matching employee record found', es: 'No se encontró registro de empleado correspondiente' },
+    '系统暂时无法完成建档，请稍后重试或联系管理员': { en: 'The system could not create your record right now. Please try again later or contact the manager.', es: 'El sistema no pudo crear su registro en este momento. Intente más tarde o contacte al gerente.' },
   }
 };
 
@@ -486,7 +487,8 @@ async function sendCode() {
     startCountdown(300);
     codeInput.focus();
   } catch (e) {
-    if (e.data && e.data.need_register) {
+    // 只有真的拿到了入职表单链接/二维码才展示引导卡片，否则退回普通错误提示
+    if (e.data && e.data.need_register && (e.data.apply_url || e.data.apply_qr)) {
       showRegisterCard(e.data);
     } else {
       showMsg('msg1', xlateErr(e.message), 'err');
