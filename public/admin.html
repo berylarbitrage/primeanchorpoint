@@ -33198,6 +33198,16 @@ async function loadInvpList() {
   renderInvpList();
 }
 
+// 手机端发票卡片：点卡片本体展开/收起明细
+function invpToggleCard(card) {
+  const d = card.querySelector('.invp-card-detail');
+  const h = card.querySelector('.invp-card-hint');
+  if (!d) return;
+  const open = d.style.display !== 'none';
+  d.style.display = open ? 'none' : 'block';
+  if (h) h.textContent = open ? '▾ 点击展开明细' : '▴ 收起';
+}
+
 function resetInvpFilter() {
   Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', amount: '', sort: 'date_desc' });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
@@ -33422,6 +33432,78 @@ function renderInvpList() {
       </span>
       <span style="margin-left:auto">本页 ${pageList.length} 张 · 共 ${list.length} 张</span>
     </div>`;
+  // ── 手机端：18 列大表没法看，改为卡片列表（点卡片展开完整明细）──
+  if (!window._invpMqBound && window.matchMedia) {
+    window._invpMqBound = true;
+    try {
+      window.matchMedia('(max-width: 768px)').addEventListener('change', () => {
+        if (document.getElementById('invpTableWrap')) renderInvpList();
+      });
+    } catch (_) {}
+  }
+  if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
+    tableWrap.innerHTML = containerNote + pagerHtml + pageList.map(r => {
+      const isPaid = r.payment_status === 'paid';
+      const subPaid = r.sub_payment_status === 'paid';
+      const profit = (r.subtotal || 0) - (r.wage_cost || 0);
+      const payAmt = (Number(r.payment_txn_sum) > 0) ? Number(r.payment_txn_sum)
+        : (r.payment_amount != null ? Number(r.payment_amount) : null);
+      const subAmt = (Number(r.sub_payment_txn_sum) > 0) ? Number(r.sub_payment_txn_sum)
+        : (r.sub_payment_amount != null ? Number(r.sub_payment_amount) : null);
+      const typeIcon = (_INVP_TYPE_META[invpType(r)] || ['🧾'])[0];
+      const paidBadge = isPaid
+        ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.7rem;background:#d1fae5;color:#065f46;font-weight:600">✓ 已付款</span>'
+        : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.7rem;background:var(--gray-50);color:var(--gray-400)">未收款</span>';
+      const lines = r.worker_lines || [];
+      const linesHtml = lines.length ? `
+        <div style="font-size:.72rem;color:var(--gray-400);margin-top:.55rem">👷 工人明细（${lines.length} 人）</div>
+        <table style="width:100%;border-collapse:collapse;font-size:.78rem;margin-top:.25rem">
+          <thead><tr style="color:var(--gray-500)"><th style="text-align:left;padding:2px 4px;font-weight:600">姓名</th><th style="text-align:right;padding:2px 4px;font-weight:600">工时</th><th style="text-align:right;padding:2px 4px;font-weight:600">工资</th><th style="text-align:right;padding:2px 4px;font-weight:600">账单</th></tr></thead>
+          <tbody>${lines.map(l => `<tr style="border-top:1px solid var(--gray-100)">
+            <td style="padding:3px 4px">${esc(l.n)}</td>
+            <td style="text-align:right;padding:3px 4px">${(Number(l.h) || 0).toFixed(1)}</td>
+            <td style="text-align:right;padding:3px 4px;color:#b45309">$${(Number(l.w) || 0).toFixed(2)}</td>
+            <td style="text-align:right;padding:3px 4px;font-weight:600">$${(Number(l.b) || 0).toFixed(2)}</td>
+          </tr>`).join('')}</tbody>
+        </table>` : '';
+      const containers = (r.container_nos || []).length ? `
+        <div style="font-size:.72rem;color:var(--gray-400);margin-top:.55rem">📦 柜号（${r.container_nos.length}）</div>
+        <div style="margin-top:.25rem;display:flex;flex-wrap:wrap;gap:.25rem">${r.container_nos.map(cn =>
+          `<span style="font-family:monospace;font-size:.7rem;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:5px;padding:1px 6px">${esc(cn)}</span>`).join('')}</div>` : '';
+      const bankLbl = _upBank(invpBankLabel(r), r.bank_account_last4);
+      return `<div style="background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:.75rem .85rem;margin-bottom:.6rem;cursor:pointer" onclick="invpToggleCard(this)">
+        <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;flex-wrap:wrap">
+          <span style="font-family:monospace;font-weight:700;font-size:.84rem">${esc(r.invoice_number || '(无编号)')}</span>
+          <span style="display:flex;gap:.3rem">${statusBadge(r.status)}${paidBadge}</span>
+        </div>
+        <div style="font-size:.78rem;color:var(--gray-500);margin-top:.25rem">${typeIcon} ${esc(r.company_name || '—')} · ${esc(r.invoice_date || '')}</div>
+        <div style="display:flex;gap:.9rem;margin-top:.45rem;font-size:.86rem;flex-wrap:wrap">
+          <span>账单 <b>${money(r.subtotal)}</b></span>
+          <span style="color:#b45309">工资 <b>${money(r.wage_cost)}</b></span>
+          <span style="color:${profit >= 0 ? '#16a34a' : '#dc2626'}">利润 <b>${money(profit)}</b></span>
+        </div>
+        <div class="invp-card-detail" style="display:none;border-top:1px dashed var(--gray-200);margin-top:.55rem;padding-top:.55rem" onclick="event.stopPropagation()">
+          <div style="font-size:.8rem;color:var(--gray-600);display:grid;grid-template-columns:auto 1fr;gap:.2rem .7rem">
+            <span style="color:var(--gray-400)">服务周期</span><span>${esc(r.period_start || '—')} ~ ${esc(r.period_end || '—')}</span>
+            <span style="color:var(--gray-400)">收款银行</span><span>${esc(bankLbl || '—')}</span>
+            <span style="color:var(--gray-400)">实付金额</span><span>${isPaid && payAmt != null ? '$' + payAmt.toFixed(2) : '—'}${isPaid && r.payment_date ? ' · ' + esc(r.payment_date) : ''}</span>
+            <span style="color:var(--gray-400)">分包付款</span><span>${subPaid && subAmt != null ? '$' + subAmt.toFixed(2) : (subPaid ? '已付' : '—')}${subPaid && r.sub_payment_date ? ' · ' + esc(r.sub_payment_date) : ''}</span>
+          </div>
+          ${linesHtml}
+          ${containers}
+          <div style="display:flex;gap:.5rem;margin-top:.65rem;flex-wrap:wrap">
+            <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openInvpForEdit(${r.id})">📝 打开完整发票</button>
+            ${isPaid
+              ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green)" onclick="event.stopPropagation();openInvpReceiptModal(${r.id}, true)">收款回执</button>`
+              : `<button class="btn btn-sm btn-blue" onclick="event.stopPropagation();openInvpReceiptModal(${r.id}, false)">上传回执</button>`}
+          </div>
+        </div>
+        <div class="invp-card-hint" style="text-align:center;color:var(--gray-300);font-size:.7rem;margin-top:.4rem">▾ 点击展开明细</div>
+      </div>`;
+    }).join('');
+    return;
+  }
+
   tableWrap.innerHTML = `
     ${containerNote}
     ${pagerHtml}
