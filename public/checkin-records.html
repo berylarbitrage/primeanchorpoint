@@ -38,7 +38,21 @@ tr:hover td{background:#FAFBFD}
 .summary{font-size:.85rem;color:var(--gray-600);margin-bottom:.6rem}
 .empty{text-align:center;padding:2.5rem 1rem;color:var(--gray-400)}
 .table-scroll{overflow-x:auto;border-radius:10px;border:1px solid var(--gray-200)}
+.table-scroll table{min-width:860px}
 #printHeader{display:none}
+/* 手机上表格压扁没法看，改用卡片列表；电脑和打印仍用表格 */
+.cards{display:none}
+.rec-card{background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:.7rem .85rem;margin-bottom:.6rem}
+.rec-card .rc-top{display:flex;justify-content:space-between;align-items:center;gap:.5rem}
+.rec-card .rc-sub{font-size:.76rem;color:var(--gray-500);margin-top:.15rem}
+.rec-card .rc-times{display:flex;flex-wrap:wrap;gap:.4rem .9rem;margin-top:.5rem;font-size:.86rem;color:var(--gray-600)}
+.rec-card .rc-times b{color:var(--gray-800)}
+@media(max-width:768px){
+  .table-scroll{display:none}
+  .cards{display:block}
+  .toolbar h1{width:100%}
+  .toolbar input[type=date],.toolbar select{flex:1;min-width:110px}
+}
 @media print{
   body{background:#fff;padding:0}
   .no-print{display:none !important}
@@ -46,7 +60,9 @@ tr:hover td{background:#FAFBFD}
   #printHeader{display:block;text-align:center;margin-bottom:1rem}
   #printHeader h2{font-size:1.1rem;color:#000}
   #printHeader p{font-size:.8rem;color:#444;margin-top:.2rem}
-  .table-scroll{overflow:visible;border:none}
+  .cards{display:none !important}
+  .table-scroll{display:block !important;overflow:visible;border:none}
+  .table-scroll table{min-width:0}
   table{font-size:.78rem}
   th{background:#eee !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .tag{border:1px solid #999;background:none !important;color:#000 !important}
@@ -102,6 +118,7 @@ tr:hover td{background:#FAFBFD}
           <tbody id="tbody"></tbody>
         </table>
       </div>
+      <div class="cards" id="cardsBox"></div>
       <div class="empty" id="emptyBox" style="display:none">当天暂无打卡记录 / No records for this date</div>
     </div>
   </div>
@@ -236,6 +253,24 @@ function renderTable() {
       <td>${status}</td>
       <td>${e.geo_verified ? '<span class="tag tag-gps">✓</span>' : '—'}</td>
     </tr>`;
+  }).join('');
+  // 手机端卡片视图（与表格同数据）
+  document.getElementById('cardsBox').innerHTML = rows.map(e => {
+    const status = e.status === 'open'
+      ? (e.on_break ? '<span class="tag tag-break">休息中</span>' : '<span class="tag tag-open">在班</span>')
+      : '<span class="tag tag-closed">已下班</span>';
+    const breaks = (e.breaks || []).map(b => fmtTime(b.start, e.timezone) + '–' + (b.end ? fmtTime(b.end, e.timezone) : '…')).join('、');
+    return `<div class="rec-card">
+      <div class="rc-top"><strong>${esc(e.name)}</strong><span>${e.geo_verified ? '<span class="tag tag-gps">GPS ✓</span> ' : ''}${status}</span></div>
+      <div class="rc-sub">${esc(e.site_name)}${e.site_code ? ' (' + esc(e.site_code) + ')' : ''}${e.emp_code ? ' · ' + esc(e.emp_code) : ''}</div>
+      <div class="rc-times">
+        <span>上班 <b>${fmtTime(e.clock_in, e.timezone)}</b></span>
+        <span>下班 <b>${fmtTime(e.clock_out, e.timezone)}</b></span>
+        <span>工时 <b>${e.total_hours ? e.total_hours.toFixed(2) : '—'}</b></span>
+        ${e.overtime_hours ? `<span>加班 <b>${e.overtime_hours.toFixed(2)}</b></span>` : ''}
+      </div>
+      ${breaks ? `<div class="rc-sub" style="margin-top:.35rem">休息：${breaks}</div>` : ''}
+    </div>`;
   }).join('');
 }
 
