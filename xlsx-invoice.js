@@ -335,6 +335,7 @@ function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, wa
   let warehouse = '', period = '', periodStart = '', periodEnd = '';
   const employees = [];
   const markupCounts = {};
+  const offPeriodRows = []; // 行自己的 Pay Period 与整表主账期不同（补差价/跨周期行）
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i] || [];
@@ -343,14 +344,17 @@ function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, wa
     if (!name || /^total$/i.test(name)) continue;
 
     if (!warehouse) warehouse = cellStr(row, col.warehouse);
+    const rowPeriod = cellStr(row, col.period);
     if (!periodStart) {
-      const p = cellStr(row, col.period);
+      const p = rowPeriod;
       const pm = p.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*[-–—]+\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
       if (pm) {
         period = p;
         periodStart = toISO(pm[1], pm[2], pm[3].length === 2 ? '20' + pm[3] : pm[3]);
         periodEnd = toISO(pm[4], pm[5], pm[6].length === 2 ? '20' + pm[6] : pm[6]);
       } else if (p && !period) { period = p; }
+    } else if (rowPeriod && period && rowPeriod.trim() !== period.trim()) {
+      offPeriodRows.push(`${cleanPersonName(name)}（${rowPeriod.trim()}）`);
     }
 
     const regRate = cellNum(row, col.regRate) || 0;
@@ -397,6 +401,8 @@ function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, wa
   const markupMultiplier = Math.round((1 + topMarkup) * 10000) / 10000;
 
   if (!periodStart) warnings.push('未能从「Pay Period」列解析出服务周期日期，请手动填写开始/结束日期。');
+  if (offPeriodRows.length)
+    warnings.push(`${offPeriodRows.length} 行的 Pay Period 与整表主账期不同（补差价/跨周期行）：${offPeriodRows.join('、')}。金额已按 Excel 原样导入，请核对。`);
   if (employees.some(e => e.reimbursement && e.reimbursement !== 0))
     warnings.push('表格含「Reimbursement」报销金额，发票生成器暂不支持报销项，已忽略；如需请手动添加一行。');
   if (otHourCols.length > 1) warnings.push('加班分「1.5×」「2.0×」多列，已合并为「加班工时」，默认按 1.5× 计' + (sawDoubleOt ? '；本表含 2.0× 加班，请把相关员工加班时薪手动改为双倍。' : '。'));

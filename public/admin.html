@@ -32821,6 +32821,12 @@ async function openInvpForEdit(id) {
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
       const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', note: item.note || '', noteType: item.noteType || '', noteDate: item.noteDate || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
+      // 恢复 Excel 锁定拆分行（补差价/跨账期行），重开后金额保持与工资表一致
+      if (item.fixed_split) {
+        emp.fixedSplit = true;
+        emp.fixedReg = Number(item.regHours) || 0;
+        emp.fixedOt = Number(item.otHours) || 0;
+      }
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
@@ -37033,15 +37039,16 @@ function renderInvpManualTable(skipSave) {
         <input type="number" class="invp-man-day" data-uid="${emp.uid}" data-date="${d}"
           value="${esc(String(val))}" min="0" step="any" placeholder="0"
           style="width:52px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.83rem"
-          oninput="invpUpdateRowTotal(this.closest('tr'))">
+          oninput="invpDayEdited(this)">
       </td>`;
     }).join('');
     const totalHrs = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
     const rate = parseFloat(emp.rate) || 0;
     const otRateVal = parseFloat(emp.otRate) || (rate ? rate * 1.5 : 0);
     const otRateIsAuto = !emp.otRate;
-    const regHrs = Math.min(totalHrs, 40);
-    const otHrs  = Math.max(totalHrs - 40, 0);
+    const _sp = _invpRowSplit(emp, totalHrs);
+    const regHrs = _sp.reg;
+    const otHrs  = _sp.ot;
     const subtotal = regHrs * rate + otHrs * otRateVal;
     const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
     const empMarkup = parseFloat(emp.markup) || globalMk;
@@ -37118,7 +37125,7 @@ function renderInvpManualTable(skipSave) {
           style="width:64px;text-align:right;border:1px solid #fdba74;border-radius:4px;padding:2px 5px;font-size:.83rem;background:#fff7ed;color:#9a3412"
           oninput="invpUpdateRowTotal(this.closest('tr'))">
       </td>
-      <td class="invp-man-reghrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${regHrs.toFixed(2)}h</td>
+      <td class="invp-man-reghrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap" ${emp.fixedSplit ? 'title="此行按 Excel 原样锁定正常/加班拆分（跨账期/补差行），修改逐日工时会解除锁定"' : ''}>${regHrs.toFixed(2)}h${emp.fixedSplit ? ' 🔒' : ''}</td>
       <td class="invp-man-othrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;${otHrs > 0 ? 'color:var(--accent);font-weight:600' : 'color:var(--gray-400)'}">${otHrs > 0 ? otHrs.toFixed(2) + 'h' : '—'}</td>
       <td class="invp-man-totalhrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${totalHrs.toFixed(1)}h</td>
       <td class="invp-man-subtotal" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;font-weight:600">$${subtotal.toFixed(2)}</td>
@@ -37434,6 +37441,19 @@ function invpClearAllHours() {
   showToast(`已清空 ${emps.length} 名员工的全部工时`, 'success');
 }
 
+// 逐日工时被手改时解除该行的 Excel 锁定拆分（工时变了，原拆分不再成立）
+function invpDayEdited(inp) {
+  const row = inp.closest('tr');
+  const emp = (window._invpManualEmps || []).find(e => String(e.uid) === String(row.dataset.uid));
+  if (emp && emp.fixedSplit) {
+    emp.fixedSplit = false;
+    emp.fixedReg = 0;
+    emp.fixedOt = 0;
+    showToast('该行原按 Excel 锁定正常/加班拆分，修改工时后已改回按 40h/周规则计算', 'warning', 5000);
+  }
+  invpUpdateRowTotal(row);
+}
+
 function invpUpdateRowTotal(row) {
   const dayInputs = row.querySelectorAll('.invp-man-day');
   const rate = parseFloat(row.querySelector('.invp-man-rate').value) || 0;
@@ -37444,11 +37464,13 @@ function invpUpdateRowTotal(row) {
   }
   const otRate = parseFloat(otRateInp?.value) || rate * 1.5;
   const totalHrs = [...dayInputs].reduce((s, inp) => s + (parseFloat(inp.value) || 0), 0);
-  const regHrs = Math.min(totalHrs, 40);
-  const otHrs  = Math.max(totalHrs - 40, 0);
+  const emp = (window._invpManualEmps || []).find(e => String(e.uid) === String(row.dataset.uid));
+  const _sp = _invpRowSplit(emp, totalHrs);
+  const regHrs = _sp.reg;
+  const otHrs  = _sp.ot;
   const subtotal = regHrs * rate + otHrs * otRate;
   row.querySelector('.invp-man-totalhrs').textContent = totalHrs.toFixed(1) + 'h';
-  row.querySelector('.invp-man-reghrs').textContent = regHrs.toFixed(2) + 'h';
+  row.querySelector('.invp-man-reghrs').textContent = regHrs.toFixed(2) + 'h' + (emp && emp.fixedSplit ? ' 🔒' : '');
   const otCell = row.querySelector('.invp-man-othrs');
   otCell.textContent = otHrs > 0 ? otHrs.toFixed(2) + 'h' : '—';
   otCell.style.color = otHrs > 0 ? 'var(--accent)' : 'var(--gray-400)';
@@ -37572,6 +37594,17 @@ function invpApplyExcelData(data) {
       linked_employee_name: prev ? (prev.linked_employee_name || '') : '',
     };
     if (prev && Number(prev.wage_rate) > 0) emp.wage_rate = prev.wage_rate;
+    // Excel 的正常/加班拆分若无法用「>40h/周」规则复现（补差价/跨账期行，
+    // 如上期 80h 正常工时），锁定按 Excel 原样计算，金额与工资表完全一致。
+    {
+      const xr = Number(e.regHours) || 0, xo = Number(e.otHours) || 0, xt = xr + xo;
+      if (xt > 0 && (Math.abs(xr - Math.min(xt, 40)) > 0.01 || Math.abs(xo - Math.max(xt - 40, 0)) > 0.01)) {
+        emp.fixedSplit = true;
+        emp.fixedReg = xr;
+        emp.fixedOt = xo;
+        (data._fixedRows = data._fixedRows || []).push(e.name || '');
+      }
+    }
     // Keep an explicit OT rate only when it isn't the automatic 1.5× (so the form
     // can keep auto-tracking the rate when it matches).
     const reg = Number(e.regRate) || 0;
@@ -37605,6 +37638,9 @@ function invpApplyExcelData(data) {
   renderInvpManualTable(true);
   window._invpDirty = true;
   if (carried) showToast(`已按姓名保留 ${carried} 行原有的分包商/介绍人等信息`, 'success', 4000);
+  if (data._fixedRows && data._fixedRows.length) {
+    showToast(`🔒 ${data._fixedRows.length} 行的正常/加班拆分无法用 40h/周规则复现（补差价/跨账期行），已按 Excel 原样锁定计算：${data._fixedRows.join('、')}`, 'warning', 9000);
+  }
 }
 
 // 按姓名匹配行的 key：忽略大小写/多余空格/旧数据里的 Chinese- 前缀。
@@ -39704,6 +39740,16 @@ function _invpOtFeeCompanyApplies(name) {
 // （新导入已在解析时去掉；这里兜底老发票里存的旧名字）。
 function _invpDisplayWorkerName(n) { return String(n || '').replace(/^chinese[-_\s]+/i, '').trim(); }
 
+// 正常/加班拆分：默认按「每周超 40 小时算加班」规则；带 fixedSplit 的行
+// （Excel 导入的跨账期/补差价行，40h 规则复现不了它的拆分）锁定按 Excel 原样，
+// 保证导入后的金额与工资表完全一致。
+function _invpRowSplit(emp, totalHrs) {
+  if (emp && emp.fixedSplit && ((Number(emp.fixedReg) || 0) + (Number(emp.fixedOt) || 0)) > 0) {
+    return { reg: Number(emp.fixedReg) || 0, ot: Number(emp.fixedOt) || 0 };
+  }
+  return { reg: Math.min(totalHrs, 40), ot: Math.max(totalHrs - 40, 0) };
+}
+
 function getInvpManualItems() {
   _invpSaveTableState();
   return window._invpManualEmps
@@ -39714,15 +39760,18 @@ function getInvpManualItems() {
       const otRate = parseFloat(emp.otRate) || rate * 1.5;
       const dates = _invpGetDates();
       const totalHours = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
-      const regHours = Math.min(totalHours, 40);
-      const otHours  = Math.max(totalHours - 40, 0);
+      const sp = _invpRowSplit(emp, totalHours);
+      const regHours = sp.reg;
+      const otHours  = sp.ot;
       const regAmt = regHours * rate;
       const otAmt  = otHours * otRate;
       const total = regAmt + otAmt;
       const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
       const markup = parseFloat(emp.markup) || globalMk;
       const billed = Math.round(_invpBilledAmt(regAmt, otAmt, markup) * 100) / 100;
-      return { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', note: emp.note || '', noteType: emp.noteType || '', noteDate: emp.noteDate || '', hours: totalHours, regHours, otHours, rate, otRate, total, regAmt, otAmt, markup, otFee: _invpOtFeeRate(), billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      const it = { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', note: emp.note || '', noteType: emp.noteType || '', noteDate: emp.noteDate || '', hours: totalHours, regHours, otHours, rate, otRate, total, regAmt, otAmt, markup, otFee: _invpOtFeeRate(), billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      if (emp.fixedSplit) it.fixed_split = 1; // 重开发票时按原样恢复锁定
+      return it;
     })
     .filter(Boolean);
 }
