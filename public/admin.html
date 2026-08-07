@@ -36483,15 +36483,17 @@ function updateInvpPreviewBtns() {
       <button class="btn btn-green" style="background:#047857;border-color:#047857" onclick="saveSubStatement()">💾 保存对账单</button>
       <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="openSubStmtArchive()">📚 对账单存档</button>
       <button class="btn btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="invpChangeStmtSub()" title="重新选择这张对账单的收款分包商">🔄 换分包商</button>
+      <button class="btn btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="invpPrintStmtReceipt()" title="一页签收单：金额/日期/周期 + 收款人手抄声明并签字 + 打卡名/真实姓名">🖊 签收单</button>
       <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
       <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
     `;
     return;
   }
-  // Archived statement viewer: print / close only.
+  // Archived statement viewer: print / receipt / close.
   if (window._invpPreviewKind === 'substmt-view') {
     wrap.innerHTML = `
       ${copyBtn}
+      <button class="btn btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="invpPrintStmtReceipt()" title="一页签收单：金额/日期/周期 + 收款人手抄声明并签字 + 打卡名/真实姓名">🖊 签收单</button>
       <button class="btn btn-outline" style="color:#047857;border-color:#047857" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
       <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
     `;
@@ -38818,6 +38820,8 @@ async function generateInvpSubcontractorStatement() {
   const ps      = document.getElementById('invPageStart').value;
   const pe      = document.getElementById('invPageEnd').value;
   const profile = getInvpProfile();
+  // 对账单自己的编号：主发票号前加 STMT-，与主 Invoice 区分开
+  const stmtNo = 'STMT-' + (invNum || (invDate || '').replace(/-/g, '') || 'DRAFT');
 
   const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const fmtNice = d => { if (!d) return ''; const [y,m,day] = d.split('-'); return `${_MONTHS[parseInt(m)-1]} ${parseInt(day)}, ${y}`; };
@@ -38835,6 +38839,7 @@ async function generateInvpSubcontractorStatement() {
 
   let recipientName, recipientEntity = null, grandTotal, lineItemTableHtml, bannerText;
   let stmtItems = []; // light line-item snapshot stored with the archived statement
+  let stmtWorkers = []; // 按对账单顺序的工人打卡名（签收单的名单用）
 
   if (mode === 'container') {
     const containerItems = getInvpContainerItems();
@@ -38873,6 +38878,7 @@ async function generateInvpSubcontractorStatement() {
     const totalQty = containerItems.reduce((s, i) => s + (i.qty || 0), 0);
     bannerText = `Container unloading services for the period ${servicePeriodLabel}`;
     stmtItems = containerItems.map(i => ({ container_no: i.container_no || '', qty: i.qty || 0, sub_price: i.sub_price || 0 }));
+    stmtWorkers = [...new Set(containerItems.flatMap(i => (Array.isArray(i.staff_list) ? i.staff_list : []).map(s => (s && s.name || '').trim())).filter(Boolean))];
 
     const containerRows = containerItems.map((i, idx) => {
       const stripe = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
@@ -38955,6 +38961,7 @@ async function generateInvpSubcontractorStatement() {
     recipientEntity = _invpFindLaborCompany(recipientName);
     grandTotal = items.reduce((s, i) => s + (i.total || 0), 0);
     stmtItems = items.map(i => ({ name: _invpDisplayWorkerName(i.name), regHours: i.regHours || 0, otHours: i.otHours || 0, rate: i.rate || 0, total: i.total || 0 }));
+    stmtWorkers = stmtItems.map(i => i.name).filter(Boolean);
     const totalRegHrs = items.reduce((s, i) => s + (i.regHours || 0), 0);
     const totalOtHrs  = items.reduce((s, i) => s + (i.otHours || 0), 0);
     const showOt = totalOtHrs > 0;
@@ -39065,8 +39072,12 @@ async function generateInvpSubcontractorStatement() {
           <div style="font-size:1.5rem;font-weight:900;letter-spacing:2px;color:${C.main};line-height:1;margin-bottom:.5rem">STATEMENT</div>
           <table style="border-collapse:collapse;margin-left:auto;font-size:.8rem;border:1px solid #cbd5e1;border-radius:3px;overflow:hidden;background:#f8fafc">
             <tr style="border-bottom:1px solid #e2e8f0">
+              <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:${C.band};font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Statement No.</td>
+              <td style="padding:5px 12px;font-weight:800;text-align:right;white-space:nowrap;color:${C.main}">${esc(stmtNo)}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #e2e8f0">
               <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:${C.band};font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Ref Invoice</td>
-              <td style="padding:5px 12px;font-weight:700;text-align:right;white-space:nowrap">${esc(invNum||'—')}</td>
+              <td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap;color:#64748b">${esc(invNum||'—')}</td>
             </tr>
             <tr style="border-bottom:1px solid #e2e8f0">
               <td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:${C.band};font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Date</td>
@@ -39135,10 +39146,106 @@ async function generateInvpSubcontractorStatement() {
     invoice_number: invNum, recipient: recipientName,
     period_start: ps, period_end: pe, statement_date: invDate || '',
     wage_total: Math.round(grandTotal * 100) / 100, items: stmtItems,
+    stmt_no: stmtNo, workers: stmtWorkers,
   };
   document.getElementById('invpPreviewModal').style.display = 'flex';
   invpFitPaper();
   updateInvpPreviewBtns();
+}
+
+// ── 签收确认单：一页纸，写明金额/日期/覆盖周期，收款人手抄声明并签字，
+//    附打卡机名字与真实姓名栏（按对账单顺序列出工人名单，真实姓名手写补）──
+function invpPrintStmtReceipt() {
+  const ctx = window._invpStmtCtx;
+  if (!ctx) { showToast('请先生成分包商对账单', 'error'); return; }
+  const w = window.open('', '_blank');
+  if (!w) { showToast('浏览器拦截了弹窗，请允许本站弹窗后重试', 'error'); return; }
+  const profile = getInvpProfile();
+  const money = '$' + (Number(ctx.wage_total) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const stmtNo = ctx.stmt_no || ('STMT-' + (ctx.invoice_number || ''));
+  const workers = Array.isArray(ctx.workers) && ctx.workers.length
+    ? ctx.workers
+    : (Array.isArray(ctx.items) ? ctx.items.map(i => i.name).filter(Boolean) : []);
+  const E = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const rosterRows = workers.map((n, i) => `
+    <tr>
+      <td style="border:1px solid #94a3b8;padding:7px 8px;text-align:center;width:34px">${i + 1}</td>
+      <td style="border:1px solid #94a3b8;padding:7px 10px;font-weight:600">${E(n)}</td>
+      <td style="border:1px solid #94a3b8;padding:7px 10px"></td>
+      <td style="border:1px solid #94a3b8;padding:7px 10px;width:110px"></td>
+    </tr>`).join('');
+  const rosterHtml = workers.length ? `
+    <div style="font-weight:700;font-size:.92rem;margin:1.1rem 0 .4rem">工人名单（按对账单顺序）/ Worker Roster (statement order)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+      <thead><tr style="background:#f1f5f9">
+        <th style="border:1px solid #94a3b8;padding:6px 8px;width:34px">#</th>
+        <th style="border:1px solid #94a3b8;padding:6px 10px;text-align:left">打卡机名字 Timeclock Name</th>
+        <th style="border:1px solid #94a3b8;padding:6px 10px;text-align:left">真实姓名（手写）Real Name (hand-write)</th>
+        <th style="border:1px solid #94a3b8;padding:6px 10px;text-align:left;width:110px">备注 Note</th>
+      </tr></thead>
+      <tbody>${rosterRows}</tbody>
+    </table>` : '';
+  const line = '<div style="border-bottom:1.5px solid #334155;height:34px"></div>';
+  w.document.write(`<!DOCTYPE html><html><head><title>签收确认单 ${E(stmtNo)}</title>
+    <style>@page{size:letter;margin:0.55in} html,body{margin:0;padding:0}
+      body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#0f172a;font-size:.9rem;line-height:1.6}
+      -webkit-print-color-adjust:exact</style></head><body>
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0F2B5B;padding-bottom:.5rem;margin-bottom:1rem">
+      <div>
+        ${profile.sender_name ? `<div style="font-size:1.05rem;font-weight:800;color:#0F2B5B">${E(profile.sender_name)}</div>` : ''}
+        <div style="font-size:1.25rem;font-weight:900;letter-spacing:1px;margin-top:.2rem">账单签收确认单</div>
+        <div style="font-size:.8rem;color:#475569">STATEMENT RECEIPT ACKNOWLEDGMENT / ACUSE DE RECIBO</div>
+      </div>
+      <img src="/logo.svg" style="height:56px" alt="">
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-bottom:1rem">
+      <tr>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;width:170px;font-weight:700">账单编号 Statement No.</td>
+        <td style="border:1px solid #94a3b8;padding:7px 10px;font-weight:800;color:#0F2B5B">${E(stmtNo)}</td>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;width:150px;font-weight:700">账单日期 Date</td>
+        <td style="border:1px solid #94a3b8;padding:7px 10px">${E(ctx.statement_date || '')}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;font-weight:700">分包商 Subcontractor</td>
+        <td style="border:1px solid #94a3b8;padding:7px 10px;font-weight:700">${E(ctx.recipient || '')}</td>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;font-weight:700">金额 Amount</td>
+        <td style="border:1px solid #94a3b8;padding:7px 10px;font-weight:800;font-size:1rem">${money}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;font-weight:700">覆盖周期 Period Covered</td>
+        <td colspan="3" style="border:1px solid #94a3b8;padding:7px 10px">${E(ctx.period_start || '')} ~ ${E(ctx.period_end || '')}</td>
+      </tr>
+    </table>
+    <div style="font-weight:700;margin-bottom:.3rem">请收款人<span style="color:#b91c1c">亲笔抄写</span>以下声明并签字 / Please HAND-COPY the sentence below and sign / Copie A MANO la frase y firme:</div>
+    <div style="border:1.5px solid #0F2B5B;background:#f8fafc;border-radius:6px;padding:.6rem .8rem;font-size:.88rem;margin-bottom:.6rem">
+      我已收到编号 ${E(stmtNo)} 的账单，金额 ${money}，本人无异议。<br>
+      <span style="color:#475569">I have received statement ${E(stmtNo)} in the amount of ${money} and have no objection.<br>
+      He recibido el estado de cuenta ${E(stmtNo)} por ${money} y no tengo objeción.</span>
+    </div>
+    <div style="font-size:.78rem;color:#64748b;margin-bottom:.2rem">手写抄写处 Hand-copy here / Copie aquí:</div>
+    ${line}${line}${line}
+    <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-top:1.1rem">
+      <tr>
+        <td style="padding:6px 8px 2px 0;width:50%">打卡机名字 Timeclock Name:</td>
+        <td style="padding:6px 0 2px 8px">真实姓名 Legal Name:</td>
+      </tr>
+      <tr>
+        <td style="padding:0 16px 0 0"><div style="border-bottom:1.5px solid #334155;height:30px"></div></td>
+        <td style="padding:0 0 0 8px"><div style="border-bottom:1.5px solid #334155;height:30px"></div></td>
+      </tr>
+      <tr>
+        <td style="padding:14px 8px 2px 0">签字 Signature:</td>
+        <td style="padding:14px 0 2px 8px">日期 Date:</td>
+      </tr>
+      <tr>
+        <td style="padding:0 16px 0 0"><div style="border-bottom:1.5px solid #334155;height:30px"></div></td>
+        <td style="padding:0 0 0 8px"><div style="border-bottom:1.5px solid #334155;height:30px"></div></td>
+      </tr>
+    </table>
+    ${rosterHtml}
+    </body></html>`);
+  w.document.close();
+  setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
 }
 
 // ── 分包商对账单存档：保存快照、列表管理（实付金额可与工资合计不同）──
@@ -39218,6 +39325,15 @@ async function viewSubStmt(id) {
   const ov = document.getElementById('subStmtArchiveOverlay'); if (ov) ov.remove();
   document.getElementById('invpPreviewContent').innerHTML = s.html;
   invpFitPaper();
+  // 从存档重建签收单需要的上下文（老存档没有 stmt_no，按主发票号补 STMT- 前缀）
+  let _items = [];
+  try { _items = JSON.parse(s.items_json || '[]'); } catch (e) {}
+  window._invpStmtCtx = {
+    invoice_id: s.invoice_id, invoice_number: s.invoice_number || '', recipient: s.recipient || '',
+    period_start: s.period_start || '', period_end: s.period_end || '', statement_date: s.statement_date || '',
+    wage_total: s.wage_total || 0, items: _items,
+    stmt_no: 'STMT-' + (s.invoice_number || s.id), workers: _items.map(i => i.name).filter(Boolean),
+  };
   window._invpPreviewKind = 'substmt-view';
   document.getElementById('invpPreviewModal').style.display = 'flex';
   invpFitPaper();
