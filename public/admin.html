@@ -39160,7 +39160,6 @@ function invpPrintStmtReceipt() {
   if (!ctx) { showToast('请先生成分包商对账单', 'error'); return; }
   const w = window.open('', '_blank');
   if (!w) { showToast('浏览器拦截了弹窗，请允许本站弹窗后重试', 'error'); return; }
-  const profile = getInvpProfile();
   const stmtNo = ctx.stmt_no || ('STMT-' + (ctx.invoice_number || ''));
   const E = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const fmtUS = d => { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[2]}/${m[3]}/${m[1]}` : String(d || ''); };
@@ -39181,13 +39180,9 @@ function invpPrintStmtReceipt() {
     // 每页独立编号：对账单编号-序号（01 起），归档时一纸一号
     const rcptNo = `${stmtNo}-${String(idx + 1).padStart(2, '0')}`;
     return `<div style="height:9.7in;overflow:hidden;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid;${idx < persons.length - 1 ? 'page-break-after:always;break-after:page;' : ''}padding-top:.1px">
-    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0F2B5B;padding-bottom:.5rem;margin-bottom:1.1rem">
-      <div>
-        ${profile.sender_name ? `<div style="font-size:1rem;font-weight:800;color:#0F2B5B">${E(profile.sender_name)}</div>` : ''}
-        <div style="font-size:1.3rem;font-weight:900;letter-spacing:1px;margin-top:.2rem">RECEIPT ACKNOWLEDGMENT</div>
-        <div style="font-size:.85rem;color:#475569">ACUSE DE RECIBO</div>
-      </div>
-      <img src="/logo.svg" style="height:52px" alt="">
+    <div style="border-bottom:3px solid #0F2B5B;padding-bottom:.5rem;margin-bottom:1.1rem">
+      <div style="font-size:1.3rem;font-weight:900;letter-spacing:1px">RECEIPT ACKNOWLEDGMENT</div>
+      <div style="font-size:.85rem;color:#475569">ACUSE DE RECIBO</div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:.92rem;margin-bottom:1.2rem">
       <tr>
