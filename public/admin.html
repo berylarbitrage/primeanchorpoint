@@ -39153,97 +39153,82 @@ async function generateInvpSubcontractorStatement() {
   updateInvpPreviewBtns();
 }
 
-// ── 签收确认单：一页纸，写明金额/日期/覆盖周期，收款人手抄声明并签字，
-//    附打卡机名字与真实姓名栏（按对账单顺序列出工人名单，真实姓名手写补）──
+// ── 签收确认单：每个工人一页（英文+西班牙语），写明该工人的金额与覆盖周期，
+//    手抄一句声明 + 真实姓名 + 签字/日期。不显示分包商名字。──
 function invpPrintStmtReceipt() {
   const ctx = window._invpStmtCtx;
   if (!ctx) { showToast('请先生成分包商对账单', 'error'); return; }
   const w = window.open('', '_blank');
   if (!w) { showToast('浏览器拦截了弹窗，请允许本站弹窗后重试', 'error'); return; }
   const profile = getInvpProfile();
-  const money = '$' + (Number(ctx.wage_total) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const stmtNo = ctx.stmt_no || ('STMT-' + (ctx.invoice_number || ''));
-  const workers = Array.isArray(ctx.workers) && ctx.workers.length
-    ? ctx.workers
-    : (Array.isArray(ctx.items) ? ctx.items.map(i => i.name).filter(Boolean) : []);
   const E = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const rosterRows = workers.map((n, i) => `
-    <tr>
-      <td style="border:1px solid #94a3b8;padding:7px 8px;text-align:center;width:34px">${i + 1}</td>
-      <td style="border:1px solid #94a3b8;padding:7px 10px;font-weight:600">${E(n)}</td>
-      <td style="border:1px solid #94a3b8;padding:7px 10px"></td>
-      <td style="border:1px solid #94a3b8;padding:7px 10px;width:110px"></td>
-    </tr>`).join('');
-  const rosterHtml = workers.length ? `
-    <div style="font-weight:700;font-size:.92rem;margin:1.1rem 0 .4rem">工人名单（按对账单顺序）/ Worker Roster (statement order)</div>
-    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
-      <thead><tr style="background:#f1f5f9">
-        <th style="border:1px solid #94a3b8;padding:6px 8px;width:34px">#</th>
-        <th style="border:1px solid #94a3b8;padding:6px 10px;text-align:left">打卡机名字 Timeclock Name</th>
-        <th style="border:1px solid #94a3b8;padding:6px 10px;text-align:left">真实姓名（手写）Real Name (hand-write)</th>
-        <th style="border:1px solid #94a3b8;padding:6px 10px;text-align:left;width:110px">备注 Note</th>
-      </tr></thead>
-      <tbody>${rosterRows}</tbody>
-    </table>` : '';
-  const line = '<div style="border-bottom:1.5px solid #334155;height:34px"></div>';
-  w.document.write(`<!DOCTYPE html><html><head><title>签收确认单 ${E(stmtNo)}</title>
-    <style>@page{size:letter;margin:0.55in} html,body{margin:0;padding:0}
-      body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#0f172a;font-size:.9rem;line-height:1.6}
-      -webkit-print-color-adjust:exact</style></head><body>
-    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0F2B5B;padding-bottom:.5rem;margin-bottom:1rem">
+  const fmtUS = d => { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[2]}/${m[3]}/${m[1]}` : String(d || ''); };
+  const period = `${fmtUS(ctx.period_start)} – ${fmtUS(ctx.period_end)}`;
+  const money = v => (v == null || !(Number(v) > 0)) ? '' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // 每人一页：工时对账单有每人金额；container 对账单只有名单，金额留空手写
+  let persons = [];
+  if (Array.isArray(ctx.items) && ctx.items.length && ctx.items[0] && ctx.items[0].name) {
+    persons = ctx.items.map(i => ({ name: i.name, amount: money(i.total) }));
+  } else if (Array.isArray(ctx.workers) && ctx.workers.length) {
+    persons = ctx.workers.map(n => ({ name: n, amount: '' }));
+  }
+  if (!persons.length) { w.close(); showToast('对账单里没有工人名单', 'error'); return; }
+
+  const line = h => `<div style="border-bottom:1.5px solid #334155;height:${h || 34}px"></div>`;
+  const pages = persons.map((p, idx) => {
+    const amt = p.amount || '$__________';
+    return `<div style="${idx < persons.length - 1 ? 'page-break-after:always;break-after:page;' : ''}padding-top:.1px">
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0F2B5B;padding-bottom:.5rem;margin-bottom:1.1rem">
       <div>
-        ${profile.sender_name ? `<div style="font-size:1.05rem;font-weight:800;color:#0F2B5B">${E(profile.sender_name)}</div>` : ''}
-        <div style="font-size:1.25rem;font-weight:900;letter-spacing:1px;margin-top:.2rem">账单签收确认单</div>
-        <div style="font-size:.8rem;color:#475569">STATEMENT RECEIPT ACKNOWLEDGMENT / ACUSE DE RECIBO</div>
+        ${profile.sender_name ? `<div style="font-size:1rem;font-weight:800;color:#0F2B5B">${E(profile.sender_name)}</div>` : ''}
+        <div style="font-size:1.3rem;font-weight:900;letter-spacing:1px;margin-top:.2rem">RECEIPT ACKNOWLEDGMENT</div>
+        <div style="font-size:.85rem;color:#475569">ACUSE DE RECIBO</div>
       </div>
-      <img src="/logo.svg" style="height:56px" alt="">
+      <img src="/logo.svg" style="height:52px" alt="">
     </div>
-    <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-bottom:1rem">
+    <table style="width:100%;border-collapse:collapse;font-size:.92rem;margin-bottom:1.2rem">
       <tr>
-        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;width:170px;font-weight:700">账单编号 Statement No.</td>
-        <td style="border:1px solid #94a3b8;padding:7px 10px;font-weight:800;color:#0F2B5B">${E(stmtNo)}</td>
-        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;width:150px;font-weight:700">账单日期 Date</td>
-        <td style="border:1px solid #94a3b8;padding:7px 10px">${E(ctx.statement_date || '')}</td>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:8px 10px;width:190px;font-weight:700">Name / Nombre</td>
+        <td style="border:1px solid #94a3b8;padding:8px 10px;font-weight:800;font-size:1.02rem">${E(p.name)}</td>
       </tr>
       <tr>
-        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;font-weight:700">分包商 Subcontractor</td>
-        <td style="border:1px solid #94a3b8;padding:7px 10px;font-weight:700">${E(ctx.recipient || '')}</td>
-        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;font-weight:700">金额 Amount</td>
-        <td style="border:1px solid #94a3b8;padding:7px 10px;font-weight:800;font-size:1rem">${money}</td>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:8px 10px;font-weight:700">Amount / Monto</td>
+        <td style="border:1px solid #94a3b8;padding:8px 10px;font-weight:800;font-size:1.05rem">${amt}</td>
       </tr>
       <tr>
-        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:7px 10px;font-weight:700">覆盖周期 Period Covered</td>
-        <td colspan="3" style="border:1px solid #94a3b8;padding:7px 10px">${E(ctx.period_start || '')} ~ ${E(ctx.period_end || '')}</td>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:8px 10px;font-weight:700">Period / Período</td>
+        <td style="border:1px solid #94a3b8;padding:8px 10px">${E(period)}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:8px 10px;font-weight:700">Date / Fecha</td>
+        <td style="border:1px solid #94a3b8;padding:8px 10px">${E(fmtUS(ctx.statement_date))}</td>
       </tr>
     </table>
-    <div style="font-weight:700;margin-bottom:.3rem">请收款人<span style="color:#b91c1c">亲笔抄写</span>以下声明并签字 / Please HAND-COPY the sentence below and sign / Copie A MANO la frase y firme:</div>
-    <div style="border:1.5px solid #0F2B5B;background:#f8fafc;border-radius:6px;padding:.6rem .8rem;font-size:.88rem;margin-bottom:.6rem">
-      我已收到编号 ${E(stmtNo)} 的账单，金额 ${money}，本人无异议。<br>
-      <span style="color:#475569">I have received statement ${E(stmtNo)} in the amount of ${money} and have no objection.<br>
-      He recibido el estado de cuenta ${E(stmtNo)} por ${money} y no tengo objeción.</span>
+    <div style="font-weight:700;margin-bottom:.35rem">Please hand-copy the sentence below / Copie a mano la frase de abajo:</div>
+    <div style="border:1.5px solid #0F2B5B;background:#f8fafc;border-radius:6px;padding:.65rem .85rem;font-size:.95rem;margin-bottom:.7rem;line-height:1.7">
+      I have received ${amt} for the period ${E(period)}.<br>
+      <span style="color:#475569">He recibido ${amt} por el período ${E(period)}.</span>
     </div>
-    <div style="font-size:.78rem;color:#64748b;margin-bottom:.2rem">手写抄写处 Hand-copy here / Copie aquí:</div>
-    ${line}${line}${line}
-    <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-top:1.1rem">
+    ${line()}${line()}${line()}
+    <table style="width:100%;border-collapse:collapse;font-size:.92rem;margin-top:1.4rem">
       <tr>
-        <td style="padding:6px 8px 2px 0;width:50%">打卡机名字 Timeclock Name:</td>
-        <td style="padding:6px 0 2px 8px">真实姓名 Legal Name:</td>
+        <td style="padding:6px 16px 2px 0;width:50%">Legal name / Nombre legal:</td>
+        <td style="padding:6px 0 2px 8px">Signature &amp; date / Firma y fecha:</td>
       </tr>
       <tr>
-        <td style="padding:0 16px 0 0"><div style="border-bottom:1.5px solid #334155;height:30px"></div></td>
-        <td style="padding:0 0 0 8px"><div style="border-bottom:1.5px solid #334155;height:30px"></div></td>
-      </tr>
-      <tr>
-        <td style="padding:14px 8px 2px 0">签字 Signature:</td>
-        <td style="padding:14px 0 2px 8px">日期 Date:</td>
-      </tr>
-      <tr>
-        <td style="padding:0 16px 0 0"><div style="border-bottom:1.5px solid #334155;height:30px"></div></td>
-        <td style="padding:0 0 0 8px"><div style="border-bottom:1.5px solid #334155;height:30px"></div></td>
+        <td style="padding:0 16px 0 0"><div style="border-bottom:1.5px solid #334155;height:34px"></div></td>
+        <td style="padding:0 0 0 8px"><div style="border-bottom:1.5px solid #334155;height:34px"></div></td>
       </tr>
     </table>
-    ${rosterHtml}
-    </body></html>`);
+    <div style="font-size:.72rem;color:#94a3b8;margin-top:1.2rem">${E(stmtNo)} · ${idx + 1}/${persons.length}</div>
+    </div>`;
+  }).join('');
+
+  w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${E(stmtNo)}</title>
+    <style>@page{size:letter;margin:0.55in} html,body{margin:0;padding:0}
+      body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#0f172a;font-size:.92rem;line-height:1.6;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    </style></head><body>${pages}</body></html>`);
   w.document.close();
   setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
 }
