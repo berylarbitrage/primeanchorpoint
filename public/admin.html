@@ -39166,67 +39166,69 @@ function invpPrintStmtReceipt() {
   const period = `${fmtUS(ctx.period_start)} – ${fmtUS(ctx.period_end)}`;
   const money = v => (v == null || !(Number(v) > 0)) ? '' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // ── 卸柜对账单：所有柜子一张纸 + 多人签字 + 证件拍照留白区 ──
+  // ── 卸柜对账单：一人一张纸（多人打印多张），每张列全所有柜号，
+  //    本人亲笔抄写"我做了这个卸柜工作"并签字，底部留白放证件拍照 ──
   const isContainer = Array.isArray(ctx.items) && ctx.items.length && ctx.items[0] && ctx.items[0].container_no !== undefined;
   if (isContainer) {
     const conts = ctx.items.map(i => (i.container_no || '').trim()).filter(Boolean);
-    const total = money(ctx.wage_total) || '$__________';
-    const workers = Array.isArray(ctx.workers) ? ctx.workers.filter(Boolean) : [];
-    // 签字行：已知卸柜人员逐行印名，再补 2 行空白给临时加入的人
-    const sigRows = [...workers, '', ''].map((n, i) => `
-      <tr>
-        <td style="border:1px solid #94a3b8;padding:6px 8px;text-align:center;width:30px">${i + 1}</td>
-        <td style="border:1px solid #94a3b8;padding:6px 10px;font-weight:600;width:26%">${E(n)}</td>
-        <td style="border:1px solid #94a3b8;padding:6px 10px;background:#fffbeb"></td>
-        <td style="border:1px solid #94a3b8;padding:6px 10px;width:24%"></td>
-        <td style="border:1px solid #94a3b8;padding:6px 10px;width:15%"></td>
-      </tr>`).join('');
-    const chips = conts.map(cn => `<span style="display:inline-block;font-family:'Menlo',Consolas,monospace;font-weight:700;font-size:.82rem;border:1px solid #94a3b8;border-radius:5px;padding:2px 8px;margin:2px 3px">${E(cn)}</span>`).join('');
-    w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${E(stmtNo)}</title>
-      <style>@page{size:letter;margin:0.5in} html,body{margin:0;padding:0}
-        body{font-family:'Helvetica Neue',Arial,sans-serif;color:#0f172a;font-size:.9rem;line-height:1.55;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      </style></head><body>
-      <div style="height:9.9in;overflow:hidden;box-sizing:border-box;display:flex;flex-direction:column">
+    let cWorkers = Array.isArray(ctx.workers) ? ctx.workers.filter(Boolean) : [];
+    if (!cWorkers.length) cWorkers = ['']; // 没登记人员时出一张空白名字的，名字手写
+    const chips = conts.map(cn => `<span style="display:inline-block;font-family:'Menlo',Consolas,monospace;font-weight:700;font-size:.8rem;border:1px solid #94a3b8;border-radius:5px;padding:1px 7px;margin:2px 3px">${E(cn)}</span>`).join('');
+    const cPages = cWorkers.map((name, idx) => {
+      const rcptNo = `${stmtNo}-${String(idx + 1).padStart(2, '0')}`;
+      return `<div style="height:9.9in;overflow:hidden;box-sizing:border-box;display:flex;flex-direction:column;page-break-inside:avoid;break-inside:avoid;${idx < cWorkers.length - 1 ? 'page-break-after:always;break-after:page;' : ''}">
         <div style="border-bottom:3px solid #0F2B5B;padding-bottom:.4rem;margin-bottom:.8rem">
-          <div style="font-size:1.25rem;font-weight:900;letter-spacing:1px">CONTAINER UNLOADING — RECEIPT ACKNOWLEDGMENT</div>
-          <div style="font-size:.85rem;color:#475569">DESCARGA DE CONTENEDORES — ACUSE DE RECIBO</div>
+          <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">CONTAINER UNLOADING — WORK CONFIRMATION</div>
+          <div style="font-size:.85rem;color:#475569">DESCARGA DE CONTENEDORES — CONFIRMACIÓN DE TRABAJO</div>
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:.88rem;margin-bottom:.7rem">
           <tr>
-            <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:6px 10px;width:180px;font-weight:700">Receipt No.<br><span style="font-weight:400;color:#64748b">Número de recibo</span></td>
-            <td style="border:1px solid #94a3b8;padding:6px 10px;font-weight:800;font-family:'Menlo',Consolas,monospace;color:#0F2B5B">${E(stmtNo)}</td>
-            <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:6px 10px;width:140px;font-weight:700">Date / Fecha</td>
-            <td style="border:1px solid #94a3b8;padding:6px 10px">${E(fmtUS(ctx.statement_date))}</td>
+            <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:6px 10px;width:200px;font-weight:700">Receipt No.<br><span style="font-weight:400;color:#64748b">Número de recibo</span></td>
+            <td style="border:1px solid #94a3b8;padding:6px 10px;font-weight:800;font-family:'Menlo',Consolas,monospace;color:#0F2B5B">${E(rcptNo)}</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:6px 10px;font-weight:700">Timeclock name<br><span style="font-weight:400;color:#64748b">Nombre en el reloj</span></td>
+            <td style="border:1px solid #94a3b8;padding:6px 10px;font-weight:800;font-size:1rem">${E(name)}</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #94a3b8;background:#fef9c3;padding:6px 10px;font-weight:700">Real name — write here ✍<br><span style="font-weight:400;color:#64748b">Nombre real — escriba aquí</span></td>
+            <td style="border:1px solid #94a3b8;padding:6px 10px;height:40px;background:#fffbeb"></td>
           </tr>
           <tr>
             <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:6px 10px;font-weight:700">Period / Período</td>
-            <td style="border:1px solid #94a3b8;padding:6px 10px">${E(period)}</td>
-            <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:6px 10px;font-weight:700">Total Amount<br><span style="font-weight:400;color:#64748b">Monto total</span></td>
-            <td style="border:1px solid #94a3b8;padding:6px 10px;font-weight:800;font-size:1.02rem">${total}</td>
+            <td style="border:1px solid #94a3b8;padding:6px 10px">${E(period)}${ctx.statement_date ? ` &nbsp;·&nbsp; Date / Fecha: ${E(fmtUS(ctx.statement_date))}` : ''}</td>
           </tr>
         </table>
-        <div style="font-weight:700;margin-bottom:.25rem">Containers unloaded (${conts.length}) / Contenedores descargados:</div>
-        <div style="border:1px solid #cbd5e1;border-radius:6px;padding:.35rem .4rem;margin-bottom:.7rem">${chips || '<span style="color:#94a3b8">—</span>'}</div>
-        <div style="border:1.5px solid #0F2B5B;background:#f8fafc;border-radius:6px;padding:.55rem .8rem;font-size:.9rem;margin-bottom:.6rem;line-height:1.6">
-          By signing below, each of us confirms that we unloaded the ${conts.length} container(s) listed above during the stated period and that the total amount of ${total} has been received in full. No further amounts are owed.<br>
-          <span style="color:#475569">Al firmar abajo, cada uno de nosotros confirma que descargamos los ${conts.length} contenedor(es) listados durante el período indicado y que el monto total de ${total} fue recibido por completo. No se debe ningún monto adicional.</span>
+        <div style="font-weight:700;margin-bottom:.25rem">Containers (${conts.length}) / Contenedores:</div>
+        <div style="border:1px solid #cbd5e1;border-radius:6px;padding:.3rem .4rem;margin-bottom:.7rem">${chips || '<span style="color:#94a3b8">—</span>'}</div>
+        <div style="font-weight:700;margin-bottom:.3rem">Please hand-copy the sentence below and sign / Copie a mano la frase de abajo y firme:</div>
+        <div style="border:1.5px solid #0F2B5B;background:#f8fafc;border-radius:6px;padding:.55rem .8rem;font-size:.92rem;margin-bottom:.55rem;line-height:1.65">
+          I did the unloading work for the ${conts.length} container(s) listed above during this period.<br>
+          <span style="color:#475569">Yo hice el trabajo de descarga de los ${conts.length} contenedor(es) listados durante este período.</span>
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:.84rem;margin-bottom:.7rem">
-          <thead><tr style="background:#f1f5f9">
-            <th style="border:1px solid #94a3b8;padding:5px 6px;width:30px">#</th>
-            <th style="border:1px solid #94a3b8;padding:5px 10px;text-align:left">Timeclock name<br><span style="font-weight:400;color:#64748b">Nombre en el reloj</span></th>
-            <th style="border:1px solid #94a3b8;padding:5px 10px;text-align:left;background:#fef9c3">Real name — write ✍<br><span style="font-weight:400;color:#64748b">Nombre real</span></th>
-            <th style="border:1px solid #94a3b8;padding:5px 10px;text-align:left">Signature / Firma</th>
-            <th style="border:1px solid #94a3b8;padding:5px 10px;text-align:left">Date / Fecha</th>
-          </tr></thead>
-          <tbody>${sigRows}</tbody>
+        <div style="border-bottom:1.5px solid #334155;height:32px"></div>
+        <div style="border-bottom:1.5px solid #334155;height:32px"></div>
+        <div style="border-bottom:1.5px solid #334155;height:32px;margin-bottom:.9rem"></div>
+        <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-bottom:.7rem">
+          <tr>
+            <td style="padding:2px 16px 2px 0;width:58%">Signature / Firma:</td>
+            <td style="padding:2px 0 2px 8px">Date / Fecha:</td>
+          </tr>
+          <tr>
+            <td style="padding:0 16px 0 0"><div style="border-bottom:1.5px solid #334155;height:32px"></div></td>
+            <td style="padding:0 0 0 8px"><div style="border-bottom:1.5px solid #334155;height:32px"></div></td>
+          </tr>
         </table>
-        <div style="flex:1;min-height:2.2in;border:2px dashed #94a3b8;border-radius:8px;display:flex;align-items:center;justify-content:center;text-align:center;color:#94a3b8;font-size:.9rem;line-height:1.7">
-          PLACE IDs HERE FOR PHOTO<br>COLOQUE LAS IDENTIFICACIONES AQUÍ PARA FOTO
+        <div style="flex:1;min-height:1.8in;border:2px dashed #94a3b8;border-radius:8px;display:flex;align-items:center;justify-content:center;text-align:center;color:#94a3b8;font-size:.9rem;line-height:1.7">
+          PLACE ID HERE FOR PHOTO<br>COLOQUE SU IDENTIFICACIÓN AQUÍ PARA FOTO
         </div>
-        <div style="font-size:.72rem;color:#94a3b8;margin-top:.4rem">${E(stmtNo)}</div>
-      </div>
-      </body></html>`);
+        <div style="font-size:.72rem;color:#94a3b8;margin-top:.35rem">${E(rcptNo)} · ${idx + 1}/${cWorkers.length}</div>
+      </div>`;
+    }).join('');
+    w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${E(stmtNo)}</title>
+      <style>@page{size:letter;margin:0.5in} html,body{margin:0;padding:0}
+        body{font-family:'Helvetica Neue',Arial,sans-serif;color:#0f172a;font-size:.9rem;line-height:1.55;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      </style></head><body>${cPages}</body></html>`);
     w.document.close();
     setTimeout(() => { try { w.print(); } catch (e) {} }, 400);
     return;
