@@ -39178,6 +39178,8 @@ function invpPrintStmtReceipt() {
   const line = h => `<div style="border-bottom:1.5px solid #334155;height:${h || 34}px"></div>`;
   const pages = persons.map((p, idx) => {
     const amt = p.amount || '$__________';
+    // 每页独立编号：对账单编号-序号（01 起），归档时一纸一号
+    const rcptNo = `${stmtNo}-${String(idx + 1).padStart(2, '0')}`;
     return `<div style="height:9.7in;overflow:hidden;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid;${idx < persons.length - 1 ? 'page-break-after:always;break-after:page;' : ''}padding-top:.1px">
     <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0F2B5B;padding-bottom:.5rem;margin-bottom:1.1rem">
       <div>
@@ -39189,7 +39191,11 @@ function invpPrintStmtReceipt() {
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:.92rem;margin-bottom:1.2rem">
       <tr>
-        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:8px 10px;width:230px;font-weight:700">Timeclock name<br><span style="font-weight:400;color:#64748b">Nombre en el reloj</span></td>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:8px 10px;width:230px;font-weight:700">Receipt No.<br><span style="font-weight:400;color:#64748b">Número de recibo</span></td>
+        <td style="border:1px solid #94a3b8;padding:8px 10px;font-weight:800;font-family:'Menlo',Consolas,monospace;color:#0F2B5B">${E(rcptNo)}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #94a3b8;background:#f1f5f9;padding:8px 10px;font-weight:700">Timeclock name<br><span style="font-weight:400;color:#64748b">Nombre en el reloj</span></td>
         <td style="border:1px solid #94a3b8;padding:8px 10px;font-weight:800;font-size:1.02rem">${E(p.name)}</td>
       </tr>
       <tr>
@@ -39225,7 +39231,7 @@ function invpPrintStmtReceipt() {
         <td style="padding:0 0 0 8px"><div style="border-bottom:1.5px solid #334155;height:34px"></div></td>
       </tr>
     </table>
-    <div style="font-size:.72rem;color:#94a3b8;margin-top:1.2rem">${E(stmtNo)} · ${idx + 1}/${persons.length}</div>
+    <div style="font-size:.72rem;color:#94a3b8;margin-top:1.2rem">${E(rcptNo)} · ${idx + 1}/${persons.length}</div>
     </div>`;
   }).join('');
 
