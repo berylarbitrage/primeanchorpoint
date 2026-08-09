@@ -475,7 +475,7 @@ function wireDrawing() {
       const rect = page.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
       const rb = document.createElement('div');
-      rb.style.cssText = `position:absolute;border:2.5px solid #dc2626;border-radius:50%;background:rgba(220,38,38,.06);z-index:8;left:${sx}px;top:${sy}px;width:0;height:0;pointer-events:none`;
+      rb.style.cssText = `position:absolute;border:2.5px solid #dc2626;border-radius:6px;background:rgba(220,38,38,.06);z-index:8;left:${sx}px;top:${sy}px;width:0;height:0;pointer-events:none`;
       page.appendChild(rb);
       const move = ev => {
         const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
@@ -544,7 +544,7 @@ function renderAnns() {
     const pg = pages[a.page || 1]; if (!pg) return;
     const el = document.createElement('div');
     el.className = 'vw-ann';
-    el.style.cssText = `position:absolute;left:${a.box_x * pg.clientWidth}px;top:${a.box_y * pg.clientHeight}px;width:${a.box_w * pg.clientWidth}px;height:${a.box_h * pg.clientHeight}px;border:2.5px solid #dc2626;border-radius:50%;background:rgba(220,38,38,.05);box-sizing:border-box;z-index:6;cursor:${canEditAnn(a) ? 'move' : 'pointer'};touch-action:none`;
+    el.style.cssText = `position:absolute;left:${a.box_x * pg.clientWidth}px;top:${a.box_y * pg.clientHeight}px;width:${a.box_w * pg.clientWidth}px;height:${a.box_h * pg.clientHeight}px;border:2.5px solid #dc2626;border-radius:6px;background:rgba(220,38,38,.05);box-sizing:border-box;z-index:6;cursor:${canEditAnn(a) ? 'move' : 'pointer'};touch-action:none`;
     el.title = a.note || '';
     el.innerHTML = `<span style="position:absolute;left:-5px;top:50%;transform:translate(-100%,-50%);background:#dc2626;color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px;pointer-events:none">${i + 1}</span>`;
     // 拖动改位置（仅自己的批注 / 管理员）；几乎没动 = 点击 → 聚焦右侧备注
