@@ -2627,6 +2627,26 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN links TEXT DEFAULT '[]
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
 // 一笔支出可以覆盖多张发票，每张各自的账期和金额：JSON [{inv, ps, pe, amt}]
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN inv_items TEXT DEFAULT '[]'`); } catch(e) {}
+// ─── 会计只读批注 (accounting review annotations) ───
+// The accounting role can VIEW invoices & bank statements but not edit them;
+// its only write surface is this table: a circled region (normalized 0..1
+// coords relative to the rendered document/page) plus a free-text note.
+db.exec(`CREATE TABLE IF NOT EXISTS acct_annotations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_type TEXT NOT NULL,
+  target_id INTEGER NOT NULL,
+  page INTEGER DEFAULT 1,
+  box_x REAL DEFAULT 0,
+  box_y REAL DEFAULT 0,
+  box_w REAL DEFAULT 0,
+  box_h REAL DEFAULT 0,
+  note TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_acct_ann_target ON acct_annotations(target_type, target_id)`); } catch (e) {}
+
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -8812,6 +8832,12 @@ function requireAdmin(req, res, next) {
     const csAllowed = p.startsWith('/api/sms/') || p === '/api/admin/me' || p === '/api/admin/logout';
     if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox)' });
   }
+  // 会计(accounting)专用账号: 只读发票与银行流水 + 圈选批注，其余管理后台一律 403
+  if (session.role === 'accounting') {
+    const p = req.originalUrl.split('?')[0];
+    const acctAllowed = p.startsWith('/api/acct/') || p === '/api/admin/me' || p === '/api/admin/logout';
+    if (!acctAllowed) return res.status(403).json({ error: '会计账号仅限使用对账查看页 (/accounting)' });
+  }
   const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=?').get(session.userId);
   req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
   req.assignedEmployeeIds = (_u && _u.assigned_employee_ids) || '';
@@ -9327,7 +9353,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const pwErr = validatePassword(password);
   if (pwErr) return res.status(400).json({ error: pwErr });
-  if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  if (!['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
   if (existing && existing.active) return res.status(400).json({ error: 'Username already exists' });
   // Overwrite unverified (inactive) account with same username
@@ -9342,7 +9368,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled } = req.body;
-  if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  if (role && !['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (password) {
@@ -32664,6 +32690,136 @@ app.delete('/api/admin/bank-statements/:id', requireAdmin, blockManager, (req, r
     if (s.file_path) storage.deleteObject(storage.keyFrom(s.file_path, 'uploads')).catch(() => {});
     db.prepare('DELETE FROM bank_statement_txns WHERE statement_id=?').run(s.id);
     db.prepare('DELETE FROM bank_statements WHERE id=?').run(s.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 会计账号 (accounting role): 只读发票 + 银行流水，圈选批注 ───────────────
+// Everything under /api/acct/* is the ONLY API surface the accounting role can
+// reach (enforced in requireAdmin). Reads are strictly read-only copies of the
+// admin data; the only writes allowed are acct_annotations rows (circle + note).
+const requireAcctView = requireRole('accounting', 'admin', 'staff');
+const requireAcctWrite = requireRole('accounting', 'admin');
+
+app.get('/accounting', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'accounting.html'));
+});
+
+const _acctAnnCount = db.prepare(`SELECT COUNT(*) AS n FROM acct_annotations WHERE target_type=? AND target_id=?`);
+
+// Read-only invoice list (no payment receipts / internal cost fields).
+app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, markup_rate, status, payment_status, created_at
+      FROM invoices ORDER BY invoice_date DESC, id DESC`).all();
+    for (const r of rows) r.annotation_count = _acctAnnCount.get('invoice', r.id).n;
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Read-only single invoice with the data needed to render the invoice document.
+app.get('/api/acct/invoices/:id', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const row = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, markup_rate, status, payment_status, created_at, items_json, profile_json
+      FROM invoices WHERE id=?`).get(parseInt(req.params.id));
+    if (!row) return res.status(404).json({ error: 'not found' });
+    try { row.items = JSON.parse(row.items_json || '[]'); } catch { row.items = []; }
+    try { row.profile = JSON.parse(row.profile_json || '{}'); } catch { row.profile = {}; }
+    delete row.items_json; delete row.profile_json;
+    res.json(row);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Read-only bank statement list.
+app.get('/api/acct/statements', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, txn_count, total_in, total_out, created_at
+      FROM bank_statements ORDER BY period_start DESC, created_at DESC`).all();
+    for (const r of rows) r.annotation_count = _acctAnnCount.get('statement', r.id).n;
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Raw statement PDF bytes, same-origin for pdf.js (view only).
+app.get('/api/acct/statements/:id/file', requireAdmin, requireAcctView, async (req, res) => {
+  try {
+    const s = db.prepare('SELECT file_path FROM bank_statements WHERE id=?').get(parseInt(req.params.id));
+    if (!s || !s.file_path) return res.status(404).json({ error: 'not found' });
+    const buf = await storage.getBuffer(storage.keyFrom(s.file_path, 'uploads'));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.send(buf);
+  } catch (e) { res.status(404).json({ error: 'File not found' }); }
+});
+
+// Annotations: list (optionally by target), create, update note/box, delete.
+const ACCT_TARGET_TYPES = ['invoice', 'statement'];
+app.get('/api/acct/annotations', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const { target_type, target_id } = req.query;
+    let rows;
+    if (target_type && target_id) {
+      if (!ACCT_TARGET_TYPES.includes(target_type)) return res.status(400).json({ error: 'bad target_type' });
+      rows = db.prepare(`SELECT * FROM acct_annotations WHERE target_type=? AND target_id=? ORDER BY page ASC, box_y ASC, id ASC`)
+        .all(target_type, parseInt(target_id));
+    } else {
+      rows = db.prepare(`SELECT * FROM acct_annotations ORDER BY id DESC LIMIT 500`).all();
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/acct/annotations', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!ACCT_TARGET_TYPES.includes(b.target_type)) return res.status(400).json({ error: 'bad target_type' });
+    const targetId = parseInt(b.target_id);
+    if (!targetId) return res.status(400).json({ error: 'bad target_id' });
+    const exists = b.target_type === 'invoice'
+      ? db.prepare('SELECT id FROM invoices WHERE id=?').get(targetId)
+      : db.prepare('SELECT id FROM bank_statements WHERE id=?').get(targetId);
+    if (!exists) return res.status(404).json({ error: 'target not found' });
+    const clamp01 = v => Math.max(0, Math.min(1, Number(v) || 0));
+    const r = db.prepare(`INSERT INTO acct_annotations (target_type, target_id, page, box_x, box_y, box_w, box_h, note, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(b.target_type, targetId, Math.max(1, parseInt(b.page) || 1),
+        clamp01(b.box_x), clamp01(b.box_y), clamp01(b.box_w), clamp01(b.box_h),
+        String(b.note || ''), req.userName || '');
+    res.json({ id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Only the author (or an admin) may change or remove an annotation.
+function _acctOwnAnnotation(req, res) {
+  const row = db.prepare('SELECT * FROM acct_annotations WHERE id=?').get(parseInt(req.params.id));
+  if (!row) { res.status(404).json({ error: 'not found' }); return null; }
+  if (req.userRole !== 'admin' && row.created_by !== (req.userName || '')) {
+    res.status(403).json({ error: '只能修改自己创建的批注' });
+    return null;
+  }
+  return row;
+}
+
+app.put('/api/acct/annotations/:id', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const row = _acctOwnAnnotation(req, res);
+    if (!row) return;
+    const b = req.body || {};
+    const clamp01 = (v, d) => (v == null ? d : Math.max(0, Math.min(1, Number(v) || 0)));
+    db.prepare(`UPDATE acct_annotations SET note=?, page=?, box_x=?, box_y=?, box_w=?, box_h=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(b.note != null ? String(b.note) : row.note,
+        b.page != null ? Math.max(1, parseInt(b.page) || 1) : row.page,
+        clamp01(b.box_x, row.box_x), clamp01(b.box_y, row.box_y),
+        clamp01(b.box_w, row.box_w), clamp01(b.box_h, row.box_h), row.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/acct/annotations/:id', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const row = _acctOwnAnnotation(req, res);
+    if (!row) return;
+    db.prepare('DELETE FROM acct_annotations WHERE id=?').run(row.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
