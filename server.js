@@ -9042,7 +9042,13 @@ app.post('/api/quote', (req, res) => {
 app.post('/api/admin/login', loginRateLimit, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
-  const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
+  let user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
+  // Fallback: allow logging in with the account's email — but only when it
+  // unambiguously identifies ONE active account (people habitually type email).
+  if (!user && String(username).includes('@')) {
+    const matches = db.prepare('SELECT * FROM admin_users WHERE email = ? AND active = 1').all(String(username).trim());
+    if (matches.length === 1) user = matches[0];
+  }
   if (!user) {
     auditLog('login_failed', { ip: req.ip, connection: req.connection, headers: req.headers }, { details: { username, reason: 'user_not_found' } });
     return res.status(401).json({ error: 'Invalid username or password' });

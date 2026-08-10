@@ -37,7 +37,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div style="font-weight:800;font-size:1.05rem;margin:.5rem 0">🧾 会计对账 · Accounting Review</div>
     <div style="font-size:.82rem;color:var(--g500);margin-bottom:12px">查看发票与银行流水（只读），圈选并备注</div>
     <div id="loginForm">
-      <input type="text" id="loginUser" placeholder="用户名" style="width:100%;margin-bottom:.5rem" autocomplete="username">
+      <input type="text" id="loginUser" placeholder="用户名或邮箱" style="width:100%;margin-bottom:.5rem" autocomplete="username">
       <input type="password" id="loginPw" placeholder="密码" style="width:100%" autocomplete="current-password" onkeydown="if(event.key==='Enter')acctLogin()">
       <div id="gateErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
       <button class="btn btn-blue" style="width:100%;justify-content:center;margin-top:.4rem" onclick="acctLogin()">登录</button>
