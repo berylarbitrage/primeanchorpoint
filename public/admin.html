@@ -4926,6 +4926,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="admin">Admin — 管理员（完全权限）</option>
       <option value="staff" selected>Staff — 员工（删除须审批）</option>
       <option value="manager">Manager — 经理（仅管理指定公司工时）</option>
+      <option value="accounting">Accounting — 会计（只读发票/银行流水，可圈选批注，登录 /accounting）</option>
     </select>
   </div>
   <div class="field" id="accPartnerField" style="display:none">
@@ -19617,7 +19618,7 @@ async function loadAccounts() {
   const partners = await api('/admin/partners').catch(()=>[]);
   _allPartners = partners;
   const roleBadge = r => r==='admin'?'badge-blue':r==='manager'?'badge-yellow':'';
-  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理' };
+  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理', accounting:'Accounting 会计' };
   const partnerName = ids => (ids||'').split(',').filter(Boolean).map(id=>{const p=partners.find(p=>p.id==id);return p?p.name:'#'+id;}).join(', ') || '—';
   document.getElementById('accountsTable').innerHTML = rows.map(a => `<tr>
     <td><strong>${esc(a.username)}</strong></td>
@@ -19760,7 +19761,7 @@ function filterInternalStaff() {
 
 function renderInternalStaffTable(rows, partners) {
   const roleBadge = r => r==='admin'?'badge-blue':r==='manager'?'badge-yellow':'';
-  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理' };
+  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理', accounting:'Accounting 会计' };
   const partnerName = ids => (ids||'').split(',').filter(Boolean).map(id=>{const p=partners.find(p=>p.id==id);return p?p.name:'#'+id;}).join(', ') || '—';
   document.getElementById('internalStaffTable').innerHTML = rows.length ? rows.map(a => `<tr>
     <td><strong>${esc(a.username)}</strong></td>

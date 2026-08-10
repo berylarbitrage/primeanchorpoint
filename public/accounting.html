@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>会计对账 · Prime Anchor</title>
+<style>
+:root{--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;--g500:#6b7280;--g600:#4b5563;--g700:#374151;--blue:#29AAE1;--red:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;background:#eef3f8;color:#1f2937}
+.wrap{max-width:1200px;margin:0 auto;padding:18px 16px 60px}
+h1{font-size:1.2rem;font-weight:800;color:#0f4c6b;margin:0;display:flex;align-items:center;gap:.4rem}
+.btn{display:inline-flex;align-items:center;gap:.25rem;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.85rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn-blue{background:var(--blue);color:#fff}.btn-blue:hover{background:#1d8fc0}
+.btn-outline{background:#fff;color:var(--g600);border:1px solid var(--g300)}
+.btn-sm{padding:.3rem .6rem;font-size:.78rem;border-radius:6px}
+.card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:14px 16px}
+.chip{display:inline-block;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.5rem .9rem;font-size:.8rem;color:var(--g500)}
+.chip b{font-size:1.05rem;margin-left:.3rem}
+table{width:100%;border-collapse:collapse}
+th{padding:.5rem .55rem;font-size:.76rem;font-weight:700;color:var(--g500);text-align:left;white-space:nowrap;border-bottom:2px solid var(--g200)}
+td{padding:.5rem .55rem;font-size:.84rem;border-top:1px solid var(--g100);vertical-align:middle}
+input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;font-size:.85rem;background:#fff;font-family:inherit}
+.tab{border:none;background:none;padding:.55rem 1rem;font-size:.9rem;font-weight:700;color:var(--g500);cursor:pointer;border-bottom:3px solid transparent}
+.tab.on{color:#0f4c6b;border-bottom-color:var(--blue)}
+.badge{display:inline-block;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
+.ann-badge{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
+.no-ann{color:var(--g300)}
+</style>
+</head>
+<body>
+
+<!-- 登录门 -->
+<div id="gate" style="position:fixed;inset:0;background:#eef3f8;display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px">
+  <div class="card" style="max-width:360px;width:100%;text-align:center;padding:26px 22px">
+    <img src="/logo.svg" style="height:52px" alt="Logo">
+    <div style="font-weight:800;font-size:1.05rem;margin:.5rem 0">🧾 会计对账 · Accounting Review</div>
+    <div style="font-size:.82rem;color:var(--g500);margin-bottom:12px">查看发票与银行流水（只读），圈选并备注</div>
+    <div id="loginForm">
+      <input type="text" id="loginUser" placeholder="用户名" style="width:100%;margin-bottom:.5rem" autocomplete="username">
+      <input type="password" id="loginPw" placeholder="密码" style="width:100%" autocomplete="current-password" onkeydown="if(event.key==='Enter')acctLogin()">
+      <div id="gateErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
+      <button class="btn btn-blue" style="width:100%;justify-content:center;margin-top:.4rem" onclick="acctLogin()">登录</button>
+    </div>
+    <div id="activateForm" style="display:none">
+      <div style="font-size:.82rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:.5rem;margin-bottom:.5rem">首次登录（或密码被重置后）需要设置自己的新密码</div>
+      <input type="password" id="actNewPw" placeholder="设置新密码" style="width:100%" onkeydown="if(event.key==='Enter')acctActivate()">
+      <div id="actErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
+      <button class="btn btn-blue" style="width:100%;justify-content:center;margin-top:.4rem" onclick="acctActivate()">设置密码并登录</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="main" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">
+    <h1>🧾 会计对账 · Accounting Review</h1>
+    <div style="display:flex;align-items:center;gap:.5rem">
+      <span id="whoami" style="font-size:.82rem;color:var(--g500)"></span>
+      <button class="btn btn-sm btn-outline" onclick="acctLogout()">退出</button>
+    </div>
+  </div>
+  <p style="color:var(--g500);font-size:.85rem;margin:.35rem 0 .9rem">发票与银行流水<strong>只读</strong>——不能修改任何数据；点「查看 / 批注」打开文件，开启「圈选批注」后在页面上<strong>拖动圈出</strong>要说明的地方并填写备注。</p>
+
+  <div style="display:flex;border-bottom:1px solid var(--g200);margin-bottom:.8rem;background:#fff;border-radius:10px 10px 0 0;padding:0 .4rem">
+    <button class="tab on" id="tabInv" onclick="showTab('inv')">📄 发票 Invoices</button>
+    <button class="tab" id="tabStmt" onclick="showTab('stmt')">🏦 银行流水 Bank Statements</button>
+  </div>
+
+  <div id="paneInv">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+      <input type="text" id="invSearch" placeholder="搜发票号 / 公司…" oninput="renderInvList()" style="width:220px">
+      <select id="invAnnFilter" onchange="renderInvList()">
+        <option value="">全部</option>
+        <option value="with">只看有批注的</option>
+      </select>
+      <span id="invStats" style="font-size:.8rem;color:var(--g500)"></span>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table><thead><tr>
+        <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>批注</th><th></th>
+      </tr></thead><tbody id="invBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <div id="paneStmt" style="display:none">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+      <input type="text" id="stmtSearch" placeholder="搜银行 / 主体 / 文件…" oninput="renderStmtList()" style="width:220px">
+      <select id="stmtAnnFilter" onchange="renderStmtList()">
+        <option value="">全部</option>
+        <option value="with">只看有批注的</option>
+      </select>
+      <span id="stmtStats" style="font-size:.8rem;color:var(--g500)"></span>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table><thead><tr>
+        <th>银行</th><th>账户主体</th><th>经手</th><th>账期</th><th>文件</th><th style="text-align:right">收入</th><th style="text-align:right">支出</th><th>批注</th><th></th>
+      </tr></thead><tbody id="stmtBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    </div>
+  </div>
+</div>
+
+<script>
+let TOKEN = localStorage.getItem('acct_token') || '';
+let USER = { username: '', role: '', display_name: '' };
+let _invList = [], _stmtList = [];
+
+function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+function money(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function toast(msg, bad) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);background:${bad ? '#dc2626' : '#16a34a'};color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:.85rem;z-index:3000;box-shadow:0 6px 20px rgba(0,0,0,.25)`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: { 'Authorization': 'Bearer ' + TOKEN, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+    body: opts.body,
+  });
+  if (r.status === 401) { acctLogout(true); throw new Error('登录已过期'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok && !j.error) j.error = 'HTTP ' + r.status;
+  return j;
+}
+
+// ── 登录 / 退出 ──
+async function acctLogin() {
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPw').value;
+  const err = document.getElementById('gateErr');
+  err.textContent = '';
+  if (!username || !password) { err.textContent = '请输入用户名和密码'; return; }
+  const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }).then(x => x.json()).catch(() => ({}));
+  if (r.needs_activation) {
+    document.getElementById('loginForm').style.display = 'none';
+    document.getElementById('activateForm').style.display = '';
+    return;
+  }
+  if (!r.success) { err.textContent = r.error || '登录失败'; return; }
+  finishLogin(r);
+}
+async function acctActivate() {
+  const username = document.getElementById('loginUser').value.trim();
+  const current_password = document.getElementById('loginPw').value;
+  const new_password = document.getElementById('actNewPw').value;
+  const err = document.getElementById('actErr');
+  err.textContent = '';
+  const r = await fetch('/api/auth/activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, current_password, new_password }) }).then(x => x.json()).catch(() => ({}));
+  if (!r.success) { err.textContent = r.error || '设置失败'; return; }
+  finishLogin(r);
+}
+function finishLogin(r) {
+  if (r.role !== 'accounting') {
+    document.getElementById('gateErr').textContent = '此页面仅限会计（Accounting）账号登录';
+    return;
+  }
+  TOKEN = r.token;
+  localStorage.setItem('acct_token', TOKEN);
+  USER = { username: r.username || '', role: r.role, display_name: r.display_name || '' };
+  enterMain();
+}
+function enterMain() {
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('main').style.display = '';
+  document.getElementById('whoami').textContent = `${USER.display_name || USER.username}（${USER.role === 'accounting' ? '会计' : USER.role}）`;
+  loadAll();
+}
+function acctLogout(silent) {
+  if (TOKEN && !silent) fetch('/api/admin/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN } }).catch(() => {});
+  localStorage.removeItem('acct_token');
+  TOKEN = '';
+  location.reload();
+}
+// 批注权限：会计和管理员可以圈选备注；staff 只读
+function canAnnotate() { return USER.role === 'accounting' || USER.role === 'admin'; }
+function canEditAnn(a) { return USER.role === 'admin' || a.created_by === USER.username; }
+
+// ── 列表 ──
+function showTab(t) {
+  document.getElementById('tabInv').classList.toggle('on', t === 'inv');
+  document.getElementById('tabStmt').classList.toggle('on', t === 'stmt');
+  document.getElementById('paneInv').style.display = t === 'inv' ? '' : 'none';
+  document.getElementById('paneStmt').style.display = t === 'stmt' ? '' : 'none';
+}
+async function loadAll() {
+  const [inv, stmt] = await Promise.all([
+    api('/api/acct/invoices').catch(() => []),
+    api('/api/acct/statements').catch(() => []),
+  ]);
+  _invList = Array.isArray(inv) ? inv : [];
+  _stmtList = Array.isArray(stmt) ? stmt : [];
+  renderInvList();
+  renderStmtList();
+}
+const PAY_LABEL = { paid: ['已收款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分收款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未收款', '#b91c1c', '#fef2f2', '#fecaca'] };
+function payBadge(s) {
+  const [label, color, bg, border] = PAY_LABEL[s || 'unpaid'] || ['—', '#6b7280', '#f9fafb', '#e5e7eb'];
+  return `<span class="badge" style="color:${color};background:${bg};border:1px solid ${border}">${label}</span>`;
+}
+function annBadge(n) { return n > 0 ? `<span class="badge ann-badge">✏️ ${n}</span>` : '<span class="no-ann">—</span>'; }
+function renderInvList() {
+  const q = (document.getElementById('invSearch').value || '').toLowerCase();
+  const onlyAnn = document.getElementById('invAnnFilter').value === 'with';
+  let rows = _invList;
+  if (q) rows = rows.filter(r => (r.invoice_number || '').toLowerCase().includes(q) || (r.company_name || '').toLowerCase().includes(q));
+  if (onlyAnn) rows = rows.filter(r => r.annotation_count > 0);
+  document.getElementById('invStats').textContent = `共 ${rows.length} 张 · 合计 ${money(rows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}`;
+  document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td style="font-weight:700;white-space:nowrap">${esc(r.invoice_number)}</td>
+    <td style="white-space:nowrap">${esc(r.invoice_date || '—')}</td>
+    <td>${esc(r.company_name || '')}</td>
+    <td style="white-space:nowrap;font-size:.78rem;color:var(--g500)">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</td>
+    <td style="text-align:right;font-weight:700">${money(r.subtotal)}</td>
+    <td>${payBadge(r.payment_status)}</td>
+    <td>${annBadge(r.annotation_count)}</td>
+    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
+  </tr>`).join('') : '<tr><td colspan="8" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
+}
+function renderStmtList() {
+  const q = (document.getElementById('stmtSearch').value || '').toLowerCase();
+  const onlyAnn = document.getElementById('stmtAnnFilter').value === 'with';
+  let rows = _stmtList;
+  if (q) rows = rows.filter(r => [r.bank, r.account_name, r.operator, r.file_name].some(v => (v || '').toLowerCase().includes(q)));
+  if (onlyAnn) rows = rows.filter(r => r.annotation_count > 0);
+  document.getElementById('stmtStats').textContent = `共 ${rows.length} 份`;
+  document.getElementById('stmtBody').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td style="font-weight:700;white-space:nowrap">${esc(r.bank || '—')}</td>
+    <td>${esc(r.account_name || '—')}</td>
+    <td>${esc(r.operator || '—')}</td>
+    <td style="white-space:nowrap;font-size:.78rem;color:var(--g500)">${esc(r.period_start || r.period || '?')}${r.period_end ? ' ~ ' + esc(r.period_end) : ''}</td>
+    <td><div style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.file_name)}">📄 ${esc(r.file_name || 'PDF')}</div></td>
+    <td style="text-align:right;color:#047857;font-weight:700">${r.total_in ? money(r.total_in) : '—'}</td>
+    <td style="text-align:right;color:#b91c1c;font-weight:700">${r.total_out ? money(r.total_out) : '—'}</td>
+    <td>${annBadge(r.annotation_count)}</td>
+    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openStatement(${r.id})">查看 / 批注</button></td>
+  </tr>`).join('') : '<tr><td colspan="9" style="color:var(--g400);padding:1rem">没有符合条件的流水。</td></tr>';
+}
+
+// ── 查看器（发票 & 流水共用外壳）──
+// _view = { type: 'invoice'|'statement', id, anns: [], draw: bool }
+let _view = null;
+function ensureViewer() {
+  if (document.getElementById('vwModal')) return;
+  const m = document.createElement('div');
+  m.id = 'vwModal';
+  m.style.cssText = 'display:none;position:fixed;inset:0;z-index:1500;background:rgba(15,23,42,.55)';
+  m.innerHTML = `<div style="position:absolute;inset:2%;background:#eef2f7;border-radius:12px;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--g200);flex-wrap:wrap">
+      <strong id="vwTitle" style="font-size:.92rem;flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></strong>
+      <span style="font-size:.74rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:.1rem .45rem">只读 · 不可修改原件</span>
+      <span id="vwStatus" style="font-size:.78rem;color:var(--g400)"></span>
+      <button class="btn btn-sm" id="vwDrawBtn" onclick="vwToggleDraw()" style="border:1px solid var(--g200)">⭕ 圈选批注：关</button>
+      <button class="btn btn-sm btn-outline" onclick="closeViewer()">✕ 关闭</button>
+    </div>
+    <div style="flex:1;display:flex;overflow:hidden">
+      <div id="vwPages" style="flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;align-items:center;gap:1rem"></div>
+      <div style="width:330px;border-left:1px solid var(--g200);background:#fff;display:flex;flex-direction:column">
+        <div style="padding:.55rem .65rem;border-bottom:1px solid var(--g100)">
+          <div style="font-weight:700;font-size:.85rem">✏️ 批注</div>
+          <div id="vwPanelHint" style="font-size:.75rem;color:var(--g400);margin-top:.2rem">开启「圈选批注」后在左侧文件上<strong>拖动圈出</strong>位置，再在这里填备注。</div>
+        </div>
+        <div id="vwPanel" style="flex:1;overflow:auto;padding:.5rem .55rem"></div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function setVwStatus(t) { const s = document.getElementById('vwStatus'); if (s) { s.textContent = t; if (t) setTimeout(() => { if (s.textContent === t) s.textContent = ''; }, 1400); } }
+function closeViewer() {
+  document.getElementById('vwModal').style.display = 'none';
+  _view = null;
+  loadAll(); // 刷新批注数
+}
+function vwToggleDraw() {
+  if (!_view) return;
+  if (!canAnnotate()) { toast('当前账号只有查看权限', true); return; }
+  _view.draw = !_view.draw;
+  vwApplyDraw();
+}
+function vwApplyDraw() {
+  const btn = document.getElementById('vwDrawBtn');
+  const on = _view && _view.draw;
+  btn.textContent = on ? '⭕ 圈选批注：开' : '⭕ 圈选批注：关';
+  btn.style.cssText = on
+    ? 'border:1px solid #dc2626;background:#fef2f2;color:#b91c1c;font-weight:700'
+    : 'border:1px solid var(--g200)';
+  document.querySelectorAll('#vwPages .vw-page').forEach(p => { p.style.cursor = on ? 'crosshair' : 'default'; });
+}
+
+// ── 打开发票：把发票数据渲染成只读发票纸 ──
+async function openInvoice(id) {
+  ensureViewer();
+  document.getElementById('vwModal').style.display = 'block';
+  const cont = document.getElementById('vwPages');
+  cont.innerHTML = '<div style="color:var(--g400);padding:2rem">加载中…</div>';
+  try {
+    const inv = await api('/api/acct/invoices/' + id);
+    if (inv.error) throw new Error(inv.error);
+    document.getElementById('vwTitle').textContent = `📄 ${inv.invoice_number} · ${inv.company_name || ''}`;
+    cont.innerHTML = '';
+    const page = document.createElement('div');
+    page.className = 'vw-page';
+    page.dataset.page = 1;
+    page.style.cssText = 'position:relative;flex:0 0 auto;width:816px;max-width:100%;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25)';
+    page.innerHTML = renderInvoiceDoc(inv);
+    cont.appendChild(page);
+    _view = { type: 'invoice', id, anns: [], draw: false };
+    wireDrawing();
+    vwApplyDraw();
+    _view.anns = await api('/api/acct/annotations?target_type=invoice&target_id=' + id);
+    if (!Array.isArray(_view.anns)) _view.anns = [];
+    renderAnns();
+  } catch (e) {
+    cont.innerHTML = '<div style="color:#dc2626;padding:2rem">打开失败：' + esc(e.message || e) + '</div>';
+  }
+}
+// 只读发票纸：logo + 抬头 + BILL TO + 明细（工时 / 装卸柜两种模式）+ 合计 + 收款信息
+function renderInvoiceDoc(inv) {
+  const profile = inv.profile || {};
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  const fmtNice = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  const period = `${fmtNice(inv.period_start)} — ${fmtNice(inv.period_end)}`;
+  const th = 'padding:6px 8px;border-bottom:2px solid #29AAE1;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#0f4c6b;text-align:left;white-space:nowrap';
+  const thR = th + ';text-align:right';
+  const td = 'padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:.8rem';
+  const tdR = td + ';text-align:right;white-space:nowrap';
+
+  let lineTable;
+  const contItems = Array.isArray(profile.container_items) ? profile.container_items : [];
+  if (profile.invoice_mode === 'container' && contItems.length) {
+    lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
+      <thead><tr><th style="${th}">#</th><th style="${th}">Type</th><th style="${th}">Container / Week</th><th style="${thR}">Qty</th><th style="${thR}">Unit Price</th><th style="${thR}">Amount</th></tr></thead>
+      <tbody>${contItems.map((c, i) => `<tr>
+        <td style="${td}">${i + 1}</td>
+        <td style="${td}">${c.line_type === 'load' ? '装柜 Load' : '卸柜 Unload'}</td>
+        <td style="${td}">${esc(c.container_no || '')}${c.week ? ` <span style="color:#94a3b8;font-size:.72rem">${esc(c.week)}</span>` : ''}</td>
+        <td style="${tdR}">${Number(c.qty) || 0}</td>
+        <td style="${tdR}">${money(c.unit_price)}</td>
+        <td style="${tdR};font-weight:700">${money(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0))}</td>
+      </tr>`).join('')}</tbody></table>`;
+  } else {
+    const hasOt = items.some(it => Number(it.otHours) > 0);
+    lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
+      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th></tr></thead>
+      <tbody>${items.map((it, i) => {
+        const amt = it.billed != null ? it.billed : it.total;
+        return `<tr>
+          <td style="${td}">${i + 1}</td>
+          <td style="${td}">${esc(it.name || '')}</td>
+          <td style="${tdR}">${(Number(it.regHours != null ? it.regHours : it.hours) || 0).toFixed(2)}</td>
+          ${hasOt ? `<td style="${tdR}">${(Number(it.otHours) || 0).toFixed(2)}</td>` : ''}
+          <td style="${tdR}">${money(it.rate)}</td>
+          ${hasOt ? `<td style="${tdR}">${money(it.otRate)}</td>` : ''}
+          <td style="${tdR};font-weight:700">${money(amt)}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }
+
+  const bankLines = [
+    profile.bank_name ? `<div><span style="color:#64748b">Bank:</span> <b>${esc(profile.bank_name)}</b></div>` : '',
+    profile.bank_account_name ? `<div><span style="color:#64748b">Account Name:</span> <b>${esc(profile.bank_account_name)}</b></div>` : '',
+    profile.bank_account_no ? `<div><span style="color:#64748b">Account No.:</span> <b>${esc(profile.bank_account_no)}</b></div>` : '',
+    profile.bank_routing_no ? `<div><span style="color:#64748b">Routing No.:</span> <b>${esc(profile.bank_routing_no)}</b></div>` : '',
+    profile.bank_wire_routing ? `<div><span style="color:#64748b">Wire Routing:</span> <b>${esc(profile.bank_wire_routing)}</b></div>` : '',
+    profile.bank_swift_code ? `<div><span style="color:#64748b">SWIFT:</span> <b>${esc(profile.bank_swift_code)}</b></div>` : '',
+  ].filter(Boolean).join('');
+
+  return `<div style="padding:0.5in;font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:.85rem;flex:1;min-width:0">
+        <img src="/logo.svg" style="height:64px;width:auto;flex-shrink:0" alt="Logo">
+        <div style="line-height:1.55;font-size:.82rem">
+          ${profile.sender_name ? `<div style="font-size:1.05rem;font-weight:800;color:#29AAE1">${esc(profile.sender_name)}</div>` : ''}
+          ${profile.sender_address ? `<div>${esc(profile.sender_address)}</div>` : ''}
+          ${profile.sender_phone ? `<div>Phone: ${esc(profile.sender_phone)}</div>` : ''}
+          ${profile.sender_email ? `<div>Email: ${esc(profile.sender_email)}</div>` : ''}
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:1.9rem;font-weight:900;letter-spacing:4px;color:#29AAE1;line-height:1;margin-bottom:.5rem">INVOICE</div>
+        <table style="border-collapse:collapse;margin-left:auto;font-size:.78rem;border:1px solid #cbd5e1;background:#f8fafc">
+          <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Invoice No.</td><td style="padding:4px 10px;font-weight:700;text-align:right">${esc(inv.invoice_number || '—')}</td></tr>
+          <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Invoice Date</td><td style="padding:4px 10px;font-weight:600;text-align:right">${fmtNice(inv.invoice_date)}</td></tr>
+          <tr><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Service Period</td><td style="padding:4px 10px;font-weight:600;text-align:right">${period}</td></tr>
+        </table>
+      </div>
+    </div>
+    <div style="border-top:2.5px solid #29AAE1;margin-bottom:.8rem"></div>
+    <table style="border-collapse:collapse;margin-bottom:.7rem;font-size:.85rem;line-height:1.55">
+      <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;white-space:nowrap;vertical-align:top">BILL TO:</td><td style="padding:2px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(inv.company_name || '')}</td></tr>
+      ${inv.bill_to_addr ? `<tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;white-space:nowrap;vertical-align:top">ADDRESS:</td><td style="padding:2px 0">${esc(inv.bill_to_addr)}</td></tr>` : ''}
+      ${inv.for_label ? `<tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;white-space:nowrap;vertical-align:top">FOR:</td><td style="padding:2px 0">${esc(inv.for_label)}</td></tr>` : ''}
+    </table>
+    ${lineTable}
+    <div style="display:flex;justify-content:flex-end;margin:.6rem 0 .9rem">
+      <table style="border-collapse:collapse;font-size:.86rem;min-width:260px"><tr>
+        <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;text-transform:uppercase;white-space:nowrap">Total Due</td>
+        <td style="padding:7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:800;text-align:right;font-size:1.15rem;white-space:nowrap">${money(inv.subtotal)}</td>
+      </tr></table>
+    </div>
+    ${bankLines ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:.55rem .8rem;font-size:.78rem;line-height:1.6;margin-bottom:.5rem"><div style="font-weight:700;color:#0f4c6b;margin-bottom:.15rem">PAYMENT INFORMATION</div>${bankLines}</div>` : ''}
+    ${(profile.contact_phone || profile.contact_email) ? `<div style="font-size:.75rem;color:#475569;margin-bottom:.4rem">For questions regarding this invoice, please contact: <b>${[profile.contact_name, profile.contact_phone, profile.contact_email].filter(Boolean).map(esc).join(' | ')}</b></div>` : ''}
+    <div style="border-top:1px solid #e2e8f0;padding-top:.5rem;text-align:center;font-size:.75rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">THANK YOU FOR YOUR BUSINESS!</div>
+  </div>`;
+}
+
+// ── 打开银行流水 PDF（pdf.js 渲染）──
+let _libsP = null;
+function loadPdfjs() {
+  if (_libsP) return _libsP;
+  const loadScript = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('fail ' + src)); document.head.appendChild(s); });
+  _libsP = (async () => {
+    const BASES = ['/vendor/pdfjs/', 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/', 'https://unpkg.com/pdfjs-dist@3.11.174/build/', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/'];
+    let base = BASES[0];
+    if (!window.pdfjsLib) for (const b of BASES) { try { await loadScript(b + 'pdf.min.js'); if (window.pdfjsLib) { base = b; break; } } catch (_) {} }
+    if (!window.pdfjsLib) throw new Error('pdf.js 加载失败');
+    try { pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js'; } catch (_) {}
+  })().catch(e => { _libsP = null; throw e; });
+  return _libsP;
+}
+async function openStatement(id) {
+  ensureViewer();
+  const s = _stmtList.find(x => x.id === id) || {};
+  document.getElementById('vwTitle').textContent = `🏦 ${[s.bank, s.account_name, s.file_name].filter(Boolean).join(' · ')}`;
+  document.getElementById('vwModal').style.display = 'block';
+  const cont = document.getElementById('vwPages');
+  cont.innerHTML = '<div style="color:var(--g400);padding:2rem">加载中…</div>';
+  try {
+    await loadPdfjs();
+    const res = await fetch('/api/acct/statements/' + id + '/file', { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+    if (!res.ok) throw new Error('下载 PDF 失败 (' + res.status + ')');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    cont.innerHTML = '';
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const targetW = Math.min(900, Math.max(340, cont.clientWidth - 40));
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const vp1 = page.getViewport({ scale: 1 });
+      const scale = targetW / vp1.width;
+      const vp = page.getViewport({ scale });
+      const wrap = document.createElement('div');
+      wrap.className = 'vw-page';
+      wrap.dataset.page = i;
+      wrap.style.cssText = 'position:relative;flex:0 0 auto;width:' + Math.round(vp.width) + 'px;height:' + Math.round(vp.height) + 'px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.25)';
+      const cv = document.createElement('canvas');
+      cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
+      cv.style.width = Math.round(vp.width) + 'px'; cv.style.height = Math.round(vp.height) + 'px';
+      wrap.appendChild(cv);
+      cont.appendChild(wrap);
+      await page.render({ canvasContext: cv.getContext('2d'), viewport: page.getViewport({ scale: scale * dpr }) }).promise;
+    }
+    _view = { type: 'statement', id, anns: [], draw: false };
+    wireDrawing();
+    vwApplyDraw();
+    _view.anns = await api('/api/acct/annotations?target_type=statement&target_id=' + id);
+    if (!Array.isArray(_view.anns)) _view.anns = [];
+    renderAnns();
+  } catch (e) {
+    cont.innerHTML = '<div style="color:#dc2626;padding:2rem">打开失败：' + esc(e.message || e) + '</div>';
+  }
+}
+
+// ── 圈选（椭圆圈）+ 批注面板，发票和流水共用 ──
+function wireDrawing() {
+  document.querySelectorAll('#vwPages .vw-page').forEach(page => {
+    if (page._wired) return;
+    page._wired = true;
+    page.addEventListener('pointerdown', e => {
+      if (!_view || !_view.draw || !canAnnotate()) return;
+      if (e.target.closest('.vw-ann')) return;
+      e.preventDefault();
+      const rect = page.getBoundingClientRect();
+      const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+      const rb = document.createElement('div');
+      rb.style.cssText = `position:absolute;border:2.5px solid #dc2626;border-radius:6px;background:rgba(220,38,38,.06);z-index:8;left:${sx}px;top:${sy}px;width:0;height:0;pointer-events:none`;
+      page.appendChild(rb);
+      const move = ev => {
+        const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+        rb.style.left = Math.min(sx, x) + 'px'; rb.style.top = Math.min(sy, y) + 'px';
+        rb.style.width = Math.abs(x - sx) + 'px'; rb.style.height = Math.abs(y - sy) + 'px';
+      };
+      const up = async () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        const l = parseFloat(rb.style.left) || 0, t = parseFloat(rb.style.top) || 0;
+        const w = parseFloat(rb.style.width) || 0, h = parseFloat(rb.style.height) || 0;
+        rb.remove();
+        if (w < 12 || h < 12) return;
+        const ann = {
+          target_type: _view.type, target_id: _view.id,
+          page: parseInt(page.dataset.page) || 1,
+          box_x: l / page.clientWidth, box_y: t / page.clientHeight,
+          box_w: w / page.clientWidth, box_h: h / page.clientHeight,
+          note: '',
+        };
+        const r = await api('/api/acct/annotations', { method: 'POST', body: JSON.stringify(ann) });
+        if (!r.id) { toast('保存失败：' + (r.error || ''), true); return; }
+        ann.id = r.id;
+        ann.created_by = USER.username;
+        ann.created_at = new Date().toISOString();
+        _view.anns.push(ann);
+        renderAnns();
+        const el = document.querySelector(`.vw-item[data-id="${ann.id}"] textarea`);
+        if (el) { el.focus(); el.scrollIntoView({ block: 'nearest' }); }
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+  });
+}
+function focusAnnItem(id) {
+  const item = document.querySelector(`.vw-item[data-id="${id}"]`);
+  if (!item) return;
+  item.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  item.style.boxShadow = '0 0 0 3px rgba(220,38,38,.35)';
+  setTimeout(() => { item.style.boxShadow = ''; }, 900);
+}
+async function annUpdateNote(id, note) {
+  const a = (_view && _view.anns || []).find(x => x.id === id);
+  if (!a) return;
+  const prev = a.note;
+  a.note = note;
+  const r = await api('/api/acct/annotations/' + id, { method: 'PUT', body: JSON.stringify({ note }) });
+  if (r.error) { a.note = prev; toast('保存失败：' + r.error, true); return; }
+  setVwStatus('已保存 ✓');
+}
+async function annDelete(id) {
+  if (!confirm('删除这个批注？')) return;
+  const r = await api('/api/acct/annotations/' + id, { method: 'DELETE' });
+  if (r.error) { toast('删除失败：' + r.error, true); return; }
+  _view.anns = _view.anns.filter(a => a.id !== id);
+  renderAnns();
+}
+function renderAnns() {
+  if (!_view) return;
+  document.querySelectorAll('#vwPages .vw-ann').forEach(e => e.remove());
+  _view.anns.sort((a, b) => (a.page - b.page) || (a.box_y - b.box_y) || (a.id - b.id));
+  const pages = {};
+  document.querySelectorAll('#vwPages .vw-page').forEach(p => { pages[parseInt(p.dataset.page)] = p; });
+  _view.anns.forEach((a, i) => {
+    const pg = pages[a.page || 1]; if (!pg) return;
+    const el = document.createElement('div');
+    el.className = 'vw-ann';
+    el.style.cssText = `position:absolute;left:${a.box_x * pg.clientWidth}px;top:${a.box_y * pg.clientHeight}px;width:${a.box_w * pg.clientWidth}px;height:${a.box_h * pg.clientHeight}px;border:2.5px solid #dc2626;border-radius:6px;background:rgba(220,38,38,.05);box-sizing:border-box;z-index:6;cursor:${canEditAnn(a) ? 'move' : 'pointer'};touch-action:none`;
+    el.title = a.note || '';
+    el.innerHTML = `<span style="position:absolute;left:-5px;top:50%;transform:translate(-100%,-50%);background:#dc2626;color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px;line-height:16px;pointer-events:none">${i + 1}</span>`;
+    // 拖动改位置（仅自己的批注 / 管理员）；几乎没动 = 点击 → 聚焦右侧备注
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      if (!canEditAnn(a)) { focusAnnItem(a.id); return; }
+      const startX = e.clientX, startY = e.clientY;
+      const orig = { x: a.box_x, y: a.box_y };
+      let moved = false;
+      const move = ev => {
+        const dx = (ev.clientX - startX) / pg.clientWidth, dy = (ev.clientY - startY) / pg.clientHeight;
+        if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 3) moved = true;
+        a.box_x = Math.max(0, Math.min(1 - a.box_w, orig.x + dx));
+        a.box_y = Math.max(0, Math.min(1 - a.box_h, orig.y + dy));
+        el.style.left = (a.box_x * pg.clientWidth) + 'px';
+        el.style.top = (a.box_y * pg.clientHeight) + 'px';
+      };
+      const up = async () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        if (!moved) { focusAnnItem(a.id); return; }
+        const r = await api('/api/acct/annotations/' + a.id, { method: 'PUT', body: JSON.stringify({ box_x: a.box_x, box_y: a.box_y }) });
+        if (r.error) toast('保存失败：' + r.error, true); else setVwStatus('位置已保存 ✓');
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+    pg.appendChild(el);
+  });
+  const panel = document.getElementById('vwPanel');
+  if (!_view.anns.length) {
+    panel.innerHTML = `<div style="color:var(--g400);font-size:.82rem;padding:.6rem .2rem">${canAnnotate() ? '还没有批注。开启「圈选批注」，在左侧文件上拖动圈出要说明的地方。' : '还没有批注。'}</div>`;
+    return;
+  }
+  panel.innerHTML = _view.anns.map((a, i) => {
+    const own = canEditAnn(a);
+    const when = String(a.created_at || '').slice(0, 16).replace('T', ' ');
+    return `<div class="vw-item" data-id="${a.id}" style="border:1px solid var(--g200);border-left:3px solid #dc2626;border-radius:8px;padding:.5rem .55rem;margin-bottom:.5rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
+        <span style="font-weight:700;font-size:.82rem;color:#dc2626">#${i + 1} · 第 ${a.page} 页</span>
+        ${own ? `<button onclick="annDelete(${a.id})" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:.78rem;padding:.1rem .45rem">🗑 删除</button>` : ''}
+      </div>
+      ${own
+        ? `<textarea placeholder="备注…" rows="2" onchange="annUpdateNote(${a.id}, this.value)" style="width:100%;font-size:.82rem;resize:vertical">${esc(a.note || '')}</textarea>`
+        : `<div style="font-size:.82rem;white-space:pre-wrap;color:var(--g700)">${esc(a.note || '') || '<span style=color:#d1d5db>（无备注）</span>'}</div>`}
+      <div style="font-size:.7rem;color:var(--g400);margin-top:.25rem">${esc(a.created_by || '')} · ${esc(when)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── init：本地有 token 就直接进 ──
+(async () => {
+  if (TOKEN) {
+    const me = await fetch('/api/admin/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } }).then(x => x.ok ? x.json() : null).catch(() => null);
+    if (me && me.role === 'accounting') {
+      USER = { username: me.username || '', role: me.role, display_name: me.display_name || '' };
+      enterMain();
+      return;
+    }
+    localStorage.removeItem('acct_token');
+    TOKEN = '';
+  }
+  document.getElementById('loginUser').focus();
+})();
+</script>
+</body>
+</html>
