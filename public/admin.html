@@ -2905,6 +2905,13 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <label>服务周期 结束 <span style="color:var(--red)">*</span></label>
           <input type="date" id="invPageEnd" onchange="renderInvpManualTable()">
         </div>
+        <div style="grid-column:1/-1;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.55rem .75rem">
+          <span style="font-size:.82rem;font-weight:700;color:#0369a1;white-space:nowrap">⏱ 周期模板</span>
+          <button type="button" class="btn btn-sm" style="background:#fff;border:1px solid #7dd3fc;color:#0369a1;white-space:nowrap" onclick="invpSetPeriodTemplate('lastweek')">上周（一~日）</button>
+          <button type="button" class="btn btn-sm" style="background:#fff;border:1px solid #7dd3fc;color:#0369a1;white-space:nowrap" onclick="invpSetPeriodTemplate('thisweek')">本周（一~日）</button>
+          <button type="button" class="btn btn-sm" style="background:#fff;border:1px solid #7dd3fc;color:#0369a1;white-space:nowrap" onclick="invpSetPeriodTemplate('last2weeks')">上两周（双周）</button>
+          <span id="invpPeriodHint" style="font-size:.8rem;font-weight:600;color:#0369a1;margin-left:auto;white-space:nowrap"></span>
+        </div>
       </div>
 
       <!-- Bill To -->
@@ -36195,6 +36202,35 @@ async function elConfirmLink() {
   } catch (e) { showToast(e.message, 'error'); }
 }
 
+// 服务周期快捷模板：按发薪周（周一~周日）一键填入起止日期
+function invpSetPeriodTemplate(kind) {
+  const today = new Date();
+  const dow = today.getDay() || 7; // 周一=1 … 周日=7
+  const d = n => { const x = new Date(today); x.setDate(today.getDate() + n); return x; };
+  const iso = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  let start, end;
+  if (kind === 'thisweek') { start = d(1 - dow); end = d(7 - dow); }
+  else if (kind === 'last2weeks') { start = d(1 - dow - 14); end = d(-dow); }
+  else { start = d(1 - dow - 7); end = d(-dow); } // lastweek
+  document.getElementById('invPageStart').value = iso(start);
+  document.getElementById('invPageEnd').value = iso(end);
+  renderInvpManualTable();
+  showToast(`服务周期已设为 ${iso(start)} ~ ${iso(end)}`, 'success', 2500);
+}
+
+// 周期提示：起止日期 + 星期 + 天数，随任何周期变动实时刷新
+function invpUpdatePeriodHint() {
+  const el = document.getElementById('invpPeriodHint');
+  if (!el) return;
+  const ps = (document.getElementById('invPageStart') || {}).value;
+  const pe = (document.getElementById('invPageEnd') || {}).value;
+  if (!ps || !pe) { el.textContent = ''; return; }
+  const zh = ['日', '一', '二', '三', '四', '五', '六'];
+  const f = s => { const dt = new Date(s + 'T00:00:00'); return `${s.slice(5)}(周${zh[dt.getDay()]})`; };
+  const days = Math.round((new Date(pe + 'T00:00:00') - new Date(ps + 'T00:00:00')) / 86400000) + 1;
+  el.textContent = days > 0 ? `${f(ps)} ~ ${f(pe)} · 共 ${days} 天` : '⚠ 开始晚于结束';
+}
+
 async function showInvpBuilder() {
   const today = new Date();
   const dow = today.getDay() || 7;
@@ -36992,6 +37028,7 @@ function _invpSaveTableState() {
 }
 
 function renderInvpManualTable(skipSave) {
+  invpUpdatePeriodHint(); // 周期提示随任何重渲染同步（模板/手改日期/导入/重开）
   if (!skipSave) _invpSaveTableState();
   const dates = _invpGetDates();
   const wrap = document.getElementById('invPageEmpWrap');
