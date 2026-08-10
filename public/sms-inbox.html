@@ -854,7 +854,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 <!-- 客服账号管理 (仅 admin) -->
 <div class="modal-bg" id="csAccModal">
   <div class="modal" style="max-width:520px">
-    <h3>👥 客服账号（只能登录 SMS Inbox）</h3>
+    <h3>👥 客服账号（可登录 SMS Inbox 和会计对账页）</h3>
     <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center">
       <button class="filter-btn" onclick="genCsInvite()">📱 生成注册二维码（发给客服自己开号）</button>
       <span style="font-size:.72rem;color:var(--gray-400)">7 天有效，可多人扫</span>
@@ -871,7 +871,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <input id="csAccEmail" type="email" placeholder="邮箱 (必填, 用于找回密码)" style="flex:1;min-width:120px">
       <button class="btn" onclick="createCsAccount()" style="margin:0">创建</button>
     </div>
-    <div style="font-size:.75rem;color:var(--gray-400);margin-top:8px">客服用这个账号登录 /sms-inbox 页面；访问管理后台其他任何页面都会被拒绝。忘记密码可在登录页用邮箱验证码自助重置。</div>
+    <div style="font-size:.75rem;color:var(--gray-400);margin-top:8px">客服用这个账号登录 /sms-inbox 页面和 /accounting 会计对账页（发票/银行流水只读+圈选批注）；访问管理后台其他任何页面都会被拒绝。忘记密码可在登录页用邮箱验证码自助重置。</div>
     <button class="close-modal" onclick="document.getElementById('csAccModal').classList.remove('show')">Close</button>
   </div>
 </div>

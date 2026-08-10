@@ -152,8 +152,8 @@ async function acctActivate() {
   finishLogin(r);
 }
 function finishLogin(r) {
-  if (r.role !== 'accounting') {
-    document.getElementById('gateErr').textContent = '此页面仅限会计（Accounting）账号登录';
+  if (!['accounting', 'cs'].includes(r.role)) {
+    document.getElementById('gateErr').textContent = '此页面仅限会计 / 客服账号登录';
     return;
   }
   TOKEN = r.token;
@@ -164,7 +164,7 @@ function finishLogin(r) {
 function enterMain() {
   document.getElementById('gate').style.display = 'none';
   document.getElementById('main').style.display = '';
-  document.getElementById('whoami').textContent = `${USER.display_name || USER.username}（${USER.role === 'accounting' ? '会计' : USER.role}）`;
+  document.getElementById('whoami').textContent = `${USER.display_name || USER.username}（${USER.role === 'accounting' ? '会计' : USER.role === 'cs' ? '客服' : USER.role}）`;
   loadAll();
 }
 function acctLogout(silent) {
@@ -174,7 +174,7 @@ function acctLogout(silent) {
   location.reload();
 }
 // 批注权限：会计和管理员可以圈选备注；staff 只读
-function canAnnotate() { return USER.role === 'accounting' || USER.role === 'admin'; }
+function canAnnotate() { return ['accounting', 'cs', 'admin'].includes(USER.role); }
 function canEditAnn(a) { return USER.role === 'admin' || a.created_by === USER.username; }
 
 // ── 列表 ──
@@ -599,7 +599,7 @@ function renderAnns() {
 (async () => {
   if (TOKEN) {
     const me = await fetch('/api/admin/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } }).then(x => x.ok ? x.json() : null).catch(() => null);
-    if (me && me.role === 'accounting') {
+    if (me && ['accounting', 'cs'].includes(me.role)) {
       USER = { username: me.username || '', role: me.role, display_name: me.display_name || '' };
       enterMain();
       return;

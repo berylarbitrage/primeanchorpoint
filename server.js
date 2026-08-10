@@ -8826,11 +8826,11 @@ function requireAdmin(req, res, next) {
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
-  // 客服(cs)专用账号: 只允许 SMS Inbox 相关接口, 其余管理后台一律 403
+  // 客服(cs)专用账号: 只允许 SMS Inbox + 会计对账页(只读+批注), 其余管理后台一律 403
   if (session.role === 'cs') {
     const p = req.originalUrl.split('?')[0];
-    const csAllowed = p.startsWith('/api/sms/') || p === '/api/admin/me' || p === '/api/admin/logout';
-    if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox)' });
+    const csAllowed = p.startsWith('/api/sms/') || p.startsWith('/api/acct/') || p === '/api/admin/me' || p === '/api/admin/logout';
+    if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox) 和会计对账页 (/accounting)' });
   }
   // 会计(accounting)专用账号: 只读发票与银行流水 + 圈选批注，其余管理后台一律 403
   if (session.role === 'accounting') {
@@ -32704,8 +32704,8 @@ app.delete('/api/admin/bank-statements/:id', requireAdmin, blockManager, (req, r
 // Everything under /api/acct/* is the ONLY API surface the accounting role can
 // reach (enforced in requireAdmin). Reads are strictly read-only copies of the
 // admin data; the only writes allowed are acct_annotations rows (circle + note).
-const requireAcctView = requireRole('accounting', 'admin', 'staff');
-const requireAcctWrite = requireRole('accounting', 'admin');
+const requireAcctView = requireRole('accounting', 'cs', 'admin', 'staff');
+const requireAcctWrite = requireRole('accounting', 'cs', 'admin');
 
 app.get('/accounting', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accounting.html'));
