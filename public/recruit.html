@@ -8,48 +8,95 @@
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--off-white:#fffbeb;--gray-100:#f3f4f6;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-500:#6b7280;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:12px}
+:root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--off-white:#faf6ec;--gray-100:#f3f4f6;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-500:#6b7280;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:14px}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;background:var(--off-white);color:var(--gray-800);min-height:100vh}
-.header{background:#fff;border-bottom:1.5px solid #fde68a;padding:12px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
-.header h1{font-size:1.1rem;color:var(--blue)}
-.wrap{max-width:760px;margin:0 auto;padding:18px 14px 40px}
-.section{background:#fff;border:1px solid #f3e8cd;border-radius:var(--radius);box-shadow:0 1px 3px rgba(146,64,14,.06);padding:16px;margin-bottom:18px}
+.header{background:#fff;border-bottom:1.5px solid #fde68a;padding:10px 18px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:20;box-shadow:0 1px 6px rgba(146,64,14,.05)}
+.header h1{font-size:1.05rem;color:var(--blue)}
+.wrap{max-width:1200px;margin:0 auto;padding:16px 14px 60px}
+
+/* ── 顶部统计 ── */
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.stat{background:#fff;border:1px solid #f3e8cd;border-radius:12px;padding:8px 14px;font-size:.78rem;color:var(--gray-500);display:flex;align-items:center;gap:6px;box-shadow:0 1px 3px rgba(146,64,14,.05)}
+.stat b{font-size:1.1rem;color:var(--gray-800)}
+.stat.warn{border-color:#fca5a5;background:#fff7f7}
+.stat.warn b{color:#b91c1c}
+.stat.good b{color:var(--green)}
+
+/* ── 双栏布局: 左表单 / 右列表 ── */
+.layout{display:grid;grid-template-columns:400px 1fr;gap:16px;align-items:start}
+.col-form{position:sticky;top:66px;max-height:calc(100vh - 80px);overflow-y:auto;border-radius:var(--radius)}
+@media(max-width:960px){
+  .layout{grid-template-columns:1fr}
+  .col-form{position:static;max-height:none;overflow:visible}
+}
+.section{background:#fff;border:1px solid #f3e8cd;border-radius:var(--radius);box-shadow:0 1px 4px rgba(146,64,14,.06);padding:16px;margin-bottom:14px}
 .section h2{font-size:.95rem;color:var(--blue);margin-bottom:10px;display:flex;align-items:center;gap:8px}
-input,select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.9rem;outline:none;font-family:inherit;background:#fff}
-input:focus,select:focus,textarea:focus{border-color:var(--accent)}
-textarea{resize:vertical;min-height:90px;line-height:1.7}
-label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margin:10px 0 4px}
-.btn{width:100%;padding:12px;background:var(--sky);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:.92rem;margin-top:12px;font-family:inherit}
+
+/* ── 表单 ── */
+.fgroup{border:1px solid #f6ecd6;background:#fffdf7;border-radius:10px;padding:10px 12px 12px;margin-bottom:10px}
+.fgroup-title{font-size:.78rem;font-weight:700;color:var(--sky);margin-bottom:2px;display:flex;align-items:center;gap:6px}
+input,select,textarea{width:100%;padding:9px 11px;border:1.5px solid var(--gray-200);border-radius:9px;font-size:.88rem;outline:none;font-family:inherit;background:#fff}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,158,11,.12)}
+textarea{resize:vertical;min-height:84px;line-height:1.7}
+label{display:block;font-size:.74rem;font-weight:700;color:var(--gray-500);margin:8px 0 4px}
+.fgroup label:first-of-type{margin-top:4px}
+.btn{width:100%;padding:12px;background:var(--sky);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:.92rem;margin-top:10px;font-family:inherit}
 .btn:hover{background:var(--blue)}
-.alert{background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:10px 14px;font-weight:700;font-size:.88rem;margin-bottom:14px}
+.alert{background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:10px 14px;font-weight:700;font-size:.86rem;margin-bottom:12px}
 .alert.ok{background:#ecfdf5;border-color:#6ee7b7;color:#065f46}
-.job-card{border:1.5px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:13px 15px;margin-bottom:10px}
-.job-card.unchecked{border-color:#fca5a5;background:#fff7f7}
-.job-card.done{border-color:var(--gray-200);background:#fafafa;opacity:.85}
-.wh-badge{display:inline-block;background:#fde68a;color:#92400e;border-radius:999px;padding:1px 10px;font-size:.74rem;font-weight:700}
-.pos{font-size:1rem;font-weight:700;color:var(--gray-800);margin:4px 0}
-.pay-line{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
-.pay-chip{background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;border-radius:8px;padding:3px 10px;font-size:.82rem;font-weight:700}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:520px){.grid2{grid-template-columns:1fr}}
+.form-toggle{margin-left:auto;border:none;background:var(--sky-light);color:var(--blue);border-radius:8px;font-size:.74rem;font-weight:700;padding:4px 10px;cursor:pointer;font-family:inherit}
+
+/* ── 列表工具栏 ── */
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.toolbar input[type=search]{flex:1;min-width:150px;width:auto}
+.toolbar select{width:auto}
+.fchip{border:1.5px solid var(--gray-200);background:#fff;border-radius:999px;padding:6px 13px;font-size:.78rem;font-weight:700;color:var(--gray-600);cursor:pointer;font-family:inherit;white-space:nowrap}
+.fchip.on{border-color:var(--accent);background:var(--sky-light);color:var(--blue)}
+.tool-btn{border:none;border-radius:9px;padding:8px 13px;font-size:.78rem;font-weight:700;cursor:pointer;font-family:inherit;background:var(--accent);color:#fff;white-space:nowrap}
+
+/* ── 招工卡片 ── */
+.job-card{border:1.5px solid #f0e3c4;background:#fff;border-radius:12px;padding:0;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 3px rgba(146,64,14,.05)}
+.job-card.unchecked{border-color:#fca5a5}
+.job-card.done{opacity:.88}
+.jc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 14px;background:#fffbeb;border-bottom:1px solid #f6ecd6}
+.job-card.unchecked .jc-head{background:#fff5f5;border-bottom-color:#fecaca}
+.job-card.done .jc-head{background:#fafafa;border-bottom-color:var(--gray-200)}
+.jc-body{padding:11px 14px 13px}
+.wh-badge{display:inline-block;background:#fde68a;color:#92400e;border-radius:999px;padding:2px 11px;font-size:.75rem;font-weight:700}
+.day-pill{font-size:.72rem;font-weight:700;color:var(--gray-500);background:var(--gray-100);border-radius:999px;padding:2px 10px}
+.check-pill{font-size:.72rem;font-weight:700;border-radius:999px;padding:2px 10px;margin-left:auto}
+.check-pill.ok{background:#ecfdf5;color:#065f46}
+.check-pill.warn{background:#fee2e2;color:#b91c1c}
+.pos{font-size:1.05rem;font-weight:700;color:var(--gray-800);margin:0 0 3px}
+.addr a{font-size:.8rem;color:#1d4ed8;text-decoration:none}
+.addr a:hover{text-decoration:underline}
+.pay-line{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 0}
+.pay-chip{background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;border-radius:8px;padding:3px 10px;font-size:.8rem;font-weight:700}
 .pay-chip.cap{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
-.details{font-size:.88rem;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:var(--gray-600);margin:4px 0 8px}
-.meta{font-size:.72rem;color:var(--gray-400);margin-bottom:8px}
-.check-state{font-size:.78rem;font-weight:700;margin-bottom:8px}
-.job-actions{display:flex;gap:6px;flex-wrap:wrap}
+.details{font-size:.86rem;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:var(--gray-600);margin:8px 0 0;background:#fffdf7;border:1px solid #f6ecd6;border-radius:8px;padding:8px 11px}
+.details.clamp{max-height:78px;overflow:hidden;position:relative}
+.details.clamp::after{content:'';position:absolute;left:0;right:0;bottom:0;height:34px;background:linear-gradient(transparent,#fffdf7)}
+.dtoggle{font-size:.76rem;font-weight:700;color:var(--sky);cursor:pointer;margin-top:3px;display:inline-block}
+.meta{font-size:.72rem;color:var(--gray-400);margin-top:8px}
+.job-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
 .ja{border:none;border-radius:8px;padding:7px 13px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
 .ja.check{background:var(--green);color:#fff}
 .ja.filled{background:#dbeafe;color:#1d4ed8}
 .ja.closed{background:#fee2e2;color:#b91c1c}
 .ja.edit{background:var(--gray-100);color:var(--gray-600)}
 .ja.reopen{background:var(--sky-light);color:var(--blue)}
-.status-badge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:.72rem;font-weight:700;margin-left:6px}
+.share-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed #f0e3c4}
+.share-row .lbl{font-size:.72rem;font-weight:700;color:var(--gray-400)}
+.status-badge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:.72rem;font-weight:700}
 .lang-chip{border:1.5px solid var(--gray-200);background:#fff;border-radius:999px;padding:7px 14px;font-size:.84rem;font-weight:700;color:var(--gray-600);cursor:pointer;font-family:inherit}
 .lang-chip.on{border-color:var(--accent);background:var(--sky-light);color:var(--blue)}
 .hint{color:var(--gray-400);font-size:.85rem;padding:16px;text-align:center}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--gray-800);color:#fff;padding:10px 22px;border-radius:999px;font-size:.85rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
 .toast.show{opacity:1}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media(max-width:520px){.grid2{grid-template-columns:1fr}}
+.shift-row{display:flex;align-items:center;gap:8px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;margin-bottom:5px;font-size:.84rem;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -61,106 +108,155 @@ label{display:block;font-size:.76rem;font-weight:700;color:var(--gray-500);margi
 </div>
 <div class="wrap">
   <div id="checkAlert" style="display:none"></div>
+  <div class="stats" id="statsRow" style="display:none"></div>
 
-  <div class="section">
-    <h2 id="formTitle">&#10133; 新增招工需求</h2>
-    <input type="hidden" id="editId">
-    <label>仓库（下拉选择）</label>
-    <select id="fWarehouse" onchange="onWhChange()"></select>
-    <input id="fWarehouseOther" placeholder="输入仓库名" style="display:none;margin-top:6px">
-    <label>地址（选仓库自动带出，可改）</label>
-    <input id="fAddress" placeholder="如 950 Lunt Ave, Elk Grove Village, IL">
-    <div class="grid2">
-      <div>
-        <label>工种</label>
-        <input id="fPosition" list="posList" placeholder="如 卸柜工 / 叉车工">
-        <datalist id="posList">
-          <option value="普工"></option><option value="叉车工"></option><option value="高位叉车"></option>
-          <option value="拣货 Order Picker"></option><option value="卸柜工"></option><option value="分拣"></option>
-          <option value="装卸"></option><option value="打包"></option><option value="工头"></option>
-        </datalist>
+  <div class="layout">
+    <!-- ── 左栏: 发布 / 编辑 ── -->
+    <div class="col-form">
+      <div class="section" id="formCard">
+        <h2 style="margin-bottom:0"><span id="formTitle">&#10133; 新增招工需求</span>
+          <button type="button" class="form-toggle" id="formToggle" onclick="toggleForm()">收起 ▲</button>
+        </h2>
+        <div id="formBody" style="margin-top:10px">
+        <input type="hidden" id="editId">
+
+        <div class="fgroup">
+          <div class="fgroup-title">📍 在哪个仓库</div>
+          <label>仓库（下拉选择）</label>
+          <select id="fWarehouse" onchange="onWhChange()"></select>
+          <input id="fWarehouseOther" placeholder="输入仓库名" style="display:none;margin-top:6px">
+          <label>地址（选仓库自动带出，可改）</label>
+          <input id="fAddress" placeholder="如 950 Lunt Ave, Elk Grove Village, IL">
+        </div>
+
+        <div class="fgroup">
+          <div class="fgroup-title">👷 招什么人</div>
+          <div class="grid2">
+            <div>
+              <label>工种</label>
+              <input id="fPosition" list="posList" placeholder="如 卸柜工 / 叉车工">
+              <datalist id="posList">
+                <option value="普工"></option><option value="叉车工"></option><option value="高位叉车"></option>
+                <option value="拣货 Order Picker"></option><option value="卸柜工"></option><option value="分拣"></option>
+                <option value="装卸"></option><option value="打包"></option><option value="工头"></option>
+              </datalist>
+            </div>
+            <div>
+              <label>要几个人（选填）</label>
+              <input id="fHeadcount" list="hcList" placeholder="如 5 / 越多越好">
+              <datalist id="hcList">
+                <option value="越多越好"></option>
+                <option value="1"></option><option value="2"></option><option value="3"></option>
+                <option value="5"></option><option value="10"></option><option value="20"></option>
+              </datalist>
+            </div>
+          </div>
+        </div>
+
+        <div class="fgroup">
+          <div class="fgroup-title">⏰ 班次 &amp; 工资</div>
+          <label>不同班次可以不同价，可加多条；只有一个价就直接填最下面「统一工资」</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <select id="sfName" style="width:auto;padding:9px 10px">
+              <option value="早班">⏰ 早班</option><option value="中班">⏰ 中班</option>
+              <option value="晚班">⏰ 晚班</option><option value="夜班">⏰ 夜班</option>
+              <option value="白班">⏰ 白班</option><option value="周末班">⏰ 周末班</option>
+              <option value="临时">⏰ 临时</option>
+            </select>
+            <input type="time" id="sfStart" style="width:auto;padding:8px 9px">
+            <span style="color:var(--gray-400)">–</span>
+            <input type="time" id="sfEnd" style="width:auto;padding:8px 9px">
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:.72rem;font-weight:700;color:var(--gray-500)">该班次语言（不选 = 按整体要求）:</span>
+            <button type="button" class="lang-chip sf-lang" data-lv="不限" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🌐 不限</button>
+            <button type="button" class="lang-chip sf-lang" data-lv="英语" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇺🇸 英语</button>
+            <button type="button" class="lang-chip sf-lang" data-lv="西班牙语" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇲🇽 西班牙语</button>
+            <button type="button" class="lang-chip sf-lang" data-lv="中文" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇨🇳 中文</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+            <input id="sfWorkerPay" placeholder="给工人 如 $18/h" style="flex:1">
+            <input id="sfForemanCap" placeholder="工头上限（内部）" style="flex:1">
+            <button type="button" onclick="addShiftRow()" style="width:auto;flex-shrink:0;padding:10px 14px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:.84rem;cursor:pointer;font-family:inherit">+ 加班次</button>
+          </div>
+          <div id="shiftRows" style="margin-top:8px"></div>
+          <div class="grid2" style="margin-top:2px">
+            <div>
+              <label>统一工资 — 给工人（不分班次时填这里）</label>
+              <input id="fWorkerPay" placeholder="如 $18/h 或 $0.10/件">
+            </div>
+            <div>
+              <label>给工头的上限（内部）</label>
+              <input id="fForemanCap" placeholder="如 $20/h（别外传）">
+            </div>
+          </div>
+        </div>
+
+        <div class="fgroup">
+          <div class="fgroup-title">📋 工作内容 &amp; 要求</div>
+          <label>具体工作内容</label>
+          <textarea id="fDetails" placeholder="比如：&#10;· 早7点到仓库，卸两个柜，约2000件&#10;· 需要有经验，能搬重物&#10;· 地址 / 找谁报到"></textarea>
+          <label>语言要求（整体，必选，可多选 — 个别班次不同的在上面班次里单独选）</label>
+          <div id="langChips" style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="lang-chip" data-lv="不限" onclick="toggleLang(this)" style="width:auto">🌐 不限</button>
+            <button type="button" class="lang-chip" data-lv="英语" onclick="toggleLang(this)" style="width:auto">🇺🇸 英语</button>
+            <button type="button" class="lang-chip" data-lv="西班牙语" onclick="toggleLang(this)" style="width:auto">🇲🇽 西班牙语</button>
+            <button type="button" class="lang-chip" data-lv="中文" onclick="toggleLang(this)" style="width:auto">🇨🇳 中文</button>
+          </div>
+          <div class="grid2">
+            <div>
+              <label>是否需要真 EAD（工卡）</label>
+              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fEad" value="0" checked style="width:auto">不要求</label>
+                <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fEad" value="1" style="width:auto">🪪 需要</label>
+              </div>
+            </div>
+            <div>
+              <label>是否需要面试</label>
+              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fIv" value="0" checked onchange="onIvChange()" style="width:auto">不需要</label>
+                <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fIv" value="1" onchange="onIvChange()" style="width:auto">🗣 需要</label>
+              </div>
+            </div>
+          </div>
+          <textarea id="fIvNotes" style="display:none;margin-top:6px;min-height:60px" placeholder="面试要求：什么时间、去哪、找谁、带什么（如带ID、穿劳保鞋）"></textarea>
+        </div>
+
+        <button class="btn" id="saveBtn" onclick="saveJob()">📢 发布</button>
+        <button class="btn" id="cancelEditBtn" onclick="cancelEdit()" style="display:none;background:var(--gray-100);color:var(--gray-600)">取消编辑</button>
+        </div>
       </div>
-      <div>
-        <label>要几个人（选填）</label>
-        <input id="fHeadcount" list="hcList" placeholder="如 5 / 越多越好">
-        <datalist id="hcList">
-          <option value="越多越好"></option>
-          <option value="1"></option><option value="2"></option><option value="3"></option>
-          <option value="5"></option><option value="10"></option><option value="20"></option>
-        </datalist>
+    </div>
+
+    <!-- ── 右栏: 在招列表 / 历史 ── -->
+    <div class="col-list">
+      <div class="toolbar" id="listToolbar" style="display:none">
+        <input type="search" id="q" placeholder="🔍 搜仓库 / 工种 / 内容…" oninput="render()">
+        <select id="whFilter" onchange="render()"></select>
+        <button type="button" class="fchip" data-f="all" onclick="setFilter('all')">全部</button>
+        <button type="button" class="fchip" data-f="unchecked" onclick="setFilter('unchecked')">⚠️ 今日未核对</button>
+        <button type="button" class="fchip" data-f="ead" onclick="setFilter('ead')">🪪 要EAD</button>
+        <button type="button" class="fchip" data-f="iv" onclick="setFilter('iv')">🗣 要面试</button>
+        <select id="allLang" style="margin-left:auto">
+          <option value="zh">中文</option><option value="en">English</option><option value="es">Español</option>
+        </select>
+        <button type="button" class="tool-btn" onclick="copyAllOpen()" title="把当前筛选出的在招职位合成一条工人版文案，直接发群">📋 复制全部在招</button>
       </div>
-    </div>
-    <label>班次 &amp; 工资（不同班次可以不同价，可加多条）</label>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <select id="sfName" style="width:auto;padding:9px 10px">
-        <option value="早班">⏰ 早班</option><option value="中班">⏰ 中班</option>
-        <option value="晚班">⏰ 晚班</option><option value="夜班">⏰ 夜班</option>
-        <option value="白班">⏰ 白班</option><option value="周末班">⏰ 周末班</option>
-        <option value="临时">⏰ 临时</option>
-      </select>
-      <input type="time" id="sfStart" style="width:auto;padding:8px 9px">
-      <span style="color:var(--gray-400)">–</span>
-      <input type="time" id="sfEnd" style="width:auto;padding:8px 9px">
-    </div>
-    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:.74rem;font-weight:700;color:var(--gray-500)">该班次语言（不选 = 按整体语言要求）:</span>
-      <button type="button" class="lang-chip sf-lang" data-lv="不限" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🌐 不限</button>
-      <button type="button" class="lang-chip sf-lang" data-lv="英语" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇺🇸 英语</button>
-      <button type="button" class="lang-chip sf-lang" data-lv="西班牙语" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇲🇽 西班牙语</button>
-      <button type="button" class="lang-chip sf-lang" data-lv="中文" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇨🇳 中文</button>
-    </div>
-    <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
-      <input id="sfWorkerPay" placeholder="给工人 如 $18/h" style="flex:1">
-      <input id="sfForemanCap" placeholder="工头上限（内部）" style="flex:1">
-      <button type="button" onclick="addShiftRow()" style="width:auto;flex-shrink:0;padding:10px 16px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:.86rem;cursor:pointer;font-family:inherit">+ 加班次</button>
-    </div>
-    <div id="shiftRows" style="margin-top:8px"></div>
-    <label>具体工作内容</label>
-    <textarea id="fDetails" placeholder="比如：&#10;· 早7点到仓库，卸两个柜，约2000件&#10;· 需要有经验，能搬重物&#10;· 地址 / 找谁报到"></textarea>
-    <label>语言要求（整体，必选，可多选 — 个别班次不同的在上面班次里单独选）</label>
-    <div id="langChips" style="display:flex;gap:8px;flex-wrap:wrap">
-      <button type="button" class="lang-chip" data-lv="不限" onclick="toggleLang(this)" style="width:auto">🌐 不限</button>
-      <button type="button" class="lang-chip" data-lv="英语" onclick="toggleLang(this)" style="width:auto">🇺🇸 英语</button>
-      <button type="button" class="lang-chip" data-lv="西班牙语" onclick="toggleLang(this)" style="width:auto">🇲🇽 西班牙语</button>
-      <button type="button" class="lang-chip" data-lv="中文" onclick="toggleLang(this)" style="width:auto">🇨🇳 中文</button>
-    </div>
-    <label>是否需要真 EAD（工卡）</label>
-    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
-      <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.88rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fEad" value="0" checked style="width:auto">不要求</label>
-      <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.88rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fEad" value="1" style="width:auto">🪪 需要真 EAD</label>
-    </div>
-    <label>是否需要面试</label>
-    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
-      <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.88rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fIv" value="0" checked onchange="onIvChange()" style="width:auto">不需要，直接上班</label>
-      <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.88rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fIv" value="1" onchange="onIvChange()" style="width:auto">🗣 需要面试</label>
-    </div>
-    <textarea id="fIvNotes" style="display:none;margin-top:6px;min-height:60px" placeholder="面试要求：什么时间、去哪、找谁、带什么（如带ID、穿劳保鞋）"></textarea>
-    <div class="grid2">
-      <div>
-        <label>给工人多少钱（不分班次时填这里）</label>
-        <input id="fWorkerPay" placeholder="如 $18/h 或 $0.10/件">
+
+      <div class="section" id="openSec" style="display:none">
+        <h2>&#128204; 在招的活 <span id="openCount" style="color:var(--gray-400);font-weight:400;font-size:.8rem"></span></h2>
+        <div id="openList"></div>
       </div>
-      <div>
-        <label>给工头的上限</label>
-        <input id="fForemanCap" placeholder="如 $20/h（内部，别外传）">
+      <div class="section" id="emptySec" style="display:none"><div class="hint">现在没有在招的活 — 有新需求就在左边发布</div></div>
+
+      <div class="section" id="histSec" style="display:none">
+        <h2>&#128337; 最近结束的（30 天内）</h2>
+        <div id="histList"></div>
       </div>
+
+      <div class="hint" id="loading">加载中…</div>
     </div>
-    <button class="btn" id="saveBtn" onclick="saveJob()">发布</button>
-    <button class="btn" id="cancelEditBtn" onclick="cancelEdit()" style="display:none;background:var(--gray-100);color:var(--gray-600)">取消编辑</button>
   </div>
-
-  <div class="section" id="openSec" style="display:none">
-    <h2>&#128204; 在招的活 <span id="openCount" style="color:var(--gray-400);font-weight:400;font-size:.8rem"></span></h2>
-    <div id="openList"></div>
-  </div>
-  <div class="section" id="emptySec" style="display:none"><div class="hint">现在没有在招的活 — 有新需求就在上面发布</div></div>
-
-  <div class="section" id="histSec" style="display:none">
-    <h2>&#128337; 最近结束的（30 天内）</h2>
-    <div id="histList"></div>
-  </div>
-
-  <div class="hint" id="loading">加载中…</div>
 </div>
 <div id="posterModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:45;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closePosterModal()">
   <div style="background:#fff;border-radius:14px;padding:14px;max-width:460px;width:100%;max-height:92vh;overflow-y:auto">
@@ -218,6 +314,7 @@ function toast(msg) {
 
 let USER = null, _jobs = [], _today = '', _warehouses = [], _whAddr = {};
 const OTHER = '__other__';
+let _filter = 'all', _openDetails = new Set();
 
 async function load() {
   try {
@@ -248,6 +345,18 @@ async function load() {
     await reload();
   } catch (e) { document.getElementById('loading').textContent = e.message || '加载失败'; return; }
   document.getElementById('loading').style.display = 'none';
+  // 手机上默认收起表单, 先看列表
+  if (window.innerWidth <= 960) toggleForm(true);
+}
+function toggleForm(forceCollapse) {
+  const body = document.getElementById('formBody');
+  const btn = document.getElementById('formToggle');
+  const hide = forceCollapse === true ? true : body.style.display !== 'none' ? true : false;
+  body.style.display = hide ? 'none' : '';
+  btn.textContent = hide ? '展开 ▼' : '收起 ▲';
+}
+function openFormIfHidden() {
+  if (document.getElementById('formBody').style.display === 'none') toggleForm(false);
 }
 function renderWhOptions(current) {
   const names = _warehouses.slice();
@@ -290,9 +399,11 @@ function payChips(j) {
   if (j.worker_pay) g += '<span class="pay-chip">👷 工人 ' + esc(j.worker_pay) + '</span>';
   if (j.foreman_cap) g += '<span class="pay-chip cap">🦺 工头上限 ' + esc(j.foreman_cap) + '</span>';
   if (g) h += '<div class="pay-line">' + g + '</div>';
-  if (j.language_req) h += '<div class="pay-line"><span class="pay-chip" style="background:#f0f9ff;border-color:#bae6fd;color:#0369a1">🗨️ 语言: ' + esc(j.language_req) + '</span></div>';
-  if (j.ead_required) h += '<div class="pay-line"><span class="pay-chip" style="background:#fff7ed;border-color:#fed7aa;color:#c2410c">🪪 需要真 EAD</span></div>';
-  if (j.interview_required) h += '<div class="pay-line"><span class="pay-chip" style="background:#fdf4ff;border-color:#e9d5ff;color:#7e22ce">🗣 需要面试' + (j.interview_notes ? ': ' + esc(j.interview_notes) : '') + '</span></div>';
+  const req = [];
+  if (j.language_req) req.push('<span class="pay-chip" style="background:#f0f9ff;border-color:#bae6fd;color:#0369a1">🗨️ ' + esc(j.language_req) + '</span>');
+  if (j.ead_required) req.push('<span class="pay-chip" style="background:#fff7ed;border-color:#fed7aa;color:#c2410c">🪪 需要真 EAD</span>');
+  if (j.interview_required) req.push('<span class="pay-chip" style="background:#fdf4ff;border-color:#e9d5ff;color:#7e22ce">🗣 需要面试' + (j.interview_notes ? ': ' + esc(j.interview_notes) : '') + '</span>');
+  if (req.length) h += '<div class="pay-line">' + req.join('') + '</div>';
   return h;
 }
 // ─── 班次+工资 构建器 ───
@@ -349,7 +460,7 @@ function removeShiftRow(i) { _shiftRows.splice(i, 1); renderShiftRows(); }
 function editShiftRow(i) {
   const r = _shiftRows[i];
   if (!r) return;
-  const m = String(r.shift || '').match(/^(\S+)(?:\s+(\d{2}:\d{2})[\u2013-](\d{2}:\d{2}))?(?:\s+(\d{2}:\d{2})\s*开始)?/);
+  const m = String(r.shift || '').match(/^(\S+)(?:\s+(\d{2}:\d{2})[–-](\d{2}:\d{2}))?(?:\s+(\d{2}:\d{2})\s*开始)?/);
   const nameSel = document.getElementById('sfName');
   if (m && [...nameSel.options].some(o => o.value === m[1])) nameSel.value = m[1];
   document.getElementById('sfStart').value = (m && (m[2] || m[4])) || '';
@@ -365,7 +476,7 @@ function editShiftRow(i) {
 }
 function renderShiftRows() {
   document.getElementById('shiftRows').innerHTML = _shiftRows.map((r, i) =>
-    '<div style="display:flex;align-items:center;gap:8px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;margin-bottom:5px;font-size:.85rem;flex-wrap:wrap">'
+    '<div class="shift-row">'
     + '<b>⏰ ' + esc(r.shift) + '</b>'
     + (r.worker_pay ? '<span style="color:#065f46;font-weight:700">👷 ' + esc(r.worker_pay) + '</span>' : '')
     + (r.foreman_cap ? '<span style="color:#1d4ed8;font-weight:700">🦺 上限 ' + esc(r.foreman_cap) + '</span>' : '')
@@ -373,6 +484,33 @@ function renderShiftRows() {
     + '<span onclick="editShiftRow(' + i + ')" style="margin-left:auto;cursor:pointer;font-weight:700;color:var(--sky)">✏️ 修改</span>'
     + '<span onclick="removeShiftRow(' + i + ')" style="cursor:pointer;font-weight:900;color:var(--red);padding-left:6px">&times;</span>'
     + '</div>').join('');
+}
+// ─── 列表筛选 ───
+function setFilter(f) {
+  _filter = f;
+  document.querySelectorAll('.fchip').forEach(b => b.classList.toggle('on', b.getAttribute('data-f') === f));
+  render();
+}
+function _daysBetween(d1, d2) {
+  try {
+    const a = new Date(String(d1).slice(0, 10) + 'T00:00:00');
+    const b = new Date(String(d2).slice(0, 10) + 'T00:00:00');
+    return Math.max(0, Math.round((b - a) / 86400000));
+  } catch (_) { return 0; }
+}
+function toggleDetails(id) {
+  if (_openDetails.has(id)) _openDetails.delete(id); else _openDetails.add(id);
+  render();
+}
+function _detailsHtml(j) {
+  if (!j.details) return '';
+  const long = String(j.details).length > 130 || String(j.details).split('\n').length > 3;
+  const open = _openDetails.has(j.id);
+  return '<div class="details' + (long && !open ? ' clamp' : '') + '">' + esc(j.details) + '</div>'
+    + (long ? '<span class="dtoggle" onclick="toggleDetails(' + j.id + ')">' + (open ? '▲ 收起' : '▼ 展开全部') + '</span>' : '');
+}
+function _mapLink(addr) {
+  return '<div class="addr">📍 <a href="https://maps.google.com/?q=' + encodeURIComponent(addr) + '" target="_blank" rel="noopener" title="在 Google 地图打开">' + esc(addr) + '</a></div>';
 }
 function render() {
   document.getElementById('dateNow').textContent = '📅 ' + _today;
@@ -386,50 +524,118 @@ function render() {
   al.textContent = unchecked.length
     ? '⚠️ 今天还有 ' + unchecked.length + ' 条招工没核对 — 请逐条确认：还在招？找到人了？不需要了？'
     : '✅ 今天的招工信息已全部核对完';
+  // 统计行
+  const filled30 = done.filter(j => j.status === 'filled').length;
+  const stats = document.getElementById('statsRow');
+  stats.style.display = (_jobs.length ? '' : 'none');
+  stats.innerHTML =
+    '<span class="stat">📌 在招 <b>' + open.length + '</b> 条</span>'
+    + '<span class="stat' + (unchecked.length ? ' warn' : ' good') + '">' + (unchecked.length ? '⚠️ 今日未核对 <b>' + unchecked.length + '</b> 条' : '✅ 今日 <b>全部已核对</b>') + '</span>'
+    + '<span class="stat good">🎉 30天找到人 <b>' + filled30 + '</b> 条</span>'
+    + '<span class="stat">🏭 涉及仓库 <b>' + new Set(open.map(j => j.warehouse)).size + '</b> 个</span>';
+  // 工具栏 + 仓库筛选下拉
+  document.getElementById('listToolbar').style.display = open.length ? '' : 'none';
+  const whSel = document.getElementById('whFilter');
+  const prevWh = whSel.value;
+  const whs = [...new Set(open.map(j => j.warehouse).filter(Boolean))];
+  whSel.innerHTML = '<option value="">全部仓库</option>' + whs.map(w => '<option value="' + esc(w) + '"' + (w === prevWh ? ' selected' : '') + '>🏭 ' + esc(w) + '</option>').join('');
+  if (!document.querySelector('.fchip.on')) document.querySelector('.fchip[data-f="all"]').classList.add('on');
+  // 筛选
+  const q = (document.getElementById('q').value || '').toLowerCase().trim();
+  const wf = whSel.value;
+  let shown = open;
+  if (wf) shown = shown.filter(j => j.warehouse === wf);
+  if (_filter === 'unchecked') shown = shown.filter(j => j.last_check_date !== _today);
+  if (_filter === 'ead') shown = shown.filter(j => j.ead_required);
+  if (_filter === 'iv') shown = shown.filter(j => j.interview_required);
+  if (q) shown = shown.filter(j => [j.warehouse, j.position, j.details, j.address].some(v => String(v || '').toLowerCase().includes(q)));
+  // 未核对的排最前
+  shown = shown.slice().sort((a, b) => {
+    const au = a.last_check_date !== _today ? 0 : 1;
+    const bu = b.last_check_date !== _today ? 0 : 1;
+    return au - bu || b.id - a.id;
+  });
 
   document.getElementById('openSec').style.display = open.length ? '' : 'none';
   document.getElementById('emptySec').style.display = open.length ? 'none' : '';
-  document.getElementById('openCount').textContent = '（' + open.length + ' 条）';
-  document.getElementById('openList').innerHTML = open.map(j => {
+  document.getElementById('openCount').textContent = '（显示 ' + shown.length + ' / 共 ' + open.length + ' 条）';
+  document.getElementById('openList').innerHTML = shown.length ? shown.map(j => {
     const checkedToday = j.last_check_date === _today;
+    const days = _daysBetween(j.created_at, _today);
     return '<div class="job-card' + (checkedToday ? '' : ' unchecked') + '">'
+      + '<div class="jc-head">'
       + '<span class="wh-badge">🏭 ' + esc(j.warehouse) + '</span>'
+      + '<span class="day-pill">已招 ' + (days === 0 ? '今天发布' : days + ' 天') + '</span>'
+      + '<span class="check-pill ' + (checkedToday ? 'ok' : 'warn') + '">' + (checkedToday ? '✅ 今日已核对' + (j.last_check_by ? ' · ' + esc(j.last_check_by) : '') : '⚠️ 今天还没核对') + '</span>'
+      + '</div><div class="jc-body">'
       + '<div class="pos">' + esc(j.position) + '</div>'
-      + (j.address ? '<div style="font-size:.82rem;color:var(--gray-600);margin:2px 0">📍 ' + esc(j.address) + '</div>' : '')
+      + (j.address ? _mapLink(j.address) : '')
       + payChips(j)
-      + (j.details ? '<div class="details">' + esc(j.details) + '</div>' : '')
+      + _detailsHtml(j)
       + '<div class="meta">发布: ' + esc(j.created_by || '') + ' · ' + esc(String(j.created_at || '').slice(0, 10)) + '</div>'
-      + '<div class="check-state" style="color:' + (checkedToday ? 'var(--green)' : 'var(--red)') + '">'
-      + (checkedToday ? '✅ 今天已核对（' + esc(j.last_check_by || '') + '）' : '⚠️ 今天还没核对') + '</div>'
       + '<div class="job-actions">'
       + (checkedToday ? '' : '<button class="ja check" onclick="act(' + j.id + ',\'check\')">✓ 还在招</button>')
       + '<button class="ja filled" onclick="act(' + j.id + ',\'filled\')">🎉 找到人了</button>'
       + '<button class="ja closed" onclick="act(' + j.id + ',\'closed\')">🚫 不需要了</button>'
       + '<button class="ja edit" onclick="startEdit(' + j.id + ')">✏️ 编辑</button>'
+      + '<button class="ja edit" onclick="dupJob(' + j.id + ')" title="以这条为模板填好左边表单，改改就能发新的">📄 复制再发</button>'
       + '</div>'
-      + '<div class="job-actions" style="margin-top:6px;align-items:center">'
+      + '<div class="share-row">'
+      + '<span class="lbl">分享:</span>'
       + '<select id="shareAud-' + j.id + '" style="width:auto;padding:6px 8px;font-size:.8rem;border-radius:8px">'
       + '<option value="worker">👷 工人版</option><option value="foreman">🦺 工头版</option></select>'
       + '<select id="shareLang-' + j.id + '" onchange="onShareLangChange(' + j.id + ')" style="width:auto;padding:6px 8px;font-size:.8rem;border-radius:8px">'
       + '<option value="zh">中文</option><option value="en">English</option><option value="es">Español</option></select>'
       + '<button class="ja edit" onclick="copyShare(' + j.id + ')">📋 复制文案</button>'
       + '<button class="ja edit" onclick="shareImage(' + j.id + ')">🖼 生成图片</button>'
-      + '</div></div>';
-  }).join('');
+      + '</div></div></div>';
+  }).join('') : '<div class="hint">没有符合筛选条件的 — 点「全部」清掉筛选</div>';
 
   document.getElementById('histSec').style.display = done.length ? '' : 'none';
-  document.getElementById('histList').innerHTML = done.map(j =>
-    '<div class="job-card done">'
+  document.getElementById('histList').innerHTML = done.map(j => {
+    const dur = _daysBetween(j.created_at, j.status_at || j.updated_at || j.created_at);
+    return '<div class="job-card done">'
+    + '<div class="jc-head">'
     + '<span class="wh-badge">🏭 ' + esc(j.warehouse) + '</span>'
     + '<span class="status-badge" style="' + (j.status === 'filled' ? 'background:#dbeafe;color:#1d4ed8' : 'background:#fee2e2;color:#b91c1c') + '">'
     + (j.status === 'filled' ? '🎉 已找到人' : '🚫 不需要了') + (j.status_by ? ' · ' + esc(j.status_by) : '') + '</span>'
+    + '<span class="day-pill" style="margin-left:auto">招了 ' + (dur === 0 ? '不到 1' : dur) + ' 天</span>'
+    + '</div><div class="jc-body">'
     + '<div class="pos">' + esc(j.position) + '</div>'
     + payChips(j)
-    + (j.details ? '<div class="details">' + esc(j.details) + '</div>' : '')
+    + _detailsHtml(j)
     + '<div class="meta">结束于 ' + esc(String(j.status_at || j.updated_at || '').slice(0, 10)) + '</div>'
-    + '<div class="job-actions"><button class="ja reopen" onclick="act(' + j.id + ',\'open\')">↩ 重新打开（继续招）</button></div>'
+    + '<div class="job-actions">'
+    + '<button class="ja reopen" onclick="act(' + j.id + ',\'open\')">↩ 重新打开（继续招）</button>'
+    + '<button class="ja edit" onclick="dupJob(' + j.id + ')">📄 复制再发</button>'
     + '</div>'
-  ).join('');
+    + '</div></div>';
+  }).join('');
+}
+// ─── 一键复制全部在招 (工人版, 按当前筛选) ───
+async function copyAllOpen() {
+  const lang = document.getElementById('allLang').value || 'zh';
+  const q = (document.getElementById('q').value || '').toLowerCase().trim();
+  const wf = document.getElementById('whFilter').value;
+  let open = _jobs.filter(j => j.status === 'open');
+  if (wf) open = open.filter(j => j.warehouse === wf);
+  if (_filter === 'unchecked') open = open.filter(j => j.last_check_date !== _today);
+  if (_filter === 'ead') open = open.filter(j => j.ead_required);
+  if (_filter === 'iv') open = open.filter(j => j.interview_required);
+  if (q) open = open.filter(j => [j.warehouse, j.position, j.details, j.address].some(v => String(v || '').toLowerCase().includes(q)));
+  if (!open.length) { toast('当前筛选下没有在招的活'); return; }
+  toast('生成中…（' + open.length + ' 条）');
+  try {
+    const texts = [];
+    for (const j of open) {
+      const r = await api('/admin/recruit-jobs/' + j.id + '/share-text?lang=' + lang);
+      if (r && r.text) texts.push(r.text);
+    }
+    const all = texts.join('\n\n━━━━━━━━━━━━\n\n');
+    try { await navigator.clipboard.writeText(all); }
+    catch (_) { const ta = document.createElement('textarea'); ta.value = all; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+    toast('📋 已复制 ' + texts.length + ' 条在招文案（工人版），直接粘贴到群里');
+  } catch (e) { toast(e.message || '生成失败'); }
 }
 // ─── 分享: 复制文案 / 生成图片 (对外版本, 不含工头上限) ───
 async function _shareText(id) {
@@ -637,10 +843,9 @@ function _whValue() {
   const sel = document.getElementById('fWarehouse').value;
   return sel === OTHER ? document.getElementById('fWarehouseOther').value.trim() : sel;
 }
-function startEdit(id) {
-  const j = _jobs.find(x => x.id === id);
-  if (!j) return;
-  document.getElementById('editId').value = id;
+// 把一条招工装进左边表单 (asNew=true 时当新需求发, 不带 editId)
+function _fillForm(j, asNew) {
+  document.getElementById('editId').value = asNew ? '' : j.id;
   renderWhOptions(j.warehouse);
   document.getElementById('fPosition').value = j.position || '';
   document.getElementById('fDetails').value = j.details || '';
@@ -656,10 +861,19 @@ function startEdit(id) {
   document.getElementById('fAddress').value = j.address || '';
   document.getElementById('fAddress')._auto = '';
   document.querySelector('input[name="fEad"][value="' + (j.ead_required ? 1 : 0) + '"]').checked = true;
-  document.getElementById('formTitle').textContent = '✏️ 编辑招工需求 #' + id;
-  document.getElementById('saveBtn').textContent = '保存修改';
+  document.getElementById('formTitle').textContent = asNew ? '📄 复制再发（改改就能发）' : '✏️ 编辑招工需求 #' + j.id;
+  document.getElementById('saveBtn').textContent = asNew ? '📢 发布' : '保存修改';
   document.getElementById('cancelEditBtn').style.display = '';
+  openFormIfHidden();
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function startEdit(id) {
+  const j = _jobs.find(x => x.id === id);
+  if (j) _fillForm(j, false);
+}
+function dupJob(id) {
+  const j = _jobs.find(x => x.id === id);
+  if (j) { _fillForm(j, true); toast('已按 #' + id + ' 填好表单，检查后点「发布」'); }
 }
 function cancelEdit() {
   document.getElementById('editId').value = '';
@@ -673,7 +887,7 @@ function cancelEdit() {
   document.querySelector('input[name="fEad"][value="0"]').checked = true;
   renderWhOptions('');
   document.getElementById('formTitle').textContent = '➕ 新增招工需求';
-  document.getElementById('saveBtn').textContent = '发布';
+  document.getElementById('saveBtn').textContent = '📢 发布';
   document.getElementById('cancelEditBtn').style.display = 'none';
 }
 async function saveJob() {
