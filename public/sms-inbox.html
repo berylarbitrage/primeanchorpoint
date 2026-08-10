@@ -2984,8 +2984,9 @@ async function loadCsAccounts() {
       + '<a style="cursor:pointer;text-decoration:underline;font-size:.75rem" onclick="resetCsPassword(' + a.id + ')">改密码</a>'
       + '</div>'
       + '<div style="display:flex;gap:10px;margin-top:3px;font-size:.74rem;color:var(--gray-500);flex-wrap:wrap">'
-      + '<span>📧 ' + (a.email ? esc(a.email) : '<i style="color:#dc2626">未填邮箱</i>') + '</span>'
+      + '<span>👤 登录名: <b style="user-select:all;color:var(--gray-700)">' + esc(a.username) + '</b></span>'
       + '<span>🔑 密码: <span id="csPw' + i + '">••••••</span> <a style="cursor:pointer;text-decoration:underline" onclick="_csShowPw(' + i + ')">👁 查看</a></span>'
+      + (a.email ? '' : '<span><i style="color:#dc2626">未填邮箱（无法自助找回密码）</i></span>')
       + '</div></div>').join('')
       : '<div style="padding:12px;color:var(--gray-400);font-size:.85rem;text-align:center">还没有客服账号 — 点上面生成二维码让客服自己注册</div>';
   } catch (e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">加载失败</div>'; }
