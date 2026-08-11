@@ -20736,6 +20736,33 @@ try {
   }
 } catch (e) { console.log('[migration] labor wage repair v2 error:', e.message); }
 
+// 一次性：合作公司 Wecharmer 改名 Nexware —— 历史发票的客户名同步改掉，
+// 付款记录 (company_worker_payments) 里的公司名也一起改，否则发票的
+// 工资/利润对账按公司名匹配会断。改名过程写进每张发票的操作历史。
+try {
+  const _wnDone = db.prepare("SELECT value FROM app_settings WHERE key='rename_wecharmer_to_nexware_v1'").get();
+  if (!_wnDone) {
+    let _wnNew = 'Nexware Inc';
+    try {
+      const p = db.prepare("SELECT name FROM partners WHERE name LIKE '%nexware%' ORDER BY id DESC").get();
+      if (p && p.name) _wnNew = p.name;
+    } catch (_) {}
+    const _wnInvs = db.prepare("SELECT id, invoice_number, company_name FROM invoices WHERE company_name LIKE '%wecharmer%'").all();
+    const _wnUpd = db.prepare('UPDATE invoices SET company_name=? WHERE id=?');
+    const _wnHist = db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)');
+    let _wnPay = 0;
+    db.transaction(() => {
+      for (const inv of _wnInvs) {
+        _wnUpd.run(_wnNew, inv.id);
+        _wnHist.run(inv.id, '客户改名', `${inv.company_name} → ${_wnNew}（合作公司改名，历史发票同步）`);
+      }
+      _wnPay = db.prepare("UPDATE company_worker_payments SET partner_name=? WHERE partner_name LIKE '%wecharmer%'").run(_wnNew).changes;
+    })();
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('rename_wecharmer_to_nexware_v1','1')").run();
+    if (_wnInvs.length || _wnPay) console.log(`[migration] Wecharmer→${_wnNew}: 发票 ${_wnInvs.length} 张, 付款记录 ${_wnPay} 条`);
+  }
+} catch (e) { console.log('[migration] wecharmer rename error:', e.message); }
+
 // 手动修正的参考值：按付款记录算这张发票账期的 工资/开票 合计，✎ 弹窗预填。
 app.get('/api/admin/invoices/:id/wage-suggest', requireAdmin, (req, res) => {
   try {
