@@ -32828,7 +32828,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', note: item.note || '', noteType: item.noteType || '', noteDate: item.noteDate || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', missedPay: item.missedPay ? 1 : 0, note: item.note || '', noteType: item.noteType || '', noteDate: item.noteDate || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
       // 恢复 Excel 锁定拆分行（补差价/跨账期行），重开后金额保持与工资表一致
       if (item.fixed_split) {
         emp.fixedSplit = true;
@@ -37009,6 +37009,8 @@ function _invpSaveTableState() {
     if (subInp) emp.subcontractor = subInp.value;
     const refInp = row.querySelector('.invp-man-ref');
     if (refInp) emp.referrer = refInp.value;
+    const missedInp = row.querySelector('.invp-man-missed');
+    if (missedInp) emp.missedPay = missedInp.checked ? 1 : 0;
     const ntSel = row.querySelector('.invp-man-notetype');
     const ndInp = row.querySelector('.invp-man-notedate');
     if (ntSel || ndInp) {
@@ -37104,7 +37106,7 @@ function renderInvpManualTable(skipSave) {
         <div style="display:flex;align-items:center;gap:4px">
           <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
             placeholder="员工姓名" style="width:110px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
-          ${linkBadge}
+          ${linkBadge}${emp.missedPay ? '<span title="已标注漏发补发——会出现在分包商对账单该员工名下" style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;color:#dc2626;font-size:.68rem;font-weight:700;padding:0 5px;line-height:1.6;white-space:nowrap;flex-shrink:0">漏发</span>' : ''}
         </div>
       </td>
       <td style="padding:3px 4px">
@@ -37142,6 +37144,12 @@ function renderInvpManualTable(skipSave) {
             style="width:132px;border:1px solid #fcd34d;border-radius:4px;padding:3px 4px;font-size:.8rem;background:#fffdf5"
             onchange="_invpSaveTableState()">
         </div>
+      </td>
+      <td style="padding:3px 4px;text-align:center">
+        <input type="checkbox" class="invp-man-missed" data-uid="${emp.uid}"${emp.missedPay ? ' checked' : ''}
+          title="漏发补发标注——勾选后姓名旁标红「漏发」，并在分包商对账单该员工名下显示「漏发补发 Missed Pay Make-up」（不出现在客户发票上）"
+          style="width:15px;height:15px;accent-color:#dc2626;cursor:pointer;vertical-align:middle"
+          onchange="_invpSaveTableState();renderInvpManualTable(true)">
       </td>
       ${dayInputs}
       <td style="padding:3px 4px;text-align:right">
@@ -37195,6 +37203,7 @@ function renderInvpManualTable(skipSave) {
         <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#047857">分包商</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">介绍人</th>
         <th style="padding:5px 6px;text-align:left;white-space:nowrap;color:#b45309">入职/离职</th>
+        <th style="padding:5px 6px;text-align:center;white-space:nowrap;color:#dc2626" title="漏发补发标注——勾选后在分包商对账单该员工名下显示「漏发补发」">漏发</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap${showWage ? ';color:#1d4ed8' : ''}">${showWage ? '公司收 $/h<br><span style="font-weight:400;font-size:.72rem">公司发我们</span>' : '时薪($/h)'}</th>
         ${showWage ? '<th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#15803d">付工人 $/h<br><span style="font-weight:400;font-size:.72rem">我们发工人</span></th>' : ''}
@@ -37435,6 +37444,7 @@ function invpDoPasteImport() {
     const prev = replace ? (prevByName.get(_invpNameKey(r.name)) || null) : null;
     const emp = { uid: _invpManualUidSeq++, name: r.name,
       category: prev ? (prev.category || '') : '', subcontractor: prev ? (prev.subcontractor || '') : '', referrer: prev ? (prev.referrer || '') : '',
+      missedPay: prev && prev.missedPay ? 1 : 0,
       note: prev ? (prev.note || '') : '', noteType: prev ? (prev.noteType || '') : '', noteDate: prev ? (prev.noteDate || '') : '',
       rate: r.rate != null ? String(r.rate) : '', days: {},
       linked_employee_id: prev ? (prev.linked_employee_id || null) : null,
@@ -37627,6 +37637,7 @@ function invpApplyExcelData(data) {
       category: prev ? (prev.category || '') : '',
       subcontractor: prev ? (prev.subcontractor || '') : '',
       referrer: prev ? (prev.referrer || '') : '',
+      missedPay: prev && prev.missedPay ? 1 : 0,
       note: prev ? (prev.note || '') : '', noteType: prev ? (prev.noteType || '') : '', noteDate: prev ? (prev.noteDate || '') : '',
       rate: (e.regRate || e.regRate === 0) ? String(e.regRate) : '', otRate: '', markup: '', days: {},
       linked_employee_id: prev ? (prev.linked_employee_id || null) : null,
@@ -38811,7 +38822,7 @@ async function _invpSilentPersistAnnotations() {
     if (!inv || inv.error) return;
     const strip = arr => (arr || []).map(i => {
       const c = { ...i };
-      delete c.subcontractor; delete c.referrer; delete c.note; delete c.noteType; delete c.noteDate; delete c.category;
+      delete c.subcontractor; delete c.referrer; delete c.note; delete c.noteType; delete c.noteDate; delete c.category; delete c.missedPay;
       return c;
     });
     let items = inv.items || [];
@@ -38998,7 +39009,7 @@ async function generateInvpSubcontractorStatement() {
     // If the chosen subcontractor name matches a managed 分包商, use its details.
     recipientEntity = _invpFindLaborCompany(recipientName);
     grandTotal = items.reduce((s, i) => s + (i.total || 0), 0);
-    stmtItems = items.map(i => ({ name: _invpDisplayWorkerName(i.name), regHours: i.regHours || 0, otHours: i.otHours || 0, rate: i.rate || 0, total: i.total || 0 }));
+    stmtItems = items.map(i => ({ name: _invpDisplayWorkerName(i.name), regHours: i.regHours || 0, otHours: i.otHours || 0, rate: i.rate || 0, total: i.total || 0, missedPay: i.missedPay ? 1 : 0 }));
     stmtWorkers = stmtItems.map(i => i.name).filter(Boolean);
     const totalRegHrs = items.reduce((s, i) => s + (i.regHours || 0), 0);
     const totalOtHrs  = items.reduce((s, i) => s + (i.otHours || 0), 0);
@@ -39010,6 +39021,7 @@ async function generateInvpSubcontractorStatement() {
       const referrer = (i.referrer || '').trim();
       const note = (i.note || '').trim();
       const metaParts = [];
+      if (i.missedPay) metaParts.push(`<span style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;color:#dc2626;font-weight:700;padding:0 6px;white-space:nowrap">⚠ 漏发补发 Missed Pay Make-up</span>`);
       if (referrer) metaParts.push(`<span style="color:#94a3b8">介绍人:</span> <span style="color:#475569">${esc(referrer)}</span>`);
       if (note) metaParts.push(`<span style="color:#475569">${esc(note)}</span>`);
       const hasMeta = metaParts.length > 0;
@@ -39981,7 +39993,7 @@ function getInvpManualItems() {
       const globalMk = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
       const markup = parseFloat(emp.markup) || globalMk;
       const billed = Math.round(_invpBilledAmt(regAmt, otAmt, markup) * 100) / 100;
-      const it = { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', note: emp.note || '', noteType: emp.noteType || '', noteDate: emp.noteDate || '', hours: totalHours, regHours, otHours, rate, otRate, total, regAmt, otAmt, markup, otFee: _invpOtFeeRate(), billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
+      const it = { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', missedPay: emp.missedPay ? 1 : 0, note: emp.note || '', noteType: emp.noteType || '', noteDate: emp.noteDate || '', hours: totalHours, regHours, otHours, rate, otRate, total, regAmt, otAmt, markup, otFee: _invpOtFeeRate(), billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
       if (emp.fixedSplit) it.fixed_split = 1; // 重开发票时按原样恢复锁定
       return it;
     })
