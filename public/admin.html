@@ -37631,7 +37631,7 @@ function invpApplyExcelData(data) {
   let carried = 0;
   window._invpManualEmps = (data.employees || []).map(e => {
     const prev = prevByName.get(_invpNameKey(e.name)) || null;
-    if (prev && (prev.subcontractor || prev.referrer || prev.category || prev.noteType || prev.linked_employee_id)) carried++;
+    if (prev && (prev.subcontractor || prev.referrer || prev.category || prev.noteType || prev.linked_employee_id || prev.missedPay)) carried++;
     const emp = {
       uid: _invpManualUidSeq++, name: e.name || '',
       category: prev ? (prev.category || '') : '',
@@ -38827,11 +38827,18 @@ async function _invpSilentPersistAnnotations() {
     });
     let items = inv.items || [];
     let changed = false;
+    // 变更检测忽略键顺序、并给旧发票缺失的 missedPay 补默认值——否则新字段
+    // 一上线，所有旧发票第一次生成对账单都会触发一次无意义的回写和
+    // 「员工明细已修改」历史记录。
+    const canon = arr => JSON.stringify((arr || []).map(i => {
+      const o = { missedPay: 0, ...i };
+      return Object.fromEntries(Object.entries(o).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    }));
     if ((window._invpMode || 'hourly') !== 'container') {
       const cur = getInvpManualItems();
       if (cur.length
         && JSON.stringify(strip(cur)) === JSON.stringify(strip(inv.items))
-        && JSON.stringify(cur) !== JSON.stringify(inv.items)) {
+        && canon(cur) !== canon(inv.items)) {
         items = cur;
         changed = true;
       }
