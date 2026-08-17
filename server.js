@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17i · 客服可见全部对话(仅退订/管理员隐藏除外), 电话打码规则不变',
+  tag: '2026-08-17j · 收紧: 客服只看已建档员工(任意状态); 申请人须建档后可见',
   started: new Date().toISOString(),
 };
 
@@ -30514,7 +30514,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 
     // 对客服(非 admin)不可见: 回了 STOP 退订的、admin 设为隐藏的、以及
     // 未入职的(未关联员工档案, 即列表里标「未入职」的联系人)
-    if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0 AND COALESCE(c.cs_hidden,0)=0`;
+    if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0 AND COALESCE(c.cs_hidden,0)=0 AND c.employee_id IS NOT NULL`;
 
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
@@ -30575,8 +30575,9 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
       LEFT JOIN admin_users a ON a.id=t.assigned_agent_id
       WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
-    // 退订 / admin 隐藏的联系人, 对客服(非 admin)不可见 (是否建档/申请不再限制)
-    if (req.userRole !== 'admin' && (thread.contact_opted_out || thread.contact_cs_hidden)) return res.status(403).json({ error: '该对话仅管理员可见' });
+    // 退订 / admin 隐藏 / 未建档(未关联员工档案)的联系人, 对客服(非 admin)不可见
+    // —— 申请了但还没建档的也不给客服看, 建档(任意状态)后按电话自动关联即可见
+    if (req.userRole !== 'admin' && (thread.contact_opted_out || thread.contact_cs_hidden || !thread.employee_id)) return res.status(403).json({ error: '该对话仅管理员可见' });
     const wsResolved = _smsResolvedState(thread);
 
     smsAudit('thread', thread.id, 'viewed', 'agent', req.userId, {});
@@ -30647,8 +30648,8 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
   try {
     const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out, c.cs_hidden, c.name AS contact_name, c.employee_id AS contact_employee_id, c.applicant_id AS contact_applicant_id FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
-    // admin 隐藏的联系人, 客服(非 admin)不能回复 (是否建档/申请不再限制)
-    if (req.userRole !== 'admin' && thread.cs_hidden) return res.status(403).json({ error: '该对话仅管理员可见' });
+    // 未建档 / admin 隐藏的联系人, 客服(非 admin)不能回复
+    if (req.userRole !== 'admin' && (thread.cs_hidden || !thread.contact_employee_id)) return res.status(403).json({ error: '该对话仅管理员可见' });
     // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
     if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
 
@@ -31846,17 +31847,16 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
         OR replace(replace(replace(replace(replace(phone,'(',''),')',''),'-',''),' ',''),'+','') LIKE ?)${hideFilter}
       ORDER BY (status='active') DESC, first_name, last_name LIMIT 500`).all(q, like, like, like, like, like, digitsLike);
     const _mask = req.userRole !== 'admin';
-    // 申请人(还没建档)客服也能看到并发起对话, 但看不到电话 (admin 隐藏的照样不给看)
-    const appHideFilter = _mask ? ` AND NOT EXISTS (SELECT 1 FROM sms_contacts sc WHERE sc.applicant_id = applicant_submissions.id AND sc.cs_hidden = 1)` : '';
-    const apps = db.prepare(`SELECT id, name, phone, position, partner_name, state, apply_state FROM applicant_submissions
-      WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)${appHideFilter}
+    // 申请人(还没建档)只有 admin 能看到; 客服只能看到已建档的员工 (建档后任意状态都可见)
+    const apps = _mask ? [] : db.prepare(`SELECT id, name, phone, position, partner_name, state, apply_state FROM applicant_submissions
+      WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)
       ORDER BY id DESC LIMIT 200`).all(q, like, like, like, like);
     const people = [
       // 员工=已入职 → 客服可见尾号
       ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: _mask ? smsMaskPhone(e.phone) : e.phone,
         state: (e.state || '').toUpperCase(),
         extra: [e.position, e.status === 'active' ? '在职' : e.status].filter(Boolean).join(' · ') })),
-      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: _mask ? '' : a.phone,
+      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: a.phone,
         state: String(a.apply_state || a.state || '').toUpperCase(),
         extra: [a.position, a.partner_name].filter(Boolean).join(' · ') })),
     ];
@@ -31871,6 +31871,8 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
 app.post('/api/sms/start-thread', requireAdmin, requireSmsAccess, (req, res) => {
   try {
     const b = req.body || {};
+    // 申请人(未建档)只有 admin 能发起对话
+    if (b.type === 'applicant' && req.userRole !== 'admin') return res.status(403).json({ error: '申请人需要管理员建档后才能联系' });
     // 优先按 type+ref_id 由服务器查电话 (客服端电话是打码的, 不能直接用)
     let phoneRaw = String(b.phone || '');
     if (b.type === 'employee' && b.ref_id) {
